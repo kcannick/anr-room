@@ -1,0 +1,12 @@
+{
+  "name": "roomtone",
+  "version": "1.0.0",
+  "description": "A live, in-room song-rating prediction game. Rate a song, predict the room's average, closest guess wins the round.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node scoring.test.js && node e2e.test.js"
+  },
+  "engines": { "node": ">=22.5.0" },
+  "dependencies": { "pg": "^8.11.0" }
+}

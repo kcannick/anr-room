@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/mark-color.png"><title>The A&R Room · Host</title>
+<style>
+  :root{
+    --brand-green:#4bb749;--brand-purple:#403694;
+    --bg:#0d0b16;--panel:#171328;--panel-2:#1d1733;--line:#2e2750;
+    --ink:#f3f0fb;--ink-dim:#a9a2c9;--ink-faint:#6f688f;
+    --signal:#4bb749;--hot:#ff5d6c;--cool:#7c6ff0;--good:#4bb749;--accent:#6d5fe0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+  .bar{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(13,11,22,.95);backdrop-filter:blur(8px);z-index:5}
+  .bar .dot{width:10px;height:10px;border-radius:50%;background:var(--signal)}
+  .bar h1{font-size:16px;margin:0;font-weight:600}
+  .bar .who{margin-left:auto;font-size:13px;color:var(--ink-dim)}
+  .grid{max-width:1080px;margin:0 auto;padding:20px;display:grid;grid-template-columns:1.15fr .85fr;gap:18px}
+  @media(max-width:840px){.grid{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px}
+  h2{margin:0 0 14px;font-size:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-dim);font-weight:600}
+  label{display:block;font-size:12px;color:var(--ink-dim);margin:0 0 6px 2px}
+  input,textarea{width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:15px;padding:11px 12px;border-radius:10px;outline:none}
+  input:focus,textarea:focus{border-color:var(--signal)}
+  textarea{resize:vertical;min-height:54px}
+  .row{display:flex;gap:10px}.row>*{flex:1}
+  .btn{cursor:pointer;background:var(--signal);color:#06210b;border:none;font:inherit;font-weight:700;font-size:14px;padding:11px 14px;border-radius:10px;transition:filter .15s}
+  .btn:hover{filter:brightness(1.07)}.btn[disabled]{opacity:.4;cursor:default}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:500}
+  .btn.warn{background:transparent;border:1px solid var(--hot);color:var(--hot)}
+  .btn.good{background:var(--good);color:#06210b}
+  .btn.sm{padding:8px 11px;font-size:13px}
+  .stack{display:flex;flex-direction:column;gap:11px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#0a0814;color:var(--ink-dim)}
+  .pill.live{border-color:var(--signal);color:var(--signal)}
+  .pill.closed{border-color:var(--hot);color:var(--hot)}
+  .pill.done{border-color:var(--good);color:var(--good)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid #241d3d}
+  td.mono,th.mono{font-family:"Space Mono",monospace}
+  .rank1{color:var(--signal);font-weight:700}
+  .muted{color:var(--ink-faint)}
+  .share{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .share img{border-radius:12px;border:1px solid var(--line);background:#fff;padding:8px}
+  .link{font-family:"Space Mono",monospace;font-size:13px;word-break:break-all;background:#0a0814;border:1px solid var(--line);padding:10px;border-radius:10px;color:var(--cool)}
+  .timer-big{font-family:"Space Mono",monospace;font-size:30px;font-weight:700}
+  .timer-big.warn{color:var(--hot)}
+  .feed{max-height:240px;overflow:auto}
+  .empty{color:var(--ink-faint);font-size:14px;padding:16px 0;text-align:center}
+  .hide{display:none!important}
+  .kpi{display:flex;gap:18px;margin-bottom:6px}
+  .kpi div b{font-family:"Space Mono",monospace;font-size:22px;display:block}
+  .kpi div span{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.08em}
+  .err{color:var(--hot);font-size:13px;min-height:16px}
+  a{color:var(--cool)}
+</style>
+</head>
+<body>
+<div class="bar"><img id="brandLogo" src="/logo.png" alt="Makin'It" style="height:18px;width:auto;opacity:.92" onerror="this.style.display='none';document.getElementById('barDot').style.display='inline-block'"><span class="dot" id="barDot" style="display:none"></span><h1 style="border-left:1px solid var(--line);padding-left:12px;margin-left:4px">The A&amp;R Room · Host</h1><span class="who" id="who"></span></div>
+
+<!-- CREATE -->
+<div id="create" class="grid hide">
+  <div class="card stack" style="grid-column:1/-1;max-width:460px;margin:40px auto 0">
+    <h2>Start a session</h2>
+    <div><label>Session name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Session"></div>
+    <div><label>Default voting window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
+    <button class="btn" id="btnCreate">Create session</button>
+    <div class="err" id="createErr"></div>
+    <p class="muted" style="font-size:13px;margin:0">Already running one on this device? It'll reopen automatically.</p>
+  </div>
+</div>
+
+<!-- CONSOLE -->
+<div id="console" class="grid hide">
+  <!-- LEFT: round control -->
+  <div class="stack">
+    <div class="card">
+      <h2>This round</h2>
+      <div id="roundBox"></div>
+    </div>
+
+    <div class="card">
+      <h2>Up next <span id="queueCount" class="muted"></span></h2>
+      <div id="queueBox"><div class="empty">Queue is empty. Add a song below.</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Queue a song</h2>
+      <div class="stack">
+        <div><label>Song title *</label><input id="rTitle" placeholder="Song name"></div>
+        <div class="row">
+          <div><label>Artist</label><input id="rArtist" placeholder="optional"></div>
+          <div><label>Giveaway this round</label><input id="rGive" placeholder="optional prize"></div>
+        </div>
+        <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
+        <button class="btn" id="btnAddRound">Add to queue</button>
+        <div class="err" id="addErr"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Live results review</h2>
+      <div id="reviewBox"><div class="empty">Open and close a round to see results here before you ratify.</div></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: room -->
+  <div class="stack">
+    <div class="card">
+      <h2>Share the room</h2>
+      <div class="share">
+        <img id="qr" width="132" height="132" alt="QR">
+        <div style="flex:1;min-width:180px">
+          <div class="link" id="playLink"></div>
+          <button class="btn ghost sm" id="btnCopy" style="margin-top:8px">Copy link</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Ads <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">· lobby · voting · locked</span></h2>
+      <div id="adsBox"></div>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+        <label>Upload a banner <span class="muted">(≈320×100, under 500KB, PNG/JPG)</span></label>
+        <input type="file" id="adFile" accept="image/png,image/jpeg,image/gif,image/webp" style="font-size:13px">
+        <div class="row" style="margin-top:10px">
+          <div><label>Click link (optional)</label><input id="adLink" placeholder="https://…"></div>
+          <div><label>Label</label><input id="adLabel" placeholder="e.g. House banner"></div>
+        </div>
+        <label style="margin-top:10px">Use as</label>
+        <select id="adScope" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+          <option value="global">Global default (all sessions)</option>
+          <option value="session">This session only</option>
+        </select>
+        <button class="btn good" id="btnAdUpload" style="margin-top:10px;width:100%">Upload &amp; apply</button>
+        <div class="err" id="adErr"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Room</h2>
+      <div class="kpi">
+        <div><b id="kJoined">0</b><span>Joined</span></div>
+        <div><b id="kRound" class="mono">—</b><span>Round</span></div>
+        <div><b id="kVotes">0</b><span>Votes in</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Live votes <span id="feedCount" class="muted"></span></h2>
+      <div class="feed" id="feed"><div class="empty">No votes yet.</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Leaderboard</h2>
+      <div id="board"><div class="empty">Nobody's joined yet.</div></div>
+      <button class="btn warn sm" id="btnEnd" style="margin-top:14px">End session</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT SONG MODAL -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
+  <div class="card" style="max-width:440px;width:100%">
+    <h2>Edit song</h2>
+    <div class="stack">
+      <div><label>Song title *</label><input id="eTitle"></div>
+      <div class="row">
+        <div><label>Artist</label><input id="eArtist"></div>
+        <div><label>Giveaway</label><input id="eGive"></div>
+      </div>
+      <div><label>Note for players</label><textarea id="eNote"></textarea></div>
+      <div class="row">
+        <button class="btn ghost" id="eCancel">Cancel</button>
+        <button class="btn good" id="eSave">Save changes</button>
+      </div>
+      <div class="err" id="eErr"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+let SID=localStorage.getItem('rt_admin_sid'), ATOK=localStorage.getItem('rt_admin_token');
+let poll=null, serverSkew=0, lastState=null;
+
+async function api(path,body,method='POST'){
+  const h={'Content-Type':'application/json'};
+  if(ATOK)h['X-Admin-Token']=ATOK;
+  const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
+  const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Error');return d;
+}
+const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
+
+// ---- create ----
+$('#btnCreate').onclick=async()=>{
+  $('#createErr').textContent='';
+  const name=$('#newName').value.trim();
+  if(!name)return $('#createErr').textContent='Give it a name';
+  let mins=Math.round(+($('#newMins').value||5));
+  if(!Number.isFinite(mins))mins=5;
+  mins=Math.min(60,Math.max(2,mins));
+  try{
+    const d=await api('/api/session',{name,defaultMinutes:mins});
+    SID=d.sessionId;ATOK=d.adminToken;
+    localStorage.setItem('rt_admin_sid',SID);localStorage.setItem('rt_admin_token',ATOK);
+    boot();
+  }catch(e){$('#createErr').textContent=e.message;}
+};
+
+// ---- add round ----
+$('#btnAddRound').onclick=async()=>{
+  $('#addErr').textContent='';
+  const song_title=$('#rTitle').value.trim();
+  if(!song_title)return $('#addErr').textContent='Song title is required';
+  try{
+    await api('/api/admin/round',{sessionId:SID,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim()});
+    $('#rTitle').value='';$('#rArtist').value='';$('#rNote').value='';$('#rGive').value='';
+    refresh();
+  }catch(e){$('#addErr').textContent=e.message;}
+};
+
+$('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textContent);$('#btnCopy').textContent='Copied!';setTimeout(()=>$('#btnCopy').textContent='Copy link',1200);};
+$('#btnEnd').onclick=async()=>{if(!confirm('End the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/end',{sessionId:SID});refresh();};
+
+// ---- round control render ----
+function roundControls(st){
+  const r=st.activeRound;
+  const box=$('#roundBox');
+  if(!r){box.innerHTML='<div class="empty">No round in play. Open a song from the queue below to start a round.</div>';return;}
+  const statusPill={voting:'<span class="pill live">● Voting open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
+  let timer='';
+  if(r.status==='voting'&&r.closes_at){
+    const left=Math.max(0,Math.round((Number(r.closes_at)-(Date.now()+serverSkew))/1000));
+    const m=Math.floor(left/60),s=left%60;
+    timer=`<div class="timer-big ${left<=10?'warn':''}" style="margin:10px 0">${m}:${String(s).padStart(2,'0')}</div>`;
+  }
+  let actions='';
+  if(r.status==='voting'){
+    actions=`<div class="row">
+        <button class="btn ghost sm" onclick="extendRound('${r.id}',0.5)">+30s</button>
+        <button class="btn ghost sm" onclick="extendRound('${r.id}',1)">+1 min</button>
+        <button class="btn warn sm" onclick="closeRound('${r.id}')">Close now</button>
+      </div>
+      <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="editRound('${r.id}')">✎ Edit song</button>
+      <button class="btn good" style="margin-top:8px;width:100%" onclick="ratifyRound('${r.id}')">Close & tally → review</button>`;
+  }else if(r.status==='closed'){
+    actions=`<div class="row">
+        <button class="btn ghost sm" onclick="reopenRound('${r.id}')">↺ Reopen voting</button>
+        <button class="btn ghost sm" onclick="editRound('${r.id}')">✎ Edit song</button>
+      </div>
+      <button class="btn good" style="margin-top:8px;width:100%" onclick="ratifyRound('${r.id}')">Tally the room → review winners</button>`;
+  }else if(r.status==='ratified'){
+    actions=`<p class="muted" style="font-size:13px;margin:8px 0 0">Results are live on players' screens. Open the next song from the queue when ready.</p>`;
+  }
+  box.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center">
+      <div><div class="muted" style="font-size:12px">Round ${r.idx}</div>
+      <div style="font-size:18px;font-weight:600">${esc(r.song_title)}</div>
+      <div class="muted" style="font-size:13px">${esc(r.song_artist||'')}</div></div>${statusPill}</div>
+      ${r.giveaway?`<div style="color:var(--good);font-size:13px;margin-top:8px">🎁 ${esc(r.giveaway)}</div>`:''}
+      ${timer}<div class="stack" style="margin-top:12px">${actions}</div>`;
+}
+
+function queueBox(st){
+  const box=$('#queueBox');
+  const q=st.queue||[];
+  $('#queueCount').textContent=q.length?('· '+q.length):'';
+  const roundBusy=st.activeRound&&(st.activeRound.status==='voting'||st.activeRound.status==='closed');
+  const prevMins=$('#openMins')?$('#openMins').value:'';
+  const fillMins=prevMins!==''?prevMins:(st.session.default_minutes||5);
+  if(!q.length){box.innerHTML='<div class="empty">Queue is empty. Add a song below.</div>';return;}
+  box.innerHTML=`<div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:12px">
+      <div style="flex:0 0 150px"><label>Voting window <span class="muted">(min, 2–60)</span></label><input id="openMins" type="number" value="${fillMins}" min="2" max="60" step="1"></div>
+      <div class="muted" style="font-size:12px;padding-bottom:11px">${roundBusy?'Finish the current round before opening the next.':'Opens the top song as the next round.'}</div>
+    </div>`+
+    q.map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;${i===0?'border-color:var(--signal)':''}">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.song_title)}</div>
+          <div class="muted" style="font-size:12px">${esc(r.song_artist||'')}${r.giveaway?' · 🎁 '+esc(r.giveaway):''}</div>
+        </div>
+        <button class="btn ghost sm" title="Edit" onclick="editRound('${r.id}')">✎</button>
+        <button class="btn ghost sm" title="Move up" ${i===0?'disabled':''} onclick="moveRound('${r.id}','up')">▲</button>
+        <button class="btn ghost sm" title="Move down" ${i===q.length-1?'disabled':''} onclick="moveRound('${r.id}','down')">▼</button>
+        <button class="btn ghost sm" title="Remove" onclick="deleteRound('${r.id}')">✕</button>
+        <button class="btn good sm" ${roundBusy?'disabled':''} onclick="openRound('${r.id}')">Open ▸</button>
+      </div>`).join('');
+}
+
+function reviewBox(st){
+  const box=$('#reviewBox');
+  if(st.ratifiedResults&&st.activeRound&&st.activeRound.status==='ratified'){
+    const rows=st.ratifiedResults;
+    box.innerHTML=`<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(st.activeRound.room_average)}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
+      <table><thead><tr><th>#</th><th>Name</th><th class="mono">Guess</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${(+r.predict).toFixed(1)}</td><td class="mono muted">${(+r.err).toFixed(1)}</td><td class="mono" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
+      </tbody></table>`;
+    return;
+  }
+  if(st.activeRound&&(st.activeRound.status==='voting'||st.activeRound.status==='closed')){
+    box.innerHTML=`<div class="empty">${st.liveVotes.length} vote(s) in. Close & tally to review winners before results go out.</div>`;return;
+  }
+  box.innerHTML='<div class="empty">Open and close a round to review results here.</div>';
+}
+
+function render(st){
+  lastState=st;
+  $('#who').textContent=st.session.name+' · '+st.session.status;
+  serverSkew=(st.serverNow||Date.now())-Date.now();
+  $('#kJoined').textContent=st.verifiedCount;
+  $('#kRound').textContent=st.activeRound?('#'+st.activeRound.idx):'—';
+  $('#kVotes').textContent=st.liveVotes.length;
+  // share
+  const link=location.origin+'/?s='+st.session.id;
+  $('#playLink').textContent=link;
+  $('#qr').src='https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data='+encodeURIComponent(link);
+  roundControls(st);queueBox(st);reviewBox(st);adsBox(st);
+  // feed
+  const feed=$('#feed');
+  if(st.liveVotes.length){
+    $('#feedCount').textContent='('+st.liveVotes.length+')';
+    feed.innerHTML='<table><thead><tr><th>Name</th><th class="mono">Rated</th><th class="mono">Predicts</th></tr></thead><tbody>'+
+      st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono">${v.taste}</td><td class="mono" style="color:var(--signal)">${(+v.predict).toFixed(1)}</td></tr>`).join('')+'</tbody></table>';
+  }else{$('#feedCount').textContent='';feed.innerHTML='<div class="empty">No votes yet.</div>';}
+  // board
+  const b=$('#board');
+  if(st.participants.length){
+    b.innerHTML='<table><thead><tr><th>#</th><th>Name</th><th class="mono">Total</th></tr></thead><tbody>'+
+      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>';
+  }else b.innerHTML='<div class="empty">Nobody\'s joined yet — share the QR code.</div>';
+}
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TIER_BADGE={bullseye:'🎯',sharp:'🔥',close:'👌',off:'😬',wayoff:'💀'};
+const tierBadge=t=>t?`<span title="${t}">${TIER_BADGE[t]||''}</span>`:'';
+
+// ---- ads ----
+function adsBox(st){
+  const box=$('#adsBox');if(!box)return;
+  const banners=st.banners||[];
+  const sessionBannerId=st.session.banner_id;
+  if(!banners.length){
+    box.innerHTML='<div class="empty" style="padding:8px 0">No banners yet. Upload one below — it shows in the lobby, during voting, and on the locked screen.</div>';
+    return;
+  }
+  box.innerHTML=banners.map(b=>{
+    const tags=[];
+    if(b.isGlobalDefault)tags.push('<span class="pill done" style="font-size:10px">Global default</span>');
+    if(b.id===sessionBannerId)tags.push('<span class="pill live" style="font-size:10px">This session</span>');
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">
+      <img src="/api/banner/image?id=${b.id}" alt="" style="height:34px;width:auto;max-width:90px;border-radius:5px;background:#0a0814">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.label||'Banner')} <span class="muted" style="font-weight:400">· ${b.scope}</span></div>
+        <div style="margin-top:3px;display:flex;gap:5px;flex-wrap:wrap">${tags.join('')||'<span class="muted" style="font-size:11px">not assigned</span>'}</div>
+      </div>
+      <select onchange="assignBanner('${b.id}',this.value);this.selectedIndex=0" style="background:#0a0814;border:1px solid var(--line);color:var(--ink-dim);font:inherit;font-size:12px;padding:6px;border-radius:8px">
+        <option value="">Use as…</option>
+        <option value="global">Global default</option>
+        <option value="session">This session</option>
+        <option value="song">Current song</option>
+      </select>
+      <button class="btn ghost sm" title="Delete" onclick="deleteBanner('${b.id}')">✕</button>
+    </div>`;
+  }).join('')+
+  `<div class="row" style="margin-top:4px">
+     <button class="btn ghost sm" onclick="assignBanner('','global')">Clear global</button>
+     <button class="btn ghost sm" onclick="assignBanner('','session')">Clear session</button>
+     <button class="btn ghost sm" onclick="assignBanner('','song')">Clear song</button>
+   </div>`;
+}
+
+window.assignBanner=async(bannerId,target)=>{
+  if(!target)return;
+  const body={sessionId:SID,target,bannerId:bannerId||null};
+  if(target==='song'){
+    if(!lastState||!lastState.activeRound){alert('No song is currently active to attach a banner to.');return;}
+    body.roundId=lastState.activeRound.id;
+  }
+  try{await api('/api/admin/banner/assign',body);}catch(e){alert(e.message);}
+  refresh();
+};
+window.deleteBanner=async(bannerId)=>{
+  if(!confirm('Delete this banner? It will be removed from anywhere it is used.'))return;
+  await api('/api/admin/banner/delete',{sessionId:SID,bannerId});refresh();
+};
+
+$('#btnAdUpload').onclick=async()=>{
+  $('#adErr').textContent='';
+  const f=$('#adFile').files[0];
+  if(!f)return $('#adErr').textContent='Choose an image first';
+  if(f.size>500*1024)return $('#adErr').textContent='Image is over 500KB — please shrink it';
+  const link=$('#adLink').value.trim();
+  if(link&&!/^https?:\/\//i.test(link))return $('#adErr').textContent='Link must start with http:// or https://';
+  $('#btnAdUpload').disabled=true;$('#btnAdUpload').textContent='Uploading…';
+  try{
+    const dataUri=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+    const r=await api('/api/admin/banner/upload',{sessionId:SID,scope:$('#adScope').value,image_data:dataUri,link_url:link,label:$('#adLabel').value.trim()});
+    // auto-assign to the scope chosen
+    await api('/api/admin/banner/assign',{sessionId:SID,target:$('#adScope').value,bannerId:r.bannerId});
+    $('#adFile').value='';$('#adLink').value='';$('#adLabel').value='';
+    refresh();
+  }catch(e){$('#adErr').textContent=e.message;}
+  $('#btnAdUpload').disabled=false;$('#btnAdUpload').textContent='Upload & apply';
+};
+
+// round actions
+window.openRound=async(rid)=>{let mins=Math.round(+($('#openMins')?.value||5));mins=Math.min(60,Math.max(2,Number.isFinite(mins)?mins:5));try{await api('/api/admin/round/open',{sessionId:SID,roundId:rid,minutes:mins});}catch(e){alert(e.message);}refresh();};
+window.moveRound=async(rid,dir)=>{await api('/api/admin/round/move',{sessionId:SID,roundId:rid,dir});refresh();};
+window.deleteRound=async(rid)=>{if(!confirm('Remove this song from the queue?'))return;await api('/api/admin/round/delete',{sessionId:SID,roundId:rid});refresh();};
+window.extendRound=async(rid,mins)=>{await api('/api/admin/round/extend',{sessionId:SID,roundId:rid,minutes:mins});refresh();};
+window.closeRound=async(rid)=>{await api('/api/admin/round/close',{sessionId:SID,roundId:rid});refresh();};
+window.reopenRound=async(rid)=>{let mins=Math.round(+($('#openMins')?.value||5));mins=Math.min(60,Math.max(2,Number.isFinite(mins)?mins:5));try{await api('/api/admin/round/reopen',{sessionId:SID,roundId:rid,minutes:mins});}catch(e){alert(e.message);}refresh();};
+window.ratifyRound=async(rid)=>{if(!confirm('Tally this round and push results to players?'))return;await api('/api/admin/round/ratify',{sessionId:SID,roundId:rid});refresh();};
+
+// edit modal
+let editingId=null;
+function findRound(rid){
+  if(!lastState)return null;
+  if(lastState.activeRound&&lastState.activeRound.id===rid)return lastState.activeRound;
+  return (lastState.queue||[]).find(r=>r.id===rid)||null;
+}
+window.editRound=(rid)=>{
+  const r=findRound(rid);if(!r)return;
+  editingId=rid;
+  $('#eTitle').value=r.song_title||'';$('#eArtist').value=r.song_artist||'';
+  $('#eGive').value=r.giveaway||'';$('#eNote').value=r.song_note||'';$('#eErr').textContent='';
+  $('#editModal').style.display='flex';
+};
+$('#eCancel').onclick=()=>{$('#editModal').style.display='none';editingId=null;};
+$('#editModal').onclick=(e)=>{if(e.target===$('#editModal')){$('#editModal').style.display='none';editingId=null;}};
+$('#eSave').onclick=async()=>{
+  $('#eErr').textContent='';
+  const title=$('#eTitle').value.trim();
+  if(!title)return $('#eErr').textContent='Song title is required';
+  try{
+    await api('/api/admin/round/edit',{sessionId:SID,roundId:editingId,song_title:title,song_artist:$('#eArtist').value.trim(),song_note:$('#eNote').value.trim(),giveaway:$('#eGive').value.trim()});
+    $('#editModal').style.display='none';editingId=null;refresh();
+  }catch(e){$('#eErr').textContent=e.message;}
+};
+
+async function refresh(){
+  try{const st=await api('/api/admin/state?sessionId='+encodeURIComponent(SID),null,'GET');render(st);}
+  catch(e){if(/auth/i.test(e.message)){localStorage.removeItem('rt_admin_sid');localStorage.removeItem('rt_admin_token');location.reload();}}
+}
+function boot(){
+  $('#create').classList.add('hide');$('#console').classList.remove('hide');
+  refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
+  setInterval(()=>{ // local timer repaint without server hit
+    const t=document.querySelector('.timer-big');if(!t)return;
+  },1000);
+}
+// boot
+if(SID&&ATOK)boot();
+else{$('#create').classList.remove('hide');}
+</script>
+</body>
+</html>
