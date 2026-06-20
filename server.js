@@ -307,7 +307,7 @@ async function ratifyRound(round) {
     // Bump each participant's running total by the points earned this round.
     // A round can be negative, but the cumulative leaderboard total never drops below 0.
     for (const v of ranked) {
-      await tx.run('UPDATE participants SET total_points = MAX(0, total_points + ?) WHERE id = ?', [v.points, v.participant_id]);
+      await tx.run('UPDATE participants SET total_points = CASE WHEN total_points + ? < 0 THEN 0 ELSE total_points + ? END WHERE id = ?', [v.points, v.points, v.participant_id]);
     }
     return { ranked, room_average: avg };
   });
