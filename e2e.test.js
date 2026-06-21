@@ -404,6 +404,21 @@ async function call(path, body, method='POST', headers={}) {
   const legacyState = await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH);
   ok('legacy admin token still admins its session', legacyState.status === 200, 'got ' + legacyState.status);
 
+  console.log('\n— pre-registration SMS consent capture (stage 5, compliant) —');
+  // A player joining with phone + explicit consent → stored with a timestamp.
+  const cr = await call('/api/join/request', { sessionId: SID, email: 'sms-yes@test.com' });
+  await call('/api/join/verify', { sessionId: SID, email: 'sms-yes@test.com', code: cr.d.devCode, name: 'Yes Person', phone: '555-111-2222', smsConsent: true });
+  const expY = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`, { headers: AH }).then(r => r.json());
+  const yRow = expY.participants.find(p => p.email === 'sms-yes@test.com');
+  ok('consenting player stored with phone', yRow && yRow.phone === '555-111-2222', JSON.stringify(yRow && yRow.phone));
+  ok('consent flag set', yRow && (yRow.sms_marketing_consent === 1 || yRow.sms_marketing_consent === true), JSON.stringify(yRow && yRow.sms_marketing_consent));
+  // A player who does NOT check the box → no consent, even if phone given.
+  const cn = await call('/api/join/request', { sessionId: SID, email: 'sms-no@test.com' });
+  await call('/api/join/verify', { sessionId: SID, email: 'sms-no@test.com', code: cn.d.devCode, name: 'No Person', phone: '555-333-4444', smsConsent: false });
+  const expN = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`, { headers: AH }).then(r => r.json());
+  const nRow = expN.participants.find(p => p.email === 'sms-no@test.com');
+  ok('non-consenting player NOT marked consented', nRow && (nRow.sms_marketing_consent === 0 || nRow.sms_marketing_consent === false || nRow.sms_marketing_consent == null), JSON.stringify(nRow && nRow.sms_marketing_consent));
+
   console.log('\n— end session: shareable recap revealed —');
   await call('/api/admin/session/end', { sessionId: SID }, 'POST', AH);
   const ms = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': t1 })).d;

@@ -468,8 +468,10 @@ async function handleApi(req, res, url) {
 
   // ----- verify OTP + create/return participant -----
   if (p === '/api/join/verify' && method === 'POST') {
-    const { sessionId, email, code, name } = await readBody(req);
+    const { sessionId, email, code, name, phone, smsConsent } = await readBody(req);
     const em = (email || '').toLowerCase();
+    const ph = (phone || '').trim();
+    const consent = smsConsent === true || smsConsent === 1 || smsConsent === '1' ? 1 : 0;
     const otp = await db.get('SELECT * FROM otps WHERE email = ? AND session_id = ?', [em, sessionId]);
     if (!otp) return bad(res, 'Request a code first');
     if (otp.attempts >= 6) return bad(res, 'Too many attempts. Request a new code.');
@@ -484,10 +486,14 @@ async function handleApi(req, res, url) {
     if (user) {
       await db.run('UPDATE users SET last_seen = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE uid = ?',
         [now(), (name || '').trim(), user.uid]);
+      // Capture phone if newly provided. Record consent (with timestamp) only when
+      // the user affirmatively opts in — never silently revoke a prior yes here.
+      if (ph) await db.run('UPDATE users SET phone = ? WHERE uid = ?', [ph, user.uid]);
+      if (consent) await db.run('UPDATE users SET sms_marketing_consent = 1, sms_consent_at = ? WHERE uid = ?', [now(), user.uid]);
     } else {
       const uid = id(12);
-      await db.run('INSERT INTO users (uid, email, name, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,0,0)',
-        [uid, em, (name || '').trim(), now(), now()]);
+      await db.run('INSERT INTO users (uid, email, name, phone, sms_marketing_consent, sms_consent_at, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,?,?,?,0,0)',
+        [uid, em, (name || '').trim(), ph || null, consent, consent ? now() : null, now(), now()]);
       user = { uid, email: em };
     }
 
@@ -495,12 +501,12 @@ async function handleApi(req, res, url) {
     let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
     const token = id(18);
     if (participant) {
-      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE id = ?',
-        [token, user.uid, (name || '').trim(), participant.id]);
+      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END WHERE id = ?',
+        [token, user.uid, (name || '').trim(), ph, consent, participant.id]);
     } else {
       const pid = id(9);
-      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,1,0,?)',
-        [pid, sessionId, user.uid, em, (name || '').trim(), token, now()]);
+      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,1,0,?)',
+        [pid, sessionId, user.uid, em, (name || '').trim(), ph || null, consent, token, now()]);
       // First time this user appears in this session → count it toward sessions_played.
       await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }
@@ -790,7 +796,7 @@ async function handleApi(req, res, url) {
     const anon = url.searchParams.get('anon') === '1';
 
     const participants = await db.all(
-      'SELECT id, user_id, name, email, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
+      'SELECT id, user_id, name, email, phone, sms_marketing_consent, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
       [sessionId]
     );
     const rounds = await db.all(
@@ -812,7 +818,7 @@ async function handleApi(req, res, url) {
 
     const cleanParticipants = participants.map((pt, i) => anon
       ? { player: labelById[pt.id], total_points: pt.total_points }
-      : { player: labelById[pt.id], name: pt.name, email: pt.email, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) });
+      : { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) });
 
     const cleanVotes = votes.map(v => {
       const base = {

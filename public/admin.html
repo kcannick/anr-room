@@ -62,15 +62,55 @@
 <body>
 <div class="bar"><img id="brandLogo" src="/logo.png" alt="Makin'It" style="height:18px;width:auto;opacity:.92" onerror="this.style.display='none';document.getElementById('barDot').style.display='inline-block'"><span class="dot" id="barDot" style="display:none"></span><h1 style="border-left:1px solid var(--line);padding-left:12px;margin-left:4px">The A&amp;R Room · Host</h1><span class="who" id="who"></span></div>
 
+<!-- LOGIN -->
+<div id="login" class="grid hide">
+  <div class="card stack" style="grid-column:1/-1;max-width:420px;margin:60px auto 0">
+    <h2>Host sign in</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 4px">Sign in with your email to manage your sessions from any device.</p>
+    <div id="loginStep1">
+      <div><label>Email</label><input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email"></div>
+      <button class="btn" id="btnLoginCode" style="margin-top:10px;width:100%">Email me a code</button>
+    </div>
+    <div id="loginStep2" class="hide">
+      <p class="muted" style="font-size:13px">Code sent to <span id="loginEmailEcho" style="color:var(--ink)"></span>. Check Spam/Promotions if you don't see it.</p>
+      <div><label>6-digit code</label><input id="loginCode" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
+      <button class="btn" id="btnLoginVerify" style="margin-top:10px;width:100%">Sign in</button>
+      <button class="btn ghost sm" id="btnLoginBack" style="margin-top:8px">Use a different email</button>
+    </div>
+    <div id="loginDev" class="note hide"></div>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- SESSION PICKER -->
+<div id="picker" class="grid hide">
+  <div class="card stack" style="grid-column:1/-1;max-width:640px;margin:40px auto 0">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0">Your sessions</h2>
+      <button class="btn sm" id="btnNewFromPicker">+ New session</button>
+    </div>
+    <div id="pickerList"><div class="empty">Loading…</div></div>
+    <button class="btn ghost sm" id="btnLogout" style="margin-top:6px">Log out</button>
+  </div>
+</div>
+
 <!-- CREATE -->
 <div id="create" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:460px;margin:40px auto 0">
     <h2>Start a session</h2>
     <div><label>Session name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Session"></div>
     <div><label>Default voting window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
+    <div>
+      <label>When</label>
+      <select id="newWhen" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+        <option value="live">Start now (live)</option>
+        <option value="upcoming">Schedule for later (let people pre-register)</option>
+      </select>
+    </div>
+    <div id="newSchedRow" class="hide"><label>Scheduled start <span class="muted">(optional, shown to early joiners)</span></label><input id="newSched" type="datetime-local"></div>
     <button class="btn" id="btnCreate">Create session</button>
     <div class="err" id="createErr"></div>
-    <p class="muted" style="font-size:13px;margin:0">Already running one on this device? It'll reopen automatically.</p>
+    <button class="btn ghost sm" id="btnCreateBack">← Back to my sessions</button>
   </div>
 </div>
 
@@ -170,7 +210,16 @@
         </div>
         <p class="muted" style="font-size:11px;margin:8px 0 0">Full versions include emails (for your list). Anon versions use “Player 1, 2…” — safe to share for analysis.</p>
       </div>
-      <button class="btn warn sm" id="btnEnd" style="margin-top:14px">End session</button>
+      <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Session status: <span id="sessStatus" style="color:var(--ink)">—</span></div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          <button class="btn good sm hide" id="btnGoLive">Go live</button>
+          <button class="btn warn sm" id="btnEnd">Complete</button>
+          <button class="btn ghost sm hide" id="btnArchive">Archive</button>
+          <button class="btn good sm hide" id="btnReopen">Reopen</button>
+        </div>
+      </div>
+      <button class="btn ghost sm" id="btnBackToSessions" style="margin-top:12px">← My sessions</button>
     </div>
   </div>
 </div>
@@ -198,15 +247,96 @@
 <script>
 const $=s=>document.querySelector(s);
 let SID=localStorage.getItem('rt_admin_sid'), ATOK=localStorage.getItem('rt_admin_token');
+let AUTHTOK=localStorage.getItem('rt_auth_token'), ME=null;
 let poll=null, serverSkew=0, lastState=null;
 
 async function api(path,body,method='POST'){
   const h={'Content-Type':'application/json'};
-  if(ATOK)h['X-Admin-Token']=ATOK;
+  if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;       // identity login (preferred)
+  if(ATOK)h['X-Admin-Token']=ATOK;            // legacy per-session token (fallback)
   const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
   const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Error');return d;
 }
 const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
+
+// ---------- AUTH FLOW: login → picker → console ----------
+function showScreen(id){
+  ['login','picker','create','console'].forEach(s=>$('#'+s).classList.add('hide'));
+  $('#'+id).classList.remove('hide');
+}
+
+// Login: request code
+$('#btnLoginCode').onclick=async()=>{
+  $('#loginErr').textContent='';
+  const email=$('#loginEmail').value.trim();
+  if(!email||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return $('#loginErr').textContent='Enter a valid email';
+  try{
+    const d=await api('/api/auth/request',{email});
+    $('#loginEmailEcho').textContent=email;
+    $('#loginStep1').classList.add('hide');$('#loginStep2').classList.remove('hide');
+    if(d.devCode){$('#loginDev').classList.remove('hide');$('#loginDev').textContent='Dev mode — your code is '+d.devCode;}
+    $('#loginCode').focus();
+  }catch(e){$('#loginErr').textContent=e.message;}
+};
+$('#btnLoginBack').onclick=()=>{$('#loginStep2').classList.add('hide');$('#loginStep1').classList.remove('hide');$('#loginDev').classList.add('hide');$('#loginErr').textContent='';};
+// Login: verify code
+$('#btnLoginVerify').onclick=async()=>{
+  $('#loginErr').textContent='';
+  const email=$('#loginEmailEcho').textContent;const code=$('#loginCode').value.trim();
+  if(!code)return $('#loginErr').textContent='Enter the code';
+  try{
+    const d=await api('/api/auth/verify',{email,code});
+    AUTHTOK=d.token;ME={uid:d.uid,email:d.email,role:d.role,name:d.name};
+    localStorage.setItem('rt_auth_token',AUTHTOK);
+    // reset login form
+    $('#loginStep2').classList.add('hide');$('#loginStep1').classList.remove('hide');$('#loginCode').value='';$('#loginDev').classList.add('hide');
+    openPicker();
+  }catch(e){$('#loginErr').textContent=e.message;}
+};
+$('#btnLogout').onclick=async()=>{
+  try{await api('/api/auth/logout',{});}catch(e){}
+  AUTHTOK=null;ME=null;localStorage.removeItem('rt_auth_token');
+  showScreen('login');
+};
+
+// Session picker
+const STATUS_LABEL={upcoming:'Upcoming',live:'Live',completed:'Completed',archived:'Archived'};
+const STATUS_ORDER=['live','upcoming','completed','archived'];
+async function openPicker(){
+  showScreen('picker');
+  $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
+  try{
+    const d=await api('/api/auth/sessions',null,'GET');
+    const box=$('#pickerList');
+    if(!d.sessions.length){box.innerHTML='<div class="empty">No sessions yet. Create your first one.</div>';return;}
+    const groups={};STATUS_ORDER.forEach(s=>groups[s]=[]);
+    d.sessions.forEach(s=>{(groups[s.status]||(groups[s.status]=[])).push(s);});
+    let html='';
+    for(const st of STATUS_ORDER){
+      if(!groups[st]||!groups[st].length)continue;
+      html+=`<div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin:14px 0 6px">${STATUS_LABEL[st]||st}</div>`;
+      for(const s of groups[st]){
+        html+=`<div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</div>
+            <div class="muted" style="font-size:11px">${s.id}${s.scheduled_at?(' · starts '+new Date(Number(s.scheduled_at)).toLocaleString()):''}</div>
+          </div>
+          <button class="btn sm" onclick="loadSession('${s.id}')">Open</button>
+        </div>`;
+      }
+    }
+    box.innerHTML=html;
+  }catch(e){$('#pickerList').innerHTML='<div class="err">'+e.message+'</div>';}
+}
+window.loadSession=(sid)=>{
+  SID=sid;ATOK=null;localStorage.setItem('rt_admin_sid',sid);localStorage.removeItem('rt_admin_token');
+  boot();
+};
+$('#btnNewFromPicker').onclick=()=>{showScreen('create');};
+$('#btnCreateBack').onclick=()=>openPicker();
+
+// show schedule row when "upcoming" chosen
+$('#newWhen').onchange=function(){$('#newSchedRow').classList.toggle('hide',this.value!=='upcoming');};
 
 // ---- create ----
 $('#btnCreate').onclick=async()=>{
@@ -216,10 +346,15 @@ $('#btnCreate').onclick=async()=>{
   let mins=Math.round(+($('#newMins').value||5));
   if(!Number.isFinite(mins))mins=5;
   mins=Math.min(60,Math.max(2,mins));
+  const when=$('#newWhen').value;
+  const body={name,defaultMinutes:mins};
+  if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=new Date(sv).getTime();}
   try{
-    const d=await api('/api/session',{name,defaultMinutes:mins});
+    const d=await api('/api/session',body);
     SID=d.sessionId;ATOK=d.adminToken;
-    localStorage.setItem('rt_admin_sid',SID);localStorage.setItem('rt_admin_token',ATOK);
+    localStorage.setItem('rt_admin_sid',SID);
+    // With identity login we don't need the per-session token, but keep it for legacy fallback.
+    if(d.adminToken)localStorage.setItem('rt_admin_token',d.adminToken);
     boot();
   }catch(e){$('#createErr').textContent=e.message;}
 };
@@ -237,7 +372,11 @@ $('#btnAddRound').onclick=async()=>{
 };
 
 $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textContent);$('#btnCopy').textContent='Copied!';setTimeout(()=>$('#btnCopy').textContent='Copy link',1200);};
-$('#btnEnd').onclick=async()=>{if(!confirm('End the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/end',{sessionId:SID});refresh();};
+$('#btnEnd').onclick=async()=>{if(!confirm('Complete the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'completed'});refresh();};
+$('#btnGoLive').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
+$('#btnArchive').onclick=async()=>{if(!confirm('Archive this session? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
+$('#btnReopen').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
+$('#btnBackToSessions').onclick=()=>{if(poll)clearInterval(poll);SID=null;localStorage.removeItem('rt_admin_sid');if(AUTHTOK){openPicker();}else{showScreen('login');}};
 
 async function downloadExport(format,anon){
   const url=`/api/admin/export?sessionId=${encodeURIComponent(SID)}&format=${format}${anon?'&anon=1':''}`;
@@ -340,6 +479,13 @@ function reviewBox(st){
 function render(st){
   lastState=st;
   $('#who').textContent=st.session.name+' · '+st.session.status;
+  // lifecycle controls reflect current status
+  const stx=st.session.status;
+  $('#sessStatus').textContent={upcoming:'Upcoming',live:'Live',completed:'Completed',archived:'Archived'}[stx]||stx;
+  $('#btnGoLive').classList.toggle('hide',stx!=='upcoming');
+  $('#btnEnd').classList.toggle('hide',stx!=='live');
+  $('#btnArchive').classList.toggle('hide',stx!=='completed');
+  $('#btnReopen').classList.toggle('hide',!(stx==='completed'||stx==='archived'));
   serverSkew=(st.serverNow||Date.now())-Date.now();
   $('#kJoined').textContent=st.verifiedCount;
   $('#kRound').textContent=st.activeRound?('#'+st.activeRound.idx):'—';
@@ -476,15 +622,31 @@ async function refresh(){
   catch(e){if(/auth/i.test(e.message)){localStorage.removeItem('rt_admin_sid');localStorage.removeItem('rt_admin_token');location.reload();}}
 }
 function boot(){
-  $('#create').classList.add('hide');$('#console').classList.remove('hide');
+  showScreen('console');
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
   setInterval(()=>{ // local timer repaint without server hit
     const t=document.querySelector('.timer-big');if(!t)return;
   },1000);
 }
-// boot
-if(SID&&ATOK)boot();
-else{$('#create').classList.remove('hide');}
+// ---- startup routing ----
+// Preferred: identity login → session picker. Legacy: a saved per-session token
+// boots straight into that session (back-compat for existing host devices).
+async function startup(){
+  if(AUTHTOK){
+    try{
+      const me=await api('/api/auth/me',null,'GET');
+      ME={uid:me.uid,email:me.email,role:me.role,name:me.name};
+      // If a session was already open on this device, reopen it; else show picker.
+      if(SID){boot();}else{openPicker();}
+      return;
+    }catch(e){ // token invalid/expired
+      AUTHTOK=null;localStorage.removeItem('rt_auth_token');
+    }
+  }
+  if(SID&&ATOK){boot();return;} // legacy per-session token path
+  showScreen('login');
+}
+startup();
 </script>
 </body>
 </html>

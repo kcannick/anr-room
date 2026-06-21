@@ -164,6 +164,11 @@
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
       <div id="devCodeBox" class="note hide"></div>
       <div><label>Your name (shown on the leaderboard)</label><input id="name" placeholder="e.g. Maya"></div>
+      <div><label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label><input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567"></div>
+      <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.45;cursor:pointer;color:var(--dim)">
+        <input type="checkbox" id="smsConsent" style="margin-top:2px;flex-shrink:0">
+        <span>Text me when this room goes live and about future A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Consent isn't required to play.</span>
+      </label>
       <button class="btn" id="btnVerify">Enter the room</button>
       <button class="btn ghost" id="btnBack">Use a different email</button>
       <div class="err" id="codeErr"></div>
@@ -340,9 +345,11 @@ $('#btnVerify').onclick=async()=>{
   const code=$('#code').value.trim(),name=$('#name').value.trim();
   if(!code)return $('#codeErr').textContent='Enter the code';
   if(!name)return $('#codeErr').textContent='Enter your name';
+  const phone=$('#phone')?$('#phone').value.trim():'';
+  const smsConsent=$('#smsConsent')?$('#smsConsent').checked:false;
   $('#btnVerify').disabled=true;
   try{
-    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name});
+    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,smsConsent});
     localStorage.setItem('rt_token',d.token);localStorage.setItem('rt_sid',SID);
     startPolling();
   }catch(e){$('#codeErr').textContent=e.message;}
@@ -472,10 +479,19 @@ function render(st){
   $('#footPts').textContent=(st.me.total_points||0)+' pts';
   $('#rTotal').textContent=st.me.total_points||0;
 
-  if(st.session.status==='ended'){renderRecap(st);lastRecap=st.recap;show('ended');closesAt=null;return;}
+  if(st.session.status==='completed'){renderRecap(st);lastRecap=st.recap;show('ended');closesAt=null;return;}
 
   const newPhase=st.phase;
-  if(st.phase==='waiting'){$('#waitHi').textContent='Hey '+(st.me.name||'there');renderBanner('adLobby',st.banner);show('wait');closesAt=null;}
+  if(st.phase==='waiting'){
+    $('#waitHi').textContent='Hey '+(st.me.name||'there');
+    const waitMsg=document.querySelector('#screen-wait .dim');
+    if(st.session.status==='upcoming'){
+      if($('#waitHi').nextElementSibling)$('#waitHi').nextElementSibling.textContent='You\u2019re registered! Voting hasn\u2019t started yet — keep this page handy and you\u2019ll be ready the moment it goes live.';
+    }else if(waitMsg){
+      waitMsg.textContent='Hang tight — the next song is being cued up.';
+    }
+    renderBanner('adLobby',st.banner);show('wait');closesAt=null;
+  }
   else if(st.phase==='voting'){
     closesAt=st.round.closes_at||null;
     if(lastPhase!=='voting'){ // reset inputs on a fresh round
