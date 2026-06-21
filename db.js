@@ -166,13 +166,16 @@ if (USE_PG) {
         client.release();
       }
     },
-    async init() {
+    async init(opts = {}) {
       // PG needs BIGINT/REAL which our portable schema already uses; INTEGER bools are fine.
       for (const s of SCHEMA) await pool.query(s);
       // Versioned migrations: ordered, run-once, loud on failure. Replaces the old
       // boot-time ALTER blocks (which failed silently and raced on cold starts).
       await runMigrations(impl);
-      await postMigrate(impl);
+      // allowHeavy=true ONLY when run from the standalone migrate script (no time limit).
+      // On the serverless boot path it's false, so heavy data conversions are skipped
+      // (and logged) rather than risking a mid-conversion timeout.
+      await postMigrate(impl, { allowHeavy: opts.allowHeavy === true });
     },
   };
 } else {
@@ -208,12 +211,14 @@ if (USE_PG) {
         throw e;
       }
     },
-    async init() {
+    async init(opts = {}) {
       for (const s of SCHEMA) sdb.exec(s);
       // Versioned migrations (see runMigrations). SQLite lacks ADD COLUMN IF NOT
       // EXISTS, so the runner treats "duplicate column" as already-applied.
       await runMigrations(impl);
-      await postMigrate(impl);
+      // Local SQLite has no serverless time limit; default allowHeavy=true unless
+      // a caller explicitly passes false. (Tests can pass false to exercise the gate.)
+      await postMigrate(impl, { allowHeavy: opts.allowHeavy !== false });
     },
   };
 }
@@ -293,7 +298,13 @@ async function runMigrations(db) {
 //  2. Recompute per-user sessions_played / lifetime_points.
 //  3. Promote the configured ADMIN_EMAIL to role='admin'.
 // (Legacy status mapping moved into migration 001.)
-async function postMigrate(db) {
+//
+// opts.allowHeavy gates HEAVY data conversions (row-by-row recomputes that can exceed
+// a serverless time limit). On the boot path allowHeavy is false, so heavy work is
+// skipped + logged with instructions to run `node migrate.js` instead. This prevents
+// the class of mid-conversion timeout that a boot-time data migration can cause.
+async function postMigrate(db, opts = {}) {
+  const allowHeavy = opts.allowHeavy === true;
   let orphans;
   try {
     orphans = await db.all("SELECT * FROM participants WHERE user_id IS NULL OR user_id = ''", []);
@@ -325,12 +336,36 @@ async function postMigrate(db) {
     await db.run("UPDATE users SET role = 'admin' WHERE email = ?", [adminEmail]).catch(() => {});
   }
 
-  // One-time 1-10 -> 0-9 scale conversion (guarded by a settings flag so it runs
-  // exactly once). Originals are preserved in taste_legacy / predict_legacy before
-  // overwriting, so the destructive shift is reversible even though the live columns
-  // present as clean 0-9 data. Recomputes room averages, errors, points, tiers, and
-  // rolls per-participant + lifetime totals back up from the reconverted votes.
-  await convertScaleTo09(db);
+  // --- HEAVY data conversions: only run from the standalone migrate script ---
+  // Each entry is a one-time, flag-guarded conversion. If pending but not allowed
+  // (i.e. we're on the serverless boot path), we DON'T run it — we log a clear
+  // instruction. This is the guard that prevents boot-time conversion timeouts.
+  await runHeavyConversions(db, allowHeavy);
+}
+
+// Registry of heavy, one-time data conversions. Add future ones here. Each is
+// {flag, label, run}. They only execute when allowHeavy is true (the migrate script);
+// on boot they're detected-and-deferred with a loud log line.
+async function runHeavyConversions(db, allowHeavy) {
+  const heavy = [
+    { flag: 'scale_conversion_0to9', label: '1-10 -> 0-9 scale conversion', run: convertScaleTo09 },
+  ];
+  for (const h of heavy) {
+    let row;
+    try { row = await db.get('SELECT v FROM settings WHERE k = ?', [h.flag]); }
+    catch { continue; } // settings table not present yet
+    if (!row || row.v !== 'pending') continue; // not requested, or already done
+    if (!allowHeavy) {
+      console.warn(`[migrate] DEFERRED heavy conversion "${h.label}" — not run on the ` +
+        `serverless boot path (would risk a timeout). Run it deliberately with:\n` +
+        `    DATABASE_URL='...' node migrate.js --run-heavy\n` +
+        `The app will boot normally; this conversion stays pending until then.`);
+      continue;
+    }
+    console.log(`[migrate] running heavy conversion: ${h.label}…`);
+    await h.run(db);
+    console.log(`[migrate] heavy conversion done: ${h.label}`);
+  }
 }
 
 // Shift all stored ratings/predictions down by 1 (1-10 -> 0-9), preserving originals,

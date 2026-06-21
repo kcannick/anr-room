@@ -41,7 +41,12 @@ async function main() {
   }
 
   // db.init() runs schema + the versioned migration runner + post-migrate backfill.
-  await db.init();
+  // Pass --run-heavy to also execute deferred HEAVY data conversions (e.g. a big
+  // re-score/scale shift) that are intentionally skipped on the serverless boot path
+  // to avoid timeouts. Running them here is safe — no serverless time limit.
+  const runHeavy = process.argv.includes('--run-heavy');
+  if (runHeavy) console.log('[migrate.js] --run-heavy: heavy data conversions WILL run.');
+  await db.init({ allowHeavy: runHeavy });
   console.log('[migrate.js] done ✓');
   process.exit(0);
 }
