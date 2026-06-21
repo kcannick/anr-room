@@ -322,10 +322,92 @@ async function call(path, body, method='POST', headers={}) {
 
   ok('export requires admin auth', (await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`)).status === 401);
 
+  console.log('\n— identity layer schema (stage 1) —');
+  // New sessions default to 'live' status (was 'open').
+  const liveCheck = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
+  ok('session has a status', !!liveCheck.session.status, JSON.stringify(liveCheck.session.status));
+  // Export still works (schema additions didn't break participant shape).
+  const expCheck = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`, { headers: AH }).then(r => r.json());
+  ok('participants export still works post-schema-change', Array.isArray(expCheck.participants));
+
+  console.log('\n— host login + ownership access (stage 2/3) —');
+  // Host login via OTP (auth-scoped, no session needed).
+  const authReq = await call('/api/auth/request', { email: 'host@test.com' });
+  ok('auth OTP issued', authReq.status === 200 && authReq.d.devCode, JSON.stringify(ar.d));
+  const authVer = await call('/api/auth/verify', { email: 'host@test.com', code: authReq.d.devCode });
+  ok('auth verify returns token + role', authVer.status === 200 && authVer.d.token && authVer.d.role === 'player', JSON.stringify(authVer.d));
+  const HOSTTOK = authVer.d.token;
+  const AUTHH = { 'X-Auth-Token': HOSTTOK };
+
+  // /auth/me validates the token.
+  const me = await call('/api/auth/me', null, 'GET', AUTHH);
+  ok('auth/me returns identity', me.status === 200 && me.d.email === 'host@test.com', JSON.stringify(me.d));
+
+  // A logged-in host creates a session → they own it.
+  const ownSess = await call('/api/session', { name: 'Host Owned' }, 'POST', AUTHH);
+  ok('host creates a session', ownSess.status === 200 && ownSess.d.sessionId, JSON.stringify(ownSess.d));
+  const OSID = ownSess.d.sessionId;
+
+  // Host can admin their OWN session via auth token (no per-session admin token needed).
+  const ownState = await call(`/api/admin/state?sessionId=${OSID}`, null, 'GET', AUTHH);
+  ok('owner can admin own session via auth token', ownState.status === 200 && ownState.d.session, JSON.stringify(ownState.status));
+
+  // A DIFFERENT host cannot admin someone else's session.
+  const ar2 = await call('/api/auth/request', { email: 'other@test.com' });
+  const av2 = await call('/api/auth/verify', { email: 'other@test.com', code: ar2.d.devCode });
+  const OTHERH = { 'X-Auth-Token': av2.d.token };
+  const denied = await call(`/api/admin/state?sessionId=${OSID}`, null, 'GET', OTHERH);
+  ok('non-owner host is denied', denied.status === 401, 'got ' + denied.status);
+
+  // The admin (promoted via ADMIN_EMAIL=admin@test.com in the test run) sees ALL sessions.
+  const ara = await call('/api/auth/request', { email: 'admin@test.com' });
+  const ava = await call('/api/auth/verify', { email: 'admin@test.com', code: ara.d.devCode });
+  ok('admin email has admin role', ava.d.role === 'admin', 'role=' + ava.d.role);
+  const ADMINH = { 'X-Auth-Token': ava.d.token };
+  const adminSees = await call(`/api/admin/state?sessionId=${OSID}`, null, 'GET', ADMINH);
+  ok('admin can admin any session', adminSees.status === 200, 'got ' + adminSees.status);
+
+  // Session picker: host sees only theirs; admin sees all.
+  const hostList = await call('/api/auth/sessions', null, 'GET', AUTHH);
+  ok('host sees own sessions only', hostList.d.sessions.every(s => s.owner_uid === me.d.uid), JSON.stringify(hostList.d.sessions.map(s=>s.id)));
+  const adminList = await call('/api/auth/sessions', null, 'GET', ADMINH);
+  ok('admin sees all sessions (>= host count)', adminList.d.sessions.length >= hostList.d.sessions.length);
+
+  console.log('\n— session lifecycle (stage 4) —');
+  // Create an upcoming (pre-registration) session.
+  const upc = await call('/api/session', { name: 'Future Show', status: 'upcoming', scheduledAt: Date.now() + 86400000 }, 'POST', AUTHH);
+  const UPID = upc.d.sessionId;
+  let us = await call(`/api/admin/state?sessionId=${UPID}`, null, 'GET', AUTHH);
+  ok('session created as upcoming', us.d.session.status === 'upcoming', us.d.session.status);
+  // Players can still JOIN an upcoming session (pre-register).
+  const preReg = await call('/api/join/request', { sessionId: UPID, email: 'early@test.com' });
+  ok('player can pre-register for upcoming', preReg.status === 200, JSON.stringify(preReg.d));
+  // Go live explicitly.
+  await call('/api/admin/session/status', { sessionId: UPID, status: 'live' }, 'POST', AUTHH);
+  us = await call(`/api/admin/state?sessionId=${UPID}`, null, 'GET', AUTHH);
+  ok('host can take session live', us.d.session.status === 'live', us.d.session.status);
+  // Complete, then reopen (the key "load a past session" capability).
+  await call('/api/admin/session/status', { sessionId: UPID, status: 'completed' }, 'POST', AUTHH);
+  await call('/api/admin/session/status', { sessionId: UPID, status: 'archived' }, 'POST', AUTHH);
+  us = await call(`/api/admin/state?sessionId=${UPID}`, null, 'GET', AUTHH);
+  ok('host can archive', us.d.session.status === 'archived', us.d.session.status);
+  await call('/api/admin/session/status', { sessionId: UPID, status: 'live' }, 'POST', AUTHH);
+  us = await call(`/api/admin/state?sessionId=${UPID}`, null, 'GET', AUTHH);
+  ok('host can reopen an archived session', us.d.session.status === 'live', us.d.session.status);
+
+  // Logout invalidates the token.
+  await call('/api/auth/logout', {}, 'POST', AUTHH);
+  const afterLogout = await call('/api/auth/me', null, 'GET', AUTHH);
+  ok('logout invalidates token', afterLogout.status === 401, 'got ' + afterLogout.status);
+
+  console.log('\n— legacy per-session admin token still works (back-compat) —');
+  const legacyState = await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH);
+  ok('legacy admin token still admins its session', legacyState.status === 200, 'got ' + legacyState.status);
+
   console.log('\n— end session: shareable recap revealed —');
   await call('/api/admin/session/end', { sessionId: SID }, 'POST', AH);
   const ms = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': t1 })).d;
-  ok('player sees ended', ms.session.status === 'ended');
+  ok('player sees completed', ms.session.status === 'completed', ms.session.status);
   ok('phase is recap', ms.phase === 'recap', ms.phase);
   ok('recap has total points', typeof ms.recap.totalPoints === 'number');
   ok('recap has a letter grade', /^[A-DF][+-]?$/.test(ms.recap.grade || ''), 'grade ' + ms.recap.grade);

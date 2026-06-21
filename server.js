@@ -58,6 +58,40 @@ async function adminFromReq(req, sessionId) {
   return s || null;
 }
 
+// ---- identity-based auth (Stage 2/3) ----
+const AUTH_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days, refreshed on use
+
+// Resolve the logged-in user from an X-Auth-Token header (durable host/admin login).
+// Refreshes last_used + sliding expiry on each successful resolve. Returns the user row or null.
+async function userFromAuth(req) {
+  const tok = req.headers['x-auth-token'];
+  if (!tok) return null;
+  const t = await db.get('SELECT * FROM auth_tokens WHERE token = ?', [tok]);
+  if (!t) return null;
+  if (now() > Number(t.expires_at)) {
+    await db.run('DELETE FROM auth_tokens WHERE token = ?', [tok]).catch(() => {});
+    return null;
+  }
+  await db.run('UPDATE auth_tokens SET last_used = ?, expires_at = ? WHERE token = ?',
+    [now(), now() + AUTH_TTL, tok]);
+  return db.get('SELECT * FROM users WHERE uid = ?', [t.uid]);
+}
+
+// Can this request administer this session? True if:
+//   - the user is logged in AND (role 'admin' OR they own the session), OR
+//   - the legacy per-session admin token matches (back-compat / fallback).
+// Returns the session row when allowed, else null.
+async function canAdminSession(req, sessionId) {
+  const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+  if (!session) return null;
+  const user = await userFromAuth(req);
+  if (user && (user.role === 'admin' || session.owner_uid === user.uid)) return session;
+  // legacy fallback: per-session admin token
+  const tok = req.headers['x-admin-token'];
+  if (tok && tok === session.admin_token) return session;
+  return null;
+}
+
 // ---------- state builders ----------
 // Fetch a banner's public shape by id, or null. Returns the id + link; the
 // image itself is served separately via /api/banner/image to keep the frequent
@@ -230,7 +264,7 @@ async function playerState(participant) {
   if (out.phase === 'waiting' || out.phase === 'voting' || out.phase === 'locked') {
     out.banner = await resolveBanner(session, round);
   }
-  if (session.status === 'ended') {
+  if (session.status === 'completed') {
     out.phase = 'recap';
     out.recap = await buildRecap(participant);
     out.banner = null;
@@ -322,14 +356,99 @@ async function handleApi(req, res, url) {
 
   // ----- create session (admin bootstrap) -----
   if (p === '/api/session' && method === 'POST') {
-    const { name, defaultMinutes } = await readBody(req);
+    const { name, defaultMinutes, scheduledAt, status } = await readBody(req);
     if (!name || !name.trim()) return bad(res, 'Session name required');
     const sid = id(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || id(4);
     const adminToken = id(18);
     const dm = clampMinutes(defaultMinutes != null ? defaultMinutes : DEFAULT_MINUTES);
-    await db.run('INSERT INTO sessions (id, name, admin_token, status, default_minutes, created_at) VALUES (?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, 'open', dm, now()]);
+    // Owner = the logged-in user creating it (if any). Falls back to null (legacy token still works).
+    const creator = await userFromAuth(req);
+    const ownerUid = creator ? creator.uid : null;
+    // New sessions are 'live' by default, or 'upcoming' if a future start is given.
+    const st = (status === 'upcoming' || (scheduledAt && Number(scheduledAt) > now())) ? 'upcoming' : 'live';
+    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, created_at) VALUES (?,?,?,?,?,?,?,?)',
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, now()]);
     return send(res, 200, { sessionId: sid, adminToken });
+  }
+
+  // ===== HOST/ADMIN LOGIN (identity-based, email OTP — no per-session token) =====
+  if (p === '/api/auth/request' && method === 'POST') {
+    const { email } = await readBody(req);
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad(res, 'Enter a valid email');
+    const em = email.toLowerCase();
+    const code = code6();
+    // Reuse the otps table with a sentinel session_id for auth-scope codes.
+    await db.run("DELETE FROM otps WHERE email = ? AND session_id = '__auth__'", [em]);
+    await db.run("INSERT INTO otps (email, session_id, code, expires_at, attempts) VALUES (?, '__auth__', ?, ?, 0)",
+      [em, code, now() + 10 * 60 * 1000]);
+    const r = await sendOtp(email, code, 'your account');
+    return send(res, 200, { sent: true, devCode: r.devCode || null });
+  }
+
+  if (p === '/api/auth/verify' && method === 'POST') {
+    const { email, code } = await readBody(req);
+    if (!email || !code) return bad(res, 'Email and code required');
+    const em = email.toLowerCase();
+    const otp = await db.get("SELECT * FROM otps WHERE email = ? AND session_id = '__auth__'", [em]);
+    if (!otp) return bad(res, 'Request a code first');
+    if (now() > Number(otp.expires_at)) return bad(res, 'Code expired. Request a new one.');
+    if (String(otp.code) !== String(code).trim()) {
+      await db.run("UPDATE otps SET attempts = attempts + 1 WHERE email = ? AND session_id = '__auth__'", [em]);
+      return bad(res, 'Incorrect code');
+    }
+    // Find or create the durable user.
+    let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
+    if (!user) {
+      const uid = id(12);
+      await db.run('INSERT INTO users (uid, email, first_seen, last_seen) VALUES (?,?,?,?)', [uid, em, now(), now()]);
+      user = await db.get('SELECT * FROM users WHERE uid = ?', [uid]);
+    } else {
+      await db.run('UPDATE users SET last_seen = ? WHERE uid = ?', [now(), user.uid]);
+    }
+    // Promote to admin at login if this email is the configured superuser (covers
+    // users created after the boot-time migration ran).
+    const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+    if (adminEmail && em === adminEmail && user.role !== 'admin') {
+      await db.run("UPDATE users SET role = 'admin' WHERE uid = ?", [user.uid]);
+      user.role = 'admin';
+    }
+    // Issue a durable auth token.
+    const token = id(24);
+    await db.run('INSERT INTO auth_tokens (token, uid, created_at, last_used, expires_at) VALUES (?,?,?,?,?)',
+      [token, user.uid, now(), now(), now() + AUTH_TTL]);
+    await db.run("DELETE FROM otps WHERE email = ? AND session_id = '__auth__'", [em]);
+    return send(res, 200, { token, role: user.role, uid: user.uid, email: user.email, name: user.name || null });
+  }
+
+  // Who am I? (validates a stored auth token)
+  if (p === '/api/auth/me' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user) return bad(res, 'Not logged in', 401);
+    return send(res, 200, { uid: user.uid, email: user.email, name: user.name || null, role: user.role });
+  }
+
+  // Log out this device, or all devices for this user.
+  if (p === '/api/auth/logout' && method === 'POST') {
+    const { allDevices } = await readBody(req);
+    const tok = req.headers['x-auth-token'];
+    if (!tok) return send(res, 200, { ok: true });
+    if (allDevices) {
+      const t = await db.get('SELECT uid FROM auth_tokens WHERE token = ?', [tok]);
+      if (t) await db.run('DELETE FROM auth_tokens WHERE uid = ?', [t.uid]);
+    } else {
+      await db.run('DELETE FROM auth_tokens WHERE token = ?', [tok]);
+    }
+    return send(res, 200, { ok: true });
+  }
+
+  // List sessions the logged-in user can manage (admin: all; host: owned), grouped by status.
+  if (p === '/api/auth/sessions' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user) return bad(res, 'Not logged in', 401);
+    const rows = user.role === 'admin'
+      ? await db.all('SELECT id, name, status, scheduled_at, owner_uid, created_at FROM sessions ORDER BY created_at DESC', [])
+      : await db.all('SELECT id, name, status, scheduled_at, owner_uid, created_at FROM sessions WHERE owner_uid = ? ORDER BY created_at DESC', [user.uid]);
+    return send(res, 200, { role: user.role, sessions: rows });
   }
 
   // ----- request OTP -----
@@ -337,7 +456,7 @@ async function handleApi(req, res, url) {
     const { sessionId, email } = await readBody(req);
     const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
     if (!session) return bad(res, 'Session not found', 404);
-    if (session.status !== 'open') return bad(res, 'This session is closed');
+    if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This session is closed');
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad(res, 'Enter a valid email');
     const code = code6();
     await db.run('DELETE FROM otps WHERE email = ? AND session_id = ?', [email.toLowerCase(), sessionId]);
@@ -427,14 +546,14 @@ async function handleApi(req, res, url) {
   // ===== ADMIN =====
   if (p === '/api/admin/state' && method === 'GET') {
     const sessionId = url.searchParams.get('sessionId');
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     return send(res, 200, await adminState(session));
   }
 
   if (p === '/api/admin/round' && method === 'POST') {
     const { sessionId, song_title, song_artist, song_note, giveaway } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     if (!song_title || !song_title.trim()) return bad(res, 'Song title required');
     // Queued songs don't get a round number (idx) until they're actually opened —
@@ -452,7 +571,7 @@ async function handleApi(req, res, url) {
   // Reorder a queued song up/down, or delete it from the queue.
   if (p === '/api/admin/round/move' && method === 'POST') {
     const { sessionId, roundId, dir } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const q = await queuedRounds(sessionId);
     const i = q.findIndex(r => r.id === roundId);
@@ -468,7 +587,7 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/admin/round/delete' && method === 'POST') {
     const { sessionId, roundId } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     await db.run("DELETE FROM rounds WHERE id = ? AND session_id = ? AND status = 'pending'", [roundId, sessionId]);
     return send(res, 200, { ok: true });
@@ -476,7 +595,7 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/admin/round/open' && method === 'POST') {
     const { sessionId, roundId, minutes } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
@@ -493,12 +612,16 @@ async function handleApi(req, res, url) {
     const dur = clampMinutes(minutes != null ? minutes : DEFAULT_MINUTES) * 60 * 1000;
     await db.run("UPDATE rounds SET status = 'voting', idx = ?, opens_at = ?, closes_at = ? WHERE id = ?",
       [idx, now(), now() + dur, roundId]);
+    // Opening a round on an 'upcoming' (pre-registration) session takes it live.
+    if (session.status === 'upcoming') {
+      await db.run("UPDATE sessions SET status = 'live' WHERE id = ?", [sessionId]);
+    }
     return send(res, 200, { ok: true });
   }
 
   if (p === '/api/admin/round/extend' && method === 'POST') {
     const { sessionId, roundId, minutes, seconds } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
@@ -510,7 +633,7 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/admin/round/close' && method === 'POST') {
     const { sessionId, roundId } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     await db.run("UPDATE rounds SET status = 'closed', closes_at = ? WHERE id = ? AND session_id = ?",
       [now(), roundId, sessionId]);
@@ -521,7 +644,7 @@ async function handleApi(req, res, url) {
   // it's been tallied/ratified. Gives it a fresh voting window.
   if (p === '/api/admin/round/reopen' && method === 'POST') {
     const { sessionId, roundId, minutes } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
@@ -537,7 +660,7 @@ async function handleApi(req, res, url) {
   // anything not yet ratified. Players see the update on their next poll.
   if (p === '/api/admin/round/edit' && method === 'POST') {
     const { sessionId, roundId, song_title, song_artist, song_note, giveaway } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
@@ -553,7 +676,7 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/admin/round/ratify' && method === 'POST') {
     const { sessionId, roundId } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
@@ -566,10 +689,22 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/admin/session/end' && method === 'POST') {
     const { sessionId } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
-    await db.run("UPDATE sessions SET status = 'ended' WHERE id = ?", [sessionId]);
+    await db.run("UPDATE sessions SET status = 'completed' WHERE id = ?", [sessionId]);
     return send(res, 200, { ok: true });
+  }
+
+  // Set session lifecycle status: upcoming | live | completed | archived.
+  // Used for go-live, complete, archive, and reopen (completed/archived -> live).
+  if (p === '/api/admin/session/status' && method === 'POST') {
+    const { sessionId, status } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const valid = ['upcoming', 'live', 'completed', 'archived'];
+    if (!valid.includes(status)) return bad(res, 'Invalid status');
+    await db.run('UPDATE sessions SET status = ? WHERE id = ?', [status, sessionId]);
+    return send(res, 200, { ok: true, status });
   }
 
   // ===== ADS / BANNERS =====
@@ -579,7 +714,7 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (body.__tooBig) return bad(res, 'Image too large — keep banners under ~500KB', 413);
     const { sessionId, scope, image_data, link_url, label } = body;
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     if (!image_data || !/^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(image_data)) {
       return bad(res, 'Provide a PNG, JPG, GIF, or WebP image');
@@ -611,7 +746,7 @@ async function handleApi(req, res, url) {
   // target: 'global' | 'session' | 'song'.  bannerId null/empty clears it.
   if (p === '/api/admin/banner/assign' && method === 'POST') {
     const { sessionId, target, bannerId, roundId } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const val = bannerId || null;
     if (target === 'global') {
@@ -631,7 +766,7 @@ async function handleApi(req, res, url) {
   // Delete a banner from the library (and clear any assignments pointing at it).
   if (p === '/api/admin/banner/delete' && method === 'POST') {
     const { sessionId, bannerId } = await readBody(req);
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     await db.tx(async (tx) => {
       await tx.run('UPDATE sessions SET banner_id = NULL WHERE banner_id = ?', [bannerId]);
@@ -649,7 +784,7 @@ async function handleApi(req, res, url) {
   //   anon   = 1  -> replace names/emails with "Player N" (safe to share)
   if (p === '/api/admin/export' && method === 'GET') {
     const sessionId = url.searchParams.get('sessionId');
-    const session = await adminFromReq(req, sessionId);
+    const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const format = (url.searchParams.get('format') || 'json').toLowerCase();
     const anon = url.searchParams.get('anon') === '1';
