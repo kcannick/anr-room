@@ -1,6 +1,13 @@
 'use strict';
 // Database layer. Auto-selects Postgres when DATABASE_URL is set, otherwise
 // falls back to a local SQLite file (built into Node 22 — no native build step).
+
+const crypto = require('node:crypto');
+// Compact url-safe id generator (used by the user-backfill migration).
+function genId(n = 12) {
+  return crypto.randomBytes(Math.ceil(n * 0.75)).toString('base64url').slice(0, n);
+}
+
 //
 // Exposes one async interface used by the rest of the app:
 //   db.run(sql, params)   -> { changes }            (INSERT/UPDATE/DELETE)
@@ -28,9 +35,19 @@ const SCHEMA = [
      default_minutes INTEGER NOT NULL DEFAULT 5, -- per-session default voting window
      created_at BIGINT NOT NULL
    )`,
+  `CREATE TABLE IF NOT EXISTS users (
+     uid TEXT PRIMARY KEY,
+     email TEXT NOT NULL UNIQUE,           -- durable identity across all sessions
+     name TEXT,
+     first_seen BIGINT NOT NULL,
+     last_seen BIGINT NOT NULL,
+     sessions_played INTEGER NOT NULL DEFAULT 0,
+     lifetime_points INTEGER NOT NULL DEFAULT 0
+   )`,
   `CREATE TABLE IF NOT EXISTS participants (
      id TEXT PRIMARY KEY,
      session_id TEXT NOT NULL,
+     user_id TEXT,                          -- links to users.uid (durable identity)
      email TEXT NOT NULL,
      name TEXT,
      token TEXT NOT NULL,                    -- player auth token (cookie)
@@ -134,6 +151,9 @@ if (USE_PG) {
     async init() {
       // PG needs BIGINT/REAL which our portable schema already uses; INTEGER bools are fine.
       for (const s of SCHEMA) await pool.query(s);
+      // For an already-deployed DB whose participants table predates user_id, add it.
+      await pool.query('ALTER TABLE participants ADD COLUMN IF NOT EXISTS user_id TEXT').catch(() => {});
+      await backfillUsers(impl);
     },
   };
 } else {
@@ -171,8 +191,41 @@ if (USE_PG) {
     },
     async init() {
       for (const s of SCHEMA) sdb.exec(s);
+      await backfillUsers(impl);
     },
   };
+}
+
+// One-time migration: fold existing participants into deduped users (by email),
+// assigning a durable uid and linking participants.user_id. Idempotent — only
+// touches participants that aren't linked yet, so it's safe to run on every boot.
+async function backfillUsers(db) {
+  let orphans;
+  try {
+    orphans = await db.all("SELECT * FROM participants WHERE user_id IS NULL OR user_id = ''", []);
+  } catch { return; } // table may not exist yet on a brand-new DB
+  if (!orphans || !orphans.length) return;
+  for (const p of orphans) {
+    const em = (p.email || '').toLowerCase();
+    if (!em) continue;
+    let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
+    if (!user) {
+      const uid = genId(12);
+      const ts = Number(p.created_at) || Date.now();
+      await db.run('INSERT INTO users (uid, email, name, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,0,0)',
+        [uid, em, p.name || '', ts, ts]);
+      user = { uid };
+    }
+    await db.run('UPDATE participants SET user_id = ? WHERE id = ?', [user.uid, p.id]);
+  }
+  // Recompute sessions_played and lifetime_points from the now-linked data.
+  const users = await db.all('SELECT uid FROM users', []);
+  for (const u of users) {
+    const sc = await db.get('SELECT COUNT(DISTINCT session_id) AS c FROM participants WHERE user_id = ?', [u.uid]);
+    const pc = await db.get('SELECT COALESCE(SUM(total_points),0) AS s FROM participants WHERE user_id = ?', [u.uid]);
+    await db.run('UPDATE users SET sessions_played = ?, lifetime_points = ? WHERE uid = ?',
+      [Number(sc.c) || 0, Number(pc.s) || 0, u.uid]);
+  }
 }
 
 impl.engine = USE_PG ? 'postgres' : 'sqlite';

@@ -308,6 +308,8 @@ async function ratifyRound(round) {
     // A round can be negative, but the cumulative leaderboard total never drops below 0.
     for (const v of ranked) {
       await tx.run('UPDATE participants SET total_points = CASE WHEN total_points + ? < 0 THEN 0 ELSE total_points + ? END WHERE id = ?', [v.points, v.points, v.participant_id]);
+      // Also accrue to the durable user's lifetime total (floored at 0), for cross-event stats.
+      await tx.run('UPDATE users SET lifetime_points = CASE WHEN lifetime_points + ? < 0 THEN 0 ELSE lifetime_points + ? END WHERE uid = (SELECT user_id FROM participants WHERE id = ?)', [v.points, v.points, v.participant_id]);
     }
     return { ranked, room_average: avg };
   });
@@ -357,16 +359,31 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE otps SET attempts = attempts + 1 WHERE email = ? AND session_id = ?', [em, sessionId]);
       return bad(res, 'Incorrect code');
     }
-    // upsert participant for this session+email
+    // ---- durable user identity (keyed on email, spans all sessions) ----
+    // Recognize a returning player by email; create a permanent uid the first time.
+    let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
+    if (user) {
+      await db.run('UPDATE users SET last_seen = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE uid = ?',
+        [now(), (name || '').trim(), user.uid]);
+    } else {
+      const uid = id(12);
+      await db.run('INSERT INTO users (uid, email, name, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,0,0)',
+        [uid, em, (name || '').trim(), now(), now()]);
+      user = { uid, email: em };
+    }
+
+    // ---- per-session player record (participants = this user, in this session) ----
     let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
     const token = id(18);
     if (participant) {
-      await db.run('UPDATE participants SET verified = 1, token = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE id = ?',
-        [token, (name || '').trim(), participant.id]);
+      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE id = ?',
+        [token, user.uid, (name || '').trim(), participant.id]);
     } else {
       const pid = id(9);
-      await db.run('INSERT INTO participants (id, session_id, email, name, token, verified, total_points, created_at) VALUES (?,?,?,?,?,1,0,?)',
-        [pid, sessionId, em, (name || '').trim(), token, now()]);
+      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,1,0,?)',
+        [pid, sessionId, user.uid, em, (name || '').trim(), token, now()]);
+      // First time this user appears in this session → count it toward sessions_played.
+      await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }
     await db.run('DELETE FROM otps WHERE email = ? AND session_id = ?', [em, sessionId]);
     return send(res, 200, { token });
@@ -623,6 +640,101 @@ async function handleApi(req, res, url) {
       await tx.run('DELETE FROM banners WHERE id = ?', [bannerId]);
     });
     return send(res, 200, { ok: true });
+  }
+
+  // ===== DATA EXPORT (host-only) =====
+  // Pulls the full session dataset — participants, rounds, and every vote with
+  // computed scores — for analysis or fan-list building.
+  //   format = csv | json
+  //   anon   = 1  -> replace names/emails with "Player N" (safe to share)
+  if (p === '/api/admin/export' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId');
+    const session = await adminFromReq(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const format = (url.searchParams.get('format') || 'json').toLowerCase();
+    const anon = url.searchParams.get('anon') === '1';
+
+    const participants = await db.all(
+      'SELECT id, user_id, name, email, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
+      [sessionId]
+    );
+    const rounds = await db.all(
+      "SELECT id, idx, song_title, song_artist, room_average, opens_at, closes_at, status FROM rounds WHERE session_id = ? AND status = 'ratified' ORDER BY idx ASC",
+      [sessionId]
+    );
+    const votes = await db.all(
+      `SELECT v.round_id, v.participant_id, v.taste, v.predict, v.err, v.points, v.tier, v.rank, v.locked_at
+         FROM votes v JOIN rounds r ON r.id = v.round_id
+        WHERE r.session_id = ? AND r.status = 'ratified'`,
+      [sessionId]
+    );
+
+    // Stable anonymization: map each participant to "Player N" by join order.
+    const labelById = {};
+    participants.forEach((pt, i) => { labelById[pt.id] = `Player ${i + 1}`; });
+    const roomAvgByRound = {};
+    rounds.forEach(r => { roomAvgByRound[r.id] = r.room_average; });
+
+    const cleanParticipants = participants.map((pt, i) => anon
+      ? { player: labelById[pt.id], total_points: pt.total_points }
+      : { player: labelById[pt.id], name: pt.name, email: pt.email, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) });
+
+    const cleanVotes = votes.map(v => {
+      const base = {
+        player: labelById[v.participant_id] || 'Player ?',
+        round: (rounds.find(r => r.id === v.round_id) || {}).idx,
+        rating: v.taste,
+        prediction: v.predict,
+        room_average: roomAvgByRound[v.round_id],
+        error: v.err,
+        points: v.points,
+        tier: v.tier,
+        rank: v.rank,
+        locked_at: Number(v.locked_at),
+      };
+      return base;
+    });
+
+    const cleanRounds = rounds.map(r => anon
+      ? { round: r.idx, room_average: r.room_average }
+      : { round: r.idx, song_title: r.song_title, song_artist: r.song_artist, room_average: r.room_average, opened_at: Number(r.opens_at), closed_at: Number(r.closes_at) });
+
+    if (format === 'csv') {
+      // One row per vote — the richest single flat table for analysis.
+      const headers = anon
+        ? ['player', 'round', 'rating', 'prediction', 'room_average', 'error', 'points', 'tier', 'rank']
+        : ['player', 'name', 'email', 'round', 'song_title', 'rating', 'prediction', 'room_average', 'error', 'points', 'tier', 'rank', 'locked_at'];
+      const nameById = {}, emailById = {};
+      participants.forEach(pt => { nameById[pt.id] = pt.name; emailById[pt.id] = pt.email; });
+      const songByRound = {}; rounds.forEach(r => { songByRound[r.id] = r.song_title; });
+      const esc = (val) => {
+        const s = val == null ? '' : String(val);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const lines = [headers.join(',')];
+      for (const v of votes) {
+        const pid = v.participant_id;
+        const r = rounds.find(rr => rr.id === v.round_id) || {};
+        const row = anon
+          ? [labelById[pid], r.idx, v.taste, v.predict, roomAvgByRound[v.round_id], v.err, v.points, v.tier, v.rank]
+          : [labelById[pid], nameById[pid], emailById[pid], r.idx, songByRound[v.round_id], v.taste, v.predict, roomAvgByRound[v.round_id], v.err, v.points, v.tier, v.rank, Number(v.locked_at)];
+        lines.push(row.map(esc).join(','));
+      }
+      const fname = `anr-${sessionId}${anon ? '-anon' : ''}.csv`;
+      res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${fname}"` });
+      return res.end(lines.join('\n'));
+    }
+
+    // JSON (default)
+    const payload = {
+      session: { id: anon ? undefined : session.id, name: session.name, exported_at: now(), anonymized: anon },
+      participants: cleanParticipants,
+      rounds: cleanRounds,
+      votes: cleanVotes,
+    };
+    const fname = `anr-${sessionId}${anon ? '-anon' : ''}.json`;
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${fname}"` });
+    return res.end(JSON.stringify(payload, null, 2));
   }
 
   return bad(res, 'Not found', 404);

@@ -283,6 +283,45 @@ async function call(path, body, method='POST', headers={}) {
   ok('deleted banner gone from library', !adminAfter.banners.find(b => b.id === upS.d.bannerId));
   ok('session banner_id cleared after delete', adminAfter.session.banner_id == null, 'still ' + adminAfter.session.banner_id);
 
+  console.log('\n— durable user identity across sessions —');
+  // Maya (a@test.com) already played this session. Create a SECOND session and
+  // have the same email join → must resolve to the same uid, not a duplicate user.
+  const s2 = await call('/api/session', { name: 'Second Night' });
+  const SID2 = s2.d.sessionId, AH2 = { 'X-Admin-Token': s2.d.adminToken };
+  const r2 = await call('/api/join/request', { sessionId: SID2, email: 'a@test.com' });
+  await call('/api/join/verify', { sessionId: SID2, email: 'a@test.com', code: r2.d.devCode, name: 'Maya' });
+  // Export both sessions (full JSON) and confirm Maya carries the same user_id.
+  const exp1 = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`, { headers: AH }).then(r => r.json());
+  const exp2 = await fetch(base + `/api/admin/export?sessionId=${SID2}&format=json`, { headers: AH2 }).then(r => r.json());
+  const maya1 = exp1.participants.find(p => p.email === 'a@test.com');
+  const maya2 = exp2.participants.find(p => p.email === 'a@test.com');
+  ok('same email gets a user_id in session 1', !!(maya1 && maya1.user_id), JSON.stringify(maya1));
+  ok('same email gets a user_id in session 2', !!(maya2 && maya2.user_id), JSON.stringify(maya2));
+  ok('returning user has the SAME uid across sessions', maya1 && maya2 && maya1.user_id === maya2.user_id, `${maya1&&maya1.user_id} vs ${maya2&&maya2.user_id}`);
+
+  console.log('\n— data export (full + anonymized, csv + json) —');
+  const fullJson = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`, { headers: AH }).then(r => r.json());
+  ok('full JSON has participants/rounds/votes', fullJson.participants && fullJson.rounds && fullJson.votes, Object.keys(fullJson).join(','));
+  ok('full JSON includes emails', fullJson.participants.some(p => p.email && p.email.includes('@')));
+  ok('full JSON votes carry room_average + points', fullJson.votes.length > 0 && 'room_average' in fullJson.votes[0] && 'points' in fullJson.votes[0], JSON.stringify(fullJson.votes[0] || {}));
+
+  const anonJson = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json&anon=1`, { headers: AH }).then(r => r.json());
+  ok('anon JSON marked anonymized', anonJson.session.anonymized === true);
+  ok('anon JSON has NO emails', !anonJson.participants.some(p => 'email' in p), JSON.stringify(anonJson.participants[0] || {}));
+  ok('anon JSON has NO names', !anonJson.participants.some(p => 'name' in p));
+  ok('anon JSON uses Player N labels', anonJson.participants.every(p => /^Player \d+$/.test(p.player)), JSON.stringify(anonJson.participants[0] || {}));
+  ok('anon votes still have behavioral data', anonJson.votes.every(v => 'rating' in v && 'prediction' in v && 'points' in v));
+
+  const csvRes = await fetch(base + `/api/admin/export?sessionId=${SID}&format=csv`, { headers: AH });
+  const csvText = await csvRes.text();
+  ok('CSV content-type + attachment', /text\/csv/.test(csvRes.headers.get('content-type') || '') && /attachment/.test(csvRes.headers.get('content-disposition') || ''));
+  ok('CSV has header row + data', csvText.split('\n').length > 1 && csvText.split('\n')[0].includes('rating'), csvText.split('\n')[0]);
+
+  const csvAnon = await fetch(base + `/api/admin/export?sessionId=${SID}&format=csv&anon=1`, { headers: AH }).then(r => r.text());
+  ok('anon CSV header omits email', !csvAnon.split('\n')[0].includes('email'), csvAnon.split('\n')[0]);
+
+  ok('export requires admin auth', (await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`)).status === 401);
+
   console.log('\n— end session: shareable recap revealed —');
   await call('/api/admin/session/end', { sessionId: SID }, 'POST', AH);
   const ms = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': t1 })).d;

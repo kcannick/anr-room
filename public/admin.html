@@ -158,6 +158,18 @@
     <div class="card">
       <h2>Leaderboard</h2>
       <div id="board"><div class="empty">Nobody's joined yet.</div></div>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+        <label style="display:block;margin-bottom:8px">Export data <span class="muted">(ratified rounds)</span></label>
+        <div class="row">
+          <button class="btn ghost sm" id="btnExpCsv">CSV (full)</button>
+          <button class="btn ghost sm" id="btnExpJson">JSON (full)</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn ghost sm" id="btnExpCsvAnon">CSV (anon)</button>
+          <button class="btn ghost sm" id="btnExpJsonAnon">JSON (anon)</button>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">Full versions include emails (for your list). Anon versions use “Player 1, 2…” — safe to share for analysis.</p>
+      </div>
       <button class="btn warn sm" id="btnEnd" style="margin-top:14px">End session</button>
     </div>
   </div>
@@ -226,6 +238,25 @@ $('#btnAddRound').onclick=async()=>{
 
 $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textContent);$('#btnCopy').textContent='Copied!';setTimeout(()=>$('#btnCopy').textContent='Copy link',1200);};
 $('#btnEnd').onclick=async()=>{if(!confirm('End the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/end',{sessionId:SID});refresh();};
+
+async function downloadExport(format,anon){
+  const url=`/api/admin/export?sessionId=${encodeURIComponent(SID)}&format=${format}${anon?'&anon=1':''}`;
+  try{
+    const res=await fetch(url,{headers:{'X-Admin-Token':ATOK}});
+    if(!res.ok){const t=await res.text();alert('Export failed: '+t);return;}
+    const blob=await res.blob();
+    const a=document.createElement('a');
+    const dlUrl=URL.createObjectURL(blob);
+    a.href=dlUrl;
+    a.download=`anr-${SID}${anon?'-anon':''}.${format}`;
+    document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(dlUrl);a.remove();},1000);
+  }catch(e){alert('Export error: '+e.message);}
+}
+$('#btnExpCsv').onclick=()=>downloadExport('csv',false);
+$('#btnExpJson').onclick=()=>downloadExport('json',false);
+$('#btnExpCsvAnon').onclick=()=>downloadExport('csv',true);
+$('#btnExpJsonAnon').onclick=()=>downloadExport('json',true);
 
 // ---- round control render ----
 function roundControls(st){
