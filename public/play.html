@@ -202,16 +202,16 @@
       <div class="give hide" id="vGive"></div>
 
       <div style="margin-top:20px">
-        <label>Your rating — how good is it? <span class="faint">(1–10)</span></label>
+        <label>① Your rating — how good is it? <span class="faint">(0–9)</span></label>
         <div class="rate-row" id="rateTop"></div>
         <div class="rate-row two" id="rateBot"></div>
       </div>
 
       <div style="margin-top:22px">
-        <label>Predict the room's average</label>
-        <div class="slider-val mono" id="predVal">5.0</div>
-        <input id="pred" type="range" min="0" max="10" step="0.1" value="5">
-        <div class="scale-ends"><span>0.0 nobody likes it</span><span>everybody loves it 10.0</span></div>
+        <label>② Predict the room's average <span class="faint">— drag to set</span></label>
+        <div class="slider-val mono" id="predVal">–.–</div>
+        <input id="pred" type="range" min="0" max="9" step="0.1" value="4.5">
+        <div class="scale-ends"><span>0.0 nobody likes it</span><span>everybody loves it 9.0</span></div>
       </div>
 
       <button class="btn" id="btnLock" style="margin-top:22px" disabled>Lock it in</button>
@@ -311,19 +311,22 @@ const api=async(path,body,method='POST')=>{
   const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(d.error||'Something went wrong'); return d;
 };
 const SID=new URLSearchParams(location.search).get('s')||localStorage.getItem('rt_sid');
-let chosenTaste=null, predict=5.0, pollTimer=null, lastPhase=null, lastRecap=null;
+let chosenTaste=null, predict=null, predictTouched=false, pollTimer=null, lastPhase=null, lastRecap=null;
+
+// Lock unlocks only when BOTH a rating is picked AND the prediction slider is touched.
+function maybeEnableLock(){ $('#btnLock').disabled = !(chosenTaste!==null && predictTouched); }
 
 function show(id){['email','code','wait','vote','locked','results','ended'].forEach(s=>$('#screen-'+s).classList.toggle('hide',s!==id));}
 
-// build rating pips 1-10
+// build rating pips 0-9 (NPS-style: no center default; 0-4 lower half, 5-9 upper half)
 (function(){
-  for(let n=1;n<=10;n++){
+  for(let n=0;n<=9;n++){
     const el=document.createElement('div');el.className='pip';el.textContent=n;el.dataset.n=n;
-    el.onclick=()=>{chosenTaste=n;document.querySelectorAll('.pip').forEach(p=>p.classList.toggle('on',+p.dataset.n===n));$('#btnLock').disabled=false;};
-    (n<=5?$('#rateTop'):$('#rateBot')).appendChild(el);
+    el.onclick=()=>{chosenTaste=n;document.querySelectorAll('.pip').forEach(p=>p.classList.toggle('on',+p.dataset.n===n));maybeEnableLock();};
+    (n<=4?$('#rateTop'):$('#rateBot')).appendChild(el);
   }
 })();
-$('#pred').oninput=e=>{predict=parseFloat(e.target.value);$('#predVal').textContent=predict.toFixed(1);};
+$('#pred').oninput=e=>{predict=parseFloat(e.target.value);predictTouched=true;$('#predVal').textContent=predict.toFixed(1);$('#pred').classList.add('touched');maybeEnableLock();};
 
 // ---- join flow ----
 $('#btnRequest').onclick=async()=>{
@@ -357,7 +360,8 @@ $('#btnVerify').onclick=async()=>{
 };
 $('#btnLock').onclick=async()=>{
   $('#voteErr').textContent='';
-  if(!chosenTaste)return $('#voteErr').textContent='Pick a rating first';
+  if(chosenTaste===null)return $('#voteErr').textContent='Pick a rating first';
+  if(!predictTouched||predict===null)return $('#voteErr').textContent='Set your prediction';
   $('#btnLock').disabled=true;
   try{await api('/api/vote',{taste:chosenTaste,predict});refresh();}
   catch(e){$('#voteErr').textContent=e.message;$('#btnLock').disabled=false;}
@@ -496,7 +500,8 @@ function render(st){
     closesAt=st.round.closes_at||null;
     if(lastPhase!=='voting'){ // reset inputs on a fresh round
       chosenTaste=null;document.querySelectorAll('.pip').forEach(p=>p.classList.remove('on'));
-      $('#pred').value=5;predict=5;$('#predVal').textContent='5.0';$('#btnLock').disabled=true;$('#voteErr').textContent='';
+      $('#pred').value=4.5;predict=null;predictTouched=false;$('#pred').classList.remove('touched');
+      $('#predVal').textContent='–.–';$('#btnLock').disabled=true;$('#voteErr').textContent='';
     }
     $('#vRound').textContent=st.round.idx;$('#vTitle').textContent=st.round.song_title;
     $('#vArtist').textContent=st.round.song_artist||'';

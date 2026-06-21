@@ -48,6 +48,7 @@ const SCHEMA = [
      first_seen BIGINT NOT NULL,
      last_seen BIGINT NOT NULL,
      sessions_played INTEGER NOT NULL DEFAULT 0,
+     rounds_voted INTEGER NOT NULL DEFAULT 0,  -- lifetime count of rounds voted in (all sessions)
      lifetime_points INTEGER NOT NULL DEFAULT 0
    )`,
   `CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -97,13 +98,15 @@ const SCHEMA = [
      id TEXT PRIMARY KEY,
      round_id TEXT NOT NULL,
      participant_id TEXT NOT NULL,
-     taste INTEGER NOT NULL,                 -- 1..10 (their rating)
-     predict REAL NOT NULL,                  -- 0.0..10.0 (room avg guess)
+     taste INTEGER NOT NULL,                 -- 0..9 (their rating)
+     predict REAL NOT NULL,                  -- 0.0..9.0 (room avg guess)
      locked_at BIGINT NOT NULL,
      points INTEGER,                         -- filled at ratify
      err REAL,                               -- |predict - room_average|
      tier TEXT,                              -- bullseye|sharp|close|off|wayoff (results reaction)
-     rank INTEGER
+     rank INTEGER,
+     taste_legacy INTEGER,                   -- preserved pre-0-9 rating (null if born on 0-9)
+     predict_legacy REAL                     -- preserved pre-0-9 prediction
    )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS uniq_vote ON votes (round_id, participant_id)`,
   `CREATE INDEX IF NOT EXISTS idx_part_session ON participants (session_id)`,
@@ -321,6 +324,73 @@ async function postMigrate(db) {
   if (adminEmail) {
     await db.run("UPDATE users SET role = 'admin' WHERE email = ?", [adminEmail]).catch(() => {});
   }
+
+  // One-time 1-10 -> 0-9 scale conversion (guarded by a settings flag so it runs
+  // exactly once). Originals are preserved in taste_legacy / predict_legacy before
+  // overwriting, so the destructive shift is reversible even though the live columns
+  // present as clean 0-9 data. Recomputes room averages, errors, points, tiers, and
+  // rolls per-participant + lifetime totals back up from the reconverted votes.
+  await convertScaleTo09(db);
+}
+
+// Shift all stored ratings/predictions down by 1 (1-10 -> 0-9), preserving originals,
+// then recompute every ratified round's average and re-score. Runs once.
+async function convertScaleTo09(db) {
+  let flag;
+  try { flag = await db.get("SELECT v FROM settings WHERE k = 'scale_conversion_0to9'", []); }
+  catch { return; } // settings table or flag not present yet
+  if (!flag || flag.v !== 'pending') return; // already done, or never seeded
+
+  const scoring = require('./scoring');
+  // 1. Back up originals (only where not already backed up) and shift live values -1.
+  //    Floor at 0 so nothing goes negative; clamp predictions to [0,9].
+  const votes = await db.all('SELECT * FROM votes', []);
+  for (const v of votes) {
+    if (v.taste_legacy == null) {
+      const newTaste = Math.max(0, Math.round(Number(v.taste)) - 1);
+      const newPredict = Math.min(9, Math.max(0, Number(v.predict) - 1));
+      await db.run('UPDATE votes SET taste_legacy = ?, predict_legacy = ?, taste = ?, predict = ? WHERE id = ?',
+        [v.taste, v.predict, newTaste, newPredict, v.id]);
+    }
+  }
+  // 2. Recompute each ratified round: new room average + re-score every vote.
+  const rounds = await db.all("SELECT * FROM rounds WHERE status = 'ratified'", []);
+  for (const r of rounds) {
+    const rv = await db.all('SELECT * FROM votes WHERE round_id = ?', [r.id]);
+    if (!rv.length) continue;
+    const avg = scoring.roomAverage(rv);            // mean of (now 0-9) tastes
+    const ranked = scoring.rankVotes(rv, avg);      // recompute err/points/tier/rank
+    for (const v of ranked) {
+      await db.run('UPDATE votes SET points = ?, err = ?, tier = ?, rank = ? WHERE id = ?',
+        [v.points, v.err, v.tier, v.rank, v.id]);
+    }
+    await db.run('UPDATE rounds SET room_average = ? WHERE id = ?', [avg, r.id]);
+  }
+  // 3. Recompute per-participant totals (floored at 0) from the reconverted votes.
+  const parts = await db.all('SELECT id FROM participants', []);
+  for (const p of parts) {
+    const row = await db.get(
+      "SELECT COALESCE(SUM(points),0) AS s FROM votes WHERE participant_id = ? AND points IS NOT NULL", [p.id]);
+    const total = Math.max(0, Number(row.s) || 0);
+    await db.run('UPDATE participants SET total_points = ? WHERE id = ?', [total, p.id]);
+  }
+  // 4. Recompute lifetime_points + rounds_voted per user from the reconverted data.
+  const users = await db.all('SELECT uid FROM users', []);
+  for (const u of users) {
+    const lp = await db.get(
+      `SELECT COALESCE(SUM(v.points),0) AS s
+         FROM votes v JOIN participants p ON v.participant_id = p.id
+        WHERE p.user_id = ? AND v.points IS NOT NULL`, [u.uid]);
+    const rc = await db.get(
+      `SELECT COUNT(*) AS c
+         FROM votes v JOIN participants p ON v.participant_id = p.id
+        WHERE p.user_id = ?`, [u.uid]);
+    await db.run('UPDATE users SET lifetime_points = ?, rounds_voted = ? WHERE uid = ?',
+      [Math.max(0, Number(lp.s) || 0), Number(rc.c) || 0, u.uid]);
+  }
+  // 5. Mark done so this never runs again.
+  await db.run("UPDATE settings SET v = 'done' WHERE k = 'scale_conversion_0to9'", []);
+  console.log('[migrate] 0-9 scale conversion complete (originals preserved in *_legacy).');
 }
 
 impl.engine = USE_PG ? 'postgres' : 'sqlite';

@@ -14,7 +14,7 @@ const BONUS = 25;
 const FAR = 5.0;        // more than 5.0 off => penalty
 const PENALTY = 10;
 
-// Room average = mean of all taste ratings (1..10) in a round.
+// Room average = mean of all taste ratings (0..9) in a round.
 function roomAverage(votes) {
   if (!votes.length) return null;
   return votes.reduce((a, v) => a + v.taste, 0) / votes.length;

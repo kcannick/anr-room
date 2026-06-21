@@ -163,8 +163,8 @@ async function call(path, body, method='POST', headers={}) {
   const tn = await join('z@test.com', 'Zed');
   const qz = await call('/api/admin/round', { sessionId: SID, song_title: 'Penalty Test' }, 'POST', AH);
   await call('/api/admin/round/open', { sessionId: SID, roundId: qz.d.roundId, minutes: 1 }, 'POST', AH);
-  // Zed rates 1, predicts 10 -> with a solo vote the room avg = 1, err = 9 -> negative round
-  await call('/api/vote', { taste: 1, predict: 10 }, 'POST', { 'X-Player-Token': tn });
+  // Zed rates 0, predicts 9 -> with a solo vote the room avg = 0, err = 9 -> negative round
+  await call('/api/vote', { taste: 0, predict: 9 }, 'POST', { 'X-Player-Token': tn });
   await call('/api/admin/round/ratify', { sessionId: SID, roundId: qz.d.roundId }, 'POST', AH);
   const zed = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': tn })).d;
   ok('Zed round score is negative', zed.myResult.points < 0, 'pts ' + zed.myResult.points);

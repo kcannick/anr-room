@@ -344,6 +344,8 @@ async function ratifyRound(round) {
       await tx.run('UPDATE participants SET total_points = CASE WHEN total_points + ? < 0 THEN 0 ELSE total_points + ? END WHERE id = ?', [v.points, v.points, v.participant_id]);
       // Also accrue to the durable user's lifetime total (floored at 0), for cross-event stats.
       await tx.run('UPDATE users SET lifetime_points = CASE WHEN lifetime_points + ? < 0 THEN 0 ELSE lifetime_points + ? END WHERE uid = (SELECT user_id FROM participants WHERE id = ?)', [v.points, v.points, v.participant_id]);
+      // Count this round toward the user's lifetime rounds_voted (engagement stat).
+      await tx.run('UPDATE users SET rounds_voted = rounds_voted + 1 WHERE uid = (SELECT user_id FROM participants WHERE id = ?)', [v.participant_id]);
     }
     return { ranked, room_average: avg };
   });
@@ -540,8 +542,8 @@ async function handleApi(req, res, url) {
     if (!round || round.status !== 'voting') return bad(res, 'Voting is not open');
     if (round.closes_at && now() > Number(round.closes_at)) return bad(res, 'Time is up');
     const t = Number(taste), pr = Number(predict);
-    if (!Number.isInteger(t) || t < 1 || t > 10) return bad(res, 'Rating must be 1–10');
-    if (!(pr >= 0 && pr <= 10)) return bad(res, 'Prediction must be 0.0–10.0');
+    if (!Number.isInteger(t) || t < 0 || t > 9) return bad(res, 'Rating must be 0–9');
+    if (!(pr >= 0 && pr <= 9)) return bad(res, 'Prediction must be 0.0–9.0');
     const existing = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
     if (existing) return bad(res, 'You already locked in');
     await db.run('INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at) VALUES (?,?,?,?,?,?)',

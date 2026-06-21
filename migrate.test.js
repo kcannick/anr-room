@@ -41,7 +41,8 @@ async function freshDb() {
   // 2. Re-running init is a clean no-op.
   await db.init();
   const count = (await db.all('SELECT id FROM _migrations', [])).length;
-  ok('re-run is idempotent (001 not double-applied)', count === 1, 'count=' + count);
+  const applied2 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('re-run is idempotent (001 present, not duplicated)', applied2.filter(x => x === '001_identity_layer').length === 1, 'ids=' + JSON.stringify(applied2));
 
   // 3. A DB that already has the columns (simulates a hand-patched production DB)
   //    must not error, and must still record the migration.
@@ -59,6 +60,38 @@ async function freshDb() {
   ok('pre-existing columns do not error', !errored);
   const rec = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('migration recorded even when columns pre-existed', rec.includes('001_identity_layer'));
+
+  // 4. The 0-9 conversion: seed a fresh DB with 1-10 votes, run init, verify the
+  //    shift (-1), preserved originals, recomputed average, and rounds_voted.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init(); // builds schema + runs migrations (incl. seeding conversion flag)
+  // Insert a user, participant, a ratified round, and two 1-10 votes, mimicking
+  // pre-conversion state: set taste_legacy NULL so the converter treats them as old.
+  const now = Date.now();
+  await db.run("INSERT INTO users (uid,email,first_seen,last_seen) VALUES ('u1','a@b.c',?,?)", [now, now]);
+  await db.run("INSERT INTO sessions (id,name,admin_token,created_at) VALUES ('s1','S','t',?)", [now]);
+  await db.run("INSERT INTO participants (id,session_id,user_id,email,token,verified,created_at) VALUES ('p1','s1','u1','a@b.c','tk',1,?)", [now]);
+  await db.run("INSERT INTO rounds (id,session_id,idx,song_title,status,room_average,created_at) VALUES ('r1','s1',1,'song','ratified',?,?)", [6, now]);
+  // Two votes on the OLD 1-10 scale (tastes 6 and 8 -> old avg 7).
+  await db.run("INSERT INTO votes (id,round_id,participant_id,taste,predict,locked_at) VALUES ('v1','r1','p1',6,7,?)", [now]);
+  await db.run("INSERT INTO participants (id,session_id,user_id,email,token,verified,created_at) VALUES ('p2','s1','u1','a@b.c','tk2',1,?)", [now]);
+  await db.run("INSERT INTO votes (id,round_id,participant_id,taste,predict,locked_at) VALUES ('v2','r1','p2',8,7,?)", [now]);
+  // Re-arm the conversion flag (init already ran it on the empty DB) and re-run.
+  await db.run("UPDATE settings SET v='pending' WHERE k='scale_conversion_0to9'");
+  await db.init();
+  const v1 = await db.get("SELECT * FROM votes WHERE id='v1'");
+  const r1 = await db.get("SELECT room_average FROM rounds WHERE id='r1'");
+  ok('0-9: taste shifted 6 -> 5', Number(v1.taste) === 5, 'taste=' + v1.taste);
+  ok('0-9: original preserved (taste_legacy=6)', Number(v1.taste_legacy) === 6, 'legacy=' + v1.taste_legacy);
+  ok('0-9: room average recomputed 7 -> 6', Math.abs(Number(r1.room_average) - 6) < 0.001, 'avg=' + r1.room_average);
+  const flag = await db.get("SELECT v FROM settings WHERE k='scale_conversion_0to9'");
+  ok('0-9: conversion marked done', flag.v === 'done', 'flag=' + flag.v);
+  // Re-running must NOT shift again (idempotent — legacy already set).
+  await db.init();
+  const v1b = await db.get("SELECT taste FROM votes WHERE id='v1'");
+  ok('0-9: re-run does not double-shift', Number(v1b.taste) === 5, 'taste=' + v1b.taste);
 
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);

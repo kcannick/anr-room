@@ -9,6 +9,10 @@
     "migrate": "node migrate.js",
     "migrate:status": "node migrate.js --status"
   },
-  "engines": { "node": ">=22.5.0" },
-  "dependencies": { "pg": "^8.11.0" }
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
+  }
 }
