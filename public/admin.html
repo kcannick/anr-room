@@ -381,7 +381,13 @@ $('#btnBackToSessions').onclick=()=>{if(poll)clearInterval(poll);SID=null;localS
 async function downloadExport(format,anon){
   const url=`/api/admin/export?sessionId=${encodeURIComponent(SID)}&format=${format}${anon?'&anon=1':''}`;
   try{
-    const res=await fetch(url,{headers:{'X-Admin-Token':ATOK}});
+    // Send whichever credential we have — identity login (preferred) and/or the
+    // legacy per-session token — mirroring the api() helper. When you open a session
+    // from the picker you hold an auth token, not the per-session admin token.
+    const h={};
+    if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;
+    if(ATOK)h['X-Admin-Token']=ATOK;
+    const res=await fetch(url,{headers:h});
     if(!res.ok){const t=await res.text();alert('Export failed: '+t);return;}
     const blob=await res.blob();
     const a=document.createElement('a');
