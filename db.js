@@ -29,8 +29,10 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS sessions (
      id TEXT PRIMARY KEY,
      name TEXT NOT NULL,
-     admin_token TEXT NOT NULL,
-     status TEXT NOT NULL DEFAULT 'open',   -- open | ended
+     admin_token TEXT NOT NULL,             -- legacy per-session admin secret (fallback)
+     owner_uid TEXT,                         -- the host (user) who owns this session
+     status TEXT NOT NULL DEFAULT 'live',   -- upcoming | live | completed | archived
+     scheduled_at BIGINT,                    -- when an 'upcoming' session is set to start
      banner_id TEXT,                         -- optional session-level ad override
      default_minutes INTEGER NOT NULL DEFAULT 5, -- per-session default voting window
      created_at BIGINT NOT NULL
@@ -39,10 +41,21 @@ const SCHEMA = [
      uid TEXT PRIMARY KEY,
      email TEXT NOT NULL UNIQUE,           -- durable identity across all sessions
      name TEXT,
+     role TEXT NOT NULL DEFAULT 'player',  -- player | host | admin
+     phone TEXT,                            -- optional; captured at registration
+     sms_marketing_consent INTEGER NOT NULL DEFAULT 0,  -- explicit, separate opt-in (TCPA)
+     sms_consent_at BIGINT,                 -- timestamp proof of consent
      first_seen BIGINT NOT NULL,
      last_seen BIGINT NOT NULL,
      sessions_played INTEGER NOT NULL DEFAULT 0,
      lifetime_points INTEGER NOT NULL DEFAULT 0
+   )`,
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+     token TEXT PRIMARY KEY,
+     uid TEXT NOT NULL,                     -- which user this login belongs to
+     created_at BIGINT NOT NULL,
+     last_used BIGINT NOT NULL,
+     expires_at BIGINT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS participants (
      id TEXT PRIMARY KEY,
@@ -50,6 +63,8 @@ const SCHEMA = [
      user_id TEXT,                          -- links to users.uid (durable identity)
      email TEXT NOT NULL,
      name TEXT,
+     phone TEXT,                            -- optional; captured at registration
+     sms_marketing_consent INTEGER NOT NULL DEFAULT 0,  -- explicit opt-in for this signup
      token TEXT NOT NULL,                    -- player auth token (cookie)
      verified INTEGER NOT NULL DEFAULT 0,
      total_points INTEGER NOT NULL DEFAULT 0,
@@ -151,9 +166,10 @@ if (USE_PG) {
     async init() {
       // PG needs BIGINT/REAL which our portable schema already uses; INTEGER bools are fine.
       for (const s of SCHEMA) await pool.query(s);
-      // For an already-deployed DB whose participants table predates user_id, add it.
-      await pool.query('ALTER TABLE participants ADD COLUMN IF NOT EXISTS user_id TEXT').catch(() => {});
-      await backfillUsers(impl);
+      // Versioned migrations: ordered, run-once, loud on failure. Replaces the old
+      // boot-time ALTER blocks (which failed silently and raced on cold starts).
+      await runMigrations(impl);
+      await postMigrate(impl);
     },
   };
 } else {
@@ -191,21 +207,95 @@ if (USE_PG) {
     },
     async init() {
       for (const s of SCHEMA) sdb.exec(s);
-      await backfillUsers(impl);
+      // Versioned migrations (see runMigrations). SQLite lacks ADD COLUMN IF NOT
+      // EXISTS, so the runner treats "duplicate column" as already-applied.
+      await runMigrations(impl);
+      await postMigrate(impl);
     },
   };
 }
 
-// One-time migration: fold existing participants into deduped users (by email),
-// assigning a durable uid and linking participants.user_id. Idempotent — only
-// touches participants that aren't linked yet, so it's safe to run on every boot.
-async function backfillUsers(db) {
+// ---- versioned migration runner ----
+// Applies numbered .sql files from ./migrations exactly once, in order, recording
+// each in a _migrations table. Fails LOUDLY (throws) on any real error — no silent
+// catch — so a broken migration surfaces immediately in logs instead of as a
+// downstream "column does not exist" crash. Safe under concurrent cold starts: on
+// Postgres it takes a transaction-scoped advisory lock so only one instance migrates
+// at a time; the others wait, then see the rows already applied and skip.
+const fs = require('node:fs');
+const pathMod = require('node:path');
+
+function loadMigrationFiles() {
+  const dir = pathMod.join(__dirname, 'migrations');
+  let files;
+  try { files = fs.readdirSync(dir); } catch { return []; }
+  return files
+    .filter(f => /^\d+.*\.sql$/.test(f))
+    .sort() // zero-padded numeric prefixes sort correctly as strings
+    .map(f => ({
+      id: f.replace(/\.sql$/, ''),
+      statements: fs.readFileSync(pathMod.join(dir, f), 'utf8')
+        .split(/^--->$/m)               // statements separated by a line of just --->
+        .map(s => s.replace(/^\s*--.*$/gm, '').trim()) // strip comment-only lines
+        .filter(Boolean),
+    }));
+}
+
+// Is this error just "the column already exists"? (SQLite has no ADD COLUMN IF NOT
+// EXISTS, so re-applying 001 on an already-migrated SQLite DB hits this — benign.)
+function isDuplicateColumn(e) {
+  const m = (e && e.message || '').toLowerCase();
+  return m.includes('duplicate column') || m.includes('already exists');
+}
+
+async function runMigrations(db) {
+  await db.run(`CREATE TABLE IF NOT EXISTS _migrations (
+    id TEXT PRIMARY KEY,
+    applied_at BIGINT NOT NULL
+  )`);
+  const migrations = loadMigrationFiles();
+  if (!migrations.length) return;
+
+  // Serialize concurrent migrators (Postgres only; SQLite init is single-process).
+  if (USE_PG) { try { await db.run('SELECT pg_advisory_lock(727274)'); } catch {} }
+  try {
+    const done = await db.all('SELECT id FROM _migrations', []);
+    const applied = new Set(done.map(r => r.id));
+    for (const m of migrations) {
+      if (applied.has(m.id)) continue;
+      console.log(`[migrate] applying ${m.id} (${m.statements.length} statements)…`);
+      for (let stmt of m.statements) {
+        // SQLite doesn't support ADD COLUMN IF NOT EXISTS — strip it and rely on the
+        // duplicate-column catch below for idempotency. Postgres keeps IF NOT EXISTS.
+        if (!USE_PG) stmt = stmt.replace(/ADD COLUMN IF NOT EXISTS/gi, 'ADD COLUMN');
+        try {
+          await db.run(stmt);
+        } catch (e) {
+          if (isDuplicateColumn(e)) continue; // already present — fine
+          // Real failure: stop everything and make it visible.
+          console.error(`[migrate] FAILED on ${m.id}: ${e.message}\n  statement: ${stmt.slice(0, 120)}`);
+          throw new Error(`Migration ${m.id} failed: ${e.message}`);
+        }
+      }
+      await db.run('INSERT INTO _migrations (id, applied_at) VALUES (?, ?)', [m.id, Date.now()]);
+      console.log(`[migrate] ${m.id} ✓`);
+    }
+  } finally {
+    if (USE_PG) { try { await db.run('SELECT pg_advisory_unlock(727274)'); } catch {} }
+  }
+}
+
+// Data backfill that must run AFTER schema migrations (idempotent — safe every boot):
+//  1. Fold existing participants into deduped users (by email) + link user_id.
+//  2. Recompute per-user sessions_played / lifetime_points.
+//  3. Promote the configured ADMIN_EMAIL to role='admin'.
+// (Legacy status mapping moved into migration 001.)
+async function postMigrate(db) {
   let orphans;
   try {
     orphans = await db.all("SELECT * FROM participants WHERE user_id IS NULL OR user_id = ''", []);
-  } catch { return; } // table may not exist yet on a brand-new DB
-  if (!orphans || !orphans.length) return;
-  for (const p of orphans) {
+  } catch { return; } // tables may not exist yet on a brand-new DB
+  for (const p of (orphans || [])) {
     const em = (p.email || '').toLowerCase();
     if (!em) continue;
     let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
@@ -225,6 +315,11 @@ async function backfillUsers(db) {
     const pc = await db.get('SELECT COALESCE(SUM(total_points),0) AS s FROM participants WHERE user_id = ?', [u.uid]);
     await db.run('UPDATE users SET sessions_played = ?, lifetime_points = ? WHERE uid = ?',
       [Number(sc.c) || 0, Number(pc.s) || 0, u.uid]);
+  }
+  // Promote the configured admin (only affects the row once it exists).
+  const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+  if (adminEmail) {
+    await db.run("UPDATE users SET role = 'admin' WHERE email = ?", [adminEmail]).catch(() => {});
   }
 }
 
