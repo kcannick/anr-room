@@ -72,5 +72,63 @@ eq('solo exact bullseye', solo[0].tier, 'bullseye');
 eq('solo exact 125', solo[0].points, 125);
 eq('solo rank 1', solo[0].rank, 1);
 
+// ============================================================================
+// BINARY POLL scoring
+const { roomSplitA, splitPoints, splitTier, rankBinaryVotes, K_BIN, BONUS: B_BONUS, PENALTY: B_PENALTY } = require('./scoring');
+
+// ---- roomSplitA ----
+eq('split 3 of 4 picked A = 75', roomSplitA([{pick:'A'},{pick:'A'},{pick:'A'},{pick:'B'}]), 75);
+eq('split unanimous A = 100', roomSplitA([{pick:'A'},{pick:'A'}]), 100);
+eq('split unanimous B = 0', roomSplitA([{pick:'B'},{pick:'B'}]), 0);
+eq('split tie = 50', roomSplitA([{pick:'A'},{pick:'B'}]), 50);
+eq('split empty = null', roomSplitA([]), null);
+eq('split rounds (1 of 3) = 33', roomSplitA([{pick:'A'},{pick:'B'},{pick:'B'}]), 33);
+
+// ---- splitPoints: exp k=0.035, +25 bullseye<=3, -10 penalty>35, floored at 0 ----
+eq('split exact = 125', splitPoints(75, 75), 125);
+eq('split 3 off = bonus band', splitPoints(72, 75), Math.round(100*Math.exp(-3*K_BIN)+B_BONUS));
+eq('split 4 off no bonus', splitPoints(71, 75), Math.round(100*Math.exp(-4*K_BIN)));
+eq('split 10 off', splitPoints(60, 50), Math.round(100*Math.exp(-10*K_BIN)));
+eq('split 35 off (no penalty yet)', splitPoints(85, 50), Math.round(100*Math.exp(-35*K_BIN)));
+eq('split 40 off = penalty applied', splitPoints(90, 50), Math.max(0, Math.round(100*Math.exp(-40*K_BIN)) - B_PENALTY));
+eq('split predict 100 on unanimous = bullseye 125', splitPoints(100, 100), 125);
+eq('split never negative (floored at 0)', splitPoints(0, 100) >= 0, true);
+eq('split sign independence', splitPoints(60, 50), splitPoints(40, 50));
+
+// ---- splitTier ----
+eq('split tier bullseye', splitTier(2), 'bullseye');
+eq('split tier bullseye edge', splitTier(3), 'bullseye');
+eq('split tier sharp', splitTier(6), 'sharp');
+eq('split tier sharp edge', splitTier(8), 'sharp');
+eq('split tier close', splitTier(15), 'close');
+eq('split tier close edge', splitTier(18), 'close');
+eq('split tier off', splitTier(25), 'off');
+eq('split tier off edge', splitTier(30), 'off');
+eq('split tier wayoff', splitTier(31), 'wayoff');
+
+// ---- rankBinaryVotes: ranking + tie-break + annotations ----
+const bsample = [
+  { user:'A', pick:'A', predict_split:60, locked_at:100 }, // actual 75 -> err 15
+  { user:'B', pick:'A', predict_split:70, locked_at:120 }, // err 5
+  { user:'C', pick:'B', predict_split:70, locked_at:90  }, // err 5, earlier than B
+  { user:'D', pick:'B', predict_split:20, locked_at:110 }, // err 55
+];
+const actualA = roomSplitA(bsample); // 50 (2 A, 2 B)
+eq('bsample actual split = 50', actualA, 50);
+const branked = rankBinaryVotes(bsample, actualA);
+// errors from 50: A|60-50|=10, B|70-50|=20, C|70-50|=20, D|20-50|=30
+eq('binary rank order', branked.map(r=>r.user), ['A','C','B','D']);
+eq('binary winner A', branked[0].user, 'A');
+approx('binary A err 10', branked[0].err, 10);
+eq('binary annotates tier', branked[0].tier, 'close');
+eq('binary annotates points', branked[0].points, splitPoints(60, 50));
+eq('binary tie -> earliest lock (C before B)', branked[1].user, 'C');
+
+// binary solo exact
+const bsolo = rankBinaryVotes([{user:'X', pick:'A', predict_split:100, locked_at:1}], 100);
+eq('binary solo exact bullseye', bsolo[0].tier, 'bullseye');
+eq('binary solo exact 125', bsolo[0].points, 125);
+eq('binary solo rank 1', bsolo[0].rank, 1);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -93,6 +93,31 @@ async function freshDb() {
   const v1b = await db.get("SELECT taste FROM votes WHERE id='v1'");
   ok('0-9: re-run does not double-shift', Number(v1b.taste) === 5, 'taste=' + v1b.taste);
 
+  // 5. Migration 003 (binary poll): fresh DB has poll_type + A/B + pick/split columns,
+  //    and re-running is idempotent.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init();
+  const applied3 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('003_binary_poll applied', applied3.includes('003_binary_poll'), JSON.stringify(applied3));
+  const sescols = (await db.all('PRAGMA table_info(sessions)', [])).map(c => c.name);
+  ok('sessions.poll_type created', sescols.includes('poll_type'));
+  const rndcols = (await db.all('PRAGMA table_info(rounds)', [])).map(c => c.name);
+  ok('rounds.option_b_title created', rndcols.includes('option_b_title'));
+  ok('rounds.option_b_artist created', rndcols.includes('option_b_artist'));
+  ok('rounds.split_a created', rndcols.includes('split_a'));
+  const votcols = (await db.all('PRAGMA table_info(votes)', []));
+  const votNames = votcols.map(c => c.name);
+  ok('votes.pick created', votNames.includes('pick'));
+  ok('votes.predict_split created', votNames.includes('predict_split'));
+  // Binary votes leave taste/predict null, so those must be nullable.
+  const tasteCol = votcols.find(c => c.name === 'taste');
+  ok('votes.taste is nullable (binary votes leave it null)', tasteCol && Number(tasteCol.notnull) === 0, 'notnull=' + (tasteCol && tasteCol.notnull));
+  await db.init();
+  const applied3b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('003 idempotent (not duplicated)', applied3b.filter(x => x === '003_binary_poll').length === 1, JSON.stringify(applied3b));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

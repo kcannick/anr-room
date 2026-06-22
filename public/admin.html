@@ -101,6 +101,14 @@
     <div><label>Session name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Session"></div>
     <div><label>Default voting window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
     <div>
+      <label>Game type</label>
+      <select id="newPollType" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+        <option value="rating">Rating (0–9) — rate a song, predict the room average</option>
+        <option value="binary">Head-to-head (Verzuz) — Song A vs B, predict the split</option>
+      </select>
+      <div class="muted" style="font-size:12px;margin-top:6px">Set once at creation — every round in the session uses this type.</div>
+    </div>
+    <div>
       <label>When</label>
       <select id="newWhen" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
         <option value="live">Start now (live)</option>
@@ -129,12 +137,16 @@
     </div>
 
     <div class="card">
-      <h2>Queue a song</h2>
+      <h2 id="queueFormTitle">Queue a song</h2>
       <div class="stack">
-        <div><label>Song title *</label><input id="rTitle" placeholder="Song name"></div>
+        <div><label id="rTitleLabel">Song title *</label><input id="rTitle" placeholder="Song name"></div>
         <div class="row">
-          <div><label>Artist</label><input id="rArtist" placeholder="optional"></div>
+          <div><label id="rArtistLabel">Artist</label><input id="rArtist" placeholder="optional"></div>
           <div><label>Giveaway this round</label><input id="rGive" placeholder="optional prize"></div>
+        </div>
+        <div id="songBRow" class="hide" style="border-top:1px solid var(--line);padding-top:12px;margin-top:2px">
+          <div><label>Song B title *</label><input id="rBTitle" placeholder="The other side"></div>
+          <div style="margin-top:10px"><label>Song B artist</label><input id="rBArtist" placeholder="optional"></div>
         </div>
         <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
         <button class="btn" id="btnAddRound">Add to queue</button>
@@ -227,12 +239,16 @@
 <!-- EDIT SONG MODAL -->
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
   <div class="card" style="max-width:440px;width:100%">
-    <h2>Edit song</h2>
+    <h2 id="editTitle">Edit song</h2>
     <div class="stack">
-      <div><label>Song title *</label><input id="eTitle"></div>
+      <div><label id="eTitleLabel">Song title *</label><input id="eTitle"></div>
       <div class="row">
-        <div><label>Artist</label><input id="eArtist"></div>
+        <div><label id="eArtistLabel">Artist</label><input id="eArtist"></div>
         <div><label>Giveaway</label><input id="eGive"></div>
+      </div>
+      <div id="eSongBRow" class="hide" style="border-top:1px solid var(--line);padding-top:12px">
+        <div><label>Song B title *</label><input id="eBTitle"></div>
+        <div style="margin-top:10px"><label>Song B artist</label><input id="eBArtist"></div>
       </div>
       <div><label>Note for players</label><textarea id="eNote"></textarea></div>
       <div class="row">
@@ -248,6 +264,7 @@
 const $=s=>document.querySelector(s);
 let SID=localStorage.getItem('rt_admin_sid'), ATOK=localStorage.getItem('rt_admin_token');
 let AUTHTOK=localStorage.getItem('rt_auth_token'), ME=null;
+let adminPollType='rating'; // set from session state; drives the binary admin UI branches
 let poll=null, serverSkew=0, lastState=null;
 
 async function api(path,body,method='POST'){
@@ -347,7 +364,7 @@ $('#btnCreate').onclick=async()=>{
   if(!Number.isFinite(mins))mins=5;
   mins=Math.min(60,Math.max(2,mins));
   const when=$('#newWhen').value;
-  const body={name,defaultMinutes:mins};
+  const body={name,defaultMinutes:mins,pollType:($('#newPollType')?$('#newPollType').value:'rating')};
   if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=new Date(sv).getTime();}
   try{
     const d=await api('/api/session',body);
@@ -363,10 +380,17 @@ $('#btnCreate').onclick=async()=>{
 $('#btnAddRound').onclick=async()=>{
   $('#addErr').textContent='';
   const song_title=$('#rTitle').value.trim();
-  if(!song_title)return $('#addErr').textContent='Song title is required';
+  if(!song_title)return $('#addErr').textContent=(adminPollType==='binary'?'Song A title is required':'Song title is required');
+  const payload={sessionId:SID,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim()};
+  if(adminPollType==='binary'){
+    const b=$('#rBTitle').value.trim();
+    if(!b)return $('#addErr').textContent='Song B title is required';
+    payload.option_b_title=b;payload.option_b_artist=$('#rBArtist').value.trim();
+  }
   try{
-    await api('/api/admin/round',{sessionId:SID,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim()});
+    await api('/api/admin/round',payload);
     $('#rTitle').value='';$('#rArtist').value='';$('#rNote').value='';$('#rGive').value='';
+    if($('#rBTitle')){$('#rBTitle').value='';$('#rBArtist').value='';}
     refresh();
   }catch(e){$('#addErr').textContent=e.message;}
 };
@@ -435,8 +459,8 @@ function roundControls(st){
   }
   box.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center">
       <div><div class="muted" style="font-size:12px">Round ${r.idx}</div>
-      <div style="font-size:18px;font-weight:600">${esc(r.song_title)}</div>
-      <div class="muted" style="font-size:13px">${esc(r.song_artist||'')}</div></div>${statusPill}</div>
+      <div style="font-size:18px;font-weight:600">${r.option_b_title?esc(r.song_title)+' <span style="color:var(--cool)">vs</span> '+esc(r.option_b_title):esc(r.song_title)}</div>
+      <div class="muted" style="font-size:13px">${r.option_b_title?(esc(r.song_artist||'')+(r.option_b_artist?' / '+esc(r.option_b_artist):'')):esc(r.song_artist||'')}</div></div>${statusPill}</div>
       ${r.giveaway?`<div style="color:var(--good);font-size:13px;margin-top:8px">🎁 ${esc(r.giveaway)}</div>`:''}
       ${timer}<div class="stack" style="margin-top:12px">${actions}</div>`;
 }
@@ -455,7 +479,7 @@ function queueBox(st){
     </div>`+
     q.map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;${i===0?'border-color:var(--signal)':''}">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.song_title)}</div>
+          <div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.option_b_title?esc(r.song_title)+' vs '+esc(r.option_b_title):esc(r.song_title)}</div>
           <div class="muted" style="font-size:12px">${esc(r.song_artist||'')}${r.giveaway?' · 🎁 '+esc(r.giveaway):''}</div>
         </div>
         <button class="btn ghost sm" title="Edit" onclick="editRound('${r.id}')">✎</button>
@@ -468,8 +492,18 @@ function queueBox(st){
 
 function reviewBox(st){
   const box=$('#reviewBox');
+  const isBin = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary'));
   if(st.ratifiedResults&&st.activeRound&&st.activeRound.status==='ratified'){
     const rows=st.ratifiedResults;
+    if(isBin){
+      const A=st.activeRound.split_a;
+      const splitTxt = A!=null ? `Song A ${Math.round(A)}% · Song B ${100-Math.round(A)}%` : '—';
+      box.innerHTML=`<p style="margin:0 0 10px"><strong>Result: <span class="mono" style="color:var(--cool)">${splitTxt}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
+        <table><thead><tr><th>#</th><th>Name</th><th class="mono">Pick</th><th class="mono">Guess A%</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
+        ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${r.pick||'—'}</td><td class="mono">${r.predict_split!=null?Math.round(r.predict_split)+'%':'—'}</td><td class="mono muted">${r.err!=null?Math.round(r.err):'—'}</td><td class="mono" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
+        </tbody></table>`;
+      return;
+    }
     box.innerHTML=`<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(st.activeRound.room_average)}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
       <table><thead><tr><th>#</th><th>Name</th><th class="mono">Guess</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
       ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${(+r.predict).toFixed(1)}</td><td class="mono muted">${(+r.err).toFixed(1)}</td><td class="mono" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
@@ -484,7 +518,14 @@ function reviewBox(st){
 
 function render(st){
   lastState=st;
-  $('#who').textContent=st.session.name+' · '+st.session.status;
+  adminPollType = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary')) ? 'binary' : 'rating';
+  const isBin = adminPollType==='binary';
+  // Queue form adapts to the session's game type.
+  $('#songBRow').classList.toggle('hide', !isBin);
+  $('#queueFormTitle').textContent = isBin ? 'Queue a matchup' : 'Queue a song';
+  $('#rTitleLabel').textContent = isBin ? 'Song A title *' : 'Song title *';
+  $('#rArtistLabel').textContent = isBin ? 'Song A artist' : 'Artist';
+  $('#who').textContent=st.session.name+' · '+st.session.status+(isBin?' · ⚔️ Head-to-head':'');
   // lifecycle controls reflect current status
   const stx=st.session.status;
   $('#sessStatus').textContent={upcoming:'Upcoming',live:'Live',completed:'Completed',archived:'Archived'}[stx]||stx;
@@ -505,8 +546,16 @@ function render(st){
   const feed=$('#feed');
   if(st.liveVotes.length){
     $('#feedCount').textContent='('+st.liveVotes.length+')';
-    feed.innerHTML='<table><thead><tr><th>Name</th><th class="mono">Rated</th><th class="mono">Predicts</th></tr></thead><tbody>'+
-      st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono">${v.taste}</td><td class="mono" style="color:var(--signal)">${(+v.predict).toFixed(1)}</td></tr>`).join('')+'</tbody></table>';
+    if(isBin){
+      const splitHdr = st.liveSplit!=null
+        ? `<div style="margin:0 0 8px;font-size:13px"><strong style="color:var(--signal)">A ${st.liveSplit}%</strong> · <strong style="color:var(--cool)">${100-st.liveSplit}% B</strong> <span class="muted">(so far)</span></div>`
+        : '';
+      feed.innerHTML=splitHdr+'<table><thead><tr><th>Name</th><th class="mono">Pick</th><th class="mono">Predicts A%</th></tr></thead><tbody>'+
+        st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono" style="color:${v.pick==='A'?'var(--signal)':'var(--cool)'}">${v.pick}</td><td class="mono" style="color:var(--signal)">${v.predict_split!=null?Math.round(v.predict_split)+'%':'—'}</td></tr>`).join('')+'</tbody></table>';
+    }else{
+      feed.innerHTML='<table><thead><tr><th>Name</th><th class="mono">Rated</th><th class="mono">Predicts</th></tr></thead><tbody>'+
+        st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono">${v.taste}</td><td class="mono" style="color:var(--signal)">${(+v.predict).toFixed(1)}</td></tr>`).join('')+'</tbody></table>';
+    }
   }else{$('#feedCount').textContent='';feed.innerHTML='<div class="empty">No votes yet.</div>';}
   // board
   const b=$('#board');
@@ -607,7 +656,13 @@ function findRound(rid){
 window.editRound=(rid)=>{
   const r=findRound(rid);if(!r)return;
   editingId=rid;
+  const isBin = adminPollType==='binary';
+  $('#editTitle').textContent = isBin ? 'Edit matchup' : 'Edit song';
+  $('#eTitleLabel').textContent = isBin ? 'Song A title *' : 'Song title *';
+  $('#eArtistLabel').textContent = isBin ? 'Song A artist' : 'Artist';
+  $('#eSongBRow').classList.toggle('hide', !isBin);
   $('#eTitle').value=r.song_title||'';$('#eArtist').value=r.song_artist||'';
+  if(isBin){$('#eBTitle').value=r.option_b_title||'';$('#eBArtist').value=r.option_b_artist||'';}
   $('#eGive').value=r.giveaway||'';$('#eNote').value=r.song_note||'';$('#eErr').textContent='';
   $('#editModal').style.display='flex';
 };
@@ -616,9 +671,15 @@ $('#editModal').onclick=(e)=>{if(e.target===$('#editModal')){$('#editModal').sty
 $('#eSave').onclick=async()=>{
   $('#eErr').textContent='';
   const title=$('#eTitle').value.trim();
-  if(!title)return $('#eErr').textContent='Song title is required';
+  if(!title)return $('#eErr').textContent=(adminPollType==='binary'?'Song A title is required':'Song title is required');
+  const payload={sessionId:SID,roundId:editingId,song_title:title,song_artist:$('#eArtist').value.trim(),song_note:$('#eNote').value.trim(),giveaway:$('#eGive').value.trim()};
+  if(adminPollType==='binary'){
+    const b=$('#eBTitle').value.trim();
+    if(!b)return $('#eErr').textContent='Song B title is required';
+    payload.option_b_title=b;payload.option_b_artist=$('#eBArtist').value.trim();
+  }
   try{
-    await api('/api/admin/round/edit',{sessionId:SID,roundId:editingId,song_title:title,song_artist:$('#eArtist').value.trim(),song_note:$('#eNote').value.trim(),giveaway:$('#eGive').value.trim()});
+    await api('/api/admin/round/edit',payload);
     $('#editModal').style.display='none';editingId=null;refresh();
   }catch(e){$('#eErr').textContent=e.message;}
 };

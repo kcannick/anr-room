@@ -56,7 +56,66 @@ function rankVotes(votes, roomAvg) {
     .map((v, i) => ({ ...v, rank: i + 1 }));
 }
 
+// ============================================================================
+// BINARY POLL ("Verzuz" mode) — a SECOND poll type, additive. The rating
+// functions above are untouched.
+//
+// A binary round pits Song A vs Song B. Players pick a side, then predict how the
+// ROOM will split (A's %, 0..100, since B = 100 - A). Only the predicted split is
+// scored — same "read the room" shape as the rating game, on a 0..100 scale.
+// Same exponential-falloff curve family, re-tuned for the wider scale.
+//   base   = 100 * e^(-error * K_BIN)        K_BIN = 0.035
+//   bonus  = +25 when error <= BULLSEYE_BIN  (3 points)   [reuses BONUS]
+//   penalty= -10 when error  > FAR_BIN       (35 points)  [reuses PENALTY]
+// Constants are prototype-tuned, not data-tuned — calibrate on the first Verzuz event.
+const K_BIN = 0.035;
+const BULLSEYE_BIN = 3;   // within 3 percentage points of the actual split => bonus
+const FAR_BIN = 35;       // more than 35 points off => penalty
+
+// Actual room split: % of locked votes that picked A, rounded to 0..100.
+// (B's share is 100 - A.) Empty round => null (no scores, like an empty rating round).
+function roomSplitA(votes) {
+  if (!votes.length) return null;
+  const a = votes.reduce((n, v) => n + (v.pick === 'A' ? 1 : 0), 0);
+  return Math.round(100 * (a / votes.length));
+}
+
+// Points for a single split prediction. error in percentage points (0..100).
+function splitPoints(predictSplit, actualA) {
+  const e = Math.abs(Number(predictSplit) - Number(actualA));
+  let pts = 100 * Math.exp(-e * K_BIN);
+  if (e <= BULLSEYE_BIN) pts += BONUS;
+  if (e > FAR_BIN) pts -= PENALTY;
+  return Math.max(0, Math.round(pts));
+}
+
+// Emotional tier for the binary results screen. Drives copy/animation, NOT the math.
+//   bullseye | sharp | close | off | wayoff  (error in points, 0..100 scale)
+function splitTier(error) {
+  const e = Math.abs(error);
+  if (e <= 3) return 'bullseye';
+  if (e <= 8) return 'sharp';
+  if (e <= 18) return 'close';
+  if (e <= 30) return 'off';
+  return 'wayoff';
+}
+
+// Rank binary votes: closest split prediction first. Tie on error -> earliest lock.
+// Returns votes annotated with { err, points, tier, rank }.
+function rankBinaryVotes(votes, actualA) {
+  return [...votes]
+    .map(v => {
+      const err = Math.abs(Number(v.predict_split) - Number(actualA));
+      return { ...v, err, points: splitPoints(v.predict_split, actualA), tier: splitTier(err) };
+    })
+    .sort((a, b) => (a.err - b.err) || (a.locked_at - b.locked_at))
+    .map((v, i) => ({ ...v, rank: i + 1 }));
+}
+
 module.exports = {
   roomAverage, accuracyPoints, pointsForError, tierForError, rankVotes,
   K, BULLSEYE, BONUS, FAR, PENALTY,
+  // binary
+  roomSplitA, splitPoints, splitTier, rankBinaryVotes,
+  K_BIN, BULLSEYE_BIN, FAR_BIN,
 };

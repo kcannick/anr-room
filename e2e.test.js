@@ -435,6 +435,118 @@ async function call(path, body, method='POST', headers={}) {
   const noauth = await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', {});
   ok('admin state requires token', noauth.status === 401);
 
+  // ======================================================================
+  // BINARY POLL ("Verzuz" mode) — a SECOND poll type. Self-contained: its own
+  // session, players, round, votes, ratify, results, recap, and export.
+  // ======================================================================
+  console.log('\n— binary poll: create a binary session —');
+  const bcs = await call('/api/session', { name: 'Verzuz Night', pollType: 'binary' });
+  ok('binary session created', bcs.status === 200 && bcs.d.sessionId, JSON.stringify(bcs.d));
+  ok('create echoes pollType=binary', bcs.d.pollType === 'binary', 'got ' + bcs.d.pollType);
+  const BSID = bcs.d.sessionId, BATOK = bcs.d.adminToken;
+  const BAH = { 'X-Admin-Token': BATOK };
+
+  let bst = (await call(`/api/admin/state?sessionId=${BSID}`, null, 'GET', BAH)).d;
+  ok('admin state reports poll_type=binary', bst.poll_type === 'binary', 'got ' + bst.poll_type);
+
+  console.log('\n— binary: four players join —');
+  async function bjoin(email, name) {
+    const req = await call('/api/join/request', { sessionId: BSID, email });
+    const ver = await call('/api/join/verify', { sessionId: BSID, email, code: req.d.devCode, name });
+    return ver.d.token;
+  }
+  const b1 = await bjoin('ba@test.com', 'Ann');   // pick A
+  const b2 = await bjoin('bb@test.com', 'Ben');   // pick A
+  const b3 = await bjoin('bc@test.com', 'Cleo');  // pick B
+  const b4 = await bjoin('bd@test.com', 'Dom');   // pick B
+  bst = (await call(`/api/admin/state?sessionId=${BSID}`, null, 'GET', BAH)).d;
+  ok('binary: 4 verified', bst.verifiedCount === 4, 'got ' + bst.verifiedCount);
+
+  console.log('\n— binary: round needs both A and B —');
+  const missB = await call('/api/admin/round', { sessionId: BSID, song_title: 'Only A' }, 'POST', BAH);
+  ok('binary round requires Song B', missB.status === 400, 'got ' + missB.status);
+  const bar = await call('/api/admin/round', { sessionId: BSID, song_title: 'Jay-Z', song_artist: 'HOV', option_b_title: 'Nas', option_b_artist: 'Nasir', giveaway: 'Tickets' }, 'POST', BAH);
+  ok('binary round added with A/B', bar.status === 200 && bar.d.roundId, JSON.stringify(bar.d));
+  const VBRID = bar.d.roundId;
+  const bop = await call('/api/admin/round/open', { sessionId: BSID, roundId: VBRID, minutes: 1 }, 'POST', BAH);
+  ok('binary round opened', bop.status === 200);
+
+  // Player sees the A/B labels + poll_type.
+  let bps = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': b1 })).d;
+  ok('binary player phase=voting', bps.phase === 'voting', bps.phase);
+  ok('binary player poll_type=binary', bps.poll_type === 'binary', bps.poll_type);
+  ok('binary player sees Song A title', bps.round.song_title === 'Jay-Z', bps.round.song_title);
+  ok('binary player sees Song B title', bps.round.option_b_title === 'Nas', bps.round.option_b_title);
+
+  console.log('\n— binary: votes (2 pick A, 2 pick B -> actual split A=50) —');
+  // Predicted splits: Ann 60 (err 10), Ben 70 (err 20), Cleo 50 (err 0 -> winner), Dom 20 (err 30)
+  const bv1 = await call('/api/vote', { pick: 'A', predict_split: 60 }, 'POST', { 'X-Player-Token': b1 });
+  await new Promise(r=>setTimeout(r,5));
+  const bv2 = await call('/api/vote', { pick: 'A', predict_split: 70 }, 'POST', { 'X-Player-Token': b2 });
+  const bv3 = await call('/api/vote', { pick: 'B', predict_split: 50 }, 'POST', { 'X-Player-Token': b3 });
+  const bv4 = await call('/api/vote', { pick: 'B', predict_split: 20 }, 'POST', { 'X-Player-Token': b4 });
+  ok('binary vote 1 locked', bv1.d.locked === true, JSON.stringify(bv1.d));
+  ok('binary vote 3 locked', bv3.d.locked === true, JSON.stringify(bv3.d));
+
+  // Cross-shaped votes rejected both ways.
+  const wrongShape = await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': b1 });
+  ok('rating-shaped vote rejected on binary session', wrongShape.status === 400, 'got ' + wrongShape.status);
+  const badPick = await call('/api/join/verify', { sessionId: BSID, email: 'be@test.com', code: (await call('/api/join/request', { sessionId: BSID, email: 'be@test.com' })).d.devCode, name: 'Eve' });
+  const noSide = await call('/api/vote', { predict_split: 50 }, 'POST', { 'X-Player-Token': badPick.d.token });
+  ok('binary vote without a pick rejected', noSide.status === 400, 'got ' + noSide.status);
+
+  // Admin live split preview.
+  bst = (await call(`/api/admin/state?sessionId=${BSID}`, null, 'GET', BAH)).d;
+  ok('admin sees binary live votes', bst.liveVotes.length === 4, 'got ' + bst.liveVotes.length);
+  ok('admin live votes carry pick', bst.liveVotes.every(v => v.pick === 'A' || v.pick === 'B'), JSON.stringify(bst.liveVotes[0]));
+  ok('admin live split = 50 (2 of 4 A)', bst.liveSplit === 50, 'got ' + bst.liveSplit);
+
+  console.log('\n— binary: ratify -> split + scoring —');
+  const brat = await call('/api/admin/round/ratify', { sessionId: BSID, roundId: VBRID }, 'POST', BAH);
+  ok('binary ratify ok', brat.status === 200, JSON.stringify(brat.d));
+  ok('binary ratify reports poll_type', brat.d.poll_type === 'binary', brat.d.poll_type);
+  ok('binary actual split A = 50', brat.d.split_a === 50, 'got ' + brat.d.split_a);
+  ok('binary ratify room_average null', brat.d.room_average === null, 'got ' + brat.d.room_average);
+
+  console.log('\n— binary: results (Cleo exact split wins) —');
+  const bm3 = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': b3 })).d;
+  ok('binary player phase=results', bm3.phase === 'results', bm3.phase);
+  ok('binary winner is Cleo (exact split)', bm3.winner && bm3.winner.name === 'Cleo', JSON.stringify(bm3.winner));
+  ok('binary Cleo rank 1', bm3.myResult.rank === 1, 'rank ' + bm3.myResult.rank);
+  ok('binary Cleo exact = 125 pts', bm3.myResult.points === 125, 'pts ' + bm3.myResult.points);
+  ok('binary Cleo tier = bullseye', bm3.myResult.tier === 'bullseye', 'tier ' + bm3.myResult.tier);
+  ok('binary result carries pick', bm3.myResult.pick === 'B', 'pick ' + bm3.myResult.pick);
+  ok('binary result carries predict_split', bm3.myResult.predict_split === 50, 'split ' + bm3.myResult.predict_split);
+  // BLIND: actual split not leaked mid-session.
+  ok('BLIND: split_a not leaked to players mid-session', bm3.round.split_a === undefined, 'leaked ' + bm3.round.split_a);
+  ok('BLIND: exact err not leaked mid-session', bm3.myResult.err === undefined, 'leaked ' + bm3.myResult.err);
+
+  const bm1 = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': b1 })).d;
+  ok('binary Ann (err 10) gets close/positive points', bm1.myResult.points > 0 && bm1.myResult.tier, JSON.stringify(bm1.myResult));
+
+  console.log('\n— binary: export carries pick/split columns —');
+  const bExpJson = await fetch(base + `/api/admin/export?sessionId=${BSID}&format=json`, { headers: BAH }).then(r => r.json());
+  ok('binary export poll_type=binary', bExpJson.session.poll_type === 'binary', JSON.stringify(bExpJson.session.poll_type));
+  ok('binary export votes have pick', bExpJson.votes.every(v => v.pick === 'A' || v.pick === 'B'), JSON.stringify(bExpJson.votes[0]));
+  ok('binary export votes have predict_split', bExpJson.votes.every(v => typeof v.predict_split === 'number'), JSON.stringify(bExpJson.votes[0]));
+  ok('binary export rounds have split_a', bExpJson.rounds.every(r => typeof r.split_a === 'number'), JSON.stringify(bExpJson.rounds[0]));
+  ok('binary export rounds carry both songs', bExpJson.rounds[0].song_a_title === 'Jay-Z' && bExpJson.rounds[0].song_b_title === 'Nas', JSON.stringify(bExpJson.rounds[0]));
+  const bCsv = await fetch(base + `/api/admin/export?sessionId=${BSID}&format=csv`, { headers: BAH }).then(r => r.text());
+  ok('binary CSV header has pick + predict_split + split_a', /pick/.test(bCsv) && /predict_split/.test(bCsv) && /split_a/.test(bCsv), bCsv.split('\n')[0]);
+
+  console.log('\n— binary: end session -> recap (no 0-9 grade, split-based) —');
+  await call('/api/admin/session/end', { sessionId: BSID }, 'POST', BAH);
+  const brecap = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': b3 })).d;
+  ok('binary phase is recap', brecap.phase === 'recap', brecap.phase);
+  ok('binary recap poll_type=binary', brecap.recap.poll_type === 'binary', brecap.recap.poll_type);
+  ok('binary recap has total points', typeof brecap.recap.totalPoints === 'number');
+  ok('binary recap has overallSplitA', typeof brecap.recap.overallSplitA === 'number', 'got ' + brecap.recap.overallSplitA);
+  ok('binary recap omits 0-9 letter grade', brecap.recap.grade == null, 'grade ' + brecap.recap.grade);
+
+  console.log('\n— rating game untouched: original session still rating —');
+  const ratingStillWorks = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
+  ok('original session is rating type', ratingStillWorks.poll_type === 'rating', ratingStillWorks.poll_type);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

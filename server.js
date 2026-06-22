@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 const { sendOtp } = require('./email');
-const { roomAverage, rankVotes } = require('./scoring');
+const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes } = require('./scoring');
 
 const PORT = process.env.PORT || 3000;
 const now = () => Date.now();
@@ -164,21 +164,24 @@ function gradeForAvgError(avgErr) {
 // when the session has ended.
 async function buildRecap(participant) {
   const sessionId = participant.session_id;
+  const session = await db.get('SELECT poll_type FROM sessions WHERE id = ?', [sessionId]);
+  const isBinary = session && session.poll_type === 'binary';
   // The player's own results across all ratified rounds.
   const mine = await db.all(
-    `SELECT v.points, v.err, v.rank, v.tier, r.idx, r.song_title, r.room_average
+    `SELECT v.points, v.err, v.rank, v.tier, r.idx, r.song_title, r.room_average, r.split_a
      FROM votes v JOIN rounds r ON r.id = v.round_id
      WHERE v.participant_id = ? AND r.status = 'ratified' ORDER BY r.idx ASC`,
     [participant.id]
   );
   const roundsPlayed = mine.length;
   const totalRounds = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [sessionId])).c;
-  // Overall room average across all songs (the "how the room felt" number).
+  // "How the room felt" number: average rating (rating game) or average A-share (binary).
+  const avgCol = isBinary ? 'split_a' : 'room_average';
   const avgRow = await db.get(
-    "SELECT AVG(room_average) AS a FROM rounds WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL",
+    `SELECT AVG(${avgCol}) AS a FROM rounds WHERE session_id = ? AND status = 'ratified' AND ${avgCol} IS NOT NULL`,
     [sessionId]
   );
-  const overallRoomAvg = avgRow && avgRow.a != null ? Number(avgRow.a) : null;
+  const overallRoom = avgRow && avgRow.a != null ? Number(avgRow.a) : null;
 
   let avgErr = null, bullseyes = 0, best = null;
   if (roundsPlayed) {
@@ -199,38 +202,59 @@ async function buildRecap(participant) {
     rank = sortedDesc.findIndex(p => p.id === participant.id) + 1;
   }
 
-  return {
+  const recap = {
     name: participant.name,
+    poll_type: isBinary ? 'binary' : 'rating',
     totalPoints: mineTotal,
     roundsPlayed,
     totalRounds,
     avgErr: avgErr != null ? Math.round(avgErr * 10) / 10 : null,
-    grade: gradeForAvgError(avgErr),
     bullseyes,
-    overallRoomAvg: overallRoomAvg != null ? Math.round(overallRoomAvg * 10) / 10 : null,
     rank, fieldSize,
     percentile,
     best: best ? { idx: best.idx, song_title: best.song_title, points: best.points } : null,
   };
+  if (isBinary) {
+    // Binary: errors are on a 0–100 scale, so the 0–9 letter grade doesn't apply.
+    // Surface the average A-share instead of the average rating.
+    recap.overallSplitA = overallRoom != null ? Math.round(overallRoom) : null;
+    recap.grade = null;
+  } else {
+    recap.grade = gradeForAvgError(avgErr);
+    recap.overallRoomAvg = overallRoom != null ? Math.round(overallRoom * 10) / 10 : null;
+  }
+  return recap;
 }
 
 async function playerState(participant) {
   const sessionId = participant.session_id;
-  const session = await db.get('SELECT id, name, status, banner_id FROM sessions WHERE id = ?', [sessionId]);
+  const session = await db.get('SELECT id, name, status, banner_id, poll_type FROM sessions WHERE id = ?', [sessionId]);
+  const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
+  const isBinary = pollType === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
   const round = await activeRound(sessionId);
 
   let view = { phase: 'waiting' }; // waiting | voting | locked | results
   if (round) {
     const myVote = await db.get('SELECT * FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
+    // Shape a round object for the player, carrying the A/B labels on binary rounds.
+    const roundBase = {
+      idx: round.idx, song_title: round.song_title, song_artist: round.song_artist,
+      song_note: round.song_note, giveaway: round.giveaway, closes_at: round.closes_at,
+    };
+    if (isBinary) { roundBase.option_b_title = round.option_b_title; roundBase.option_b_artist = round.option_b_artist; }
+    const myVoteShape = (v) => v
+      ? (isBinary ? { pick: v.pick, predict_split: v.predict_split } : { taste: v.taste, predict: v.predict })
+      : null;
+
     if (round.status === 'voting') {
       view = {
         phase: myVote ? 'locked' : 'voting',
-        round: { idx: round.idx, song_title: round.song_title, song_artist: round.song_artist, song_note: round.song_note, giveaway: round.giveaway, closes_at: round.closes_at },
-        myVote: myVote ? { taste: myVote.taste, predict: myVote.predict } : null,
+        round: roundBase,
+        myVote: myVoteShape(myVote),
       };
     } else if (round.status === 'closed') {
-      view = { phase: 'locked', round: { idx: round.idx, song_title: round.song_title }, tallying: true, myVote: myVote ? { taste: myVote.taste, predict: myVote.predict } : null };
+      view = { phase: 'locked', round: { idx: round.idx, song_title: round.song_title, ...(isBinary ? { option_b_title: round.option_b_title } : {}) }, tallying: true, myVote: myVoteShape(myVote) };
     } else if (round.status === 'ratified') {
       const ranked = await db.all('SELECT * FROM votes WHERE round_id = ? ORDER BY rank ASC', [round.id]);
       const mine = ranked.find(v => v.participant_id === participant.id);
@@ -238,13 +262,19 @@ async function playerState(participant) {
         ? await db.get('SELECT name FROM participants WHERE id = ?', [ranked[0].participant_id])
         : null;
       // FULLY BLIND during the session: players see their points, rank, and reaction
-      // tier — but NOT the room average, NOT their exact "off by", NOT the winner's
-      // guess. The answer is saved for the end-of-session recap reveal.
+      // tier — but NOT the room average / split, NOT their exact "off by", NOT the
+      // winner's guess. The answer is saved for the end-of-session recap reveal.
+      const resultRound = { idx: round.idx, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway };
+      if (isBinary) { resultRound.option_b_title = round.option_b_title; resultRound.option_b_artist = round.option_b_artist; }
       view = {
         phase: 'results',
-        round: { idx: round.idx, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway },
+        round: resultRound,
         winner: ranked[0] ? { name: winner ? winner.name : 'Someone' } : null,
-        myResult: mine ? { taste: mine.taste, predict: mine.predict, points: mine.points, rank: mine.rank, tier: mine.tier } : null,
+        myResult: mine
+          ? (isBinary
+              ? { pick: mine.pick, predict_split: mine.predict_split, points: mine.points, rank: mine.rank, tier: mine.tier }
+              : { taste: mine.taste, predict: mine.predict, points: mine.points, rank: mine.rank, tier: mine.tier })
+          : null,
         totalPlayers: ranked.length,
       };
     } else {
@@ -253,7 +283,8 @@ async function playerState(participant) {
   }
 
   const out = {
-    session: { name: session.name, status: session.status },
+    session: { name: session.name, status: session.status, poll_type: pollType },
+    poll_type: pollType,
     me: { name: participant.name, email: participant.email, total_points: participant.total_points },
     myTotalPoints: participant.total_points,
     participants: count,
@@ -274,24 +305,43 @@ async function playerState(participant) {
 
 async function adminState(session) {
   const sessionId = session.id;
+  const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
+  const isBinary = pollType === 'binary';
   const participants = await db.all('SELECT id, name, email, verified, total_points FROM participants WHERE session_id = ? ORDER BY total_points DESC, created_at ASC', [sessionId]);
   const rounds = await db.all('SELECT * FROM rounds WHERE session_id = ? ORDER BY idx ASC', [sessionId]);
   const round = await activeRound(sessionId);
   let liveVotes = [];
   if (round && (round.status === 'voting' || round.status === 'closed')) {
-    liveVotes = await db.all(
-      `SELECT v.taste, v.predict, v.locked_at, p.name FROM votes v
-       JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.locked_at ASC`,
-      [round.id]
-    );
+    liveVotes = isBinary
+      ? await db.all(
+          `SELECT v.pick, v.predict_split, v.locked_at, p.name FROM votes v
+           JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.locked_at ASC`,
+          [round.id]
+        )
+      : await db.all(
+          `SELECT v.taste, v.predict, v.locked_at, p.name FROM votes v
+           JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.locked_at ASC`,
+          [round.id]
+        );
+  }
+  // Live A/B split preview (binary only) — what % of locked votes have picked A so far.
+  let liveSplit = null;
+  if (isBinary && round && (round.status === 'voting' || round.status === 'closed')) {
+    liveSplit = roomSplitA(liveVotes);
   }
   let ratifiedResults = null;
   if (round && round.status === 'ratified') {
-    ratifiedResults = await db.all(
-      `SELECT v.rank, v.taste, v.predict, v.err, v.points, v.tier, p.name FROM votes v
-       JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC`,
-      [round.id]
-    );
+    ratifiedResults = isBinary
+      ? await db.all(
+          `SELECT v.rank, v.pick, v.predict_split, v.err, v.points, v.tier, p.name FROM votes v
+           JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC`,
+          [round.id]
+        )
+      : await db.all(
+          `SELECT v.rank, v.taste, v.predict, v.err, v.points, v.tier, p.name FROM votes v
+           JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC`,
+          [round.id]
+        );
   }
   const queue = await queuedRounds(sessionId);
   const playedCount = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [sessionId])).c;
@@ -309,7 +359,8 @@ async function adminState(session) {
     isGlobalDefault: b.id === globalBannerId,
   }));
   return {
-    session: { id: session.id, name: session.name, status: session.status, admin_token: session.admin_token, banner_id: session.banner_id || null, default_minutes: session.default_minutes || DEFAULT_MINUTES },
+    session: { id: session.id, name: session.name, status: session.status, admin_token: session.admin_token, banner_id: session.banner_id || null, default_minutes: session.default_minutes || DEFAULT_MINUTES, poll_type: pollType },
+    poll_type: pollType,
     participants,
     verifiedCount: participants.filter(p => p.verified).length,
     rounds,
@@ -317,6 +368,7 @@ async function adminState(session) {
     playedCount,
     activeRound: round || null,
     liveVotes,
+    liveSplit,
     ratifiedResults,
     banners,
     globalBannerId,
@@ -324,22 +376,39 @@ async function adminState(session) {
   };
 }
 
-// ---------- ratify: compute room avg, points, ranks, bump totals ----------
+// ---------- ratify: compute result, points, ranks, bump totals ----------
 async function ratifyRound(round) {
+  const session = await db.get('SELECT poll_type FROM sessions WHERE id = ?', [round.session_id]);
+  const isBinary = session && session.poll_type === 'binary';
   return db.tx(async (tx) => {
     const votes = await tx.all('SELECT * FROM votes WHERE round_id = ?', [round.id]);
     if (!votes.length) {
+      if (isBinary) {
+        await tx.run("UPDATE rounds SET status = 'ratified', split_a = NULL WHERE id = ?", [round.id]);
+        return { ranked: [], split_a: null, poll_type: 'binary' };
+      }
       await tx.run("UPDATE rounds SET status = 'ratified', room_average = NULL WHERE id = ?", [round.id]);
-      return { ranked: [], room_average: null };
+      return { ranked: [], room_average: null, poll_type: 'rating' };
     }
-    const avg = roomAverage(votes);
-    const ranked = rankVotes(votes, avg);
+
+    let ranked, resultField;
+    if (isBinary) {
+      const actualA = roomSplitA(votes);
+      ranked = rankBinaryVotes(votes, actualA);
+      resultField = { split_a: actualA };
+      await tx.run("UPDATE rounds SET status = 'ratified', split_a = ? WHERE id = ?", [actualA, round.id]);
+    } else {
+      const avg = roomAverage(votes);
+      ranked = rankVotes(votes, avg);
+      resultField = { room_average: avg };
+      await tx.run("UPDATE rounds SET status = 'ratified', room_average = ? WHERE id = ?", [avg, round.id]);
+    }
     for (const v of ranked) {
       await tx.run('UPDATE votes SET points = ?, err = ?, tier = ?, rank = ? WHERE id = ?', [v.points, v.err, v.tier, v.rank, v.id]);
     }
-    await tx.run("UPDATE rounds SET status = 'ratified', room_average = ? WHERE id = ?", [avg, round.id]);
     // Bump each participant's running total by the points earned this round.
     // A round can be negative, but the cumulative leaderboard total never drops below 0.
+    // This rollup is poll-type-agnostic — it just sums vote points.
     for (const v of ranked) {
       await tx.run('UPDATE participants SET total_points = CASE WHEN total_points + ? < 0 THEN 0 ELSE total_points + ? END WHERE id = ?', [v.points, v.points, v.participant_id]);
       // Also accrue to the durable user's lifetime total (floored at 0), for cross-event stats.
@@ -347,7 +416,7 @@ async function ratifyRound(round) {
       // Count this round toward the user's lifetime rounds_voted (engagement stat).
       await tx.run('UPDATE users SET rounds_voted = rounds_voted + 1 WHERE uid = (SELECT user_id FROM participants WHERE id = ?)', [v.participant_id]);
     }
-    return { ranked, room_average: avg };
+    return { ranked, ...resultField, poll_type: isBinary ? 'binary' : 'rating' };
   });
 }
 
@@ -358,19 +427,21 @@ async function handleApi(req, res, url) {
 
   // ----- create session (admin bootstrap) -----
   if (p === '/api/session' && method === 'POST') {
-    const { name, defaultMinutes, scheduledAt, status } = await readBody(req);
+    const { name, defaultMinutes, scheduledAt, status, pollType } = await readBody(req);
     if (!name || !name.trim()) return bad(res, 'Session name required');
     const sid = id(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || id(4);
     const adminToken = id(18);
     const dm = clampMinutes(defaultMinutes != null ? defaultMinutes : DEFAULT_MINUTES);
+    // Poll type is fixed at creation; rounds inherit it. 'rating' (0-9) is the default.
+    const pt = pollType === 'binary' ? 'binary' : 'rating';
     // Owner = the logged-in user creating it (if any). Falls back to null (legacy token still works).
     const creator = await userFromAuth(req);
     const ownerUid = creator ? creator.uid : null;
     // New sessions are 'live' by default, or 'upcoming' if a future start is given.
     const st = (status === 'upcoming' || (scheduledAt && Number(scheduledAt) > now())) ? 'upcoming' : 'live';
-    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, created_at) VALUES (?,?,?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, now()]);
-    return send(res, 200, { sessionId: sid, adminToken });
+    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, now()]);
+    return send(res, 200, { sessionId: sid, adminToken, pollType: pt });
   }
 
   // ===== HOST/ADMIN LOGIN (identity-based, email OTP — no per-session token) =====
@@ -537,15 +608,34 @@ async function handleApi(req, res, url) {
   if (p === '/api/vote' && method === 'POST') {
     const participant = await participantFromReq(req);
     if (!participant) return bad(res, 'Not authenticated', 401);
-    const { taste, predict } = await readBody(req);
+    const body = await readBody(req);
     const round = await activeRound(participant.session_id);
     if (!round || round.status !== 'voting') return bad(res, 'Voting is not open');
     if (round.closes_at && now() > Number(round.closes_at)) return bad(res, 'Time is up');
+    const existing = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
+    if (existing) return bad(res, 'You already locked in');
+    const session = await db.get('SELECT poll_type FROM sessions WHERE id = ?', [participant.session_id]);
+    const isBinary = session && session.poll_type === 'binary';
+
+    if (isBinary) {
+      // Binary vote: pick a side + predict the room's A/B split. Reject rating-shaped votes.
+      const { pick, predict_split } = body;
+      if (body.taste != null || body.predict != null) return bad(res, 'This is a head-to-head round — pick a side and predict the split');
+      const pk = String(pick || '').toUpperCase();
+      if (pk !== 'A' && pk !== 'B') return bad(res, 'Pick a side: A or B');
+      const sp = Number(predict_split);
+      if (!(sp >= 0 && sp <= 100)) return bad(res, 'Split prediction must be 0–100');
+      await db.run('INSERT INTO votes (id, round_id, participant_id, pick, predict_split, locked_at) VALUES (?,?,?,?,?,?)',
+        [id(9), round.id, participant.id, pk, sp, now()]);
+      return send(res, 200, { locked: true });
+    }
+
+    // Rating vote (unchanged): rate 0–9, predict the room average 0.0–9.0.
+    const { taste, predict } = body;
+    if (body.pick != null || body.predict_split != null) return bad(res, 'This is a rating round — rate the song and predict the average');
     const t = Number(taste), pr = Number(predict);
     if (!Number.isInteger(t) || t < 0 || t > 9) return bad(res, 'Rating must be 0–9');
     if (!(pr >= 0 && pr <= 9)) return bad(res, 'Prediction must be 0.0–9.0');
-    const existing = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
-    if (existing) return bad(res, 'You already locked in');
     await db.run('INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at) VALUES (?,?,?,?,?,?)',
       [id(9), round.id, participant.id, t, pr, now()]);
     return send(res, 200, { locked: true });
@@ -560,18 +650,22 @@ async function handleApi(req, res, url) {
   }
 
   if (p === '/api/admin/round' && method === 'POST') {
-    const { sessionId, song_title, song_artist, song_note, giveaway } = await readBody(req);
+    const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
-    if (!song_title || !song_title.trim()) return bad(res, 'Song title required');
+    if (!song_title || !song_title.trim()) return bad(res, (session.poll_type === 'binary' ? 'Song A title required' : 'Song title required'));
+    // Binary sessions need both sides; Song A reuses song_title/song_artist.
+    const isBinary = session.poll_type === 'binary';
+    if (isBinary && (!option_b_title || !option_b_title.trim())) return bad(res, 'Song B title required');
     // Queued songs don't get a round number (idx) until they're actually opened —
     // they're played in queue order, which may differ from the order added.
     const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
     const rid = id(9);
     await db.run(
-      `INSERT INTO rounds (id, session_id, idx, queue_pos, song_title, song_artist, song_note, giveaway, status, created_at)
-       VALUES (?,?,?,?,?,?,?,?, 'pending', ?)`,
-      [rid, sessionId, 0, Number(maxPos) + 1, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(), now()]
+      `INSERT INTO rounds (id, session_id, idx, queue_pos, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, status, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
+      [rid, sessionId, 0, Number(maxPos) + 1, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+       isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null, now()]
     );
     return send(res, 200, { roundId: rid });
   }
@@ -667,17 +761,25 @@ async function handleApi(req, res, url) {
   // Edit a song's details. Allowed while pending (queued), voting, or closed —
   // anything not yet ratified. Players see the update on their next poll.
   if (p === '/api/admin/round/edit' && method === 'POST') {
-    const { sessionId, roundId, song_title, song_artist, song_note, giveaway } = await readBody(req);
+    const { sessionId, roundId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     if (round.status === 'ratified') return bad(res, 'Round already tallied — can\'t edit it now');
     if (song_title !== undefined && !String(song_title).trim()) return bad(res, 'Song title can\'t be empty');
+    const isBinary = session.poll_type === 'binary';
+    if (isBinary && option_b_title !== undefined && !String(option_b_title).trim()) return bad(res, 'Song B title can\'t be empty');
     await db.run(
       `UPDATE rounds SET song_title = COALESCE(NULLIF(?,''), song_title),
-         song_artist = ?, song_note = ?, giveaway = ? WHERE id = ?`,
-      [(song_title || '').trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(), roundId]
+         song_artist = ?, song_note = ?, giveaway = ?,
+         option_b_title = CASE WHEN ? = 1 THEN COALESCE(NULLIF(?,''), option_b_title) ELSE option_b_title END,
+         option_b_artist = CASE WHEN ? = 1 THEN ? ELSE option_b_artist END
+       WHERE id = ?`,
+      [(song_title || '').trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+       isBinary ? 1 : 0, (option_b_title || '').trim(),
+       isBinary ? 1 : 0, (option_b_artist || '').trim(),
+       roundId]
     );
     return send(res, 200, { ok: true });
   }
@@ -692,7 +794,7 @@ async function handleApi(req, res, url) {
       await db.run("UPDATE rounds SET status = 'closed' WHERE id = ?", [roundId]);
     }
     const out = await ratifyRound(round);
-    return send(res, 200, { ok: true, room_average: out.room_average, players: out.ranked.length });
+    return send(res, 200, { ok: true, poll_type: out.poll_type, room_average: out.room_average ?? null, split_a: out.split_a ?? null, players: out.ranked.length });
   }
 
   if (p === '/api/admin/session/end' && method === 'POST') {
@@ -796,17 +898,18 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Admin auth failed', 401);
     const format = (url.searchParams.get('format') || 'json').toLowerCase();
     const anon = url.searchParams.get('anon') === '1';
+    const isBinary = session.poll_type === 'binary';
 
     const participants = await db.all(
       'SELECT id, user_id, name, email, phone, sms_marketing_consent, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
       [sessionId]
     );
     const rounds = await db.all(
-      "SELECT id, idx, song_title, song_artist, room_average, opens_at, closes_at, status FROM rounds WHERE session_id = ? AND status = 'ratified' ORDER BY idx ASC",
+      "SELECT id, idx, song_title, song_artist, option_b_title, option_b_artist, room_average, split_a, opens_at, closes_at, status FROM rounds WHERE session_id = ? AND status = 'ratified' ORDER BY idx ASC",
       [sessionId]
     );
     const votes = await db.all(
-      `SELECT v.round_id, v.participant_id, v.taste, v.predict, v.err, v.points, v.tier, v.rank, v.locked_at
+      `SELECT v.round_id, v.participant_id, v.taste, v.predict, v.pick, v.predict_split, v.err, v.points, v.tier, v.rank, v.locked_at
          FROM votes v JOIN rounds r ON r.id = v.round_id
         WHERE r.session_id = ? AND r.status = 'ratified'`,
       [sessionId]
@@ -815,8 +918,8 @@ async function handleApi(req, res, url) {
     // Stable anonymization: map each participant to "Player N" by join order.
     const labelById = {};
     participants.forEach((pt, i) => { labelById[pt.id] = `Player ${i + 1}`; });
-    const roomAvgByRound = {};
-    rounds.forEach(r => { roomAvgByRound[r.id] = r.room_average; });
+    const roomAvgByRound = {}, splitAByRound = {};
+    rounds.forEach(r => { roomAvgByRound[r.id] = r.room_average; splitAByRound[r.id] = r.split_a; });
 
     const cleanParticipants = participants.map((pt, i) => anon
       ? { player: labelById[pt.id], total_points: pt.total_points }
@@ -826,30 +929,46 @@ async function handleApi(req, res, url) {
       const base = {
         player: labelById[v.participant_id] || 'Player ?',
         round: (rounds.find(r => r.id === v.round_id) || {}).idx,
-        rating: v.taste,
-        prediction: v.predict,
-        room_average: roomAvgByRound[v.round_id],
-        error: v.err,
-        points: v.points,
-        tier: v.tier,
-        rank: v.rank,
-        locked_at: Number(v.locked_at),
       };
+      if (isBinary) {
+        base.pick = v.pick;
+        base.predict_split = v.predict_split;
+        base.split_a = splitAByRound[v.round_id];
+      } else {
+        base.rating = v.taste;
+        base.prediction = v.predict;
+        base.room_average = roomAvgByRound[v.round_id];
+      }
+      base.error = v.err;
+      base.points = v.points;
+      base.tier = v.tier;
+      base.rank = v.rank;
+      base.locked_at = Number(v.locked_at);
       return base;
     });
 
-    const cleanRounds = rounds.map(r => anon
-      ? { round: r.idx, room_average: r.room_average }
-      : { round: r.idx, song_title: r.song_title, song_artist: r.song_artist, room_average: r.room_average, opened_at: Number(r.opens_at), closed_at: Number(r.closes_at) });
+    const cleanRounds = rounds.map(r => {
+      if (anon) {
+        return isBinary ? { round: r.idx, split_a: r.split_a } : { round: r.idx, room_average: r.room_average };
+      }
+      return isBinary
+        ? { round: r.idx, song_a_title: r.song_title, song_a_artist: r.song_artist, song_b_title: r.option_b_title, song_b_artist: r.option_b_artist, split_a: r.split_a, opened_at: Number(r.opens_at), closed_at: Number(r.closes_at) }
+        : { round: r.idx, song_title: r.song_title, song_artist: r.song_artist, room_average: r.room_average, opened_at: Number(r.opens_at), closed_at: Number(r.closes_at) };
+    });
 
     if (format === 'csv') {
       // One row per vote — the richest single flat table for analysis.
-      const headers = anon
-        ? ['player', 'round', 'rating', 'prediction', 'room_average', 'error', 'points', 'tier', 'rank']
-        : ['player', 'name', 'email', 'round', 'song_title', 'rating', 'prediction', 'room_average', 'error', 'points', 'tier', 'rank', 'locked_at'];
+      const headers = isBinary
+        ? (anon
+            ? ['player', 'round', 'pick', 'predict_split', 'split_a', 'error', 'points', 'tier', 'rank']
+            : ['player', 'name', 'email', 'round', 'song_a', 'song_b', 'pick', 'predict_split', 'split_a', 'error', 'points', 'tier', 'rank', 'locked_at'])
+        : (anon
+            ? ['player', 'round', 'rating', 'prediction', 'room_average', 'error', 'points', 'tier', 'rank']
+            : ['player', 'name', 'email', 'round', 'song_title', 'rating', 'prediction', 'room_average', 'error', 'points', 'tier', 'rank', 'locked_at']);
       const nameById = {}, emailById = {};
       participants.forEach(pt => { nameById[pt.id] = pt.name; emailById[pt.id] = pt.email; });
-      const songByRound = {}; rounds.forEach(r => { songByRound[r.id] = r.song_title; });
+      const songAByRound = {}, songBByRound = {}, songByRound = {};
+      rounds.forEach(r => { songAByRound[r.id] = r.song_title; songBByRound[r.id] = r.option_b_title; songByRound[r.id] = r.song_title; });
       const esc = (val) => {
         const s = val == null ? '' : String(val);
         return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -858,9 +977,16 @@ async function handleApi(req, res, url) {
       for (const v of votes) {
         const pid = v.participant_id;
         const r = rounds.find(rr => rr.id === v.round_id) || {};
-        const row = anon
-          ? [labelById[pid], r.idx, v.taste, v.predict, roomAvgByRound[v.round_id], v.err, v.points, v.tier, v.rank]
-          : [labelById[pid], nameById[pid], emailById[pid], r.idx, songByRound[v.round_id], v.taste, v.predict, roomAvgByRound[v.round_id], v.err, v.points, v.tier, v.rank, Number(v.locked_at)];
+        let row;
+        if (isBinary) {
+          row = anon
+            ? [labelById[pid], r.idx, v.pick, v.predict_split, splitAByRound[v.round_id], v.err, v.points, v.tier, v.rank]
+            : [labelById[pid], nameById[pid], emailById[pid], r.idx, songAByRound[v.round_id], songBByRound[v.round_id], v.pick, v.predict_split, splitAByRound[v.round_id], v.err, v.points, v.tier, v.rank, Number(v.locked_at)];
+        } else {
+          row = anon
+            ? [labelById[pid], r.idx, v.taste, v.predict, roomAvgByRound[v.round_id], v.err, v.points, v.tier, v.rank]
+            : [labelById[pid], nameById[pid], emailById[pid], r.idx, songByRound[v.round_id], v.taste, v.predict, roomAvgByRound[v.round_id], v.err, v.points, v.tier, v.rank, Number(v.locked_at)];
+        }
         lines.push(row.map(esc).join(','));
       }
       const fname = `anr-${sessionId}${anon ? '-anon' : ''}.csv`;
@@ -870,7 +996,7 @@ async function handleApi(req, res, url) {
 
     // JSON (default)
     const payload = {
-      session: { id: anon ? undefined : session.id, name: session.name, exported_at: now(), anonymized: anon },
+      session: { id: anon ? undefined : session.id, name: session.name, poll_type: isBinary ? 'binary' : 'rating', exported_at: now(), anonymized: anon },
       participants: cleanParticipants,
       rounds: cleanRounds,
       votes: cleanVotes,

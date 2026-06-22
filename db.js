@@ -35,6 +35,7 @@ const SCHEMA = [
      scheduled_at BIGINT,                    -- when an 'upcoming' session is set to start
      banner_id TEXT,                         -- optional session-level ad override
      default_minutes INTEGER NOT NULL DEFAULT 5, -- per-session default voting window
+     poll_type TEXT NOT NULL DEFAULT 'rating', -- 'rating' (0-9 game) | 'binary' (Verzuz A/B)
      created_at BIGINT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS users (
@@ -92,21 +93,26 @@ const SCHEMA = [
      opens_at BIGINT,
      closes_at BIGINT,
      room_average REAL,
+     option_b_title TEXT,                    -- binary: Song B title (Song A reuses song_title)
+     option_b_artist TEXT,                   -- binary: Song B artist (Song A reuses song_artist)
+     split_a REAL,                           -- binary: resolved % that picked A (null until ratified)
      created_at BIGINT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS votes (
      id TEXT PRIMARY KEY,
      round_id TEXT NOT NULL,
      participant_id TEXT NOT NULL,
-     taste INTEGER NOT NULL,                 -- 0..9 (their rating)
-     predict REAL NOT NULL,                  -- 0.0..9.0 (room avg guess)
+     taste INTEGER,                          -- rating: 0..9 (their rating); null for binary votes
+     predict REAL,                           -- rating: 0.0..9.0 (room avg guess); null for binary votes
      locked_at BIGINT NOT NULL,
      points INTEGER,                         -- filled at ratify
      err REAL,                               -- |predict - room_average|
      tier TEXT,                              -- bullseye|sharp|close|off|wayoff (results reaction)
      rank INTEGER,
      taste_legacy INTEGER,                   -- preserved pre-0-9 rating (null if born on 0-9)
-     predict_legacy REAL                     -- preserved pre-0-9 prediction
+     predict_legacy REAL,                    -- preserved pre-0-9 prediction
+     pick TEXT,                              -- binary: 'A' | 'B' (chosen side); null for rating votes
+     predict_split REAL                      -- binary: predicted % for A, 0..100; null for rating votes
    )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS uniq_vote ON votes (round_id, participant_id)`,
   `CREATE INDEX IF NOT EXISTS idx_part_session ON participants (session_id)`,
@@ -334,6 +340,16 @@ async function postMigrate(db, opts = {}) {
   const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
   if (adminEmail) {
     await db.run("UPDATE users SET role = 'admin' WHERE email = ?", [adminEmail]).catch(() => {});
+  }
+
+  // Binary poll: existing Postgres production DBs created votes.taste/predict as
+  // NOT NULL. Binary votes leave those null (they fill pick/predict_split instead),
+  // so relax the constraint. Postgres-only + idempotent (DROP NOT NULL on an already-
+  // nullable column is a no-op). SQLite never had a way to add the constraint via
+  // migration and fresh SQLite uses the relaxed SCHEMA, so it needs nothing here.
+  if (USE_PG) {
+    await db.run('ALTER TABLE votes ALTER COLUMN taste DROP NOT NULL').catch(() => {});
+    await db.run('ALTER TABLE votes ALTER COLUMN predict DROP NOT NULL').catch(() => {});
   }
 
   // --- HEAVY data conversions: only run from the standalone migrate script ---

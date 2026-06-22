@@ -69,6 +69,24 @@
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:30px;height:30px;border-radius:50%;background:#fff;border:4px solid var(--signal);cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.5)}
   input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:#fff;border:4px solid var(--signal);cursor:pointer}
   .scale-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-faint);margin-top:5px}
+  /* binary poll (Verzuz mode) */
+  .opt-list{display:flex;flex-direction:column;gap:11px}
+  .opt{display:flex;align-items:center;gap:13px;width:100%;text-align:left;cursor:pointer;
+    background:#0a0814;border:1px solid var(--line);border-radius:14px;padding:15px 16px;transition:.12s;color:var(--ink)}
+  .opt:hover{border-color:var(--ink-faint)}
+  .opt.on{background:linear-gradient(180deg,rgba(75,183,73,.16),rgba(75,183,73,.05));border-color:var(--signal);transform:translateY(-2px)}
+  .opt .letter{flex:none;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-family:"Space Mono",monospace;font-weight:700;font-size:20px;background:#15101f;border:1px solid var(--line);color:var(--ink-dim)}
+  .opt.on .letter{background:var(--signal);color:#06210b;border-color:var(--signal)}
+  .opt .meta{min-width:0}
+  .opt .ti{font-weight:700;font-size:17px;line-height:1.15;overflow:hidden;text-overflow:ellipsis}
+  .opt .ar{font-size:13px;color:var(--ink-dim);margin-top:2px;overflow:hidden;text-overflow:ellipsis}
+  .split-readout{display:flex;justify-content:space-between;align-items:flex-end;font-family:"Space Mono",monospace;margin-top:14px}
+  .split-readout .side{font-size:15px;color:var(--ink-dim)}
+  .split-readout .pct{font-size:30px;font-weight:700;color:var(--signal)}
+  .split-bar{display:flex;height:16px;border-radius:8px;overflow:hidden;margin:10px 0 4px;border:1px solid var(--line)}
+  .split-bar .a{background:var(--signal);transition:width .08s linear}
+  .split-bar .b{background:var(--cool);transition:width .08s linear}
   /* timer ring */
   .timer{display:flex;flex-direction:column;align-items:center;gap:3px}
   .timer .t{font-family:"Space Mono",monospace;font-size:30px;font-weight:700;letter-spacing:.04em}
@@ -204,6 +222,8 @@
       <div class="note hide" id="vNote"></div>
       <div class="give hide" id="vGive"></div>
 
+      <!-- RATING FLOW (0-9 game) -->
+      <div id="ratingFlow">
       <!-- STEP 1: RATE -->
       <div id="stepRate" style="margin-top:22px">
         <div class="step-head"><span class="step-num">①</span> Rate</div>
@@ -225,6 +245,44 @@
           <button class="btn ghost" id="btnPredBack" style="width:100%;margin-top:10px">← Back</button>
         </div>
       </div>
+      </div>
+
+      <!-- BINARY FLOW (Verzuz A/B) -->
+      <div id="binaryFlow" class="hide">
+      <!-- STEP 1: PICK A SIDE -->
+      <div id="stepPick" style="margin-top:22px">
+        <div class="step-head"><span class="step-num">①</span> Pick a side</div>
+        <div class="step-help">Which one are you riding with?</div>
+        <div class="opt-list">
+          <button class="opt" id="optA" data-pick="A">
+            <span class="letter">A</span>
+            <span class="meta"><div class="ti" id="optATitle">—</div><div class="ar" id="optAArtist"></div></span>
+          </button>
+          <button class="opt" id="optB" data-pick="B">
+            <span class="letter">B</span>
+            <span class="meta"><div class="ti" id="optBTitle">—</div><div class="ar" id="optBArtist"></div></span>
+          </button>
+        </div>
+        <button class="btn" id="btnPickNext" style="margin-top:22px" disabled>Next →</button>
+      </div>
+
+      <!-- STEP 2: READ THE ROOM (the split) -->
+      <div id="stepSplit" class="hide" style="margin-top:22px">
+        <div class="step-head"><span class="step-num">②</span> Read the Room!</div>
+        <div class="step-help">Predict how the room will split between the two.</div>
+        <div class="split-readout">
+          <div><div class="side" id="splitLabelA">A</div></div>
+          <div style="text-align:right"><span class="pct" id="splitPctA">–</span><span class="side"> / </span><span class="pct" id="splitPctB" style="color:var(--cool)">–</span></div>
+        </div>
+        <div class="split-bar"><div class="a" id="splitBarA" style="width:50%"></div><div class="b" id="splitBarB" style="width:50%"></div></div>
+        <input id="split" type="range" min="0" max="100" step="1" value="50" style="margin-top:8px">
+        <div class="scale-ends"><span id="splitEndA">all A</span><span id="splitEndB">all B</span></div>
+        <div style="margin-top:22px">
+          <button class="btn" id="btnLockBin" style="width:100%" disabled>Lock it in</button>
+          <button class="btn ghost" id="btnSplitBack" style="width:100%;margin-top:10px">← Back</button>
+        </div>
+      </div>
+      </div>
       <div class="err" id="voteErr"></div>
     </div>
     <!-- AD SLOT: bottom of rating page. Drop a sponsor banner here. -->
@@ -237,9 +295,13 @@
       <div style="font-size:34px">🔒</div>
       <h2 style="margin:10px 0 6px;font-size:22px">Locked in</h2>
       <p class="dim" style="margin:0;font-size:15px" id="lockedSub">Waiting for the room to finish voting…</p>
-      <div class="result-grid" style="max-width:300px;margin:18px auto 0">
+      <div class="result-grid" style="max-width:300px;margin:18px auto 0" id="lkRatingGrid">
         <div class="cell"><div class="k">Your rating</div><div class="v" id="lkTaste" style="color:var(--ink)">—</div></div>
         <div class="cell"><div class="k">Your guess</div><div class="v" id="lkPred" style="color:var(--signal)">—</div></div>
+      </div>
+      <div class="result-grid hide" style="max-width:300px;margin:18px auto 0" id="lkBinaryGrid">
+        <div class="cell"><div class="k">Your pick</div><div class="v" id="lkPick" style="color:var(--ink)">—</div></div>
+        <div class="cell"><div class="k">Your split</div><div class="v" id="lkSplit" style="color:var(--signal)">—</div></div>
       </div>
       <div class="pulse-wait"><i></i><i></i><i></i></div>
     </div>
@@ -264,7 +326,7 @@
       </div>
 
       <div class="result-grid">
-        <div class="cell"><div class="k">Your guess</div><div class="v" id="rGuess" style="color:var(--accent)">—</div></div>
+        <div class="cell"><div class="k" id="rGuessK">Your guess</div><div class="v" id="rGuess" style="color:var(--accent)">—</div></div>
         <div class="cell"><div class="k">Points this round</div><div class="v" id="rPts" style="color:var(--good)">—</div></div>
       </div>
 
@@ -286,7 +348,7 @@
         <div class="eyebrow">The A&amp;R Room · Session recap</div>
         <h2 id="recapName" style="font-size:22px;margin-top:6px">Your card</h2>
       </div>
-      <div class="grade-wrap">
+      <div class="grade-wrap" id="recapGradeWrap">
         <div class="grade" id="recapGrade">—</div>
         <div class="grade-label">Ear for the room</div>
       </div>
@@ -297,8 +359,8 @@
         <div class="rcell"><div class="k">Top <span id="recapPctSign">%</span></div><div class="v" id="recapPct" style="color:var(--accent)">—</div></div>
       </div>
       <div class="reveal">
-        <div class="reveal-row"><span>The room's overall average</span><strong id="recapRoomAvg" class="mono">—</strong></div>
-        <div class="reveal-row"><span>Your average read, off by</span><strong id="recapAvgErr" class="mono">—</strong></div>
+        <div class="reveal-row"><span id="recapRoomLabel">The room's overall average</span><strong id="recapRoomAvg" class="mono">—</strong></div>
+        <div class="reveal-row"><span id="recapErrLabel">Your average read, off by</span><strong id="recapAvgErr" class="mono">—</strong></div>
         <div class="reveal-row" id="recapBestRow"><span>Your best round</span><strong id="recapBest" class="mono">—</strong></div>
       </div>
       <button class="btn" id="btnShare" style="margin-top:18px">Share my card</button>
@@ -322,10 +384,21 @@ const api=async(path,body,method='POST')=>{
 };
 const SID=new URLSearchParams(location.search).get('s')||localStorage.getItem('rt_sid');
 let chosenTaste=null, predict=null, predictTouched=false, pollTimer=null, lastPhase=null, lastRecap=null;
+// Binary (Verzuz) state. Mirrors the rating flow: a pick (analog of taste) + a split
+// prediction (analog of predict). pollType comes from server state per session.
+let pollType='rating', chosenPick=null, splitVal=null, splitTouched=false;
 
 // Lock unlocks only when BOTH a rating is picked AND the prediction slider is touched.
 function maybeEnableLock(){ $('#btnLock').disabled = !(chosenTaste!==null && predictTouched); }
 function maybeEnableNext(){ $('#btnNext').disabled = (chosenTaste===null); }
+// Binary equivalents.
+function maybeEnableLockBin(){ $('#btnLockBin').disabled = !(chosenPick!==null && splitTouched); }
+function maybeEnablePickNext(){ $('#btnPickNext').disabled = (chosenPick===null); }
+// Swap the binary widget between step 1 (Pick) and step 2 (Read the Room / split).
+function showStepBinary(step){
+  $('#stepPick').classList.toggle('hide', step!==1);
+  $('#stepSplit').classList.toggle('hide', step!==2);
+}
 // Swap the widget between step 1 (Rate) and step 2 (Read the Room). Same screen,
 // same position — only the active step shows. Both inputs are preserved across moves.
 function showStep(step){
@@ -347,6 +420,27 @@ $('#pred').oninput=e=>{predict=parseFloat(e.target.value);predictTouched=true;$(
 // Step navigation: Rate → (Next) → Read the Room → (Back) → Rate. Inputs preserved.
 $('#btnNext').onclick=()=>{ if(chosenTaste===null)return; showStep(2); };
 $('#btnPredBack').onclick=()=>{ showStep(1); };
+
+// ---- binary (Verzuz) input handlers ----
+function selectPick(pk){
+  chosenPick=pk;
+  $('#optA').classList.toggle('on', pk==='A');
+  $('#optB').classList.toggle('on', pk==='B');
+  maybeEnablePickNext();
+}
+$('#optA').onclick=()=>selectPick('A');
+$('#optB').onclick=()=>selectPick('B');
+function paintSplit(a){
+  const A=Math.round(a), B=100-A;
+  $('#splitPctA').textContent=A+'%';$('#splitPctB').textContent=B+'%';
+  $('#splitBarA').style.width=A+'%';$('#splitBarB').style.width=B+'%';
+}
+$('#split').oninput=e=>{
+  splitVal=parseInt(e.target.value,10);splitTouched=true;
+  paintSplit(splitVal);maybeEnableLockBin();
+};
+$('#btnPickNext').onclick=()=>{ if(chosenPick===null)return; showStepBinary(2); };
+$('#btnSplitBack').onclick=()=>{ showStepBinary(1); };
 
 // ---- join flow ----
 $('#btnRequest').onclick=async()=>{
@@ -386,6 +480,14 @@ $('#btnLock').onclick=async()=>{
   try{await api('/api/vote',{taste:chosenTaste,predict});refresh();}
   catch(e){$('#voteErr').textContent=e.message;$('#btnLock').disabled=false;}
 };
+$('#btnLockBin').onclick=async()=>{
+  $('#voteErr').textContent='';
+  if(chosenPick===null)return $('#voteErr').textContent='Pick a side first';
+  if(!splitTouched||splitVal===null)return $('#voteErr').textContent='Set your split prediction';
+  $('#btnLockBin').disabled=true;
+  try{await api('/api/vote',{pick:chosenPick,predict_split:splitVal});refresh();}
+  catch(e){$('#voteErr').textContent=e.message;$('#btnLockBin').disabled=false;}
+};
 
 // ---- timer ----
 let closesAt=null;
@@ -395,7 +497,7 @@ function tick(){
   const m=Math.floor(left/60),s=left%60;
   $('#vTimer').querySelector('.t').textContent=(m>0?m+':':'')+(m>0?String(s).padStart(2,'0'):s);
   $('#vTimer').classList.toggle('warn',left<=10);
-  if(left<=0){$('#btnLock').disabled=true;$('#btnNext').disabled=true;}
+  if(left<=0){$('#btnLock').disabled=true;$('#btnNext').disabled=true;$('#btnLockBin').disabled=true;$('#btnPickNext').disabled=true;}
 }
 setInterval(tick,250);
 
@@ -439,12 +541,23 @@ function confetti(){
 
 function renderResults(st){
   const mr=st.myResult;
+  const isBin = pollType==='binary';
   $('#rRound').textContent=st.round.idx;
-  $('#rTitle').textContent=st.round.song_title;
+  $('#rTitle').textContent=isBin ? ((st.round.song_title||'A')+' vs '+(st.round.option_b_title||'B')) : st.round.song_title;
   // Winner name only — the room's number stays sealed until the end.
   $('#rWinner').textContent=st.winner?st.winner.name:'No votes this round';
   if(mr){
-    $('#rGuess').textContent=mr.predict.toFixed(1);
+    if(isBin){
+      $('#rGuessK').textContent='Your call';
+      const side = mr.pick!=null ? ('Song '+mr.pick) : '—';
+      const sp = mr.predict_split!=null ? (Math.round(mr.predict_split)+'% A') : '—';
+      $('#rGuess').textContent=side+' · '+sp;
+      $('#rGuess').style.fontSize='20px';
+    }else{
+      $('#rGuessK').textContent='Your guess';
+      $('#rGuess').textContent=(mr.predict!=null?mr.predict.toFixed(1):'—');
+      $('#rGuess').style.fontSize='';
+    }
     $('#rPts').textContent=(mr.points>=0?'+':'')+mr.points;
     $('#rPts').style.color=mr.points>=0?'var(--good)':'var(--hot)';
     $('#rRank').textContent='#'+mr.rank;
@@ -461,22 +574,37 @@ function renderResults(st){
 
 function renderRecap(st){
   const r=st.recap;if(!r)return;
+  const isBin = (r.poll_type==='binary');
   $('#recapName').textContent=(r.name||'You')+'’s card';
-  $('#recapGrade').textContent=r.grade||'—';
   $('#recapPts').textContent=r.totalPoints;
   $('#recapRank').textContent=r.rank?('#'+r.rank+' / '+r.fieldSize):'—';
   $('#recapBull').textContent=r.bullseyes;
   if(r.percentile!=null){$('#recapPct').textContent=(100-r.percentile)+'%';$('#recapPctSign').textContent='%';}
   else $('#recapPct').textContent='—';
-  $('#recapRoomAvg').textContent=r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—';
-  $('#recapAvgErr').textContent=r.avgErr!=null?r.avgErr.toFixed(1):'—';
+  if(isBin){
+    // No 0-9 letter grade for binary; surface the room's average A-share instead.
+    $('#recapGradeWrap').style.display='none';
+    $('#recapRoomLabel').textContent='Room leaned (Song A share)';
+    $('#recapRoomAvg').textContent=r.overallSplitA!=null?(Math.round(r.overallSplitA)+'%'):'—';
+    $('#recapErrLabel').textContent='Your average read, off by';
+    $('#recapAvgErr').textContent=r.avgErr!=null?(Math.round(r.avgErr)+' pts'):'—';
+  }else{
+    $('#recapGradeWrap').style.display='';
+    $('#recapGrade').textContent=r.grade||'—';
+    $('#recapRoomLabel').textContent='The room\u2019s overall average';
+    $('#recapRoomAvg').textContent=r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—';
+    $('#recapErrLabel').textContent='Your average read, off by';
+    $('#recapAvgErr').textContent=r.avgErr!=null?r.avgErr.toFixed(1):'—';
+  }
   if(r.best){$('#recapBestRow').style.display='';$('#recapBest').textContent='R'+r.best.idx+' · +'+r.best.points;}
   else $('#recapBestRow').style.display='none';
 }
 
 function shareText(r){
-  const line=`The A&R Room — my card\nGrade: ${r.grade||'—'} · ${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} · ${r.bullseyes} bullseye${r.bullseyes===1?'':'s'}\nRoom average revealed: ${r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—'}`;
-  return line;
+  if(r.poll_type==='binary'){
+    return `The A&R Room — my card\n${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} · ${r.bullseyes} bullseye${r.bullseyes===1?'':'s'}\nRoom leaned ${r.overallSplitA!=null?Math.round(r.overallSplitA)+'% A':'—'}`;
+  }
+  return `The A&R Room — my card\nGrade: ${r.grade||'—'} · ${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} · ${r.bullseyes} bullseye${r.bullseyes===1?'':'s'}\nRoom average revealed: ${r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—'}`;
 }
 
 let lastBannerId=null;
@@ -498,6 +626,7 @@ function renderBanner(slotId, banner){
 }
 
 function render(st){
+  pollType = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary')) ? 'binary' : 'rating';
   $('#sessName').textContent=st.session.name;
   $('#footCount').textContent=st.participants;$('#waitCount').textContent=st.participants;
   $('#footPts').textContent=(st.me.total_points||0)+' pts';
@@ -518,21 +647,54 @@ function render(st){
   }
   else if(st.phase==='voting'){
     closesAt=st.round.closes_at||null;
+    const isBin = pollType==='binary';
+    $('#ratingFlow').classList.toggle('hide', isBin);
+    $('#binaryFlow').classList.toggle('hide', !isBin);
     if(lastPhase!=='voting'){ // reset inputs on a fresh round
+      // rating inputs
       chosenTaste=null;document.querySelectorAll('.pip').forEach(p=>p.classList.remove('on'));
       $('#pred').value=4.5;predict=null;predictTouched=false;$('#pred').classList.remove('touched');
       $('#predVal').textContent='–.–';$('#btnLock').disabled=true;$('#btnNext').disabled=true;
-      $('#voteErr').textContent='';showStep(1); // always start on the Rate step
+      showStep(1);
+      // binary inputs
+      chosenPick=null;$('#optA').classList.remove('on');$('#optB').classList.remove('on');
+      $('#split').value=50;splitVal=null;splitTouched=false;paintSplit(50);
+      $('#splitPctA').textContent='–';$('#splitPctB').textContent='–';
+      $('#btnLockBin').disabled=true;$('#btnPickNext').disabled=true;showStepBinary(1);
+      $('#voteErr').textContent='';
     }
     $('#vRound').textContent=st.round.idx;$('#vTitle').textContent=st.round.song_title;
     $('#vArtist').textContent=st.round.song_artist||'';
+    if(isBin){
+      // Title row reads as the matchup; populate the A/B option cards.
+      $('#vTitle').textContent=(st.round.song_title||'A')+' vs '+(st.round.option_b_title||'B');
+      $('#vArtist').textContent='';
+      $('#optATitle').textContent=st.round.song_title||'Song A';
+      $('#optAArtist').textContent=st.round.song_artist||'';
+      $('#optBTitle').textContent=st.round.option_b_title||'Song B';
+      $('#optBArtist').textContent=st.round.option_b_artist||'';
+      $('#splitLabelA').textContent=(st.round.song_title||'A');
+      $('#splitEndA').textContent='all '+(st.round.song_title||'A');
+      $('#splitEndB').textContent='all '+(st.round.option_b_title||'B');
+    }
     if(st.round.song_note){$('#vNote').classList.remove('hide');$('#vNote').textContent=st.round.song_note;}else $('#vNote').classList.add('hide');
     if(st.round.giveaway){$('#vGive').classList.remove('hide');$('#vGive').textContent='🎁 Win: '+st.round.giveaway;}else $('#vGive').classList.add('hide');
     renderBanner('adVote',st.banner);tick();show('vote');
   }
   else if(st.phase==='locked'){
     closesAt=null;
-    if(st.myVote){$('#lkTaste').textContent=st.myVote.taste;$('#lkPred').textContent=st.myVote.predict.toFixed(1);}
+    const isBin = pollType==='binary';
+    $('#lkRatingGrid').classList.toggle('hide', isBin);
+    $('#lkBinaryGrid').classList.toggle('hide', !isBin);
+    if(st.myVote){
+      if(isBin){
+        $('#lkPick').textContent=st.myVote.pick!=null?('Song '+st.myVote.pick):'—';
+        $('#lkSplit').textContent=st.myVote.predict_split!=null?(Math.round(st.myVote.predict_split)+'% A'):'—';
+      }else{
+        $('#lkTaste').textContent=st.myVote.taste;
+        $('#lkPred').textContent=(st.myVote.predict!=null?st.myVote.predict.toFixed(1):'—');
+      }
+    }
     $('#lockedSub').textContent=st.tallying?'Votes are in — the host is tallying the room…':'Waiting for the room to finish voting…';
     renderBanner('adLocked',st.banner);show('locked');
   }
