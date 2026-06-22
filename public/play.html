@@ -31,6 +31,7 @@
   .brand-stack{display:flex;flex-direction:column;gap:9px}
   .brand-wordmark{height:18px;width:auto;opacity:.92;align-self:flex-start}
   .brand-titlerow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .beta-pill{font-family:"Space Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.12em;color:var(--signal);border:1px solid var(--signal-deep,#2f7a2c);background:rgba(75,183,73,.12);border-radius:999px;padding:2px 7px;align-self:center;text-transform:uppercase}
   .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--signal);box-shadow:0 0 0 0 rgba(75,183,73,.7);animation:pulse 2.4s infinite}
   .mark{height:52px;width:auto;margin:0 auto 14px;display:block;opacity:.95}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(75,183,73,.55)}70%{box-shadow:0 0 0 9px rgba(75,183,73,0)}100%{box-shadow:0 0 0 0 rgba(75,183,73,0)}}
@@ -166,10 +167,12 @@
       <span class="dot" id="brandDot" style="display:none"></span>
       <div class="brand-titlerow">
         <h1>The A&amp;R Room</h1>
+        <span class="beta-pill">BETA</span>
         <div class="session-name" id="sessName">—</div>
       </div>
     </div>
-    <button id="muteBtn" title="Sound on/off" aria-label="Toggle sound" style="margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;width:38px;height:38px;font-size:18px;cursor:pointer;flex:none">🔊</button>
+    <button id="feedbackBtn" title="Send feedback" aria-label="Send feedback" style="margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;height:38px;padding:0 12px;font-size:13px;cursor:pointer;flex:none;display:flex;align-items:center;gap:6px">💬 Feedback</button>
+    <button id="muteBtn" title="Sound on/off" aria-label="Toggle sound" style="background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;width:38px;height:38px;font-size:18px;cursor:pointer;flex:none">🔊</button>
   </div>
 
   <!-- JOIN: email -->
@@ -396,6 +399,29 @@
 <!-- offscreen canvas used to render the shareable result/recap graphic -->
 <canvas id="shareCanvas" width="1080" height="1920" style="display:none"></canvas>
 
+<!-- FEEDBACK MODAL (beta) -->
+<div id="fbModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.82);z-index:80;align-items:center;justify-content:center;padding:22px;overflow:auto">
+  <div class="panel" style="max-width:440px;width:100%">
+    <div style="display:flex;align-items:center;gap:8px"><span style="font-size:24px">💬</span><span class="beta-pill">BETA</span></div>
+    <h2 style="margin:10px 0 6px;font-size:21px">Tell us how it's going</h2>
+    <p class="dim" style="font-size:14px;line-height:1.55;margin:0 0 14px">This is a beta version of the app. If you run into any bugs or difficulty using it, let us know so we can make it better for you. Attaching a screenshot is optional.</p>
+    <label style="display:block;font-size:12px;color:var(--ink-dim);margin:0 0 6px 2px">Your feedback</label>
+    <textarea id="fbMessage" placeholder="What happened? What were you trying to do?" style="width:100%;min-height:110px;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:15px;padding:11px 13px;border-radius:10px;resize:vertical"></textarea>
+    <label style="display:block;font-size:12px;color:var(--ink-dim);margin:12px 0 6px 2px">Email <span style="font-weight:400">(optional — if you'd like a reply)</span></label>
+    <input id="fbEmail" type="email" placeholder="you@example.com" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:15px;padding:11px 13px;border-radius:10px">
+    <div style="margin-top:12px">
+      <input type="file" id="fbShot" accept="image/*" style="display:none">
+      <button class="btn ghost" id="fbAttach" style="width:100%">📎 Attach a screenshot (optional)</button>
+      <div id="fbShotName" class="dim" style="font-size:12px;margin-top:6px;text-align:center"></div>
+    </div>
+    <div class="err" id="fbErr" style="margin-top:10px"></div>
+    <div style="margin-top:16px">
+      <button class="btn" id="fbSend" style="width:100%">Send feedback</button>
+      <button class="btn ghost" id="fbCancel" style="width:100%;margin-top:10px">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- CHECK-IN MODAL: shown when a geofenced session requires check-in at first lock-in -->
 <div id="ciModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.82);z-index:70;align-items:center;justify-content:center;padding:22px">
   <div class="panel" style="max-width:430px;width:100%;text-align:center">
@@ -492,6 +518,74 @@ function applyBroadcast(bc){
   try{navigator.vibrate&&navigator.vibrate([0,30,30,30]);}catch(e){}
 }
 $('#bcDismiss')&&($('#bcDismiss').onclick=()=>{$('#bcModal').style.display='none';});
+
+// ---- feedback (beta) ----
+let fbImageData=null; // data URL of the (downscaled) screenshot, or null
+$('#feedbackBtn')&&($('#feedbackBtn').onclick=()=>{ $('#fbErr').textContent='';$('#fbModal').style.display='flex'; });
+$('#fbCancel')&&($('#fbCancel').onclick=()=>{ $('#fbModal').style.display='none'; });
+$('#fbAttach')&&($('#fbAttach').onclick=()=>$('#fbShot').click());
+$('#fbShot')&&($('#fbShot').onchange=async(e)=>{
+  const file=e.target.files&&e.target.files[0];
+  if(!file)return;
+  if(!/^image\//.test(file.type)){$('#fbErr').textContent='Please choose an image file.';return;}
+  $('#fbErr').textContent='';$('#fbShotName').textContent='Processing image…';
+  try{
+    fbImageData=await downscaleImage(file, 1600, 0.82); // cap longest edge ~1600px
+    $('#fbShotName').textContent='📎 '+file.name+' attached';
+    $('#fbAttach').textContent='✓ Screenshot attached — tap to change';
+  }catch(err){ $('#fbErr').textContent='Could not read that image.'; fbImageData=null; $('#fbShotName').textContent=''; }
+});
+// Downscale + re-encode a phone screenshot so the upload stays small.
+function downscaleImage(file, maxEdge, quality){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('read'));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('decode'));
+      img.onload=()=>{
+        let {width:w,height:h}=img;
+        const scale=Math.min(1, maxEdge/Math.max(w,h));
+        w=Math.round(w*scale); h=Math.round(h*scale);
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+$('#fbSend')&&($('#fbSend').onclick=async()=>{
+  const message=$('#fbMessage').value.trim();
+  if(!message){$('#fbErr').textContent='Please enter a message.';return;}
+  $('#fbErr').textContent='';$('#fbSend').disabled=true;$('#fbSend').textContent='Sending…';
+  try{
+    await api('/api/feedback',{
+      message,
+      contactEmail:$('#fbEmail').value.trim()||null,
+      sessionId:SID||null,
+      image:fbImageData||null,
+    });
+    $('#fbModal').style.display='none';
+    // reset
+    $('#fbMessage').value='';$('#fbEmail').value='';fbImageData=null;
+    $('#fbShotName').textContent='';$('#fbAttach').textContent='📎 Attach a screenshot (optional)';
+    $('#fbSend').textContent='Send feedback';$('#fbSend').disabled=false;
+    // tiny confirmation toast
+    showFbThanks();
+  }catch(e){
+    $('#fbErr').textContent=e.message||'Could not send. Please try again.';
+    $('#fbSend').textContent='Send feedback';$('#fbSend').disabled=false;
+  }
+});
+function showFbThanks(){
+  const t=document.createElement('div');
+  t.textContent='Thanks for the feedback 🙌';
+  t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--signal,#4bb749);color:#06140a;font-weight:700;padding:12px 18px;border-radius:12px;z-index:90;box-shadow:0 10px 30px rgba(0,0,0,.4)';
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.transition='opacity .4s';t.style.opacity='0';setTimeout(()=>t.remove(),420);},2200);
+}
 
 // ---- invite: anyone can share their personal join link (carries their ref code) ----
 let referredCount=0;

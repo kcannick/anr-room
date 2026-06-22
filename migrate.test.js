@@ -176,6 +176,19 @@ async function freshDb() {
   const applied7b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('007 idempotent (not duplicated)', applied7b.filter(x => x === '007_session_softdelete').length === 1, JSON.stringify(applied7b));
 
+  // 10. Migration 008 (feedback): feedback table.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init();
+  const applied8 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('008_feedback applied', applied8.includes('008_feedback'), JSON.stringify(applied8));
+  const fc8 = (await db.all('PRAGMA table_info(feedback)', [])).map(c => c.name);
+  ['id', 'message', 'had_screenshot', 'contact_email', 'session_id', 'emailed', 'created_at'].forEach(col => ok('feedback.' + col + ' exists', fc8.includes(col)));
+  await db.init();
+  const applied8b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('008 idempotent (not duplicated)', applied8b.filter(x => x === '008_feedback').length === 1, JSON.stringify(applied8b));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

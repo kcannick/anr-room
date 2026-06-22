@@ -82,4 +82,77 @@ async function sendOtp(to, code, sessionName) {
   }
 }
 
-module.exports = { sendOtp, PROVIDER };
+module.exports = { sendOtp, PROVIDER, sendFeedback };
+
+// ----- feedback email (best-effort; optional screenshot attachment) -----
+// payload: { message, sessionName, sessionId, fromName, fromEmail, userAgent,
+//            image: { dataBase64, mime, filename } | null }
+// Returns { ok } or { ok:false, error }. Callers must treat failure as non-fatal.
+async function sendFeedback(to, payload) {
+  const {
+    message = '', sessionName = '', sessionId = '', fromName = '', fromEmail = '',
+    userAgent = '', image = null,
+  } = payload || {};
+  const subject = `A&R Room feedback${sessionName ? ` — ${sessionName}` : ''}`;
+  const lines = [
+    message,
+    '',
+    '— context —',
+    sessionName ? `Session: ${sessionName} (${sessionId})` : `Session: ${sessionId || 'n/a'}`,
+    fromName || fromEmail ? `From: ${fromName || ''} ${fromEmail ? `<${fromEmail}>` : ''}`.trim() : 'From: anonymous',
+    userAgent ? `Device: ${userAgent}` : '',
+  ].filter(Boolean);
+  const text = lines.join('\n');
+  const html = `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6">
+    <p style="white-space:pre-wrap">${escapeHtml(message)}</p>
+    <hr style="border:none;border-top:1px solid #ddd;margin:16px 0">
+    <p style="color:#666;font-size:13px;margin:0">
+      <strong>Session:</strong> ${escapeHtml(sessionName || 'n/a')} ${sessionId ? `(${escapeHtml(sessionId)})` : ''}<br>
+      <strong>From:</strong> ${escapeHtml(fromName || 'anonymous')} ${fromEmail ? `&lt;${escapeHtml(fromEmail)}&gt;` : ''}<br>
+      ${userAgent ? `<strong>Device:</strong> ${escapeHtml(userAgent)}` : ''}
+    </p>
+  </div>`;
+
+  if (PROVIDER === 'console') {
+    console.log(`\n[FEEDBACK] to ${to}${image ? ' (with screenshot)' : ''}\n${text}\n`);
+    return { ok: true, devLogged: true };
+  }
+  try {
+    if (PROVIDER === 'resend') {
+      const body = { from: FROM, to: [to], subject, html, text };
+      if (image && image.dataBase64) {
+        body.attachments = [{ filename: image.filename || 'screenshot.png', content: image.dataBase64 }];
+      }
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`);
+    } else if (PROVIDER === 'mandrill') {
+      const msg = {
+        from_email: (FROM.match(/<(.+)>/) || [null, FROM])[1],
+        from_name: (FROM.match(/^(.*?)</) || [null, 'The A&R Room'])[1].trim(),
+        to: [{ email: to, type: 'to' }], subject, html, text,
+      };
+      if (image && image.dataBase64) {
+        msg.attachments = [{ type: image.mime || 'image/png', name: image.filename || 'screenshot.png', content: image.dataBase64 }];
+      }
+      const res = await fetch('https://mandrillapp.com/api/1.0/messages/send.json', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: process.env.MANDRILL_API_KEY, message: msg }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || (Array.isArray(data) && data[0] && data[0].status === 'rejected')) {
+        throw new Error(`Mandrill error: ${JSON.stringify(data)}`);
+      }
+    } else {
+      throw new Error(`Unknown EMAIL_PROVIDER: ${PROVIDER}`);
+    }
+    console.log(`[FEEDBACK] emailed to ${to} via ${PROVIDER}`);
+    return { ok: true };
+  } catch (e) {
+    console.error(`[FEEDBACK] email failed via ${PROVIDER}: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
+}

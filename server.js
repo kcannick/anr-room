@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
-const { sendOtp } = require('./email');
+const { sendOtp, sendFeedback } = require('./email');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes } = require('./scoring');
 
 const PORT = process.env.PORT || 3000;
@@ -742,6 +742,64 @@ async function handleApi(req, res, url) {
     const participant = await participantFromReq(req);
     if (!participant) return bad(res, 'Not authenticated', 401);
     return send(res, 200, await playerState(participant));
+  }
+
+  // ----- beta feedback (public; no auth required) -----
+  // Logs the text to the DB for later review, then best-effort emails the admin (with
+  // the optional screenshot as an attachment). Email failure NEVER blocks the submit —
+  // the DB log is the source of truth. The screenshot is emailed, not stored in the DB.
+  if (p === '/api/feedback' && method === 'POST') {
+    const body = await readBody(req);
+    const message = (body.message || '').toString().trim();
+    if (!message) return bad(res, 'Please enter a message');
+    if (message.length > 4000) return bad(res, 'Message is too long (max 4000 characters)');
+    const sessionId = (body.sessionId || '').toString().slice(0, 64) || null;
+    const contactEmail = (body.contactEmail || '').toString().trim().slice(0, 200) || null;
+    const userAgent = (req.headers['user-agent'] || '').toString().slice(0, 400) || null;
+
+    // Resolve participant + session context if the caller is a known player.
+    let participant = null;
+    try { participant = await participantFromReq(req); } catch (e) { /* anonymous is fine */ }
+    const effectiveSessionId = (participant && participant.session_id) || sessionId;
+    let sessionName = '';
+    if (effectiveSessionId) {
+      const s = await db.get('SELECT name FROM sessions WHERE id = ?', [effectiveSessionId]);
+      if (s) sessionName = s.name;
+    }
+
+    // Validate the optional screenshot (emailed only). Cap the size to keep the request
+    // sane; a base64 image > ~7MB (~5.25MB raw) is rejected rather than stored/sent.
+    let image = null;
+    if (body.image && typeof body.image === 'string') {
+      const m = body.image.match(/^data:(image\/(png|jpeg|jpg|webp|gif));base64,(.+)$/);
+      if (!m) return bad(res, 'Screenshot must be a PNG, JPEG, WEBP or GIF image');
+      const b64 = m[3];
+      if (b64.length > 7 * 1024 * 1024) return bad(res, 'Screenshot is too large (max ~5MB)');
+      const ext = m[2] === 'jpeg' ? 'jpg' : m[2];
+      image = { dataBase64: b64, mime: m[1], filename: `screenshot.${ext}` };
+    }
+
+    // 1) Durable log first — this is the record you'll review later.
+    const fid = id(10);
+    await db.run(
+      'INSERT INTO feedback (id, session_id, participant_id, message, had_screenshot, contact_email, user_agent, emailed, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+      [fid, effectiveSessionId, participant ? participant.id : null, message, image ? 1 : 0, contactEmail, userAgent, 0, now()]
+    );
+
+    // 2) Best-effort email to the admin. Never blocks the response.
+    const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+    if (adminEmail) {
+      sendFeedback(adminEmail, {
+        message, sessionName, sessionId: effectiveSessionId || '',
+        fromName: participant ? (participant.name || '') : '',
+        fromEmail: contactEmail || (participant ? participant.email : '') || '',
+        userAgent, image,
+      }).then(r => {
+        if (r && r.ok) db.run('UPDATE feedback SET emailed = 1 WHERE id = ?', [fid]).catch(() => {});
+      }).catch(() => { /* swallow — DB log already captured it */ });
+    }
+
+    return send(res, 200, { ok: true });
   }
 
   // ----- public overlay state (no auth; PII-safe display data for OBS/venue screens) -----

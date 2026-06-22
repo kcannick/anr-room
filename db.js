@@ -146,6 +146,17 @@ const SCHEMA = [
      k TEXT PRIMARY KEY,
      v TEXT
    )`,
+  `CREATE TABLE IF NOT EXISTS feedback (
+     id TEXT PRIMARY KEY,
+     session_id TEXT,                        -- session the feedback came from (if known)
+     participant_id TEXT,                    -- player who submitted (if logged in)
+     message TEXT NOT NULL,                  -- the feedback text (screenshot is emailed, not stored)
+     had_screenshot INTEGER NOT NULL DEFAULT 0, -- 1 if a screenshot was attached to the email
+     contact_email TEXT,                     -- optional email they want a reply at
+     user_agent TEXT,                        -- browser/device string for debugging context
+     emailed INTEGER NOT NULL DEFAULT 0,     -- 1 if the admin notification email succeeded
+     created_at BIGINT NOT NULL
+   )`,
 ];
 
 let impl;

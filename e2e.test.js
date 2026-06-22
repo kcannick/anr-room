@@ -801,6 +801,19 @@ async function call(path, body, method='POST', headers={}) {
   const listRestored = (await call('/api/auth/sessions', null, 'GET', ADMINH)).d;
   ok('restored session back in list', listRestored.sessions.some(s => s.id === SMID), 'not listed');
 
+  console.log('\n— beta feedback: logs to DB, validates, never blocks —');
+  const fbSess = await call('/api/session', { name: 'Feedback Night' });
+  const FBSID = fbSess.d.sessionId;
+  const fb1 = await call('/api/feedback', { message: 'Lock button was confusing', sessionId: FBSID, contactEmail: 'fan@x.com' });
+  ok('text feedback accepted', fb1.status === 200 && fb1.d.ok, JSON.stringify([fb1.status, fb1.d]));
+  const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const fb2 = await call('/api/feedback', { message: 'with shot', sessionId: FBSID, image: tinyPng });
+  ok('feedback with screenshot accepted', fb2.status === 200 && fb2.d.ok, JSON.stringify([fb2.status, fb2.d]));
+  const fbEmpty = await call('/api/feedback', { message: '   ' });
+  ok('empty message rejected', fbEmpty.status === 400, 'got ' + fbEmpty.status);
+  const fbBadImg = await call('/api/feedback', { message: 'x', image: 'data:text/plain;base64,aGk=' });
+  ok('non-image attachment rejected', fbBadImg.status === 400, 'got ' + fbBadImg.status);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);
