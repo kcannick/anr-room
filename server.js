@@ -19,6 +19,16 @@ const clampMinutes = (m) => {
   return Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, n));
 };
 
+// Sanitize an optional user-supplied URL: must be http(s); empty/invalid -> null.
+// Keeps javascript:/data: and other schemes out of links we render for players.
+function cleanUrl(u) {
+  const s = (u || '').toString().trim();
+  if (!s) return null;
+  if (!/^https?:\/\//i.test(s)) return null;
+  if (s.length > 500) return null;
+  return s;
+}
+
 // ---------- tiny helpers ----------
 function send(res, status, data, headers = {}) {
   const body = typeof data === 'string' ? data : JSON.stringify(data);
@@ -228,7 +238,7 @@ async function buildRecap(participant) {
 
 async function playerState(participant) {
   const sessionId = participant.session_id;
-  const session = await db.get('SELECT id, name, status, banner_id, poll_type FROM sessions WHERE id = ?', [sessionId]);
+  const session = await db.get('SELECT id, name, status, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at FROM sessions WHERE id = ?', [sessionId]);
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
@@ -283,8 +293,12 @@ async function playerState(participant) {
   }
 
   const out = {
-    session: { name: session.name, status: session.status, poll_type: pollType },
+    session: { id: sessionId, name: session.name, status: session.status, poll_type: pollType,
+      watch_url: session.watch_url || null, lobby_message: session.lobby_message || null },
     poll_type: pollType,
+    watch_url: session.watch_url || null,
+    lobby_message: session.lobby_message || null,
+    broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
     me: { name: participant.name, email: participant.email, total_points: participant.total_points },
     myTotalPoints: participant.total_points,
     participants: count,
@@ -303,11 +317,61 @@ async function playerState(participant) {
   return out;
 }
 
+// Public, PII-safe state for the on-stream overlay. Shows the live truth (unlike the
+// blind player view): current song/matchup, the running tally, the latest ratified
+// result with the real room number, and a first-name leaderboard.
+async function overlayState(session) {
+  const sessionId = session.id;
+  const isBinary = session.poll_type === 'binary';
+  const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
+  const round = await activeRound(sessionId);
+  const onlyFirst = (nm) => (nm || 'Player').toString().trim().split(/\s+/)[0];
+
+  let current = null, result = null;
+  if (round) {
+    const votes = await db.all('SELECT * FROM votes WHERE round_id = ?', [round.id]);
+    const base = {
+      idx: round.idx, status: round.status, closes_at: round.closes_at,
+      song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway,
+    };
+    if (isBinary) { base.option_b_title = round.option_b_title; base.option_b_artist = round.option_b_artist; }
+    if (round.status === 'voting' || round.status === 'closed') {
+      // Live tally — safe to show the running number on stream as the hype.
+      base.votes = votes.length;
+      base.live = isBinary ? { split_a: roomSplitA(votes) } : { average: votes.length ? roomAverage(votes) : null };
+      current = base;
+    } else if (round.status === 'ratified') {
+      const ranked = isBinary
+        ? await db.all(`SELECT v.rank, v.pick, v.predict_split, v.points, p.name FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC LIMIT 3`, [round.id])
+        : await db.all(`SELECT v.rank, v.predict, v.points, p.name FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC LIMIT 3`, [round.id]);
+      result = {
+        idx: round.idx, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway,
+        option_b_title: isBinary ? round.option_b_title : undefined,
+        room: isBinary ? { split_a: round.split_a } : { average: round.room_average },
+        top: ranked.map(r => ({ name: onlyFirst(r.name), points: r.points, rank: r.rank,
+          ...(isBinary ? { pick: r.pick, predict_split: r.predict_split } : { predict: r.predict }) })),
+        winner: ranked[0] ? onlyFirst(ranked[0].name) : null,
+      };
+    }
+  }
+
+  const board = await db.all('SELECT name, total_points FROM participants WHERE session_id = ? AND verified = 1 ORDER BY total_points DESC, created_at ASC LIMIT 10', [sessionId]);
+  return {
+    session: { id: sessionId, name: session.name, status: session.status, poll_type: isBinary ? 'binary' : 'rating' },
+    participants: count,
+    current,
+    result,
+    leaderboard: board.map((p, i) => ({ rank: i + 1, name: onlyFirst(p.name), points: p.total_points })),
+    broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
+    serverNow: now(),
+  };
+}
+
 async function adminState(session) {
   const sessionId = session.id;
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
-  const participants = await db.all('SELECT id, name, email, verified, total_points FROM participants WHERE session_id = ? ORDER BY total_points DESC, created_at ASC', [sessionId]);
+  const participants = await db.all('SELECT id, name, email, verified, total_points, signup_answer FROM participants WHERE session_id = ? ORDER BY total_points DESC, created_at ASC', [sessionId]);
   const rounds = await db.all('SELECT * FROM rounds WHERE session_id = ? ORDER BY idx ASC', [sessionId]);
   const round = await activeRound(sessionId);
   let liveVotes = [];
@@ -359,7 +423,9 @@ async function adminState(session) {
     isGlobalDefault: b.id === globalBannerId,
   }));
   return {
-    session: { id: session.id, name: session.name, status: session.status, admin_token: session.admin_token, banner_id: session.banner_id || null, default_minutes: session.default_minutes || DEFAULT_MINUTES, poll_type: pollType },
+    session: { id: session.id, name: session.name, status: session.status, admin_token: session.admin_token, banner_id: session.banner_id || null, default_minutes: session.default_minutes || DEFAULT_MINUTES, poll_type: pollType,
+      watch_url: session.watch_url || null, lobby_message: session.lobby_message || null, signup_prompt: session.signup_prompt || null,
+      broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null },
     poll_type: pollType,
     participants,
     verifiedCount: participants.filter(p => p.verified).length,
@@ -427,20 +493,24 @@ async function handleApi(req, res, url) {
 
   // ----- create session (admin bootstrap) -----
   if (p === '/api/session' && method === 'POST') {
-    const { name, defaultMinutes, scheduledAt, status, pollType } = await readBody(req);
+    const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, lobbyMessage, signupPrompt } = await readBody(req);
     if (!name || !name.trim()) return bad(res, 'Session name required');
     const sid = id(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || id(4);
     const adminToken = id(18);
     const dm = clampMinutes(defaultMinutes != null ? defaultMinutes : DEFAULT_MINUTES);
     // Poll type is fixed at creation; rounds inherit it. 'rating' (0-9) is the default.
     const pt = pollType === 'binary' ? 'binary' : 'rating';
+    // Optional event config — a stream link, a lobby message, a custom sign-up prompt.
+    const wu = cleanUrl(watchUrl);
+    const lm = (lobbyMessage || '').toString().trim().slice(0, 500) || null;
+    const sp = (signupPrompt || '').toString().trim().slice(0, 200) || null;
     // Owner = the logged-in user creating it (if any). Falls back to null (legacy token still works).
     const creator = await userFromAuth(req);
     const ownerUid = creator ? creator.uid : null;
     // New sessions are 'live' by default, or 'upcoming' if a future start is given.
     const st = (status === 'upcoming' || (scheduledAt && Number(scheduledAt) > now())) ? 'upcoming' : 'live';
-    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, now()]);
+    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, lobby_message, signup_prompt, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, lm, sp, now()]);
     return send(res, 200, { sessionId: sid, adminToken, pollType: pt });
   }
 
@@ -536,14 +606,16 @@ async function handleApi(req, res, url) {
     await db.run('INSERT INTO otps (email, session_id, code, expires_at, attempts) VALUES (?,?,?,?,0)',
       [email.toLowerCase(), sessionId, code, now() + 10 * 60 * 1000]);
     const r = await sendOtp(email, code, session.name);
-    return send(res, 200, { sent: true, devCode: r.devCode || null });
+    return send(res, 200, { sent: true, devCode: r.devCode || null,
+      sessionName: session.name, signupPrompt: session.signup_prompt || null, watchUrl: session.watch_url || null });
   }
 
   // ----- verify OTP + create/return participant -----
   if (p === '/api/join/verify' && method === 'POST') {
-    const { sessionId, email, code, name, phone, smsConsent } = await readBody(req);
+    const { sessionId, email, code, name, phone, smsConsent, signupAnswer } = await readBody(req);
     const em = (email || '').toLowerCase();
     const ph = (phone || '').trim();
+    const ans = (signupAnswer || '').toString().trim().slice(0, 300) || null;
     const consent = smsConsent === true || smsConsent === 1 || smsConsent === '1' ? 1 : 0;
     const otp = await db.get('SELECT * FROM otps WHERE email = ? AND session_id = ?', [em, sessionId]);
     if (!otp) return bad(res, 'Request a code first');
@@ -574,12 +646,12 @@ async function handleApi(req, res, url) {
     let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
     const token = id(18);
     if (participant) {
-      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END WHERE id = ?',
-        [token, user.uid, (name || '').trim(), ph, consent, participant.id]);
+      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END, signup_answer = COALESCE(NULLIF(?,\'\'), signup_answer) WHERE id = ?',
+        [token, user.uid, (name || '').trim(), ph, consent, ans || '', participant.id]);
     } else {
       const pid = id(9);
-      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,1,0,?)',
-        [pid, sessionId, user.uid, em, (name || '').trim(), ph || null, consent, token, now()]);
+      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, signup_answer, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,1,0,?)',
+        [pid, sessionId, user.uid, em, (name || '').trim(), ph || null, consent, ans, token, now()]);
       // First time this user appears in this session → count it toward sessions_played.
       await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }
@@ -602,6 +674,17 @@ async function handleApi(req, res, url) {
     const participant = await participantFromReq(req);
     if (!participant) return bad(res, 'Not authenticated', 401);
     return send(res, 200, await playerState(participant));
+  }
+
+  // ----- public overlay state (no auth; PII-safe display data for OBS/venue screens) -----
+  // Keyed only by session id. Returns what's safe to show on a stream: session name,
+  // current song/matchup, live tally, the most recent ratified result, and a first-name
+  // leaderboard. No emails, phones, or sign-up answers ever leave this endpoint.
+  if (p === '/api/overlay/state' && method === 'GET') {
+    const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
+    const session = sessionId ? await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]) : null;
+    if (!session) return bad(res, 'Session not found', 404);
+    return send(res, 200, await overlayState(session));
   }
 
   // ----- cast vote -----
@@ -817,6 +900,40 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, status });
   }
 
+  // Update event config after creation: watch link, lobby message, sign-up prompt.
+  // Each field is optional; only fields present in the body are changed. Send an
+  // empty string to clear a field.
+  if (p === '/api/admin/session/config' && method === 'POST') {
+    const body = await readBody(req);
+    const session = await canAdminSession(req, body.sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const sets = [], vals = [];
+    if ('watchUrl' in body)      { sets.push('watch_url = ?');     vals.push(cleanUrl(body.watchUrl)); }
+    if ('lobbyMessage' in body)  { sets.push('lobby_message = ?'); vals.push((body.lobbyMessage || '').toString().trim().slice(0, 500) || null); }
+    if ('signupPrompt' in body)  { sets.push('signup_prompt = ?'); vals.push((body.signupPrompt || '').toString().trim().slice(0, 200) || null); }
+    if (!sets.length) return bad(res, 'Nothing to update');
+    vals.push(body.sessionId);
+    await db.run(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`, vals);
+    return send(res, 200, { ok: true });
+  }
+
+  // Live broadcast: push a message to every player in the session, or clear it.
+  // The message + timestamp ride along in player state; the client shows it once
+  // per (broadcast_at) value, so re-sending the same text re-pops it.
+  if (p === '/api/admin/session/broadcast' && method === 'POST') {
+    const { sessionId, text, clear } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    if (clear) {
+      await db.run('UPDATE sessions SET broadcast_text = NULL, broadcast_at = NULL WHERE id = ?', [sessionId]);
+      return send(res, 200, { ok: true, cleared: true });
+    }
+    const msg = (text || '').toString().trim().slice(0, 500);
+    if (!msg) return bad(res, 'Broadcast message is empty');
+    await db.run('UPDATE sessions SET broadcast_text = ?, broadcast_at = ? WHERE id = ?', [msg, now(), sessionId]);
+    return send(res, 200, { ok: true, at: now() });
+  }
+
   // ===== ADS / BANNERS =====
   // Upload a banner image (sent as a base64 data URI from the browser).
   // scope: 'global' | 'session'. Optional link_url (opens in new tab on tap).
@@ -901,7 +1018,7 @@ async function handleApi(req, res, url) {
     const isBinary = session.poll_type === 'binary';
 
     const participants = await db.all(
-      'SELECT id, user_id, name, email, phone, sms_marketing_consent, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
+      'SELECT id, user_id, name, email, phone, sms_marketing_consent, signup_answer, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
       [sessionId]
     );
     const rounds = await db.all(
@@ -923,7 +1040,7 @@ async function handleApi(req, res, url) {
 
     const cleanParticipants = participants.map((pt, i) => anon
       ? { player: labelById[pt.id], total_points: pt.total_points }
-      : { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) });
+      : { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, signup_answer: pt.signup_answer || null, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) });
 
     const cleanVotes = votes.map(v => {
       const base = {
@@ -1026,6 +1143,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
     if (url.pathname === '/' || url.pathname === '/play') return serveStatic(res, 'play.html');
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
+    if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // allow direct asset paths
     return serveStatic(res, url.pathname.replace(/^\//, '') || 'play.html');
   } catch (e) {

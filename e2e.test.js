@@ -547,6 +547,65 @@ async function call(path, body, method='POST', headers={}) {
   const ratingStillWorks = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   ok('original session is rating type', ratingStillWorks.poll_type === 'rating', ratingStillWorks.poll_type);
 
+  // ======================================================================
+  // EVENT TOOLS — watch link, lobby message, sign-up prompt, broadcast, overlay
+  // ======================================================================
+  console.log('\n— event tools: session config at creation —');
+  const ecs = await call('/api/session', { name: 'Event Night', watchUrl: 'https://twitch.tv/example', lobbyMessage: 'Starting soon!', signupPrompt: 'Drop your IG + city' });
+  ok('session created with config', ecs.status === 200 && ecs.d.sessionId, JSON.stringify(ecs.d));
+  const ESID = ecs.d.sessionId, EATOK = ecs.d.adminToken, EAH = { 'X-Admin-Token': EATOK };
+  let es = (await call(`/api/admin/state?sessionId=${ESID}`, null, 'GET', EAH)).d;
+  ok('watch_url stored', es.session.watch_url === 'https://twitch.tv/example', es.session.watch_url);
+  ok('lobby_message stored', es.session.lobby_message === 'Starting soon!', es.session.lobby_message);
+  ok('signup_prompt stored', es.session.signup_prompt === 'Drop your IG + city', es.session.signup_prompt);
+
+  console.log('\n— event tools: bad watch url is rejected (sanitized to null) —');
+  const badUrl = await call('/api/session', { name: 'Bad URL', watchUrl: 'javascript:alert(1)' });
+  const buState = (await call(`/api/admin/state?sessionId=${badUrl.d.sessionId}`, null, 'GET', { 'X-Admin-Token': badUrl.d.adminToken })).d;
+  ok('non-http watch url sanitized to null', buState.session.watch_url === null, 'got ' + buState.session.watch_url);
+
+  console.log('\n— event tools: update config after creation —');
+  await call('/api/admin/session/config', { sessionId: ESID, watchUrl: 'https://youtube.com/live', lobbyMessage: '', signupPrompt: 'IG only' }, 'POST', EAH);
+  es = (await call(`/api/admin/state?sessionId=${ESID}`, null, 'GET', EAH)).d;
+  ok('watch_url updated', es.session.watch_url === 'https://youtube.com/live', es.session.watch_url);
+  ok('lobby_message cleared via empty string', es.session.lobby_message === null, JSON.stringify(es.session.lobby_message));
+  ok('signup_prompt updated', es.session.signup_prompt === 'IG only', es.session.signup_prompt);
+
+  console.log('\n— event tools: sign-up prompt surfaced at join + answer captured —');
+  const ejr = await call('/api/join/request', { sessionId: ESID, email: 'fan@test.com' });
+  ok('join/request returns signup prompt', ejr.d.signupPrompt === 'IG only', ejr.d.signupPrompt);
+  ok('join/request returns watch url', ejr.d.watchUrl === 'https://youtube.com/live', ejr.d.watchUrl);
+  await call('/api/join/verify', { sessionId: ESID, email: 'fan@test.com', code: ejr.d.devCode, name: 'Fan One', signupAnswer: '@fanone · Atlanta' });
+  const eexp = await fetch(base + `/api/admin/export?sessionId=${ESID}&format=json`, { headers: EAH }).then(r => r.json());
+  const fanRow = eexp.participants.find(p => p.email === 'fan@test.com');
+  ok('signup_answer captured + exported', fanRow && fanRow.signup_answer === '@fanone · Atlanta', JSON.stringify(fanRow && fanRow.signup_answer));
+  const eexpAnon = await fetch(base + `/api/admin/export?sessionId=${ESID}&format=json&anon=1`, { headers: EAH }).then(r => r.json());
+  ok('signup_answer NOT in anon export', eexpAnon.participants.every(p => !('signup_answer' in p)), JSON.stringify(eexpAnon.participants[0]));
+
+  console.log('\n— event tools: broadcast push + clear —');
+  const bc = await call('/api/admin/session/broadcast', { sessionId: ESID, text: 'Running 10 min late!' }, 'POST', EAH);
+  ok('broadcast push ok', bc.status === 200 && bc.d.at, JSON.stringify(bc.d));
+  es = (await call(`/api/admin/state?sessionId=${ESID}`, null, 'GET', EAH)).d;
+  ok('broadcast visible in admin state', es.session.broadcast && es.session.broadcast.text === 'Running 10 min late!', JSON.stringify(es.session.broadcast));
+  // Player sees it too.
+  const fanState = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': (await (async()=>{const r=await call('/api/join/request',{sessionId:ESID,email:'fan2@test.com'});const v=await call('/api/join/verify',{sessionId:ESID,email:'fan2@test.com',code:r.d.devCode,name:'Fan Two'});return v.d.token;})()) } )).d;
+  ok('player sees broadcast', fanState.broadcast && fanState.broadcast.text === 'Running 10 min late!', JSON.stringify(fanState.broadcast));
+  ok('player sees watch_url + lobby in state', fanState.watch_url === 'https://youtube.com/live', fanState.watch_url);
+  await call('/api/admin/session/broadcast', { sessionId: ESID, clear: true }, 'POST', EAH);
+  es = (await call(`/api/admin/state?sessionId=${ESID}`, null, 'GET', EAH)).d;
+  ok('broadcast cleared', es.session.broadcast === null, JSON.stringify(es.session.broadcast));
+
+  console.log('\n— overlay: public PII-safe state —');
+  const ov = await fetch(base + `/api/overlay/state?s=${ESID}`).then(r => r.json());
+  ok('overlay needs no auth', !!ov.session, JSON.stringify(ov.session && ov.session.name));
+  ok('overlay carries leaderboard', Array.isArray(ov.leaderboard), JSON.stringify(ov.leaderboard && ov.leaderboard.length));
+  ok('overlay first-names only (no spaces)', ov.leaderboard.every(r => !/\s/.test(r.name)), JSON.stringify(ov.leaderboard.map(r=>r.name)));
+  const ovStr = JSON.stringify(ov);
+  ok('overlay leaks no emails', !/@test\.com/.test(ovStr));
+  ok('overlay leaks no signup answers', !/Atlanta/.test(ovStr) && !/fanone/.test(ovStr));
+  const ovBad = await fetch(base + `/api/overlay/state?s=nope`).then(r => r.status);
+  ok('overlay 404s unknown session', ovBad === 404, 'got ' + ovBad);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

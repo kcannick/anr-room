@@ -164,6 +164,7 @@
         <div class="session-name" id="sessName">—</div>
       </div>
     </div>
+    <button id="muteBtn" title="Sound on/off" aria-label="Toggle sound" style="margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;width:38px;height:38px;font-size:18px;cursor:pointer;flex:none">🔊</button>
   </div>
 
   <!-- JOIN: email -->
@@ -185,6 +186,7 @@
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
       <div id="devCodeBox" class="note hide"></div>
       <div><label>Your name (shown on the leaderboard)</label><input id="name" placeholder="e.g. Maya"></div>
+      <div id="signupPromptRow" class="hide"><label id="signupPromptLabel">—</label><input id="signupAnswer" placeholder="Type your answer"></div>
       <div><label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label><input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567"></div>
       <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.45;cursor:pointer;color:var(--dim)">
         <input type="checkbox" id="smsConsent" style="margin-top:2px;flex-shrink:0">
@@ -202,7 +204,10 @@
       <img class="mark" src="/mark.png" alt="" onerror="this.style.display='none'">
       <div class="eyebrow">You're in</div>
       <h2 style="margin:10px 0 6px;font-size:24px" id="waitHi">Welcome</h2>
-      <p class="dim" style="font-size:15px;margin:0">Hang tight — the next song is being cued up.</p>
+      <p class="dim" style="font-size:15px;margin:0" id="waitSub">Hang tight — the next song is being cued up.</p>
+      <div id="lobbyMsg" class="note hide" style="text-align:left;margin-top:14px"></div>
+      <a id="watchBtn" class="btn hide" href="#" target="_blank" rel="noopener noreferrer" style="margin-top:14px;text-decoration:none">▶ Watch the stream</a>
+      <button id="inviteBtn" class="btn ghost" style="margin-top:10px">＋ Invite others</button>
       <div class="pulse-wait"><i></i><i></i><i></i></div>
       <div class="tag" style="margin-top:6px">🎧 <span id="waitCount">0</span> in the room</div>
     </div>
@@ -374,6 +379,18 @@
   </div>
 </div>
 
+<!-- BROADCAST MODAL: host message pushed to all players mid-session -->
+<div id="bcModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.78);z-index:60;align-items:center;justify-content:center;padding:22px">
+  <div class="panel" style="max-width:420px;width:100%;text-align:center">
+    <div style="font-size:30px">📣</div>
+    <div class="eyebrow" style="margin-top:6px">From the host</div>
+    <p id="bcText" style="font-size:17px;line-height:1.5;margin:12px 0 18px;color:var(--ink)">—</p>
+    <button class="btn" id="bcDismiss" style="width:100%">Got it</button>
+  </div>
+</div>
+<!-- offscreen canvas used to render the shareable result/recap graphic -->
+<canvas id="shareCanvas" width="1080" height="1920" style="display:none"></canvas>
+
 <script>
 const $=s=>document.querySelector(s);
 const api=async(path,body,method='POST')=>{
@@ -383,6 +400,64 @@ const api=async(path,body,method='POST')=>{
   const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(d.error||'Something went wrong'); return d;
 };
 const SID=new URLSearchParams(location.search).get('s')||localStorage.getItem('rt_sid');
+
+// ---- sound engine (WebAudio; no asset files). Synthesizes a buzzer, a chime, and a
+// short results sting + applause. Muted state persists; browsers require a user
+// gesture before audio, so we lazily create the context on first interaction. ----
+let audioCtx=null, soundOn=(localStorage.getItem('rt_muted')!=='1');
+function ac(){ if(!audioCtx){ try{audioCtx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} } if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); return audioCtx; }
+function tone(freq,start,dur,type='sine',gain=0.2){
+  const c=ac();if(!c)return;const o=c.createOscillator(),g=c.createGain();
+  o.type=type;o.frequency.value=freq;o.connect(g);g.connect(c.destination);
+  const t=c.currentTime+start;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(gain,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0008,t+dur);o.start(t);o.stop(t+dur+0.02);
+}
+function noiseBurst(start,dur,gain=0.12){
+  const c=ac();if(!c)return;const n=c.createBufferSource();
+  const buf=c.createBuffer(1,Math.floor(c.sampleRate*dur),c.sampleRate);const d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);
+  n.buffer=buf;const g=c.createGain(),f=c.createBiquadFilter();f.type='bandpass';f.frequency.value=1600;
+  n.connect(f);f.connect(g);g.connect(c.destination);const t=c.currentTime+start;
+  g.gain.setValueAtTime(gain,t);g.gain.exponentialRampToValueAtTime(0.0008,t+dur);n.start(t);n.stop(t+dur);
+}
+const SFX={
+  buzzer(){ if(!soundOn)return; tone(160,0,0.55,'sawtooth',0.22); tone(120,0,0.55,'square',0.14); },
+  chime(){ if(!soundOn)return; tone(880,0,0.18,'sine',0.18); tone(1320,0.08,0.22,'sine',0.14); },
+  results(){ if(!soundOn)return; // swoosh + rising arpeggio
+    noiseBurst(0,0.35,0.10); [523,659,784,1047].forEach((f,i)=>tone(f,0.12+i*0.07,0.3,'triangle',0.16)); },
+  applause(){ if(!soundOn)return; for(let i=0;i<8;i++)noiseBurst(0.3+Math.random()*0.5,0.18+Math.random()*0.2,0.05); },
+  tick(){ if(!soundOn)return; tone(660,0,0.06,'square',0.10); },
+};
+function updateMuteBtn(){ const b=$('#muteBtn'); if(b)b.textContent=soundOn?'🔊':'🔇'; }
+(function(){ const b=$('#muteBtn'); if(b)b.onclick=()=>{ soundOn=!soundOn; localStorage.setItem('rt_muted',soundOn?'0':'1'); updateMuteBtn(); if(soundOn){ac();SFX.chime();} }; updateMuteBtn(); })();
+// Prime the audio context on the first tap anywhere (unlocks autoplay policies).
+document.addEventListener('pointerdown',()=>{ac();},{once:true});
+
+// ---- broadcast modal: show a host message once per (at) timestamp ----
+let lastBroadcastAt=Number(localStorage.getItem('rt_bc_at')||0);
+function applyBroadcast(bc){
+  if(!bc||!bc.text||!bc.at)return;
+  if(bc.at<=lastBroadcastAt)return; // already shown this one
+  lastBroadcastAt=bc.at;localStorage.setItem('rt_bc_at',String(bc.at));
+  $('#bcText').textContent=bc.text;
+  $('#bcModal').style.display='flex';
+  SFX.chime();
+  try{navigator.vibrate&&navigator.vibrate([0,30,30,30]);}catch(e){}
+}
+$('#bcDismiss')&&($('#bcDismiss').onclick=()=>{$('#bcModal').style.display='none';});
+
+// ---- invite: anyone can share the join link ----
+function playLink(){ return location.origin+'/?s='+encodeURIComponent(SID||localStorage.getItem('rt_sid')||''); }
+$('#inviteBtn')&&($('#inviteBtn').onclick=async()=>{
+  const url=playLink();
+  const data={title:'The A&R Room',text:'Join me in The A&R Room — rate the songs and read the room.',url};
+  try{
+    if(navigator.share){await navigator.share(data);}
+    else{await navigator.clipboard.writeText(url);$('#inviteBtn').textContent='Link copied!';setTimeout(()=>$('#inviteBtn').textContent='＋ Invite others',1400);}
+  }catch(e){/* user cancelled share — ignore */}
+});
+
+
 let chosenTaste=null, predict=null, predictTouched=false, pollTimer=null, lastPhase=null, lastRecap=null;
 // Binary (Verzuz) state. Mirrors the rating flow: a pick (analog of taste) + a split
 // prediction (analog of predict). pollType comes from server state per session.
@@ -452,6 +527,9 @@ $('#btnRequest').onclick=async()=>{
     $('#emailEcho').textContent=email;localStorage.setItem('rt_email',email);
     if(d.devCode){$('#devCodeBox').classList.remove('hide');$('#devCodeBox').textContent='Dev mode — your code is '+d.devCode;}
     else $('#devCodeBox').classList.add('hide');
+    // Custom sign-up prompt, if the host set one for this session.
+    if(d.signupPrompt){$('#signupPromptRow').classList.remove('hide');$('#signupPromptLabel').textContent=d.signupPrompt;}
+    else $('#signupPromptRow').classList.add('hide');
     show('code');
   }catch(e){$('#emailErr').textContent=e.message;}
   $('#btnRequest').disabled=false;
@@ -464,9 +542,10 @@ $('#btnVerify').onclick=async()=>{
   if(!name)return $('#codeErr').textContent='Enter your name';
   const phone=$('#phone')?$('#phone').value.trim():'';
   const smsConsent=$('#smsConsent')?$('#smsConsent').checked:false;
+  const signupAnswer=$('#signupAnswer')?$('#signupAnswer').value.trim():'';
   $('#btnVerify').disabled=true;
   try{
-    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,smsConsent});
+    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,smsConsent,signupAnswer});
     localStorage.setItem('rt_token',d.token);localStorage.setItem('rt_sid',SID);
     startPolling();
   }catch(e){$('#codeErr').textContent=e.message;}
@@ -490,14 +569,23 @@ $('#btnLockBin').onclick=async()=>{
 };
 
 // ---- timer ----
-let closesAt=null;
+let closesAt=null, lastTickSec=null, buzzed=false;
 function tick(){
-  if(closesAt==null)return;
+  if(closesAt==null){lastTickSec=null;return;}
   const left=Math.max(0,Math.round((closesAt-Date.now())/1000));
   const m=Math.floor(left/60),s=left%60;
   $('#vTimer').querySelector('.t').textContent=(m>0?m+':':'')+(m>0?String(s).padStart(2,'0'):s);
   $('#vTimer').classList.toggle('warn',left<=10);
-  if(left<=0){$('#btnLock').disabled=true;$('#btnNext').disabled=true;$('#btnLockBin').disabled=true;$('#btnPickNext').disabled=true;}
+  // Final-5 countdown ticks (only while the player can still act), then a buzzer at 0.
+  const canAct = !$('#btnLock').disabled || !$('#btnLockBin').disabled || !$('#btnNext').disabled || !$('#btnPickNext').disabled;
+  if(left!==lastTickSec){
+    if(left>0 && left<=5 && canAct) SFX.tick();
+    lastTickSec=left;
+  }
+  if(left<=0){
+    if(!buzzed){buzzed=true;SFX.buzzer();}
+    $('#btnLock').disabled=true;$('#btnNext').disabled=true;$('#btnLockBin').disabled=true;$('#btnPickNext').disabled=true;
+  }
 }
 setInterval(tick,250);
 
@@ -519,6 +607,9 @@ function fireReaction(tier,roundIdx){
   // only fire the splashy stuff once per round (not on every poll)
   if(lastReactedRound===roundIdx)return;
   lastReactedRound=roundIdx;
+  // Results sting on reveal; applause for the strong tiers.
+  SFX.results();
+  if(tier==='bullseye'||tier==='sharp')SFX.applause();
   try{
     if(tier==='bullseye'){navigator.vibrate&&navigator.vibrate([0,40,40,80]);confetti();}
     else if(tier==='sharp'){navigator.vibrate&&navigator.vibrate(40);}
@@ -632,25 +723,38 @@ function render(st){
   $('#footPts').textContent=(st.me.total_points||0)+' pts';
   $('#rTotal').textContent=st.me.total_points||0;
 
+  // Watch-stream link (lobby button) — set whenever present.
+  if(st.watch_url){$('#watchBtn').href=st.watch_url;$('#watchBtn').classList.remove('hide');}
+  else $('#watchBtn').classList.add('hide');
+
+  // Live broadcast from the host — pop once per (at) timestamp.
+  applyBroadcast(st.broadcast);
+
   if(st.session.status==='completed'){renderRecap(st);lastRecap=st.recap;show('ended');closesAt=null;return;}
 
   const newPhase=st.phase;
   if(st.phase==='waiting'){
     $('#waitHi').textContent='Hey '+(st.me.name||'there');
-    const waitMsg=document.querySelector('#screen-wait .dim');
     if(st.session.status==='upcoming'){
-      if($('#waitHi').nextElementSibling)$('#waitHi').nextElementSibling.textContent='You\u2019re registered! Voting hasn\u2019t started yet — keep this page handy and you\u2019ll be ready the moment it goes live.';
-    }else if(waitMsg){
-      waitMsg.textContent='Hang tight — the next song is being cued up.';
+      $('#waitSub').textContent='You\u2019re registered! Voting hasn\u2019t started yet — keep this page handy and you\u2019ll be ready the moment it goes live.';
+    }else{
+      $('#waitSub').textContent='Hang tight — the next song is being cued up.';
     }
+    // Host lobby message, if set.
+    if(st.lobby_message){$('#lobbyMsg').classList.remove('hide');$('#lobbyMsg').textContent=st.lobby_message;}
+    else $('#lobbyMsg').classList.add('hide');
     renderBanner('adLobby',st.banner);show('wait');closesAt=null;
   }
   else if(st.phase==='voting'){
-    closesAt=st.round.closes_at||null;
+    // Chime when the host adds time (closes_at pushed later while already voting).
+    const newClose=st.round.closes_at||null;
+    if(lastPhase==='voting' && closesAt!=null && newClose!=null && newClose>closesAt+500){ SFX.chime(); buzzed=false; }
+    closesAt=newClose;
     const isBin = pollType==='binary';
     $('#ratingFlow').classList.toggle('hide', isBin);
     $('#binaryFlow').classList.toggle('hide', !isBin);
     if(lastPhase!=='voting'){ // reset inputs on a fresh round
+      buzzed=false;lastTickSec=null;
       // rating inputs
       chosenTaste=null;document.querySelectorAll('.pip').forEach(p=>p.classList.remove('on'));
       $('#pred').value=4.5;predict=null;predictTouched=false;$('#pred').classList.remove('touched');
@@ -708,13 +812,74 @@ async function refresh(){
 }
 function startPolling(){if(pollTimer)clearInterval(pollTimer);refresh();pollTimer=setInterval(refresh,2500);}
 
+// ---- shareable graphic (1080x1920 Instagram Story) rendered on the offscreen canvas ----
+function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function renderRecapGraphic(r){
+  const c=$('#shareCanvas'),x=c.getContext('2d'),W=1080,H=1920;
+  // background
+  const bg=x.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#16121f');bg.addColorStop(1,'#0a0814');
+  x.fillStyle=bg;x.fillRect(0,0,W,H);
+  // accent header bar
+  x.fillStyle='#4bb749';x.fillRect(0,0,W,14);
+  x.textAlign='center';
+  x.fillStyle='#a9a2c9';x.font='600 34px DM Sans, sans-serif';
+  x.fillText('THE  A&R  ROOM',W/2,150);
+  x.fillStyle='#f3f0fb';x.font='800 70px DM Sans, sans-serif';
+  x.fillText((r.name||'You')+'’s card',W/2,250);
+  const isBin=r.poll_type==='binary';
+  // big metric circle
+  const cy=560,rad=200;
+  x.lineWidth=18;x.strokeStyle='#2a2438';x.beginPath();x.arc(W/2,cy,rad,0,Math.PI*2);x.stroke();
+  x.strokeStyle='#4bb749';x.beginPath();x.arc(W/2,cy,rad,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.min(1,(r.totalPoints||0)/Math.max(100,(r.totalPoints||0))) );x.stroke();
+  x.fillStyle='#f3f0fb';x.font='800 120px Space Mono, monospace';x.fillText(r.totalPoints,W/2,cy+20);
+  x.fillStyle='#a9a2c9';x.font='600 36px DM Sans, sans-serif';x.fillText('TOTAL POINTS',W/2,cy+90);
+  if(!isBin && r.grade){ // grade chip for rating game
+    x.fillStyle='#6d5fe0';roundRect(x,W/2-110,cy+150,220,96,22);x.fill();
+    x.fillStyle='#fff';x.font='800 70px Space Mono, monospace';x.fillText(r.grade,W/2,cy+220);
+    x.fillStyle='#a9a2c9';x.font='600 30px DM Sans, sans-serif';x.fillText('EAR FOR THE ROOM',W/2,cy+285);
+  }
+  // stat rows
+  const rows=[
+    ['Room rank', r.rank?('#'+r.rank+' of '+r.fieldSize):'—'],
+    ['Bullseyes', String(r.bullseyes)],
+    [isBin?'Room leaned':'Room average', isBin?(r.overallSplitA!=null?Math.round(r.overallSplitA)+'% A':'—'):(r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—')],
+  ];
+  let ry=1180;x.textAlign='left';
+  rows.forEach(([k,v])=>{
+    x.fillStyle='#15101f';roundRect(x,90,ry,W-180,120,20);x.fill();
+    x.fillStyle='#a9a2c9';x.font='600 38px DM Sans, sans-serif';x.fillText(k,130,ry+74);
+    x.fillStyle='#4bb749';x.font='700 50px Space Mono, monospace';x.textAlign='right';x.fillText(v,W-130,ry+78);x.textAlign='left';
+    ry+=150;
+  });
+  // footer
+  x.textAlign='center';x.fillStyle='#6f688f';x.font='600 34px DM Sans, sans-serif';
+  x.fillText('Read the room. anr.makinitmag.com',W/2,1820);
+  return c;
+}
+function canvasToBlob(c){return new Promise(res=>c.toBlob(res,'image/png',0.92));}
+
 $('#btnShare')&&($('#btnShare').onclick=async()=>{
   if(!lastRecap)return;
-  const text=shareText(lastRecap);
+  const btn=$('#btnShare');const orig=btn.textContent;btn.disabled=true;btn.textContent='Building your card…';
   try{
-    if(navigator.share){await navigator.share({title:'The A&R Room',text});}
-    else{await navigator.clipboard.writeText(text);$('#btnShare').textContent='Copied to clipboard!';setTimeout(()=>$('#btnShare').textContent='Share my card',1500);}
-  }catch(e){}
+    const canvas=renderRecapGraphic(lastRecap);
+    const blob=await canvasToBlob(canvas);
+    const file=new File([blob],'anr-card.png',{type:'image/png'});
+    const text=shareText(lastRecap);
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:'The A&R Room',text});
+    }else{
+      // Fallback: download the image + copy the text.
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='anr-card.png';a.click();
+      try{await navigator.clipboard.writeText(text);}catch(e){}
+      btn.textContent='Saved image ✓';setTimeout(()=>{btn.textContent=orig;},1600);
+    }
+  }catch(e){
+    // Last-ditch text share.
+    try{ if(navigator.share)await navigator.share({title:'The A&R Room',text:shareText(lastRecap)}); else {await navigator.clipboard.writeText(shareText(lastRecap));} }catch(_){}
+  }
+  if(btn.textContent==='Building your card…')btn.textContent=orig;
+  btn.disabled=false;
 });
 
 // boot

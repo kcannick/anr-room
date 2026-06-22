@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The A&R Room — Overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* OBS browser source: transparent background by design. The page paints nothing
+     full-bleed — only the cards have backgrounds — so the stream shows through. */
+  :root{
+    --ink:#f3f0fb; --ink-dim:#bdb6d8; --ink-faint:#8c84ad;
+    --signal:#4bb749; --cool:#7c6ff0; --hot:#ff5d6c; --gold:#f5a524;
+    --panel:rgba(16,12,26,.86); --panel-2:rgba(10,8,20,.82);
+    --line:rgba(255,255,255,.10);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:transparent}
+  body{
+    font-family:"DM Sans",system-ui,sans-serif;color:var(--ink);
+    width:1920px;height:1080px;overflow:hidden;position:relative;
+    /* scale to fit whatever the browser source is sized to */
+    transform-origin:top left;
+  }
+  .mono{font-family:"Space Mono",monospace}
+  .hide{display:none!important}
+
+  /* shared card chrome */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:22px;
+    backdrop-filter:blur(8px);box-shadow:0 24px 60px rgba(0,0,0,.45)}
+  .eyebrow{font-size:18px;letter-spacing:.26em;text-transform:uppercase;color:var(--signal);font-weight:700}
+  .dim{color:var(--ink-dim)} .faint{color:var(--ink-faint)}
+
+  /* ---- LOWER THIRD: current song / matchup ---- */
+  #lower{position:absolute;left:60px;right:60px;bottom:56px;padding:34px 44px;display:flex;align-items:center;gap:36px}
+  #lower .brandtag{display:flex;flex-direction:column;gap:6px;flex:none;border-right:1px solid var(--line);padding-right:36px}
+  #lower .brandtag .room{font-weight:800;font-size:30px;letter-spacing:-.01em}
+  #lower .brandtag .sess{font-size:18px;color:var(--ink-dim);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #lower .main{flex:1;min-width:0}
+  #lower .nowtag{font-size:18px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
+  #lower .title{font-size:54px;font-weight:800;line-height:1.04;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #lower .artist{font-size:26px;color:var(--ink-dim);margin-top:4px}
+  #lower .vs{color:var(--cool);font-weight:800}
+  #lower .right{flex:none;text-align:right;min-width:300px}
+  #lower .countlabel{font-size:17px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
+  #lower .bignum{font-family:"Space Mono",monospace;font-size:84px;font-weight:700;line-height:.95;color:var(--signal)}
+  #lower .sub{font-size:18px;color:var(--ink-dim);margin-top:2px}
+  /* live split bar (binary) */
+  #splitWrap{margin-top:14px}
+  #splitBar{display:flex;height:26px;border-radius:13px;overflow:hidden;border:1px solid var(--line)}
+  #splitBar .a{background:var(--signal)} #splitBar .b{background:var(--cool)}
+  #splitLabels{display:flex;justify-content:space-between;font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:8px}
+  #splitLabels .la{color:var(--signal)} #splitLabels .lb{color:var(--cool)}
+
+  /* ---- LEADERBOARD: right rail ---- */
+  #board{position:absolute;top:60px;right:60px;width:440px;padding:28px 30px}
+  #board h3{font-size:22px;font-weight:800;letter-spacing:.02em;display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  #board h3 .dotlive{width:12px;height:12px;border-radius:50%;background:var(--signal);box-shadow:0 0 0 0 rgba(75,183,73,.7);animation:pulse 2s infinite}
+  .lbrow{display:flex;align-items:center;gap:14px;padding:11px 0;border-top:1px solid var(--line)}
+  .lbrow:first-of-type{border-top:none}
+  .lbrow .rk{font-family:"Space Mono",monospace;font-size:24px;font-weight:700;width:46px;color:var(--ink-faint)}
+  .lbrow.top1 .rk{color:var(--gold)} .lbrow.top2 .rk{color:var(--ink)} .lbrow.top3 .rk{color:#cd7f32}
+  .lbrow .nm{flex:1;font-size:26px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lbrow .pts{font-family:"Space Mono",monospace;font-size:26px;font-weight:700;color:var(--signal)}
+
+  /* ---- RESULT BANNER: winner reveal ---- */
+  #result{position:absolute;left:60px;right:60px;top:60px;padding:30px 44px;display:flex;align-items:center;gap:30px}
+  #result .crown{font-size:64px;flex:none}
+  #result .rmeta{flex:1;min-width:0}
+  #result .rlabel{font-size:18px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:700}
+  #result .rwin{font-size:50px;font-weight:800;line-height:1.02}
+  #result .rsong{font-size:22px;color:var(--ink-dim);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #result .rroom{flex:none;text-align:right}
+  #result .rroom .k{font-size:16px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
+  #result .rroom .v{font-family:"Space Mono",monospace;font-size:64px;font-weight:700;color:var(--signal);line-height:1}
+
+  /* ---- BROADCAST ticker ---- */
+  #bcast{position:absolute;left:60px;right:60px;top:50%;transform:translateY(-50%);padding:34px 46px;text-align:center;border-color:var(--gold)}
+  #bcast .blab{font-size:18px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);font-weight:700}
+  #bcast .btext{font-size:44px;font-weight:800;line-height:1.2;margin-top:12px}
+
+  /* idle / connecting */
+  #idle{position:absolute;left:60px;bottom:56px;padding:24px 34px}
+  #idle .t{font-size:26px;font-weight:700}
+  #idle .s{font-size:18px;color:var(--ink-dim);margin-top:4px}
+
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(75,183,73,.6)}70%{box-shadow:0 0 0 14px rgba(75,183,73,0)}100%{box-shadow:0 0 0 0 rgba(75,183,73,0)}}
+  /* gentle enter for swapped cards */
+  .card{transition:opacity .25s ease}
+</style>
+</head>
+<body>
+  <!-- LEADERBOARD (always on, unless ?view hides it) -->
+  <div id="board" class="card hide">
+    <h3><span class="dotlive"></span> Leaderboard</h3>
+    <div id="lbRows"></div>
+  </div>
+
+  <!-- LOWER THIRD: current round -->
+  <div id="lower" class="card hide">
+    <div class="brandtag">
+      <div class="room">The A&amp;R Room</div>
+      <div class="sess" id="sessName">—</div>
+    </div>
+    <div class="main">
+      <div class="nowtag" id="nowTag">Now rating · Round 1</div>
+      <div class="title" id="curTitle">—</div>
+      <div class="artist" id="curArtist"></div>
+      <div id="splitWrap" class="hide">
+        <div id="splitBar"><div class="a" style="width:50%"></div><div class="b" style="width:50%"></div></div>
+        <div id="splitLabels"><span class="la" id="splitLA">A 50%</span><span class="lb" id="splitLB">50% B</span></div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="countlabel" id="rightLabel">Votes in</div>
+      <div class="bignum" id="rightNum">0</div>
+      <div class="sub" id="rightSub"></div>
+    </div>
+  </div>
+
+  <!-- RESULT BANNER -->
+  <div id="result" class="card hide">
+    <div class="crown">👑</div>
+    <div class="rmeta">
+      <div class="rlabel" id="resLabel">Round winner</div>
+      <div class="rwin" id="resWinner">—</div>
+      <div class="rsong" id="resSong"></div>
+    </div>
+    <div class="rroom">
+      <div class="k" id="resRoomK">Room average</div>
+      <div class="v" id="resRoomV">—</div>
+    </div>
+  </div>
+
+  <!-- BROADCAST -->
+  <div id="bcast" class="card hide">
+    <div class="blab">📣 From the host</div>
+    <div class="btext" id="bcastText">—</div>
+  </div>
+
+  <!-- IDLE -->
+  <div id="idle" class="card">
+    <div class="t" id="idleT">The A&amp;R Room</div>
+    <div class="s" id="idleS">Connecting to the room…</div>
+  </div>
+
+<script>
+const $=s=>document.querySelector(s);
+const params=new URLSearchParams(location.search);
+const SID=params.get('s')||params.get('sessionId');
+// ?view= controls which panels show: 'all' (default), 'lower', 'board', 'result'.
+const VIEW=(params.get('view')||'all').toLowerCase();
+const showBoard=(VIEW==='all'||VIEW==='board');
+const showLower=(VIEW==='all'||VIEW==='lower');
+const showResultView=(VIEW==='all'||VIEW==='result');
+
+// Fit the 1920x1080 stage into whatever the OBS source is sized to.
+function fit(){
+  const sx=window.innerWidth/1920, sy=window.innerHeight/1080;
+  const s=Math.min(sx,sy);
+  document.body.style.transform='scale('+s+')';
+}
+window.addEventListener('resize',fit);fit();
+
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt1=n=>n==null?'—':(Math.round(n*10)/10).toFixed(1);
+
+let lastBcAt=0, bcTimer=null;
+function showOnly(){
+  // visibility driven by data + view flags
+}
+
+async function poll(){
+  if(!SID){$('#idleT').textContent='No session';$('#idleS').textContent='Add ?s=SESSION_ID to the overlay URL';return;}
+  let st;
+  try{ st=await fetch('/api/overlay/state?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status)); }
+  catch(e){ $('#idle').classList.remove('hide');$('#idleS').textContent='Reconnecting…'; return; }
+  render(st);
+}
+
+function render(st){
+  const isBin=st.session.poll_type==='binary';
+  $('#sessName').textContent=st.session.name||'';
+
+  // --- broadcast (highest priority overlay) ---
+  if(st.broadcast&&st.broadcast.text){
+    $('#bcastText').textContent=st.broadcast.text;
+    $('#bcast').classList.remove('hide');
+    if(st.broadcast.at!==lastBcAt){
+      lastBcAt=st.broadcast.at;
+      // auto-hide a broadcast after 12s of screen time (host can re-send to repin)
+      if(bcTimer)clearTimeout(bcTimer);
+      bcTimer=setTimeout(()=>{$('#bcast').classList.add('hide');},12000);
+    }
+  }
+
+  // --- leaderboard rail ---
+  if(showBoard && st.leaderboard && st.leaderboard.length){
+    $('#lbRows').innerHTML=st.leaderboard.slice(0,8).map(r=>`
+      <div class="lbrow ${r.rank<=3?('top'+r.rank):''}">
+        <div class="rk">${r.rank}</div>
+        <div class="nm">${esc(r.name)}</div>
+        <div class="pts">${r.points}</div>
+      </div>`).join('');
+    $('#board').classList.remove('hide');
+  }else $('#board').classList.add('hide');
+
+  // --- result banner vs current round (mutually exclusive) ---
+  const result=st.result, current=st.current;
+  let showingResult=false;
+  if(showResultView && result){
+    showingResult=true;
+    $('#resWinner').textContent=result.winner||'No votes';
+    $('#resSong').textContent=isBin
+      ? ((result.song_title||'A')+' vs '+(result.option_b_title||'B'))
+      : (result.song_title+(result.song_artist?' · '+result.song_artist:''));
+    if(isBin){
+      $('#resRoomK').textContent='Room split (A)';
+      $('#resRoomV').textContent=result.room.split_a!=null?Math.round(result.room.split_a)+'%':'—';
+    }else{
+      $('#resRoomK').textContent='Room average';
+      $('#resRoomV').textContent=fmt1(result.room.average);
+    }
+    $('#result').classList.remove('hide');
+  }else $('#result').classList.add('hide');
+
+  // --- lower third (current round), hidden while a result banner is up ---
+  if(showLower && current && !showingResult){
+    $('#nowTag').textContent=(isBin?'Now playing · Round ':'Now rating · Round ')+current.idx+(current.status==='closed'?' · voting closed':'');
+    if(isBin){
+      $('#curTitle').innerHTML=esc(current.song_title||'A')+' <span class="vs">vs</span> '+esc(current.option_b_title||'B');
+      $('#curArtist').textContent='';
+      const a=current.live&&current.live.split_a!=null?Math.round(current.live.split_a):null;
+      if(a!=null){
+        $('#splitWrap').classList.remove('hide');
+        $('#splitBar').children[0].style.width=a+'%';$('#splitBar').children[1].style.width=(100-a)+'%';
+        $('#splitLA').textContent=(current.song_title||'A')+' '+a+'%';
+        $('#splitLB').textContent=(100-a)+'% '+(current.option_b_title||'B');
+      }else $('#splitWrap').classList.add('hide');
+      $('#rightLabel').textContent='Votes in';
+      $('#rightNum').textContent=current.votes||0;
+      $('#rightSub').textContent='';
+    }else{
+      $('#curTitle').textContent=current.song_title||'—';
+      $('#curArtist').textContent=current.song_artist||'';
+      $('#splitWrap').classList.add('hide');
+      // While rating is open we show the vote count (the room average stays sealed
+      // for the players; on the overlay we still keep it hidden until ratify to
+      // preserve the reveal — show votes-in as the live hype number).
+      $('#rightLabel').textContent='Votes in';
+      $('#rightNum').textContent=current.votes||0;
+      $('#rightSub').textContent='';
+    }
+    if(current.giveaway){$('#rightSub').textContent='🎁 '+current.giveaway;}
+    $('#lower').classList.remove('hide');
+  }else $('#lower').classList.add('hide');
+
+  // --- idle card only when nothing else is showing ---
+  const anything=!$('#lower').classList.contains('hide')||!$('#result').classList.contains('hide')||!$('#board').classList.contains('hide')||!$('#bcast').classList.contains('hide');
+  if(anything){$('#idle').classList.add('hide');}
+  else{
+    $('#idle').classList.remove('hide');
+    $('#idleT').textContent=st.session.name||'The A&R Room';
+    $('#idleS').textContent=(st.session.status==='upcoming')?'Starting soon…':((st.participants||0)+' in the room · waiting for the next song');
+  }
+}
+
+poll();
+setInterval(poll,2000);
+</script>
+</body>
+</html>

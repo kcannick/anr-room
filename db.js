@@ -36,6 +36,11 @@ const SCHEMA = [
      banner_id TEXT,                         -- optional session-level ad override
      default_minutes INTEGER NOT NULL DEFAULT 5, -- per-session default voting window
      poll_type TEXT NOT NULL DEFAULT 'rating', -- 'rating' (0-9 game) | 'binary' (Verzuz A/B)
+     watch_url TEXT,                         -- optional stream/watch link shown to players
+     lobby_message TEXT,                     -- optional admin text shown in the lobby/waiting screen
+     signup_prompt TEXT,                     -- optional custom question asked at join (e.g. "IG + city")
+     broadcast_text TEXT,                    -- current live broadcast message (null = none)
+     broadcast_at BIGINT,                    -- when the current broadcast was set (drives client dedupe)
      created_at BIGINT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS users (
@@ -67,6 +72,7 @@ const SCHEMA = [
      name TEXT,
      phone TEXT,                            -- optional; captured at registration
      sms_marketing_consent INTEGER NOT NULL DEFAULT 0,  -- explicit opt-in for this signup
+     signup_answer TEXT,                    -- answer to the session's custom sign-up prompt
      token TEXT NOT NULL,                    -- player auth token (cookie)
      verified INTEGER NOT NULL DEFAULT 0,
      total_points INTEGER NOT NULL DEFAULT 0,

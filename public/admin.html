@@ -116,6 +116,14 @@
       </select>
     </div>
     <div id="newSchedRow" class="hide"><label>Scheduled start <span class="muted">(optional, shown to early joiners)</span></label><input id="newSched" type="datetime-local"></div>
+    <details style="border-top:1px solid var(--line);padding-top:10px">
+      <summary style="cursor:pointer;color:var(--ink-dim);font-size:13px">Event extras (optional) — watch link, lobby message, sign-up prompt</summary>
+      <div style="margin-top:10px">
+        <label>Watch link</label><input id="newWatch" placeholder="https://twitch.tv/…">
+        <label style="margin-top:10px">Lobby message</label><textarea id="newLobby" placeholder="Shown while players wait"></textarea>
+        <label style="margin-top:10px">Sign-up prompt</label><input id="newPrompt" placeholder="e.g. Drop your Instagram + city">
+      </div>
+    </details>
     <button class="btn" id="btnCreate">Create session</button>
     <div class="err" id="createErr"></div>
     <button class="btn ghost sm" id="btnCreateBack">← Back to my sessions</button>
@@ -170,6 +178,37 @@
           <div class="link" id="playLink"></div>
           <button class="btn ghost sm" id="btnCopy" style="margin-top:8px">Copy link</button>
         </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Event tools</h2>
+      <!-- Broadcast -->
+      <label>Broadcast a message to everyone <span class="muted">(pops on all player screens)</span></label>
+      <textarea id="bcInput" placeholder="e.g. Verzuz is running 10 min late — we'll spin some indie until it kicks off"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn good sm" id="btnBroadcast">Send broadcast</button>
+        <button class="btn ghost sm" id="btnBroadcastClear">Clear</button>
+      </div>
+      <div class="muted" id="bcStatus" style="font-size:12px;margin-top:6px"></div>
+
+      <!-- Overlay link -->
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+        <label>Stream overlay <span class="muted">(OBS browser source — transparent)</span></label>
+        <div class="link" id="overlayLink" style="word-break:break-all"></div>
+        <button class="btn ghost sm" id="btnCopyOverlay" style="margin-top:8px">Copy overlay link</button>
+      </div>
+
+      <!-- Config -->
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+        <label>Watch link <span class="muted">(stream URL shown to players)</span></label>
+        <input id="cfgWatch" placeholder="https://…">
+        <label style="margin-top:10px">Lobby message <span class="muted">(shown while waiting)</span></label>
+        <textarea id="cfgLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea>
+        <label style="margin-top:10px">Sign-up prompt <span class="muted">(custom question at join)</span></label>
+        <input id="cfgPrompt" placeholder="e.g. Drop your Instagram + city">
+        <button class="btn sm" id="btnSaveConfig" style="margin-top:10px;width:100%">Save event settings</button>
+        <div class="muted" id="cfgStatus" style="font-size:12px;margin-top:6px"></div>
       </div>
     </div>
 
@@ -365,6 +404,9 @@ $('#btnCreate').onclick=async()=>{
   mins=Math.min(60,Math.max(2,mins));
   const when=$('#newWhen').value;
   const body={name,defaultMinutes:mins,pollType:($('#newPollType')?$('#newPollType').value:'rating')};
+  if($('#newWatch')&&$('#newWatch').value.trim())body.watchUrl=$('#newWatch').value.trim();
+  if($('#newLobby')&&$('#newLobby').value.trim())body.lobbyMessage=$('#newLobby').value.trim();
+  if($('#newPrompt')&&$('#newPrompt').value.trim())body.signupPrompt=$('#newPrompt').value.trim();
   if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=new Date(sv).getTime();}
   try{
     const d=await api('/api/session',body);
@@ -396,6 +438,31 @@ $('#btnAddRound').onclick=async()=>{
 };
 
 $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textContent);$('#btnCopy').textContent='Copied!';setTimeout(()=>$('#btnCopy').textContent='Copy link',1200);};
+
+// ---- event tools ----
+$('#btnCopyOverlay')&&($('#btnCopyOverlay').onclick=()=>{navigator.clipboard.writeText($('#overlayLink').textContent);$('#btnCopyOverlay').textContent='Copied!';setTimeout(()=>$('#btnCopyOverlay').textContent='Copy overlay link',1200);});
+$('#btnBroadcast')&&($('#btnBroadcast').onclick=async()=>{
+  const text=$('#bcInput').value.trim();if(!text)return $('#bcStatus').textContent='Type a message first.';
+  $('#btnBroadcast').disabled=true;
+  try{await api('/api/admin/session/broadcast',{sessionId:SID,text});$('#bcStatus').textContent='Sent to all players ✓';setTimeout(()=>$('#bcStatus').textContent='',2500);}
+  catch(e){$('#bcStatus').textContent=e.message;}
+  $('#btnBroadcast').disabled=false;
+});
+$('#btnBroadcastClear')&&($('#btnBroadcastClear').onclick=async()=>{
+  try{await api('/api/admin/session/broadcast',{sessionId:SID,clear:true});$('#bcInput').value='';$('#bcStatus').textContent='Cleared.';setTimeout(()=>$('#bcStatus').textContent='',2000);}
+  catch(e){$('#bcStatus').textContent=e.message;}
+});
+$('#btnSaveConfig')&&($('#btnSaveConfig').onclick=async()=>{
+  $('#btnSaveConfig').disabled=true;
+  try{
+    await api('/api/admin/session/config',{sessionId:SID,watchUrl:$('#cfgWatch').value.trim(),lobbyMessage:$('#cfgLobby').value.trim(),signupPrompt:$('#cfgPrompt').value.trim()});
+    $('#cfgStatus').textContent='Saved ✓';setTimeout(()=>$('#cfgStatus').textContent='',2000);
+  }catch(e){$('#cfgStatus').textContent=e.message;}
+  $('#btnSaveConfig').disabled=false;
+});
+// Track whether the host is editing a config field, so polling doesn't clobber input.
+let cfgFocused=false;
+['cfgWatch','cfgLobby','cfgPrompt'].forEach(idr=>{const el=$('#'+idr);if(el){el.addEventListener('focus',()=>cfgFocused=true);el.addEventListener('blur',()=>setTimeout(()=>cfgFocused=false,200));}});
 $('#btnEnd').onclick=async()=>{if(!confirm('Complete the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'completed'});refresh();};
 $('#btnGoLive').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
 $('#btnArchive').onclick=async()=>{if(!confirm('Archive this session? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
@@ -541,6 +608,16 @@ function render(st){
   const link=location.origin+'/?s='+st.session.id;
   $('#playLink').textContent=link;
   $('#qr').src='https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data='+encodeURIComponent(link);
+  // event tools
+  if($('#overlayLink'))$('#overlayLink').textContent=location.origin+'/overlay?s='+st.session.id;
+  if(!cfgFocused){
+    if($('#cfgWatch'))$('#cfgWatch').value=st.session.watch_url||'';
+    if($('#cfgLobby'))$('#cfgLobby').value=st.session.lobby_message||'';
+    if($('#cfgPrompt'))$('#cfgPrompt').value=st.session.signup_prompt||'';
+  }
+  if($('#bcStatus')&&st.session.broadcast&&!$('#bcStatus').textContent){
+    $('#bcStatus').textContent='Live broadcast active — players see it.';
+  }
   roundControls(st);queueBox(st);reviewBox(st);adsBox(st);
   // feed
   const feed=$('#feed');
@@ -560,8 +637,9 @@ function render(st){
   // board
   const b=$('#board');
   if(st.participants.length){
+    const anyAnswer=st.participants.some(p=>p.signup_answer);
     b.innerHTML='<table><thead><tr><th>#</th><th>Name</th><th class="mono">Total</th></tr></thead><tbody>'+
-      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>';
+      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.signup_answer?`<div class="muted" style="font-size:11px">${esc(p.signup_answer)}</div>`:''}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+(anyAnswer?'<p class="muted" style="font-size:11px;margin:8px 0 0">Sign-up answers shown under each name — handy for posting winners.</p>':'');
   }else b.innerHTML='<div class="empty">Nobody\'s joined yet — share the QR code.</div>';
 }
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

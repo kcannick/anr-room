@@ -118,6 +118,23 @@ async function freshDb() {
   const applied3b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('003 idempotent (not duplicated)', applied3b.filter(x => x === '003_binary_poll').length === 1, JSON.stringify(applied3b));
 
+  // 6. Migration 004 (event tools): session config + broadcast + participant answer.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init();
+  const applied4 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('004_event_tools applied', applied4.includes('004_event_tools'), JSON.stringify(applied4));
+  const sc4 = (await db.all('PRAGMA table_info(sessions)', [])).map(c => c.name);
+  ['watch_url', 'lobby_message', 'signup_prompt', 'broadcast_text', 'broadcast_at'].forEach(col => {
+    ok('sessions.' + col + ' created', sc4.includes(col));
+  });
+  const pc4 = (await db.all('PRAGMA table_info(participants)', [])).map(c => c.name);
+  ok('participants.signup_answer created', pc4.includes('signup_answer'));
+  await db.init();
+  const applied4b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('004 idempotent (not duplicated)', applied4b.filter(x => x === '004_event_tools').length === 1, JSON.stringify(applied4b));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
