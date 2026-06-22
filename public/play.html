@@ -195,11 +195,11 @@
       <div id="devCodeBox" class="note hide"></div>
       <div><label>Your name (shown on the leaderboard)</label><input id="name" placeholder="e.g. Maya"></div>
       <div id="signupPromptRow" class="hide"><label id="signupPromptLabel">—</label><input id="signupAnswer" placeholder="Type your answer"></div>
-      <div><label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label><input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567"></div>
-      <label class="consent">
-        <input type="checkbox" id="smsConsent">
-        <span>Text me when this room goes live and about future A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Consent isn't required to play.</span>
-      </label>
+      <div>
+        <label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label>
+        <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
+        <p class="dim" style="font-size:12px;line-height:1.5;margin:7px 2px 0">By entering your number you agree to get texts when this room goes live and about future A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Optional — not required to play.</p>
+      </div>
       <button class="btn" id="btnVerify">Enter the room</button>
       <button class="btn ghost" id="btnBack">Use a different email</button>
       <div class="err" id="codeErr"></div>
@@ -681,10 +681,29 @@ $('#btnRequest').onclick=async()=>{
     // Custom sign-up prompt, if the host set one for this session.
     if(d.signupPrompt){$('#signupPromptRow').classList.remove('hide');$('#signupPromptLabel').textContent=d.signupPrompt;}
     else $('#signupPromptRow').classList.add('hide');
+    applyPrefill(d.prefill);
     show('code');
   }catch(e){$('#emailErr').textContent=e.message;}
   $('#btnRequest').disabled=false;
 };
+// Returning-player prefill: name is filled; the phone is shown MASKED (we never receive
+// the real number here). Having a number on file means they're already opted in to SMS,
+// so the masked hint doubles as the opt-in indicator. phonePrefilled => "stored number
+// on file, field left as the mask" so verify can tell the server to keep it.
+let phonePrefilled=false;
+function applyPrefill(pf){
+  phonePrefilled=false;
+  const nameEl=$('#name'), phoneEl=$('#phone');
+  if(!pf){ if(phoneEl){phoneEl.value='';phoneEl.placeholder='(555) 123-4567';} return; }
+  if(nameEl&&pf.name)nameEl.value=pf.name;
+  if(phoneEl){
+    if(pf.hasPhone){
+      phoneEl.value='';
+      phoneEl.placeholder=pf.phoneHint+' (on file — tap to change)';
+      phonePrefilled=true;
+    }else{ phoneEl.value='';phoneEl.placeholder='(555) 123-4567'; }
+  }
+}
 $('#btnBack').onclick=()=>{show('email');};
 $('#btnVerify').onclick=async()=>{
   $('#codeErr').textContent='';
@@ -692,12 +711,15 @@ $('#btnVerify').onclick=async()=>{
   if(!code)return $('#codeErr').textContent='Enter the code';
   if(!name)return $('#codeErr').textContent='Enter your name';
   const phone=$('#phone')?$('#phone').value.trim():'';
-  const smsConsent=$('#smsConsent')?$('#smsConsent').checked:false;
+  // If a returning user has a number on file and left the field untouched (still the
+  // mask), tell the server to keep it (and keep them opted in). A newly typed number is
+  // sent and replaces it. No stored number + empty field => no phone => no SMS consent.
+  const keepPhone = phonePrefilled && phone.length===0;
   const signupAnswer=$('#signupAnswer')?$('#signupAnswer').value.trim():'';
   const ref=localStorage.getItem('rt_ref_'+SID)||'';
   $('#btnVerify').disabled=true;
   try{
-    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,smsConsent,signupAnswer,ref});
+    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,keepPhone,signupAnswer,ref});
     setToken(d.token);
     localStorage.removeItem('rt_ref_'+SID);
     startPolling();

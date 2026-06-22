@@ -404,20 +404,35 @@ async function call(path, body, method='POST', headers={}) {
   const legacyState = await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH);
   ok('legacy admin token still admins its session', legacyState.status === 200, 'got ' + legacyState.status);
 
-  console.log('\n— pre-registration SMS consent capture (stage 5, compliant) —');
-  // A player joining with phone + explicit consent → stored with a timestamp.
-  const cr = await call('/api/join/request', { sessionId: SID, email: 'sms-yes@test.com' });
-  await call('/api/join/verify', { sessionId: SID, email: 'sms-yes@test.com', code: cr.d.devCode, name: 'Yes Person', phone: '555-111-2222', smsConsent: true });
+  console.log('\n— SMS consent via phone presence (phone = opt-in, no checkbox) —');
+  const smsYesReq = await call('/api/join/request', { sessionId: SID, email: 'sms-yes@test.com' });
+  await call('/api/join/verify', { sessionId: SID, email: 'sms-yes@test.com', code: smsYesReq.d.devCode, name: 'Yes Person', phone: '555-111-2222' });
   const expY = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`, { headers: AH }).then(r => r.json());
   const yRow = expY.participants.find(p => p.email === 'sms-yes@test.com');
-  ok('consenting player stored with phone', yRow && yRow.phone === '555-111-2222', JSON.stringify(yRow && yRow.phone));
-  ok('consent flag set', yRow && (yRow.sms_marketing_consent === 1 || yRow.sms_marketing_consent === true), JSON.stringify(yRow && yRow.sms_marketing_consent));
-  // A player who does NOT check the box → no consent, even if phone given.
-  const cn = await call('/api/join/request', { sessionId: SID, email: 'sms-no@test.com' });
-  await call('/api/join/verify', { sessionId: SID, email: 'sms-no@test.com', code: cn.d.devCode, name: 'No Person', phone: '555-333-4444', smsConsent: false });
+  ok('player with phone stored', yRow && yRow.phone === '555-111-2222', JSON.stringify(yRow && yRow.phone));
+  ok('phone presence = consent', yRow && (yRow.sms_marketing_consent === 1 || yRow.sms_marketing_consent === true), JSON.stringify(yRow && yRow.sms_marketing_consent));
+  const smsNoReq = await call('/api/join/request', { sessionId: SID, email: 'sms-no@test.com' });
+  await call('/api/join/verify', { sessionId: SID, email: 'sms-no@test.com', code: smsNoReq.d.devCode, name: 'No Person', phone: '', smsConsent: true });
   const expN = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`, { headers: AH }).then(r => r.json());
   const nRow = expN.participants.find(p => p.email === 'sms-no@test.com');
-  ok('non-consenting player NOT marked consented', nRow && (nRow.sms_marketing_consent === 0 || nRow.sms_marketing_consent === false || nRow.sms_marketing_consent == null), JSON.stringify(nRow && nRow.sms_marketing_consent));
+  ok('no phone = not consented (even if client claims consent)', nRow && (nRow.sms_marketing_consent === 0 || nRow.sms_marketing_consent === false || nRow.sms_marketing_consent == null), JSON.stringify(nRow && nRow.sms_marketing_consent));
+
+  console.log('\n— returning prefill + phone-as-consent combined —');
+  const pfEmail = 'combo@test.com';
+  const pfSessA = await call('/api/session', { name: 'Combo One' });
+  const pfReqA = await call('/api/join/request', { sessionId: pfSessA.d.sessionId, email: pfEmail });
+  ok('first visit not returning', pfReqA.d.returning === false, JSON.stringify(pfReqA.d.returning));
+  await call('/api/join/verify', { sessionId: pfSessA.d.sessionId, email: pfEmail, code: pfReqA.d.devCode, name: 'Combo Kid', phone: '4045550101' });
+  const pfSessB = await call('/api/session', { name: 'Combo Two' });
+  const pfReqB = await call('/api/join/request', { sessionId: pfSessB.d.sessionId, email: pfEmail });
+  ok('return visit flagged returning', pfReqB.d.returning === true, JSON.stringify(pfReqB.d.returning));
+  ok('prefill name present', pfReqB.d.prefill && pfReqB.d.prefill.name === 'Combo Kid', JSON.stringify(pfReqB.d.prefill));
+  ok('phone hint masked', pfReqB.d.prefill && pfReqB.d.prefill.phoneHint === '••• 0101', JSON.stringify(pfReqB.d.prefill && pfReqB.d.prefill.phoneHint));
+  ok('full phone not leaked in request', !JSON.stringify(pfReqB.d).includes('4045550101') && !JSON.stringify(pfReqB.d).includes('5550101'));
+  await call('/api/join/verify', { sessionId: pfSessB.d.sessionId, email: pfEmail, code: pfReqB.d.devCode, name: 'Combo Kid', phone: '', keepPhone: true });
+  const pfSessC = await call('/api/session', { name: 'Combo Three' });
+  const pfReqC = await call('/api/join/request', { sessionId: pfSessC.d.sessionId, email: pfEmail });
+  ok('kept phone preserved (still on file)', pfReqC.d.prefill && pfReqC.d.prefill.phoneHint === '••• 0101', JSON.stringify(pfReqC.d.prefill && pfReqC.d.prefill.phoneHint));
 
   console.log('\n— end session: shareable recap revealed —');
   await call('/api/admin/session/end', { sessionId: SID }, 'POST', AH);

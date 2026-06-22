@@ -657,18 +657,36 @@ async function handleApi(req, res, url) {
     await db.run('INSERT INTO otps (email, session_id, code, expires_at, attempts) VALUES (?,?,?,?,0)',
       [email.toLowerCase(), sessionId, code, now() + 10 * 60 * 1000]);
     const r = await sendOtp(email, code, session.name);
+    // Returning-player prefill (safe subset only). This response is pre-verification, so
+    // we must NOT leak raw PII to anyone who types an email. We return the name and, for
+    // the phone, only a MASKED hint (last 4 digits) — never the full number. Because
+    // providing a number IS the SMS opt-in, a phone on file means they're already opted
+    // in; the masked hint signals that without exposing the number.
+    const prior = await db.get('SELECT name, phone FROM users WHERE email = ?', [email.toLowerCase()]);
+    let prefill = null;
+    if (prior) {
+      const digits = (prior.phone || '').replace(/\D/g, '');
+      prefill = {
+        name: prior.name || '',
+        hasPhone: !!digits,
+        phoneHint: digits ? ('••• ' + digits.slice(-4)) : null,
+      };
+    }
     return send(res, 200, { sent: true, devCode: r.devCode || null,
-      sessionName: session.name, signupPrompt: session.signup_prompt || null, watchUrl: session.watch_url || null });
+      sessionName: session.name, signupPrompt: session.signup_prompt || null, watchUrl: session.watch_url || null,
+      returning: !!prior, prefill });
   }
 
   // ----- verify OTP + create/return participant -----
   if (p === '/api/join/verify' && method === 'POST') {
-    const { sessionId, email, code, name, phone, smsConsent, signupAnswer, ref } = await readBody(req);
+    const { sessionId, email, code, name, phone, keepPhone, signupAnswer, ref } = await readBody(req);
     const em = (email || '').toLowerCase();
-    const ph = (phone || '').trim();
+    // Phone handling: ignore the masked hint if it's ever echoed back; only a value with
+    // real digits counts as a newly typed number.
+    const phRaw = (phone || '').trim();
+    const newPhone = (phRaw && !phRaw.includes('•') && phRaw.replace(/\D/g, '').length >= 7) ? phRaw : '';
     const ans = (signupAnswer || '').toString().trim().slice(0, 300) || null;
     const refIn = (ref || '').toString().trim().toUpperCase().slice(0, 12) || null;
-    const consent = smsConsent === true || smsConsent === 1 || smsConsent === '1' ? 1 : 0;
     const otp = await db.get('SELECT * FROM otps WHERE email = ? AND session_id = ?', [em, sessionId]);
     if (!otp) return bad(res, 'Request a code first');
     if (otp.attempts >= 6) return bad(res, 'Too many attempts. Request a new code.');
@@ -680,19 +698,37 @@ async function handleApi(req, res, url) {
     // ---- durable user identity (keyed on email, spans all sessions) ----
     // Recognize a returning player by email; create a permanent uid the first time.
     let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
+    const storedDigits = user ? (user.phone || '').replace(/\D/g, '') : '';
+    // Providing a phone number IS the SMS opt-in (disclosure sits under the field). The
+    // effective phone is: a newly typed number, OR the stored number kept by a returning
+    // user (keepPhone flag, field left as the mask). Consent = does an effective phone
+    // exist. Derived server-side; no client consent flag is trusted.
+    const keepingStored = (keepPhone === true || keepPhone === 1 || keepPhone === '1') && storedDigits.length >= 7;
+    const effectivePhone = newPhone || (keepingStored ? user.phone : '');
+    const consent = (effectivePhone.replace(/\D/g, '').length >= 7) ? 1 : 0;
+
     if (user) {
       await db.run('UPDATE users SET last_seen = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE uid = ?',
         [now(), (name || '').trim(), user.uid]);
-      // Capture phone if newly provided. Record consent (with timestamp) only when
-      // the user affirmatively opts in — never silently revoke a prior yes here.
-      if (ph) await db.run('UPDATE users SET phone = ? WHERE uid = ?', [ph, user.uid]);
-      if (consent) await db.run('UPDATE users SET sms_marketing_consent = 1, sms_consent_at = ? WHERE uid = ?', [now(), user.uid]);
+      // Save a newly typed number (masked/echoed values were filtered out above).
+      if (newPhone) await db.run('UPDATE users SET phone = ? WHERE uid = ?', [newPhone, user.uid]);
+      // Consent reconciliation. A phone present (new or kept) => opted in (stamp on a
+      // fresh opt-in). If they previously had consent but provided/kept no number now,
+      // treat that as a withdrawal (keep the stored number on file, flip the flag off).
+      const wasConsented = user.sms_marketing_consent === 1 || user.sms_marketing_consent === true;
+      if (consent && !wasConsented) {
+        await db.run('UPDATE users SET sms_marketing_consent = 1, sms_consent_at = ? WHERE uid = ?', [now(), user.uid]);
+      } else if (!consent && wasConsented) {
+        await db.run('UPDATE users SET sms_marketing_consent = 0 WHERE uid = ?', [user.uid]);
+      }
     } else {
       const uid = id(12);
       await db.run('INSERT INTO users (uid, email, name, phone, sms_marketing_consent, sms_consent_at, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,?,?,?,0,0)',
-        [uid, em, (name || '').trim(), ph || null, consent, consent ? now() : null, now(), now()]);
+        [uid, em, (name || '').trim(), effectivePhone || null, consent, consent ? now() : null, now(), now()]);
       user = { uid, email: em };
     }
+    // The per-session participant records the phone + consent for THIS signup.
+    const ph = effectivePhone;
 
     // ---- per-session player record (participants = this user, in this session) ----
     let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
