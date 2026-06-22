@@ -41,6 +41,9 @@
   .center{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px}
   /* inputs */
   label{display:block;font-size:12px;letter-spacing:.04em;color:var(--ink-dim);margin:0 0 7px 2px}
+  .step-head{font-size:26px;font-weight:800;letter-spacing:-.01em;color:var(--ink);display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .step-num{color:var(--signal);font-size:26px}
+  .step-help{font-size:14px;color:var(--ink-dim);margin:0 0 14px 2px;line-height:1.4}
   input{width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);
     font-size:17px;padding:14px 15px;border-radius:12px;font-family:inherit;outline:none}
   input:focus{border-color:var(--signal)}
@@ -201,20 +204,27 @@
       <div class="note hide" id="vNote"></div>
       <div class="give hide" id="vGive"></div>
 
-      <div style="margin-top:20px">
-        <label>① Your rating — how good is it? <span class="faint">(0–9)</span></label>
+      <!-- STEP 1: RATE -->
+      <div id="stepRate" style="margin-top:22px">
+        <div class="step-head"><span class="step-num">①</span> Rate</div>
+        <div class="step-help">Your rating — how good is it? <span class="faint">(0 = worst · 9 = best)</span></div>
         <div class="rate-row" id="rateTop"></div>
         <div class="rate-row two" id="rateBot"></div>
+        <button class="btn" id="btnNext" style="margin-top:22px" disabled>Next →</button>
       </div>
 
-      <div style="margin-top:22px">
-        <label>② Predict the room's average <span class="faint">— drag to set</span></label>
-        <div class="slider-val mono" id="predVal">–.–</div>
+      <!-- STEP 2: READ THE ROOM -->
+      <div id="stepPredict" class="hide" style="margin-top:22px">
+        <div class="step-head"><span class="step-num">②</span> Read the Room!</div>
+        <div class="step-help">Predict what you think the room's average rating will be.</div>
+        <div class="slider-val mono" id="predVal" style="margin-top:14px">–.–</div>
         <input id="pred" type="range" min="0" max="9" step="0.1" value="4.5">
         <div class="scale-ends"><span>0.0 nobody likes it</span><span>everybody loves it 9.0</span></div>
+        <div style="margin-top:22px">
+          <button class="btn" id="btnLock" style="width:100%" disabled>Lock it in</button>
+          <button class="btn ghost" id="btnPredBack" style="width:100%;margin-top:10px">← Back</button>
+        </div>
       </div>
-
-      <button class="btn" id="btnLock" style="margin-top:22px" disabled>Lock it in</button>
       <div class="err" id="voteErr"></div>
     </div>
     <!-- AD SLOT: bottom of rating page. Drop a sponsor banner here. -->
@@ -315,6 +325,13 @@ let chosenTaste=null, predict=null, predictTouched=false, pollTimer=null, lastPh
 
 // Lock unlocks only when BOTH a rating is picked AND the prediction slider is touched.
 function maybeEnableLock(){ $('#btnLock').disabled = !(chosenTaste!==null && predictTouched); }
+function maybeEnableNext(){ $('#btnNext').disabled = (chosenTaste===null); }
+// Swap the widget between step 1 (Rate) and step 2 (Read the Room). Same screen,
+// same position — only the active step shows. Both inputs are preserved across moves.
+function showStep(step){
+  $('#stepRate').classList.toggle('hide', step!==1);
+  $('#stepPredict').classList.toggle('hide', step!==2);
+}
 
 function show(id){['email','code','wait','vote','locked','results','ended'].forEach(s=>$('#screen-'+s).classList.toggle('hide',s!==id));}
 
@@ -322,11 +339,14 @@ function show(id){['email','code','wait','vote','locked','results','ended'].forE
 (function(){
   for(let n=0;n<=9;n++){
     const el=document.createElement('div');el.className='pip';el.textContent=n;el.dataset.n=n;
-    el.onclick=()=>{chosenTaste=n;document.querySelectorAll('.pip').forEach(p=>p.classList.toggle('on',+p.dataset.n===n));maybeEnableLock();};
+    el.onclick=()=>{chosenTaste=n;document.querySelectorAll('.pip').forEach(p=>p.classList.toggle('on',+p.dataset.n===n));maybeEnableNext();};
     (n<=4?$('#rateTop'):$('#rateBot')).appendChild(el);
   }
 })();
 $('#pred').oninput=e=>{predict=parseFloat(e.target.value);predictTouched=true;$('#predVal').textContent=predict.toFixed(1);$('#pred').classList.add('touched');maybeEnableLock();};
+// Step navigation: Rate → (Next) → Read the Room → (Back) → Rate. Inputs preserved.
+$('#btnNext').onclick=()=>{ if(chosenTaste===null)return; showStep(2); };
+$('#btnPredBack').onclick=()=>{ showStep(1); };
 
 // ---- join flow ----
 $('#btnRequest').onclick=async()=>{
@@ -375,7 +395,7 @@ function tick(){
   const m=Math.floor(left/60),s=left%60;
   $('#vTimer').querySelector('.t').textContent=(m>0?m+':':'')+(m>0?String(s).padStart(2,'0'):s);
   $('#vTimer').classList.toggle('warn',left<=10);
-  if(left<=0){$('#btnLock').disabled=true;}
+  if(left<=0){$('#btnLock').disabled=true;$('#btnNext').disabled=true;}
 }
 setInterval(tick,250);
 
@@ -501,7 +521,8 @@ function render(st){
     if(lastPhase!=='voting'){ // reset inputs on a fresh round
       chosenTaste=null;document.querySelectorAll('.pip').forEach(p=>p.classList.remove('on'));
       $('#pred').value=4.5;predict=null;predictTouched=false;$('#pred').classList.remove('touched');
-      $('#predVal').textContent='–.–';$('#btnLock').disabled=true;$('#voteErr').textContent='';
+      $('#predVal').textContent='–.–';$('#btnLock').disabled=true;$('#btnNext').disabled=true;
+      $('#voteErr').textContent='';showStep(1); // always start on the Rate step
     }
     $('#vRound').textContent=st.round.idx;$('#vTitle').textContent=st.round.song_title;
     $('#vArtist').textContent=st.round.song_artist||'';
