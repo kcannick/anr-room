@@ -117,11 +117,17 @@
     </div>
     <div id="newSchedRow" class="hide"><label>Scheduled start <span class="muted">(optional, shown to early joiners)</span></label><input id="newSched" type="datetime-local"></div>
     <details style="border-top:1px solid var(--line);padding-top:10px">
-      <summary style="cursor:pointer;color:var(--ink-dim);font-size:13px">Event extras (optional) — watch link, lobby message, sign-up prompt</summary>
+      <summary style="cursor:pointer;color:var(--ink-dim);font-size:13px">Event extras (optional) — watch link, lobby message, sign-up prompt, venue</summary>
       <div style="margin-top:10px">
         <label>Watch link</label><input id="newWatch" placeholder="https://twitch.tv/…">
         <label style="margin-top:10px">Lobby message</label><textarea id="newLobby" placeholder="Shown while players wait"></textarea>
         <label style="margin-top:10px">Sign-up prompt</label><input id="newPrompt" placeholder="e.g. Drop your Instagram + city">
+        <label style="margin-top:10px">Venue address <span class="muted">(for check-in; enable enforcement later)</span></label>
+        <div class="row" style="gap:6px">
+          <input id="newGeoAddr" placeholder="Type the venue address" style="flex:1">
+          <button type="button" class="btn ghost sm" id="btnNewGeocode" style="flex:none">Find</button>
+        </div>
+        <div class="muted" id="newGeoResolved" style="font-size:12px;margin-top:4px"></div>
       </div>
     </details>
     <button class="btn" id="btnCreate">Create session</button>
@@ -286,13 +292,23 @@
         <p class="muted" style="font-size:11px;margin:8px 0 0">Full versions include emails (for your list). Anon versions use “Player 1, 2…” — safe to share for analysis.</p>
       </div>
       <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <label style="font-size:12px">Session name</label>
+        <div class="row" style="gap:6px">
+          <input id="editName" placeholder="Session name" style="flex:1">
+          <button class="btn ghost sm" id="btnSaveName" style="flex:none">Save</button>
+        </div>
+        <div class="muted" id="nameStatus" style="font-size:11px;margin-top:4px"></div>
+      </div>
+      <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
         <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Session status: <span id="sessStatus" style="color:var(--ink)">—</span></div>
         <div class="row" style="gap:6px;flex-wrap:wrap">
           <button class="btn good sm hide" id="btnGoLive">Go live</button>
           <button class="btn warn sm" id="btnEnd">Complete</button>
           <button class="btn ghost sm hide" id="btnArchive">Archive</button>
           <button class="btn good sm hide" id="btnReopen">Reopen</button>
+          <button class="btn warn sm hide" id="btnDelete" style="margin-left:auto">Delete</button>
         </div>
+        <div class="muted" id="delHint" style="font-size:11px;margin-top:4px"></div>
       </div>
       <button class="btn ghost sm" id="btnBackToSessions" style="margin-top:12px">← My sessions</button>
     </div>
@@ -431,6 +447,9 @@ $('#btnCreate').onclick=async()=>{
   if($('#newWatch')&&$('#newWatch').value.trim())body.watchUrl=$('#newWatch').value.trim();
   if($('#newLobby')&&$('#newLobby').value.trim())body.lobbyMessage=$('#newLobby').value.trim();
   if($('#newPrompt')&&$('#newPrompt').value.trim())body.signupPrompt=$('#newPrompt').value.trim();
+  // Venue (optional) — resolved by the Find button into newGeoLat/Lng. Enforcement stays
+  // off; the host turns on check-in mode later from the management page.
+  if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=$('#newGeoResolved').textContent.replace(/^📍 /,'');body.geoRadius=200;}
   if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=new Date(sv).getTime();}
   try{
     const d=await api('/api/session',body);
@@ -438,9 +457,21 @@ $('#btnCreate').onclick=async()=>{
     localStorage.setItem('rt_admin_sid',SID);
     // With identity login we don't need the per-session token, but keep it for legacy fallback.
     if(d.adminToken)localStorage.setItem('rt_admin_token',d.adminToken);
+    newGeoLat=newGeoLng=null;
     boot();
   }catch(e){$('#createErr').textContent=e.message;}
 };
+// Create-form geocode (pre-creation lookup — no session id needed).
+let newGeoLat=null, newGeoLng=null;
+$('#btnNewGeocode')&&($('#btnNewGeocode').onclick=async()=>{
+  const address=$('#newGeoAddr').value.trim();if(!address)return $('#newGeoResolved').textContent='Type an address first.';
+  $('#newGeoResolved').textContent='Looking up…';
+  try{
+    const d=await api('/api/admin/session/geocode',{address});
+    newGeoLat=d.lat;newGeoLng=d.lng;
+    $('#newGeoResolved').textContent='📍 '+(d.label||(d.lat+', '+d.lng));
+  }catch(e){$('#newGeoResolved').textContent=e.message;}
+});
 
 // ---- add round ----
 $('#btnAddRound').onclick=async()=>{
@@ -523,6 +554,23 @@ $('#btnEnd').onclick=async()=>{if(!confirm('Complete the session for everyone? F
 $('#btnGoLive').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
 $('#btnArchive').onclick=async()=>{if(!confirm('Archive this session? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
 $('#btnReopen').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
+// Edit session name.
+let nameFocused=false;
+$('#editName')&&$('#editName').addEventListener('focus',()=>nameFocused=true);
+$('#editName')&&$('#editName').addEventListener('blur',()=>setTimeout(()=>nameFocused=false,200));
+$('#btnSaveName')&&($('#btnSaveName').onclick=async()=>{
+  const nm=$('#editName').value.trim();if(!nm)return $('#nameStatus').textContent='Name can\u2019t be empty.';
+  try{await api('/api/admin/session/config',{sessionId:SID,name:nm});$('#nameStatus').textContent='Saved ✓';setTimeout(()=>$('#nameStatus').textContent='',2000);refresh();}
+  catch(e){$('#nameStatus').textContent=e.message;}
+});
+// Delete session (admin only).
+$('#btnDelete')&&($('#btnDelete').onclick=async()=>{
+  if(!confirm('Delete this session? It will be hidden from all lists. Data is kept and an admin can restore it.'))return;
+  try{await api('/api/admin/session/delete',{sessionId:SID});
+    if(poll)clearInterval(poll);SID=null;localStorage.removeItem('rt_admin_sid');
+    if(AUTHTOK){openPicker();}else{showScreen('login');}
+  }catch(e){$('#delHint').textContent=e.message;}
+});
 $('#btnBackToSessions').onclick=()=>{if(poll)clearInterval(poll);SID=null;localStorage.removeItem('rt_admin_sid');if(AUTHTOK){openPicker();}else{showScreen('login');}};
 
 async function downloadExport(format,anon){
@@ -656,6 +704,10 @@ function render(st){
   $('#btnEnd').classList.toggle('hide',stx!=='live');
   $('#btnArchive').classList.toggle('hide',stx!=='completed');
   $('#btnReopen').classList.toggle('hide',!(stx==='completed'||stx==='archived'));
+  // Name edit field (don't clobber while typing).
+  if($('#editName')&&!nameFocused)$('#editName').value=st.session.name||'';
+  // Delete is admin-only.
+  $('#btnDelete').classList.toggle('hide', !(ME&&ME.role==='admin'));
   serverSkew=(st.serverNow||Date.now())-Date.now();
   $('#kJoined').textContent=st.verifiedCount;
   $('#kRound').textContent=st.activeRound?('#'+st.activeRound.idx):'—';

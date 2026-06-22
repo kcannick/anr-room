@@ -737,6 +737,70 @@ async function call(path, body, method='POST', headers={}) {
   const gexpStr = JSON.stringify(gexp);
   ok('no raw player coords in export', !gexpStr.includes('40.7128') && !gexpStr.includes('34.0432'), 'coords leaked');
 
+  // ======================================================================
+  // REGRESSION: per-session tokens — a token must resolve to ITS OWN session
+  // (the "Session A link showed Session B" bug). Same email in two sessions
+  // must produce two distinct participants/tokens, each scoped to its session.
+  // ======================================================================
+  console.log('\n— regression: same email across two sessions = two scoped tokens —');
+  const sA = await call('/api/session', { name: 'Session Alpha' });
+  const sB = await call('/api/session', { name: 'Session Bravo' });
+  const SA = sA.d.sessionId, SB = sB.d.sessionId;
+  const EMAIL = 'dualjoin@test.com';
+  // Join A.
+  const rA = await call('/api/join/request', { sessionId: SA, email: EMAIL });
+  const vA = await call('/api/join/verify', { sessionId: SA, email: EMAIL, code: rA.d.devCode, name: 'Dual Joiner' });
+  // Join B with the SAME email.
+  const rB = await call('/api/join/request', { sessionId: SB, email: EMAIL });
+  const vB = await call('/api/join/verify', { sessionId: SB, email: EMAIL, code: rB.d.devCode, name: 'Dual Joiner' });
+  ok('two sessions yield different tokens', vA.d.token !== vB.d.token, 'tokens matched!');
+  // Token A resolves to Session Alpha; token B to Session Bravo.
+  const stateA = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': vA.d.token })).d;
+  const stateB = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': vB.d.token })).d;
+  ok('token A -> Session Alpha', stateA.session.name === 'Session Alpha', stateA.session.name);
+  ok('token B -> Session Bravo', stateB.session.name === 'Session Bravo', stateB.session.name);
+  ok('tokens do not cross sessions', stateA.session.id === SA && stateB.session.id === SB, JSON.stringify([stateA.session.id, stateB.session.id]));
+
+  // ======================================================================
+  // SESSION MANAGEMENT — edit name, default ad at creation, soft-delete
+  // ======================================================================
+  console.log('\n— session mgmt: edit name + config after creation —');
+  const smA = ADMINH; // admin auth header from earlier in the suite
+  const sm = await call('/api/session', { name: 'Original Name', lobbyMessage: 'hi' });
+  const SMID = sm.d.sessionId, SMAH = { 'X-Admin-Token': sm.d.adminToken };
+  await call('/api/admin/session/config', { sessionId: SMID, name: 'Renamed Event', lobbyMessage: 'updated' }, 'POST', SMAH);
+  let sms = (await call(`/api/admin/state?sessionId=${SMID}`, null, 'GET', SMAH)).d;
+  ok('session name edited', sms.session.name === 'Renamed Event', sms.session.name);
+  ok('lobby message edited', sms.session.lobby_message === 'updated', sms.session.lobby_message);
+  const emptyName = await call('/api/admin/session/config', { sessionId: SMID, name: '   ' }, 'POST', SMAH);
+  ok('empty name rejected', emptyName.status === 400, 'got ' + emptyName.status);
+
+  console.log('\n— session mgmt: default ad + venue settable at creation —');
+  const smCreate = await call('/api/session', { name: 'Preconfigured', geoLat: 34.04, geoLng: -118.26, geoRadius: 150, geoLabel: 'Venue X' });
+  const PCID = smCreate.d.sessionId, PCAH = { 'X-Admin-Token': smCreate.d.adminToken };
+  const pcs = (await call(`/api/admin/state?sessionId=${PCID}`, null, 'GET', PCAH)).d;
+  ok('venue set at creation', pcs.session.geo_lat === 34.04 && pcs.session.geo_label === 'Venue X', JSON.stringify([pcs.session.geo_lat, pcs.session.geo_label]));
+  ok('venue creation leaves enforcement off', pcs.session.geo_mode === 'off', pcs.session.geo_mode);
+
+  console.log('\n— session mgmt: soft-delete (admin only) hides from list, blocks joins —');
+  // Non-admin host can't delete.
+  const hostDel = await call('/api/admin/session/delete', { sessionId: SMID }, 'POST', { 'X-Auth-Token': HOSTTOK });
+  ok('non-admin cannot delete', hostDel.status === 403, 'got ' + hostDel.status);
+  // Admin deletes.
+  const del = await call('/api/admin/session/delete', { sessionId: SMID }, 'POST', ADMINH);
+  ok('admin delete ok', del.status === 200 && del.d.deleted, JSON.stringify(del.d));
+  // Hidden from the admin's session list.
+  const listAfter = (await call('/api/auth/sessions', null, 'GET', ADMINH)).d;
+  ok('deleted session hidden from list', !listAfter.sessions.some(s => s.id === SMID), 'still listed');
+  // Player can't join a deleted session.
+  const joinDel = await call('/api/join/request', { sessionId: SMID, email: 'late@test.com' });
+  ok('join blocked on deleted session', joinDel.status === 404, 'got ' + joinDel.status);
+  // Restore brings it back.
+  const restore = await call('/api/admin/session/delete', { sessionId: SMID, restore: true }, 'POST', ADMINH);
+  ok('admin restore ok', restore.status === 200 && restore.d.restored, JSON.stringify(restore.d));
+  const listRestored = (await call('/api/auth/sessions', null, 'GET', ADMINH)).d;
+  ok('restored session back in list', listRestored.sessions.some(s => s.id === SMID), 'not listed');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

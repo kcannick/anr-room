@@ -46,6 +46,7 @@ const SCHEMA = [
      geo_lng REAL,                           -- venue pin longitude
      geo_radius INTEGER,                     -- check-in radius in yards (generous default applied in code)
      geo_label TEXT,                         -- human-readable venue address/name for display
+     deleted_at BIGINT,                      -- soft-delete timestamp (null = active; hidden from lists if set)
      created_at BIGINT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS users (

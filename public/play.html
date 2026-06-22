@@ -410,13 +410,33 @@
 
 <script>
 const $=s=>document.querySelector(s);
+// Session id comes STRICTLY from the URL. We do NOT fall back to a stored session —
+// that was the source of "Session A link opened Session B": a stale value winning over
+// the actual link. No ?s= => no session (handled in boot).
+const SID=new URLSearchParams(location.search).get('s');
+// Player tokens are PER SESSION. A single global token meant a token from session A
+// would authenticate you into session A even when you opened a session B link (the
+// token resolves to one participant/session server-side). Scope the key by session id.
+function tokenKey(sid){ return 'rt_token_'+(sid||''); }
+function getToken(){ return SID ? localStorage.getItem(tokenKey(SID)) : null; }
+function setToken(t){ if(SID)localStorage.setItem(tokenKey(SID),t); }
+function clearToken(){ if(SID)localStorage.removeItem(tokenKey(SID)); }
+// One-time migration: an older build stored a single global 'rt_token' tied to whatever
+// session was last joined. If we're on that same session, preserve it under the new key;
+// otherwise drop it so it can't leak across sessions.
+(function migrateLegacyToken(){
+  const legacy=localStorage.getItem('rt_token'), legacySid=localStorage.getItem('rt_sid');
+  if(legacy){
+    if(SID && legacySid===SID && !localStorage.getItem(tokenKey(SID))) localStorage.setItem(tokenKey(SID),legacy);
+    localStorage.removeItem('rt_token'); localStorage.removeItem('rt_sid');
+  }
+})();
 const api=async(path,body,method='POST')=>{
   const h={'Content-Type':'application/json'};
-  const tok=localStorage.getItem('rt_token'); if(tok)h['X-Player-Token']=tok;
+  const tok=getToken(); if(tok)h['X-Player-Token']=tok;
   const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
   const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(d.error||'Something went wrong'); return d;
 };
-const SID=new URLSearchParams(location.search).get('s')||localStorage.getItem('rt_sid');
 // Incoming referral code from the share link (?ref=CODE). Persist per-session so it
 // survives the email->code step. Cleared once we've joined.
 const INCOMING_REF=(new URLSearchParams(location.search).get('ref')||'').trim().toUpperCase();
@@ -471,7 +491,7 @@ $('#bcDismiss')&&($('#bcDismiss').onclick=()=>{$('#bcModal').style.display='none
 // ---- invite: anyone can share their personal join link (carries their ref code) ----
 let referredCount=0;
 function playLink(){
-  let u=location.origin+'/?s='+encodeURIComponent(SID||localStorage.getItem('rt_sid')||'');
+  let u=location.origin+'/?s='+encodeURIComponent(SID||'');
   if(myRefCode)u+='&ref='+encodeURIComponent(myRefCode);
   return u;
 }
@@ -579,7 +599,7 @@ $('#btnVerify').onclick=async()=>{
   $('#btnVerify').disabled=true;
   try{
     const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,smsConsent,signupAnswer,ref});
-    localStorage.setItem('rt_token',d.token);localStorage.setItem('rt_sid',SID);
+    setToken(d.token);
     localStorage.removeItem('rt_ref_'+SID);
     startPolling();
   }catch(e){$('#codeErr').textContent=e.message;}
@@ -589,7 +609,7 @@ $('#btnVerify').onclick=async()=>{
 // check-in gate distinctly from real errors.
 async function apiRaw(path,body){
   const h={'Content-Type':'application/json'};
-  const tok=localStorage.getItem('rt_token'); if(tok)h['X-Player-Token']=tok;
+  const tok=getToken(); if(tok)h['X-Player-Token']=tok;
   const r=await fetch(path,{method:'POST',headers:h,body:JSON.stringify(body||{})});
   const d=await r.json().catch(()=>({}));
   return {status:r.status,data:d};
@@ -918,7 +938,7 @@ function render(st){
 
 async function refresh(){
   try{const st=await api('/api/me/state',null,'GET');render(st);}
-  catch(e){if(/auth/i.test(e.message)){localStorage.removeItem('rt_token');location.reload();}}
+  catch(e){if(/auth/i.test(e.message)){clearToken();location.reload();}}
 }
 function startPolling(){if(pollTimer)clearInterval(pollTimer);refresh();pollTimer=setInterval(refresh,2500);}
 
@@ -995,8 +1015,7 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
 // boot
 (function(){
   if(!SID){document.body.innerHTML='<div class="wrap"><div class="panel" style="margin-top:40px">No session link. Ask the host for the room QR code or link.</div></div>';return;}
-  localStorage.setItem('rt_sid',SID);
-  if(localStorage.getItem('rt_token'))startPolling();
+  if(getToken())startPolling();
   else show('email');
 })();
 </script>

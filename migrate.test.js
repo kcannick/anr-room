@@ -163,6 +163,19 @@ async function freshDb() {
   const applied6b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('006 idempotent (not duplicated)', applied6b.filter(x => x === '006_geocheckin').length === 1, JSON.stringify(applied6b));
 
+  // 9. Migration 007 (soft-delete): sessions.deleted_at.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init();
+  const applied7 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('007_session_softdelete applied', applied7.includes('007_session_softdelete'), JSON.stringify(applied7));
+  const sc7 = (await db.all('PRAGMA table_info(sessions)', [])).map(c => c.name);
+  ok('sessions.deleted_at created', sc7.includes('deleted_at'));
+  await db.init();
+  const applied7b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('007 idempotent (not duplicated)', applied7b.filter(x => x === '007_session_softdelete').length === 1, JSON.stringify(applied7b));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

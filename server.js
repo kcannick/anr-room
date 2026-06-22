@@ -537,7 +537,7 @@ async function handleApi(req, res, url) {
 
   // ----- create session (admin bootstrap) -----
   if (p === '/api/session' && method === 'POST') {
-    const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, lobbyMessage, signupPrompt } = await readBody(req);
+    const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, lobbyMessage, signupPrompt, bannerId, geoLabel, geoLat, geoLng, geoRadius } = await readBody(req);
     if (!name || !name.trim()) return bad(res, 'Session name required');
     const sid = id(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || id(4);
     const adminToken = id(18);
@@ -548,13 +548,20 @@ async function handleApi(req, res, url) {
     const wu = cleanUrl(watchUrl);
     const lm = (lobbyMessage || '').toString().trim().slice(0, 500) || null;
     const sp = (signupPrompt || '').toString().trim().slice(0, 200) || null;
+    const bid = bannerId || null; // optional default ad set at creation
+    // Optional venue, settable at creation (geocoded address). Enforcement stays off
+    // until the host turns geo_mode on later.
+    const gla = Number(geoLat), gln = Number(geoLng);
+    const haveGeo = Number.isFinite(gla) && Number.isFinite(gln) && Math.abs(gla) <= 90 && Math.abs(gln) <= 180;
+    const grad = Number.isFinite(Number(geoRadius)) ? Math.min(5000, Math.max(25, Math.round(Number(geoRadius)))) : null;
+    const glabel = (geoLabel || '').toString().trim().slice(0, 200) || null;
     // Owner = the logged-in user creating it (if any). Falls back to null (legacy token still works).
     const creator = await userFromAuth(req);
     const ownerUid = creator ? creator.uid : null;
     // New sessions are 'live' by default, or 'upcoming' if a future start is given.
     const st = (status === 'upcoming' || (scheduledAt && Number(scheduledAt) > now())) ? 'upcoming' : 'live';
-    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, lobby_message, signup_prompt, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, lm, sp, now()]);
+    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, lobby_message, signup_prompt, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, lm, sp, bid, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, now()]);
     return send(res, 200, { sessionId: sid, adminToken, pollType: pt });
   }
 
@@ -633,8 +640,8 @@ async function handleApi(req, res, url) {
     const user = await userFromAuth(req);
     if (!user) return bad(res, 'Not logged in', 401);
     const rows = user.role === 'admin'
-      ? await db.all('SELECT id, name, status, scheduled_at, owner_uid, created_at FROM sessions ORDER BY created_at DESC', [])
-      : await db.all('SELECT id, name, status, scheduled_at, owner_uid, created_at FROM sessions WHERE owner_uid = ? ORDER BY created_at DESC', [user.uid]);
+      ? await db.all('SELECT id, name, status, scheduled_at, owner_uid, created_at FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC', [])
+      : await db.all('SELECT id, name, status, scheduled_at, owner_uid, created_at FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at DESC', [user.uid]);
     return send(res, 200, { role: user.role, sessions: rows });
   }
 
@@ -642,7 +649,7 @@ async function handleApi(req, res, url) {
   if (p === '/api/join/request' && method === 'POST') {
     const { sessionId, email } = await readBody(req);
     const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
-    if (!session) return bad(res, 'Session not found', 404);
+    if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
     if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This session is closed');
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad(res, 'Enter a valid email');
     const code = code6();
@@ -1013,6 +1020,23 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, status });
   }
 
+  // Soft-delete a session (admin only). The row + all its data are retained; it's just
+  // hidden from listings. Restorable by clearing deleted_at. Player links to a deleted
+  // session stop working (treated as closed).
+  if (p === '/api/admin/session/delete' && method === 'POST') {
+    const { sessionId, restore } = await readBody(req);
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const session = await db.get('SELECT id FROM sessions WHERE id = ?', [sessionId]);
+    if (!session) return bad(res, 'Session not found', 404);
+    if (restore) {
+      await db.run('UPDATE sessions SET deleted_at = NULL WHERE id = ?', [sessionId]);
+      return send(res, 200, { ok: true, restored: true });
+    }
+    await db.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [now(), sessionId]);
+    return send(res, 200, { ok: true, deleted: true });
+  }
+
   // Update event config after creation: watch link, lobby message, sign-up prompt.
   // Each field is optional; only fields present in the body are changed. Send an
   // empty string to clear a field.
@@ -1021,6 +1045,9 @@ async function handleApi(req, res, url) {
     const session = await canAdminSession(req, body.sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const sets = [], vals = [];
+    if ('name' in body)         { const nm = (body.name || '').toString().trim(); if (!nm) return bad(res, 'Session name can\'t be empty'); sets.push('name = ?'); vals.push(nm.slice(0, 120)); }
+    if ('bannerId' in body)     { sets.push('banner_id = ?'); vals.push(body.bannerId || null); }
+    if ('defaultMinutes' in body) { sets.push('default_minutes = ?'); vals.push(clampMinutes(body.defaultMinutes)); }
     if ('watchUrl' in body)      { sets.push('watch_url = ?');     vals.push(cleanUrl(body.watchUrl)); }
     if ('lobbyMessage' in body)  { sets.push('lobby_message = ?'); vals.push((body.lobbyMessage || '').toString().trim().slice(0, 500) || null); }
     if ('signupPrompt' in body)  { sets.push('signup_prompt = ?'); vals.push((body.signupPrompt || '').toString().trim().slice(0, 200) || null); }
@@ -1052,8 +1079,11 @@ async function handleApi(req, res, url) {
   // enter coordinates manually or use device location instead.
   if (p === '/api/admin/session/geocode' && method === 'POST') {
     const { sessionId, address } = await readBody(req);
-    const session = await canAdminSession(req, sessionId);
-    if (!session) return bad(res, 'Admin auth failed', 401);
+    // Either an admin of the given session, OR any logged-in host (for pre-creation lookup).
+    let authed = false;
+    if (sessionId) { authed = !!(await canAdminSession(req, sessionId)); }
+    else { authed = !!(await userFromAuth(req)); }
+    if (!authed) return bad(res, 'Auth failed', 401);
     const q = (address || '').toString().trim();
     if (!q) return bad(res, 'Enter an address');
     try {
