@@ -210,6 +210,30 @@
         <button class="btn sm" id="btnSaveConfig" style="margin-top:10px;width:100%">Save event settings</button>
         <div class="muted" id="cfgStatus" style="font-size:12px;margin-top:6px"></div>
       </div>
+
+      <!-- Location check-in -->
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+        <label>Event location <span class="muted">(for on-premise check-in)</span></label>
+        <div class="row" style="gap:6px">
+          <input id="geoAddr" placeholder="Type the venue address" style="flex:1">
+          <button class="btn ghost sm" id="btnGeocode" style="flex:none">Find</button>
+        </div>
+        <div class="muted" id="geoResolved" style="font-size:12px;margin-top:6px"></div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn ghost sm" id="btnUseMyLoc">📍 Use my location</button>
+          <div style="flex:1"><label style="font-size:12px">Radius (yards)</label><input id="geoRadius" type="number" min="25" max="5000" value="200"></div>
+        </div>
+        <label style="margin-top:12px">Check-in mode</label>
+        <select id="geoMode" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+          <option value="off">Off — no location required</option>
+          <option value="optional">Optional — check in as in-room or remote (dual pool)</option>
+          <option value="required">Required — must be at the venue to vote</option>
+        </select>
+        <div class="muted" style="font-size:11px;margin-top:6px">Set the venue any time (even before the event). Turn the mode on when you're ready to enforce — players check in at their first lock-in.</div>
+        <button class="btn sm" id="btnSaveGeo" style="margin-top:10px;width:100%">Save location settings</button>
+        <div class="muted" id="geoStatus" style="font-size:12px;margin-top:6px"></div>
+        <div id="poolCounts" class="muted" style="font-size:12px;margin-top:10px"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -463,6 +487,38 @@ $('#btnSaveConfig')&&($('#btnSaveConfig').onclick=async()=>{
 // Track whether the host is editing a config field, so polling doesn't clobber input.
 let cfgFocused=false;
 ['cfgWatch','cfgLobby','cfgPrompt'].forEach(idr=>{const el=$('#'+idr);if(el){el.addEventListener('focus',()=>cfgFocused=true);el.addEventListener('blur',()=>setTimeout(()=>cfgFocused=false,200));}});
+
+// ---- location check-in ----
+let geoResolvedLat=null, geoResolvedLng=null, geoTouched=false;
+['geoAddr','geoRadius','geoMode'].forEach(idr=>{const el=$('#'+idr);if(el){el.addEventListener('focus',()=>geoTouched=true);el.addEventListener('blur',()=>setTimeout(()=>geoTouched=false,200));}});
+$('#btnGeocode')&&($('#btnGeocode').onclick=async()=>{
+  const address=$('#geoAddr').value.trim();if(!address)return $('#geoResolved').textContent='Type an address first.';
+  $('#geoResolved').textContent='Looking up…';
+  try{
+    const d=await api('/api/admin/session/geocode',{sessionId:SID,address});
+    geoResolvedLat=d.lat;geoResolvedLng=d.lng;
+    $('#geoResolved').textContent='📍 '+(d.label||(d.lat+', '+d.lng));
+  }catch(e){$('#geoResolved').textContent=e.message;}
+});
+$('#btnUseMyLoc')&&($('#btnUseMyLoc').onclick=()=>{
+  if(!navigator.geolocation)return $('#geoResolved').textContent='This device can\u2019t share location.';
+  $('#geoResolved').textContent='Getting your location…';
+  navigator.geolocation.getCurrentPosition(
+    pos=>{geoResolvedLat=pos.coords.latitude;geoResolvedLng=pos.coords.longitude;$('#geoResolved').textContent='📍 Using your current location ('+geoResolvedLat.toFixed(5)+', '+geoResolvedLng.toFixed(5)+')';$('#geoAddr').value='';},
+    err=>{$('#geoResolved').textContent='Couldn\u2019t get your location.';},
+    {enableHighAccuracy:true,timeout:10000}
+  );
+});
+$('#btnSaveGeo')&&($('#btnSaveGeo').onclick=async()=>{
+  $('#btnSaveGeo').disabled=true;
+  const body={sessionId:SID,geoMode:$('#geoMode').value,geoRadius:Number($('#geoRadius').value)||200};
+  if(geoResolvedLat!=null&&geoResolvedLng!=null){body.geoLat=geoResolvedLat;body.geoLng=geoResolvedLng;body.geoLabel=$('#geoResolved').textContent.replace(/^📍 /,'');}
+  try{
+    await api('/api/admin/session/config',body);
+    $('#geoStatus').textContent='Saved ✓';setTimeout(()=>$('#geoStatus').textContent='',2000);
+  }catch(e){$('#geoStatus').textContent=e.message;}
+  $('#btnSaveGeo').disabled=false;
+});
 $('#btnEnd').onclick=async()=>{if(!confirm('Complete the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'completed'});refresh();};
 $('#btnGoLive').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
 $('#btnArchive').onclick=async()=>{if(!confirm('Archive this session? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
@@ -615,6 +671,18 @@ function render(st){
     if($('#cfgLobby'))$('#cfgLobby').value=st.session.lobby_message||'';
     if($('#cfgPrompt'))$('#cfgPrompt').value=st.session.signup_prompt||'';
   }
+  // Geo panel (don't clobber while host is editing).
+  if(!geoTouched){
+    if($('#geoMode'))$('#geoMode').value=st.session.geo_mode||'off';
+    if($('#geoRadius')&&st.session.geo_radius)$('#geoRadius').value=st.session.geo_radius;
+    if($('#geoResolved')&&!$('#geoResolved').textContent&&st.session.geo_label)$('#geoResolved').textContent='📍 '+st.session.geo_label;
+  }
+  if($('#poolCounts')&&st.pools){
+    const tot=st.pools.in_person+st.pools.online;
+    $('#poolCounts').innerHTML = (st.session.geo_mode&&st.session.geo_mode!=='off')||tot>0
+      ? `Checked in — <strong style="color:var(--signal)">${st.pools.in_person} in-room</strong> · <strong style="color:var(--cool)">${st.pools.online} remote</strong>${st.pools.unchecked?` · ${st.pools.unchecked} not yet`:''}`
+      : '';
+  }
   if($('#bcStatus')&&st.session.broadcast&&!$('#bcStatus').textContent){
     $('#bcStatus').textContent='Live broadcast active — players see it.';
   }
@@ -640,7 +708,7 @@ function render(st){
     const anyAnswer=st.participants.some(p=>p.signup_answer);
     const anyBrought=st.participants.some(p=>p.brought>0);
     b.innerHTML='<table><thead><tr><th>#</th><th>Name</th><th class="mono">Total</th></tr></thead><tbody>'+
-      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.brought>0?` <span class="muted" style="font-size:11px">· brought ${p.brought}</span>`:''}${p.signup_answer?`<div class="muted" style="font-size:11px">${esc(p.signup_answer)}</div>`:''}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+((anyAnswer||anyBrought)?'<p class="muted" style="font-size:11px;margin:8px 0 0">“Brought N” = friends they referred who actually played.'+(anyAnswer?' Sign-up answers shown under names.':'')+'</p>':'');
+      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.pool==='in_person'?' <span style="color:var(--signal);font-size:11px">·in-room</span>':p.pool==='online'?' <span style="color:var(--cool);font-size:11px">·remote</span>':''}${p.brought>0?` <span class="muted" style="font-size:11px">· brought ${p.brought}</span>`:''}${p.signup_answer?`<div class="muted" style="font-size:11px">${esc(p.signup_answer)}</div>`:''}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+((anyAnswer||anyBrought)?'<p class="muted" style="font-size:11px;margin:8px 0 0">“Brought N” = friends they referred who actually played.'+(anyAnswer?' Sign-up answers shown under names.':'')+'</p>':'');
   }else b.innerHTML='<div class="empty">Nobody\'s joined yet — share the QR code.</div>';
 }
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

@@ -148,6 +148,21 @@ async function freshDb() {
   const applied5b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('005 idempotent (not duplicated)', applied5b.filter(x => x === '005_referrals').length === 1, JSON.stringify(applied5b));
 
+  // 8. Migration 006 (geo check-in): session geo cols + participant pool cols.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init();
+  const applied6 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('006_geocheckin applied', applied6.includes('006_geocheckin'), JSON.stringify(applied6));
+  const sc6 = (await db.all('PRAGMA table_info(sessions)', [])).map(c => c.name);
+  ['geo_mode', 'geo_lat', 'geo_lng', 'geo_radius', 'geo_label'].forEach(col => ok('sessions.' + col + ' created', sc6.includes(col)));
+  const pc6 = (await db.all('PRAGMA table_info(participants)', [])).map(c => c.name);
+  ['pool', 'checkin_distance'].forEach(col => ok('participants.' + col + ' created', pc6.includes(col)));
+  await db.init();
+  const applied6b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('006 idempotent (not duplicated)', applied6b.filter(x => x === '006_geocheckin').length === 1, JSON.stringify(applied6b));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

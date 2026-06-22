@@ -41,6 +41,11 @@ const SCHEMA = [
      signup_prompt TEXT,                     -- optional custom question asked at join (e.g. "IG + city")
      broadcast_text TEXT,                    -- current live broadcast message (null = none)
      broadcast_at BIGINT,                    -- when the current broadcast was set (drives client dedupe)
+     geo_mode TEXT NOT NULL DEFAULT 'off',   -- 'off' | 'optional' (dual pool) | 'required' (in-room only)
+     geo_lat REAL,                           -- venue pin latitude (set via geocoded address / map / device)
+     geo_lng REAL,                           -- venue pin longitude
+     geo_radius INTEGER,                     -- check-in radius in yards (generous default applied in code)
+     geo_label TEXT,                         -- human-readable venue address/name for display
      created_at BIGINT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS users (
@@ -76,6 +81,8 @@ const SCHEMA = [
      ref_code TEXT,                          -- this participant's shareable referral code
      referred_by TEXT,                       -- participant.id of whoever referred them (null = organic)
      ref_credited INTEGER NOT NULL DEFAULT 0, -- 1 once they verified AND played a round (real referral)
+     pool TEXT,                              -- 'in_person' | 'online' | null (set at check-in)
+     checkin_distance INTEGER,               -- coarse yards from venue at check-in (auditing; no raw coords stored)
      token TEXT NOT NULL,                    -- player auth token (cookie)
      verified INTEGER NOT NULL DEFAULT 0,
      total_points INTEGER NOT NULL DEFAULT 0,

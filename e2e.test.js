@@ -662,6 +662,81 @@ async function call(path, body, method='POST', headers={}) {
   ok('anon export still has referral attribution (no PII)', rexpAnon.participants.some(p => p.referred_by && /^Player \d+$/.test(p.referred_by)), JSON.stringify(rexpAnon.participants.map(p=>p.referred_by)));
   ok('anon export leaks no referral emails', !/@test\.com/.test(JSON.stringify(rexpAnon.participants)));
 
+  // ======================================================================
+  // GEOFENCED CHECK-IN — venue pin, modes, lock-in gate, pooling, privacy
+  // ======================================================================
+  console.log('\n— geo: venue can be set ahead, enforcement off; config independent —');
+  const gcs = await call('/api/session', { name: 'LA Event' });
+  const GSID = gcs.d.sessionId, GATOK = gcs.d.adminToken, GAH = { 'X-Admin-Token': GATOK };
+  // Set venue pin now (as if geocoded), leave geo_mode off.
+  const VENUE = { lat: 34.0430, lng: -118.2673 }; // ~ LA live venue
+  await call('/api/admin/session/config', { sessionId: GSID, geoLat: VENUE.lat, geoLng: VENUE.lng, geoRadius: 200, geoLabel: 'The Novo, Los Angeles' }, 'POST', GAH);
+  let gs = (await call(`/api/admin/state?sessionId=${GSID}`, null, 'GET', GAH)).d;
+  ok('venue pin stored', gs.session.geo_lat === VENUE.lat && gs.session.geo_lng === VENUE.lng, JSON.stringify([gs.session.geo_lat, gs.session.geo_lng]));
+  ok('geo_mode still off (enforcement independent)', gs.session.geo_mode === 'off', gs.session.geo_mode);
+  ok('venue label stored', gs.session.geo_label === 'The Novo, Los Angeles', gs.session.geo_label);
+
+  console.log('\n— geo: with enforcement off, voting is NOT gated —');
+  async function gjoin(email, name) {
+    const r = await call('/api/join/request', { sessionId: GSID, email });
+    const v = await call('/api/join/verify', { sessionId: GSID, email, code: r.d.devCode, name });
+    return v.d.token;
+  }
+  const gRound1 = await call('/api/admin/round', { sessionId: GSID, song_title: 'Pre-enforce' }, 'POST', GAH);
+  await call('/api/admin/round/open', { sessionId: GSID, roundId: gRound1.d.roundId, minutes: 5 }, 'POST', GAH);
+  const earlyTok = await gjoin('early@test.com', 'Early Bird');
+  const earlyVote = await call('/api/vote', { taste: 6, predict: 6 }, 'POST', { 'X-Player-Token': earlyTok });
+  ok('vote locks with geo off', earlyVote.d.locked === true, JSON.stringify(earlyVote.d));
+  await call('/api/admin/round/ratify', { sessionId: GSID, roundId: gRound1.d.roundId }, 'POST', GAH);
+
+  console.log('\n— geo: flip enforcement ON (optional/dual-pool); lock-in now gated —');
+  await call('/api/admin/session/config', { sessionId: GSID, geoMode: 'optional' }, 'POST', GAH);
+  const gRound2 = await call('/api/admin/round', { sessionId: GSID, song_title: 'Geo Round' }, 'POST', GAH);
+  await call('/api/admin/round/open', { sessionId: GSID, roundId: gRound2.d.roundId, minutes: 5 }, 'POST', GAH);
+  const inTok = await gjoin('inroom@test.com', 'In Room');
+  // Player state advertises the geo requirement.
+  const inState = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': inTok })).d;
+  ok('player sees geo mode', inState.geo && inState.geo.mode === 'optional', JSON.stringify(inState.geo));
+  ok('player pool null before check-in', inState.pool === null, JSON.stringify(inState.pool));
+  // Try to lock in without checking in -> 428 checkin_required.
+  const gated = await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': inTok });
+  ok('lock-in gated by check-in (428)', gated.status === 428 && gated.d.error === 'checkin_required', JSON.stringify([gated.status, gated.d]));
+
+  console.log('\n— geo: in-radius check-in -> in_person, then vote locks —');
+  // ~30 yards away (tiny offset).
+  const near = { lat: VENUE.lat + 0.0002, lng: VENUE.lng };
+  const ciIn = await call('/api/checkin', { lat: near.lat, lng: near.lng, accuracy: 15 }, 'POST', { 'X-Player-Token': inTok });
+  ok('in-radius -> in_person pool', ciIn.d.pool === 'in_person' && ciIn.d.checked_in, JSON.stringify(ciIn.d));
+  const inVote = await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': inTok });
+  ok('vote locks after check-in', inVote.d.locked === true, JSON.stringify(inVote.d));
+
+  console.log('\n— geo: far check-in in optional mode -> online pool —');
+  const farTok = await gjoin('remote@test.com', 'Remote Rita');
+  const far = { lat: 40.7128, lng: -74.0060 }; // NYC — definitely far from LA
+  const ciFar = await call('/api/checkin', { lat: far.lat, lng: far.lng, accuracy: 20 }, 'POST', { 'X-Player-Token': farTok });
+  ok('far -> online pool (optional mode)', ciFar.d.pool === 'online' && ciFar.d.checked_in, JSON.stringify(ciFar.d));
+  const farVote = await call('/api/vote', { taste: 3, predict: 4 }, 'POST', { 'X-Player-Token': farTok });
+  ok('online player can still vote (optional)', farVote.d.locked === true, JSON.stringify(farVote.d));
+
+  console.log('\n— geo: REQUIRED mode rejects out-of-radius —');
+  await call('/api/admin/session/config', { sessionId: GSID, geoMode: 'required' }, 'POST', GAH);
+  const strictTok = await gjoin('strict@test.com', 'Strict Sam');
+  const ciReject = await call('/api/checkin', { lat: far.lat, lng: far.lng, accuracy: 20 }, 'POST', { 'X-Player-Token': strictTok });
+  ok('required + far -> not checked in', ciReject.d.checked_in === false && ciReject.d.pool === null, JSON.stringify(ciReject.d));
+  const ciDecline = await call('/api/checkin', { declined: true }, 'POST', { 'X-Player-Token': strictTok });
+  ok('required + declined -> 422', ciDecline.status === 422, JSON.stringify([ciDecline.status, ciDecline.d]));
+
+  console.log('\n— geo: pools tally + privacy (no raw coords stored) —');
+  gs = (await call(`/api/admin/state?sessionId=${GSID}`, null, 'GET', GAH)).d;
+  ok('admin pool counts present', gs.pools && gs.pools.in_person >= 1 && gs.pools.online >= 1, JSON.stringify(gs.pools));
+  const gexp = await fetch(base + `/api/admin/export?sessionId=${GSID}&format=json`, { headers: GAH }).then(r => r.json());
+  const inRow = gexp.participants.find(p => p.email === 'inroom@test.com');
+  ok('export carries pool', inRow && inRow.pool === 'in_person', JSON.stringify(inRow && inRow.pool));
+  ok('export carries coarse distance only', inRow && typeof inRow.checkin_distance === 'number', JSON.stringify(inRow && inRow.checkin_distance));
+  // privacy: raw coordinates never persisted anywhere
+  const gexpStr = JSON.stringify(gexp);
+  ok('no raw player coords in export', !gexpStr.includes('40.7128') && !gexpStr.includes('34.0432'), 'coords leaked');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

@@ -391,6 +391,23 @@
 <!-- offscreen canvas used to render the shareable result/recap graphic -->
 <canvas id="shareCanvas" width="1080" height="1920" style="display:none"></canvas>
 
+<!-- CHECK-IN MODAL: shown when a geofenced session requires check-in at first lock-in -->
+<div id="ciModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.82);z-index:70;align-items:center;justify-content:center;padding:22px">
+  <div class="panel" style="max-width:430px;width:100%;text-align:center">
+    <div style="font-size:34px">📍</div>
+    <div class="eyebrow" style="margin-top:6px">Check in to vote</div>
+    <h2 style="margin:8px 0 6px;font-size:21px" id="ciTitle">Are you in the room?</h2>
+    <p class="dim" style="font-size:15px;line-height:1.5;margin:0 0 8px" id="ciBody">Share your location so we know if you're at the event or watching remotely. We use it once to check you in — we don't track or store where you are.</p>
+    <div id="ciVenue" class="tag hide" style="margin:4px auto 0"></div>
+    <div class="err" id="ciErr" style="margin-top:10px"></div>
+    <div style="margin-top:18px">
+      <button class="btn" id="ciShare" style="width:100%">📍 Check me in</button>
+      <button class="btn ghost" id="ciRemote" style="width:100%;margin-top:10px">I'm watching remotely</button>
+      <button class="btn ghost" id="ciCancel" style="width:100%;margin-top:10px">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $=s=>document.querySelector(s);
 const api=async(path,body,method='POST')=>{
@@ -568,21 +585,90 @@ $('#btnVerify').onclick=async()=>{
   }catch(e){$('#codeErr').textContent=e.message;}
   $('#btnVerify').disabled=false;
 };
+// Raw fetch that returns {status,data} without throwing — lets us intercept the 428
+// check-in gate distinctly from real errors.
+async function apiRaw(path,body){
+  const h={'Content-Type':'application/json'};
+  const tok=localStorage.getItem('rt_token'); if(tok)h['X-Player-Token']=tok;
+  const r=await fetch(path,{method:'POST',headers:h,body:JSON.stringify(body||{})});
+  const d=await r.json().catch(()=>({}));
+  return {status:r.status,data:d};
+}
+
+let pendingVote=null; // the vote payload held while we run check-in
+async function lockVote(payload, btnId){
+  const out=await apiRaw('/api/vote',payload);
+  if(out.status===428 && out.data.error==='checkin_required'){
+    pendingVote={payload,btnId};
+    openCheckin();
+    return;
+  }
+  if(out.status>=200 && out.status<300){ refresh(); return; }
+  $('#voteErr').textContent=out.data.error||'Something went wrong';
+  if(btnId)$(btnId).disabled=false;
+}
 $('#btnLock').onclick=async()=>{
   $('#voteErr').textContent='';
   if(chosenTaste===null)return $('#voteErr').textContent='Pick a rating first';
   if(!predictTouched||predict===null)return $('#voteErr').textContent='Set your prediction';
   $('#btnLock').disabled=true;
-  try{await api('/api/vote',{taste:chosenTaste,predict});refresh();}
-  catch(e){$('#voteErr').textContent=e.message;$('#btnLock').disabled=false;}
+  await lockVote({taste:chosenTaste,predict},'#btnLock');
 };
 $('#btnLockBin').onclick=async()=>{
   $('#voteErr').textContent='';
   if(chosenPick===null)return $('#voteErr').textContent='Pick a side first';
   if(!splitTouched||splitVal===null)return $('#voteErr').textContent='Set your split prediction';
   $('#btnLockBin').disabled=true;
-  try{await api('/api/vote',{pick:chosenPick,predict_split:splitVal});refresh();}
-  catch(e){$('#voteErr').textContent=e.message;$('#btnLockBin').disabled=false;}
+  await lockVote({pick:chosenPick,predict_split:splitVal},'#btnLockBin');
+};
+
+// ---- check-in flow (geofenced events) ----
+let geoMode='off', geoLabel=null;
+function openCheckin(){
+  $('#ciErr').textContent='';
+  $('#ciTitle').textContent = geoMode==='required' ? 'Check in at the event' : 'Are you in the room?';
+  if(geoMode==='required'){
+    $('#ciBody').textContent='This is an in-room event — share your location to confirm you\u2019re here. We use it once to check you in and don\u2019t store where you are.';
+    $('#ciRemote').classList.add('hide');
+  }else{
+    $('#ciBody').textContent='Share your location so we know if you\u2019re at the event or watching remotely. We use it once to check you in — we don\u2019t store where you are.';
+    $('#ciRemote').classList.remove('hide');
+  }
+  if(geoLabel){$('#ciVenue').classList.remove('hide');$('#ciVenue').textContent='📍 '+geoLabel;}
+  else $('#ciVenue').classList.add('hide');
+  $('#ciModal').style.display='flex';
+}
+function closeCheckin(){ $('#ciModal').style.display='none'; }
+async function submitCheckin(body){
+  const out=await apiRaw('/api/checkin',body);
+  if(out.status>=200 && out.status<300 && out.data.checked_in){
+    closeCheckin();
+    // Now retry the held vote.
+    if(pendingVote){ const pv=pendingVote; pendingVote=null; await lockVote(pv.payload, pv.btnId); }
+    return;
+  }
+  // required + out of radius (200 with checked_in:false) or 422 decline
+  $('#ciErr').textContent = out.data.message || out.data.error || 'Check-in failed. Try again.';
+}
+$('#ciShare').onclick=()=>{
+  $('#ciErr').textContent='Getting your location…';
+  if(!navigator.geolocation){$('#ciErr').textContent='Your device can\u2019t share location. Try the remote option.';return;}
+  navigator.geolocation.getCurrentPosition(
+    pos=>submitCheckin({lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy}),
+    err=>{
+      // permission denied / unavailable
+      if(geoMode==='required')$('#ciErr').textContent='We need location access to check you in at this event. Enable it in your browser and try again.';
+      else $('#ciErr').textContent='Couldn\u2019t get your location. You can join as remote instead.';
+    },
+    {enableHighAccuracy:true,timeout:10000,maximumAge:0}
+  );
+};
+$('#ciRemote').onclick=()=>{ $('#ciErr').textContent=''; submitCheckin({declined:true}); };
+$('#ciCancel').onclick=()=>{
+  closeCheckin();
+  // release the held vote + re-enable the lock button so they can try again
+  if(pendingVote&&pendingVote.btnId)$(pendingVote.btnId).disabled=false;
+  pendingVote=null;
 };
 
 // ---- timer ----
@@ -747,6 +833,9 @@ function render(st){
   // Referral: remember my code (for the invite link) + my credited count.
   if(st.refCode)myRefCode=st.refCode;
   if(typeof st.referredCount==='number'){referredCount=st.referredCount;updateInviteBtn();}
+
+  // Geo check-in config (drives the check-in modal copy).
+  if(st.geo){geoMode=st.geo.mode||'off';geoLabel=st.geo.label||null;}
 
   // Live broadcast from the host — pop once per (at) timestamp.
   applyBroadcast(st.broadcast);

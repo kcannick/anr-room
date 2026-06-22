@@ -37,6 +37,17 @@ function refCode() {
   return s;
 }
 
+// Great-circle distance between two lat/lng points, in YARDS.
+function distanceYards(lat1, lng1, lat2, lng2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 6371000; // earth radius, meters
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const meters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return meters * 1.09361; // meters -> yards
+}
+const DEFAULT_GEO_RADIUS = 200; // generous default (yards) — venue GPS is imprecise indoors
+
 // ---------- tiny helpers ----------
 function send(res, status, data, headers = {}) {
   const body = typeof data === 'string' ? data : JSON.stringify(data);
@@ -246,7 +257,7 @@ async function buildRecap(participant) {
 
 async function playerState(participant) {
   const sessionId = participant.session_id;
-  const session = await db.get('SELECT id, name, status, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at FROM sessions WHERE id = ?', [sessionId]);
+  const session = await db.get('SELECT id, name, status, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, geo_mode, geo_label, geo_radius FROM sessions WHERE id = ?', [sessionId]);
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
@@ -315,6 +326,8 @@ async function playerState(participant) {
     myTotalPoints: participant.total_points,
     refCode: participant.ref_code || null,
     referredCount,
+    geo: { mode: session.geo_mode || 'off', label: session.geo_label || null, radius: session.geo_radius || null },
+    pool: participant.pool || null,
     participants: count,
     ...view,
   };
@@ -394,7 +407,7 @@ async function adminState(session) {
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
   const participants = await db.all(`
-    SELECT p.id, p.name, p.email, p.verified, p.total_points, p.signup_answer, p.referred_by,
+    SELECT p.id, p.name, p.email, p.verified, p.total_points, p.signup_answer, p.referred_by, p.pool, p.checkin_distance,
            (SELECT COUNT(*) FROM participants c WHERE c.session_id = p.session_id AND c.referred_by = p.id AND c.ref_credited = 1) AS brought
     FROM participants p WHERE p.session_id = ? ORDER BY p.total_points DESC, p.created_at ASC`, [sessionId]);
   const rounds = await db.all('SELECT * FROM rounds WHERE session_id = ? ORDER BY idx ASC', [sessionId]);
@@ -450,7 +463,13 @@ async function adminState(session) {
   return {
     session: { id: session.id, name: session.name, status: session.status, admin_token: session.admin_token, banner_id: session.banner_id || null, default_minutes: session.default_minutes || DEFAULT_MINUTES, poll_type: pollType,
       watch_url: session.watch_url || null, lobby_message: session.lobby_message || null, signup_prompt: session.signup_prompt || null,
-      broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null },
+      broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
+      geo_mode: session.geo_mode || 'off', geo_lat: session.geo_lat ?? null, geo_lng: session.geo_lng ?? null, geo_radius: session.geo_radius || null, geo_label: session.geo_label || null },
+    pools: {
+      in_person: participants.filter(p => p.pool === 'in_person').length,
+      online: participants.filter(p => p.pool === 'online').length,
+      unchecked: participants.filter(p => !p.pool).length,
+    },
     poll_type: pollType,
     participants,
     verifiedCount: participants.filter(p => p.verified).length,
@@ -729,6 +748,51 @@ async function handleApi(req, res, url) {
     return send(res, 200, await overlayState(session));
   }
 
+  // ----- check in to an event (sets the player's pool: in_person | online) -----
+  // Called when the player taps "Check in" at first lock-in. We use precise coords
+  // ONLY to compute distance, then discard them — we persist only the pool + a coarse
+  // distance for the host's auditing. Accuracy-aware: a low-confidence reading near the
+  // boundary is admitted (the venue's own GPS is imprecise indoors).
+  if (p === '/api/checkin' && method === 'POST') {
+    const participant = await participantFromReq(req);
+    if (!participant) return bad(res, 'Not authenticated', 401);
+    const { lat, lng, accuracy, declined } = await readBody(req);
+    const session = await db.get('SELECT geo_mode, geo_lat, geo_lng, geo_radius FROM sessions WHERE id = ?', [participant.session_id]);
+    const mode = session ? session.geo_mode : 'off';
+    if (mode === 'off' || session.geo_lat == null || session.geo_lng == null) {
+      // No geofence configured — everyone is simply "online" (or unpooled). Nothing to check.
+      await db.run("UPDATE participants SET pool = COALESCE(pool, 'online') WHERE id = ?", [participant.id]);
+      return send(res, 200, { pool: 'online', checked_in: true, geofenced: false });
+    }
+    // Player declined to share location.
+    if (declined || lat == null || lng == null) {
+      if (mode === 'required') return bad(res, 'This event needs your location to check you in. Please allow location access.', 422);
+      // optional mode: treat as online
+      await db.run("UPDATE participants SET pool = 'online', checkin_distance = NULL WHERE id = ?", [participant.id]);
+      return send(res, 200, { pool: 'online', checked_in: true, geofenced: true });
+    }
+    const la = Number(lat), ln = Number(lng), acc = Number(accuracy) || 0;
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return bad(res, 'Invalid location reading');
+    const radius = session.geo_radius || DEFAULT_GEO_RADIUS;
+    const dist = distanceYards(session.geo_lat, session.geo_lng, la, ln);
+    // Admit if within radius, OR if the reading's own uncertainty (accuracy, in meters
+    // -> yards) plausibly places them inside. This forgives bad indoor GPS.
+    const accYards = acc * 1.09361;
+    const inPerson = dist <= radius || (dist - accYards) <= radius;
+    const coarse = Math.round(dist); // store coarse distance only — never raw coords
+    if (inPerson) {
+      await db.run("UPDATE participants SET pool = 'in_person', checkin_distance = ? WHERE id = ?", [coarse, participant.id]);
+      return send(res, 200, { pool: 'in_person', checked_in: true, geofenced: true, distance: coarse });
+    }
+    // Out of radius.
+    if (mode === 'required') {
+      return send(res, 200, { pool: null, checked_in: false, geofenced: true, distance: coarse,
+        message: 'You\u2019re not at the event location, so you can\u2019t vote in this in-room session.' });
+    }
+    await db.run("UPDATE participants SET pool = 'online', checkin_distance = ? WHERE id = ?", [coarse, participant.id]);
+    return send(res, 200, { pool: 'online', checked_in: true, geofenced: true, distance: coarse });
+  }
+
   // ----- cast vote -----
   if (p === '/api/vote' && method === 'POST') {
     const participant = await participantFromReq(req);
@@ -739,8 +803,13 @@ async function handleApi(req, res, url) {
     if (round.closes_at && now() > Number(round.closes_at)) return bad(res, 'Time is up');
     const existing = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
     if (existing) return bad(res, 'You already locked in');
-    const session = await db.get('SELECT poll_type FROM sessions WHERE id = ?', [participant.session_id]);
+    const session = await db.get('SELECT poll_type, geo_mode FROM sessions WHERE id = ?', [participant.session_id]);
     const isBinary = session && session.poll_type === 'binary';
+    // Geo gate: when enforcement is on, a player must check in before their FIRST
+    // lock-in. The client intercepts this code and shows the check-in prompt.
+    if (session && session.geo_mode && session.geo_mode !== 'off' && !participant.pool) {
+      return send(res, 428, { error: 'checkin_required', geo_mode: session.geo_mode });
+    }
 
     if (isBinary) {
       // Binary vote: pick a side + predict the room's A/B split. Reject rating-shaped votes.
@@ -955,10 +1024,49 @@ async function handleApi(req, res, url) {
     if ('watchUrl' in body)      { sets.push('watch_url = ?');     vals.push(cleanUrl(body.watchUrl)); }
     if ('lobbyMessage' in body)  { sets.push('lobby_message = ?'); vals.push((body.lobbyMessage || '').toString().trim().slice(0, 500) || null); }
     if ('signupPrompt' in body)  { sets.push('signup_prompt = ?'); vals.push((body.signupPrompt || '').toString().trim().slice(0, 200) || null); }
+    // Geo: enforcement mode is independent of the venue pin (set venue early, enforce later).
+    if ('geoMode' in body) {
+      const m = ['off', 'optional', 'required'].includes(body.geoMode) ? body.geoMode : 'off';
+      sets.push('geo_mode = ?'); vals.push(m);
+    }
+    if ('geoLat' in body && 'geoLng' in body) {
+      const la = Number(body.geoLat), ln = Number(body.geoLng);
+      if (Number.isFinite(la) && Number.isFinite(ln) && Math.abs(la) <= 90 && Math.abs(ln) <= 180) {
+        sets.push('geo_lat = ?'); vals.push(la);
+        sets.push('geo_lng = ?'); vals.push(ln);
+      } else return bad(res, 'Invalid venue coordinates');
+    }
+    if ('geoRadius' in body) {
+      const r = Math.round(Number(body.geoRadius));
+      sets.push('geo_radius = ?'); vals.push(Number.isFinite(r) && r > 0 ? Math.min(5000, Math.max(25, r)) : DEFAULT_GEO_RADIUS);
+    }
+    if ('geoLabel' in body) { sets.push('geo_label = ?'); vals.push((body.geoLabel || '').toString().trim().slice(0, 200) || null); }
     if (!sets.length) return bad(res, 'Nothing to update');
     vals.push(body.sessionId);
     await db.run(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`, vals);
     return send(res, 200, { ok: true });
+  }
+
+  // Geocode an address -> lat/lng for the venue pin. Host-only. Uses OpenStreetMap
+  // Nominatim (no API key). Network failures degrade gracefully — the host can always
+  // enter coordinates manually or use device location instead.
+  if (p === '/api/admin/session/geocode' && method === 'POST') {
+    const { sessionId, address } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const q = (address || '').toString().trim();
+    if (!q) return bad(res, 'Enter an address');
+    try {
+      const u = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q);
+      const r = await fetch(u, { headers: { 'User-Agent': 'TheA&RRoom/1.0 (event check-in)' } });
+      if (!r.ok) return bad(res, 'Geocoding service unavailable — enter coordinates manually', 502);
+      const arr = await r.json();
+      if (!arr || !arr.length) return bad(res, 'No match for that address — try a more specific one', 404);
+      const hit = arr[0];
+      return send(res, 200, { lat: Number(hit.lat), lng: Number(hit.lon), label: hit.display_name });
+    } catch (e) {
+      return bad(res, 'Geocoding failed — enter coordinates manually', 502);
+    }
   }
 
   // Live broadcast: push a message to every player in the session, or clear it.
@@ -1062,7 +1170,7 @@ async function handleApi(req, res, url) {
     const isBinary = session.poll_type === 'binary';
 
     const participants = await db.all(
-      'SELECT id, user_id, name, email, phone, sms_marketing_consent, signup_answer, ref_code, referred_by, ref_credited, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
+      'SELECT id, user_id, name, email, phone, sms_marketing_consent, signup_answer, ref_code, referred_by, ref_credited, pool, checkin_distance, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
       [sessionId]
     );
     const rounds = await db.all(
@@ -1086,8 +1194,8 @@ async function handleApi(req, res, url) {
       const referredByLabel = pt.referred_by ? (labelById[pt.referred_by] || null) : null;
       const credited = (pt.ref_credited === 1 || pt.ref_credited === true) ? 1 : 0;
       return anon
-        ? { player: labelById[pt.id], total_points: pt.total_points, referred_by: referredByLabel, referral_credited: credited }
-        : { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, signup_answer: pt.signup_answer || null, referred_by: referredByLabel, referral_credited: credited, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) };
+        ? { player: labelById[pt.id], total_points: pt.total_points, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null }
+        : { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, signup_answer: pt.signup_answer || null, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null, checkin_distance: pt.checkin_distance ?? null, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) };
     });
 
     const cleanVotes = votes.map(v => {
