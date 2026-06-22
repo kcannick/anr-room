@@ -41,6 +41,11 @@
   .center{flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px}
   /* inputs */
   label{display:block;font-size:12px;letter-spacing:.04em;color:var(--ink-dim);margin:0 0 7px 2px}
+  /* SMS consent row: a label that must lay out as a flex row (checkbox + text),
+     overriding the global block label above. The span takes the remaining width. */
+  label.consent{display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.45;letter-spacing:0;cursor:pointer;color:var(--ink-dim);margin:0;text-align:left}
+  label.consent input{margin-top:2px;flex:0 0 auto;width:18px;height:18px}
+  label.consent span{flex:1 1 auto;min-width:0}
   .step-head{font-size:26px;font-weight:800;letter-spacing:-.01em;color:var(--ink);display:flex;align-items:center;gap:8px;margin-bottom:4px}
   .step-num{color:var(--signal);font-size:26px}
   .step-help{font-size:14px;color:var(--ink-dim);margin:0 0 14px 2px;line-height:1.4}
@@ -188,8 +193,8 @@
       <div><label>Your name (shown on the leaderboard)</label><input id="name" placeholder="e.g. Maya"></div>
       <div id="signupPromptRow" class="hide"><label id="signupPromptLabel">—</label><input id="signupAnswer" placeholder="Type your answer"></div>
       <div><label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label><input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567"></div>
-      <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.45;cursor:pointer;color:var(--dim)">
-        <input type="checkbox" id="smsConsent" style="margin-top:2px;flex-shrink:0">
+      <label class="consent">
+        <input type="checkbox" id="smsConsent">
         <span>Text me when this room goes live and about future A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Consent isn't required to play.</span>
       </label>
       <button class="btn" id="btnVerify">Enter the room</button>
