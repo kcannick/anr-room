@@ -476,11 +476,11 @@ function updateMuteBtn(){ const b=$('#muteBtn'); if(b)b.textContent=soundOn?'�
 document.addEventListener('pointerdown',()=>{ac();},{once:true});
 
 // ---- broadcast modal: show a host message once per (at) timestamp ----
-let lastBroadcastAt=Number(localStorage.getItem('rt_bc_at')||0);
+let lastBroadcastAt=Number(localStorage.getItem('rt_bc_at_'+(SID||''))||0);
 function applyBroadcast(bc){
   if(!bc||!bc.text||!bc.at)return;
   if(bc.at<=lastBroadcastAt)return; // already shown this one
-  lastBroadcastAt=bc.at;localStorage.setItem('rt_bc_at',String(bc.at));
+  lastBroadcastAt=bc.at;localStorage.setItem('rt_bc_at_'+(SID||''),String(bc.at));
   $('#bcText').textContent=bc.text;
   $('#bcModal').style.display='flex';
   SFX.chime();
@@ -1013,8 +1013,23 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
 });
 
 // boot
-(function(){
+(async function(){
   if(!SID){document.body.innerHTML='<div class="wrap"><div class="panel" style="margin-top:40px">No session link. Ask the host for the room QR code or link.</div></div>';return;}
+  // Populate the room name in the header up front, even before the player logs in —
+  // this is public info and avoids a blank title on a fresh session. Also lets us show
+  // a clear message if the link points at a missing/closed session.
+  try{
+    const info=await fetch('/api/session/info?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status));
+    if(info&&info.name)$('#sessName').textContent=info.name;
+    if(info&&info.signupPrompt){$('#signupPromptRow').classList.remove('hide');$('#signupPromptLabel').textContent=info.signupPrompt;}
+    if(info&&info.closed&&!getToken()){
+      document.body.innerHTML='<div class="wrap"><div class="brand"><div class="brand-titlerow"><h1>The A&amp;R Room</h1></div></div><div class="panel" style="margin-top:24px;text-align:center"><div style="font-size:30px">🔒</div><h2 style="margin:10px 0">'+(info.name||'This session')+'</h2><p class="dim">This session has ended. Thanks for playing!</p></div></div>';
+      return;
+    }
+  }catch(e){
+    if(e===404){document.body.innerHTML='<div class="wrap"><div class="panel" style="margin-top:40px;text-align:center"><div style="font-size:30px">🤔</div><h2 style="margin:10px 0">Session not found</h2><p class="dim">This link may be expired or incorrect. Ask the host for the current room link.</p></div></div>';return;}
+    // other errors: fall through and let the normal flow try
+  }
   if(getToken())startPolling();
   else show('email');
 })();

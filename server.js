@@ -748,6 +748,24 @@ async function handleApi(req, res, url) {
   // Keyed only by session id. Returns what's safe to show on a stream: session name,
   // current song/matchup, live tally, the most recent ratified result, and a first-name
   // leaderboard. No emails, phones, or sign-up answers ever leave this endpoint.
+  // ----- public session info (no auth) — lets the player page show the room name/status
+  // BEFORE login, so the header isn't blank on a fresh session. PII-safe: name + status
+  // + lightweight join context only.
+  if (p === '/api/session/info' && method === 'GET') {
+    const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
+    const session = sessionId ? await db.get('SELECT id, name, status, deleted_at, signup_prompt, watch_url, lobby_message FROM sessions WHERE id = ?', [sessionId]) : null;
+    if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
+    return send(res, 200, {
+      id: session.id,
+      name: session.name,
+      status: session.status,
+      closed: session.status === 'completed' || session.status === 'archived',
+      signupPrompt: session.signup_prompt || null,
+      watchUrl: session.watch_url || null,
+      lobbyMessage: session.lobby_message || null,
+    });
+  }
+
   if (p === '/api/overlay/state' && method === 'GET') {
     const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
     const session = sessionId ? await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]) : null;
