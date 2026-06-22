@@ -606,6 +606,62 @@ async function call(path, body, method='POST', headers={}) {
   const ovBad = await fetch(base + `/api/overlay/state?s=nope`).then(r => r.status);
   ok('overlay 404s unknown session', ovBad === 404, 'got ' + ovBad);
 
+  // ======================================================================
+  // REFERRALS — code issued, attribution on join, credit on first vote
+  // ======================================================================
+  console.log('\n— referrals: each player gets a code; referred join is attributed —');
+  const rcs = await call('/api/session', { name: 'Referral Test' });
+  const RSID = rcs.d.sessionId, RATOK = rcs.d.adminToken, RAH = { 'X-Admin-Token': RATOK };
+  // Inviter joins.
+  async function rjoin(email, name, ref) {
+    const req = await call('/api/join/request', { sessionId: RSID, email });
+    const body = { sessionId: RSID, email, code: req.d.devCode, name };
+    if (ref) body.ref = ref;
+    const ver = await call('/api/join/verify', body);
+    return ver.d.token;
+  }
+  const inviterTok = await rjoin('inviter@test.com', 'Ivy Inviter');
+  const inviterState = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': inviterTok })).d;
+  ok('player gets a ref code', !!inviterState.refCode && inviterState.refCode.length >= 4, JSON.stringify(inviterState.refCode));
+  ok('referred count starts at 0', inviterState.referredCount === 0, 'got ' + inviterState.referredCount);
+  const INVITE_CODE = inviterState.refCode;
+
+  // Referred player joins WITH the code.
+  const refTok = await rjoin('referred@test.com', 'Reggie Referred', INVITE_CODE);
+  // Not credited yet (hasn't played).
+  let inv2 = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': inviterTok })).d;
+  ok('referral NOT credited before play', inv2.referredCount === 0, 'got ' + inv2.referredCount);
+
+  console.log('\n— referrals: credit only after the referred player actually plays —');
+  // Open a round and have the referred player vote.
+  const rr = await call('/api/admin/round', { sessionId: RSID, song_title: 'Ref Song' }, 'POST', RAH);
+  const RRID = rr.d.roundId;
+  await call('/api/admin/round/open', { sessionId: RSID, roundId: RRID, minutes: 2 }, 'POST', RAH);
+  await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': refTok });
+  inv2 = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': inviterTok })).d;
+  ok('referral credited after referee plays', inv2.referredCount === 1, 'got ' + inv2.referredCount);
+
+  console.log('\n— referrals: self-referral and unknown codes are ignored —');
+  // Self-referral: a NEW player using a code that maps to their own (future) row can't —
+  // codes map to existing inviters, so test that an unknown code yields organic.
+  const orphanTok = await rjoin('orphan@test.com', 'Olive Orphan', 'ZZZZZZ');
+  const rexp = await fetch(base + `/api/admin/export?sessionId=${RSID}&format=json`, { headers: RAH }).then(r => r.json());
+  const orphanRow = rexp.participants.find(p => p.email === 'orphan@test.com');
+  ok('unknown ref code -> organic (no referrer)', orphanRow && orphanRow.referred_by === null, JSON.stringify(orphanRow && orphanRow.referred_by));
+  // A player using their OWN code: have the inviter try to re-join with their own code — same email blocks self-ref.
+  await rjoin('inviter@test.com', 'Ivy Inviter', INVITE_CODE);
+  const rexp2 = await fetch(base + `/api/admin/export?sessionId=${RSID}&format=json`, { headers: RAH }).then(r => r.json());
+  const invRow = rexp2.participants.find(p => p.email === 'inviter@test.com');
+  ok('self-referral blocked (inviter has no referrer)', invRow && invRow.referred_by === null, JSON.stringify(invRow && invRow.referred_by));
+
+  console.log('\n— referrals: export attribution (anon-safe) —');
+  const refRow = rexp2.participants.find(p => p.email === 'referred@test.com');
+  ok('referred_by maps to inviter label', refRow && /^Player \d+$/.test(refRow.referred_by || ''), JSON.stringify(refRow && refRow.referred_by));
+  ok('referral_credited reflected in export', refRow && refRow.referral_credited === 1, JSON.stringify(refRow && refRow.referral_credited));
+  const rexpAnon = await fetch(base + `/api/admin/export?sessionId=${RSID}&format=json&anon=1`, { headers: RAH }).then(r => r.json());
+  ok('anon export still has referral attribution (no PII)', rexpAnon.participants.some(p => p.referred_by && /^Player \d+$/.test(p.referred_by)), JSON.stringify(rexpAnon.participants.map(p=>p.referred_by)));
+  ok('anon export leaks no referral emails', !/@test\.com/.test(JSON.stringify(rexpAnon.participants)));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

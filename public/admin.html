@@ -638,8 +638,9 @@ function render(st){
   const b=$('#board');
   if(st.participants.length){
     const anyAnswer=st.participants.some(p=>p.signup_answer);
+    const anyBrought=st.participants.some(p=>p.brought>0);
     b.innerHTML='<table><thead><tr><th>#</th><th>Name</th><th class="mono">Total</th></tr></thead><tbody>'+
-      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.signup_answer?`<div class="muted" style="font-size:11px">${esc(p.signup_answer)}</div>`:''}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+(anyAnswer?'<p class="muted" style="font-size:11px;margin:8px 0 0">Sign-up answers shown under each name — handy for posting winners.</p>':'');
+      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.brought>0?` <span class="muted" style="font-size:11px">· brought ${p.brought}</span>`:''}${p.signup_answer?`<div class="muted" style="font-size:11px">${esc(p.signup_answer)}</div>`:''}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+((anyAnswer||anyBrought)?'<p class="muted" style="font-size:11px;margin:8px 0 0">“Brought N” = friends they referred who actually played.'+(anyAnswer?' Sign-up answers shown under names.':'')+'</p>':'');
   }else b.innerHTML='<div class="empty">Nobody\'s joined yet — share the QR code.</div>';
 }
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

@@ -135,6 +135,19 @@ async function freshDb() {
   const applied4b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('004 idempotent (not duplicated)', applied4b.filter(x => x === '004_event_tools').length === 1, JSON.stringify(applied4b));
 
+  // 7. Migration 005 (referrals): participant ref columns.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init();
+  const applied5 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('005_referrals applied', applied5.includes('005_referrals'), JSON.stringify(applied5));
+  const pc5 = (await db.all('PRAGMA table_info(participants)', [])).map(c => c.name);
+  ['ref_code', 'referred_by', 'ref_credited'].forEach(col => ok('participants.' + col + ' created', pc5.includes(col)));
+  await db.init();
+  const applied5b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('005 idempotent (not duplicated)', applied5b.filter(x => x === '005_referrals').length === 1, JSON.stringify(applied5b));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

@@ -400,6 +400,11 @@ const api=async(path,body,method='POST')=>{
   const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(d.error||'Something went wrong'); return d;
 };
 const SID=new URLSearchParams(location.search).get('s')||localStorage.getItem('rt_sid');
+// Incoming referral code from the share link (?ref=CODE). Persist per-session so it
+// survives the email->code step. Cleared once we've joined.
+const INCOMING_REF=(new URLSearchParams(location.search).get('ref')||'').trim().toUpperCase();
+if(INCOMING_REF)localStorage.setItem('rt_ref_'+(SID||''),INCOMING_REF);
+let myRefCode=null; // this player's own code, filled from state after join
 
 // ---- sound engine (WebAudio; no asset files). Synthesizes a buzzer, a chime, and a
 // short results sting + applause. Muted state persists; browsers require a user
@@ -446,16 +451,26 @@ function applyBroadcast(bc){
 }
 $('#bcDismiss')&&($('#bcDismiss').onclick=()=>{$('#bcModal').style.display='none';});
 
-// ---- invite: anyone can share the join link ----
-function playLink(){ return location.origin+'/?s='+encodeURIComponent(SID||localStorage.getItem('rt_sid')||''); }
+// ---- invite: anyone can share their personal join link (carries their ref code) ----
+let referredCount=0;
+function playLink(){
+  let u=location.origin+'/?s='+encodeURIComponent(SID||localStorage.getItem('rt_sid')||'');
+  if(myRefCode)u+='&ref='+encodeURIComponent(myRefCode);
+  return u;
+}
 $('#inviteBtn')&&($('#inviteBtn').onclick=async()=>{
   const url=playLink();
-  const data={title:'The A&R Room',text:'Join me in The A&R Room — rate the songs and read the room.',url};
+  const data={title:'The A&R Room',text:'Come play The A&R Room with me 🎧 Rate the drops, read the room, climb the board.',url};
   try{
     if(navigator.share){await navigator.share(data);}
-    else{await navigator.clipboard.writeText(url);$('#inviteBtn').textContent='Link copied!';setTimeout(()=>$('#inviteBtn').textContent='＋ Invite others',1400);}
+    else{await navigator.clipboard.writeText(url);$('#inviteBtn').textContent='Link copied!';setTimeout(()=>updateInviteBtn(),1400);}
   }catch(e){/* user cancelled share — ignore */}
 });
+// Invite button label reflects how many credited friends you've brought.
+function updateInviteBtn(){
+  const b=$('#inviteBtn');if(!b)return;
+  b.textContent = referredCount>0 ? ('＋ Invite — you\u2019ve brought '+referredCount) : '＋ Invite others';
+}
 
 
 let chosenTaste=null, predict=null, predictTouched=false, pollTimer=null, lastPhase=null, lastRecap=null;
@@ -543,10 +558,12 @@ $('#btnVerify').onclick=async()=>{
   const phone=$('#phone')?$('#phone').value.trim():'';
   const smsConsent=$('#smsConsent')?$('#smsConsent').checked:false;
   const signupAnswer=$('#signupAnswer')?$('#signupAnswer').value.trim():'';
+  const ref=localStorage.getItem('rt_ref_'+SID)||'';
   $('#btnVerify').disabled=true;
   try{
-    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,smsConsent,signupAnswer});
+    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,smsConsent,signupAnswer,ref});
     localStorage.setItem('rt_token',d.token);localStorage.setItem('rt_sid',SID);
+    localStorage.removeItem('rt_ref_'+SID);
     startPolling();
   }catch(e){$('#codeErr').textContent=e.message;}
   $('#btnVerify').disabled=false;
@@ -726,6 +743,10 @@ function render(st){
   // Watch-stream link (lobby button) — set whenever present.
   if(st.watch_url){$('#watchBtn').href=st.watch_url;$('#watchBtn').classList.remove('hide');}
   else $('#watchBtn').classList.add('hide');
+
+  // Referral: remember my code (for the invite link) + my credited count.
+  if(st.refCode)myRefCode=st.refCode;
+  if(typeof st.referredCount==='number'){referredCount=st.referredCount;updateInviteBtn();}
 
   // Live broadcast from the host — pop once per (at) timestamp.
   applyBroadcast(st.broadcast);

@@ -73,6 +73,9 @@ const SCHEMA = [
      phone TEXT,                            -- optional; captured at registration
      sms_marketing_consent INTEGER NOT NULL DEFAULT 0,  -- explicit opt-in for this signup
      signup_answer TEXT,                    -- answer to the session's custom sign-up prompt
+     ref_code TEXT,                          -- this participant's shareable referral code
+     referred_by TEXT,                       -- participant.id of whoever referred them (null = organic)
+     ref_credited INTEGER NOT NULL DEFAULT 0, -- 1 once they verified AND played a round (real referral)
      token TEXT NOT NULL,                    -- player auth token (cookie)
      verified INTEGER NOT NULL DEFAULT 0,
      total_points INTEGER NOT NULL DEFAULT 0,

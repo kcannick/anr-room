@@ -29,6 +29,14 @@ function cleanUrl(u) {
   return s;
 }
 
+// Short, human-shareable referral code (no ambiguous chars). Used in ?ref= links.
+function refCode() {
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/O/0/1/L
+  let s = '';
+  for (let i = 0; i < 6; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return s;
+}
+
 // ---------- tiny helpers ----------
 function send(res, status, data, headers = {}) {
   const body = typeof data === 'string' ? data : JSON.stringify(data);
@@ -292,6 +300,10 @@ async function playerState(participant) {
     }
   }
 
+  // Referral: this player's own share code + how many people they've brought who
+  // actually played (credited). Informational only — no reward attached.
+  const referredCount = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND referred_by = ? AND ref_credited = 1', [sessionId, participant.id])).c;
+
   const out = {
     session: { id: sessionId, name: session.name, status: session.status, poll_type: pollType,
       watch_url: session.watch_url || null, lobby_message: session.lobby_message || null },
@@ -301,6 +313,8 @@ async function playerState(participant) {
     broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
     me: { name: participant.name, email: participant.email, total_points: participant.total_points },
     myTotalPoints: participant.total_points,
+    refCode: participant.ref_code || null,
+    referredCount,
     participants: count,
     ...view,
   };
@@ -315,6 +329,14 @@ async function playerState(participant) {
     out.banner = null;
   }
   return out;
+}
+
+// A referral counts as "real" only once the referred player actually plays — flip
+// ref_credited on their first vote. Idempotent: the WHERE clause makes re-calls no-ops.
+// This is the anti-farming gate (a fake account that never plays never counts).
+async function creditReferral(participant) {
+  if (!participant || !participant.referred_by || participant.ref_credited) return;
+  await db.run('UPDATE participants SET ref_credited = 1 WHERE id = ? AND referred_by IS NOT NULL AND ref_credited = 0', [participant.id]);
 }
 
 // Public, PII-safe state for the on-stream overlay. Shows the live truth (unlike the
@@ -371,7 +393,10 @@ async function adminState(session) {
   const sessionId = session.id;
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
-  const participants = await db.all('SELECT id, name, email, verified, total_points, signup_answer FROM participants WHERE session_id = ? ORDER BY total_points DESC, created_at ASC', [sessionId]);
+  const participants = await db.all(`
+    SELECT p.id, p.name, p.email, p.verified, p.total_points, p.signup_answer, p.referred_by,
+           (SELECT COUNT(*) FROM participants c WHERE c.session_id = p.session_id AND c.referred_by = p.id AND c.ref_credited = 1) AS brought
+    FROM participants p WHERE p.session_id = ? ORDER BY p.total_points DESC, p.created_at ASC`, [sessionId]);
   const rounds = await db.all('SELECT * FROM rounds WHERE session_id = ? ORDER BY idx ASC', [sessionId]);
   const round = await activeRound(sessionId);
   let liveVotes = [];
@@ -612,10 +637,11 @@ async function handleApi(req, res, url) {
 
   // ----- verify OTP + create/return participant -----
   if (p === '/api/join/verify' && method === 'POST') {
-    const { sessionId, email, code, name, phone, smsConsent, signupAnswer } = await readBody(req);
+    const { sessionId, email, code, name, phone, smsConsent, signupAnswer, ref } = await readBody(req);
     const em = (email || '').toLowerCase();
     const ph = (phone || '').trim();
     const ans = (signupAnswer || '').toString().trim().slice(0, 300) || null;
+    const refIn = (ref || '').toString().trim().toUpperCase().slice(0, 12) || null;
     const consent = smsConsent === true || smsConsent === 1 || smsConsent === '1' ? 1 : 0;
     const otp = await db.get('SELECT * FROM otps WHERE email = ? AND session_id = ?', [em, sessionId]);
     if (!otp) return bad(res, 'Request a code first');
@@ -648,10 +674,26 @@ async function handleApi(req, res, url) {
     if (participant) {
       await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END, signup_answer = COALESCE(NULLIF(?,\'\'), signup_answer) WHERE id = ?',
         [token, user.uid, (name || '').trim(), ph, consent, ans || '', participant.id]);
+      // Give an existing referral-less participant a code if they somehow lack one.
+      if (!participant.ref_code) await db.run('UPDATE participants SET ref_code = ? WHERE id = ?', [refCode(), participant.id]);
     } else {
       const pid = id(9);
-      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, signup_answer, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,1,0,?)',
-        [pid, sessionId, user.uid, em, (name || '').trim(), ph || null, consent, ans, token, now()]);
+      // Resolve the inviter: a code must map to a DIFFERENT, verified participant in
+      // THIS session, and must not be a self-referral by email. Anything else -> organic.
+      let referredBy = null;
+      if (refIn) {
+        const inviter = await db.get('SELECT id, email FROM participants WHERE session_id = ? AND ref_code = ? AND verified = 1', [sessionId, refIn]);
+        if (inviter && inviter.email !== em) referredBy = inviter.id;
+      }
+      // Generate a unique-per-session code for the new player.
+      let myCode = refCode();
+      for (let tries = 0; tries < 5; tries++) {
+        const clash = await db.get('SELECT 1 FROM participants WHERE session_id = ? AND ref_code = ?', [sessionId, myCode]);
+        if (!clash) break;
+        myCode = refCode();
+      }
+      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, signup_answer, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,0,?)',
+        [pid, sessionId, user.uid, em, (name || '').trim(), ph || null, consent, ans, myCode, referredBy, token, now()]);
       // First time this user appears in this session → count it toward sessions_played.
       await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }
@@ -710,6 +752,7 @@ async function handleApi(req, res, url) {
       if (!(sp >= 0 && sp <= 100)) return bad(res, 'Split prediction must be 0–100');
       await db.run('INSERT INTO votes (id, round_id, participant_id, pick, predict_split, locked_at) VALUES (?,?,?,?,?,?)',
         [id(9), round.id, participant.id, pk, sp, now()]);
+      await creditReferral(participant);
       return send(res, 200, { locked: true });
     }
 
@@ -721,6 +764,7 @@ async function handleApi(req, res, url) {
     if (!(pr >= 0 && pr <= 9)) return bad(res, 'Prediction must be 0.0–9.0');
     await db.run('INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at) VALUES (?,?,?,?,?,?)',
       [id(9), round.id, participant.id, t, pr, now()]);
+    await creditReferral(participant);
     return send(res, 200, { locked: true });
   }
 
@@ -1018,7 +1062,7 @@ async function handleApi(req, res, url) {
     const isBinary = session.poll_type === 'binary';
 
     const participants = await db.all(
-      'SELECT id, user_id, name, email, phone, sms_marketing_consent, signup_answer, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
+      'SELECT id, user_id, name, email, phone, sms_marketing_consent, signup_answer, ref_code, referred_by, ref_credited, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
       [sessionId]
     );
     const rounds = await db.all(
@@ -1038,9 +1082,13 @@ async function handleApi(req, res, url) {
     const roomAvgByRound = {}, splitAByRound = {};
     rounds.forEach(r => { roomAvgByRound[r.id] = r.room_average; splitAByRound[r.id] = r.split_a; });
 
-    const cleanParticipants = participants.map((pt, i) => anon
-      ? { player: labelById[pt.id], total_points: pt.total_points }
-      : { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, signup_answer: pt.signup_answer || null, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) });
+    const cleanParticipants = participants.map((pt, i) => {
+      const referredByLabel = pt.referred_by ? (labelById[pt.referred_by] || null) : null;
+      const credited = (pt.ref_credited === 1 || pt.ref_credited === true) ? 1 : 0;
+      return anon
+        ? { player: labelById[pt.id], total_points: pt.total_points, referred_by: referredByLabel, referral_credited: credited }
+        : { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, signup_answer: pt.signup_answer || null, referred_by: referredByLabel, referral_credited: credited, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) };
+    });
 
     const cleanVotes = votes.map(v => {
       const base = {
