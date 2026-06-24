@@ -257,7 +257,7 @@ async function buildRecap(participant) {
 
 async function playerState(participant) {
   const sessionId = participant.session_id;
-  const session = await db.get('SELECT id, name, status, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, geo_mode, geo_label, geo_radius FROM sessions WHERE id = ?', [sessionId]);
+  const session = await db.get('SELECT id, name, status, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius FROM sessions WHERE id = ?', [sessionId]);
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
@@ -371,9 +371,10 @@ async function overlayState(session) {
     };
     if (isBinary) { base.option_b_title = round.option_b_title; base.option_b_artist = round.option_b_artist; }
     if (round.status === 'voting' || round.status === 'closed') {
-      // Live tally — safe to show the running number on stream as the hype.
+      // Live tally: only the vote count is safe to show (the hype number). The room
+      // average (rating) and the A/B split (binary) are the prediction targets — they
+      // stay sealed until ratify, so we do NOT send them on the live payload at all.
       base.votes = votes.length;
-      base.live = isBinary ? { split_a: roomSplitA(votes) } : { average: votes.length ? roomAverage(votes) : null };
       current = base;
     } else if (round.status === 'ratified') {
       const ranked = isBinary
@@ -397,8 +398,7 @@ async function overlayState(session) {
     current,
     result,
     leaderboard: board.map((p, i) => ({ rank: i + 1, name: onlyFirst(p.name), points: p.total_points })),
-    broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
-    serverNow: now(),
+    broadcast: (session.broadcast_text && session.broadcast_overlay) ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
   };
 }
 
@@ -1215,16 +1215,16 @@ async function handleApi(req, res, url) {
   // The message + timestamp ride along in player state; the client shows it once
   // per (broadcast_at) value, so re-sending the same text re-pops it.
   if (p === '/api/admin/session/broadcast' && method === 'POST') {
-    const { sessionId, text, clear } = await readBody(req);
+    const { sessionId, text, clear, overlay } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     if (clear) {
-      await db.run('UPDATE sessions SET broadcast_text = NULL, broadcast_at = NULL WHERE id = ?', [sessionId]);
+      await db.run('UPDATE sessions SET broadcast_text = NULL, broadcast_at = NULL, broadcast_overlay = FALSE WHERE id = ?', [sessionId]);
       return send(res, 200, { ok: true, cleared: true });
     }
     const msg = (text || '').toString().trim().slice(0, 500);
     if (!msg) return bad(res, 'Broadcast message is empty');
-    await db.run('UPDATE sessions SET broadcast_text = ?, broadcast_at = ? WHERE id = ?', [msg, now(), sessionId]);
+    await db.run('UPDATE sessions SET broadcast_text = ?, broadcast_at = ?, broadcast_overlay = ? WHERE id = ?', [msg, now(), overlay ? 1 : 0, sessionId]);
     return send(res, 200, { ok: true, at: now() });
   }
 

@@ -192,6 +192,10 @@
       <!-- Broadcast -->
       <label>Broadcast a message to everyone <span class="muted">(pops on all player screens)</span></label>
       <textarea id="bcInput" placeholder="e.g. Verzuz is running 10 min late — we'll spin some indie until it kicks off"></textarea>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:500;cursor:pointer">
+        <input type="checkbox" id="bcOverlay" style="width:auto;margin:0">
+        <span>Also show on the stream overlay <span class="muted">(uses the lower-third slot — hides the song while it's up)</span></span>
+      </label>
       <div class="row" style="margin-top:8px">
         <button class="btn good sm" id="btnBroadcast">Send broadcast</button>
         <button class="btn ghost sm" id="btnBroadcastClear">Clear</button>
@@ -499,7 +503,7 @@ $('#btnCopyOverlay')&&($('#btnCopyOverlay').onclick=()=>{navigator.clipboard.wri
 $('#btnBroadcast')&&($('#btnBroadcast').onclick=async()=>{
   const text=$('#bcInput').value.trim();if(!text)return $('#bcStatus').textContent='Type a message first.';
   $('#btnBroadcast').disabled=true;
-  try{await api('/api/admin/session/broadcast',{sessionId:SID,text});$('#bcStatus').textContent='Sent to all players ✓';setTimeout(()=>$('#bcStatus').textContent='',2500);}
+  try{await api('/api/admin/session/broadcast',{sessionId:SID,text,overlay:$('#bcOverlay').checked});$('#bcStatus').textContent=$('#bcOverlay').checked?'Sent to players + overlay ✓':'Sent to all players ✓';setTimeout(()=>$('#bcStatus').textContent='',2500);}
   catch(e){$('#bcStatus').textContent=e.message;}
   $('#btnBroadcast').disabled=false;
 });

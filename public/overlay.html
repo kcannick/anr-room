@@ -47,12 +47,15 @@
   #lower .countlabel{font-size:17px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
   #lower .bignum{font-family:"Space Mono",monospace;font-size:84px;font-weight:700;line-height:.95;color:var(--signal)}
   #lower .sub{font-size:18px;color:var(--ink-dim);margin-top:2px}
-  /* live split bar (binary) */
-  #splitWrap{margin-top:14px}
-  #splitBar{display:flex;height:26px;border-radius:13px;overflow:hidden;border:1px solid var(--line)}
-  #splitBar .a{background:var(--signal)} #splitBar .b{background:var(--cool)}
-  #splitLabels{display:flex;justify-content:space-between;font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:8px}
-  #splitLabels .la{color:var(--signal)} #splitLabels .lb{color:var(--cool)}
+  /* binary matchup: A vs B, each full title + artist, NO live split (it's the prediction target) */
+  #vsRow{display:flex;align-items:center;gap:26px;margin-top:4px}
+  #vsRow .side{flex:1;min-width:0}
+  #vsRow .st{display:flex;align-items:baseline;gap:10px}
+  #vsRow .sl{font-size:22px;font-weight:800;letter-spacing:.08em;flex:none}
+  #vsRow .side.a .sl{color:var(--signal)} #vsRow .side.b .sl{color:var(--cool)}
+  #vsRow .stitle{font-size:40px;font-weight:800;line-height:1.04;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #vsRow .sartist{font-size:22px;color:var(--ink-dim);margin-left:32px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #vsRow .vsmid{color:var(--cool);font-weight:800;font-size:34px;flex:none}
 
   /* ---- LEADERBOARD: right rail ---- */
   #board{position:absolute;top:60px;right:60px;width:440px;padding:28px 30px}
@@ -65,21 +68,30 @@
   .lbrow .nm{flex:1;font-size:26px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lbrow .pts{font-family:"Space Mono",monospace;font-size:26px;font-weight:700;color:var(--signal)}
 
-  /* ---- RESULT BANNER: winner reveal ---- */
-  #result{position:absolute;left:60px;right:60px;top:60px;padding:30px 44px;display:flex;align-items:center;gap:30px}
-  #result .crown{font-size:64px;flex:none}
+  /* ---- WINNER REVEAL: shares the lower-third slot (swaps with #lower) ---- */
+  #result{position:absolute;left:60px;right:60px;bottom:56px;padding:30px 44px;display:flex;align-items:center;gap:30px;border-color:var(--gold)}
+  #result .crown{font-size:60px;flex:none;border-right:1px solid var(--line);padding-right:30px}
   #result .rmeta{flex:1;min-width:0}
   #result .rlabel{font-size:18px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:700}
-  #result .rwin{font-size:50px;font-weight:800;line-height:1.02}
+  #result .rwin{font-size:50px;font-weight:800;line-height:1.02;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #result .rsong{font-size:22px;color:var(--ink-dim);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #result .rroom{flex:none;text-align:right}
+  /* rating: room average in the right slot */
+  #result .rroom{flex:none;text-align:right;min-width:240px}
   #result .rroom .k{font-size:16px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
   #result .rroom .v{font-family:"Space Mono",monospace;font-size:64px;font-weight:700;color:var(--signal);line-height:1}
+  /* binary: full-width split bar revealed under the winner name (no right slot) */
+  #resSplit{margin-top:13px}
+  #resSplit .bar{display:flex;height:16px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  #resSplit .bar .a{background:var(--signal)} #resSplit .bar .b{background:var(--cool)}
+  #resSplit .labels{display:flex;justify-content:space-between;font-size:22px;font-weight:700;margin-top:8px;color:var(--ink-dim)}
 
-  /* ---- BROADCAST ticker ---- */
-  #bcast{position:absolute;left:60px;right:60px;top:50%;transform:translateY(-50%);padding:34px 46px;text-align:center;border-color:var(--gold)}
-  #bcast .blab{font-size:18px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);font-weight:700}
-  #bcast .btext{font-size:44px;font-weight:800;line-height:1.2;margin-top:12px}
+  /* ---- BROADCAST in lower-third slot ---- */
+  #bcastLower{position:absolute;left:60px;right:60px;bottom:56px;padding:34px 44px;display:flex;align-items:center;gap:36px;border-color:var(--gold)}
+  #bcastLower .brandtag{display:flex;flex-direction:column;gap:6px;flex:none;border-right:1px solid var(--line);padding-right:36px}
+  #bcastLower .brandtag .room{font-weight:800;font-size:30px;letter-spacing:-.01em;color:var(--gold)}
+  #bcastLower .brandtag .sess{font-size:18px;color:var(--ink-dim);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #bcastLower .main{flex:1;min-width:0}
+  #bcastLower .nowtag{font-size:18px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
 
   /* idle / connecting */
   #idle{position:absolute;left:60px;bottom:56px;padding:24px 34px}
@@ -98,7 +110,7 @@
     <div id="lbRows"></div>
   </div>
 
-  <!-- LOWER THIRD: current round -->
+  <!-- LOWER THIRD: current round (rating OR binary matchup) -->
   <div id="lower" class="card hide">
     <div class="brandtag">
       <div class="room">The A&amp;R Room</div>
@@ -106,11 +118,22 @@
     </div>
     <div class="main">
       <div class="nowtag" id="nowTag">Now rating · Round 1</div>
-      <div class="title" id="curTitle">—</div>
-      <div class="artist" id="curArtist"></div>
-      <div id="splitWrap" class="hide">
-        <div id="splitBar"><div class="a" style="width:50%"></div><div class="b" style="width:50%"></div></div>
-        <div id="splitLabels"><span class="la" id="splitLA">A 50%</span><span class="lb" id="splitLB">50% B</span></div>
+      <!-- rating: single song -->
+      <div id="ratingMain">
+        <div class="title" id="curTitle">—</div>
+        <div class="artist" id="curArtist"></div>
+      </div>
+      <!-- binary: A vs B, each title + artist; NO live split (it's what players predict) -->
+      <div id="vsRow" class="hide">
+        <div class="side a">
+          <div class="st"><span class="sl">A</span><span class="stitle" id="aTitle">—</span></div>
+          <div class="sartist" id="aArtist"></div>
+        </div>
+        <div class="vsmid">vs</div>
+        <div class="side b">
+          <div class="st"><span class="sl">B</span><span class="stitle" id="bTitle">—</span></div>
+          <div class="sartist" id="bArtist"></div>
+        </div>
       </div>
     </div>
     <div class="right">
@@ -120,24 +143,36 @@
     </div>
   </div>
 
-  <!-- RESULT BANNER -->
+  <!-- BROADCAST in lower-third slot (host opt-in; never shows alongside the song) -->
+  <div id="bcastLower" class="card hide">
+    <div class="brandtag">
+      <div class="room">📣 From the host</div>
+      <div class="sess" id="bcastSess">—</div>
+    </div>
+    <div class="main">
+      <div class="nowtag">Announcement</div>
+      <div class="title" id="bcastLowerText" style="white-space:normal;font-size:44px;line-height:1.1">—</div>
+    </div>
+  </div>
+
+  <!-- WINNER REVEAL: shares the lower-third slot -->
   <div id="result" class="card hide">
     <div class="crown">👑</div>
     <div class="rmeta">
       <div class="rlabel" id="resLabel">Round winner</div>
       <div class="rwin" id="resWinner">—</div>
+      <!-- rating: song line under the winner -->
       <div class="rsong" id="resSong"></div>
+      <!-- binary: full-width split revealed here (the prediction target, post-ratify only) -->
+      <div id="resSplit" class="hide">
+        <div class="bar"><div class="a" style="width:50%"></div><div class="b" style="width:50%"></div></div>
+        <div class="labels"><span id="resSplitA">A 50%</span><span id="resSplitB">50% B</span></div>
+      </div>
     </div>
-    <div class="rroom">
+    <div class="rroom" id="resRoom">
       <div class="k" id="resRoomK">Room average</div>
       <div class="v" id="resRoomV">—</div>
     </div>
-  </div>
-
-  <!-- BROADCAST -->
-  <div id="bcast" class="card hide">
-    <div class="blab">📣 From the host</div>
-    <div class="btext" id="bcastText">—</div>
   </div>
 
   <!-- IDLE -->
@@ -167,7 +202,7 @@ window.addEventListener('resize',fit);fit();
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt1=n=>n==null?'—':(Math.round(n*10)/10).toFixed(1);
 
-let lastBcAt=0, bcTimer=null;
+let lastBcAt=0, bcVisibleUntil=0;
 function showOnly(){
   // visibility driven by data + view flags
 }
@@ -184,17 +219,23 @@ function render(st){
   const isBin=st.session.poll_type==='binary';
   $('#sessName').textContent=st.session.name||'';
 
-  // --- broadcast (highest priority overlay) ---
+  // --- broadcast (host opt-in; rides the lower-third slot, never with the song) ---
+  // The overlay only receives a broadcast when the host ticked "show on overlay";
+  // it takes the lower-third slot and suppresses the round card + result banner
+  // for 12s, then auto-hides (host re-sends to repin).
+  let showingBroadcast=false;
   if(st.broadcast&&st.broadcast.text){
-    $('#bcastText').textContent=st.broadcast.text;
-    $('#bcast').classList.remove('hide');
     if(st.broadcast.at!==lastBcAt){
       lastBcAt=st.broadcast.at;
-      // auto-hide a broadcast after 12s of screen time (host can re-send to repin)
-      if(bcTimer)clearTimeout(bcTimer);
-      bcTimer=setTimeout(()=>{$('#bcast').classList.add('hide');},12000);
+      bcVisibleUntil=Date.now()+12000;
     }
-  }
+    if(Date.now()<bcVisibleUntil){
+      showingBroadcast=true;
+      $('#bcastLowerText').textContent=st.broadcast.text;
+      $('#bcastSess').textContent=st.session.name||'';
+      $('#bcastLower').classList.remove('hide');
+    }else $('#bcastLower').classList.add('hide');
+  }else{ lastBcAt=0; $('#bcastLower').classList.add('hide'); }
 
   // --- leaderboard rail ---
   if(showBoard && st.leaderboard && st.leaderboard.length){
@@ -210,45 +251,55 @@ function render(st){
   // --- result banner vs current round (mutually exclusive) ---
   const result=st.result, current=st.current;
   let showingResult=false;
-  if(showResultView && result){
+  if(showResultView && result && !showingBroadcast){
     showingResult=true;
     $('#resWinner').textContent=result.winner||'No votes';
-    $('#resSong').textContent=isBin
-      ? ((result.song_title||'A')+' vs '+(result.option_b_title||'B'))
-      : (result.song_title+(result.song_artist?' · '+result.song_artist:''));
     if(isBin){
-      $('#resRoomK').textContent='Room split (A)';
-      $('#resRoomV').textContent=result.room.split_a!=null?Math.round(result.room.split_a)+'%':'—';
+      // Binary winner: full-width split revealed here (post-ratify only). Hide the
+      // rating song line + the room-average right slot; show the split bar instead.
+      $('#resSong').classList.add('hide');
+      $('#resRoom').classList.add('hide');
+      const a=result.room&&result.room.split_a!=null?Math.round(result.room.split_a):null;
+      if(a!=null){
+        $('#resSplit').classList.remove('hide');
+        $('#resSplit .bar').children[0].style.width=a+'%';
+        $('#resSplit .bar').children[1].style.width=(100-a)+'%';
+        $('#resSplitA').textContent=(result.song_title||'A')+' '+a+'%';
+        $('#resSplitB').textContent=(100-a)+'% '+(result.option_b_title||'B');
+      }else $('#resSplit').classList.add('hide');
     }else{
+      // Rating winner: song line under the name, room average in the right slot.
+      $('#resSplit').classList.add('hide');
+      $('#resSong').classList.remove('hide');
+      $('#resSong').textContent=result.song_title+(result.song_artist?' · '+result.song_artist:'');
+      $('#resRoom').classList.remove('hide');
       $('#resRoomK').textContent='Room average';
       $('#resRoomV').textContent=fmt1(result.room.average);
     }
     $('#result').classList.remove('hide');
   }else $('#result').classList.add('hide');
 
-  // --- lower third (current round), hidden while a result banner is up ---
-  if(showLower && current && !showingResult){
+  // --- lower third (current round), hidden while a winner reveal or broadcast is up ---
+  if(showLower && current && !showingResult && !showingBroadcast){
     $('#nowTag').textContent=(isBin?'Now playing · Round ':'Now rating · Round ')+current.idx+(current.status==='closed'?' · voting closed':'');
     if(isBin){
-      $('#curTitle').innerHTML=esc(current.song_title||'A')+' <span class="vs">vs</span> '+esc(current.option_b_title||'B');
-      $('#curArtist').textContent='';
-      const a=current.live&&current.live.split_a!=null?Math.round(current.live.split_a):null;
-      if(a!=null){
-        $('#splitWrap').classList.remove('hide');
-        $('#splitBar').children[0].style.width=a+'%';$('#splitBar').children[1].style.width=(100-a)+'%';
-        $('#splitLA').textContent=(current.song_title||'A')+' '+a+'%';
-        $('#splitLB').textContent=(100-a)+'% '+(current.option_b_title||'B');
-      }else $('#splitWrap').classList.add('hide');
+      // Binary live: A vs B (full title + artist each). NO split — it's the prediction
+      // target and stays sealed until ratify, same as the rating room average.
+      $('#ratingMain').classList.add('hide');
+      $('#vsRow').classList.remove('hide');
+      $('#aTitle').textContent=current.song_title||'A';
+      $('#aArtist').textContent=current.song_artist||'';
+      $('#bTitle').textContent=current.option_b_title||'B';
+      $('#bArtist').textContent=current.option_b_artist||'';
       $('#rightLabel').textContent='Votes in';
       $('#rightNum').textContent=current.votes||0;
       $('#rightSub').textContent='';
     }else{
+      $('#vsRow').classList.add('hide');
+      $('#ratingMain').classList.remove('hide');
       $('#curTitle').textContent=current.song_title||'—';
       $('#curArtist').textContent=current.song_artist||'';
-      $('#splitWrap').classList.add('hide');
-      // While rating is open we show the vote count (the room average stays sealed
-      // for the players; on the overlay we still keep it hidden until ratify to
-      // preserve the reveal — show votes-in as the live hype number).
+      // Room average stays sealed until ratify to preserve the reveal — show votes-in.
       $('#rightLabel').textContent='Votes in';
       $('#rightNum').textContent=current.votes||0;
       $('#rightSub').textContent='';
@@ -258,7 +309,7 @@ function render(st){
   }else $('#lower').classList.add('hide');
 
   // --- idle card only when nothing else is showing ---
-  const anything=!$('#lower').classList.contains('hide')||!$('#result').classList.contains('hide')||!$('#board').classList.contains('hide')||!$('#bcast').classList.contains('hide');
+  const anything=!$('#lower').classList.contains('hide')||!$('#result').classList.contains('hide')||!$('#board').classList.contains('hide')||!$('#bcastLower').classList.contains('hide');
   if(anything){$('#idle').classList.add('hide');}
   else{
     $('#idle').classList.remove('hide');
