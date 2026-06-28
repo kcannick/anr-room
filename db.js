@@ -167,6 +167,11 @@ if (USE_PG) {
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
     max: 5,
+    // Fail loud and fast instead of hanging to the Vercel 10s kill. A stuck
+    // connect or a wedged query now errors in a few seconds with a clear cause,
+    // rather than silently 504-ing every route. (Boot path must never block.)
+    connectionTimeoutMillis: 5000,   // give up acquiring a connection after 5s
+    statement_timeout: 8000,         // abort any single query after 8s (server-side)
   });
   impl = {
     async run(sql, params = []) {
@@ -200,9 +205,37 @@ if (USE_PG) {
         client.release();
       }
     },
+    // Acquire the migration advisory lock on a DEDICATED client and run `fn`
+    // while holding it, then release on the SAME client. Pinning to one client
+    // is essential: pg_advisory_lock is session-scoped, so lock and unlock must
+    // happen on the same connection — the old code ran them through the shared
+    // pool, so unlock could land on a connection that never held the lock (which
+    // Postgres ignores, leaving the lock stuck). Uses pg_try_advisory_lock
+    // (non-blocking) with a bounded retry so an instance NEVER waits forever on
+    // the boot path — the failure mode that 504'd every route under load.
+    // Returns true if we ran fn (got the lock), false if we gave up (someone
+    // else is migrating — caller re-checks and finds nothing pending).
+    async withMigrationLock(fn, { key = 727274, tries = 50, gapMs = 100 } = {}) {
+      const client = await pool.connect();
+      try {
+        let got = false;
+        for (let i = 0; i < tries; i++) {
+          const r = await client.query('SELECT pg_try_advisory_lock($1) AS ok', [key]);
+          if (r.rows[0] && r.rows[0].ok) { got = true; break; }
+          await new Promise(res => setTimeout(res, gapMs));
+        }
+        if (!got) return false; // another instance holds it; proceed without migrating
+        try {
+          await fn();
+          return true;
+        } finally {
+          await client.query('SELECT pg_advisory_unlock($1)', [key]).catch(() => {});
+        }
+      } finally {
+        client.release();
+      }
+    },
     async init(opts = {}) {
-      // PG needs BIGINT/REAL which our portable schema already uses; INTEGER bools are fine.
-      for (const s of SCHEMA) await pool.query(s);
       // Versioned migrations: ordered, run-once, loud on failure. Replaces the old
       // boot-time ALTER blocks (which failed silently and raced on cold starts).
       await runMigrations(impl);
@@ -298,13 +331,26 @@ async function runMigrations(db) {
   const migrations = loadMigrationFiles();
   if (!migrations.length) return;
 
-  // Serialize concurrent migrators (Postgres only; SQLite init is single-process).
-  if (USE_PG) { try { await db.run('SELECT pg_advisory_lock(727274)'); } catch {} }
-  try {
+  // ---- VERSION GATE (the important fix) ----
+  // Cheap pre-check that runs on EVERY boot: read what's applied, compare to the
+  // shipped files. If nothing is pending (the steady-state case — your prod DB
+  // already has all migrations), return IMMEDIATELY, before touching any lock.
+  // This is what keeps the serverless boot path lock-free: a thousand cold starts
+  // each do one tiny SELECT and serve traffic, instead of piling onto a blocking
+  // advisory lock and 504-ing. The lock below is only ever reached in the brief
+  // window right after a deploy that ships a genuinely new migration.
+  async function pending() {
     const done = await db.all('SELECT id FROM _migrations', []);
     const applied = new Set(done.map(r => r.id));
-    for (const m of migrations) {
-      if (applied.has(m.id)) continue;
+    return migrations.filter(m => !applied.has(m.id));
+  }
+  if ((await pending()).length === 0) return; // nothing to do — no lock, no work
+
+  // Something IS pending. Do the actual apply work, serialized.
+  const apply = async () => {
+    // Re-read inside the lock: another instance may have applied them while we
+    // waited for the lock. (Idempotent either way, but this avoids redundant DDL.)
+    for (const m of await pending()) {
       console.log(`[migrate] applying ${m.id} (${m.statements.length} statements)…`);
       for (let stmt of m.statements) {
         // SQLite doesn't support ADD COLUMN IF NOT EXISTS — strip it and rely on the
@@ -322,8 +368,23 @@ async function runMigrations(db) {
       await db.run('INSERT INTO _migrations (id, applied_at) VALUES (?, ?)', [m.id, Date.now()]);
       console.log(`[migrate] ${m.id} ✓`);
     }
-  } finally {
-    if (USE_PG) { try { await db.run('SELECT pg_advisory_unlock(727274)'); } catch {} }
+  };
+
+  if (USE_PG && typeof db.withMigrationLock === 'function') {
+    // Pinned, non-blocking, bounded try-lock. If we don't get the lock, another
+    // instance is migrating — we give up gracefully. Then re-check: by now it has
+    // (almost certainly) finished, so pending() is empty and we proceed clean. In
+    // the rare case it's still going, the next request's cold start will self-heal.
+    const ran = await db.withMigrationLock(apply);
+    if (!ran) {
+      const still = await pending();
+      if (still.length) {
+        console.log(`[migrate] another instance is migrating; ${still.length} pending, proceeding (will self-heal next boot)`);
+      }
+    }
+  } else {
+    // SQLite (single-process) — no lock needed.
+    await apply();
   }
 }
 
