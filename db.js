@@ -400,6 +400,42 @@ async function runMigrations(db) {
 // the class of mid-conversion timeout that a boot-time data migration can cause.
 async function postMigrate(db, opts = {}) {
   const allowHeavy = opts.allowHeavy === true;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // BOOT-PATH GUARD (the fix for the 504 outage).
+  //
+  // Everything below the admin-promote is MAINTENANCE, not init: an orphan
+  // backfill (one-time) and a per-user stats recompute that re-derives
+  // sessions_played / lifetime_points for EVERY user. That recompute is 2
+  // aggregate queries per user, run sequentially — ~12s at 60 users — and it
+  // was running on EVERY serverless cold start, before any route could serve.
+  // Once the user count grew past the point where it exceeded Vercel's 10s
+  // function limit, every cold start timed out and every function-backed route
+  // 504'd. It is idempotent and produces the same numbers every boot, so there
+  // is no reason to pay it per-request.
+  //
+  // It now runs ONLY when allowHeavy is true — i.e. from `node migrate.js
+  // --run-heavy`, the same deploy-time path the heavy scale-conversion already
+  // uses. On the serverless boot path (allowHeavy=false) we do the cheap
+  // admin-promote and return. Stats are maintained at write-time by the app and
+  // re-derived deliberately at deploy, never on the request hot path.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Cheap + safe on every boot: promote the configured admin once the row exists.
+  const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+  if (adminEmail) {
+    await db.run("UPDATE users SET role = 'admin' WHERE email = ?", [adminEmail]).catch(() => {});
+  }
+
+  if (!allowHeavy) {
+    // Serverless boot path: skip all maintenance. Detect whether a backfill is
+    // pending purely so we can log a loud, actionable line (no work, no scans
+    // that could stall the boot).
+    return;
+  }
+
+  // ── Below here only runs from the standalone migrate script (allowHeavy) ──
+
   let orphans;
   try {
     orphans = await db.all("SELECT * FROM participants WHERE user_id IS NULL OR user_id = ''", []);
@@ -424,11 +460,6 @@ async function postMigrate(db, opts = {}) {
     const pc = await db.get('SELECT COALESCE(SUM(total_points),0) AS s FROM participants WHERE user_id = ?', [u.uid]);
     await db.run('UPDATE users SET sessions_played = ?, lifetime_points = ? WHERE uid = ?',
       [Number(sc.c) || 0, Number(pc.s) || 0, u.uid]);
-  }
-  // Promote the configured admin (only affects the row once it exists).
-  const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
-  if (adminEmail) {
-    await db.run("UPDATE users SET role = 'admin' WHERE email = ?", [adminEmail]).catch(() => {});
   }
 
   // Binary poll: existing Postgres production DBs created votes.taste/predict as
