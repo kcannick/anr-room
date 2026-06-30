@@ -645,8 +645,8 @@ async function handleApi(req, res, url) {
     const cols = `id, name, status, scheduled_at, owner_uid, created_at, series_id, poll_type, geo_mode,
       (SELECT COUNT(*) FROM participants pp WHERE pp.session_id = sessions.id AND pp.verified = 1) AS ar_count`;
     const rows = user.role === 'admin'
-      ? await db.all(`SELECT ${cols} FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC`, [])
-      : await db.all(`SELECT ${cols} FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [user.uid]);
+      ? await db.all(`SELECT ${cols} FROM sessions WHERE deleted_at IS NULL ORDER BY created_at ASC`, [])
+      : await db.all(`SELECT ${cols} FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at ASC`, [user.uid]);
     return send(res, 200, { role: user.role, sessions: rows });
   }
 
@@ -1340,6 +1340,46 @@ async function handleApi(req, res, url) {
     });
   }
 
+  // Public homepage data (no auth). Session-aware: the live session (if any), the next
+  // upcoming session, the active series leaderboard, and past winners. PII-safe — first
+  // name + points only, never email/phone. One call powers the whole front door.
+  if (p === '/api/home' && method === 'GET') {
+    const firstName = (nm) => (nm || 'A&R').toString().trim().split(/\s+/)[0];
+    // Live session (most recent if more than one is somehow live).
+    const liveRow = await db.get("SELECT * FROM sessions WHERE status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1", []);
+    let live = null;
+    if (liveRow) {
+      const arCount = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [liveRow.id])).c;
+      const round = await activeRound(liveRow.id);
+      let nowPlaying = null;
+      if (round) nowPlaying = liveRow.poll_type === 'binary'
+        ? (round.song_title + ' VS ' + (round.option_b_title || 'B'))
+        : (round.song_title + (round.song_artist ? ' — ' + round.song_artist : ''));
+      live = { id: liveRow.id, name: liveRow.name, pollType: liveRow.poll_type, watchUrl: liveRow.watch_url || null, arCount: Number(arCount) || 0, nowPlaying };
+    }
+    // Next upcoming session: earliest future start, else most recently created upcoming.
+    const nextRow = await db.get("SELECT id, name, scheduled_at, watch_url FROM sessions WHERE status = 'upcoming' AND deleted_at IS NULL ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", []);
+    const next = nextRow ? { id: nextRow.id, name: nextRow.name, scheduledAt: nextRow.scheduled_at, watchUrl: nextRow.watch_url || null } : null;
+    // Active series (else most recent) + its live-computed top 5.
+    const serRow = (await db.get("SELECT id, title, status FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []))
+      || (await db.get("SELECT id, title, status FROM series ORDER BY created_at DESC LIMIT 1", []));
+    let series = null;
+    if (serRow) {
+      const rows = await db.all(
+        `SELECT u.name, SUM(v.points) AS pts FROM votes v
+         JOIN participants p ON v.participant_id = p.id
+         JOIN users u        ON p.user_id = u.uid
+         JOIN rounds r       ON v.round_id = r.id
+         JOIN sessions s     ON r.session_id = s.id
+         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL
+         GROUP BY u.uid, u.name ORDER BY pts DESC, u.name ASC LIMIT 5`, [serRow.id]);
+      series = { id: serRow.id, title: serRow.title, status: serRow.status,
+        leaderboard: rows.map((r, i) => ({ rank: i + 1, name: firstName(r.name), points: Number(r.pts) || 0 })) };
+    }
+    // Past winners — no winner model yet; empty until an A&R Wars close records them.
+    return send(res, 200, { live, next, series, winners: [] });
+  }
+
 
   // Update event config after creation: watch link, lobby message, sign-up prompt.
   // Each field is optional; only fields present in the body are changed. Send an
@@ -1631,7 +1671,10 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
-    if (url.pathname === '/' || url.pathname === '/play') return serveStatic(res, 'play.html');
+    // Bare root = the public homepage; root WITH a session param (?s=) is the voting
+    // page (preserves existing QR/share links of the form /?s=<id>). /play is explicit.
+    if (url.pathname === '/') return serveStatic(res, url.searchParams.get('s') ? 'play.html' : 'home.html');
+    if (url.pathname === '/play') return serveStatic(res, 'play.html');
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // allow direct asset paths

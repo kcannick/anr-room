@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/mark-color.png">
+<title>The A&R Room · Got an ear for music?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d0b16;--panel:#171328;--panel-2:#1d1733;--line:#2e2750;
+    --ink:#f3f0fb;--ink-dim:#a9a2c9;--ink-faint:#6f688f;
+    --signal:#4bb749;--signal-deep:#379235;--hot:#ff5d6c;--cool:#7c6ff0;--accent:#6d5fe0;--amber:#f5a524;--brand-purple:#403694;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:0 16px 60px;background:radial-gradient(130% 70% at 50% -6%, #241a4d 0%, var(--bg) 52%);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:560px;margin:0 auto}
+  .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+  /* nav */
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:18px 2px 16px;position:sticky;top:0;background:linear-gradient(180deg,rgba(13,11,22,.96),rgba(13,11,22,.6));backdrop-filter:blur(7px);z-index:10}
+  .brand{display:flex;align-items:center;gap:9px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--signal);box-shadow:0 0 10px 1px rgba(75,183,73,.6)}
+  .brand .nm{font-weight:800;font-size:16px;letter-spacing:-.01em}
+  .nav-links{display:flex;gap:16px;font-size:12px;color:var(--ink-dim)}
+  .nav-links a{cursor:pointer}.nav-links a:hover{color:var(--ink)}
+  /* live banner */
+  .live-banner{display:flex;align-items:center;gap:11px;background:rgba(255,93,108,.12);border:1px solid #5a2230;border-radius:13px;padding:13px 15px;margin-bottom:16px}
+  .live-banner .pulse{width:11px;height:11px;border-radius:50%;background:var(--hot);box-shadow:0 0 0 0 rgba(255,93,108,.7);animation:pulse 1.8s infinite;flex:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,93,108,.6)}70%{box-shadow:0 0 0 11px rgba(255,93,108,0)}100%{box-shadow:0 0 0 0 rgba(255,93,108,0)}}
+  .live-banner .lb-txt{flex:1;min-width:0}
+  .live-banner .lb-t{font-weight:800;font-size:15px;color:#ff8b96}
+  .live-banner .lb-s{font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .live-banner .lb-btn{background:var(--hot);color:#2a0a0e;font-size:13px;font-weight:800;padding:10px 16px;border-radius:10px;white-space:nowrap}
+  /* hero */
+  .hero{text-align:center;padding:18px 6px 20px}
+  .hero h1{font-size:33px;font-weight:800;line-height:1.08;letter-spacing:-.02em;margin:0 0 12px}
+  .hero h1 .grad{color:var(--signal)}
+  .hero p{font-size:15px;color:var(--ink-dim);line-height:1.5;margin:0 auto 18px;max-width:360px}
+  .cta{display:inline-block;background:var(--signal);color:#06210b;font-size:15px;font-weight:800;padding:14px 28px;border-radius:12px;cursor:pointer;border:none}
+  .cta:hover{filter:brightness(1.07)}
+  .cta.hot{background:var(--hot);color:#2a0a0e}
+  .prize{display:inline-flex;align-items:center;gap:6px;background:rgba(245,165,36,.12);border:1px solid #5a4a1d;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;color:var(--amber);margin-bottom:16px}
+  /* stream */
+  /* live block = a branded graphic (no live frame / no YouTube thumbnail) */
+  .stream{position:relative;aspect-ratio:16/9;background:radial-gradient(120% 100% at 50% 0%, #2a1f55 0%, #15101f 70%);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:14px;gap:9px;padding:16px;text-align:center;overflow:hidden}
+  .stream .lvtag{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:5px;background:rgba(255,93,108,.92);color:#2a0a0e;font-size:10px;font-weight:800;padding:4px 9px;border-radius:6px;letter-spacing:.06em}
+  .stream .st-mark{width:40px;height:40px;object-fit:contain;opacity:.95}
+  .stream .st-brand{font-weight:800;font-size:16px;letter-spacing:-.01em}
+  .stream .st-now{font-size:12.5px;color:var(--ink-dim);max-width:80%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stream .st-watch{margin-top:4px;background:var(--hot);color:#2a0a0e;font-size:12px;font-weight:800;padding:9px 16px;border-radius:9px}
+  .watch-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:18px}
+  .watch-chip{font-size:12px;color:var(--ink-dim);border:1px solid var(--line);border-radius:8px;padding:7px 13px;cursor:pointer}
+  .watch-chip.yt{border-color:var(--hot);color:#ff8b96}
+  /* sections */
+  .sec{margin-bottom:20px}
+  .sec-h{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin:0 0 11px 2px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:15px;padding:15px}
+  .howrow{display:flex;gap:9px;margin-bottom:20px}
+  .how{flex:1;background:#0f0c1c;border:1px solid var(--line);border-radius:12px;padding:13px 9px;text-align:center}
+  .how .hn{font-family:"Space Mono",monospace;font-size:12px;color:var(--signal);font-weight:700}
+  .how .ht{font-size:12px;color:var(--ink-dim);margin-top:6px;line-height:1.35}
+  /* upcoming */
+  .upcoming{display:flex;align-items:center;gap:13px}
+  .up-date{font-family:"Space Mono",monospace;text-align:center;background:#0f0c1c;border:1px solid var(--line);border-radius:11px;padding:9px 12px;flex:none}
+  .up-date .d{font-size:20px;font-weight:700;line-height:1}
+  .up-date .m{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-top:3px}
+  .up-meta{flex:1;min-width:0}
+  .up-name{font-size:15px;font-weight:700}
+  .up-time{font-size:12px;color:var(--ink-dim);margin-top:2px}
+  .up-remind{font-size:13px;font-weight:700;color:#06210b;background:var(--signal);border-radius:9px;padding:9px 15px;cursor:pointer;white-space:nowrap}
+  /* leaderboard */
+  .lbrow{display:flex;align-items:center;gap:10px;padding:8px 0}
+  .lbrow+.lbrow{border-top:1px solid var(--line)}
+  .lbrank{font-family:"Space Mono",monospace;font-size:14px;font-weight:700;width:20px;color:var(--ink-dim)}
+  .lbrank.t{color:var(--signal)}
+  .lbav{width:32px;height:32px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:12px;border:1px solid var(--line)}
+  .lbnm{flex:1;font-size:14px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lbpts{font-family:"Space Mono",monospace;font-size:14px;font-weight:700}
+  .empty{text-align:center;padding:22px 14px;color:var(--ink-faint);font-size:13px;line-height:1.5}
+  .empty .ico{font-size:24px;margin-bottom:8px;opacity:.55}
+  /* submit */
+  .submit{background:linear-gradient(180deg,rgba(64,54,148,.25),rgba(64,54,148,.1));border:1px solid var(--brand-purple);border-radius:15px;padding:17px;text-align:center;margin-bottom:18px}
+  .submit .s-t{font-size:15px;font-weight:700;margin-bottom:5px}
+  .submit .s-s{font-size:12.5px;color:var(--ink-dim);margin-bottom:13px;line-height:1.45}
+  .submit .s-btn{display:inline-block;background:transparent;border:1px solid var(--cool);color:var(--cool);font-size:13px;font-weight:700;padding:10px 20px;border-radius:9px;cursor:pointer}
+  .foot{text-align:center;font-size:11px;color:var(--ink-faint);margin-top:8px}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="nav">
+    <div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div>
+    <div class="nav-links">
+      <a onclick="document.getElementById('secBoard').scrollIntoView({behavior:'smooth'})">Leaderboard</a>
+      <a onclick="document.getElementById('secWinners').scrollIntoView({behavior:'smooth'})">Winners</a>
+      <a id="navSubmit" onclick="document.getElementById('secSubmit').scrollIntoView({behavior:'smooth'})">Submit</a>
+    </div>
+  </div>
+
+  <div id="content">
+    <div class="empty" style="padding:80px 0"><div class="ico">🎧</div>Loading…</div>
+  </div>
+
+  <p class="foot">Makin' It Magazine · The A&amp;R Room</p>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
+const SUBMIT_URL='https://www.makinitmag.com/review'; // artist-submission page
+
+function fmtPts(n){return (Number(n)||0).toLocaleString();}
+// Session times are anchored to the broadcast timezone (ET) so every visitor sees the
+// same clock time, correctly labelled — not their own local time mislabelled "ET".
+const ET_TZ='America/New_York';
+function fmtET(ms,opts){return new Date(Number(ms)).toLocaleString('en-US',{timeZone:ET_TZ,...opts});}
+function dateBlock(ms){
+  if(!ms)return {d:'—',m:'TBA'};
+  return {d:fmtET(ms,{day:'numeric'}), m:fmtET(ms,{month:'short'})};
+}
+function whenLine(ms){
+  if(!ms)return 'Date to be announced · 6 platforms';
+  return fmtET(ms,{weekday:'short'})+' · '+fmtET(ms,{hour:'numeric',minute:'2-digit'})+' ET · 6 platforms';
+}
+
+function lbCard(rows){
+  if(!rows||!rows.length)return `<div class="card"><div class="empty"><div class="ico">📊</div>No standings yet — they fill in as A&Rs rate songs in tagged sessions.</div></div>`;
+  return '<div class="card">'+rows.map(r=>`<div class="lbrow"><span class="lbrank${r.rank<=3?' t':''}">${r.rank}</span><div class="lbav">${esc(initials(r.name))}</div><div class="lbnm">${esc(r.name)}</div><span class="lbpts">${fmtPts(r.points)}</span></div>`).join('')+'</div>';
+}
+function howRow(){
+  return `<div class="howrow">
+    <div class="how"><div class="hn">01</div><div class="ht">Rate the song</div></div>
+    <div class="how"><div class="hn">02</div><div class="ht">Predict the room</div></div>
+    <div class="how"><div class="hn">03</div><div class="ht">Climb &amp; qualify</div></div>
+  </div>`;
+}
+function nextCard(next){
+  if(!next)return `<div class="sec"><p class="sec-h">Next session</p><div class="card"><div class="empty">No session scheduled yet — check back soon.</div></div></div>`;
+  const db=dateBlock(next.scheduledAt);
+  return `<div class="sec" id="secNext"><p class="sec-h">Next session</p>
+    <div class="card upcoming">
+      <div class="up-date"><div class="d">${esc(db.d)}</div><div class="m">${esc(db.m)}</div></div>
+      <div class="up-meta"><div class="up-name">${esc(next.name)}</div><div class="up-time">${esc(whenLine(next.scheduledAt))}</div></div>
+      <a class="up-remind" href="/?s=${encodeURIComponent(next.id)}">Register</a>
+    </div></div>`;
+}
+function boardSection(series,label){
+  const title=label||(series?('Series leaderboard · '+esc(series.title)):'Series leaderboard');
+  return `<div class="sec" id="secBoard"><p class="sec-h">${title}</p>${lbCard(series&&series.leaderboard)}</div>`;
+}
+function winnersSection(winners){
+  const body=(winners&&winners.length)
+    ? '<div class="card">'+winners.map(w=>`<div class="lbrow"><span class="lbrank t">🏆</span><div class="lbnm">${esc(w.name)}<small>${esc(w.series||'')}</small></div><span class="lbpts">${fmtPts(w.points)}</span></div>`).join('')+'</div>'
+    : `<div class="card"><div class="empty"><div class="ico">🏆</div>The first A&R Wars champion is crowned as the series close.<br>Winners appear here.</div></div>`;
+  return `<div class="sec" id="secWinners"><p class="sec-h">Past winners</p>${body}</div>`;
+}
+function submitSection(){
+  return `<div class="submit" id="secSubmit">
+    <div class="s-t">Are you an artist?</div>
+    <div class="s-s">Get your record in front of a real, rating audience — exposure and distribution, not a lottery.</div>
+    <a class="s-btn" href="${SUBMIT_URL}" target="_blank" rel="noopener">Submit your music</a>
+  </div>`;
+}
+
+function renderLive(d){
+  const live=d.live;
+  const voteHref='/?s='+encodeURIComponent(live.id);
+  // Branded "Live now" graphic — not a live frame or the YouTube thumbnail (which is the
+  // promo card). Real-frame capture is a deliberate later decision.
+  const watchBtn=live.watchUrl?`<a class="st-watch" href="${esc(live.watchUrl)}" target="_blank" rel="noopener">Watch on YouTube ↗</a>`:'';
+  $('#content').innerHTML=`
+    <div class="live-banner">
+      <span class="pulse"></span>
+      <div class="lb-txt"><div class="lb-t">Live right now!</div><div class="lb-s">${esc(live.nowPlaying||live.name)} · ${live.arCount} in the room</div></div>
+      <a class="lb-btn" href="${voteHref}">Get in to vote</a>
+    </div>
+    <div class="stream">
+      <span class="lvtag">● LIVE</span>
+      <img class="st-mark" src="/mark-color.png" alt="" onerror="this.style.display='none'">
+      <div class="st-brand">The A&amp;R Room</div>
+      <div class="st-now">${esc(live.nowPlaying||live.name)}</div>
+      ${watchBtn}
+    </div>
+    <div class="hero" style="padding:6px 6px 18px">
+      <p style="margin-bottom:14px;max-width:380px">Watching on another screen? Jump in here and vote — rate the current song and read the room.</p>
+      <a class="cta hot" href="${voteHref}">Get in to vote</a>
+    </div>
+    ${boardSection(d.series,'Live standings · updating')}
+    ${winnersSection(d.winners)}
+    ${submitSection()}`;
+}
+function renderBetween(d){
+  const primaryHref=d.next?('/?s='+encodeURIComponent(d.next.id)):null;
+  const heroCta=primaryHref
+    ? `<a class="cta" href="${primaryHref}">Register to play</a>`
+    : `<a class="cta" onclick="document.getElementById('secBoard').scrollIntoView({behavior:'smooth'})">See the leaderboard</a>`;
+  $('#content').innerHTML=`
+    <div class="hero">
+      <div class="prize">💰 $500 monthly cash prize</div>
+      <h1>Got an ear<br><span class="grad">for music?</span></h1>
+      <p>Rate songs, read the room, climb the leaderboard. Top A&Rs compete in A&amp;R Wars for the cash.</p>
+      ${heroCta}
+    </div>
+    ${howRow()}
+    ${nextCard(d.next)}
+    ${boardSection(d.series)}
+    ${winnersSection(d.winners)}
+    ${submitSection()}`;
+}
+
+async function load(){
+  try{
+    const r=await fetch('/api/home');
+    const d=await r.json();
+    if(d.live)renderLive(d); else renderBetween(d);
+  }catch(e){
+    $('#content').innerHTML='<div class="empty" style="padding:60px 0"><div class="ico">⚠️</div>Couldn\'t load right now. Refresh to try again.</div>';
+  }
+}
+load();
+// Light refresh so the page reflects going-live and leaderboard changes without a reload.
+setInterval(load, 30000);
+</script>
+</body>
+</html>
