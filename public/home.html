@@ -42,6 +42,8 @@
   .cta{display:inline-block;background:var(--signal);color:#06210b;font-size:15px;font-weight:800;padding:14px 28px;border-radius:12px;cursor:pointer;border:none}
   .cta:hover{filter:brightness(1.07)}
   .cta.hot{background:var(--hot);color:#2a0a0e}
+  .cta.sec{display:inline-block;background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600;margin-top:10px}
+  .nav-join{font-size:12px;font-weight:700;color:#06210b;background:var(--signal);padding:6px 12px;border-radius:8px}
   .prize{display:inline-flex;align-items:center;gap:6px;background:rgba(245,165,36,.12);border:1px solid #5a4a1d;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;color:var(--amber);margin-bottom:16px}
   /* stream */
   /* live block = a branded graphic (no live frame / no YouTube thumbnail) */
@@ -112,6 +114,7 @@
       <a id="navBoard" onclick="document.getElementById('secBoard')?.scrollIntoView({behavior:'smooth'})">Leaderboard</a>
       <a id="navWinners" onclick="document.getElementById('secWinners')?.scrollIntoView({behavior:'smooth'})">Winners</a>
       <a id="navSubmit" onclick="document.getElementById('secSubmit')?.scrollIntoView({behavior:'smooth'})">Submit</a>
+      <a class="nav-join" href="/join">Join</a>
     </div>
   </div>
 
@@ -229,10 +232,11 @@ function renderLive(d){
     ${submitSection()}`;
 }
 function renderBetween(d){
-  const primaryHref=d.next?('/?s='+encodeURIComponent(d.next.id)):null;
-  const heroCta=primaryHref
-    ? `<a class="cta" href="${primaryHref}">Register to play</a>`
-    : `<a class="cta" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
+  // With an upcoming session, "Register to play" leads and Join is secondary. With no
+  // session, "Join the A&R Team" becomes the primary action (the registration that was missing).
+  const heroCta=d.next
+    ? `<a class="cta" href="/?s=${encodeURIComponent(d.next.id)}">Register to play</a><a class="cta sec" href="/join">Join the A&R Team</a>`
+    : `<a class="cta" href="/join">Join the A&R Team</a><a class="cta sec" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
   $('#content').innerHTML=`
     <div class="hero">
       <div class="prize">💰 $500 monthly cash prize</div>

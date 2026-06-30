@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/mark-color.png">
+<title>The A&R Room · Join the A&R Team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d0b16;--panel:#171328;--panel-2:#1d1733;--line:#2e2750;
+    --ink:#f3f0fb;--ink-dim:#a9a2c9;--ink-faint:#6f688f;
+    --signal:#4bb749;--signal-deep:#379235;--hot:#ff5d6c;--cool:#7c6ff0;--accent:#6d5fe0;--amber:#f5a524;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:24px 16px 60px;background:radial-gradient(130% 70% at 50% -6%, #241a4d 0%, var(--bg) 54%);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  a{color:inherit}
+  .wrap{max-width:440px;margin:0 auto}
+  .nav{display:flex;align-items:center;gap:9px;padding:4px 2px 20px}
+  .nav .dot{width:9px;height:9px;border-radius:50%;background:var(--signal);box-shadow:0 0 10px 1px rgba(75,183,73,.6)}
+  .nav .nm{font-weight:800;font-size:15px}
+  .eyebrow{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin:0 0 9px}
+  .eyebrow.g{color:var(--signal)}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px}
+  h2{font-size:21px;font-weight:800;margin:2px 0 6px;letter-spacing:-.01em}
+  .dim{color:var(--ink-dim);font-size:13.5px;line-height:1.5}
+  label{display:block;font-size:12px;color:var(--ink-dim);margin:14px 0 6px 2px}
+  input{width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:16px;padding:13px 14px;border-radius:12px;outline:none}
+  input:focus{border-color:var(--signal)}
+  input.code{text-align:center;letter-spacing:.45em;font-size:24px;font-family:"Space Mono",monospace}
+  .btn{width:100%;background:var(--signal);color:#06210b;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer;margin-top:14px}
+  .btn[disabled]{opacity:.5}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600;margin-top:9px}
+  .hint{font-size:11.5px;color:var(--ink-faint);line-height:1.5;margin:7px 2px 0}
+  .err{color:var(--hot);font-size:13px;min-height:16px;margin-top:8px}
+  .note{font-size:11.5px;color:var(--ink-faint);line-height:1.55;margin:12px 4px 0}
+  .hide{display:none!important}
+  .dev{font-size:12px;color:var(--amber);background:rgba(245,165,36,.1);border:1px solid #5a4a1d;border-radius:9px;padding:8px 10px;margin-top:10px}
+  /* profile step */
+  .steplabel{font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px}
+  .stepnum{font-family:"Space Mono",monospace;color:var(--signal)}
+  .stepsub{font-size:11px;color:var(--ink-faint);font-weight:400}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 2px}
+  .chip{font-size:12px;padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:#0a0814;color:var(--ink-dim);cursor:pointer;user-select:none}
+  .chip.on{background:rgba(109,95,224,.18);border-color:var(--accent);color:var(--ink)}
+  .chip.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .loc-drop{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:6;background:#15101f;border:1px solid var(--line);border-radius:11px;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.55)}
+  .loc-opt{padding:11px 13px;font-size:15px;cursor:pointer}
+  .loc-opt+.loc-opt{border-top:1px solid var(--line)}
+  .loc-opt:hover{background:rgba(109,95,224,.15)}
+  .photorow{display:flex;align-items:center;gap:11px;margin:16px 0 2px;cursor:pointer}
+  .avph{width:44px;height:44px;border-radius:50%;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;border:1px solid var(--line);flex:none;background-size:cover;background-position:center}
+  .big-check{width:74px;height:74px;border-radius:50%;background:rgba(75,183,73,.14);border:1px solid var(--signal-deep);display:flex;align-items:center;justify-content:center;font-size:36px;margin:6px auto 14px}
+  /* crop modal */
+  #cropModal{display:none;position:fixed;inset:0;background:rgba(8,5,18,.92);z-index:30;align-items:center;justify-content:center;padding:18px}
+  .cropbox{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px;max-width:340px;width:100%}
+  #cropStage{position:relative;width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;background:#000;touch-action:none;cursor:move}
+  #cropImg{position:absolute;left:0;top:0;-webkit-user-drag:none;user-select:none;pointer-events:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="nav" href="/"><span class="dot"></span><span class="nm">The A&amp;R Room</span></a>
+
+  <!-- STEP 1: EMAIL -->
+  <section id="s-email">
+    <p class="eyebrow">Join the A&amp;R Team</p>
+    <div class="panel">
+      <h2>Take your seat</h2>
+      <p class="dim">No session needed — join the team, build your profile, and you're ready the moment the next session goes live.</p>
+      <label>Email</label>
+      <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com">
+      <div id="devBox" class="dev hide"></div>
+      <button class="btn" id="btnSend">Send my code</button>
+      <div class="err" id="emailErr"></div>
+    </div>
+  </section>
+
+  <!-- STEP 2: CODE + NAME + PHONE -->
+  <section id="s-code" class="hide">
+    <p class="eyebrow">Join the A&amp;R Team</p>
+    <div class="panel">
+      <h2 style="font-size:18px">Confirm it's you</h2>
+      <p class="dim" style="font-size:12.5px">Code sent to <span id="emailEcho" style="color:var(--ink)"></span>.</p>
+      <label>6-digit code</label>
+      <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
+      <label>Display name <span style="color:var(--signal);font-weight:700">required</span></label>
+      <input id="name" placeholder="e.g. DJ Chain">
+      <label>Mobile <span class="dim" style="font-size:11px">(optional)</span></label>
+      <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
+      <p class="hint">We'll text you when a session goes live + about A&amp;R Room events. Msg &amp; data rates may apply; reply STOP to opt out. Optional.</p>
+      <button class="btn" id="btnJoin">Join the team →</button>
+      <button class="btn ghost" id="btnBackEmail">Use a different email</button>
+      <div class="err" id="codeErr"></div>
+    </div>
+  </section>
+
+  <!-- STEP 3: PROFILE -->
+  <section id="s-profile" class="hide">
+    <p class="eyebrow g">Step 2 of 2 · finish to get listed</p>
+    <div class="panel">
+      <h2 style="font-size:18px">Complete your profile</h2>
+      <p class="dim" style="font-size:12.5px;margin-bottom:4px">This is what puts you on the leaderboard and the New A&Rs ticker.</p>
+      <div class="steplabel"><span class="stepnum">①</span> What do you do? <span class="stepsub">select all that apply</span></div>
+      <div class="chips" id="jCats"></div>
+      <div class="steplabel" style="margin-top:10px"><span class="stepnum">②</span> Most focused on? <span class="stepsub">your primary</span></div>
+      <div class="chips" id="jPrimary"></div>
+      <label>Location <span class="stepsub">required to qualify</span></label>
+      <div style="position:relative">
+        <input id="jLocation" placeholder="Start typing your city…" autocomplete="off">
+        <div id="jLocDrop" class="loc-drop hide"></div>
+      </div>
+      <div style="display:flex;gap:9px">
+        <div style="flex:1"><label>Instagram</label><input id="jIg" placeholder="@handle"></div>
+        <div style="flex:1"><label>TikTok</label><input id="jTt" placeholder="@handle"></div>
+      </div>
+      <div class="photorow" id="jPhotoRow">
+        <div class="avph" id="jAvatar">+</div>
+        <div style="font-size:12.5px;line-height:1.4"><span id="jPhotoLabel">Add a photo</span><br><span class="dim" style="font-size:11px">tap to upload &amp; crop</span></div>
+      </div>
+      <input type="file" id="jPhotoInput" accept="image/*" style="display:none">
+      <div class="err" id="profErr"></div>
+      <button class="btn" id="btnFinish">Finish &amp; get listed</button>
+      <button class="btn ghost" id="btnSkip">I'll finish later</button>
+    </div>
+  </section>
+
+  <!-- STEP 4: DONE -->
+  <section id="s-done" class="hide">
+    <div class="panel" style="text-align:center">
+      <div class="big-check">✓</div>
+      <h2 id="doneTitle">You're on the team!</h2>
+      <p class="dim" id="doneSub" style="margin:6px 0 0">You'll appear in <b style="color:var(--ink)">New A&Rs</b> and we'll let you know the moment the next session goes live.</p>
+      <a class="btn" id="doneCta" href="/" style="display:block;text-decoration:none;text-align:center">Back to The A&amp;R Room</a>
+    </div>
+  </section>
+</div>
+
+<!-- PHOTO CROP MODAL -->
+<div id="cropModal">
+  <div class="cropbox">
+    <div style="font-size:15px;font-weight:700;margin-bottom:3px">Crop your photo</div>
+    <p class="dim" style="font-size:12px;margin:0 0 12px">Drag to position · slider to zoom</p>
+    <div id="cropStage"><img id="cropImg" alt=""></div>
+    <input id="cropZoom" type="range" min="1" max="3" step="0.01" value="1" style="margin-top:14px">
+    <div class="err" id="cropErr"></div>
+    <button class="btn" id="cropSave">Use photo</button>
+    <button class="btn ghost" id="cropCancel">Cancel</button>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
+let AUTHTOK=null, CATS=[], jPrimary=null, profile={categories:[],photoUrl:null};
+async function api(path,body,method='POST'){
+  const h={'Content-Type':'application/json'}; if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;
+  const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
+  const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(d.error||'Something went wrong'); return d;
+}
+function show(id){['email','code','profile','done'].forEach(s=>$('#s-'+s).classList.toggle('hide',s!==id));}
+
+// STEP 1
+$('#btnSend').onclick=async()=>{
+  $('#emailErr').textContent='';
+  const email=$('#email').value.trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return $('#emailErr').textContent='Enter a valid email';
+  $('#btnSend').disabled=true;
+  try{
+    const d=await api('/api/auth/request',{email});
+    $('#emailEcho').textContent=email;
+    if(d.devCode){$('#devBox').classList.remove('hide');$('#devBox').textContent='Dev mode — your code is '+d.devCode;}
+    show('code');$('#code').focus();
+  }catch(e){$('#emailErr').textContent=e.message;}
+  $('#btnSend').disabled=false;
+};
+$('#btnBackEmail').onclick=()=>show('email');
+
+// STEP 2
+$('#btnJoin').onclick=async()=>{
+  $('#codeErr').textContent='';
+  const code=$('#code').value.trim(), name=$('#name').value.trim(), phone=$('#phone').value.trim();
+  if(!code)return $('#codeErr').textContent='Enter the code';
+  if(!name)return $('#codeErr').textContent='Add a display name';
+  $('#btnJoin').disabled=true;
+  try{
+    const d=await api('/api/auth/verify',{email:$('#emailEcho').textContent,code,name,phone});
+    AUTHTOK=d.token; localStorage.setItem('rt_auth_token',AUTHTOK);
+    await loadProfile();
+    show('profile');
+  }catch(e){$('#codeErr').textContent=e.message;}
+  $('#btnJoin').disabled=false;
+};
+
+// STEP 3 — profile
+async function loadProfile(){
+  try{ const d=await api('/api/me/profile',null,'GET'); CATS=d.categoriesAvailable||[]; profile=d.profile||profile; }catch(e){}
+  renderCats();
+}
+const jSelected=()=>[...document.querySelectorAll('#jCats .chip.on')].map(el=>el.dataset.c);
+function renderPrimary(){
+  const cats=jSelected();
+  if(jPrimary && !cats.includes(jPrimary)) jPrimary=null;
+  if(!jPrimary && cats.length) jPrimary=cats[0];
+  $('#jPrimary').innerHTML=cats.length?cats.map(c=>`<span class="chip${c===jPrimary?' primary':''}" data-p="${c}">${c}</span>`).join(''):'<span class="dim" style="font-size:11px">Pick categories above first</span>';
+  $('#jPrimary').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{jPrimary=el.dataset.p;renderPrimary();});
+}
+function renderCats(){
+  const sel=new Set(profile.categories||[]); jPrimary=profile.primaryCategory||null;
+  $('#jCats').innerHTML=CATS.map(c=>`<span class="chip${sel.has(c)?' on':''}" data-c="${c}">${c}</span>`).join('');
+  $('#jCats').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{el.classList.toggle('on');renderPrimary();});
+  $('#jLocation').value=profile.location||''; $('#jIg').value=profile.instagram?('@'+profile.instagram):''; $('#jTt').value=profile.tiktok?('@'+profile.tiktok):'';
+  renderAvatar(); renderPrimary();
+}
+function renderAvatar(){
+  const av=$('#jAvatar');
+  if(profile.photoUrl){av.textContent='';av.style.backgroundImage=`url(${profile.photoUrl})`;$('#jPhotoLabel').textContent='Photo added ✓';}
+  else{av.style.backgroundImage='';av.textContent='+';$('#jPhotoLabel').textContent='Add a photo';}
+}
+$('#btnFinish').onclick=async()=>{
+  $('#profErr').textContent='';
+  const cats=jSelected();
+  if(!cats.length)return $('#profErr').textContent='Pick at least one category.';
+  const location=$('#jLocation').value.trim();
+  if(!location)return $('#profErr').textContent='Add your location to get listed.';
+  $('#btnFinish').disabled=true;
+  try{
+    await api('/api/me/profile',{categories:cats,primaryCategory:jPrimary||cats[0],location,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()});
+    finishDone(true);
+  }catch(e){$('#profErr').textContent=e.message;}
+  $('#btnFinish').disabled=false;
+};
+$('#btnSkip').onclick=()=>finishDone(false);
+function finishDone(listed){
+  if(!listed){ $('#doneTitle').textContent='Welcome to the team!'; $('#doneSub').innerHTML='Your account is set. <b style="color:var(--ink)">Complete your profile</b> any time to get listed and qualify — we\'ll notify you when the next session is live.'; }
+  show('done');
+}
+
+// location autocomplete
+let locTimer=null;
+$('#jLocation').addEventListener('input',function(){
+  const v=this.value.trim(); clearTimeout(locTimer);
+  if(v.length<2){$('#jLocDrop').classList.add('hide');return;}
+  locTimer=setTimeout(async()=>{
+    try{
+      const d=await api('/api/geo/cities?q='+encodeURIComponent(v),null,'GET');
+      const cities=d.cities||[];
+      if(!cities.length){$('#jLocDrop').classList.add('hide');return;}
+      $('#jLocDrop').innerHTML=cities.map(c=>`<div class="loc-opt" data-c="${esc(c)}">${esc(c)}</div>`).join('');
+      $('#jLocDrop').querySelectorAll('.loc-opt').forEach(el=>el.onmousedown=e=>{e.preventDefault();$('#jLocation').value=el.dataset.c;$('#jLocDrop').classList.add('hide');});
+      $('#jLocDrop').classList.remove('hide');
+    }catch(e){$('#jLocDrop').classList.add('hide');}
+  },320);
+});
+$('#jLocation').addEventListener('blur',()=>setTimeout(()=>$('#jLocDrop').classList.add('hide'),150));
+
+// photo crop
+let crop={img:null,niw:0,nih:0,S:0,scale0:1,scale:1,ox:0,oy:0,drag:null};
+$('#jPhotoRow').onclick=()=>$('#jPhotoInput').click();
+$('#jPhotoInput').onchange=e=>{
+  const file=e.target.files&&e.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{const img=new Image();img.onload=()=>{crop.img=img;crop.niw=img.naturalWidth;crop.nih=img.naturalHeight;openCrop();};img.src=reader.result;};
+  reader.readAsDataURL(file); e.target.value='';
+};
+function cropClamp(){const minX=crop.S-crop.niw*crop.scale,minY=crop.S-crop.nih*crop.scale;crop.ox=Math.min(0,Math.max(minX,crop.ox));crop.oy=Math.min(0,Math.max(minY,crop.oy));}
+function cropRender(){const im=$('#cropImg');im.style.width=(crop.niw*crop.scale)+'px';im.style.height=(crop.nih*crop.scale)+'px';im.style.left=crop.ox+'px';im.style.top=crop.oy+'px';}
+function openCrop(){
+  $('#cropImg').src=crop.img.src; $('#cropModal').style.display='flex';
+  crop.S=$('#cropStage').clientWidth; crop.scale0=Math.max(crop.S/crop.niw,crop.S/crop.nih);
+  $('#cropZoom').value=1; crop.scale=crop.scale0; crop.ox=(crop.S-crop.niw*crop.scale)/2; crop.oy=(crop.S-crop.nih*crop.scale)/2;
+  cropClamp();cropRender();$('#cropErr').textContent='';
+}
+$('#cropZoom').oninput=function(){const z=parseFloat(this.value)||1,ns=crop.scale0*z,c=crop.S/2;crop.ox=c-((c-crop.ox)/crop.scale)*ns;crop.oy=c-((c-crop.oy)/crop.scale)*ns;crop.scale=ns;cropClamp();cropRender();};
+(()=>{const st=$('#cropStage');
+  const down=e=>{crop.drag={x:(e.touches?e.touches[0].clientX:e.clientX),y:(e.touches?e.touches[0].clientY:e.clientY)};};
+  const move=e=>{if(!crop.drag)return;const cx=(e.touches?e.touches[0].clientX:e.clientX),cy=(e.touches?e.touches[0].clientY:e.clientY);crop.ox+=cx-crop.drag.x;crop.oy+=cy-crop.drag.y;crop.drag={x:cx,y:cy};cropClamp();cropRender();if(e.cancelable)e.preventDefault();};
+  st.addEventListener('pointerdown',down);window.addEventListener('pointermove',move);window.addEventListener('pointerup',()=>crop.drag=null);
+})();
+$('#cropCancel').onclick=()=>$('#cropModal').style.display='none';
+$('#cropSave').onclick=async()=>{
+  $('#cropErr').textContent='';
+  const out=400,cv=document.createElement('canvas');cv.width=out;cv.height=out;const ctx=cv.getContext('2d');
+  ctx.drawImage(crop.img,-crop.ox/crop.scale,-crop.oy/crop.scale,crop.S/crop.scale,crop.S/crop.scale,0,0,out,out);
+  const dataUrl=cv.toDataURL('image/jpeg',0.85);
+  $('#cropSave').disabled=true;
+  try{const d=await api('/api/me/photo',{image:dataUrl});profile.photoUrl=d.photoUrl;renderAvatar();$('#cropModal').style.display='none';}
+  catch(err){$('#cropErr').textContent=err.message;}
+  $('#cropSave').disabled=false;
+};
+</script>
+</body>
+</html>
