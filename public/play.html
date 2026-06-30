@@ -180,6 +180,10 @@
   .pf-num{font-family:"Space Mono",monospace;color:var(--signal);font-weight:700}
   .pf-sub{font-size:11px;color:var(--ink-faint);font-weight:400}
   .pf-avph{width:38px;height:38px;border-radius:50%;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;border:1px solid var(--line);flex:none}
+  .loc-drop{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:6;background:#15101f;border:1px solid var(--line);border-radius:11px;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.55)}
+  .loc-opt{padding:11px 13px;font-size:15px;cursor:pointer}
+  .loc-opt+.loc-opt{border-top:1px solid var(--line)}
+  .loc-opt:hover{background:rgba(109,95,224,.15)}
   /* liveness join feed (3.5d) */
   .lv-h{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin-bottom:9px}
   .feed-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-dim);padding:5px 0;text-align:left}
@@ -494,7 +498,10 @@
     <div class="pf-steplabel" style="margin-top:14px"><span class="pf-num">②</span> Most focused on? <span class="pf-sub">your primary — shows on the board</span></div>
     <div class="chips" id="pfPrimary"></div>
     <label style="margin-top:14px">Location <span class="pf-sub">required to qualify</span></label>
-    <input id="pfLocation" placeholder="City, State" style="margin-bottom:18px">
+    <div style="position:relative;margin-bottom:18px">
+      <input id="pfLocation" placeholder="Start typing your city…" autocomplete="off">
+      <div id="pfLocDrop" class="loc-drop hide"></div>
+    </div>
     <div style="display:flex;gap:9px">
       <div style="flex:1"><label>Instagram</label><input id="pfIg" placeholder="@handle"></div>
       <div style="flex:1"><label>TikTok</label><input id="pfTt" placeholder="@handle"></div>
@@ -1309,6 +1316,24 @@ $('#cropSave').onclick=async()=>{
   }catch(err){$('#cropErr').textContent=err.message;}
   $('#cropSave').disabled=false;
 };
+
+// ---------- LOCATION AUTOCOMPLETE (3.5a) — City, ST via the geocoder ----------
+let locTimer=null;
+$('#pfLocation').addEventListener('input',function(){
+  const v=this.value.trim(); clearTimeout(locTimer);
+  if(v.length<2){$('#pfLocDrop').classList.add('hide');return;}
+  locTimer=setTimeout(async()=>{
+    try{
+      const d=await api('/api/geo/cities?q='+encodeURIComponent(v),null,'GET');
+      const cities=d.cities||[];
+      if(!cities.length){$('#pfLocDrop').classList.add('hide');return;}
+      $('#pfLocDrop').innerHTML=cities.map(c=>`<div class="loc-opt" data-c="${esc(c)}">${esc(c)}</div>`).join('');
+      $('#pfLocDrop').querySelectorAll('.loc-opt').forEach(el=>el.onmousedown=e=>{e.preventDefault();$('#pfLocation').value=el.dataset.c;$('#pfLocDrop').classList.add('hide');});
+      $('#pfLocDrop').classList.remove('hide');
+    }catch(e){$('#pfLocDrop').classList.add('hide');}
+  },320);
+});
+$('#pfLocation').addEventListener('blur',()=>setTimeout(()=>$('#pfLocDrop').classList.add('hide'),150));
 
 // ---- shareable graphic (1080x1920 Instagram Story) rendered on the offscreen canvas ----
 function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
