@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "if [ -n \"$DATABASE_URL\" ]; then node migrate.js --run-heavy; else echo '[build] DATABASE_URL not visible at build time — skipping deploy-step migration; boot path will apply migrations safely (advisory-locked). To enable deploy-step migrations, scope DATABASE_URL to Build in Vercel env settings.'; fi",
+  "buildCommand": "bash scripts/vercel-build.sh",
   "functions": { "api/index.js": { "maxDuration": 10 } },
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index.js" }
