@@ -82,15 +82,19 @@
   <section id="s-code" class="hide">
     <p class="eyebrow">Join the A&amp;R Team</p>
     <div class="panel">
-      <h2 style="font-size:18px">Confirm it's you</h2>
+      <h2 style="font-size:18px" id="codeTitle">Confirm it's you</h2>
       <p class="dim" style="font-size:12.5px">Code sent to <span id="emailEcho" style="color:var(--ink)"></span>.</p>
       <label>6-digit code</label>
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
-      <label>Display name <span style="color:var(--signal);font-weight:700">required</span></label>
-      <input id="name" placeholder="e.g. DJ Chain">
-      <label>Mobile <span class="dim" style="font-size:11px">(optional)</span></label>
-      <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
-      <p class="hint">We'll text you when a session goes live + about A&amp;R Room events. Msg &amp; data rates may apply; reply STOP to opt out. Optional.</p>
+      <div id="nameRow">
+        <label>Display name <span style="color:var(--signal);font-weight:700">required</span></label>
+        <input id="name" placeholder="e.g. DJ Chain">
+      </div>
+      <div id="phoneRow">
+        <label>Mobile <span class="dim" style="font-size:11px">(optional)</span></label>
+        <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
+        <p class="hint">We'll text you when a session goes live + about A&amp;R Room events. Msg &amp; data rates may apply; reply STOP to opt out. Optional.</p>
+      </div>
       <button class="btn" id="btnJoin">Join the team →</button>
       <button class="btn ghost" id="btnBackEmail">Use a different email</button>
       <div class="err" id="codeErr"></div>
@@ -156,6 +160,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
 let AUTHTOK=null, CATS=[], jPrimary=null, profile={categories:[],photoUrl:null};
+let known={exists:false,hasName:false,hasPhone:false,profileComplete:false};
 async function api(path,body,method='POST'){
   const h={'Content-Type':'application/json'}; if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;
   const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
@@ -171,7 +176,13 @@ $('#btnSend').onclick=async()=>{
   $('#btnSend').disabled=true;
   try{
     const d=await api('/api/auth/request',{email});
+    known=d.known||known;
     $('#emailEcho').textContent=email;
+    // Returning members skip what's already on file: hide name/phone fields they have.
+    $('#nameRow').classList.toggle('hide',known.hasName);
+    $('#phoneRow').classList.toggle('hide',known.hasPhone);
+    $('#codeTitle').textContent=known.exists?'Welcome back':"Confirm it's you";
+    $('#btnJoin').textContent=known.exists?'Continue →':'Join the team →';
     if(d.devCode){$('#devBox').classList.remove('hide');$('#devBox').textContent='Dev mode — your code is '+d.devCode;}
     show('code');$('#code').focus();
   }catch(e){$('#emailErr').textContent=e.message;}
@@ -184,13 +195,14 @@ $('#btnJoin').onclick=async()=>{
   $('#codeErr').textContent='';
   const code=$('#code').value.trim(), name=$('#name').value.trim(), phone=$('#phone').value.trim();
   if(!code)return $('#codeErr').textContent='Enter the code';
-  if(!name)return $('#codeErr').textContent='Add a display name';
+  if(!known.hasName && !name)return $('#codeErr').textContent='Add a display name';
   $('#btnJoin').disabled=true;
   try{
     const d=await api('/api/auth/verify',{email:$('#emailEcho').textContent,code,name,phone});
     AUTHTOK=d.token; localStorage.setItem('rt_auth_token',AUTHTOK);
     await loadProfile();
-    show('profile');
+    // Already-complete members skip the profile step entirely.
+    if(profile.complete)doneReturning(); else show('profile');
   }catch(e){$('#codeErr').textContent=e.message;}
   $('#btnJoin').disabled=false;
 };
@@ -236,6 +248,11 @@ $('#btnFinish').onclick=async()=>{
 $('#btnSkip').onclick=()=>finishDone(false);
 function finishDone(listed){
   if(!listed){ $('#doneTitle').textContent='Welcome to the team!'; $('#doneSub').innerHTML='Your account is set. <b style="color:var(--ink)">Complete your profile</b> any time to get listed and qualify — we\'ll notify you when the next session is live.'; }
+  show('done');
+}
+function doneReturning(){
+  $('#doneTitle').textContent='Welcome back!';
+  $('#doneSub').innerHTML='Your profile is all set — you\'re on the board, and we\'ll notify you the moment the next session goes live.';
   show('done');
 }
 

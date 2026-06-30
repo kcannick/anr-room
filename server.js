@@ -621,7 +621,16 @@ async function handleApi(req, res, url) {
     await db.run("INSERT INTO otps (email, session_id, code, expires_at, attempts) VALUES (?, '__auth__', ?, ?, 0)",
       [em, code, now() + 10 * 60 * 1000]);
     const r = await sendOtp(email, code, 'your account');
-    return send(res, 200, { sent: true, devCode: r.devCode || null });
+    // PII-safe "what's already on file" hint so the Join flow can skip steps a returning
+    // member has already done (name/phone fields, the profile step). Booleans only.
+    const prior = await db.get('SELECT name, phone, profile_complete FROM users WHERE email = ?', [em]);
+    const known = {
+      exists: !!prior,
+      hasName: !!(prior && (prior.name || '').trim()),
+      hasPhone: !!(prior && (prior.phone || '').replace(/\D/g, '').length >= 7),
+      profileComplete: !!(prior && prior.profile_complete),
+    };
+    return send(res, 200, { sent: true, devCode: r.devCode || null, known });
   }
 
   if (p === '/api/auth/verify' && method === 'POST') {
