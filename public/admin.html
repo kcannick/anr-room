@@ -100,6 +100,22 @@
   .pill.completed{border-color:var(--line);color:var(--ink-faint)}
   .pill.archived{border-color:var(--line);color:var(--ink-faint)}
   .btn.danger{background:transparent;border:1px solid var(--hot);color:var(--hot);font-weight:500}
+  .btn.amber{background:transparent;border:1px solid var(--amber);color:var(--amber);font-weight:500}
+  /* ---- admin users panel ---- */
+  .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
+  .urow+.urow{margin-top:8px}
+  .urow.blocked{opacity:.55}
+  .uav{width:38px;height:38px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:13px;border:1px solid var(--line);object-fit:cover}
+  .umeta{flex:1;min-width:0}
+  .uname{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .usub{font-size:11px;color:var(--ink-faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .badge{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
+  .badge.admin{background:rgba(75,183,73,.16);color:var(--signal)}
+  .badge.blocked{background:rgba(255,93,108,.16);color:var(--hot)}
+  .badge.incomplete{background:rgba(245,165,36,.14);color:var(--amber)}
+  .uactions{display:flex;gap:6px;flex:none}
+  .ufilters{display:flex;gap:8px;flex-wrap:wrap}
+  .ufilters select,.ufilters input{flex:1;min-width:130px;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:9px 10px;border-radius:9px}
 </style>
 </head>
 <body>
@@ -131,6 +147,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h2 style="margin:0">Your sessions</h2>
       <div class="row" style="gap:8px;flex:0 0 auto">
+        <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnManageSeries">Series</button>
         <button class="btn sm" id="btnNewFromPicker">+ New session</button>
       </div>
@@ -434,6 +451,41 @@
   </div>
 </div>
 
+<!-- USERS (admin) -->
+<div id="users" class="grid hide">
+  <div class="stack" style="grid-column:1/-1;max-width:680px;margin:0 auto;width:100%">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:13px">
+        <h2 style="margin:0">Users <span class="muted" id="usersTotal" style="font-weight:400;text-transform:none;letter-spacing:0"></span></h2>
+        <button class="btn ghost sm" id="btnUsersBack">← My sessions</button>
+      </div>
+      <input id="uSearch" placeholder="Search by name or email…" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;border-radius:10px">
+      <div class="ufilters" style="margin-top:9px">
+        <select id="uStatus"><option value="">All statuses</option><option value="active">Active</option><option value="blocked">Blocked</option></select>
+        <select id="uSkill"><option value="">All skills</option></select>
+      </div>
+      <div class="ufilters" style="margin-top:8px">
+        <input id="uLocation" placeholder="Filter by location…">
+        <select id="uSort"><option value="recent">Sort: Last seen</option><option value="points">Sort: Points</option><option value="name">Sort: Name</option></select>
+      </div>
+      <div id="usersList" style="margin-top:14px"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE USER MODAL -->
+<div id="userDelModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
+  <div class="card" style="max-width:440px;width:100%">
+    <h2>Delete user</h2>
+    <p id="udBody" class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)"></p>
+    <label>Type <b id="udName" style="color:var(--ink)"></b> to confirm</label>
+    <input id="udConfirm" placeholder="Type it exactly" autocomplete="off">
+    <button class="btn danger" id="udDelete" style="width:100%;margin-top:10px" disabled>Delete permanently</button>
+    <button class="btn ghost" id="udCancel" style="width:100%;margin-top:9px">Cancel</button>
+    <div class="err" id="udErr"></div>
+  </div>
+</div>
+
 <!-- EDIT SONG MODAL -->
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
   <div class="card" style="max-width:440px;width:100%">
@@ -494,7 +546,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','picker','create','console','series'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','picker','create','console','series','users'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -593,6 +645,7 @@ async function openPicker(){
   showScreen('picker');
   $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
   $('#btnManageSeries').classList.toggle('hide',!isAdmin());
+  $('#btnManageUsers').classList.toggle('hide',!isAdmin());
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
@@ -710,6 +763,53 @@ const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'')
 
 $('#btnManageSeries').onclick=()=>openSeries();
 $('#btnSeriesBack').onclick=()=>openPicker();
+
+// ---------- USERS ADMIN ----------
+let usersFilterTimer=null, usersCats=[];
+$('#btnManageUsers').onclick=()=>openUsers();
+$('#btnUsersBack').onclick=()=>openPicker();
+async function openUsers(){
+  showScreen('users');
+  $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
+  await loadUsers();
+}
+function usersQuery(){
+  const p=new URLSearchParams();
+  const q=$('#uSearch').value.trim(); if(q)p.set('q',q);
+  if($('#uStatus').value)p.set('status',$('#uStatus').value);
+  if($('#uSkill').value)p.set('skill',$('#uSkill').value);
+  const loc=$('#uLocation').value.trim(); if(loc)p.set('location',loc);
+  p.set('sort',$('#uSort').value||'recent');
+  return p.toString();
+}
+const lastSeenLabel=ms=>{if(!ms)return 'never';const s=Math.round((Date.now()-Number(ms))/1000);if(s<60)return 'just now';const m=Math.round(s/60);if(m<60)return m+'m ago';const h=Math.round(m/60);if(h<24)return h+'h ago';return Math.round(h/24)+'d ago';};
+async function loadUsers(){
+  const box=$('#usersList');
+  try{
+    const d=await api('/api/admin/users?'+usersQuery(),null,'GET');
+    if(usersCats.length===0 && d.categories){usersCats=d.categories;$('#uSkill').innerHTML='<option value="">All skills</option>'+d.categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');}
+    $('#usersTotal').textContent='· '+(Number(d.total)||0).toLocaleString()+' total';
+    if(!d.users.length){box.innerHTML='<div class="empty">No users match.</div>';return;}
+    box.innerHTML=d.users.map(u=>{
+      const av=u.photoUrl?`<img class="uav" src="${esc(u.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(u.name||u.email))}</div>`;
+      const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', (!u.blocked&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
+      const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
+      const actions=u.role==='admin'?'<span class="muted" style="font-size:11px">protected</span>':
+        `<button class="btn ${u.blocked?'ghost':'amber'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
+        `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
+      return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname">${esc(u.name||'(no name)')}${badges}</div><div class="usub">${esc(sub)}</div></div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
+    }).join('');
+  }catch(e){box.innerHTML='<div class="err">'+e.message+'</div>';}
+}
+window.toggleBlock=async(uid,blocked)=>{try{await api('/api/admin/users/block',{uid,blocked:!!blocked});await loadUsers();}catch(e){alert(e.message);}};
+['uSearch','uLocation'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('input',()=>{clearTimeout(usersFilterTimer);usersFilterTimer=setTimeout(loadUsers,320);}));
+['uStatus','uSkill','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
+// delete-user modal (type-name confirm)
+let udState={id:null,name:''};
+window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='Permanently delete <b style="color:var(--ink)">'+esc(name)+'</b> — their account, participations, and votes. This changes any leaderboard that counted them and can’t be undone.';$('#udName').textContent=name;$('#udConfirm').value='';$('#udDelete').disabled=true;$('#udErr').textContent='';$('#userDelModal').style.display='flex';};
+$('#udConfirm').oninput=function(){$('#udDelete').disabled=this.value!==udState.name;};
+$('#udCancel').onclick=()=>{$('#userDelModal').style.display='none';};
+$('#udDelete').onclick=async()=>{$('#udErr').textContent='';try{await api('/api/admin/users/delete',{uid:udState.id,confirmName:$('#udConfirm').value});$('#userDelModal').style.display='none';await loadUsers();}catch(e){$('#udErr').textContent=e.message;}};
 
 async function openSeries(){
   showScreen('series');
