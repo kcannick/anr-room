@@ -11,6 +11,19 @@ const PORT = process.env.PORT || 3000;
 const now = () => Date.now();
 const id = (n = 9) => crypto.randomBytes(n).toString('base64url');
 const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
+// Profile categories (3.5a) — the creative/industry roles an A&R can pick. Server-side
+// allowlist so the client can't inject arbitrary values; the chips render from this list.
+// "Most focused on" (primary) is one of these. Broad on purpose (not music-only) — the
+// visual/content people around an artist's rollout belong in the room too.
+const PROFILE_CATEGORIES = ['DJ', 'Producer', 'Engineer', 'Manager', 'Event Promoter', 'Booking', 'Artist', 'Creative Director', 'Videographer', 'Photographer', 'Content Creator', 'Marketing', 'Executive', 'Media', 'Listener / Fan'];
+// A profile qualifies (leaderboard/prizes/Wars + payout KYC) when it has: display name
+// + at least one category + a primary + location. Socials and photo are optional.
+function isProfileComplete(u) {
+  if (!u) return false;
+  let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
+  return !!((u.name || '').trim() && cats.length >= 1 && (u.primary_category || '').trim() && (u.location || '').trim());
+}
+
 // Voting windows are constrained to 2–60 minutes everywhere.
 const MIN_MINUTES = 2, MAX_MINUTES = 60, DEFAULT_MINUTES = 5;
 const clampMinutes = (m) => {
@@ -79,6 +92,15 @@ async function participantFromReq(req) {
   const tok = req.headers['x-player-token'];
   if (!tok) return null;
   return db.get('SELECT * FROM participants WHERE token = ?', [tok]);
+}
+// First-account-is-admin (3.5b): on a fresh install the first user becomes admin,
+// so the operator doesn't depend on the ADMIN_EMAIL env var (kept as a fallback/override).
+// No-op once any admin exists. Returns true if it promoted this user.
+async function maybePromoteFirstAdmin(uid) {
+  const admin = await db.get("SELECT 1 AS x FROM users WHERE role = 'admin' LIMIT 1", []);
+  if (admin) return false;
+  await db.run("UPDATE users SET role = 'admin' WHERE uid = ?", [uid]);
+  return true;
 }
 async function adminFromReq(req, sessionId) {
   const tok = req.headers['x-admin-token'];
@@ -315,6 +337,15 @@ async function playerState(participant) {
   // actually played (credited). Informational only — no reward attached.
   const referredCount = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND referred_by = ? AND ref_credited = 1', [sessionId, participant.id])).c;
 
+  // Liveness join feed (3.5d) — recent verified joiners. Names show only for COMPLETE
+  // profiles; incomplete joiners appear as "someone". Count-only — no lean/direction.
+  const joinRows = await db.all(
+    `SELECT p.created_at, u.name AS uname, u.profile_complete
+     FROM participants p LEFT JOIN users u ON p.user_id = u.uid
+     WHERE p.session_id = ? AND p.verified = 1
+     ORDER BY p.created_at DESC LIMIT 6`, [sessionId]);
+  const joins = joinRows.map(r => ({ name: r.profile_complete ? ((r.uname || '').toString().trim().split(/\s+/)[0] || null) : null, at: Number(r.created_at) }));
+
   const out = {
     session: { id: sessionId, name: session.name, status: session.status, poll_type: pollType,
       watch_url: session.watch_url || null, lobby_message: session.lobby_message || null },
@@ -329,6 +360,7 @@ async function playerState(participant) {
     geo: { mode: session.geo_mode || 'off', label: session.geo_label || null, radius: session.geo_radius || null },
     pool: participant.pool || null,
     participants: count,
+    joins,
     ...view,
   };
   // Ad banner — shown on lobby, voting, and locked only. Never on results/recap.
@@ -599,8 +631,10 @@ async function handleApi(req, res, url) {
     } else {
       await db.run('UPDATE users SET last_seen = ? WHERE uid = ?', [now(), user.uid]);
     }
-    // Promote to admin at login if this email is the configured superuser (covers
-    // users created after the boot-time migration ran).
+    // First-account-is-admin: the operator's first host login on a fresh install becomes
+    // admin (a session can't exist without a host, so this fires before any player joins).
+    if (user.role !== 'admin' && await maybePromoteFirstAdmin(user.uid)) user.role = 'admin';
+    // ADMIN_EMAIL fallback/override: promote the configured superuser at login.
     const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
     if (adminEmail && em === adminEmail && user.role !== 'admin') {
       await db.run("UPDATE users SET role = 'admin' WHERE uid = ?", [user.uid]);
@@ -783,6 +817,44 @@ async function handleApi(req, res, url) {
     const participant = await participantFromReq(req);
     if (!participant) return bad(res, 'Not authenticated', 401);
     return send(res, 200, await playerState(participant));
+  }
+
+  // Player's profile (3.5a) — lives on the durable `users` row behind the participant.
+  if (p === '/api/me/profile' && method === 'GET') {
+    const participant = await participantFromReq(req);
+    if (!participant || !participant.user_id) return bad(res, 'Not authenticated', 401);
+    const u = await db.get('SELECT name, categories, primary_category, location, instagram, tiktok, photo_url, profile_complete FROM users WHERE uid = ?', [participant.user_id]);
+    if (!u) return bad(res, 'Not found', 404);
+    let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
+    return send(res, 200, {
+      profile: {
+        name: u.name || '', categories: cats, primaryCategory: u.primary_category || '',
+        location: u.location || '', instagram: u.instagram || '', tiktok: u.tiktok || '',
+        photoUrl: u.photo_url || null, complete: !!u.profile_complete,
+      },
+      categoriesAvailable: PROFILE_CATEGORIES,
+    });
+  }
+
+  // Save profile (3.5a). Validates categories against the allowlist, recomputes the
+  // qualification flag. Name is set at registration (not changed here); socials optional.
+  if (p === '/api/me/profile' && method === 'POST') {
+    const participant = await participantFromReq(req);
+    if (!participant || !participant.user_id) return bad(res, 'Not authenticated', 401);
+    const body = await readBody(req);
+    let cats = Array.isArray(body.categories) ? body.categories.filter(c => PROFILE_CATEGORIES.includes(c)) : [];
+    cats = [...new Set(cats)].slice(0, PROFILE_CATEGORIES.length);
+    let primary = PROFILE_CATEGORIES.includes(body.primaryCategory) ? body.primaryCategory : null;
+    if (primary && !cats.includes(primary)) cats.push(primary); // primary implies selected
+    if (!primary && cats.length) primary = cats[0];             // default primary to first picked
+    const location = (body.location || '').toString().trim().slice(0, 120) || null;
+    const instagram = (body.instagram || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
+    const tiktok = (body.tiktok || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
+    const u = await db.get('SELECT name FROM users WHERE uid = ?', [participant.user_id]);
+    const complete = isProfileComplete({ name: u && u.name, categories: JSON.stringify(cats), primary_category: primary, location }) ? 1 : 0;
+    await db.run('UPDATE users SET categories = ?, primary_category = ?, location = ?, instagram = ?, tiktok = ?, profile_complete = ? WHERE uid = ?',
+      [JSON.stringify(cats), primary, location, instagram, tiktok, complete, participant.user_id]);
+    return send(res, 200, { ok: true, complete: !!complete });
   }
 
   // ----- beta feedback (public; no auth required) -----
@@ -1298,21 +1370,27 @@ async function handleApi(req, res, url) {
     // line is drawn at qualifyCount. An explicit ?limit= overrides.
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 200);
     const rows = await db.all(
-      `SELECT u.uid AS user_id, u.name, u.email, SUM(v.points) AS series_points
+      `SELECT u.uid AS user_id, u.name, u.email, u.profile_complete, u.primary_category, u.location, SUM(v.points) AS series_points
        FROM votes v
        JOIN participants p ON v.participant_id = p.id
        JOIN users u        ON p.user_id = u.uid
        JOIN rounds r       ON v.round_id = r.id
        JOIN sessions s     ON r.session_id = s.id
        WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL
-       GROUP BY u.uid, u.name, u.email
+       GROUP BY u.uid, u.name, u.email, u.profile_complete, u.primary_category, u.location
        ORDER BY series_points DESC, u.name ASC
        LIMIT ?`, [seriesId, limit]);
-    return send(res, 200, {
-      seriesId,
-      qualifyCount,
-      leaderboard: rows.map((r, i) => ({ rank: i + 1, userId: r.user_id, name: r.name, email: r.email, points: Number(r.series_points) || 0, qualifies: (i + 1) <= qualifyCount })),
+    // Admin sees everyone (incl. incomplete), but the A&R Wars cut only counts qualified
+    // (complete) profiles — an incomplete top scorer doesn't take a qualifying slot.
+    let q = 0;
+    const leaderboard = rows.map((r, i) => {
+      const complete = !!r.profile_complete;
+      const qualifies = complete && q < qualifyCount;
+      if (qualifies) q++;
+      return { rank: i + 1, userId: r.user_id, name: r.name, email: r.email, points: Number(r.series_points) || 0,
+        profileComplete: complete, category: r.primary_category || null, location: r.location || null, qualifies };
     });
+    return send(res, 200, { seriesId, qualifyCount, leaderboard });
   }
 
   // Public series leaderboard (no auth) — PII-safe: display name + points + rank only.
@@ -1323,20 +1401,22 @@ async function handleApi(req, res, url) {
     const series = await db.get('SELECT id, title, status FROM series WHERE id = ?', [seriesId]);
     if (!series) return bad(res, 'Series not found', 404);
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '10', 10) || 10, 1), 50);
+    // Qualified-only: only complete profiles appear publicly (3.5c gate). Category +
+    // location are public by design (they're what makes a leaderboard row "real").
     const rows = await db.all(
-      `SELECT u.name, SUM(v.points) AS series_points
+      `SELECT u.name, u.primary_category, u.location, SUM(v.points) AS series_points
        FROM votes v
        JOIN participants p ON v.participant_id = p.id
        JOIN users u        ON p.user_id = u.uid
        JOIN rounds r       ON v.round_id = r.id
        JOIN sessions s     ON r.session_id = s.id
-       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL
-       GROUP BY u.uid, u.name
+       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1
+       GROUP BY u.uid, u.name, u.primary_category, u.location
        ORDER BY series_points DESC, u.name ASC
        LIMIT ?`, [seriesId, limit]);
     return send(res, 200, {
       series: { id: series.id, title: series.title, status: series.status },
-      leaderboard: rows.map((r, i) => ({ rank: i + 1, name: onlyFirst(r.name), points: Number(r.series_points) || 0 })),
+      leaderboard: rows.map((r, i) => ({ rank: i + 1, name: onlyFirst(r.name), category: r.primary_category || null, location: r.location || null, points: Number(r.series_points) || 0 })),
     });
   }
 
@@ -1366,15 +1446,15 @@ async function handleApi(req, res, url) {
     let series = null;
     if (serRow) {
       const rows = await db.all(
-        `SELECT u.name, SUM(v.points) AS pts FROM votes v
+        `SELECT u.name, u.primary_category, u.location, SUM(v.points) AS pts FROM votes v
          JOIN participants p ON v.participant_id = p.id
          JOIN users u        ON p.user_id = u.uid
          JOIN rounds r       ON v.round_id = r.id
          JOIN sessions s     ON r.session_id = s.id
-         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL
-         GROUP BY u.uid, u.name ORDER BY pts DESC, u.name ASC LIMIT 5`, [serRow.id]);
+         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1
+         GROUP BY u.uid, u.name, u.primary_category, u.location ORDER BY pts DESC, u.name ASC LIMIT 5`, [serRow.id]);
       series = { id: serRow.id, title: serRow.title, status: serRow.status,
-        leaderboard: rows.map((r, i) => ({ rank: i + 1, name: firstName(r.name), points: Number(r.pts) || 0 })) };
+        leaderboard: rows.map((r, i) => ({ rank: i + 1, name: firstName(r.name), category: r.primary_category || null, location: r.location || null, points: Number(r.pts) || 0 })) };
     }
     // Past winners — no winner model yet; empty until an A&R Wars close records them.
     return send(res, 200, { live, next, series, winners: [] });

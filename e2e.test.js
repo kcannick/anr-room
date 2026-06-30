@@ -332,6 +332,11 @@ async function call(path, body, method='POST', headers={}) {
   ok('participants export still works post-schema-change', Array.isArray(expCheck.participants));
 
   console.log('\n— host login + ownership access (stage 2/3) —');
+  // First-account-is-admin (3.5b): establish the ADMIN_EMAIL admin BEFORE the host logs
+  // in, so the test host stays a regular (non-admin) host instead of being auto-promoted
+  // as the first account on a fresh DB.
+  const seedAdm = await call('/api/auth/request', { email: 'admin@test.com' });
+  await call('/api/auth/verify', { email: 'admin@test.com', code: seedAdm.d.devCode });
   // Host login via OTP (auth-scoped, no session needed).
   const authReq = await call('/api/auth/request', { email: 'host@test.com' });
   ok('auth OTP issued', authReq.status === 200 && authReq.d.devCode, JSON.stringify(ar.d));
