@@ -24,6 +24,10 @@ function isProfileComplete(u) {
   return !!((u.name || '').trim() && cats.length >= 1 && (u.primary_category || '').trim() && (u.location || '').trim());
 }
 
+// US state names -> 2-letter abbreviations, for "City, ST" profile locations.
+const US_STATE_ABBR = { alabama:'AL', alaska:'AK', arizona:'AZ', arkansas:'AR', california:'CA', colorado:'CO', connecticut:'CT', delaware:'DE', 'district of columbia':'DC', florida:'FL', georgia:'GA', hawaii:'HI', idaho:'ID', illinois:'IL', indiana:'IN', iowa:'IA', kansas:'KS', kentucky:'KY', louisiana:'LA', maine:'ME', maryland:'MD', massachusetts:'MA', michigan:'MI', minnesota:'MN', mississippi:'MS', missouri:'MO', montana:'MT', nebraska:'NE', nevada:'NV', 'new hampshire':'NH', 'new jersey':'NJ', 'new mexico':'NM', 'new york':'NY', 'north carolina':'NC', 'north dakota':'ND', ohio:'OH', oklahoma:'OK', oregon:'OR', pennsylvania:'PA', 'rhode island':'RI', 'south carolina':'SC', 'south dakota':'SD', tennessee:'TN', texas:'TX', utah:'UT', vermont:'VT', virginia:'VA', washington:'WA', 'west virginia':'WV', wisconsin:'WI', wyoming:'WY' };
+const stateAbbr = (s) => US_STATE_ABBR[(s || '').toLowerCase()] || null;
+
 // Voting windows are constrained to 2–60 minutes everywhere.
 const MIN_MINUTES = 2, MAX_MINUTES = 60, DEFAULT_MINUTES = 5;
 const clampMinutes = (m) => {
@@ -342,7 +346,7 @@ async function playerState(participant) {
   const joinRows = await db.all(
     `SELECT p.created_at, u.name AS uname, u.profile_complete
      FROM participants p LEFT JOIN users u ON p.user_id = u.uid
-     WHERE p.session_id = ? AND p.verified = 1
+     WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
      ORDER BY p.created_at DESC LIMIT 6`, [sessionId]);
   const joins = joinRows.map(r => ({ name: r.profile_complete ? ((r.uname || '').toString().trim().split(/\s+/)[0] || null) : null, at: Number(r.created_at) }));
 
@@ -631,6 +635,8 @@ async function handleApi(req, res, url) {
     } else {
       await db.run('UPDATE users SET last_seen = ? WHERE uid = ?', [now(), user.uid]);
     }
+    // Blocked accounts can't log in (admins are never blocked).
+    if (user.blocked) return bad(res, 'This account has been suspended.', 403);
     // First-account-is-admin: the operator's first host login on a fresh install becomes
     // admin (a session can't exist without a host, so this fires before any player joins).
     if (user.role !== 'admin' && await maybePromoteFirstAdmin(user.uid)) user.role = 'admin';
@@ -737,6 +743,7 @@ async function handleApi(req, res, url) {
     // ---- durable user identity (keyed on email, spans all sessions) ----
     // Recognize a returning player by email; create a permanent uid the first time.
     let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
+    if (user && user.blocked) return bad(res, 'This account has been suspended.', 403);
     const storedDigits = user ? (user.phone || '').replace(/\D/g, '') : '';
     // Providing a phone number IS the SMS opt-in (disclosure sits under the field). The
     // effective phone is: a newly typed number, OR the stored number kept by a returning
@@ -884,6 +891,111 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, photoUrl });
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // ADMIN USER MANAGEMENT — searchable users list + block (reversible) + delete (hard).
+  // ─────────────────────────────────────────────────────────────────────────
+  if (p === '/api/admin/users' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+    const status = url.searchParams.get('status') || '';      // active | blocked | ''
+    const skill = url.searchParams.get('skill') || '';        // primary_category
+    const loc = (url.searchParams.get('location') || '').trim().toLowerCase();
+    const sort = url.searchParams.get('sort') || 'recent';    // recent | points | name
+    const where = [], params = [];
+    if (q) { where.push('(LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ?)'); params.push('%' + q + '%', '%' + q + '%'); }
+    if (status === 'blocked') where.push('u.blocked = 1');
+    else if (status === 'active') where.push('u.blocked = 0');
+    if (skill && PROFILE_CATEGORIES.includes(skill)) { where.push('u.primary_category = ?'); params.push(skill); }
+    if (loc) { where.push('LOWER(u.location) LIKE ?'); params.push('%' + loc + '%'); }
+    const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+    const orderSql = sort === 'points' ? 'u.lifetime_points DESC' : sort === 'name' ? 'u.name ASC' : 'u.last_seen DESC';
+    const total = (await db.get(`SELECT COUNT(*) AS c FROM users u ${whereSql}`, params)).c;
+    const rows = await db.all(
+      `SELECT u.uid, u.name, u.email, u.role, u.blocked, u.profile_complete, u.primary_category, u.location, u.photo_url, u.lifetime_points, u.last_seen,
+         (SELECT COUNT(DISTINCT session_id) FROM participants WHERE user_id = u.uid AND verified = 1) AS sessions
+       FROM users u ${whereSql} ORDER BY ${orderSql} LIMIT 100`, params);
+    return send(res, 200, {
+      total: Number(total) || 0,
+      users: rows.map(r => ({ id: r.uid, name: r.name || null, email: r.email, role: r.role, blocked: !!r.blocked,
+        profileComplete: !!r.profile_complete, primaryCategory: r.primary_category || null, location: r.location || null,
+        photoUrl: r.photo_url || null, points: Number(r.lifetime_points) || 0, sessions: Number(r.sessions) || 0,
+        lastSeen: r.last_seen ? Number(r.last_seen) : null })),
+      categories: PROFILE_CATEGORIES,
+    });
+  }
+
+  // Block / unblock a user (reversible). Admins can't be blocked. Blocking logs them out.
+  if (p === '/api/admin/users/block' && method === 'POST') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const { uid, blocked } = await readBody(req);
+    const u = await db.get('SELECT uid, role FROM users WHERE uid = ?', [uid]);
+    if (!u) return bad(res, 'User not found', 404);
+    if (u.role === 'admin') return bad(res, "Admins can't be blocked");
+    const b = blocked ? 1 : 0;
+    await db.run('UPDATE users SET blocked = ? WHERE uid = ?', [b, uid]);
+    if (b) await db.run('DELETE FROM auth_tokens WHERE uid = ?', [uid]); // force-logout
+    return send(res, 200, { ok: true, blocked: !!b });
+  }
+
+  // Hard-delete a user (admin). PERMANENT — removes the account, its participations, and
+  // its votes in one transaction (changes any leaderboard that counted them). Name-confirmed.
+  if (p === '/api/admin/users/delete' && method === 'POST') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const { uid, confirmName } = await readBody(req);
+    const u = await db.get('SELECT uid, name, email, role FROM users WHERE uid = ?', [uid]);
+    if (!u) return bad(res, 'User not found', 404);
+    if (u.role === 'admin') return bad(res, "Admins can't be deleted here");
+    const expected = (u.name && u.name.trim()) ? u.name : u.email;
+    if ((confirmName || '') !== expected) return bad(res, 'Does not match — type it exactly to confirm');
+    await db.tx(async (tx) => {
+      await tx.run('DELETE FROM votes WHERE participant_id IN (SELECT id FROM participants WHERE user_id = ?)', [uid]);
+      await tx.run('DELETE FROM participants WHERE user_id = ?', [uid]);
+      await tx.run('DELETE FROM auth_tokens WHERE uid = ?', [uid]);
+      await tx.run('DELETE FROM otps WHERE email = ?', [u.email]);
+      await tx.run('DELETE FROM users WHERE uid = ?', [uid]);
+    });
+    return send(res, 200, { ok: true, deleted: true });
+  }
+
+  // Public profile (no auth) — PII-safe: photo, name, role(s), city, socials, and
+  // competition stats (points, sessions, current series rank). 404 for blocked/missing.
+  if (p === '/api/profile' && method === 'GET') {
+    const uid = url.searchParams.get('u') || url.searchParams.get('id');
+    if (!uid) return bad(res, 'Profile id required');
+    const u = await db.get('SELECT uid, name, categories, primary_category, location, instagram, tiktok, photo_url, blocked, lifetime_points FROM users WHERE uid = ?', [uid]);
+    if (!u || u.blocked) return bad(res, 'Profile not found', 404);
+    let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
+    const sessions = (await db.get('SELECT COUNT(DISTINCT session_id) AS c FROM participants WHERE user_id = ? AND verified = 1', [uid])).c;
+    // Current series rank: rank among qualified (complete, non-blocked) A&Rs in the active
+    // series, by summed points. Null if no active series or they haven't qualified there.
+    let seriesRank = null, seriesTitle = null;
+    const ser = (await db.get("SELECT id, title FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []))
+      || (await db.get('SELECT id, title FROM series ORDER BY created_at DESC LIMIT 1', []));
+    if (ser) {
+      const ranked = await db.all(
+        `SELECT u2.uid, SUM(v.points) AS pts FROM votes v
+         JOIN participants p ON v.participant_id = p.id
+         JOIN users u2       ON p.user_id = u2.uid
+         JOIN rounds r       ON v.round_id = r.id
+         JOIN sessions s     ON r.session_id = s.id
+         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u2.profile_complete = 1 AND u2.blocked = 0
+         GROUP BY u2.uid ORDER BY pts DESC`, [ser.id]);
+      const idx = ranked.findIndex(r => r.uid === uid);
+      if (idx >= 0) { seriesRank = idx + 1; seriesTitle = ser.title; }
+    }
+    return send(res, 200, {
+      profile: {
+        id: u.uid, name: u.name || 'A&R', categories: cats, primaryCategory: u.primary_category || null,
+        location: u.location || null, instagram: u.instagram || null, tiktok: u.tiktok || null,
+        photoUrl: u.photo_url || null,
+        stats: { points: Number(u.lifetime_points) || 0, sessions: Number(sessions) || 0, seriesRank, seriesTitle },
+      },
+    });
+  }
+
   // ----- beta feedback (public; no auth required) -----
   // Logs the text to the DB for later review, then best-effort emails the admin (with
   // the optional screenshot as an attachment). Email failure NEVER blocks the submit —
@@ -1020,6 +1132,13 @@ async function handleApi(req, res, url) {
   if (p === '/api/vote' && method === 'POST') {
     const participant = await participantFromReq(req);
     if (!participant) return bad(res, 'Not authenticated', 401);
+    // Blocked accounts can't vote (and their existing votes are already excluded from
+    // every board). Also stamp activity so "last seen" reflects real play, not just login.
+    if (participant.user_id) {
+      const pu = await db.get('SELECT blocked FROM users WHERE uid = ?', [participant.user_id]);
+      if (pu && pu.blocked) return bad(res, 'This account has been suspended.', 403);
+      await db.run('UPDATE users SET last_seen = ? WHERE uid = ?', [now(), participant.user_id]);
+    }
     const body = await readBody(req);
     const round = await activeRound(participant.session_id);
     if (!round || round.status !== 'voting') return bad(res, 'Voting is not open');
@@ -1403,7 +1522,7 @@ async function handleApi(req, res, url) {
        JOIN users u        ON p.user_id = u.uid
        JOIN rounds r       ON v.round_id = r.id
        JOIN sessions s     ON r.session_id = s.id
-       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL
+       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.blocked = 0
        GROUP BY u.uid, u.name, u.email, u.profile_complete, u.primary_category, u.location
        ORDER BY series_points DESC, u.name ASC
        LIMIT ?`, [seriesId, limit]);
@@ -1431,19 +1550,19 @@ async function handleApi(req, res, url) {
     // Qualified-only: only complete profiles appear publicly (3.5c gate). Category +
     // location are public by design (they're what makes a leaderboard row "real").
     const rows = await db.all(
-      `SELECT u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS series_points
+      `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS series_points
        FROM votes v
        JOIN participants p ON v.participant_id = p.id
        JOIN users u        ON p.user_id = u.uid
        JOIN rounds r       ON v.round_id = r.id
        JOIN sessions s     ON r.session_id = s.id
-       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1
+       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1 AND u.blocked = 0
        GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
        ORDER BY series_points DESC, u.name ASC
        LIMIT ?`, [seriesId, limit]);
     return send(res, 200, {
       series: { id: series.id, title: series.title, status: series.status },
-      leaderboard: rows.map((r, i) => ({ rank: i + 1, name: onlyFirst(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.series_points) || 0 })),
+      leaderboard: rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: onlyFirst(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.series_points) || 0 })),
     });
   }
 
@@ -1473,23 +1592,23 @@ async function handleApi(req, res, url) {
     let series = null;
     if (serRow) {
       const rows = await db.all(
-        `SELECT u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS pts FROM votes v
+        `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS pts FROM votes v
          JOIN participants p ON v.participant_id = p.id
          JOIN users u        ON p.user_id = u.uid
          JOIN rounds r       ON v.round_id = r.id
          JOIN sessions s     ON r.session_id = s.id
-         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1
+         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1 AND u.blocked = 0
          GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url ORDER BY pts DESC, u.name ASC LIMIT 5`, [serRow.id]);
       series = { id: serRow.id, title: serRow.title, status: serRow.status,
-        leaderboard: rows.map((r, i) => ({ rank: i + 1, name: firstName(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.pts) || 0 })) };
+        leaderboard: rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: firstName(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.pts) || 0 })) };
     }
     // Past winners — no winner model yet; empty until an A&R Wars close records them.
     // Recent A&Rs (activity ticker) — complete profiles only (they carry the photo/role/
     // location the ticker shows, and it doubles as a "complete to appear" pull). Public-
     // safe: display name + city + role + photo; never email/phone.
     const arRows = await db.all(
-      'SELECT name, primary_category, location, photo_url FROM users WHERE profile_complete = 1 ORDER BY first_seen DESC LIMIT 12', []);
-    const recentARs = arRows.map(u => ({ name: u.name, category: u.primary_category || null, location: u.location || null, photoUrl: u.photo_url || null }));
+      'SELECT uid, name, primary_category, location, photo_url FROM users WHERE profile_complete = 1 AND blocked = 0 ORDER BY first_seen DESC LIMIT 12', []);
+    const recentARs = arRows.map(u => ({ id: u.uid, name: u.name, category: u.primary_category || null, location: u.location || null, photoUrl: u.photo_url || null }));
     return send(res, 200, { live, next, series, winners: [], recentARs });
   }
 
@@ -1554,6 +1673,34 @@ async function handleApi(req, res, url) {
     } catch (e) {
       return bad(res, 'Geocoding failed — enter coordinates manually', 502);
     }
+  }
+
+  // City autocomplete for the profile Location field (player-auth). Returns "City, ST"
+  // suggestions via OpenStreetMap, so locations standardize (which sharpens the admin
+  // Location filter). Degrades to [] on any error — the field still accepts free text.
+  if (p === '/api/geo/cities' && method === 'GET') {
+    const participant = await participantFromReq(req);
+    if (!participant) return bad(res, 'Not authenticated', 401);
+    const q = (url.searchParams.get('q') || '').trim();
+    if (q.length < 2) return send(res, 200, { cities: [] });
+    try {
+      const u = 'https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=8&featuretype=city&q=' + encodeURIComponent(q);
+      const r = await fetch(u, { headers: { 'User-Agent': 'TheA&RRoom/1.0 (profile city)' } });
+      if (!r.ok) return send(res, 200, { cities: [] });
+      const arr = await r.json();
+      const seen = new Set(), cities = [];
+      for (const hit of (arr || [])) {
+        const a = hit.address || {};
+        const city = a.city || a.town || a.village || a.hamlet || a.municipality;
+        const region = a.state || a.region || a.country;
+        if (!city || !region) continue;
+        const label = `${city}, ${stateAbbr(region) || region}`;
+        if (seen.has(label)) continue;
+        seen.add(label); cities.push(label);
+        if (cities.length >= 5) break;
+      }
+      return send(res, 200, { cities });
+    } catch (e) { return send(res, 200, { cities: [] }); }
   }
 
   // Live broadcast: push a message to every player in the session, or clear it.
@@ -1788,6 +1935,7 @@ const server = http.createServer(async (req, res) => {
     // page (preserves existing QR/share links of the form /?s=<id>). /play is explicit.
     if (url.pathname === '/') return serveStatic(res, url.searchParams.get('s') ? 'play.html' : 'home.html');
     if (url.pathname === '/play') return serveStatic(res, 'play.html');
+    if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // allow direct asset paths
