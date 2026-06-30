@@ -168,7 +168,7 @@
         <option value="upcoming">Schedule for later (let people pre-register)</option>
       </select>
     </div>
-    <div id="newSchedRow" class="hide"><label>Scheduled start <span class="muted">(optional, shown to early joiners)</span></label><input id="newSched" type="datetime-local"></div>
+    <div id="newSchedRow" class="hide"><label>Scheduled start <span class="muted">(Eastern Time — the broadcast timezone)</span></label><input id="newSched" type="datetime-local"></div>
     <details style="border-top:1px solid var(--line);padding-top:10px">
       <summary style="cursor:pointer;color:var(--ink-dim);font-size:13px">Event extras (optional) — watch link, lobby message, sign-up prompt, venue</summary>
       <div style="margin-top:10px">
@@ -370,12 +370,12 @@
         <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Session status: <span id="sessStatus" style="color:var(--ink)">—</span></div>
         <div class="row" style="gap:6px;flex-wrap:wrap">
           <button class="btn good sm hide" id="btnGoLive">Go live</button>
+          <button class="btn ghost sm hide" id="btnUnlive">Back to upcoming</button>
           <button class="btn warn sm" id="btnEnd">Complete</button>
           <button class="btn ghost sm hide" id="btnArchive">Archive</button>
           <button class="btn good sm hide" id="btnReopen">Reopen</button>
-          <button class="btn warn sm hide" id="btnDelete" style="margin-left:auto">Delete</button>
         </div>
-        <div class="muted" id="delHint" style="font-size:11px;margin-top:4px"></div>
+        <div class="muted" style="font-size:11px;margin-top:6px">Delete is on each session in <b>My sessions</b>.</div>
       </div>
       <button class="btn ghost sm" id="btnBackToSessions" style="margin-top:12px">← My sessions</button>
     </div>
@@ -549,10 +549,23 @@ async function loadSeriesCache(){
 const typeLabel=s=>s.poll_type==='binary'?'Head-to-head (VS)':'Rating 0–9';
 const locLabel=s=>({required:'Venue-locked',optional:'Optional check-in'})[s.geo_mode]||'Open';
 const seriesTitleFor=sid=>{const x=SERIES.find(z=>z.id===sid);return x?x.title:null;};
+// --- Session times are anchored to the broadcast timezone (ET: "Wed 7–11 PM ET"),
+// so they read the same for everyone regardless of the admin's or viewer's location. ---
+const ET_TZ='America/New_York';
+function fmtET(ms,opts){return new Date(Number(ms)).toLocaleString('en-US',{timeZone:ET_TZ,...opts});}
+// "YYYY-MM-DDTHH:mm" entered as ET wall-clock -> epoch ms (DST-aware).
+function etInputToEpoch(str){
+  const [d,t]=str.split('T'); const [y,mo,da]=d.split('-').map(Number); const [h,mi]=t.split(':').map(Number);
+  const guess=Date.UTC(y,mo-1,da,h,mi);
+  const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:ET_TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date(guess)).map(x=>[x.type,x.value]));
+  const back=Date.UTC(p.year,p.month-1,p.day,(p.hour%24),p.minute,p.second);
+  return guess-(back-guess); // subtract the ET offset at that instant
+}
 function startLabel(s){
   const t=s.scheduled_at||s.created_at; if(!t)return null;
-  const d=new Date(Number(t));
-  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+(s.scheduled_at?(', '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})):'');
+  return s.scheduled_at
+    ? fmtET(t,{month:'short',day:'numeric'})+', '+fmtET(t,{hour:'numeric',minute:'2-digit'})+' ET'
+    : fmtET(t,{month:'short',day:'numeric'});
 }
 function attr(txt,cls){return `<span class="attr${cls?' '+cls:''}">${txt}</span>`;}
 function sessionCardHtml(s){
@@ -852,7 +865,7 @@ $('#btnCreate').onclick=async()=>{
       if($('#newLobby').value.trim())body.lobbyMessage=$('#newLobby').value.trim();
       if($('#newPrompt')&&$('#newPrompt').value.trim())body.signupPrompt=$('#newPrompt').value.trim();
       if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=geoLabel;body.geoRadius=geoRadius;}
-      if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=new Date(sv).getTime();}
+      if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=etInputToEpoch(sv);}
       const d=await api('/api/session',body);
       // The create endpoint doesn't take series or geo mode — persist them after.
       if(seriesId&&isAdmin())await api('/api/admin/series/tag',{sessionId:d.sessionId,seriesId});
@@ -993,6 +1006,7 @@ $('#btnSaveGeo')&&($('#btnSaveGeo').onclick=async()=>{
 });
 $('#btnEnd').onclick=async()=>{if(!confirm('Complete the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'completed'});refresh();};
 $('#btnGoLive').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
+$('#btnUnlive').onclick=async()=>{if(!confirm('Move this session back to Upcoming? It leaves the live state — players can pre-register again.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'upcoming'});refresh();};
 $('#btnArchive').onclick=async()=>{if(!confirm('Archive this session? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
 $('#btnReopen').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
 // Edit session name.
@@ -1004,14 +1018,7 @@ $('#btnSaveName')&&($('#btnSaveName').onclick=async()=>{
   try{await api('/api/admin/session/config',{sessionId:SID,name:nm});$('#nameStatus').textContent='Saved ✓';setTimeout(()=>$('#nameStatus').textContent='',2000);refresh();}
   catch(e){$('#nameStatus').textContent=e.message;}
 });
-// Delete session (admin only).
-$('#btnDelete')&&($('#btnDelete').onclick=async()=>{
-  if(!confirm('Delete this session? It will be hidden from all lists. Data is kept and an admin can restore it.'))return;
-  try{await api('/api/admin/session/delete',{sessionId:SID});
-    if(poll)clearInterval(poll);SID=null;localStorage.removeItem('rt_admin_sid');
-    if(AUTHTOK){openPicker();}else{showScreen('login');}
-  }catch(e){$('#delHint').textContent=e.message;}
-});
+// Session delete lives on the My-sessions list (archive/cascade dialog) — not here.
 $('#btnBackToSessions').onclick=()=>{if(poll)clearInterval(poll);SID=null;localStorage.removeItem('rt_admin_sid');if(AUTHTOK){openPicker();}else{showScreen('login');}};
 
 async function downloadExport(format,anon){
@@ -1142,13 +1149,12 @@ function render(st){
   const stx=st.session.status;
   $('#sessStatus').textContent={upcoming:'Upcoming',live:'Live',completed:'Completed',archived:'Archived'}[stx]||stx;
   $('#btnGoLive').classList.toggle('hide',stx!=='upcoming');
+  $('#btnUnlive').classList.toggle('hide',stx!=='live');   // undo an accidental go-live
   $('#btnEnd').classList.toggle('hide',stx!=='live');
   $('#btnArchive').classList.toggle('hide',stx!=='completed');
   $('#btnReopen').classList.toggle('hide',!(stx==='completed'||stx==='archived'));
   // Name edit field (don't clobber while typing).
   if($('#editName')&&!nameFocused)$('#editName').value=st.session.name||'';
-  // Delete is admin-only.
-  $('#btnDelete').classList.toggle('hide', !(ME&&ME.role==='admin'));
   serverSkew=(st.serverNow||Date.now())-Date.now();
   $('#kJoined').textContent=st.verifiedCount;
   $('#kRound').textContent=st.activeRound?('#'+st.activeRound.idx):'—';
