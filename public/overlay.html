@@ -314,7 +314,7 @@ function render(st){
   else{
     $('#idle').classList.remove('hide');
     $('#idleT').textContent=st.session.name||'The A&R Room';
-    $('#idleS').textContent=(st.session.status==='upcoming')?'Starting soon…':((st.participants||0)+' in the room · waiting for the next song');
+    $('#idleS').textContent=(st.session.status==='upcoming')?'Starting soon…':((st.participants||0)+' A&Rs in the room · waiting for the next song');
   }
 }
 

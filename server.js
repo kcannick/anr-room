@@ -405,7 +405,7 @@ async function overlayState(session) {
   const isBinary = session.poll_type === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
   const round = await activeRound(sessionId);
-  const onlyFirst = (nm) => (nm || 'Player').toString().trim().split(/\s+/)[0];
+  const onlyFirst = (nm) => (nm || 'A&R').toString().trim().split(/\s+/)[0];
 
   let current = null, result = null;
   if (round) {
