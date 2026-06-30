@@ -106,6 +106,15 @@ async function maybePromoteFirstAdmin(uid) {
   await db.run("UPDATE users SET role = 'admin' WHERE uid = ?", [uid]);
   return true;
 }
+// Resolve the durable user behind a request from EITHER a session player token
+// (X-Player-Token → participant.user_id) OR an account token (X-Auth-Token → users.uid).
+// Lets session-less "A&R Team" members edit their profile/photo just like players do.
+async function resolveUserId(req) {
+  const participant = await participantFromReq(req);
+  if (participant && participant.user_id) return participant.user_id;
+  const u = await userFromAuth(req);
+  return u ? u.uid : null;
+}
 async function adminFromReq(req, sessionId) {
   const tok = req.headers['x-admin-token'];
   if (!tok) return null;
@@ -616,7 +625,7 @@ async function handleApi(req, res, url) {
   }
 
   if (p === '/api/auth/verify' && method === 'POST') {
-    const { email, code } = await readBody(req);
+    const { email, code, name, phone } = await readBody(req);
     if (!email || !code) return bad(res, 'Email and code required');
     const em = email.toLowerCase();
     const otp = await db.get("SELECT * FROM otps WHERE email = ? AND session_id = '__auth__'", [em]);
@@ -637,6 +646,14 @@ async function handleApi(req, res, url) {
     }
     // Blocked accounts can't log in (admins are never blocked).
     if (user.blocked) return bad(res, 'This account has been suspended.', 403);
+    // "Join the A&R Team" signup carries a display name + optional phone — set them on
+    // the account (phone present => SMS opt-in, same model as a session join).
+    const sName = (name || '').toString().trim().slice(0, 80);
+    if (sName) { await db.run("UPDATE users SET name = COALESCE(NULLIF(?, ''), name) WHERE uid = ?", [sName, user.uid]); user.name = user.name || sName; }
+    const sPhoneRaw = (phone || '').toString().trim();
+    if (sPhoneRaw && !sPhoneRaw.includes('•') && sPhoneRaw.replace(/\D/g, '').length >= 7) {
+      await db.run('UPDATE users SET phone = ?, sms_marketing_consent = 1, sms_consent_at = ? WHERE uid = ?', [sPhoneRaw, now(), user.uid]);
+    }
     // First-account-is-admin: the operator's first host login on a fresh install becomes
     // admin (a session can't exist without a host, so this fires before any player joins).
     if (user.role !== 'admin' && await maybePromoteFirstAdmin(user.uid)) user.role = 'admin';
@@ -828,9 +845,9 @@ async function handleApi(req, res, url) {
 
   // Player's profile (3.5a) — lives on the durable `users` row behind the participant.
   if (p === '/api/me/profile' && method === 'GET') {
-    const participant = await participantFromReq(req);
-    if (!participant || !participant.user_id) return bad(res, 'Not authenticated', 401);
-    const u = await db.get('SELECT name, categories, primary_category, location, instagram, tiktok, photo_url, profile_complete FROM users WHERE uid = ?', [participant.user_id]);
+    const userId = await resolveUserId(req);
+    if (!userId) return bad(res, 'Not authenticated', 401);
+    const u = await db.get('SELECT name, categories, primary_category, location, instagram, tiktok, photo_url, profile_complete FROM users WHERE uid = ?', [userId]);
     if (!u) return bad(res, 'Not found', 404);
     let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
     return send(res, 200, {
@@ -846,8 +863,8 @@ async function handleApi(req, res, url) {
   // Save profile (3.5a). Validates categories against the allowlist, recomputes the
   // qualification flag. Name is set at registration (not changed here); socials optional.
   if (p === '/api/me/profile' && method === 'POST') {
-    const participant = await participantFromReq(req);
-    if (!participant || !participant.user_id) return bad(res, 'Not authenticated', 401);
+    const userId = await resolveUserId(req);
+    if (!userId) return bad(res, 'Not authenticated', 401);
     const body = await readBody(req);
     let cats = Array.isArray(body.categories) ? body.categories.filter(c => PROFILE_CATEGORIES.includes(c)) : [];
     cats = [...new Set(cats)].slice(0, PROFILE_CATEGORIES.length);
@@ -857,10 +874,10 @@ async function handleApi(req, res, url) {
     const location = (body.location || '').toString().trim().slice(0, 120) || null;
     const instagram = (body.instagram || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
     const tiktok = (body.tiktok || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
-    const u = await db.get('SELECT name FROM users WHERE uid = ?', [participant.user_id]);
+    const u = await db.get('SELECT name FROM users WHERE uid = ?', [userId]);
     const complete = isProfileComplete({ name: u && u.name, categories: JSON.stringify(cats), primary_category: primary, location }) ? 1 : 0;
     await db.run('UPDATE users SET categories = ?, primary_category = ?, location = ?, instagram = ?, tiktok = ?, profile_complete = ? WHERE uid = ?',
-      [JSON.stringify(cats), primary, location, instagram, tiktok, complete, participant.user_id]);
+      [JSON.stringify(cats), primary, location, instagram, tiktok, complete, userId]);
     return send(res, 200, { ok: true, complete: !!complete });
   }
 
@@ -869,8 +886,8 @@ async function handleApi(req, res, url) {
   // otherwise falls back to storing the data URL inline so the feature still works
   // before a Blob store exists (migrate by adding the token + re-uploading).
   if (p === '/api/me/photo' && method === 'POST') {
-    const participant = await participantFromReq(req);
-    if (!participant || !participant.user_id) return bad(res, 'Not authenticated', 401);
+    const userId = await resolveUserId(req);
+    if (!userId) return bad(res, 'Not authenticated', 401);
     const body = await readBody(req);
     if (body.__tooBig) return bad(res, 'Image too large — try again (crop makes a small file)', 413);
     const dataUrl = (body.image || '').toString();
@@ -881,13 +898,13 @@ async function handleApi(req, res, url) {
     let photoUrl;
     if (process.env.BLOB_READ_WRITE_TOKEN) {
       const { put } = require('@vercel/blob');
-      const r = await put(`avatars/${participant.user_id}-${now()}.${m[1] === 'png' ? 'png' : 'jpg'}`, buf,
+      const r = await put(`avatars/${userId}-${now()}.${m[1] === 'png' ? 'png' : 'jpg'}`, buf,
         { access: 'public', contentType: `image/${m[1]}` });
       photoUrl = r.url;
     } else {
       photoUrl = dataUrl; // dev / pre-Blob fallback
     }
-    await db.run('UPDATE users SET photo_url = ? WHERE uid = ?', [photoUrl, participant.user_id]);
+    await db.run('UPDATE users SET photo_url = ? WHERE uid = ?', [photoUrl, userId]);
     return send(res, 200, { ok: true, photoUrl });
   }
 
@@ -1679,8 +1696,7 @@ async function handleApi(req, res, url) {
   // suggestions via OpenStreetMap, so locations standardize (which sharpens the admin
   // Location filter). Degrades to [] on any error — the field still accepts free text.
   if (p === '/api/geo/cities' && method === 'GET') {
-    const participant = await participantFromReq(req);
-    if (!participant) return bad(res, 'Not authenticated', 401);
+    if (!(await resolveUserId(req))) return bad(res, 'Not authenticated', 401);
     const q = (url.searchParams.get('q') || '').trim();
     if (q.length < 2) return send(res, 200, { cities: [] });
     try {
@@ -1936,6 +1952,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/') return serveStatic(res, url.searchParams.get('s') ? 'play.html' : 'home.html');
     if (url.pathname === '/play') return serveStatic(res, 'play.html');
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
+    if (url.pathname === '/join') return serveStatic(res, 'join.html'); // session-less A&R Team signup
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // allow direct asset paths
