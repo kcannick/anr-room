@@ -1453,9 +1453,20 @@ const server = http.createServer(async (req, res) => {
 // Ensure the schema exists. Idempotent (CREATE TABLE IF NOT EXISTS), so it's
 // safe to call on every cold start in serverless. Memoized so repeated calls
 // within a warm function are cheap.
+//
+// SELF-HEALING: a successful init is cached for the instance's lifetime, but a
+// FAILED init clears the cache so the next request retries. Without this, a
+// single transient DB hiccup during a cold start would leave _initPromise as a
+// permanently-rejected promise, bricking that warm instance into returning
+// errors for its entire lifetime even after the database recovered.
 let _initPromise = null;
 function ensureInit() {
-  if (!_initPromise) _initPromise = db.init();
+  if (!_initPromise) {
+    _initPromise = db.init().catch((err) => {
+      _initPromise = null; // allow the next call to retry instead of caching the failure
+      throw err;
+    });
+  }
   return _initPromise;
 }
 

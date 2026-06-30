@@ -7,6 +7,7 @@
     "start": "node server.js",
     "test": "node scoring.test.js && node migrate.test.js && node e2e.test.js",
     "migrate": "node migrate.js",
+    "migrate:heavy": "node migrate.js --run-heavy",
     "migrate:status": "node migrate.js --status"
   },
   "engines": {
