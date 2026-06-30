@@ -247,7 +247,7 @@ if (USE_PG) {
   };
 } else {
   const { DatabaseSync } = require('node:sqlite');
-  const path = process.env.SQLITE_PATH || './roomtone.db';
+  const path = process.env.SQLITE_PATH || './anr-room.db';
   const sdb = new DatabaseSync(path);
   sdb.exec('PRAGMA journal_mode = WAL;');
   // node:sqlite is synchronous; we wrap in async to match the PG interface.

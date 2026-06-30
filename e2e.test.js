@@ -3,6 +3,7 @@
 process.env.EMAIL_PROVIDER = 'console';
 process.env.SQLITE_PATH = './test.db';
 process.env.PORT = '3999';
+process.env.ADMIN_EMAIL = 'admin@test.com';
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
 try { fs.unlinkSync('./test.db-wal'); } catch {}

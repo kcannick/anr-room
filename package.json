@@ -1,5 +1,5 @@
 {
-  "name": "roomtone",
+  "name": "anr-room",
   "version": "1.0.0",
   "description": "A live, in-room song-rating prediction game. Rate a song, predict the room's average, closest guess wins the round.",
   "main": "server.js",

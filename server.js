@@ -1145,7 +1145,14 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE sessions SET deleted_at = NULL WHERE id = ?', [sessionId]);
       return send(res, 200, { ok: true, restored: true });
     }
-    await db.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [now(), sessionId]);
+    // Soft-delete. Also clear a 'live' status: a deleted session must never
+    // remain live (a deleted+live row is the contradictory state that caused the
+    // stuck-live confusion during the outage cleanup). Completed/upcoming are left
+    // as-is so a restore returns the session to a sensible status.
+    await db.run(
+      "UPDATE sessions SET deleted_at = ?, status = CASE WHEN status = 'live' THEN 'completed' ELSE status END WHERE id = ?",
+      [now(), sessionId]
+    );
     return send(res, 200, { ok: true, deleted: true });
   }
 
