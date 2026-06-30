@@ -1156,6 +1156,136 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, deleted: true });
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // SERIES LAYER
+  // A series is a DISPLAY container that groups tagged sessions into a monthly
+  // competition. Membership is the explicit `sessions.series_id` tag — never the
+  // dates/target (those are display only). Leaderboard points are LIVE-COMPUTED
+  // by summing votes.points across a series' tagged sessions, so the board stays
+  // correct through retroactive tagging, re-ratification, and vote corrections.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Create a series (admin).
+  if (p === '/api/admin/series/create' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const { title, description, targetSessions, qualifyCount, startDate, endDate, status } = await readBody(req);
+    if (!title || !title.trim()) return bad(res, 'Series title required');
+    const sid = id(9);
+    const st = ['upcoming', 'active', 'closed'].includes(status) ? status : 'upcoming';
+    const qc = qualifyCount != null ? Math.min(Math.max(parseInt(qualifyCount, 10) || 8, 1), 100) : 8;
+    await db.run(
+      'INSERT INTO series (id, title, description, status, target_sessions, qualify_count, start_date, end_date, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+      [sid, title.trim().slice(0, 120), (description || '').toString().trim().slice(0, 1000) || null, st,
+       targetSessions != null ? Number(targetSessions) : null, qc,
+       startDate != null ? Number(startDate) : null, endDate != null ? Number(endDate) : null, now()]
+    );
+    return send(res, 200, { ok: true, seriesId: sid });
+  }
+
+  // List all series with a tagged-session count (admin).
+  if (p === '/api/admin/series/list' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const rows = await db.all(
+      `SELECT s.*, (SELECT COUNT(*) FROM sessions ss WHERE ss.series_id = s.id AND ss.deleted_at IS NULL) AS session_count
+       FROM series s ORDER BY s.created_at DESC`, []);
+    return send(res, 200, { series: rows });
+  }
+
+  // Edit a series' display metadata or status (admin). Only provided fields change.
+  if (p === '/api/admin/series/edit' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const series = await db.get('SELECT id FROM series WHERE id = ?', [body.seriesId]);
+    if (!series) return bad(res, 'Series not found', 404);
+    const sets = [], vals = [];
+    if ('title' in body)          { const t = (body.title || '').toString().trim(); if (!t) return bad(res, 'Series title can\'t be empty'); sets.push('title = ?'); vals.push(t.slice(0, 120)); }
+    if ('description' in body)    { sets.push('description = ?'); vals.push((body.description || '').toString().trim().slice(0, 1000) || null); }
+    if ('status' in body)         { const st = ['upcoming', 'active', 'closed'].includes(body.status) ? body.status : 'upcoming'; sets.push('status = ?'); vals.push(st); }
+    if ('targetSessions' in body) { sets.push('target_sessions = ?'); vals.push(body.targetSessions != null ? Number(body.targetSessions) : null); }
+    if ('qualifyCount' in body)   { sets.push('qualify_count = ?'); vals.push(Math.min(Math.max(parseInt(body.qualifyCount, 10) || 8, 1), 100)); }
+    if ('startDate' in body)      { sets.push('start_date = ?'); vals.push(body.startDate != null ? Number(body.startDate) : null); }
+    if ('endDate' in body)        { sets.push('end_date = ?'); vals.push(body.endDate != null ? Number(body.endDate) : null); }
+    if (!sets.length) return bad(res, 'Nothing to update');
+    vals.push(body.seriesId);
+    await db.run(`UPDATE series SET ${sets.join(', ')} WHERE id = ?`, vals);
+    return send(res, 200, { ok: true });
+  }
+
+  // Tag (or untag) a session into a series (admin). seriesId null/'' clears the tag.
+  if (p === '/api/admin/series/tag' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const { sessionId, seriesId } = await readBody(req);
+    const session = await db.get('SELECT id FROM sessions WHERE id = ?', [sessionId]);
+    if (!session) return bad(res, 'Session not found', 404);
+    if (seriesId) {
+      const series = await db.get('SELECT id FROM series WHERE id = ?', [seriesId]);
+      if (!series) return bad(res, 'Series not found', 404);
+    }
+    await db.run('UPDATE sessions SET series_id = ? WHERE id = ?', [seriesId || null, sessionId]);
+    return send(res, 200, { ok: true, sessionId, seriesId: seriesId || null });
+  }
+
+  // Series leaderboard — LIVE-COMPUTED (admin/internal view; full identity).
+  // Sums votes.points across the series' tagged (non-deleted) sessions, grouped by
+  // the durable user behind each participant. `limit` query param caps the cut.
+  if (p === '/api/admin/series/leaderboard' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const seriesId = url.searchParams.get('seriesId') || url.searchParams.get('id');
+    if (!seriesId) return bad(res, 'seriesId required');
+    const seriesRow = await db.get('SELECT qualify_count FROM series WHERE id = ?', [seriesId]);
+    const qualifyCount = seriesRow ? (seriesRow.qualify_count || 8) : 8;
+    // Default to a generous view (50) so the admin sees beyond the cut; the cut
+    // line is drawn at qualifyCount. An explicit ?limit= overrides.
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 200);
+    const rows = await db.all(
+      `SELECT u.uid AS user_id, u.name, u.email, SUM(v.points) AS series_points
+       FROM votes v
+       JOIN participants p ON v.participant_id = p.id
+       JOIN users u        ON p.user_id = u.uid
+       JOIN rounds r       ON v.round_id = r.id
+       JOIN sessions s     ON r.session_id = s.id
+       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL
+       GROUP BY u.uid, u.name, u.email
+       ORDER BY series_points DESC, u.name ASC
+       LIMIT ?`, [seriesId, limit]);
+    return send(res, 200, {
+      seriesId,
+      qualifyCount,
+      leaderboard: rows.map((r, i) => ({ rank: i + 1, userId: r.user_id, name: r.name, email: r.email, points: Number(r.series_points) || 0, qualifies: (i + 1) <= qualifyCount })),
+    });
+  }
+
+  // Public series leaderboard (no auth) — PII-safe: display name + points + rank only.
+  // Feeds the public homepage standings. Never emits email/phone.
+  if (p === '/api/series/leaderboard' && method === 'GET') {
+    const seriesId = url.searchParams.get('seriesId') || url.searchParams.get('id');
+    if (!seriesId) return bad(res, 'seriesId required');
+    const series = await db.get('SELECT id, title, status FROM series WHERE id = ?', [seriesId]);
+    if (!series) return bad(res, 'Series not found', 404);
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '10', 10) || 10, 1), 50);
+    const rows = await db.all(
+      `SELECT u.name, SUM(v.points) AS series_points
+       FROM votes v
+       JOIN participants p ON v.participant_id = p.id
+       JOIN users u        ON p.user_id = u.uid
+       JOIN rounds r       ON v.round_id = r.id
+       JOIN sessions s     ON r.session_id = s.id
+       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL
+       GROUP BY u.uid, u.name
+       ORDER BY series_points DESC, u.name ASC
+       LIMIT ?`, [seriesId, limit]);
+    return send(res, 200, {
+      series: { id: series.id, title: series.title, status: series.status },
+      leaderboard: rows.map((r, i) => ({ rank: i + 1, name: onlyFirst(r.name), points: Number(r.series_points) || 0 })),
+    });
+  }
+
+
   // Update event config after creation: watch link, lobby message, sign-up prompt.
   // Each field is optional; only fields present in the body are changed. Send an
   // empty string to clear a field.

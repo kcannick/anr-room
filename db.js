@@ -47,6 +47,7 @@ const SCHEMA = [
      geo_radius INTEGER,                     -- check-in radius in yards (generous default applied in code)
      geo_label TEXT,                         -- human-readable venue address/name for display
      deleted_at BIGINT,                      -- soft-delete timestamp (null = active; hidden from lists if set)
+     series_id TEXT,                          -- optional: the Series this session is tagged into (display-grouped competition)
      created_at BIGINT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS users (
@@ -134,6 +135,21 @@ const SCHEMA = [
   `CREATE UNIQUE INDEX IF NOT EXISTS uniq_vote ON votes (round_id, participant_id)`,
   `CREATE INDEX IF NOT EXISTS idx_part_session ON participants (session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_round_session ON rounds (session_id)`,
+  `CREATE TABLE IF NOT EXISTS series (
+     id TEXT PRIMARY KEY,
+     title TEXT NOT NULL,
+     description TEXT,
+     status TEXT NOT NULL DEFAULT 'upcoming', -- upcoming | active | closed
+     target_sessions INTEGER,                 -- optional, DISPLAY ONLY (never a membership filter)
+     qualify_count INTEGER NOT NULL DEFAULT 8, -- top-N who qualify for A&R Wars (drives the cut)
+     start_date BIGINT,                       -- optional, DISPLAY ONLY
+     end_date BIGINT,                         -- optional, DISPLAY ONLY
+     created_at BIGINT NOT NULL
+   )`,
+  // NOTE: indexes on sessions(series_id) and votes(round_id) live in migration
+  // 011_series, NOT here. They depend on the series_id column the migration adds,
+  // and the migration runner runs AFTER this SCHEMA — so placing them here would
+  // fail with "no such column" when upgrading a pre-existing sessions table.
   `CREATE TABLE IF NOT EXISTS banners (
      id TEXT PRIMARY KEY,
      session_id TEXT,                        -- owning session (null for the global default)
