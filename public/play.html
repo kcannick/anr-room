@@ -171,6 +171,24 @@
   .stream-poster img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.62}
   .stream-play{position:relative;width:56px;height:56px;border-radius:50%;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px;padding-left:3px}
   .stream-cap{position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:11px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+  /* profile completion modal (3.5a) */
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 2px}
+  .chip{font-size:12px;padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:#0f0c1c;color:var(--ink-dim);cursor:pointer;user-select:none}
+  .chip.on{background:rgba(109,95,224,.18);border-color:var(--accent);color:var(--ink)}
+  .chip.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .pf-steplabel{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .pf-num{font-family:"Space Mono",monospace;color:var(--signal);font-weight:700}
+  .pf-sub{font-size:11px;color:var(--ink-faint);font-weight:400}
+  .pf-avph{width:38px;height:38px;border-radius:50%;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;border:1px solid var(--line);flex:none}
+  /* liveness join feed (3.5d) */
+  .lv-h{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin-bottom:9px}
+  .feed-item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-dim);padding:5px 0;text-align:left}
+  .feed-item .fdot{width:6px;height:6px;border-radius:50%;background:var(--signal);flex:none}
+  .feed-item .fdot.anon{background:var(--ink-faint)}
+  .feed-item b{color:var(--ink);font-weight:600}
+  .feed-item .anon-t{color:var(--ink-faint)}
+  .feed-item .ft{margin-left:auto;font-size:10px;color:var(--ink-faint);font-family:"Space Mono",monospace}
+  .lv-seal{font-size:10.5px;color:var(--ink-faint);margin-top:11px;display:flex;gap:6px;align-items:flex-start;line-height:1.4;text-align:left}
 </style>
 </head>
 <body>
@@ -215,7 +233,6 @@
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
       <div id="devCodeBox" class="note hide"></div>
       <div><label>Your name (shown on the leaderboard)</label><input id="name" placeholder="e.g. Maya"></div>
-      <div id="signupPromptRow" class="hide"><label id="signupPromptLabel">—</label><input id="signupAnswer" placeholder="Type your answer"></div>
       <div>
         <label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label>
         <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
@@ -239,6 +256,12 @@
       <button id="inviteBtn" class="btn ghost" style="margin-top:10px">＋ Invite others</button>
       <div class="pulse-wait"><i></i><i></i><i></i></div>
       <div class="tag" style="margin-top:6px">🎧 <span id="waitCount">0</span> in the room</div>
+    </div>
+    <!-- LIVENESS FEED (3.5d) — recent joins, count-only -->
+    <div class="panel" id="livenessPanel" style="margin-top:14px;display:none">
+      <div class="lv-h">In the room</div>
+      <div id="joinFeed"></div>
+      <div class="lv-seal"><span style="color:var(--signal)">🔒</span><span>Count only — the room's lean stays sealed until results. It's what you're predicting.</span></div>
     </div>
     <!-- AD SLOT: lobby. Drop a sponsor banner here (image or markup). -->
     <div class="ad-slot" id="adLobby" aria-hidden="true"></div>
@@ -457,6 +480,32 @@
       <button class="btn ghost" id="ciRemote" style="width:100%;margin-top:10px">I'm watching remotely</button>
       <button class="btn ghost" id="ciCancel" style="width:100%;margin-top:10px">Cancel</button>
     </div>
+  </div>
+</div>
+
+<!-- PROFILE COMPLETION MODAL (3.5a) — dead-time, dismissible -->
+<div id="profileModal" style="display:none;position:fixed;inset:0;background:rgba(8,5,18,.82);z-index:90;align-items:center;justify-content:center;padding:18px;overflow:auto">
+  <div class="panel" style="max-width:440px;width:100%;border-color:var(--accent)">
+    <div class="eyebrow" style="color:var(--signal)">Round closed · results soon</div>
+    <div style="font-size:17px;font-weight:700;margin:2px 0 3px">Complete your profile to qualify</div>
+    <p class="dim" style="font-size:12.5px;line-height:1.5;margin:0 0 14px">You're scoring — but you won't appear on the leaderboard or qualify for prizes until your profile's done.</p>
+    <div class="pf-steplabel"><span class="pf-num">①</span> What do you do? <span class="pf-sub">select all that apply</span></div>
+    <div class="chips" id="pfCats"></div>
+    <div class="pf-steplabel" style="margin-top:14px"><span class="pf-num">②</span> Most focused on? <span class="pf-sub">your primary — shows on the board</span></div>
+    <div class="chips" id="pfPrimary"></div>
+    <label style="margin-top:14px">Location <span class="pf-sub">required to qualify</span></label>
+    <input id="pfLocation" placeholder="City, State">
+    <div style="display:flex;gap:9px">
+      <div style="flex:1"><label>Instagram</label><input id="pfIg" placeholder="@handle"></div>
+      <div style="flex:1"><label>TikTok</label><input id="pfTt" placeholder="@handle"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;margin:12px 0 4px;opacity:.6">
+      <div class="pf-avph">+</div>
+      <div style="font-size:11.5px;line-height:1.4">Add a photo <span class="dim">(coming soon)</span></div>
+    </div>
+    <div class="err" id="pfErr"></div>
+    <button class="btn" id="pfSave" style="width:100%;margin-top:8px">Save &amp; qualify</button>
+    <button class="btn ghost" id="pfLater" style="width:100%;margin-top:9px">Later</button>
   </div>
 </div>
 
@@ -699,9 +748,6 @@ $('#btnRequest').onclick=async()=>{
     $('#emailEcho').textContent=email;localStorage.setItem('rt_email',email);
     if(d.devCode){$('#devCodeBox').classList.remove('hide');$('#devCodeBox').textContent='Dev mode — your code is '+d.devCode;}
     else $('#devCodeBox').classList.add('hide');
-    // Custom sign-up prompt, if the host set one for this session.
-    if(d.signupPrompt){$('#signupPromptRow').classList.remove('hide');$('#signupPromptLabel').textContent=d.signupPrompt;}
-    else $('#signupPromptRow').classList.add('hide');
     applyPrefill(d.prefill);
     show('code');
   }catch(e){$('#emailErr').textContent=e.message;}
@@ -736,11 +782,10 @@ $('#btnVerify').onclick=async()=>{
   // mask), tell the server to keep it (and keep them opted in). A newly typed number is
   // sent and replaces it. No stored number + empty field => no phone => no SMS consent.
   const keepPhone = phonePrefilled && phone.length===0;
-  const signupAnswer=$('#signupAnswer')?$('#signupAnswer').value.trim():'';
   const ref=localStorage.getItem('rt_ref_'+SID)||'';
   $('#btnVerify').disabled=true;
   try{
-    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,keepPhone,signupAnswer,ref});
+    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,keepPhone,ref});
     setToken(d.token);
     localStorage.removeItem('rt_ref_'+SID);
     startPolling();
@@ -1014,6 +1059,7 @@ function render(st){
   pollType = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary')) ? 'binary' : 'rating';
   $('#sessName').textContent=st.session.name;
   $('#footCount').textContent=st.participants;$('#waitCount').textContent=st.participants;
+  renderJoins(st);
   $('#footPts').textContent=(st.me.total_points||0)+' pts';
   $('#rTotal').textContent=st.me.total_points||0;
 
@@ -1107,6 +1153,8 @@ function render(st){
     renderBanner('adLocked',st.banner);show('locked');
   }
   else if(st.phase==='results'){closesAt=null;renderResults(st);show('results');}
+  // Dead-time nudge: prompt profile completion once when results first reveal.
+  if(st.phase==='results' && lastPhase!=='results') maybePromptProfile();
   lastPhase=newPhase;
 }
 
@@ -1114,7 +1162,63 @@ async function refresh(){
   try{const st=await api('/api/me/state',null,'GET');render(st);}
   catch(e){if(/auth/i.test(e.message)){clearToken();location.reload();}}
 }
-function startPolling(){if(pollTimer)clearInterval(pollTimer);refresh();pollTimer=setInterval(refresh,2500);}
+function startPolling(){if(pollTimer)clearInterval(pollTimer);loadProfile();refresh();pollTimer=setInterval(refresh,2500);}
+
+// ---------- LIVENESS FEED (3.5d) ----------
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function relTime(at){const s=Math.max(0,Math.round((Date.now()-Number(at))/1000));if(s<5)return 'now';if(s<60)return s+'s';const m=Math.round(s/60);if(m<60)return m+'m';return Math.round(m/60)+'h';}
+function renderJoins(st){
+  const panel=$('#livenessPanel'),feed=$('#joinFeed');if(!panel)return;
+  if(!st.joins||!st.joins.length){panel.style.display='none';return;}
+  panel.style.display='block';
+  feed.innerHTML=st.joins.map(j=>`<div class="feed-item"><span class="fdot${j.name?'':' anon'}"></span>${j.name?`<b>${esc(j.name)}</b> just joined`:'<span class="anon-t">someone joined</span>'}<span class="ft">${relTime(j.at)}</span></div>`).join('');
+}
+
+// ---------- PROFILE COMPLETION (3.5a) ----------
+let myProfile=null, PROFILE_CATS=[], pfPrimary=null, profileDismissed=false;
+async function loadProfile(){ try{const d=await api('/api/me/profile',null,'GET');myProfile=d.profile;PROFILE_CATS=d.categoriesAvailable||[];}catch(e){} }
+const pfSelected=()=>[...document.querySelectorAll('#pfCats .chip.on')].map(el=>el.dataset.c);
+function renderPfPrimary(){
+  const cats=pfSelected();
+  if(pfPrimary && !cats.includes(pfPrimary)) pfPrimary=null;
+  if(!pfPrimary && cats.length) pfPrimary=cats[0];
+  $('#pfPrimary').innerHTML = cats.length
+    ? cats.map(c=>`<span class="chip${c===pfPrimary?' primary':''}" data-p="${c}">${c}</span>`).join('')
+    : '<span class="dim" style="font-size:11px">Pick categories above first</span>';
+  $('#pfPrimary').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{pfPrimary=el.dataset.p;renderPfPrimary();});
+}
+function openProfileModal(){
+  if(!myProfile)return;
+  const sel=new Set(myProfile.categories||[]); pfPrimary=myProfile.primaryCategory||null;
+  $('#pfCats').innerHTML=PROFILE_CATS.map(c=>`<span class="chip${sel.has(c)?' on':''}" data-c="${c}">${c}</span>`).join('');
+  $('#pfCats').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{el.classList.toggle('on');renderPfPrimary();});
+  $('#pfLocation').value=myProfile.location||'';
+  $('#pfIg').value=myProfile.instagram?('@'+myProfile.instagram):'';
+  $('#pfTt').value=myProfile.tiktok?('@'+myProfile.tiktok):'';
+  $('#pfErr').textContent=''; renderPfPrimary();
+  $('#profileModal').style.display='flex';
+}
+window.openProfileModal=openProfileModal; // also opened from the gate CTA
+function maybePromptProfile(){
+  if(!myProfile || myProfile.complete || profileDismissed) return;
+  profileDismissed=true; // auto-nudge once per page load; the gate CTA reopens it
+  openProfileModal();
+}
+$('#pfLater').onclick=()=>{ profileDismissed=true; $('#profileModal').style.display='none'; };
+$('#pfSave').onclick=async()=>{
+  const cats=pfSelected();
+  if(!cats.length) return $('#pfErr').textContent='Pick at least one category.';
+  const location=$('#pfLocation').value.trim();
+  if(!location) return $('#pfErr').textContent='Add your location to qualify.';
+  const body={categories:cats, primaryCategory:pfPrimary||cats[0], location, instagram:$('#pfIg').value.trim(), tiktok:$('#pfTt').value.trim()};
+  $('#pfSave').disabled=true;
+  try{
+    const d=await api('/api/me/profile',body);
+    myProfile={...myProfile, complete:d.complete, categories:cats, primaryCategory:body.primaryCategory, location, instagram:body.instagram.replace(/^@+/,''), tiktok:body.tiktok.replace(/^@+/,'')};
+    $('#profileModal').style.display='none';
+  }catch(e){$('#pfErr').textContent=e.message;}
+  $('#pfSave').disabled=false;
+};
 
 // ---- shareable graphic (1080x1920 Instagram Story) rendered on the offscreen canvas ----
 function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
@@ -1195,7 +1299,6 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
   try{
     const info=await fetch('/api/session/info?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status));
     if(info&&info.name)$('#sessName').textContent=info.name;
-    if(info&&info.signupPrompt){$('#signupPromptRow').classList.remove('hide');$('#signupPromptLabel').textContent=info.signupPrompt;}
     if(info&&info.closed&&!getToken()){
       document.body.innerHTML='<div class="wrap"><div class="brand"><div class="brand-titlerow"><h1>The A&amp;R Room</h1></div></div><div class="panel" style="margin-top:24px;text-align:center"><div style="font-size:30px">🔒</div><h2 style="margin:10px 0">'+(info.name||'This session')+'</h2><p class="dim">This session has ended. Thanks for playing!</p></div></div>';
       return;
