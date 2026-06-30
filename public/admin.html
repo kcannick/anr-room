@@ -174,7 +174,6 @@
       <div style="margin-top:10px">
         <label>Watch link</label><input id="newWatch" placeholder="https://twitch.tv/…">
         <label style="margin-top:10px">Lobby message</label><textarea id="newLobby" placeholder="Shown while players wait"></textarea>
-        <label style="margin-top:10px">Sign-up prompt</label><input id="newPrompt" placeholder="e.g. Drop your Instagram + city">
         <label style="margin-top:10px">Venue address <span class="muted">(for check-in; enable enforcement later)</span></label>
         <div class="row" style="gap:6px">
           <input id="newGeoAddr" placeholder="Type the venue address" style="flex:1">
@@ -278,8 +277,6 @@
         <input id="cfgWatch" placeholder="https://…">
         <label style="margin-top:10px">Lobby message <span class="muted">(shown while waiting)</span></label>
         <textarea id="cfgLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea>
-        <label style="margin-top:10px">Sign-up prompt <span class="muted">(custom question at join)</span></label>
-        <input id="cfgPrompt" placeholder="e.g. Drop your Instagram + city">
         <button class="btn sm" id="btnSaveConfig" style="margin-top:10px;width:100%">Save event settings</button>
         <div class="muted" id="cfgStatus" style="font-size:12px;margin-top:6px"></div>
       </div>
@@ -801,15 +798,18 @@ async function loadSeriesBoard(sid){
     $('#seriesActions').classList.remove('hide');
     $('#btnCloseSeries').classList.toggle('hide',s&&s.status==='closed');
     if(!d.leaderboard.length){$('#seriesBoard').innerHTML='<div class="empty">No votes in tagged sessions yet. Tag sessions from your session list to populate the board.</div>';return;}
-    let html='',cutDrawn=false;
+    let html='',qSeen=0,cutDrawn=false;
     for(const r of d.leaderboard){
+      const incomplete=r.profileComplete===false;
+      const sub=[r.email?esc(r.email):'', r.location?esc(r.location):''].filter(Boolean).join(' · ');
       html+=`<div class="lrow${r.qualifies?' qualifies':''}">
         <span class="lrank${r.qualifies?' q':''}">${r.rank}</span>
         <div class="lav">${esc(initials(r.name))}</div>
-        <div class="lmeta"><div class="lname">${esc(r.name||'—')}</div><div class="lsub">${esc(r.email||'')}</div></div>
+        <div class="lmeta"><div class="lname">${esc(r.name||'—')}${incomplete?' <span style="color:var(--amber);font-size:10px;font-weight:600">· profile incomplete</span>':''}</div><div class="lsub">${sub}</div></div>
         <span class="lpts">${(Number(r.points)||0).toLocaleString()}</span>
       </div>`;
-      if(r.qualifies && r.rank===d.qualifyCount && !cutDrawn){html+=`<div class="cutline">cut at ${d.qualifyCount} — adjustable per series</div>`;cutDrawn=true;}
+      if(r.qualifies)qSeen++;
+      if(!cutDrawn && qSeen===d.qualifyCount){html+=`<div class="cutline">cut at ${d.qualifyCount} — qualified profiles only</div>`;cutDrawn=true;}
     }
     $('#seriesBoard').innerHTML=html;
   }catch(e){$('#seriesBoard').innerHTML='<div class="err">'+e.message+'</div>';$('#seriesActions').classList.add('hide');}
@@ -863,7 +863,6 @@ $('#btnCreate').onclick=async()=>{
       const body={name,defaultMinutes:mins,pollType:$('#newPollType').value};
       if($('#newWatch').value.trim())body.watchUrl=$('#newWatch').value.trim();
       if($('#newLobby').value.trim())body.lobbyMessage=$('#newLobby').value.trim();
-      if($('#newPrompt')&&$('#newPrompt').value.trim())body.signupPrompt=$('#newPrompt').value.trim();
       if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=geoLabel;body.geoRadius=geoRadius;}
       if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=etInputToEpoch(sv);}
       const d=await api('/api/session',body);
@@ -964,14 +963,14 @@ $('#btnBroadcastClear')&&($('#btnBroadcastClear').onclick=async()=>{
 $('#btnSaveConfig')&&($('#btnSaveConfig').onclick=async()=>{
   $('#btnSaveConfig').disabled=true;
   try{
-    await api('/api/admin/session/config',{sessionId:SID,watchUrl:$('#cfgWatch').value.trim(),lobbyMessage:$('#cfgLobby').value.trim(),signupPrompt:$('#cfgPrompt').value.trim()});
+    await api('/api/admin/session/config',{sessionId:SID,watchUrl:$('#cfgWatch').value.trim(),lobbyMessage:$('#cfgLobby').value.trim()});
     $('#cfgStatus').textContent='Saved ✓';setTimeout(()=>$('#cfgStatus').textContent='',2000);
   }catch(e){$('#cfgStatus').textContent=e.message;}
   $('#btnSaveConfig').disabled=false;
 });
 // Track whether the host is editing a config field, so polling doesn't clobber input.
 let cfgFocused=false;
-['cfgWatch','cfgLobby','cfgPrompt'].forEach(idr=>{const el=$('#'+idr);if(el){el.addEventListener('focus',()=>cfgFocused=true);el.addEventListener('blur',()=>setTimeout(()=>cfgFocused=false,200));}});
+['cfgWatch','cfgLobby'].forEach(idr=>{const el=$('#'+idr);if(el){el.addEventListener('focus',()=>cfgFocused=true);el.addEventListener('blur',()=>setTimeout(()=>cfgFocused=false,200));}});
 
 // ---- location check-in ----
 let geoResolvedLat=null, geoResolvedLng=null, geoTouched=false;
@@ -1168,7 +1167,6 @@ function render(st){
   if(!cfgFocused){
     if($('#cfgWatch'))$('#cfgWatch').value=st.session.watch_url||'';
     if($('#cfgLobby'))$('#cfgLobby').value=st.session.lobby_message||'';
-    if($('#cfgPrompt'))$('#cfgPrompt').value=st.session.signup_prompt||'';
   }
   // Geo panel (don't clobber while host is editing).
   if(!geoTouched){
