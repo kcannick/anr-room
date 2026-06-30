@@ -904,17 +904,25 @@ async function handleApi(req, res, url) {
     if (!m) return bad(res, 'Invalid image');
     const buf = Buffer.from(m[2], 'base64');
     if (buf.length > 1024 * 1024) return bad(res, 'Image too large', 413);
-    let photoUrl;
+    let photoUrl = dataUrl, storage = 'fallback';
     if (process.env.BLOB_READ_WRITE_TOKEN) {
-      const { put } = require('@vercel/blob');
-      const r = await put(`avatars/${userId}-${now()}.${m[1] === 'png' ? 'png' : 'jpg'}`, buf,
-        { access: 'public', contentType: `image/${m[1]}` });
-      photoUrl = r.url;
-    } else {
-      photoUrl = dataUrl; // dev / pre-Blob fallback
+      try {
+        const { put } = require('@vercel/blob');
+        const r = await put(`avatars/${userId}-${now()}.${m[1] === 'png' ? 'png' : 'jpg'}`, buf,
+          { access: 'public', contentType: `image/${m[1]}`, token: process.env.BLOB_READ_WRITE_TOKEN });
+        photoUrl = r.url; storage = 'blob';
+      } catch (e) {
+        console.error('[blob] upload failed, using data-URL fallback:', e && e.message);
+        storage = 'error:' + ((e && e.message) || 'unknown').slice(0, 80);
+      }
     }
     await db.run('UPDATE users SET photo_url = ? WHERE uid = ?', [photoUrl, userId]);
-    return send(res, 200, { ok: true, photoUrl });
+    return send(res, 200, { ok: true, photoUrl, storage }); // storage tells us which path ran
+  }
+
+  // Diagnostic: is Vercel Blob configured for this runtime? Boolean only, no secret.
+  if (p === '/api/health/blob' && method === 'GET') {
+    return send(res, 200, { configured: !!process.env.BLOB_READ_WRITE_TOKEN });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
