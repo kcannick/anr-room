@@ -921,19 +921,8 @@ async function handleApi(req, res, url) {
   }
 
   // Diagnostic: is Vercel Blob configured for this runtime? Boolean only, no secret.
-  // ?write=1 does ONE tiny real write to confirm the plan allows Blob writes (temporary).
   if (p === '/api/health/blob' && method === 'GET') {
-    const configured = !!process.env.BLOB_READ_WRITE_TOKEN;
-    if (url.searchParams.get('write') === '1' && configured) {
-      try {
-        const { put } = require('@vercel/blob');
-        const r = await put(`healthcheck/${now()}.txt`, 'ok', { access: 'public', contentType: 'text/plain', token: process.env.BLOB_READ_WRITE_TOKEN });
-        return send(res, 200, { configured, writeOk: true, url: r.url });
-      } catch (e) {
-        return send(res, 200, { configured, writeOk: false, error: ((e && e.message) || 'unknown').slice(0, 160) });
-      }
-    }
-    return send(res, 200, { configured });
+    return send(res, 200, { configured: !!process.env.BLOB_READ_WRITE_TOKEN });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
