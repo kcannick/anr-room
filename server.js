@@ -1457,7 +1457,13 @@ async function handleApi(req, res, url) {
         leaderboard: rows.map((r, i) => ({ rank: i + 1, name: firstName(r.name), category: r.primary_category || null, location: r.location || null, points: Number(r.pts) || 0 })) };
     }
     // Past winners — no winner model yet; empty until an A&R Wars close records them.
-    return send(res, 200, { live, next, series, winners: [] });
+    // Recent A&Rs (activity ticker) — complete profiles only (they carry the photo/role/
+    // location the ticker shows, and it doubles as a "complete to appear" pull). Public-
+    // safe: display name + city + role + photo; never email/phone.
+    const arRows = await db.all(
+      'SELECT name, primary_category, location, photo_url FROM users WHERE profile_complete = 1 ORDER BY first_seen DESC LIMIT 12', []);
+    const recentARs = arRows.map(u => ({ name: u.name, category: u.primary_category || null, location: u.location || null, photoUrl: u.photo_url || null }));
+    return send(res, 200, { live, next, series, winners: [], recentARs });
   }
 
 

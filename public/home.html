@@ -80,6 +80,16 @@
   .lbnm{flex:1;font-size:14px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lbnm small{display:block;font-size:10px;color:var(--ink-faint);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .lbnm .tag{display:inline-block;font-size:9px;color:var(--cool);background:rgba(124,111,240,.14);border-radius:5px;padding:1px 5px;font-weight:600;margin-right:5px;vertical-align:1px}
+  /* recent-A&Rs activity ticker */
+  .ticker{overflow:hidden;border:1px solid var(--line);border-radius:13px;background:#0f0c1c;padding:11px 0;position:relative}
+  .ticker:hover .ticker-track{animation-play-state:paused}
+  .ticker-track{display:flex;gap:10px;width:max-content;padding:0 5px;animation:tk 38s linear infinite}
+  @keyframes tk{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  @media (prefers-reduced-motion: reduce){.ticker-track{animation:none}}
+  .tk-item{display:flex;align-items:center;gap:9px;padding:6px 14px 6px 6px;border:1px solid var(--line);border-radius:999px;background:var(--panel);flex:none}
+  .tk-av{width:34px;height:34px;border-radius:50%;flex:none;object-fit:cover;border:1px solid var(--line);background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:12px}
+  .tk-nm{font-size:13px;font-weight:600;line-height:1.15;white-space:nowrap}
+  .tk-sub{font-size:10px;color:var(--ink-faint);white-space:nowrap}
   .lbpts{font-family:"Space Mono",monospace;font-size:14px;font-weight:700}
   .empty{text-align:center;padding:22px 14px;color:var(--ink-faint);font-size:13px;line-height:1.5}
   .empty .ico{font-size:24px;margin-bottom:8px;opacity:.55}
@@ -97,9 +107,9 @@
   <div class="nav">
     <div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div>
     <div class="nav-links">
-      <a onclick="document.getElementById('secBoard').scrollIntoView({behavior:'smooth'})">Leaderboard</a>
-      <a onclick="document.getElementById('secWinners').scrollIntoView({behavior:'smooth'})">Winners</a>
-      <a id="navSubmit" onclick="document.getElementById('secSubmit').scrollIntoView({behavior:'smooth'})">Submit</a>
+      <a id="navBoard" onclick="document.getElementById('secBoard')?.scrollIntoView({behavior:'smooth'})">Leaderboard</a>
+      <a id="navWinners" onclick="document.getElementById('secWinners')?.scrollIntoView({behavior:'smooth'})">Winners</a>
+      <a id="navSubmit" onclick="document.getElementById('secSubmit')?.scrollIntoView({behavior:'smooth'})">Submit</a>
     </div>
   </div>
 
@@ -138,7 +148,7 @@ function lbCard(rows){
   }).join('')+'</div>';
 }
 function howRow(){
-  return `<div class="howrow">
+  return `<div class="howrow" id="secHow">
     <div class="how"><div class="hn">01</div><div class="ht">Rate the song</div></div>
     <div class="how"><div class="hn">02</div><div class="ht">Predict the room</div></div>
     <div class="how"><div class="hn">03</div><div class="ht">Climb &amp; qualify</div></div>
@@ -155,14 +165,27 @@ function nextCard(next){
     </div></div>`;
 }
 function boardSection(series,label){
-  const title=label||(series?('Series leaderboard · '+esc(series.title)):'Series leaderboard');
-  return `<div class="sec" id="secBoard"><p class="sec-h">${title}</p>${lbCard(series&&series.leaderboard)}</div>`;
+  // Hidden entirely until there are standings — no empty placeholder on the front door.
+  if(!series || !series.leaderboard || !series.leaderboard.length) return '';
+  const title=label||('Series leaderboard · '+esc(series.title));
+  return `<div class="sec" id="secBoard"><p class="sec-h">${title}</p>${lbCard(series.leaderboard)}</div>`;
 }
 function winnersSection(winners){
-  const body=(winners&&winners.length)
-    ? '<div class="card">'+winners.map(w=>`<div class="lbrow"><span class="lbrank t">🏆</span><div class="lbnm">${esc(w.name)}<small>${esc(w.series||'')}</small></div><span class="lbpts">${fmtPts(w.points)}</span></div>`).join('')+'</div>'
-    : `<div class="card"><div class="empty"><div class="ico">🏆</div>The first A&R Wars champion is crowned as the series close.<br>Winners appear here.</div></div>`;
+  // Hidden until a champion exists — no "winners appear here" placeholder.
+  if(!winners || !winners.length) return '';
+  const body='<div class="card">'+winners.map(w=>`<div class="lbrow"><span class="lbrank t">🏆</span><div class="lbnm">${esc(w.name)}<small>${esc(w.series||'')}</small></div><span class="lbpts">${fmtPts(w.points)}</span></div>`).join('')+'</div>';
   return `<div class="sec" id="secWinners"><p class="sec-h">Past winners</p>${body}</div>`;
+}
+function tickerSection(ars){
+  if(!ars || !ars.length) return '';
+  const item=a=>{
+    const av=a.photoUrl?`<img class="tk-av" src="${esc(a.photoUrl)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'tk-av',textContent:'${esc(initials(a.name))}'}))">`:`<span class="tk-av">${esc(initials(a.name))}</span>`;
+    const sub=[a.category,a.location].filter(Boolean).join(' · ');
+    return `<div class="tk-item">${av}<div><div class="tk-nm">${esc(a.name)}</div>${sub?`<div class="tk-sub">${esc(sub)}</div>`:''}</div></div>`;
+  };
+  const items=ars.map(item).join('');
+  // Items duplicated so the marquee loops seamlessly (track scrolls exactly -50%).
+  return `<div class="sec"><p class="sec-h">Recent A&Rs</p><div class="ticker"><div class="ticker-track">${items}${items}</div></div></div>`;
 }
 function submitSection(){
   return `<div class="submit" id="secSubmit">
@@ -195,6 +218,7 @@ function renderLive(d){
       <p style="margin-bottom:14px;max-width:380px">Watching on another screen? Jump in here and vote — rate the current song and read the room.</p>
       <a class="cta hot" href="${voteHref}">Get in to vote</a>
     </div>
+    ${tickerSection(d.recentARs)}
     ${boardSection(d.series,'Live standings · updating')}
     ${winnersSection(d.winners)}
     ${submitSection()}`;
@@ -203,7 +227,7 @@ function renderBetween(d){
   const primaryHref=d.next?('/?s='+encodeURIComponent(d.next.id)):null;
   const heroCta=primaryHref
     ? `<a class="cta" href="${primaryHref}">Register to play</a>`
-    : `<a class="cta" onclick="document.getElementById('secBoard').scrollIntoView({behavior:'smooth'})">See the leaderboard</a>`;
+    : `<a class="cta" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
   $('#content').innerHTML=`
     <div class="hero">
       <div class="prize">💰 $500 monthly cash prize</div>
@@ -212,6 +236,7 @@ function renderBetween(d){
       ${heroCta}
     </div>
     ${howRow()}
+    ${tickerSection(d.recentARs)}
     ${nextCard(d.next)}
     ${boardSection(d.series)}
     ${winnersSection(d.winners)}
@@ -223,6 +248,10 @@ async function load(){
     const r=await fetch('/api/home');
     const d=await r.json();
     if(d.live)renderLive(d); else renderBetween(d);
+    // Nav links only show when their section rendered (sections hide when empty).
+    const navToggle=(id,present)=>{const el=$('#'+id);if(el)el.style.display=present?'':'none';};
+    navToggle('navBoard', !!document.getElementById('secBoard'));
+    navToggle('navWinners', !!document.getElementById('secWinners'));
   }catch(e){
     $('#content').innerHTML='<div class="empty" style="padding:60px 0"><div class="ico">⚠️</div>Couldn\'t load right now. Refresh to try again.</div>';
   }
