@@ -157,6 +157,20 @@
   @keyframes pop{0%{transform:scale(.3);opacity:0}60%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}
   @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(3px)}}
   @media (prefers-reduced-motion: reduce){.reaction-emoji,.rx-wayoff{animation:none!important}}
+  /* live stream embed (tap-to-start, collapsible, sticky) */
+  .stream-embed{position:sticky;top:8px;z-index:20;background:#000;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:16px}
+  .stream-bar{display:flex;align-items:center;gap:8px;padding:9px 13px;cursor:pointer;background:var(--panel);border-bottom:1px solid var(--line)}
+  .stream-bar .live-dot{width:8px;height:8px;border-radius:50%;background:var(--hot);box-shadow:0 0 8px 1px rgba(255,93,108,.6);flex:none}
+  .stream-bar .st-title{flex:1;font-size:13px;font-weight:600;color:var(--ink)}
+  .stream-bar .st-tog{color:var(--ink-dim);font-size:14px}
+  .stream-player{position:relative;aspect-ratio:16/9;background:#000}
+  .stream-player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+  .stream-embed.collapsed .stream-player{display:none}
+  .stream-embed.collapsed{border-radius:14px}
+  .stream-poster{position:absolute;inset:0;width:100%;height:100%;border:0;padding:0;cursor:pointer;background:#000;display:flex;align-items:center;justify-content:center}
+  .stream-poster img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.62}
+  .stream-play{position:relative;width:56px;height:56px;border-radius:50%;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px;padding-left:3px}
+  .stream-cap{position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:11px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85)}
 </style>
 </head>
 <body>
@@ -173,6 +187,13 @@
     </div>
     <button id="feedbackBtn" title="Send feedback" aria-label="Send feedback" style="margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;height:38px;padding:0 12px;font-size:13px;cursor:pointer;flex:none;display:flex;align-items:center;gap:6px">💬 Feedback</button>
     <button id="muteBtn" title="Sound on/off" aria-label="Toggle sound" style="background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;width:38px;height:38px;font-size:18px;cursor:pointer;flex:none">🔊</button>
+  </div>
+
+  <!-- LIVE STREAM EMBED — tap-to-start (never autoplay), collapsible. Only appears
+       for a YouTube watch link; other links keep the lobby "Watch the stream" button. -->
+  <div id="streamEmbed" class="stream-embed hide">
+    <div class="stream-bar" id="streamToggle"><span class="live-dot"></span><span class="st-title">Live stream</span><span class="st-tog" id="streamChevron">▾</span></div>
+    <div class="stream-player" id="streamPlayer"></div>
   </div>
 
   <!-- JOIN: email -->
@@ -960,6 +981,35 @@ function renderBanner(slotId, banner){
   }
 }
 
+// --- live stream embed (tap-to-start; never autoplay; collapsible) ---
+function ytId(u){
+  if(!u)return null;
+  const m=String(u).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|live\/|embed\/|shorts\/)|[?&]v=)([A-Za-z0-9_-]{11})/);
+  return m?m[1]:null;
+}
+let streamVid=null, streamCollapsed=false;
+function updateStreamEmbed(st){
+  const box=$('#streamEmbed'); if(!box)return;
+  const vid=ytId(st.watch_url);
+  const showable=vid && st.session && st.session.status!=='completed' && st.session.status!=='archived';
+  if(!showable){ box.classList.add('hide'); streamVid=null; $('#streamPlayer').innerHTML=''; return; }
+  box.classList.remove('hide');
+  if(vid!==streamVid){
+    // New (or first) video — render the tap-to-start poster. Guarded so the 2.5s poll
+    // never rebuilds (and never interrupts) a stream the viewer already started.
+    streamVid=vid;
+    $('#streamPlayer').innerHTML=`<button class="stream-poster" id="streamPoster" aria-label="Play the live stream"><img src="https://i.ytimg.com/vi/${vid}/hqdefault.jpg" alt=""><span class="stream-play">▶</span><span class="stream-cap">Tap to watch the stream</span></button>`;
+    $('#streamPoster').onclick=()=>{
+      $('#streamPlayer').innerHTML=`<iframe src="https://www.youtube.com/embed/${vid}?autoplay=1&playsinline=1&rel=0" title="Live stream" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    };
+  }
+}
+$('#streamToggle').onclick=()=>{
+  streamCollapsed=!streamCollapsed;
+  $('#streamEmbed').classList.toggle('collapsed',streamCollapsed);
+  $('#streamChevron').textContent=streamCollapsed?'▸':'▾';
+};
+
 function render(st){
   pollType = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary')) ? 'binary' : 'rating';
   $('#sessName').textContent=st.session.name;
@@ -970,6 +1020,9 @@ function render(st){
   // Watch-stream link (lobby button) — set whenever present.
   if(st.watch_url){$('#watchBtn').href=st.watch_url;$('#watchBtn').classList.remove('hide');}
   else $('#watchBtn').classList.add('hide');
+
+  // Live stream embed at the top (YouTube only; tap-to-start, never autoplay).
+  updateStreamEmbed(st);
 
   // Referral: remember my code (for the invite link) + my credited count.
   if(st.refCode)myRefCode=st.refCode;
