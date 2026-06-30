@@ -10,6 +10,7 @@
     --bg:#0d0b16;--panel:#171328;--panel-2:#1d1733;--line:#2e2750;
     --ink:#f3f0fb;--ink-dim:#a9a2c9;--ink-faint:#6f688f;
     --signal:#4bb749;--hot:#ff5d6c;--cool:#7c6ff0;--good:#4bb749;--accent:#6d5fe0;
+    --signal-deep:#379235;--amber:#f5a524;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
@@ -57,6 +58,48 @@
   .kpi div span{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.08em}
   .err{color:var(--hot);font-size:13px;min-height:16px}
   a{color:var(--cool)}
+  /* ---- series admin ---- */
+  .pill.upcoming{border-color:var(--cool);color:var(--cool)}
+  .pill.active{border-color:var(--signal);color:var(--signal)}
+  .ser{display:flex;align-items:center;gap:11px;padding:11px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c;cursor:pointer}
+  .ser+.ser{margin-top:8px}
+  .ser.sel{border-color:var(--signal-deep);background:rgba(75,183,73,.06)}
+  .ser-meta{flex:1;min-width:0}
+  .ser-name{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .ser-sub{font-size:11px;color:var(--ink-faint);margin-top:2px}
+  .tagsel{width:auto;max-width:160px;font-size:12px;padding:7px 9px;font-size:13px}
+  .lbhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .lbcut{font-size:11px;color:var(--amber);font-weight:600}
+  .lrow{display:flex;align-items:center;gap:11px;padding:8px 6px}
+  .lrow+.lrow{border-top:1px solid var(--line)}
+  .lrow.qualifies{background:rgba(245,165,36,.05)}
+  .lrank{font-family:"Space Mono",monospace;font-size:14px;font-weight:700;width:22px;text-align:center;color:var(--ink-dim)}
+  .lrank.q{color:var(--amber)}
+  .lav{width:32px;height:32px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:12px;border:1px solid var(--line)}
+  .lmeta{flex:1;min-width:0}
+  .lname{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lsub{font-size:10px;color:var(--ink-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lpts{font-family:"Space Mono",monospace;font-size:14px;font-weight:700}
+  .cutline{display:flex;align-items:center;gap:8px;margin:4px 0;color:var(--amber);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .cutline::before,.cutline::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--amber),transparent);opacity:.4}
+  .note{font-size:11.5px;color:var(--ink-dim);line-height:1.55;margin:12px 2px 0}
+  .note b{color:var(--ink)}
+  .hint{font-size:11px;color:var(--ink-faint);margin:7px 2px 0;line-height:1.5}
+  /* ---- session cards ---- */
+  .sc{border:1px solid var(--line);border-radius:13px;background:#0f0c1c;padding:14px;margin-bottom:12px}
+  .sc.live{border-color:rgba(255,93,108,.4)}
+  .sc-top{display:flex;align-items:flex-start;gap:10px}
+  .sc-name{font-size:15px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .sc-attrs{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .attr{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-dim);background:#140f24;border:1px solid var(--line);border-radius:8px;padding:4px 8px}
+  .attr.series{color:var(--signal);border-color:var(--signal-deep);background:rgba(75,183,73,.07)}
+  .attr.series.none{color:var(--ink-faint);border-color:var(--line);background:#140f24}
+  .sc-actions{display:flex;gap:7px;margin-top:13px;padding-top:12px;border-top:1px solid var(--line);align-items:center}
+  .sc-actions .spacer{flex:1}
+  .grouplbl{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);margin:14px 0 8px}
+  .pill.completed{border-color:var(--line);color:var(--ink-faint)}
+  .pill.archived{border-color:var(--line);color:var(--ink-faint)}
+  .btn.danger{background:transparent;border:1px solid var(--hot);color:var(--hot);font-weight:500}
 </style>
 </head>
 <body>
@@ -87,7 +130,10 @@
   <div class="card stack" style="grid-column:1/-1;max-width:640px;margin:40px auto 0">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h2 style="margin:0">Your sessions</h2>
-      <button class="btn sm" id="btnNewFromPicker">+ New session</button>
+      <div class="row" style="gap:8px;flex:0 0 auto">
+        <button class="btn ghost sm hide" id="btnManageSeries">Series</button>
+        <button class="btn sm" id="btnNewFromPicker">+ New session</button>
+      </div>
     </div>
     <div id="pickerList"><div class="empty">Loading…</div></div>
     <button class="btn ghost sm" id="btnLogout" style="margin-top:6px">Log out</button>
@@ -97,7 +143,7 @@
 <!-- CREATE -->
 <div id="create" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:460px;margin:40px auto 0">
-    <h2>Start a session</h2>
+    <h2 id="createTitle">Start a session</h2>
     <div><label>Session name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Session"></div>
     <div><label>Default voting window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
     <div>
@@ -106,9 +152,16 @@
         <option value="rating">Rating (0–9) — rate a song, predict the room average</option>
         <option value="binary">Head-to-head (Verzuz) — Song A vs B, predict the split</option>
       </select>
-      <div class="muted" style="font-size:12px;margin-top:6px">Set once at creation — every round in the session uses this type.</div>
+      <div class="muted" id="typeHint" style="font-size:12px;margin-top:6px">Set once at creation — every round in the session uses this type.</div>
+      <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 Locked — this session has votes, so the game type can't change.</div>
     </div>
-    <div>
+    <div id="seriesField">
+      <label>Series <span class="muted">(counts toward this monthly leaderboard)</span></label>
+      <select id="newSeries" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+        <option value="">— Unassigned —</option>
+      </select>
+    </div>
+    <div id="whenBlock">
       <label>When</label>
       <select id="newWhen" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
         <option value="live">Start now (live)</option>
@@ -128,6 +181,16 @@
           <button type="button" class="btn ghost sm" id="btnNewGeocode" style="flex:none">Find</button>
         </div>
         <div class="muted" id="newGeoResolved" style="font-size:12px;margin-top:4px"></div>
+        <div class="row" style="gap:6px;margin-top:10px">
+          <div><label>Radius (yards)</label><input id="newGeoRadius" type="number" min="25" max="5000" value="200"></div>
+          <div><label>Check-in mode</label>
+            <select id="newGeoMode" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+              <option value="off">Off — no location required</option>
+              <option value="optional">Optional — in-room or remote (dual pool)</option>
+              <option value="required">Required — must be at the venue</option>
+            </select>
+          </div>
+        </div>
       </div>
     </details>
     <button class="btn" id="btnCreate">Create session</button>
@@ -269,7 +332,7 @@
     <div class="card">
       <h2>Room</h2>
       <div class="kpi">
-        <div><b id="kJoined">0</b><span>Joined</span></div>
+        <div><b id="kJoined">0</b><span>A&amp;Rs</span></div>
         <div><b id="kRound" class="mono">—</b><span>Round</span></div>
         <div><b id="kVotes">0</b><span>Votes in</span></div>
       </div>
@@ -319,6 +382,61 @@
   </div>
 </div>
 
+<!-- SERIES -->
+<div id="series" class="grid hide">
+  <!-- LEFT: manage + create/edit -->
+  <div class="stack">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2 style="margin:0">Series</h2>
+        <button class="btn ghost sm" id="btnSeriesBack">← My sessions</button>
+      </div>
+      <div id="seriesList"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2 id="seriesFormTitle">New series</h2>
+      <div class="stack">
+        <div><label>Title</label><input id="sfTitle" placeholder="e.g. June 2026"></div>
+        <div class="row">
+          <div><label>Status</label>
+            <select id="sfStatus" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:15px;padding:11px;border-radius:10px">
+              <option value="upcoming">Upcoming</option>
+              <option value="active">Active</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <div><label>Qualify count <span class="muted">top-N → Wars</span></label><input id="sfQualify" type="number" min="1" max="100" value="8"></div>
+        </div>
+        <div class="row">
+          <div><label>Target sessions <span class="muted">display only</span></label><input id="sfTarget" type="number" min="0" placeholder="optional"></div>
+          <div><label>Description <span class="muted">optional</span></label><input id="sfDesc" placeholder="optional"></div>
+        </div>
+        <button class="btn" id="btnSeriesSave">Create series</button>
+        <button class="btn ghost sm hide" id="btnSeriesNew">+ New series instead</button>
+        <div class="err" id="seriesErr"></div>
+        <p class="hint"><b>Qualify count is per-series</b> — a small month can cut at 4, a big one at 8. It drives the leaderboard cut line. Dates &amp; target are labels only; membership is the tag (set it on each session in your session list).</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: leaderboard + cut -->
+  <div class="stack">
+    <div class="card">
+      <div class="lbhead">
+        <h2 style="margin:0" id="lbTitle">Live standings</h2>
+        <span class="lbcut" id="lbCut"></span>
+      </div>
+      <div id="seriesBoard"><div class="empty">Select a series to see its standings.</div></div>
+      <div class="row hide" id="seriesActions" style="margin-top:14px">
+        <button class="btn good" id="btnCloseSeries">Close series</button>
+        <button class="btn ghost" id="btnExportSeries" style="flex:0 0 auto">Export</button>
+      </div>
+      <p class="note"><b>No "locking" needed.</b> The board only moves when a tagged session gets new votes — once the month's sessions are done, the top N are already final. <b>Close series</b> is just a status flip; the qualifiers are read live off the standings.</p>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT SONG MODAL -->
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
   <div class="card" style="max-width:440px;width:100%">
@@ -343,6 +461,24 @@
   </div>
 </div>
 
+<!-- DELETE SESSION MODAL (archive / cascade) -->
+<div id="deleteModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
+  <div class="card" style="max-width:460px;width:100%">
+    <h2>Delete session</h2>
+    <p id="delBody" class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)"></p>
+    <div class="row" style="margin-top:6px">
+      <button class="btn good" id="delArchive">Archive (recommended)</button>
+      <button class="btn ghost" id="delCancel" style="flex:0 0 auto">Cancel</button>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+      <label>Permanently delete everything? Type <b id="delName" style="color:var(--ink)"></b> to confirm</label>
+      <input id="delConfirm" placeholder="Type the exact session name" autocomplete="off">
+      <button class="btn danger" id="delPurge" style="width:100%;margin-top:10px" disabled>Cascade delete — permanent</button>
+    </div>
+    <div class="err" id="delErr"></div>
+  </div>
+</div>
+
 <script>
 const $=s=>document.querySelector(s);
 let SID=localStorage.getItem('rt_admin_sid'), ATOK=localStorage.getItem('rt_admin_token');
@@ -361,7 +497,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','picker','create','console'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','picker','create','console','series'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -402,9 +538,52 @@ $('#btnLogout').onclick=async()=>{
 // Session picker
 const STATUS_LABEL={upcoming:'Upcoming',live:'Live',completed:'Completed',archived:'Archived'};
 const STATUS_ORDER=['live','upcoming','completed','archived'];
+let SERIES=[]; // admin-only cache of series for the inline tag dropdowns
+const isAdmin=()=>ME&&ME.role==='admin';
+async function loadSeriesCache(){
+  if(!isAdmin()){SERIES=[];return;}
+  try{const d=await api('/api/admin/series/list',null,'GET');SERIES=d.series||[];}
+  catch(e){SERIES=[];}
+}
+// --- session card helpers ---
+const typeLabel=s=>s.poll_type==='binary'?'Head-to-head (VS)':'Rating 0–9';
+const locLabel=s=>({required:'Venue-locked',optional:'Optional check-in'})[s.geo_mode]||'Open';
+const seriesTitleFor=sid=>{const x=SERIES.find(z=>z.id===sid);return x?x.title:null;};
+function startLabel(s){
+  const t=s.scheduled_at||s.created_at; if(!t)return null;
+  const d=new Date(Number(t));
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+(s.scheduled_at?(', '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})):'');
+}
+function attr(txt,cls){return `<span class="attr${cls?' '+cls:''}">${txt}</span>`;}
+function sessionCardHtml(s){
+  const st=seriesTitleFor(s.series_id);
+  const attrs=[
+    startLabel(s)?attr(esc(startLabel(s))):'',
+    attr(esc(typeLabel(s))),
+    attr(esc(locLabel(s))),
+    s.ar_count?attr(s.ar_count+' A&R'+(s.ar_count==1?'':'s')):'',
+    st?attr('◆ '+esc(st),'series'):attr('◇ Unassigned','series none')
+  ].filter(Boolean).join('');
+  return `<div class="sc${s.status==='live'?' live':''}">
+    <div class="sc-top">
+      <div class="sc-name">${esc(s.name)}</div>
+      <span class="pill ${s.status}">${STATUS_LABEL[s.status]||s.status}</span>
+    </div>
+    <div class="sc-attrs">${attrs}</div>
+    <div class="sc-actions">
+      <button class="btn sm" onclick="loadSession('${s.id}')">Open</button>
+      <button class="btn ghost sm" onclick="editSession('${s.id}')">Edit</button>
+      <button class="btn ghost sm" onclick="duplicateSession('${s.id}')">Duplicate</button>
+      <span class="spacer"></span>
+      <button class="btn danger sm" onclick="deleteSession('${s.id}','${esc(s.name).replace(/'/g,"\\'")}')">Delete</button>
+    </div>
+  </div>`;
+}
 async function openPicker(){
   showScreen('picker');
   $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
+  $('#btnManageSeries').classList.toggle('hide',!isAdmin());
+  await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
     const box=$('#pickerList');
@@ -414,16 +593,8 @@ async function openPicker(){
     let html='';
     for(const st of STATUS_ORDER){
       if(!groups[st]||!groups[st].length)continue;
-      html+=`<div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin:14px 0 6px">${STATUS_LABEL[st]||st}</div>`;
-      for(const s of groups[st]){
-        html+=`<div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</div>
-            <div class="muted" style="font-size:11px">${s.id}${s.scheduled_at?(' · starts '+new Date(Number(s.scheduled_at)).toLocaleString()):''}</div>
-          </div>
-          <button class="btn sm" onclick="loadSession('${s.id}')">Open</button>
-        </div>`;
-      }
+      html+=`<div class="grouplbl">${STATUS_LABEL[st]||st}</div>`;
+      for(const s of groups[st])html+=sessionCardHtml(s);
     }
     box.innerHTML=html;
   }catch(e){$('#pickerList').innerHTML='<div class="err">'+e.message+'</div>';}
@@ -432,37 +603,265 @@ window.loadSession=(sid)=>{
   SID=sid;ATOK=null;localStorage.setItem('rt_admin_sid',sid);localStorage.removeItem('rt_admin_token');
   boot();
 };
-$('#btnNewFromPicker').onclick=()=>{showScreen('create');};
+// ---------- CREATE / EDIT / DUPLICATE SESSION (shared form) ----------
+let sessForm={mode:'create',id:null,_series:''};
+
+function populateSeriesSelect(selectedId){
+  let html='<option value="">— Unassigned —</option>';
+  for(const ser of SERIES)html+=`<option value="${ser.id}"${ser.id===selectedId?' selected':''}>${esc(ser.title)}</option>`;
+  html+='<option value="__new__" style="color:var(--signal)">+ New series…</option>';
+  $('#newSeries').innerHTML=html;
+}
+// "+ New series…" inline-create from the form.
+$('#newSeries').onchange=async function(){
+  if(this.value!=='__new__')return;
+  const title=(prompt('Name the new series:')||'').trim();
+  if(!title){populateSeriesSelect(sessForm._series||'');return;}
+  try{const d=await api('/api/admin/series/create',{title});await loadSeriesCache();sessForm._series=d.seriesId;populateSeriesSelect(d.seriesId);}
+  catch(e){alert(e.message);populateSeriesSelect(sessForm._series||'');}
+};
+function blankSessionForm(){
+  $('#newName').value='';$('#newMins').value='5';$('#newPollType').value='rating';
+  $('#newWhen').value='live';$('#newSched').value='';$('#newSchedRow').classList.add('hide');
+  $('#newWatch').value='';$('#newLobby').value='';if($('#newPrompt'))$('#newPrompt').value='';
+  $('#newGeoAddr').value='';$('#newGeoResolved').textContent='';$('#newGeoRadius').value='200';$('#newGeoMode').value='off';
+  newGeoLat=newGeoLng=null;
+  $('#newPollType').disabled=false;$('#typeLockMsg').classList.add('hide');$('#typeHint').classList.remove('hide');
+  $('#createErr').textContent='';
+}
+function openCreateForm(){
+  sessForm={mode:'create',id:null,_series:''};
+  blankSessionForm();
+  $('#seriesField').classList.toggle('hide',!isAdmin());
+  $('#whenBlock').classList.remove('hide');
+  populateSeriesSelect('');
+  $('#createTitle').textContent='Start a session';
+  $('#btnCreate').textContent='Create session';
+  $('#btnCreateBack').classList.remove('hide');
+  showScreen('create');
+}
+$('#btnNewFromPicker').onclick=openCreateForm;
 $('#btnCreateBack').onclick=()=>openPicker();
+
+// Fill the shared form from a session-detail object. mode: 'edit' (locks type when the
+// session has data, hides When) or 'duplicate' (fresh create, name + " (copy)").
+function fillSessionForm(s,deps,mode){
+  $('#newName').value=mode==='duplicate'?(s.name+' (copy)'):s.name;
+  $('#newMins').value=s.defaultMinutes||5;
+  $('#newPollType').value=s.pollType==='binary'?'binary':'rating';
+  $('#newWatch').value=s.watchUrl||'';$('#newLobby').value=s.lobbyMessage||'';
+  if($('#newPrompt'))$('#newPrompt').value='';
+  $('#newGeoRadius').value=s.geoRadius||200;$('#newGeoMode').value=s.geoMode||'off';
+  if(s.geoLat!=null&&s.geoLng!=null){newGeoLat=Number(s.geoLat);newGeoLng=Number(s.geoLng);$('#newGeoResolved').textContent='📍 '+(s.geoLabel||(s.geoLat+', '+s.geoLng));$('#newGeoAddr').value=s.geoLabel||'';}
+  else{newGeoLat=newGeoLng=null;$('#newGeoResolved').textContent='';$('#newGeoAddr').value='';}
+  $('#seriesField').classList.toggle('hide',!isAdmin());
+  sessForm._series=s.seriesId||'';populateSeriesSelect(s.seriesId||'');
+  if(mode==='edit'){
+    $('#whenBlock').classList.add('hide');$('#newSchedRow').classList.add('hide');
+    const lock=deps&&deps.hasDependents;
+    $('#newPollType').disabled=!!lock;
+    $('#typeLockMsg').classList.toggle('hide',!lock);
+    $('#typeHint').classList.toggle('hide',!!lock);
+  }else{ // duplicate -> fresh upcoming session
+    $('#whenBlock').classList.remove('hide');
+    $('#newWhen').value='upcoming';$('#newSchedRow').classList.remove('hide');$('#newSched').value='';
+    $('#newPollType').disabled=false;$('#typeLockMsg').classList.add('hide');$('#typeHint').classList.remove('hide');
+  }
+  $('#createErr').textContent='';
+}
+window.editSession=async(sid)=>{
+  try{
+    await loadSeriesCache();
+    const d=await api('/api/admin/session/get?id='+encodeURIComponent(sid),null,'GET');
+    sessForm={mode:'edit',id:sid,_series:d.session.seriesId||''};
+    fillSessionForm(d.session,d.dependents,'edit');
+    $('#createTitle').textContent='Edit session';$('#btnCreate').textContent='Save changes';
+    $('#btnCreateBack').classList.remove('hide');
+    showScreen('create');
+  }catch(e){alert(e.message);}
+};
+window.duplicateSession=async(sid)=>{
+  try{
+    await loadSeriesCache();
+    const d=await api('/api/admin/session/get?id='+encodeURIComponent(sid),null,'GET');
+    sessForm={mode:'create',id:null,_series:d.session.seriesId||''};
+    fillSessionForm(d.session,null,'duplicate');
+    $('#createTitle').textContent='New session (from a copy)';$('#btnCreate').textContent='Create session';
+    $('#btnCreateBack').classList.remove('hide');
+    showScreen('create');
+  }catch(e){alert(e.message);}
+};
+
+// ---------- SERIES ADMIN ----------
+let editingSeriesId=null;   // null = create mode; id = editing that series
+let selectedSeriesId=null;  // which series' leaderboard is shown on the right
+const SER_PILL={upcoming:'upcoming',active:'active',closed:'closed'};
+const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
+
+$('#btnManageSeries').onclick=()=>openSeries();
+$('#btnSeriesBack').onclick=()=>openPicker();
+
+async function openSeries(){
+  showScreen('series');
+  $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
+  seriesFormReset();
+  await renderSeriesList();
+}
+async function renderSeriesList(){
+  const box=$('#seriesList');
+  try{
+    const d=await api('/api/admin/series/list',null,'GET');
+    SERIES=d.series||[];
+    if(!SERIES.length){box.innerHTML='<div class="empty">No series yet. Create your first below.</div>';return;}
+    let html='';
+    for(const s of SERIES){
+      const cnt=Number(s.session_count)||0;
+      html+=`<div class="ser${s.id===selectedSeriesId?' sel':''}" onclick="selectSeries('${s.id}')">
+        <div class="ser-meta">
+          <div class="ser-name">${esc(s.title)} <span class="pill ${SER_PILL[s.status]||'upcoming'}">${esc(s.status)}</span></div>
+          <div class="ser-sub">${cnt} session${cnt==1?'':'s'} · top <b>${s.qualify_count||8}</b> → A&amp;R Wars</div>
+        </div>
+        <button class="btn ghost sm" onclick="event.stopPropagation();editSeries('${s.id}')">Edit</button>
+      </div>`;
+    }
+    box.innerHTML=html;
+  }catch(e){box.innerHTML='<div class="err">'+e.message+'</div>';}
+}
+
+function seriesFormReset(){
+  editingSeriesId=null;
+  $('#seriesFormTitle').textContent='New series';
+  $('#sfTitle').value='';$('#sfStatus').value='upcoming';$('#sfQualify').value='8';
+  $('#sfTarget').value='';$('#sfDesc').value='';$('#seriesErr').textContent='';
+  $('#btnSeriesSave').textContent='Create series';
+  $('#btnSeriesNew').classList.add('hide');
+}
+window.editSeries=(sid)=>{
+  const s=SERIES.find(x=>x.id===sid);if(!s)return;
+  editingSeriesId=sid;
+  $('#seriesFormTitle').textContent='Edit series';
+  $('#sfTitle').value=s.title||'';$('#sfStatus').value=s.status||'upcoming';
+  $('#sfQualify').value=s.qualify_count||8;
+  $('#sfTarget').value=s.target_sessions!=null?s.target_sessions:'';
+  $('#sfDesc').value=s.description||'';$('#seriesErr').textContent='';
+  $('#btnSeriesSave').textContent='Save changes';
+  $('#btnSeriesNew').classList.remove('hide');
+  $('#sfTitle').scrollIntoView({behavior:'smooth',block:'center'});
+};
+$('#btnSeriesNew').onclick=()=>seriesFormReset();
+
+$('#btnSeriesSave').onclick=async()=>{
+  $('#seriesErr').textContent='';
+  const title=$('#sfTitle').value.trim();
+  if(!title)return $('#seriesErr').textContent='Give the series a title';
+  const body={
+    title,
+    status:$('#sfStatus').value,
+    qualifyCount:Math.min(100,Math.max(1,parseInt($('#sfQualify').value,10)||8)),
+    targetSessions:$('#sfTarget').value.trim()===''?null:Number($('#sfTarget').value),
+    description:$('#sfDesc').value.trim()
+  };
+  try{
+    if(editingSeriesId){
+      await api('/api/admin/series/edit',{seriesId:editingSeriesId,...body});
+    }else{
+      const d=await api('/api/admin/series/create',body);
+      selectedSeriesId=d.seriesId;
+    }
+    seriesFormReset();
+    await renderSeriesList();
+    if(selectedSeriesId)await loadSeriesBoard(selectedSeriesId);
+  }catch(e){$('#seriesErr').textContent=e.message;}
+};
+
+window.selectSeries=(sid)=>{selectedSeriesId=sid;renderSeriesList();loadSeriesBoard(sid);};
+
+let lastBoard=null; // cached for export
+async function loadSeriesBoard(sid){
+  const s=SERIES.find(x=>x.id===sid);
+  $('#lbTitle').textContent=(s?s.title:'Series')+' · live standings';
+  $('#seriesBoard').innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const d=await api('/api/admin/series/leaderboard?seriesId='+encodeURIComponent(sid),null,'GET');
+    lastBoard={series:s,rows:d.leaderboard,qualifyCount:d.qualifyCount};
+    $('#lbCut').textContent='Top '+d.qualifyCount+' qualify';
+    $('#seriesActions').classList.remove('hide');
+    $('#btnCloseSeries').classList.toggle('hide',s&&s.status==='closed');
+    if(!d.leaderboard.length){$('#seriesBoard').innerHTML='<div class="empty">No votes in tagged sessions yet. Tag sessions from your session list to populate the board.</div>';return;}
+    let html='',cutDrawn=false;
+    for(const r of d.leaderboard){
+      html+=`<div class="lrow${r.qualifies?' qualifies':''}">
+        <span class="lrank${r.qualifies?' q':''}">${r.rank}</span>
+        <div class="lav">${esc(initials(r.name))}</div>
+        <div class="lmeta"><div class="lname">${esc(r.name||'—')}</div><div class="lsub">${esc(r.email||'')}</div></div>
+        <span class="lpts">${(Number(r.points)||0).toLocaleString()}</span>
+      </div>`;
+      if(r.qualifies && r.rank===d.qualifyCount && !cutDrawn){html+=`<div class="cutline">cut at ${d.qualifyCount} — adjustable per series</div>`;cutDrawn=true;}
+    }
+    $('#seriesBoard').innerHTML=html;
+  }catch(e){$('#seriesBoard').innerHTML='<div class="err">'+e.message+'</div>';$('#seriesActions').classList.add('hide');}
+}
+
+$('#btnCloseSeries').onclick=async()=>{
+  if(!selectedSeriesId)return;
+  const s=SERIES.find(x=>x.id===selectedSeriesId);
+  if(!confirm('Close "'+(s?s.title:'this series')+'"? The qualifiers are read live off the current standings. You can reopen by editing the status.'))return;
+  try{
+    await api('/api/admin/series/edit',{seriesId:selectedSeriesId,status:'closed'});
+    await renderSeriesList();
+    await loadSeriesBoard(selectedSeriesId);
+  }catch(e){alert(e.message);}
+};
+$('#btnExportSeries').onclick=()=>{
+  if(!lastBoard||!lastBoard.rows.length)return;
+  const hdr=['rank','name','email','points','qualifies'];
+  const lines=[hdr.join(',')].concat(lastBoard.rows.map(r=>[r.rank,'"'+String(r.name||'').replace(/"/g,'""')+'"','"'+String(r.email||'')+'"',r.points,r.qualifies?'yes':'no'].join(',')));
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=(lastBoard.series?lastBoard.series.title.replace(/[^\w]+/g,'-'):'series')+'-leaderboard.csv';
+  a.click();URL.revokeObjectURL(a.href);
+};
 
 // show schedule row when "upcoming" chosen
 $('#newWhen').onchange=function(){$('#newSchedRow').classList.toggle('hide',this.value!=='upcoming');};
 
-// ---- create ----
+// ---- create / save (shared) ----
 $('#btnCreate').onclick=async()=>{
   $('#createErr').textContent='';
   const name=$('#newName').value.trim();
   if(!name)return $('#createErr').textContent='Give it a name';
   let mins=Math.round(+($('#newMins').value||5));
-  if(!Number.isFinite(mins))mins=5;
-  mins=Math.min(60,Math.max(2,mins));
-  const when=$('#newWhen').value;
-  const body={name,defaultMinutes:mins,pollType:($('#newPollType')?$('#newPollType').value:'rating')};
-  if($('#newWatch')&&$('#newWatch').value.trim())body.watchUrl=$('#newWatch').value.trim();
-  if($('#newLobby')&&$('#newLobby').value.trim())body.lobbyMessage=$('#newLobby').value.trim();
-  if($('#newPrompt')&&$('#newPrompt').value.trim())body.signupPrompt=$('#newPrompt').value.trim();
-  // Venue (optional) — resolved by the Find button into newGeoLat/Lng. Enforcement stays
-  // off; the host turns on check-in mode later from the management page.
-  if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=$('#newGeoResolved').textContent.replace(/^📍 /,'');body.geoRadius=200;}
-  if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=new Date(sv).getTime();}
+  if(!Number.isFinite(mins))mins=5; mins=Math.min(60,Math.max(2,mins));
+  const seriesId=($('#newSeries').value&&$('#newSeries').value!=='__new__')?$('#newSeries').value:'';
+  const geoMode=$('#newGeoMode').value;
+  let geoRadius=Math.round(+($('#newGeoRadius').value||200));
+  if(!Number.isFinite(geoRadius))geoRadius=200; geoRadius=Math.min(5000,Math.max(25,geoRadius));
+  const geoLabel=newGeoLat!=null?($('#newGeoResolved').textContent.replace(/^📍 /,'')||$('#newGeoAddr').value.trim()):'';
   try{
-    const d=await api('/api/session',body);
-    SID=d.sessionId;ATOK=d.adminToken;
-    localStorage.setItem('rt_admin_sid',SID);
-    // With identity login we don't need the per-session token, but keep it for legacy fallback.
-    if(d.adminToken)localStorage.setItem('rt_admin_token',d.adminToken);
-    newGeoLat=newGeoLng=null;
-    boot();
+    if(sessForm.mode==='edit'){
+      // Persist editable settings via the partial-update config endpoint; series via tag.
+      const body={sessionId:sessForm.id,name,defaultMinutes:mins,watchUrl:$('#newWatch').value.trim(),lobbyMessage:$('#newLobby').value.trim(),geoMode,geoRadius};
+      if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=geoLabel;}
+      await api('/api/admin/session/config',body);
+      if(isAdmin())await api('/api/admin/series/tag',{sessionId:sessForm.id,seriesId:seriesId||null});
+      openPicker();
+    }else{
+      const when=$('#newWhen').value;
+      const body={name,defaultMinutes:mins,pollType:$('#newPollType').value};
+      if($('#newWatch').value.trim())body.watchUrl=$('#newWatch').value.trim();
+      if($('#newLobby').value.trim())body.lobbyMessage=$('#newLobby').value.trim();
+      if($('#newPrompt')&&$('#newPrompt').value.trim())body.signupPrompt=$('#newPrompt').value.trim();
+      if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=geoLabel;body.geoRadius=geoRadius;}
+      if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=new Date(sv).getTime();}
+      const d=await api('/api/session',body);
+      // The create endpoint doesn't take series or geo mode — persist them after.
+      if(seriesId&&isAdmin())await api('/api/admin/series/tag',{sessionId:d.sessionId,seriesId});
+      if(geoMode&&geoMode!=='off')await api('/api/admin/session/config',{sessionId:d.sessionId,geoMode});
+      SID=d.sessionId;ATOK=d.adminToken;localStorage.setItem('rt_admin_sid',SID);
+      if(d.adminToken)localStorage.setItem('rt_admin_token',d.adminToken);
+      newGeoLat=newGeoLng=null;
+      boot();
+    }
   }catch(e){$('#createErr').textContent=e.message;}
 };
 // Create-form geocode (pre-creation lookup — no session id needed).
@@ -476,6 +875,44 @@ $('#btnNewGeocode')&&($('#btnNewGeocode').onclick=async()=>{
     $('#newGeoResolved').textContent='📍 '+(d.label||(d.lat+', '+d.lng));
   }catch(e){$('#newGeoResolved').textContent=e.message;}
 });
+
+// ---------- DELETE SESSION (archive / cascade, per audit §G) ----------
+let delState={id:null,name:''};
+window.deleteSession=async(sid,name)=>{
+  try{
+    const d=await api('/api/admin/session/get?id='+encodeURIComponent(sid),null,'GET');
+    const dep=d.dependents;
+    if(!dep.hasDependents){
+      // No participant data -> disposable. Delete permanently, no ceremony.
+      if(!confirm('Delete "'+d.session.name+'"? It has no A&Rs or votes, so it will be removed permanently.'))return;
+      await api('/api/admin/session/purge',{sessionId:sid,confirmName:d.session.name});
+      await openPicker();
+      return;
+    }
+    // Has data -> the two-path dialog with real counts.
+    delState={id:sid,name:d.session.name};
+    const bits=[];
+    if(dep.participants)bits.push('<b style="color:var(--ink)">'+dep.participants+'</b> A&R'+(dep.participants==1?'':'s'));
+    if(dep.votes)bits.push('<b style="color:var(--ink)">'+dep.votes+'</b> vote'+(dep.votes==1?'':'s'));
+    if(dep.ratifiedRounds)bits.push('<b style="color:var(--ink)">'+dep.ratifiedRounds+'</b> ratified round'+(dep.ratifiedRounds==1?'':'s'));
+    $('#delBody').innerHTML=esc(d.session.name)+' has '+bits.join(', ')+'. <b style="color:var(--ink)">Archive</b> keeps everything and just hides it (reversible). <b style="color:var(--ink)">Cascade delete</b> removes the session and all its data permanently — and changes any series leaderboard that counted it.';
+    $('#delName').textContent=d.session.name;
+    $('#delConfirm').value='';$('#delPurge').disabled=true;$('#delErr').textContent='';
+    $('#deleteModal').style.display='flex';
+  }catch(e){alert(e.message);}
+};
+$('#delConfirm').oninput=function(){$('#delPurge').disabled=this.value!==delState.name;};
+$('#delCancel').onclick=()=>{$('#deleteModal').style.display='none';};
+$('#delArchive').onclick=async()=>{
+  $('#delErr').textContent='';
+  try{await api('/api/admin/session/delete',{sessionId:delState.id});$('#deleteModal').style.display='none';await openPicker();}
+  catch(e){$('#delErr').textContent=e.message;}
+};
+$('#delPurge').onclick=async()=>{
+  $('#delErr').textContent='';
+  try{await api('/api/admin/session/purge',{sessionId:delState.id,confirmName:$('#delConfirm').value});$('#deleteModal').style.display='none';await openPicker();}
+  catch(e){$('#delErr').textContent=e.message;}
+};
 
 // ---- add round ----
 $('#btnAddRound').onclick=async()=>{

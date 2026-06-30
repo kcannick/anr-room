@@ -639,9 +639,14 @@ async function handleApi(req, res, url) {
   if (p === '/api/auth/sessions' && method === 'GET') {
     const user = await userFromAuth(req);
     if (!user) return bad(res, 'Not logged in', 401);
+    // Extra columns power the session cards: series_id (series chip), poll_type
+    // (game-type attr), geo_mode (location-rule attr), and ar_count (verified
+    // participants — labelled "A&Rs" in the UI). All cheap at this scale.
+    const cols = `id, name, status, scheduled_at, owner_uid, created_at, series_id, poll_type, geo_mode,
+      (SELECT COUNT(*) FROM participants pp WHERE pp.session_id = sessions.id AND pp.verified = 1) AS ar_count`;
     const rows = user.role === 'admin'
-      ? await db.all('SELECT id, name, status, scheduled_at, owner_uid, created_at FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC', [])
-      : await db.all('SELECT id, name, status, scheduled_at, owner_uid, created_at FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at DESC', [user.uid]);
+      ? await db.all(`SELECT ${cols} FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC`, [])
+      : await db.all(`SELECT ${cols} FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [user.uid]);
     return send(res, 200, { role: user.role, sessions: rows });
   }
 
@@ -1154,6 +1159,56 @@ async function handleApi(req, res, url) {
       [now(), sessionId]
     );
     return send(res, 200, { ok: true, deleted: true });
+  }
+
+  // Full session detail for the admin Create/Edit form (prefill) + the delete
+  // dependents check. "Dependents" = participant-generated data (audit §G): any
+  // votes OR any verified participants OR any ratified rounds. Empty rounds with no
+  // votes do NOT count — a session clicked together but never played is disposable.
+  if (p === '/api/admin/session/get' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const sessionId = url.searchParams.get('id') || url.searchParams.get('sessionId');
+    const s = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+    if (!s) return bad(res, 'Session not found', 404);
+    const votes = await db.get('SELECT COUNT(*) AS n FROM votes WHERE round_id IN (SELECT id FROM rounds WHERE session_id = ?)', [sessionId]);
+    const parts = await db.get('SELECT COUNT(*) AS n FROM participants WHERE session_id = ? AND verified = 1', [sessionId]);
+    const rrounds = await db.get("SELECT COUNT(*) AS n FROM rounds WHERE session_id = ? AND status = 'ratified'", [sessionId]);
+    const v = Number(votes.n) || 0, pc = Number(parts.n) || 0, rr = Number(rrounds.n) || 0;
+    return send(res, 200, {
+      session: {
+        id: s.id, name: s.name, status: s.status, pollType: s.poll_type,
+        defaultMinutes: s.default_minutes, scheduledAt: s.scheduled_at, seriesId: s.series_id || null,
+        watchUrl: s.watch_url || null, lobbyMessage: s.lobby_message || null,
+        geoMode: s.geo_mode || 'off', geoLat: s.geo_lat, geoLng: s.geo_lng,
+        geoRadius: s.geo_radius, geoLabel: s.geo_label || null,
+      },
+      dependents: { votes: v, participants: pc, ratifiedRounds: rr, hasDependents: (v > 0 || pc > 0 || rr > 0) },
+    });
+  }
+
+  // Hard cascade-delete (admin). PERMANENT — removes the session and its entire
+  // dependent tree. The reversible everyday action is soft-delete (/delete); this is
+  // the rare, intentional destroy, gated by exact-name confirmation (audit §G).
+  // Transactional: all-or-nothing, so a mid-cascade failure can't manufacture the
+  // orphan rows the whole model exists to prevent.
+  if (p === '/api/admin/session/purge' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const { sessionId, confirmName } = await readBody(req);
+    const s = await db.get('SELECT id, name FROM sessions WHERE id = ?', [sessionId]);
+    if (!s) return bad(res, 'Session not found', 404);
+    if ((confirmName || '') !== s.name) return bad(res, 'Name does not match — type the exact session name to confirm');
+    // Delete in FK order: votes -> rounds -> participants -> session banners -> otps -> session.
+    await db.tx(async (tx) => {
+      await tx.run('DELETE FROM votes WHERE round_id IN (SELECT id FROM rounds WHERE session_id = ?)', [sessionId]);
+      await tx.run('DELETE FROM rounds WHERE session_id = ?', [sessionId]);
+      await tx.run('DELETE FROM participants WHERE session_id = ?', [sessionId]);
+      await tx.run('DELETE FROM banners WHERE session_id = ?', [sessionId]);
+      await tx.run('DELETE FROM otps WHERE session_id = ?', [sessionId]);
+      await tx.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
+    });
+    return send(res, 200, { ok: true, purged: true });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
