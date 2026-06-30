@@ -76,7 +76,7 @@
   .lbrow+.lbrow{border-top:1px solid var(--line)}
   .lbrank{font-family:"Space Mono",monospace;font-size:14px;font-weight:700;width:20px;color:var(--ink-dim)}
   .lbrank.t{color:var(--signal)}
-  .lbav{width:32px;height:32px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:12px;border:1px solid var(--line)}
+  .lbav{width:32px;height:32px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:12px;border:1px solid var(--line);object-fit:cover}
   .lbnm{flex:1;font-size:14px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lbnm small{display:block;font-size:10px;color:var(--ink-faint);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .lbnm .tag{display:inline-block;font-size:9px;color:var(--cool);background:rgba(124,111,240,.14);border-radius:5px;padding:1px 5px;font-weight:600;margin-right:5px;vertical-align:1px}
@@ -144,7 +144,8 @@ function lbCard(rows){
   if(!rows||!rows.length)return `<div class="card"><div class="empty"><div class="ico">📊</div>No standings yet — they fill in as A&Rs rate songs in tagged sessions.</div></div>`;
   return '<div class="card">'+rows.map(r=>{
     const sub=[r.category?`<span class="tag">${esc(r.category)}</span>`:'', r.location?esc(r.location):''].filter(Boolean).join('');
-    return `<div class="lbrow"><span class="lbrank${r.rank<=3?' t':''}">${r.rank}</span><div class="lbav">${esc(initials(r.name))}</div><div class="lbnm">${esc(r.name)}${sub?`<small>${sub}</small>`:''}</div><span class="lbpts">${fmtPts(r.points)}</span></div>`;
+    const av=r.photoUrl?`<img class="lbav" src="${esc(r.photoUrl)}" alt="">`:`<div class="lbav">${esc(initials(r.name))}</div>`;
+    return `<div class="lbrow"><span class="lbrank${r.rank<=3?' t':''}">${r.rank}</span>${av}<div class="lbnm">${esc(r.name)}${sub?`<small>${sub}</small>`:''}</div><span class="lbpts">${fmtPts(r.points)}</span></div>`;
   }).join('')+'</div>';
 }
 function howRow(){
@@ -185,7 +186,7 @@ function tickerSection(ars){
   };
   const items=ars.map(item).join('');
   // Items duplicated so the marquee loops seamlessly (track scrolls exactly -50%).
-  return `<div class="sec"><p class="sec-h">Recent A&Rs</p><div class="ticker"><div class="ticker-track">${items}${items}</div></div></div>`;
+  return `<div class="sec"><p class="sec-h">New A&Rs</p><div class="ticker"><div class="ticker-track">${items}${items}</div></div></div>`;
 }
 function submitSection(){
   return `<div class="submit" id="secSubmit">

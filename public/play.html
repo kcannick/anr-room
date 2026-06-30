@@ -499,13 +499,29 @@
       <div style="flex:1"><label>Instagram</label><input id="pfIg" placeholder="@handle"></div>
       <div style="flex:1"><label>TikTok</label><input id="pfTt" placeholder="@handle"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:9px;margin:12px 0 4px;opacity:.6">
-      <div class="pf-avph">+</div>
-      <div style="font-size:11.5px;line-height:1.4">Add a photo <span class="dim">(coming soon)</span></div>
+    <div id="pfPhotoRow" style="display:flex;align-items:center;gap:11px;margin:12px 0 4px;cursor:pointer">
+      <div class="pf-avph" id="pfAvatar">+</div>
+      <div style="font-size:12px;line-height:1.4"><span id="pfPhotoLabel">Add a photo</span><br><span class="dim" style="font-size:11px">tap to upload &amp; crop</span></div>
     </div>
+    <input type="file" id="pfPhotoInput" accept="image/*" style="display:none">
     <div class="err" id="pfErr"></div>
     <button class="btn" id="pfSave" style="width:100%;margin-top:8px">Save &amp; qualify</button>
     <button class="btn ghost" id="pfLater" style="width:100%;margin-top:9px">Later</button>
+  </div>
+</div>
+
+<!-- PHOTO CROP MODAL (3.5a) — client-side square crop, then upload -->
+<div id="cropModal" style="display:none;position:fixed;inset:0;background:rgba(8,5,18,.92);z-index:95;align-items:center;justify-content:center;padding:18px">
+  <div class="panel" style="max-width:340px;width:100%">
+    <div style="font-size:15px;font-weight:700;margin-bottom:3px">Crop your photo</div>
+    <p class="dim" style="font-size:12px;margin:0 0 12px">Drag to position · slider to zoom</p>
+    <div id="cropStage" style="position:relative;width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;background:#000;touch-action:none;cursor:move">
+      <img id="cropImg" alt="" style="position:absolute;left:0;top:0;-webkit-user-drag:none;user-select:none;pointer-events:none">
+    </div>
+    <input id="cropZoom" type="range" min="1" max="3" step="0.01" value="1" style="margin-top:14px">
+    <div class="err" id="cropErr"></div>
+    <button class="btn" id="cropSave" style="width:100%;margin-top:8px">Use photo</button>
+    <button class="btn ghost" id="cropCancel" style="width:100%;margin-top:9px">Cancel</button>
   </div>
 </div>
 
@@ -1195,8 +1211,17 @@ function openProfileModal(){
   $('#pfLocation').value=myProfile.location||'';
   $('#pfIg').value=myProfile.instagram?('@'+myProfile.instagram):'';
   $('#pfTt').value=myProfile.tiktok?('@'+myProfile.tiktok):'';
-  $('#pfErr').textContent=''; renderPfPrimary();
+  $('#pfErr').textContent=''; renderPfPrimary(); renderPfAvatar();
   $('#profileModal').style.display='flex';
+}
+function renderPfAvatar(){
+  const av=$('#pfAvatar'); if(!av)return;
+  if(myProfile && myProfile.photoUrl){
+    av.textContent=''; av.style.backgroundImage=`url(${myProfile.photoUrl})`; av.style.backgroundSize='cover'; av.style.backgroundPosition='center';
+    $('#pfPhotoLabel').textContent='Photo added ✓';
+  }else{
+    av.style.backgroundImage=''; av.textContent='+'; $('#pfPhotoLabel').textContent='Add a photo';
+  }
 }
 window.openProfileModal=openProfileModal; // also opened from the gate CTA
 function maybePromptProfile(){
@@ -1218,6 +1243,71 @@ $('#pfSave').onclick=async()=>{
     $('#profileModal').style.display='none';
   }catch(e){$('#pfErr').textContent=e.message;}
   $('#pfSave').disabled=false;
+};
+
+// ---------- PHOTO CROP + UPLOAD (3.5a) ----------
+// Client-side square crop (drag + zoom), downscaled to 400px JPEG, then uploaded.
+let crop={img:null,niw:0,nih:0,S:0,scale0:1,scale:1,ox:0,oy:0,drag:null};
+$('#pfPhotoRow').onclick=()=>$('#pfPhotoInput').click();
+$('#pfPhotoInput').onchange=e=>{
+  const file=e.target.files&&e.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{ crop.img=img; crop.niw=img.naturalWidth; crop.nih=img.naturalHeight; openCrop(); };
+    img.src=reader.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value=''; // allow re-selecting the same file
+};
+function cropClamp(){
+  const minX=crop.S-crop.niw*crop.scale, minY=crop.S-crop.nih*crop.scale;
+  crop.ox=Math.min(0,Math.max(minX,crop.ox)); crop.oy=Math.min(0,Math.max(minY,crop.oy));
+}
+function cropRender(){
+  const im=$('#cropImg');
+  im.style.width=(crop.niw*crop.scale)+'px'; im.style.height=(crop.nih*crop.scale)+'px';
+  im.style.left=crop.ox+'px'; im.style.top=crop.oy+'px';
+}
+function openCrop(){
+  $('#cropImg').src=crop.img.src;
+  $('#cropModal').style.display='flex';
+  // measure stage after it's visible
+  crop.S=$('#cropStage').clientWidth;
+  crop.scale0=Math.max(crop.S/crop.niw, crop.S/crop.nih);
+  $('#cropZoom').value=1; crop.scale=crop.scale0;
+  crop.ox=(crop.S-crop.niw*crop.scale)/2; crop.oy=(crop.S-crop.nih*crop.scale)/2;
+  cropClamp(); cropRender(); $('#cropErr').textContent='';
+}
+$('#cropZoom').oninput=function(){
+  const z=parseFloat(this.value)||1, ns=crop.scale0*z, c=crop.S/2;
+  // zoom around the stage center
+  crop.ox=c-((c-crop.ox)/crop.scale)*ns; crop.oy=c-((c-crop.oy)/crop.scale)*ns; crop.scale=ns;
+  cropClamp(); cropRender();
+};
+(()=>{ const stage=$('#cropStage');
+  const down=e=>{ crop.drag={x:(e.touches?e.touches[0].clientX:e.clientX),y:(e.touches?e.touches[0].clientY:e.clientY)}; };
+  const move=e=>{ if(!crop.drag)return; const cx=(e.touches?e.touches[0].clientX:e.clientX),cy=(e.touches?e.touches[0].clientY:e.clientY);
+    crop.ox+=cx-crop.drag.x; crop.oy+=cy-crop.drag.y; crop.drag={x:cx,y:cy}; cropClamp(); cropRender(); if(e.cancelable)e.preventDefault(); };
+  const up=()=>{ crop.drag=null; };
+  stage.addEventListener('pointerdown',down); window.addEventListener('pointermove',move); window.addEventListener('pointerup',up);
+})();
+$('#cropCancel').onclick=()=>{ $('#cropModal').style.display='none'; };
+$('#cropSave').onclick=async()=>{
+  $('#cropErr').textContent='';
+  const out=400, cv=document.createElement('canvas'); cv.width=out; cv.height=out;
+  const ctx=cv.getContext('2d');
+  const sx=-crop.ox/crop.scale, sy=-crop.oy/crop.scale, sSize=crop.S/crop.scale;
+  ctx.drawImage(crop.img, sx, sy, sSize, sSize, 0, 0, out, out);
+  const dataUrl=cv.toDataURL('image/jpeg',0.85);
+  $('#cropSave').disabled=true;
+  try{
+    const d=await api('/api/me/photo',{image:dataUrl});
+    myProfile=myProfile||{}; myProfile.photoUrl=d.photoUrl;
+    renderPfAvatar();
+    $('#cropModal').style.display='none';
+  }catch(err){$('#cropErr').textContent=err.message;}
+  $('#cropSave').disabled=false;
 };
 
 // ---- shareable graphic (1080x1920 Instagram Story) rendered on the offscreen canvas ----

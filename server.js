@@ -857,6 +857,33 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, complete: !!complete });
   }
 
+  // Upload a profile photo (3.5a). Receives a client-cropped, downscaled square as a
+  // data URL. Stored on Vercel Blob (public CDN) when BLOB_READ_WRITE_TOKEN is set;
+  // otherwise falls back to storing the data URL inline so the feature still works
+  // before a Blob store exists (migrate by adding the token + re-uploading).
+  if (p === '/api/me/photo' && method === 'POST') {
+    const participant = await participantFromReq(req);
+    if (!participant || !participant.user_id) return bad(res, 'Not authenticated', 401);
+    const body = await readBody(req);
+    if (body.__tooBig) return bad(res, 'Image too large — try again (crop makes a small file)', 413);
+    const dataUrl = (body.image || '').toString();
+    const m = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) return bad(res, 'Invalid image');
+    const buf = Buffer.from(m[2], 'base64');
+    if (buf.length > 1024 * 1024) return bad(res, 'Image too large', 413);
+    let photoUrl;
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      const { put } = require('@vercel/blob');
+      const r = await put(`avatars/${participant.user_id}-${now()}.${m[1] === 'png' ? 'png' : 'jpg'}`, buf,
+        { access: 'public', contentType: `image/${m[1]}` });
+      photoUrl = r.url;
+    } else {
+      photoUrl = dataUrl; // dev / pre-Blob fallback
+    }
+    await db.run('UPDATE users SET photo_url = ? WHERE uid = ?', [photoUrl, participant.user_id]);
+    return send(res, 200, { ok: true, photoUrl });
+  }
+
   // ----- beta feedback (public; no auth required) -----
   // Logs the text to the DB for later review, then best-effort emails the admin (with
   // the optional screenshot as an attachment). Email failure NEVER blocks the submit —
@@ -1404,19 +1431,19 @@ async function handleApi(req, res, url) {
     // Qualified-only: only complete profiles appear publicly (3.5c gate). Category +
     // location are public by design (they're what makes a leaderboard row "real").
     const rows = await db.all(
-      `SELECT u.name, u.primary_category, u.location, SUM(v.points) AS series_points
+      `SELECT u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS series_points
        FROM votes v
        JOIN participants p ON v.participant_id = p.id
        JOIN users u        ON p.user_id = u.uid
        JOIN rounds r       ON v.round_id = r.id
        JOIN sessions s     ON r.session_id = s.id
        WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1
-       GROUP BY u.uid, u.name, u.primary_category, u.location
+       GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
        ORDER BY series_points DESC, u.name ASC
        LIMIT ?`, [seriesId, limit]);
     return send(res, 200, {
       series: { id: series.id, title: series.title, status: series.status },
-      leaderboard: rows.map((r, i) => ({ rank: i + 1, name: onlyFirst(r.name), category: r.primary_category || null, location: r.location || null, points: Number(r.series_points) || 0 })),
+      leaderboard: rows.map((r, i) => ({ rank: i + 1, name: onlyFirst(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.series_points) || 0 })),
     });
   }
 
@@ -1446,15 +1473,15 @@ async function handleApi(req, res, url) {
     let series = null;
     if (serRow) {
       const rows = await db.all(
-        `SELECT u.name, u.primary_category, u.location, SUM(v.points) AS pts FROM votes v
+        `SELECT u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS pts FROM votes v
          JOIN participants p ON v.participant_id = p.id
          JOIN users u        ON p.user_id = u.uid
          JOIN rounds r       ON v.round_id = r.id
          JOIN sessions s     ON r.session_id = s.id
          WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1
-         GROUP BY u.uid, u.name, u.primary_category, u.location ORDER BY pts DESC, u.name ASC LIMIT 5`, [serRow.id]);
+         GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url ORDER BY pts DESC, u.name ASC LIMIT 5`, [serRow.id]);
       series = { id: serRow.id, title: serRow.title, status: serRow.status,
-        leaderboard: rows.map((r, i) => ({ rank: i + 1, name: firstName(r.name), category: r.primary_category || null, location: r.location || null, points: Number(r.pts) || 0 })) };
+        leaderboard: rows.map((r, i) => ({ rank: i + 1, name: firstName(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.pts) || 0 })) };
     }
     // Past winners — no winner model yet; empty until an A&R Wars close records them.
     // Recent A&Rs (activity ticker) — complete profiles only (they carry the photo/role/
