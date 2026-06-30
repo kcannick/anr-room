@@ -72,7 +72,8 @@
   .up-time{font-size:12px;color:var(--ink-dim);margin-top:2px}
   .up-remind{font-size:13px;font-weight:700;color:#06210b;background:var(--signal);border-radius:9px;padding:9px 15px;cursor:pointer;white-space:nowrap}
   /* leaderboard */
-  .lbrow{display:flex;align-items:center;gap:10px;padding:8px 0}
+  .lbrow{display:flex;align-items:center;gap:10px;padding:8px 0;color:inherit;text-decoration:none}
+  a.lbrow{cursor:pointer}a.lbrow:hover .lbnm{color:var(--cool)}
   .lbrow+.lbrow{border-top:1px solid var(--line)}
   .lbrank{font-family:"Space Mono",monospace;font-size:14px;font-weight:700;width:20px;color:var(--ink-dim)}
   .lbrank.t{color:var(--signal)}
@@ -86,7 +87,8 @@
   .ticker-track{display:flex;gap:10px;width:max-content;padding:0 5px;animation:tk 38s linear infinite}
   @keyframes tk{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   @media (prefers-reduced-motion: reduce){.ticker-track{animation:none}}
-  .tk-item{display:flex;align-items:center;gap:9px;padding:6px 14px 6px 6px;border:1px solid var(--line);border-radius:999px;background:var(--panel);flex:none}
+  .tk-item{display:flex;align-items:center;gap:9px;padding:6px 14px 6px 6px;border:1px solid var(--line);border-radius:999px;background:var(--panel);flex:none;color:inherit;text-decoration:none}
+  a.tk-item{cursor:pointer}a.tk-item:hover{border-color:var(--accent)}
   .tk-av{width:34px;height:34px;border-radius:50%;flex:none;object-fit:cover;border:1px solid var(--line);background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:12px}
   .tk-nm{font-size:13px;font-weight:600;line-height:1.15;white-space:nowrap}
   .tk-sub{font-size:10px;color:var(--ink-faint);white-space:nowrap}
@@ -145,7 +147,8 @@ function lbCard(rows){
   return '<div class="card">'+rows.map(r=>{
     const sub=[r.category?`<span class="tag">${esc(r.category)}</span>`:'', r.location?esc(r.location):''].filter(Boolean).join('');
     const av=r.photoUrl?`<img class="lbav" src="${esc(r.photoUrl)}" alt="">`:`<div class="lbav">${esc(initials(r.name))}</div>`;
-    return `<div class="lbrow"><span class="lbrank${r.rank<=3?' t':''}">${r.rank}</span>${av}<div class="lbnm">${esc(r.name)}${sub?`<small>${sub}</small>`:''}</div><span class="lbpts">${fmtPts(r.points)}</span></div>`;
+    const inner=`<span class="lbrank${r.rank<=3?' t':''}">${r.rank}</span>${av}<div class="lbnm">${esc(r.name)}${sub?`<small>${sub}</small>`:''}</div><span class="lbpts">${fmtPts(r.points)}</span>`;
+    return r.id?`<a class="lbrow" href="/u/${encodeURIComponent(r.id)}">${inner}</a>`:`<div class="lbrow">${inner}</div>`;
   }).join('')+'</div>';
 }
 function howRow(){
@@ -182,7 +185,8 @@ function tickerSection(ars){
   const item=a=>{
     const av=a.photoUrl?`<img class="tk-av" src="${esc(a.photoUrl)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'tk-av',textContent:'${esc(initials(a.name))}'}))">`:`<span class="tk-av">${esc(initials(a.name))}</span>`;
     const sub=[a.category,a.location].filter(Boolean).join(' · ');
-    return `<div class="tk-item">${av}<div><div class="tk-nm">${esc(a.name)}</div>${sub?`<div class="tk-sub">${esc(sub)}</div>`:''}</div></div>`;
+    const inner=`${av}<div><div class="tk-nm">${esc(a.name)}</div>${sub?`<div class="tk-sub">${esc(sub)}</div>`:''}</div>`;
+    return a.id?`<a class="tk-item" href="/u/${encodeURIComponent(a.id)}">${inner}</a>`:`<div class="tk-item">${inner}</div>`;
   };
   const items=ars.map(item).join('');
   // Items duplicated so the marquee loops seamlessly (track scrolls exactly -50%).
