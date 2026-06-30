@@ -190,6 +190,7 @@
       <summary style="cursor:pointer;color:var(--ink-dim);font-size:13px">Event extras (optional) — watch link, lobby message, sign-up prompt, venue</summary>
       <div style="margin-top:10px">
         <label>Watch link</label><input id="newWatch" placeholder="https://twitch.tv/…">
+        <label style="margin-top:10px">Submission link <span class="muted">(where artists submit for this session)</span></label><input id="newSubmit" placeholder="https://…">
         <label style="margin-top:10px">Lobby message</label><textarea id="newLobby" placeholder="Shown while players wait"></textarea>
         <label style="margin-top:10px">Venue address <span class="muted">(for check-in; enable enforcement later)</span></label>
         <div class="row" style="gap:6px">
@@ -687,7 +688,7 @@ $('#newSeries').onchange=async function(){
 function blankSessionForm(){
   $('#newName').value='';$('#newMins').value='5';$('#newPollType').value='rating';
   $('#newWhen').value='live';$('#newSched').value='';$('#newSchedRow').classList.add('hide');
-  $('#newWatch').value='';$('#newLobby').value='';if($('#newPrompt'))$('#newPrompt').value='';
+  $('#newWatch').value='';$('#newSubmit').value='';$('#newLobby').value='';if($('#newPrompt'))$('#newPrompt').value='';
   $('#newGeoAddr').value='';$('#newGeoResolved').textContent='';$('#newGeoRadius').value='200';$('#newGeoMode').value='off';
   newGeoLat=newGeoLng=null;
   $('#newPollType').disabled=false;$('#typeLockMsg').classList.add('hide');$('#typeHint').classList.remove('hide');
@@ -713,7 +714,7 @@ function fillSessionForm(s,deps,mode){
   $('#newName').value=mode==='duplicate'?(s.name+' (copy)'):s.name;
   $('#newMins').value=s.defaultMinutes||5;
   $('#newPollType').value=s.pollType==='binary'?'binary':'rating';
-  $('#newWatch').value=s.watchUrl||'';$('#newLobby').value=s.lobbyMessage||'';
+  $('#newWatch').value=s.watchUrl||'';$('#newSubmit').value=s.submitUrl||'';$('#newLobby').value=s.lobbyMessage||'';
   if($('#newPrompt'))$('#newPrompt').value='';
   $('#newGeoRadius').value=s.geoRadius||200;$('#newGeoMode').value=s.geoMode||'off';
   if(s.geoLat!=null&&s.geoLng!=null){newGeoLat=Number(s.geoLat);newGeoLng=Number(s.geoLng);$('#newGeoResolved').textContent='📍 '+(s.geoLabel||(s.geoLat+', '+s.geoLng));$('#newGeoAddr').value=s.geoLabel||'';}
@@ -954,7 +955,7 @@ $('#btnCreate').onclick=async()=>{
   try{
     if(sessForm.mode==='edit'){
       // Persist editable settings via the partial-update config endpoint; series via tag.
-      const body={sessionId:sessForm.id,name,defaultMinutes:mins,watchUrl:$('#newWatch').value.trim(),lobbyMessage:$('#newLobby').value.trim(),geoMode,geoRadius};
+      const body={sessionId:sessForm.id,name,defaultMinutes:mins,watchUrl:$('#newWatch').value.trim(),submitUrl:$('#newSubmit').value.trim(),lobbyMessage:$('#newLobby').value.trim(),geoMode,geoRadius};
       if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=geoLabel;}
       await api('/api/admin/session/config',body);
       if(isAdmin())await api('/api/admin/series/tag',{sessionId:sessForm.id,seriesId:seriesId||null});
@@ -963,6 +964,7 @@ $('#btnCreate').onclick=async()=>{
       const when=$('#newWhen').value;
       const body={name,defaultMinutes:mins,pollType:$('#newPollType').value};
       if($('#newWatch').value.trim())body.watchUrl=$('#newWatch').value.trim();
+      if($('#newSubmit').value.trim())body.submitUrl=$('#newSubmit').value.trim();
       if($('#newLobby').value.trim())body.lobbyMessage=$('#newLobby').value.trim();
       if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=geoLabel;body.geoRadius=geoRadius;}
       if(when==='upcoming'){body.status='upcoming';const sv=$('#newSched').value;if(sv)body.scheduledAt=etInputToEpoch(sv);}

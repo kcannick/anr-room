@@ -582,7 +582,7 @@ async function handleApi(req, res, url) {
 
   // ----- create session (admin bootstrap) -----
   if (p === '/api/session' && method === 'POST') {
-    const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, lobbyMessage, signupPrompt, bannerId, geoLabel, geoLat, geoLng, geoRadius } = await readBody(req);
+    const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, submitUrl, lobbyMessage, signupPrompt, bannerId, geoLabel, geoLat, geoLng, geoRadius } = await readBody(req);
     if (!name || !name.trim()) return bad(res, 'Session name required');
     const sid = id(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || id(4);
     const adminToken = id(18);
@@ -591,6 +591,7 @@ async function handleApi(req, res, url) {
     const pt = pollType === 'binary' ? 'binary' : 'rating';
     // Optional event config — a stream link, a lobby message, a custom sign-up prompt.
     const wu = cleanUrl(watchUrl);
+    const su = cleanUrl(submitUrl);
     const lm = (lobbyMessage || '').toString().trim().slice(0, 500) || null;
     const sp = (signupPrompt || '').toString().trim().slice(0, 200) || null;
     const bid = bannerId || null; // optional default ad set at creation
@@ -605,8 +606,8 @@ async function handleApi(req, res, url) {
     const ownerUid = creator ? creator.uid : null;
     // New sessions are 'live' by default, or 'upcoming' if a future start is given.
     const st = (status === 'upcoming' || (scheduledAt && Number(scheduledAt) > now())) ? 'upcoming' : 'live';
-    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, lobby_message, signup_prompt, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, lm, sp, bid, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, now()]);
+    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, submit_url, lobby_message, signup_prompt, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, su, lm, sp, bid, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, now()]);
     return send(res, 200, { sessionId: sid, adminToken, pollType: pt });
   }
 
@@ -1442,7 +1443,7 @@ async function handleApi(req, res, url) {
       session: {
         id: s.id, name: s.name, status: s.status, pollType: s.poll_type,
         defaultMinutes: s.default_minutes, scheduledAt: s.scheduled_at, seriesId: s.series_id || null,
-        watchUrl: s.watch_url || null, lobbyMessage: s.lobby_message || null,
+        watchUrl: s.watch_url || null, submitUrl: s.submit_url || null, lobbyMessage: s.lobby_message || null,
         geoMode: s.geo_mode || 'off', geoLat: s.geo_lat, geoLng: s.geo_lng,
         geoRadius: s.geo_radius, geoLabel: s.geo_label || null,
       },
@@ -1626,11 +1627,11 @@ async function handleApi(req, res, url) {
       if (round) nowPlaying = liveRow.poll_type === 'binary'
         ? (round.song_title + ' VS ' + (round.option_b_title || 'B'))
         : (round.song_title + (round.song_artist ? ' — ' + round.song_artist : ''));
-      live = { id: liveRow.id, name: liveRow.name, pollType: liveRow.poll_type, watchUrl: liveRow.watch_url || null, arCount: Number(arCount) || 0, nowPlaying };
+      live = { id: liveRow.id, name: liveRow.name, pollType: liveRow.poll_type, watchUrl: liveRow.watch_url || null, submitUrl: liveRow.submit_url || null, arCount: Number(arCount) || 0, nowPlaying };
     }
     // Next upcoming session: earliest future start, else most recently created upcoming.
-    const nextRow = await db.get("SELECT id, name, scheduled_at, watch_url FROM sessions WHERE status = 'upcoming' AND deleted_at IS NULL ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", []);
-    const next = nextRow ? { id: nextRow.id, name: nextRow.name, scheduledAt: nextRow.scheduled_at, watchUrl: nextRow.watch_url || null } : null;
+    const nextRow = await db.get("SELECT id, name, scheduled_at, watch_url, submit_url FROM sessions WHERE status = 'upcoming' AND deleted_at IS NULL ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", []);
+    const next = nextRow ? { id: nextRow.id, name: nextRow.name, scheduledAt: nextRow.scheduled_at, watchUrl: nextRow.watch_url || null, submitUrl: nextRow.submit_url || null } : null;
     // Active series (else most recent) + its live-computed top 5.
     const serRow = (await db.get("SELECT id, title, status FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []))
       || (await db.get("SELECT id, title, status FROM series ORDER BY created_at DESC LIMIT 1", []));
@@ -1670,6 +1671,7 @@ async function handleApi(req, res, url) {
     if ('bannerId' in body)     { sets.push('banner_id = ?'); vals.push(body.bannerId || null); }
     if ('defaultMinutes' in body) { sets.push('default_minutes = ?'); vals.push(clampMinutes(body.defaultMinutes)); }
     if ('watchUrl' in body)      { sets.push('watch_url = ?');     vals.push(cleanUrl(body.watchUrl)); }
+    if ('submitUrl' in body)     { sets.push('submit_url = ?');    vals.push(cleanUrl(body.submitUrl)); }
     if ('lobbyMessage' in body)  { sets.push('lobby_message = ?'); vals.push((body.lobbyMessage || '').toString().trim().slice(0, 500) || null); }
     if ('signupPrompt' in body)  { sets.push('signup_prompt = ?'); vals.push((body.signupPrompt || '').toString().trim().slice(0, 200) || null); }
     // Geo: enforcement mode is independent of the venue pin (set venue early, enforce later).
@@ -1980,7 +1982,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/') return serveStatic(res, url.searchParams.get('s') ? 'play.html' : 'home.html');
     if (url.pathname === '/play') return serveStatic(res, 'play.html');
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
-    if (url.pathname === '/join') return serveStatic(res, 'join.html'); // session-less A&R Team signup
+    if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // allow direct asset paths

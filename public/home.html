@@ -73,6 +73,7 @@
   .up-name{font-size:15px;font-weight:700}
   .up-time{font-size:12px;color:var(--ink-dim);margin-top:2px}
   .up-remind{font-size:13px;font-weight:700;color:#06210b;background:var(--signal);border-radius:9px;padding:9px 15px;cursor:pointer;white-space:nowrap}
+  .sub-link{display:inline-block;margin-top:9px;font-size:12px;color:var(--cool);font-weight:600}
   /* leaderboard */
   .lbrow{display:flex;align-items:center;gap:10px;padding:8px 0;color:inherit;text-decoration:none}
   a.lbrow{cursor:pointer}a.lbrow:hover .lbnm{color:var(--cool)}
@@ -113,8 +114,7 @@
     <div class="nav-links">
       <a id="navBoard" onclick="document.getElementById('secBoard')?.scrollIntoView({behavior:'smooth'})">Leaderboard</a>
       <a id="navWinners" onclick="document.getElementById('secWinners')?.scrollIntoView({behavior:'smooth'})">Winners</a>
-      <a id="navSubmit" onclick="document.getElementById('secSubmit')?.scrollIntoView({behavior:'smooth'})">Submit</a>
-      <a class="nav-join" href="/join">Join</a>
+      <a class="nav-join" id="navJoin" href="/join">Join</a>
     </div>
   </div>
 
@@ -164,12 +164,13 @@ function howRow(){
 function nextCard(next){
   if(!next)return `<div class="sec"><p class="sec-h">Next session</p><div class="card"><div class="empty">No session scheduled yet — check back soon.</div></div></div>`;
   const db=dateBlock(next.scheduledAt);
+  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener">🎤 Artists — submit your music for this session ↗</a>`:'';
   return `<div class="sec" id="secNext"><p class="sec-h">Next session</p>
     <div class="card upcoming">
       <div class="up-date"><div class="d">${esc(db.d)}</div><div class="m">${esc(db.m)}</div></div>
       <div class="up-meta"><div class="up-name">${esc(next.name)}</div><div class="up-time">${esc(whenLine(next.scheduledAt))}</div></div>
       <a class="up-remind" href="/?s=${encodeURIComponent(next.id)}">Register</a>
-    </div></div>`;
+    </div>${submit}</div>`;
 }
 function boardSection(series,label){
   // Hidden entirely until there are standings — no empty placeholder on the front door.
@@ -195,11 +196,13 @@ function tickerSection(ars){
   // Items duplicated so the marquee loops seamlessly (track scrolls exactly -50%).
   return `<div class="sec"><p class="sec-h">New A&Rs</p><div class="ticker"><div class="ticker-track">${items}${items}</div></div></div>`;
 }
-function submitSection(){
+function submitSection(sUrl){
+  // Use the featured session's own submission link when it has one, else the house default.
+  const href=sUrl||SUBMIT_URL;
   return `<div class="submit" id="secSubmit">
     <div class="s-t">Are you an artist?</div>
     <div class="s-s">Get your record in front of a real, rating audience — exposure and distribution, not a lottery.</div>
-    <a class="s-btn" href="${SUBMIT_URL}" target="_blank" rel="noopener">Submit your music</a>
+    <a class="s-btn" href="${esc(href)}" target="_blank" rel="noopener">Submit your music</a>
   </div>`;
 }
 
@@ -229,7 +232,7 @@ function renderLive(d){
     ${tickerSection(d.recentARs)}
     ${boardSection(d.series,'Live standings · updating')}
     ${winnersSection(d.winners)}
-    ${submitSection()}`;
+    ${submitSection(d.live&&d.live.submitUrl)}`;
 }
 function renderBetween(d){
   // With an upcoming session, "Register to play" leads and Join is secondary. With no
@@ -249,7 +252,7 @@ function renderBetween(d){
     ${nextCard(d.next)}
     ${boardSection(d.series)}
     ${winnersSection(d.winners)}
-    ${submitSection()}`;
+    ${submitSection(d.next&&d.next.submitUrl)}`;
 }
 
 async function load(){
@@ -268,6 +271,15 @@ async function load(){
 load();
 // Light refresh so the page reflects going-live and leaderboard changes without a reload.
 setInterval(load, 30000);
+
+// Logged-in A&Rs see "My Profile" (-> their editable profile) instead of "Join".
+(async function initNav(){
+  const tok=localStorage.getItem('rt_auth_token'); if(!tok)return;
+  try{
+    const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
+    if(me&&me.uid){ const j=document.getElementById('navJoin'); j.textContent='My Profile'; j.href='/profile'; }
+  }catch(e){}
+})();
 </script>
 </body>
 </html>

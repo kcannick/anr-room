@@ -103,10 +103,10 @@
 
   <!-- STEP 3: PROFILE -->
   <section id="s-profile" class="hide">
-    <p class="eyebrow g">Step 2 of 2 · finish to get listed</p>
+    <p class="eyebrow g" id="profileEyebrow">Step 2 of 2 · finish to get listed</p>
     <div class="panel">
-      <h2 style="font-size:18px">Complete your profile</h2>
-      <p class="dim" style="font-size:12.5px;margin-bottom:4px">This is what puts you on the leaderboard and the New A&Rs ticker.</p>
+      <h2 style="font-size:18px" id="profileH2">Complete your profile</h2>
+      <p class="dim" id="profileSub" style="font-size:12.5px;margin-bottom:4px">This is what puts you on the leaderboard and the New A&Rs ticker.</p>
       <div class="steplabel"><span class="stepnum">①</span> What do you do? <span class="stepsub">select all that apply</span></div>
       <div class="chips" id="jCats"></div>
       <div class="steplabel" style="margin-top:10px"><span class="stepnum">②</span> Most focused on? <span class="stepsub">your primary</span></div>
@@ -161,6 +161,7 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
 let AUTHTOK=null, CATS=[], jPrimary=null, profile={categories:[],photoUrl:null};
 let known={exists:false,hasName:false,hasPhone:false,profileComplete:false};
+let editMode=false, MEUID=null;
 async function api(path,body,method='POST'){
   const h={'Content-Type':'application/json'}; if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;
   const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
@@ -241,11 +242,32 @@ $('#btnFinish').onclick=async()=>{
   $('#btnFinish').disabled=true;
   try{
     await api('/api/me/profile',{categories:cats,primaryCategory:jPrimary||cats[0],location,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()});
+    if(editMode){ location.href='/u/'+encodeURIComponent(MEUID); return; } // saved -> view profile
     finishDone(true);
   }catch(e){$('#profErr').textContent=e.message;}
   $('#btnFinish').disabled=false;
 };
-$('#btnSkip').onclick=()=>finishDone(false);
+$('#btnSkip').onclick=()=>{ if(editMode){ location.href=MEUID?('/u/'+encodeURIComponent(MEUID)):'/'; } else finishDone(false); };
+// Edit mode: a logged-in A&R lands straight on their (pre-filled) profile to view/edit.
+async function initJoin(){
+  const tok=localStorage.getItem('rt_auth_token');
+  if(tok){
+    $('#s-email').classList.add('hide'); // no flash of the signup step for logged-in members
+    try{
+      const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
+      if(me&&me.uid){ AUTHTOK=tok; MEUID=me.uid; editMode=true; await loadProfile();
+        $('#profileEyebrow').textContent='Your A&R profile';
+        $('#profileH2').textContent='Edit your profile';
+        $('#profileSub').innerHTML='Update your skills, location, socials, or photo. <a href="/u/'+encodeURIComponent(me.uid)+'" style="color:var(--cool)">View public profile ↗</a>';
+        $('#btnFinish').textContent='Save changes';
+        $('#btnSkip').textContent='Cancel';
+        show('profile'); return;
+      }
+    }catch(e){}
+  }
+  show('email');
+}
+initJoin();
 function finishDone(listed){
   if(!listed){ $('#doneTitle').textContent='Welcome to the team!'; $('#doneSub').innerHTML='Your account is set. <b style="color:var(--ink)">Complete your profile</b> any time to get listed and qualify — we\'ll notify you when the next session is live.'; }
   show('done');

@@ -78,8 +78,16 @@ function render(p){
         <div class="stat"><div class="v green">${fmt(st.sessions)}</div><div class="l">Sessions</div></div>
         ${rank}
       </div>
+      <a class="pf-back" id="editLink" href="/profile" style="display:none;margin-right:14px">✎ Edit profile</a>
       <a class="pf-back" href="/">← Back to The A&amp;R Room</a>
     </div>`;
+}
+async function showEditIfOwner(profileId){
+  const tok=localStorage.getItem('rt_auth_token'); if(!tok)return;
+  try{
+    const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
+    if(me&&me.uid===profileId){const el=document.getElementById('editLink');if(el)el.style.display='inline-block';}
+  }catch(e){}
 }
 async function load(){
   if(!UID){$('#content').innerHTML='<div class="empty"><div class="ico">🤔</div>No profile specified.</div>';return;}
@@ -88,6 +96,7 @@ async function load(){
     if(!r.ok)throw 0;
     const d=await r.json();
     render(d.profile);
+    showEditIfOwner(d.profile.id);
     document.title='The A&R Room · '+(d.profile.name||'Profile');
   }catch(e){
     $('#content').innerHTML='<div class="empty"><div class="ico">🤔</div>This profile isn\'t available.<br><a class="pf-back" href="/" style="margin-top:12px">← Back to The A&R Room</a></div>';
