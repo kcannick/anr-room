@@ -916,27 +916,38 @@ async function handleApi(req, res, url) {
     if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
     const q = (url.searchParams.get('q') || '').trim().toLowerCase();
     const status = url.searchParams.get('status') || '';      // active | blocked | ''
-    const skill = url.searchParams.get('skill') || '';        // primary_category
+    const skill = url.searchParams.get('skill') || '';        // a category
+    const skillMode = url.searchParams.get('skillMode') === 'any' ? 'any' : 'primary'; // primary|any
     const loc = (url.searchParams.get('location') || '').trim().toLowerCase();
-    const sort = url.searchParams.get('sort') || 'recent';    // recent | points | name
+    const sort = url.searchParams.get('sort') || 'recent';    // recent | points | name | sessions | series
     const where = [], params = [];
     if (q) { where.push('(LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ?)'); params.push('%' + q + '%', '%' + q + '%'); }
     if (status === 'blocked') where.push('u.blocked = 1');
     else if (status === 'active') where.push('u.blocked = 0');
-    if (skill && PROFILE_CATEGORIES.includes(skill)) { where.push('u.primary_category = ?'); params.push(skill); }
+    if (skill && PROFILE_CATEGORIES.includes(skill)) {
+      // 'primary' matches the headline role; 'any' matches anyone with that role at all
+      // (categories is a JSON array, so a quoted-token LIKE is a safe contains check).
+      if (skillMode === 'any') { where.push('u.categories LIKE ?'); params.push('%"' + skill + '"%'); }
+      else { where.push('u.primary_category = ?'); params.push(skill); }
+    }
     if (loc) { where.push('LOWER(u.location) LIKE ?'); params.push('%' + loc + '%'); }
     const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
-    const orderSql = sort === 'points' ? 'u.lifetime_points DESC' : sort === 'name' ? 'u.name ASC' : 'u.last_seen DESC';
+    // Series participated: distinct series a user has scored votes in.
+    const seriesSub = `(SELECT COUNT(DISTINCT s.series_id) FROM votes v JOIN participants p ON v.participant_id = p.id JOIN rounds r ON v.round_id = r.id JOIN sessions s ON r.session_id = s.id WHERE p.user_id = u.uid AND s.series_id IS NOT NULL)`;
+    const sessSub = `(SELECT COUNT(DISTINCT session_id) FROM participants WHERE user_id = u.uid AND verified = 1)`;
+    const orderSql = sort === 'points' ? 'u.lifetime_points DESC' : sort === 'name' ? 'u.name ASC'
+      : sort === 'sessions' ? `${sessSub} DESC` : sort === 'series' ? `${seriesSub} DESC` : 'u.last_seen DESC';
     const total = (await db.get(`SELECT COUNT(*) AS c FROM users u ${whereSql}`, params)).c;
     const rows = await db.all(
       `SELECT u.uid, u.name, u.email, u.role, u.blocked, u.profile_complete, u.primary_category, u.location, u.photo_url, u.lifetime_points, u.last_seen,
-         (SELECT COUNT(DISTINCT session_id) FROM participants WHERE user_id = u.uid AND verified = 1) AS sessions
+         ${sessSub} AS sessions, ${seriesSub} AS series_participated
        FROM users u ${whereSql} ORDER BY ${orderSql} LIMIT 100`, params);
     return send(res, 200, {
       total: Number(total) || 0,
       users: rows.map(r => ({ id: r.uid, name: r.name || null, email: r.email, role: r.role, blocked: !!r.blocked,
         profileComplete: !!r.profile_complete, primaryCategory: r.primary_category || null, location: r.location || null,
         photoUrl: r.photo_url || null, points: Number(r.lifetime_points) || 0, sessions: Number(r.sessions) || 0,
+        seriesParticipated: Number(r.series_participated) || 0,
         lastSeen: r.last_seen ? Number(r.last_seen) : null })),
       categories: PROFILE_CATEGORIES,
     });

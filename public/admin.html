@@ -463,10 +463,11 @@
       <div class="ufilters" style="margin-top:9px">
         <select id="uStatus"><option value="">All statuses</option><option value="active">Active</option><option value="blocked">Blocked</option></select>
         <select id="uSkill"><option value="">All skills</option></select>
+        <select id="uSkillMode" style="flex:0 0 auto;min-width:0;max-width:118px"><option value="primary">Primary</option><option value="any">Any role</option></select>
       </div>
       <div class="ufilters" style="margin-top:8px">
         <input id="uLocation" placeholder="Filter by location…">
-        <select id="uSort"><option value="recent">Sort: Last seen</option><option value="points">Sort: Points</option><option value="name">Sort: Name</option></select>
+        <select id="uSort"><option value="recent">Sort: Last seen</option><option value="points">Sort: Points</option><option value="sessions">Sort: Sessions</option><option value="series">Sort: Series</option><option value="name">Sort: Name</option></select>
       </div>
       <div id="usersList" style="margin-top:14px"><div class="empty">Loading…</div></div>
     </div>
@@ -777,7 +778,7 @@ function usersQuery(){
   const p=new URLSearchParams();
   const q=$('#uSearch').value.trim(); if(q)p.set('q',q);
   if($('#uStatus').value)p.set('status',$('#uStatus').value);
-  if($('#uSkill').value)p.set('skill',$('#uSkill').value);
+  if($('#uSkill').value){p.set('skill',$('#uSkill').value);p.set('skillMode',$('#uSkillMode').value);}
   const loc=$('#uLocation').value.trim(); if(loc)p.set('location',loc);
   p.set('sort',$('#uSort').value||'recent');
   return p.toString();
@@ -793,7 +794,7 @@ async function loadUsers(){
     box.innerHTML=d.users.map(u=>{
       const av=u.photoUrl?`<img class="uav" src="${esc(u.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(u.name||u.email))}</div>`;
       const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', (!u.blocked&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
-      const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
+      const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', u.seriesParticipated?(u.seriesParticipated+' series'):'', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
       const actions=u.role==='admin'?'<span class="muted" style="font-size:11px">protected</span>':
         `<button class="btn ${u.blocked?'ghost':'amber'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
         `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
@@ -803,7 +804,7 @@ async function loadUsers(){
 }
 window.toggleBlock=async(uid,blocked)=>{try{await api('/api/admin/users/block',{uid,blocked:!!blocked});await loadUsers();}catch(e){alert(e.message);}};
 ['uSearch','uLocation'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('input',()=>{clearTimeout(usersFilterTimer);usersFilterTimer=setTimeout(loadUsers,320);}));
-['uStatus','uSkill','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
+['uStatus','uSkill','uSkillMode','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
 // delete-user modal (type-name confirm)
 let udState={id:null,name:''};
 window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='Permanently delete <b style="color:var(--ink)">'+esc(name)+'</b> — their account, participations, and votes. This changes any leaderboard that counted them and can’t be undone.';$('#udName').textContent=name;$('#udConfirm').value='';$('#udDelete').disabled=true;$('#udErr').textContent='';$('#userDelModal').style.display='flex';};
