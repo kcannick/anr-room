@@ -2264,6 +2264,20 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
+    // Google Analytics bootstrap, generated from GA_MEASUREMENT_ID (GA4, e.g. G-XXXX).
+    // Pages include <script async src="/analytics.js">; with no id set it's a no-op, so
+    // analytics is off in dev/preview and until the operator configures it in prod.
+    if (url.pathname === '/analytics.js') {
+      const gaId = (process.env.GA_MEASUREMENT_ID || '').trim();
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=600' });
+      if (!/^G-[A-Za-z0-9]+$/.test(gaId)) return res.end('/* analytics disabled (no GA_MEASUREMENT_ID) */');
+      return res.end(
+        `(function(){var s=document.createElement('script');s.async=1;` +
+        `s.src='https://www.googletagmanager.com/gtag/js?id=${gaId}';document.head.appendChild(s);` +
+        `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}window.gtag=gtag;` +
+        `gtag('js',new Date());gtag('config','${gaId}');})();`
+      );
+    }
     // Direct asset paths: serve the file if it exists. If not, an unknown PAGE request
     // (no file extension, .html, or a browser navigation) redirects to the homepage;
     // a missing asset (.js/.css/.png/etc.) still gets a plain 404 so we never hand HTML
