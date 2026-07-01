@@ -312,7 +312,7 @@ async function buildRecap(participant) {
 
 async function playerState(participant) {
   const sessionId = participant.session_id;
-  const session = await db.get('SELECT id, name, status, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius FROM sessions WHERE id = ?', [sessionId]);
+  const session = await db.get('SELECT id, name, status, scheduled_at, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius FROM sessions WHERE id = ?', [sessionId]);
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
@@ -381,6 +381,7 @@ async function playerState(participant) {
 
   const out = {
     session: { id: sessionId, name: session.name, status: session.status, poll_type: pollType,
+      scheduled_at: session.scheduled_at ? Number(session.scheduled_at) : null,
       watch_url: session.watch_url || null, lobby_message: session.lobby_message || null },
     poll_type: pollType,
     watch_url: session.watch_url || null,
