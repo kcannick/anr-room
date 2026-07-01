@@ -507,7 +507,7 @@ async function adminState(session) {
   }));
   return {
     session: { id: session.id, name: session.name, status: session.status, admin_token: session.admin_token, banner_id: session.banner_id || null, default_minutes: session.default_minutes || DEFAULT_MINUTES, poll_type: pollType,
-      watch_url: session.watch_url || null, lobby_message: session.lobby_message || null, signup_prompt: session.signup_prompt || null,
+      watch_url: session.watch_url || null, submit_url: session.submit_url || null, lobby_message: session.lobby_message || null, signup_prompt: session.signup_prompt || null,
       broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
       geo_mode: session.geo_mode || 'off', geo_lat: session.geo_lat ?? null, geo_lng: session.geo_lng ?? null, geo_radius: session.geo_radius || null, geo_label: session.geo_label || null },
     pools: {
@@ -529,6 +529,19 @@ async function adminState(session) {
     globalBannerId,
     serverNow: now(),
   };
+}
+
+// Small JSON GET against the nero.fan public API (used by the "Pull Song from
+// Nero" helper). No auth needed; we send an Origin so their edge is happy and
+// abort after 8s so a stalled fetch never hangs the admin request.
+async function neroFetch(u) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch(u, { headers: { 'Origin': 'https://www.nero.fan', 'Accept': 'application/json' }, signal: ctrl.signal });
+    if (!r.ok) throw new Error('nero ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
 }
 
 // ---------- ratify: compute result, points, ranks, bump totals ----------
@@ -1265,6 +1278,37 @@ async function handleApi(req, res, url) {
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     return send(res, 200, await adminState(session));
+  }
+
+  // ----- pull the currently-playing song from a nero.fan live page -----
+  // If the session's submission link points at a nero.fan live room, read the
+  // now-playing submission from nero's public API and hand it back so the host
+  // can one-tap queue it. Their submissionName -> our title, submitterName -> artist.
+  if (p === '/api/admin/nero-pull' && method === 'POST') {
+    const { sessionId } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const su = session.submit_url || '';
+    const m = /nero\.fan\/([^/?#]+)\/live\b/i.exec(su);
+    if (!m) return bad(res, 'This session has no nero.fan live link', 400);
+    const username = m[1];
+    try {
+      const resolved = await neroFetch(`https://api.nero.fan/sessions/overlay/resolve/${encodeURIComponent(username)}`);
+      const neroSid = resolved && resolved.sessionId;
+      if (!neroSid) return bad(res, 'Could not find that nero.fan room', 404);
+      const state = await neroFetch(`https://api.nero.fan/sessions/state/${encodeURIComponent(neroSid)}`);
+      const cur = state && state.current;
+      if (!cur || !cur.submissionName) return send(res, 200, { playing: false });
+      return send(res, 200, {
+        playing: true,
+        title: cur.submissionName || '',
+        artist: cur.submitterName || '',
+        instagram: (cur.submitterSocials && cur.submitterSocials.instagram) || null,
+        note: cur.note || null,
+      });
+    } catch (e) {
+      return bad(res, 'Could not reach nero.fan — try again', 502);
+    }
   }
 
   if (p === '/api/admin/round' && method === 'POST') {

@@ -232,6 +232,8 @@
 
     <div class="card">
       <h2 id="queueFormTitle">Queue a song</h2>
+      <button class="btn ghost sm hide" id="btnNeroPull" style="margin-bottom:8px">⬇ Pull current song from Nero</button>
+      <div class="muted hide" id="neroMsg" style="font-size:12px;margin-bottom:8px"></div>
       <div class="stack">
         <div><label id="rTitleLabel">Song title *</label><input id="rTitle" placeholder="Song name"></div>
         <div class="row">
@@ -1048,6 +1050,22 @@ $('#btnAddRound').onclick=async()=>{
   }catch(e){$('#addErr').textContent=e.message;}
 };
 
+// Pull the now-playing song from the session's nero.fan live link into the queue form.
+$('#btnNeroPull').onclick=async()=>{
+  const b=$('#btnNeroPull'),msg=$('#neroMsg'),old=b.textContent;
+  b.disabled=true;b.textContent='Pulling…';msg.classList.add('hide');
+  try{
+    const d=await api('/api/admin/nero-pull',{sessionId:SID});
+    if(!d.playing){msg.textContent='Nothing is playing on Nero right now.';}
+    else{
+      $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
+      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+'. Review, then Add to queue.';
+      $('#rTitle').focus();
+    }
+  }catch(e){msg.textContent=e.message;}
+  finally{b.disabled=false;b.textContent=old;msg.classList.remove('hide');}
+};
+
 $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textContent);$('#btnCopy').textContent='Copied!';setTimeout(()=>$('#btnCopy').textContent='Copy link',1200);};
 
 // ---- event tools ----
@@ -1246,6 +1264,9 @@ function render(st){
   $('#queueFormTitle').textContent = isBin ? 'Queue a matchup' : 'Queue a song';
   $('#rTitleLabel').textContent = isBin ? 'Song A title *' : 'Song title *';
   $('#rArtistLabel').textContent = isBin ? 'Song A artist' : 'Artist';
+  // "Pull from Nero" only when this session's submission link is a nero.fan live room.
+  const su=(st.session&&st.session.submit_url)||'';
+  $('#btnNeroPull').classList.toggle('hide', !/nero\.fan\/[^/?#]+\/live\b/i.test(su));
   $('#who').textContent=st.session.name+' · '+st.session.status+(isBin?' · ⚔️ Versus':'');
   // lifecycle controls reflect current status
   const stx=st.session.status;
