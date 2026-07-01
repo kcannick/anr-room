@@ -2,8 +2,12 @@
 
 A weekly live music-review broadcast (Wed 7–11 PM ET, multistreamed to 6 platforms) with a
 participation layer: viewers rate songs 0–9 and predict the room average, scoring on how
-well they "read the room." Points accrue across a monthly **Series**; the top N qualify for
-**A&R Wars**, a head-to-head tournament (binary "Verzuz" poll) for a cash prize.
+well they "read the room." Points accrue across a monthly **Series**, whose top A&Rs help
+populate **A&R Wars**: an 8-competitor single-elimination tournament (curated — e.g. top 4
+from the board + 4 invited Tastemakers) where competitors scout songs from a "service pack"
+and play them head-to-head; the A&R Room audience votes each matchup via binary ("Verzuz")
+polls, majority wins, winner advances. Competitors aren't session participants — the audience
+votes. Cash prize. (See docs/anr-room-roadmap.md 6.4 for the full format.)
 
 Operator: Makin' It Magazine (makinitmag.com). The operator is a marketing person and
 ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to babysit.
