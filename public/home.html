@@ -102,7 +102,9 @@
   .submit{background:linear-gradient(180deg,rgba(64,54,148,.25),rgba(64,54,148,.1));border:1px solid var(--brand-purple);border-radius:15px;padding:17px;text-align:center;margin-bottom:18px}
   .submit .s-t{font-size:15px;font-weight:700;margin-bottom:5px}
   .submit .s-s{font-size:12.5px;color:var(--ink-dim);margin-bottom:13px;line-height:1.45}
-  .submit .s-btn{display:inline-block;background:transparent;border:1px solid var(--cool);color:var(--cool);font-size:13px;font-weight:700;padding:10px 20px;border-radius:9px;cursor:pointer}
+  .submit .s-actions{display:flex;gap:9px;justify-content:center;flex-wrap:wrap}
+  .submit .s-btn{display:inline-block;background:transparent;border:1px solid var(--cool);color:var(--cool);font-size:13px;font-weight:700;padding:10px 20px;border-radius:9px;cursor:pointer;font-family:inherit}
+  .submit .s-btn:hover{background:rgba(124,111,240,.12)}
   .foot{text-align:center;font-size:11px;color:var(--ink-faint);margin-top:8px}
   .hide{display:none!important}
 </style>
@@ -164,7 +166,7 @@ function howRow(){
 function nextCard(next){
   if(!next)return `<div class="sec"><p class="sec-h">Next session</p><div class="card"><div class="empty">No session scheduled yet — check back soon.</div></div></div>`;
   const db=dateBlock(next.scheduledAt);
-  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener">🎤 Artists — submit your music for this session ↗</a>`:'';
+  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener">🎤 Know an artist? Submit music for this session ↗</a>`:'';
   return `<div class="sec" id="secNext"><p class="sec-h">Next session</p>
     <div class="card upcoming">
       <div class="up-date"><div class="d">${esc(db.d)}</div><div class="m">${esc(db.m)}</div></div>
@@ -197,13 +199,22 @@ function tickerSection(ars){
   return `<div class="sec"><p class="sec-h">New A&Rs</p><div class="ticker"><div class="ticker-track">${items}${items}</div></div></div>`;
 }
 function submitSection(sUrl){
-  // Use the featured session's own submission link when it has one, else the house default.
+  // Audience-facing: viewers refer artists they know (a retention/word-of-mouth lever).
+  // Uses the featured session's own submission link when it has one, else the house default.
   const href=sUrl||SUBMIT_URL;
   return `<div class="submit" id="secSubmit">
-    <div class="s-t">Are you an artist?</div>
-    <div class="s-s">Get your record in front of a real, rating audience — exposure and distribution, not a lottery.</div>
-    <a class="s-btn" href="${esc(href)}" target="_blank" rel="noopener">Submit your music</a>
+    <div class="s-t">Know an artist we need to hear?</div>
+    <div class="s-s">Send them here to submit — the room reviews new music live, so a real audience gives it real ears.</div>
+    <div class="s-actions">
+      <a class="s-btn" href="${esc(href)}" target="_blank" rel="noopener">Have them submit</a>
+      <button class="s-btn" onclick="shareSubmit(this,'${esc(href)}')">Share link</button>
+    </div>
   </div>`;
+}
+async function shareSubmit(btn,url){
+  if(navigator.share){ try{ await navigator.share({title:'Submit your music — The A&R Room', url}); return; }catch(e){ if(e&&e.name==='AbortError')return; } }
+  try{ await navigator.clipboard.writeText(url); const t=btn.textContent; btn.textContent='Link copied ✓'; setTimeout(()=>btn.textContent=t,1600); }
+  catch(e){ prompt('Copy this submit link:', url); }
 }
 
 function renderLive(d){
