@@ -940,6 +940,14 @@ async function call(path, body, method='POST', headers={}) {
   const ist = (await call('/api/admin/state?sessionId=' + anyLive.d.sessionId, null, 'GET', ADMINH)).d;
   ok('adminState carries ingestLatest', ist.ingestLatest && ist.ingestLatest.title === 'Neon Skyline', JSON.stringify(ist.ingestLatest));
 
+  console.log('\n— SMS test endpoint: auth-gated, reports provider —');
+  const smsNoAuth = await call('/api/admin/sms/test', { to: '+13055551234' }, 'POST');
+  ok('sms test needs auth', smsNoAuth.status === 401, 'got ' + smsNoAuth.status);
+  const smsNoNum = await call('/api/admin/sms/test', {}, 'POST', ADMINH);
+  ok('sms test requires a number', smsNoNum.status === 400, 'got ' + smsNoNum.status);
+  const smsTest = await call('/api/admin/sms/test', { to: '+13055551234' }, 'POST', ADMINH);
+  ok('sms test sends (console provider in tests)', smsTest.status === 200 && smsTest.d.ok === true && smsTest.d.provider === 'console', JSON.stringify(smsTest.d));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

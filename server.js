@@ -23,7 +23,7 @@ const path = require('path');
 
 const db = require('./db');
 const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
-const { sendSms } = require('./sms');
+const { sendSms, PROVIDER: SMS_PROVIDER } = require('./sms');
 const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes } = require('./scoring');
 
@@ -1390,6 +1390,17 @@ async function handleApi(req, res, url) {
     if (!rec.title && !rec.artist) return send(res, 400, { error: 'Need at least a title or artist' }, cors);
     await db.run("INSERT INTO settings (k,v) VALUES ('ingest_latest', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [JSON.stringify(rec)]);
     return send(res, 200, { ok: true, staged: { title: rec.title, artist: rec.artist } }, cors);
+  }
+
+  // Send a one-off test SMS to verify the Twilio config (no session needed). Reports the
+  // active provider so the UI can flag when SMS_PROVIDER is still 'console' (logs, no send).
+  if (p === '/api/admin/sms/test' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user) return bad(res, 'Not logged in', 401);
+    const { to } = await readBody(req);
+    if (!to || !to.trim()) return bad(res, 'Phone number required');
+    const r = await sendSms(to.trim(), '🎧 Test from The A&R Room — your SMS setup is working! Reply STOP to opt out.');
+    return send(res, 200, { ok: !!r.ok, provider: SMS_PROVIDER, error: r.error || null });
   }
 
   // Host pulls the latest staged submission into the queue form (mirrors nero-pull).

@@ -311,6 +311,16 @@
         <div class="muted" id="cfgStatus" style="font-size:12px;margin-top:6px"></div>
       </div>
 
+      <!-- SMS test: verify the Twilio config (sends one text; no session needed) -->
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+        <label>Test SMS setup <span class="muted">(sends one text to check Twilio)</span></label>
+        <div class="row" style="gap:6px;margin-top:2px">
+          <input id="smsTestNum" type="tel" inputmode="tel" placeholder="+1 305 555 1234" style="flex:1">
+          <button class="btn sm" id="btnSmsTest" style="flex:0 0 auto">Send test</button>
+        </div>
+        <div class="muted" id="smsTestStatus" style="font-size:12px;margin-top:6px"></div>
+      </div>
+
       <!-- Location check-in -->
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
         <label>Event location <span class="muted">(for on-premise check-in)</span></label>
@@ -1135,6 +1145,18 @@ $('#btnSaveConfig')&&($('#btnSaveConfig').onclick=async()=>{
     $('#cfgStatus').textContent='Saved ✓';setTimeout(()=>$('#cfgStatus').textContent='',2000);
   }catch(e){$('#cfgStatus').textContent=e.message;}
   $('#btnSaveConfig').disabled=false;
+});
+$('#btnSmsTest')&&($('#btnSmsTest').onclick=async()=>{
+  const to=$('#smsTestNum').value.trim();
+  if(!to)return $('#smsTestStatus').textContent='Enter a phone number';
+  $('#btnSmsTest').disabled=true;$('#smsTestStatus').textContent='Sending…';
+  try{
+    const d=await api('/api/admin/sms/test',{to});
+    if(d.provider!=='twilio') $('#smsTestStatus').textContent='⚠️ SMS_PROVIDER is "'+d.provider+'" — set it to twilio and redeploy. Nothing was actually sent.';
+    else if(d.ok) $('#smsTestStatus').textContent='Sent ✓ — check your phone.';
+    else $('#smsTestStatus').textContent='Twilio error: '+(d.error||'unknown');
+  }catch(e){$('#smsTestStatus').textContent=e.message;}
+  $('#btnSmsTest').disabled=false;
 });
 // Track whether the host is editing a config field, so polling doesn't clobber input.
 let cfgFocused=false;
