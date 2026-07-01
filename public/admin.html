@@ -539,6 +539,25 @@
   </div>
 </div>
 
+<!-- GO LIVE MODAL (confirm + choose notify channels) -->
+<div id="goliveModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
+  <div class="card" style="max-width:440px;width:100%">
+    <h2>Go live?</h2>
+    <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)">Opens <b id="glName" style="color:var(--ink)"></b> for voting and notifies your registered A&amp;Rs on the channels you pick.</p>
+    <div style="margin:12px 0 2px">
+      <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;cursor:pointer"><input type="checkbox" id="glEmail" checked style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>Email</span></label>
+      <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;cursor:pointer"><input type="checkbox" id="glSms" checked style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>SMS <span class="muted" style="font-size:11px">(only A&amp;Rs who opted in)</span></span></label>
+      <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;opacity:.5"><input type="checkbox" id="glPush" disabled style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>Push <span class="muted" style="font-size:11px">(coming with the app update)</span></span></label>
+    </div>
+    <div class="muted" id="glCount" style="font-size:12px;margin:4px 2px 0"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn good" id="glConfirm">Go live</button>
+      <button class="btn ghost" id="glCancel" style="flex:0 0 auto">Cancel</button>
+    </div>
+    <div class="err" id="glErr"></div>
+  </div>
+</div>
+
 <script>
 const $=s=>document.querySelector(s);
 let SID=localStorage.getItem('rt_admin_sid'), ATOK=localStorage.getItem('rt_admin_token');
@@ -1133,7 +1152,24 @@ $('#btnSaveGeo')&&($('#btnSaveGeo').onclick=async()=>{
   $('#btnSaveGeo').disabled=false;
 });
 $('#btnEnd').onclick=async()=>{if(!confirm('Complete the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'completed'});refresh();};
-$('#btnGoLive').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
+// Go live is a confirm step: pick which channels notify the registered A&Rs.
+$('#btnGoLive').onclick=()=>{
+  $('#glName').textContent=(lastState&&lastState.session&&lastState.session.name)||'this session';
+  const n=(lastState&&lastState.verifiedCount)||0;
+  $('#glCount').textContent=n?(n+' registered A&R'+(n===1?'':'s')+' can be notified.'):'No one is registered yet — notifications will reach only opted-in registrants.';
+  $('#glErr').textContent='';
+  $('#goliveModal').style.display='flex';
+};
+$('#glCancel').onclick=()=>{$('#goliveModal').style.display='none';};
+$('#glConfirm').onclick=async()=>{
+  $('#glErr').textContent=''; $('#glConfirm').disabled=true;
+  const notify={email:$('#glEmail').checked,sms:$('#glSms').checked,push:$('#glPush').checked};
+  try{
+    await api('/api/admin/session/status',{sessionId:SID,status:'live',notify});
+    $('#goliveModal').style.display='none';refresh();
+  }catch(e){$('#glErr').textContent=e.message;}
+  $('#glConfirm').disabled=false;
+};
 $('#btnUnlive').onclick=async()=>{if(!confirm('Move this session back to Upcoming? It leaves the live state — players can pre-register again.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'upcoming'});refresh();};
 $('#btnArchive').onclick=async()=>{if(!confirm('Archive this session? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
 $('#btnReopen').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};

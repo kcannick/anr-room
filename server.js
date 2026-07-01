@@ -579,7 +579,11 @@ async function logNotify(sessionId, p, channel, destination, status, error) {
   } catch (e) { /* unique-index race: another worker logged first — fine */ }
 }
 
-async function dispatchGoLiveNotifications(session, base) {
+async function dispatchGoLiveNotifications(session, base, channels) {
+  const wantEmail = !!(channels && channels.email);
+  const wantSms = !!(channels && channels.sms);
+  // Push (channels.push) is not wired yet — deferred behind the PWA shell; ignore it here.
+  if (!wantEmail && !wantSms) return { attempted: 0, sent: 0, failed: 0 };
   const sessionId = session.id;
   const parts = await db.all(
     'SELECT id, user_id, email, phone, sms_marketing_consent FROM participants WHERE session_id = ? AND verified = 1',
@@ -599,12 +603,12 @@ async function dispatchGoLiveNotifications(session, base) {
   const text = `${name} is live on The A&R Room. Join: ${url}`;
   let sent = 0, failed = 0;
   await runLimited(capped, NOTIFY_CONCURRENCY, async (p) => {
-    if (p.email && !(await alreadyNotified(sessionId, p.id, 'email'))) {
+    if (wantEmail && p.email && !(await alreadyNotified(sessionId, p.id, 'email'))) {
       const r = await sendEmail(p.email, subject, html, text);
       await logNotify(sessionId, p, 'email', p.email, r.ok ? 'sent' : 'failed', r.error);
       r.ok ? sent++ : failed++;
     }
-    if (p.phone && p.sms_marketing_consent && !(await alreadyNotified(sessionId, p.id, 'sms'))) {
+    if (wantSms && p.phone && p.sms_marketing_consent && !(await alreadyNotified(sessionId, p.id, 'sms'))) {
       const r = await sendSms(p.phone, smsBody);
       await logNotify(sessionId, p, 'sms', p.phone, r.ok ? 'sent' : 'failed', r.error);
       r.ok ? sent++ : failed++;
@@ -1540,18 +1544,19 @@ async function handleApi(req, res, url) {
   // Set session lifecycle status: upcoming | live | completed | archived.
   // Used for go-live, complete, archive, and reopen (completed/archived -> live).
   if (p === '/api/admin/session/status' && method === 'POST') {
-    const { sessionId, status } = await readBody(req);
+    const { sessionId, status, notify } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const valid = ['upcoming', 'live', 'completed', 'archived'];
     if (!valid.includes(status)) return bad(res, 'Invalid status');
     const wasLive = session.status === 'live';
     await db.run('UPDATE sessions SET status = ? WHERE id = ?', [status, sessionId]);
-    // The moment a session goes live, notify its registrants (SMS + email). Idempotent
-    // per (session, participant, channel) so a reopen never re-notifies. Non-fatal —
-    // a send hiccup must never fail the go-live itself.
-    if (status === 'live' && !wasLive) {
-      try { await dispatchGoLiveNotifications(session, publicBaseFromReq(req)); }
+    // On go-live, the host chooses which channels notify registrants (notify:{email,sms,push})
+    // from the confirm dialog. No notify object => notify nothing. Idempotent per
+    // (session, participant, channel) so a reopen never re-notifies. Non-fatal — a send
+    // hiccup must never fail the go-live itself.
+    if (status === 'live' && !wasLive && notify) {
+      try { await dispatchGoLiveNotifications(session, publicBaseFromReq(req), notify); }
       catch (e) { console.error(`[NOTIFY] go-live dispatch error: ${e.message}`); }
     }
     return send(res, 200, { ok: true, status });

@@ -894,22 +894,31 @@ async function call(path, body, method='POST', headers={}) {
   await call('/api/join/verify', { sessionId: NOID, email: 'maily@test.com', code: nrq2.d.devCode, name: 'Maily' });
   const before = Number((await db.get('SELECT COUNT(*) c FROM notification_log WHERE session_id = ?', [NOID])).c);
   ok('nothing sent before go-live', before === 0, 'got ' + before);
-  // Flip to live -> dispatch fires.
-  const golive = await call('/api/admin/session/status', { sessionId: NOID, status: 'live' }, 'POST', ADMINH);
+  // Go live WITHOUT a notify object -> the host didn't opt in, so nothing sends.
+  await call('/api/admin/session/status', { sessionId: NOID, status: 'live' }, 'POST', ADMINH);
+  const noNotify = Number((await db.get('SELECT COUNT(*) c FROM notification_log WHERE session_id = ?', [NOID])).c);
+  ok('go-live without notify sends nothing', noNotify === 0, 'got ' + noNotify);
+  // Reopen and go live WITH notify:{email,sms} -> dispatch fires on this transition.
+  await call('/api/admin/session/status', { sessionId: NOID, status: 'upcoming' }, 'POST', ADMINH);
+  const golive = await call('/api/admin/session/status', { sessionId: NOID, status: 'live', notify: { email: true, sms: true } }, 'POST', ADMINH);
   ok('go-live ok', golive.status === 200, JSON.stringify(golive.d));
   const rows = await db.all('SELECT channel, status FROM notification_log WHERE session_id = ?', [NOID]);
   const emails = rows.filter(r => r.channel === 'email'), smses = rows.filter(r => r.channel === 'sms');
   ok('emailed both registrants', emails.length === 2 && emails.every(r => r.status === 'sent'), JSON.stringify(rows));
   ok('SMS only to the consenting number', smses.length === 1 && smses[0].status === 'sent', JSON.stringify(smses));
-  // Idempotent: reopen (live -> upcoming -> live) must not re-notify.
+  // Idempotent: reopen with notify again must not re-notify.
   await call('/api/admin/session/status', { sessionId: NOID, status: 'upcoming' }, 'POST', ADMINH);
-  await call('/api/admin/session/status', { sessionId: NOID, status: 'live' }, 'POST', ADMINH);
+  await call('/api/admin/session/status', { sessionId: NOID, status: 'live', notify: { email: true, sms: true } }, 'POST', ADMINH);
   const after = Number((await db.get('SELECT COUNT(*) c FROM notification_log WHERE session_id = ?', [NOID])).c);
   ok('reopen does not re-notify', after === rows.length, `before ${rows.length} after ${after}`);
-  // A session created directly as live doesn't spam (no upcoming->live transition, no registrants).
-  const liveDirect = await call('/api/session', { name: 'Born Live', status: 'live' }, 'POST', ADMINH);
-  const bornRows = Number((await db.get('SELECT COUNT(*) c FROM notification_log WHERE session_id = ?', [liveDirect.d.sessionId])).c);
-  ok('born-live session sends nothing', bornRows === 0, 'got ' + bornRows);
+  // Channel selection is honored: email-only go-live sends no SMS.
+  const emSess = await call('/api/session', { name: 'Email Only Night', status: 'upcoming' }, 'POST', ADMINH);
+  const EMID = emSess.d.sessionId;
+  const erq = await call('/api/join/request', { sessionId: EMID, email: 'eo@test.com' });
+  await call('/api/join/verify', { sessionId: EMID, email: 'eo@test.com', code: erq.d.devCode, name: 'EOnly', phone: '(555) 333-4444' });
+  await call('/api/admin/session/status', { sessionId: EMID, status: 'live', notify: { email: true, sms: false } }, 'POST', ADMINH);
+  const emRows = await db.all('SELECT channel FROM notification_log WHERE session_id = ?', [EMID]);
+  ok('email-only selection sends no SMS', emRows.length === 1 && emRows[0].channel === 'email', JSON.stringify(emRows));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
