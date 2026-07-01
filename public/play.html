@@ -218,6 +218,18 @@
     <div class="stream-player" id="streamPlayer"></div>
   </div>
 
+  <!-- JOIN: logged-in one-tap register (uses the A&R account, no code) -->
+  <section id="screen-account" class="center stack hide">
+    <div class="panel stack" style="text-align:center">
+      <div class="eyebrow">Welcome back</div>
+      <h2 style="margin:6px 0;font-size:24px" id="acctHi">You're logged in</h2>
+      <p class="dim" id="acctSub" style="font-size:14px;margin:0">Register for this session with your A&amp;R account — no code needed.</p>
+      <button class="btn" id="btnAcctJoin">Register</button>
+      <button class="btn ghost" id="btnAcctOther">Use a different email</button>
+      <div class="err" id="acctErr"></div>
+    </div>
+  </section>
+
   <!-- JOIN: email -->
   <section id="screen-email" class="center stack hide">
     <div class="panel stack">
@@ -725,7 +737,28 @@ function showStep(step){
   $('#stepPredict').classList.toggle('hide', step!==2);
 }
 
-function show(id){['email','code','wait','vote','locked','results','ended'].forEach(s=>$('#screen-'+s).classList.toggle('hide',s!==id));}
+function show(id){['account','email','code','wait','vote','locked','results','ended'].forEach(s=>$('#screen-'+s).classList.toggle('hide',s!==id));}
+// Logged-in one-tap register (no OTP) — offered when there's an account token but no
+// participant token for this session yet.
+async function tryAccountRegister(info){
+  const at=localStorage.getItem('rt_auth_token');
+  let me=null; try{ me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':at}}).then(r=>r.ok?r.json():null); }catch(e){}
+  if(!me||!me.uid){ show('email'); return; }
+  const live=info&&info.status==='live';
+  $('#acctHi').textContent='Hey '+(me.name||'there');
+  $('#acctSub').textContent=live?'Register with your A&R account and jump into the room — no code needed.':"Register with your A&R account — you're set the moment it goes live. No code needed.";
+  $('#btnAcctJoin').textContent=live?'Enter the room':'Register';
+  show('account');
+}
+$('#btnAcctJoin').onclick=async()=>{
+  $('#acctErr').textContent=''; $('#btnAcctJoin').disabled=true;
+  try{
+    const r=await fetch('/api/join/account',{method:'POST',headers:{'Content-Type':'application/json','X-Auth-Token':localStorage.getItem('rt_auth_token')},body:JSON.stringify({sessionId:SID})});
+    const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not register');
+    setToken(d.token); startPolling();
+  }catch(e){ $('#acctErr').textContent=e.message; $('#btnAcctJoin').disabled=false; }
+};
+$('#btnAcctOther').onclick=()=>show('email');
 
 // build rating pips 0-9 (NPS-style: no center default; 0-4 lower half, 5-9 upper half)
 (function(){
@@ -1411,11 +1444,12 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
   // Populate the room name in the header up front, even before the player logs in —
   // this is public info and avoids a blank title on a fresh session. Also lets us show
   // a clear message if the link points at a missing/closed session.
+  let sessInfo=null;
   try{
-    const info=await fetch('/api/session/info?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status));
-    if(info&&info.name)$('#sessName').textContent=info.name;
-    if(info&&info.closed&&!getToken()){
-      document.body.innerHTML='<div class="wrap"><div class="brand"><div class="brand-titlerow"><h1>The A&amp;R Room</h1></div></div><div class="panel" style="margin-top:24px;text-align:center"><div style="font-size:30px">🔒</div><h2 style="margin:10px 0">'+(info.name||'This session')+'</h2><p class="dim">This session has ended. Thanks for playing!</p></div></div>';
+    sessInfo=await fetch('/api/session/info?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status));
+    if(sessInfo&&sessInfo.name)$('#sessName').textContent=sessInfo.name;
+    if(sessInfo&&sessInfo.closed&&!getToken()){
+      document.body.innerHTML='<div class="wrap"><div class="brand"><div class="brand-titlerow"><h1>The A&amp;R Room</h1></div></div><div class="panel" style="margin-top:24px;text-align:center"><div style="font-size:30px">🔒</div><h2 style="margin:10px 0">'+(sessInfo.name||'This session')+'</h2><p class="dim">This session has ended. Thanks for playing!</p></div></div>';
       return;
     }
   }catch(e){
@@ -1423,6 +1457,7 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
     // other errors: fall through and let the normal flow try
   }
   if(getToken())startPolling();
+  else if(localStorage.getItem('rt_auth_token'))await tryAccountRegister(sessInfo); // logged-in one-tap
   else show('email');
 })();
 </script>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The A&R Room — Join the A&R Team Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d0b16;--panel:#171328;--panel-2:#1d1733;--line:#2e2750;
+    --ink:#f3f0fb;--ink-dim:#a9a2c9;--ink-faint:#6f688f;
+    --signal:#4bb749;--signal-deep:#379235;--hot:#ff5d6c;--cool:#7c6ff0;--accent:#6d5fe0;--amber:#f5a524;--brand-purple:#403694;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:30px 16px 60px;background:radial-gradient(130% 80% at 50% -8%, #241a4d 0%, var(--bg) 56%);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:1140px;margin:0 auto}
+  .deck-title{text-align:center;margin:0 0 6px;font-size:22px;font-weight:800}
+  .deck-sub{text-align:center;color:var(--ink-dim);font-size:13px;margin:0 0 32px;line-height:1.6}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;align-items:start}
+  .state{position:relative}
+  .state-label{position:absolute;top:-10px;left:16px;z-index:5;font-family:"Space Mono",monospace;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:3px 9px;border-radius:999px;color:#fff;background:var(--accent)}
+  .phone{background:radial-gradient(130% 70% at 50% -8%, #241a4d 0%, var(--bg) 58%);border:1px solid var(--line);border-radius:20px;padding:18px 15px;min-height:480px}
+  .nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .brand{display:flex;align-items:center;gap:8px}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--signal)}
+  .brand .nm{font-weight:800;font-size:13px}
+  .nav-cta{font-size:11px;font-weight:700;color:#06210b;background:var(--signal);padding:6px 11px;border-radius:8px}
+  .hero{text-align:center;padding:14px 4px}
+  .prize{display:inline-flex;gap:6px;background:rgba(245,165,36,.12);border:1px solid #5a4a1d;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:700;color:var(--amber);margin-bottom:13px}
+  .hero h1{font-size:26px;font-weight:800;line-height:1.1;letter-spacing:-.02em;margin:0 0 10px}
+  .hero h1 .g{color:var(--signal)}
+  .hero p{font-size:13px;color:var(--ink-dim);line-height:1.5;margin:0 auto 16px;max-width:280px}
+  .cta{display:block;background:var(--signal);color:#06210b;font-size:15px;font-weight:800;padding:14px;border-radius:12px;text-align:center;cursor:pointer}
+  .cta.sec{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600;margin-top:10px}
+  .eyebrow{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin:0 0 8px}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:16px}
+  h2{font-size:19px;font-weight:800;margin:4px 0 6px}
+  label{display:block;font-size:11px;color:var(--ink-dim);margin:0 0 6px 2px}
+  .field{width:100%;background:#0f0c1c;border:1px solid var(--line);border-radius:11px;padding:12px;color:var(--ink);font-size:15px;margin-bottom:12px;font-family:inherit}
+  .field.ph{color:var(--ink-faint)}
+  .hint{font-size:11px;color:var(--ink-faint);line-height:1.5;margin:2px 2px 12px}
+  .dim{color:var(--ink-dim);font-size:13px;line-height:1.5}
+  .big-check{width:70px;height:70px;border-radius:50%;background:rgba(75,183,73,.14);border:1px solid var(--signal-deep);display:flex;align-items:center;justify-content:center;font-size:34px;margin:8px auto 14px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 6px}
+  .chip{font-size:11px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:#0f0c1c;color:var(--ink-dim)}
+  .chip.on{background:rgba(109,95,224,.18);border-color:var(--accent);color:var(--ink)}
+  .note{font-size:11.5px;color:var(--ink-dim);line-height:1.55;margin:13px 4px 0}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="deck-title">Join the A&R Team — mockups</h1>
+  <p class="deck-sub">A direct way to register with no session scheduled. Persistent CTA + primary hero when idle. Real account + profile → a listed A&R, notified for the next session.</p>
+
+  <div class="grid">
+
+    <!-- 1. HOMEPAGE IDLE -->
+    <div class="state">
+      <span class="state-label">1 · Homepage (no session)</span>
+      <div class="phone">
+        <div class="nav"><div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div><span class="nav-cta">Join the team</span></div>
+        <div class="hero">
+          <div class="prize">💰 $500 monthly cash prize</div>
+          <h1>Got an ear<br><span class="g">for music?</span></h1>
+          <p>No session live right now — but the A&amp;R Team is always open. Join, build your profile, climb the board.</p>
+          <span class="cta">Join the A&amp;R Team</span>
+          <span class="cta sec">See how it works</span>
+        </div>
+        <p class="note"><b>Primary action when idle.</b> "Join the team" also lives in the nav so it's reachable anytime. When a session IS live/upcoming, "Get in to vote" / "Register" lead and this drops to secondary.</p>
+      </div>
+    </div>
+
+    <!-- 2. EMAIL -->
+    <div class="state">
+      <span class="state-label">2 · Sign up</span>
+      <div class="phone">
+        <div class="nav"><div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div></div>
+        <p class="eyebrow">Join the A&amp;R Team</p>
+        <div class="panel">
+          <h2>Take your seat</h2>
+          <p class="dim" style="margin:0 0 14px">Enter your email and we'll send a six-digit code to confirm it's you.</p>
+          <label>Email</label>
+          <input class="field ph" value="you@email.com">
+          <span class="cta">Send my code</span>
+        </div>
+        <p class="note">Same fast email-OTP the rest of the app uses — no passwords. Creates a durable account (no session needed).</p>
+      </div>
+    </div>
+
+    <!-- 3. CODE + NAME -->
+    <div class="state">
+      <span class="state-label">3 · Confirm + name</span>
+      <div class="phone">
+        <div class="nav"><div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div></div>
+        <p class="eyebrow">Join the A&amp;R Team</p>
+        <div class="panel">
+          <h2 style="font-size:17px">Enter the code</h2>
+          <p class="dim" style="margin:0 0 12px;font-size:12px">Sent to you@email.com.</p>
+          <input class="field ph" value="••••••" style="text-align:center;letter-spacing:.4em">
+          <label>Display name <span style="color:var(--signal);font-weight:700">required</span></label>
+          <input class="field ph" value="DJ Chain">
+          <label>Mobile <span class="dim" style="font-size:11px">(optional — get notified when sessions go live)</span></label>
+          <input class="field ph" value="(404) 555-0173" style="margin-bottom:6px">
+          <p class="hint">Texts only when a session goes live + about A&amp;R Room events. Reply STOP to opt out.</p>
+          <span class="cta">Join the team →</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. PROFILE + SUCCESS -->
+    <div class="state">
+      <span class="state-label">4 · Profile → you're in</span>
+      <div class="phone">
+        <div class="nav"><div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div></div>
+        <div class="panel" style="margin-bottom:14px">
+          <p class="eyebrow" style="color:var(--signal)">Step 2 of 2 · finish to get listed</p>
+          <div style="font-size:15px;font-weight:700;margin-bottom:8px">Complete your profile</div>
+          <div class="chips"><span class="chip on">DJ</span><span class="chip on">Producer</span><span class="chip">Content Creator</span><span class="chip">+ more</span></div>
+          <input class="field ph" value="Atlanta, GA" style="margin-top:8px"><div class="dim" style="font-size:11px;margin-top:-6px">↳ reuses the same profile step (skills · location · photo)</div>
+        </div>
+        <div class="panel" style="text-align:center">
+          <div class="big-check">✓</div>
+          <div style="font-size:17px;font-weight:800">You're on the team!</div>
+          <p class="dim" style="margin:6px 0 0;font-size:12.5px">You'll appear in <b style="color:var(--ink)">New A&amp;Rs</b> and we'll let you know the moment the next session goes live.</p>
+        </div>
+        <p class="note">Same profile completion we already built (skills → primary, location autocomplete, photo crop). On finish: listed in the ticker, notify-ready, and one tap into the next live session.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

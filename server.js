@@ -767,6 +767,10 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE otps SET attempts = attempts + 1 WHERE email = ? AND session_id = ?', [em, sessionId]);
       return bad(res, 'Incorrect code');
     }
+    // Re-check the session is still open (belt-and-suspenders: could close between
+    // requesting a code and verifying). You can only register for upcoming/live sessions.
+    const vSession = await db.get('SELECT status, deleted_at FROM sessions WHERE id = ?', [sessionId]);
+    if (!vSession || vSession.deleted_at || vSession.status === 'completed' || vSession.status === 'archived') return bad(res, 'This session is closed', 400);
     // ---- durable user identity (keyed on email, spans all sessions) ----
     // Recognize a returning player by email; create a permanent uid the first time.
     let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
@@ -833,6 +837,36 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }
     await db.run('DELETE FROM otps WHERE email = ? AND session_id = ?', [em, sessionId]);
+    return send(res, 200, { token });
+  }
+
+  // ----- register a logged-in account holder into a session (no OTP) -----
+  // They're already identity-verified via their A&R account, so one tap adds them as a
+  // participant. Only for upcoming/live sessions. Returns a per-session player token.
+  if (p === '/api/join/account' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user) return bad(res, 'Not logged in', 401);
+    if (user.blocked) return bad(res, 'This account has been suspended.', 403);
+    const { sessionId } = await readBody(req);
+    const session = await db.get('SELECT id, status, deleted_at FROM sessions WHERE id = ?', [sessionId]);
+    if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
+    if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This session is closed — you can only register for upcoming or live sessions', 400);
+    const em = (user.email || '').toLowerCase();
+    const consent = ((user.phone || '').replace(/\D/g, '').length >= 7) ? 1 : 0;
+    const token = id(18);
+    let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
+    if (participant) {
+      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone) WHERE id = ?',
+        [token, user.uid, (user.name || '').trim(), user.phone || '', participant.id]);
+      if (!participant.ref_code) await db.run('UPDATE participants SET ref_code = ? WHERE id = ?', [refCode(), participant.id]);
+    } else {
+      const pid = id(9);
+      let myCode = refCode();
+      for (let tries = 0; tries < 5; tries++) { const clash = await db.get('SELECT 1 FROM participants WHERE session_id = ? AND ref_code = ?', [sessionId, myCode]); if (!clash) break; myCode = refCode(); }
+      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, signup_answer, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,0,?)',
+        [pid, sessionId, user.uid, em, (user.name || '').trim(), user.phone || null, consent, null, myCode, null, token, now()]);
+      await db.run('UPDATE users SET sessions_played = sessions_played + 1, last_seen = ? WHERE uid = ?', [now(), user.uid]);
+    }
     return send(res, 200, { token });
   }
 

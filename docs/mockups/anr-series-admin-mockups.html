@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The A&R Room — Series Admin Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand-green:#4bb749;--brand-purple:#403694;
+    --bg:#0d0b16;--panel:#171328;--panel-2:#1d1733;--line:#2e2750;
+    --ink:#f3f0fb;--ink-dim:#a9a2c9;--ink-faint:#6f688f;
+    --signal:#4bb749;--signal-deep:#379235;--hot:#ff5d6c;--cool:#7c6ff0;--good:#4bb749;--accent:#6d5fe0;--amber:#f5a524;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 16px 60px;background:var(--bg);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+  .wrap{max-width:1140px;margin:0 auto}
+  .deck-title{text-align:center;margin:0 0 6px;font-size:22px;font-weight:700}
+  .deck-sub{text-align:center;color:var(--ink-dim);font-size:13px;margin:0 0 32px}
+  .bar{display:flex;align-items:center;gap:10px;padding:13px 18px;border:1px solid var(--line);border-bottom:none;border-radius:16px 16px 0 0;background:rgba(13,11,22,.95)}
+  .bar .dot{width:10px;height:10px;border-radius:50%;background:var(--signal)}
+  .bar .ttl{font-weight:700;font-size:14px}
+  .bar .who{margin-left:auto;font-size:12px;color:var(--ink-dim)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:22px;align-items:start;margin-top:22px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px}
+  h2{margin:0 0 14px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);font-weight:600}
+  label{display:block;font-size:12px;color:var(--ink-dim);margin:0 0 6px 2px}
+  input,textarea,select{width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;border-radius:10px;outline:none}
+  input:focus,select:focus{border-color:var(--signal)}
+  .btn{cursor:pointer;background:var(--signal);color:#06210b;border:none;font:inherit;font-weight:700;font-size:13px;padding:10px 13px;border-radius:10px}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:500}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .row{display:flex;gap:9px}
+  .row>*{flex:1}
+  .muted{color:var(--ink-faint);font-size:11px;font-weight:400;letter-spacing:0;text-transform:none}
+  .screen-label{font-family:"Space Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:3px 9px;border-radius:999px;color:#fff;background:var(--accent);display:inline-block;margin-bottom:10px}
+  /* series list */
+  .ser{display:flex;align-items:center;gap:11px;padding:11px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
+  .ser+.ser{margin-top:8px}
+  .ser.active-ser{border-color:var(--signal-deep);background:rgba(75,183,73,.06)}
+  .ser-meta{flex:1;min-width:0}
+  .ser-name{font-size:14px;font-weight:600}
+  .ser-sub{font-size:11px;color:var(--ink-faint);margin-top:2px}
+  .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;letter-spacing:.04em;text-transform:uppercase}
+  .pill.active{background:rgba(75,183,73,.15);color:var(--signal)}
+  .pill.upcoming{background:rgba(124,111,240,.15);color:var(--cool)}
+  .pill.closed{background:rgba(111,104,143,.15);color:var(--ink-faint)}
+  /* session tagging row */
+  .sess{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px}
+  .sess+.sess{margin-top:7px}
+  .sess-meta{flex:1;min-width:0}
+  .sess-name{font-size:13px;font-weight:600}
+  .sess-sub{font-size:11px;color:var(--ink-faint);margin-top:1px}
+  .tagsel{max-width:150px;font-size:12px;padding:7px 9px}
+  .tagged{color:var(--signal);font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px}
+  /* leaderboard */
+  .lbhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .lbcut{font-size:11px;color:var(--amber);font-weight:600}
+  .lrow{display:flex;align-items:center;gap:11px;padding:8px 6px}
+  .lrow+.lrow{border-top:1px solid var(--line)}
+  .lrow.qualifies{background:rgba(245,165,36,.05)}
+  .lrank{font-family:"Space Mono",monospace;font-size:14px;font-weight:700;width:22px;text-align:center;color:var(--ink-dim)}
+  .lrank.q{color:var(--amber)}
+  .lav{width:32px;height:32px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:12px;border:1px solid var(--line)}
+  .lmeta{flex:1;min-width:0}
+  .lname{font-size:13px;font-weight:600}
+  .lsub{font-size:10px;color:var(--ink-faint)}
+  .lpts{font-family:"Space Mono",monospace;font-size:14px;font-weight:700}
+  .cutline{display:flex;align-items:center;gap:8px;margin:4px 0;color:var(--amber);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .cutline::before,.cutline::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--amber),transparent);opacity:.4}
+  .note{font-size:11.5px;color:var(--ink-dim);line-height:1.55;margin:12px 2px 0}
+  .note b{color:var(--ink)}
+  .hint{font-size:11px;color:var(--ink-faint);margin:7px 2px 0;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="deck-title">Series admin — mockups</h1>
+  <p class="deck-sub">In the host panel's real style. Three surfaces: manage series · tag sessions · the leaderboard + qualification cut. Endpoints are already built.</p>
+
+  <div class="grid">
+
+    <!-- 1. SERIES MANAGEMENT -->
+    <div>
+      <span class="screen-label">1 · Manage series</span>
+      <div class="bar"><span class="dot"></span><span class="ttl">The A&R Room · Host</span><span class="who">admin@makinitmag.com</span></div>
+      <div class="card" style="border-radius:0 0 16px 16px;border-top:none">
+        <h2>Series</h2>
+        <div class="ser active-ser">
+          <div class="ser-meta"><div class="ser-name">June 2026 <span class="pill active">Active</span></div><div class="ser-sub">4 sessions · top <b>8</b> → A&R Wars</div></div>
+          <button class="btn ghost sm">Edit</button>
+        </div>
+        <div class="ser">
+          <div class="ser-meta"><div class="ser-name">May 2026 <span class="pill closed">Closed</span></div><div class="ser-sub">5 sessions · top 6 · winner crowned</div></div>
+          <button class="btn ghost sm">View</button>
+        </div>
+
+        <h2 style="margin-top:20px">New series</h2>
+        <label>Title</label>
+        <input value="August 2026" />
+        <div class="row" style="margin-top:11px">
+          <div><label>Status</label><select><option>Upcoming</option><option>Active</option><option>Closed</option></select></div>
+          <div><label>Qualify count <span class="muted">top-N → Wars</span></label><input value="8" /></div>
+        </div>
+        <div class="row" style="margin-top:11px">
+          <div><label>Target sessions <span class="muted">display only</span></label><input value="5" /></div>
+          <div><label>Description <span class="muted">optional</span></label><input value="Summer series" /></div>
+        </div>
+        <button class="btn" style="width:100%;margin-top:13px">Create series</button>
+        <p class="hint"><b>Qualify count is per-series</b> — a small month can cut at 4, a big one at 8. It drives the leaderboard cut line (panel 3). Dates &amp; target are labels only; membership is the tag (panel 2).</p>
+      </div>
+    </div>
+
+    <!-- 2. TAG INLINE ON THE SESSION -->
+    <div>
+      <span class="screen-label">2 · Tag from the session (inline)</span>
+      <div class="card">
+        <h2>Your sessions <span class="muted">· series dropdown on each</span></h2>
+        <div class="sess">
+          <div class="sess-meta"><div class="sess-name">Weekly Review · Jun 25</div><div class="sess-sub">completed · 38 voters</div></div>
+          <select class="tagsel"><option>— untagged —</option><option selected>June 2026</option><option>May 2026</option><option style="color:var(--signal)">+ Add new series…</option></select>
+        </div>
+        <div class="sess">
+          <div class="sess-meta"><div class="sess-name">Friday Bonus · Jun 20</div><div class="sess-sub">completed · 22 voters</div></div>
+          <select class="tagsel"><option>— untagged —</option><option selected>June 2026</option><option>May 2026</option><option style="color:var(--signal)">+ Add new series…</option></select>
+        </div>
+        <div class="sess">
+          <div class="sess-meta"><div class="sess-name">Weekly Review · Jul 2</div><div class="sess-sub">upcoming</div></div>
+          <select class="tagsel"><option selected>— untagged —</option><option>June 2026</option><option style="color:var(--signal)">+ Add new series…</option></select>
+        </div>
+        <div class="sess" style="border-color:var(--signal-deep);background:rgba(75,183,73,.05)">
+          <div class="sess-meta"><div class="sess-name" style="color:var(--signal)">+ Add new series…</div><input value="July 2026" style="margin-top:6px;font-size:13px;padding:7px 9px" placeholder="Name it"/></div>
+          <button class="btn sm">Create &amp; tag</button>
+        </div>
+        <p class="note"><b>Tag right where you work.</b> The dropdown sits on each session — pick an existing series or <b>+ Add new series</b> to create one inline (just a name; refine details later in panel 1). The Friday bonus counts because you tagged it here.</p>
+      </div>
+    </div>
+
+    <!-- 3. LEADERBOARD + CONFIGURABLE CUT -->
+    <div>
+      <span class="screen-label">3 · Leaderboard + cut (cut = series setting)</span>
+      <div class="card">
+        <div class="lbhead">
+          <h2 style="margin:0">June 2026 · live standings</h2>
+          <span class="lbcut">Top 8 qualify</span>
+        </div>
+        <div class="lrow qualifies"><span class="lrank q">1</span><div class="lav">BK</div><div class="lmeta"><div class="lname">Belafonte K.</div><div class="lsub">Producer · Atlanta</div></div><span class="lpts">2,940</span></div>
+        <div class="lrow qualifies"><span class="lrank q">2</span><div class="lav">SR</div><div class="lmeta"><div class="lname">Sierra Rae</div><div class="lsub">A&R · Houston</div></div><span class="lpts">2,710</span></div>
+        <div class="lrow qualifies"><span class="lrank q">3</span><div class="lav">DC</div><div class="lmeta"><div class="lname">DJ Chain</div><div class="lsub">DJ · Atlanta</div></div><span class="lpts">2,655</span></div>
+        <div class="lrow qualifies"><span class="lrank q">4</span><div class="lav">MV</div><div class="lmeta"><div class="lname">Marcus V.</div><div class="lsub">Manager · Atlanta</div></div><span class="lpts">2,480</span></div>
+        <div class="lrow qualifies"><span class="lrank q">5</span><div class="lav">TL</div><div class="lmeta"><div class="lname">Tia Lemon</div><div class="lsub">Marketing · Miami</div></div><span class="lpts">2,205</span></div>
+        <div class="lrow qualifies"><span class="lrank q">6</span><div class="lav">JW</div><div class="lmeta"><div class="lname">Jay Wells</div><div class="lsub">Artist · ATL</div></div><span class="lpts">2,090</span></div>
+        <div class="lrow qualifies"><span class="lrank q">7</span><div class="lav">NP</div><div class="lmeta"><div class="lname">Nia P.</div><div class="lsub">Media · NYC</div></div><span class="lpts">1,975</span></div>
+        <div class="lrow qualifies"><span class="lrank q">8</span><div class="lav">RB</div><div class="lmeta"><div class="lname">Rob Banks</div><div class="lsub">DJ · Decatur</div></div><span class="lpts">1,840</span></div>
+        <div class="cutline">cut at 8 — adjustable per series</div>
+        <div class="lrow"><span class="lrank">9</span><div class="lav">KO</div><div class="lmeta"><div class="lname">Kelly O.</div><div class="lsub">Producer · ATL</div></div><span class="lpts">1,720</span></div>
+        <div class="lrow"><span class="lrank">10</span><div class="lav">DM</div><div class="lmeta"><div class="lname">Deon M.</div><div class="lsub">Booking · ATL</div></div><span class="lpts">1,610</span></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn good">Close series</button>
+          <button class="btn ghost" style="flex:0 0 auto">Export</button>
+        </div>
+        <p class="note"><b>No "locking" needed.</b> The board only moves when a tagged session gets new votes — once the month's sessions are done, the top N are already final. <b>Close series</b> is just a status flip; the qualifiers are read live off the standings. <span style="color:var(--ink-faint)">(2.0: auto-seed an A&R Wars session with them.)</span></p>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="note" style="text-align:center;max-width:780px;margin:26px auto 0"><b>One operator flow:</b> create a series (set its qualify-count) → tag each session inline from your session list (or add a new series on the spot) → watch the live leaderboard → lock the top N into A&R Wars at month's end. The public homepage shows a PII-safe version of panel 3 (first name + points). All endpoints built and tested.</p>
+</div>
+</body>
+</html>

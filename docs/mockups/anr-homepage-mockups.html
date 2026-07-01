@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The A&R Room — Public Homepage Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand-green:#4bb749; --brand-purple:#403694;
+    --bg:#0d0b16; --panel:#171328; --panel-2:#1d1733; --line:#2e2750;
+    --ink:#f3f0fb; --ink-dim:#a9a2c9; --ink-faint:#6f688f;
+    --signal:#4bb749; --signal-deep:#379235; --hot:#ff5d6c; --cool:#7c6ff0;
+    --accent:#6d5fe0; --amber:#f5a524;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:30px 16px 60px;background:radial-gradient(130% 90% at 50% -10%, #241a4d 0%, var(--bg) 58%);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:1180px;margin:0 auto}
+  .deck-title{text-align:center;margin:0 0 6px;font-size:22px;font-weight:800;letter-spacing:-.01em}
+  .deck-sub{text-align:center;color:var(--ink-dim);font-size:13px;margin:0 0 34px}
+  .states{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:26px;align-items:start}
+  .state{position:relative}
+  .state-label{position:absolute;top:-11px;left:18px;z-index:5;font-family:"Space Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:3px 9px;border-radius:999px;color:#fff}
+  .state-label.between{background:var(--accent)}
+  .state-label.live{background:var(--hot)}
+  .frame{background:var(--bg);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+  .page{background:radial-gradient(130% 70% at 50% -8%, #241a4d 0%, var(--bg) 55%);padding:18px 16px 22px}
+  /* nav */
+  .nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .brand{display:flex;align-items:center;gap:8px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--signal);box-shadow:0 0 10px 1px rgba(75,183,73,.6)}
+  .brand .nm{font-weight:800;font-size:15px;letter-spacing:-.01em}
+  .nav-links{display:flex;gap:14px;font-size:11.5px;color:var(--ink-dim)}
+  .nav-links span{cursor:pointer}
+  /* live banner */
+  .live-banner{display:flex;align-items:center;gap:10px;background:rgba(255,93,108,.12);border:1px solid #5a2230;border-radius:13px;padding:12px 14px;margin-bottom:16px}
+  .live-banner .pulse{width:11px;height:11px;border-radius:50%;background:var(--hot);box-shadow:0 0 0 0 rgba(255,93,108,.7);animation:pulse 1.8s infinite;flex:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,93,108,.6)}70%{box-shadow:0 0 0 10px rgba(255,93,108,0)}100%{box-shadow:0 0 0 0 rgba(255,93,108,0)}}
+  .live-banner .lb-txt{flex:1}
+  .live-banner .lb-t{font-weight:800;font-size:14px;color:#ff8b96}
+  .live-banner .lb-s{font-size:11px;color:var(--ink-dim)}
+  .live-banner .lb-btn{background:var(--hot);color:#2a0a0e;font-size:12px;font-weight:800;padding:9px 15px;border-radius:9px;white-space:nowrap}
+  /* hero */
+  .hero{text-align:center;padding:14px 6px 18px}
+  .hero h1{font-size:27px;font-weight:800;line-height:1.1;letter-spacing:-.02em;margin:0 0 9px}
+  .hero h1 .grad{color:var(--signal)}
+  .hero p{font-size:13.5px;color:var(--ink-dim);line-height:1.5;margin:0 auto 16px;max-width:300px}
+  .hero .cta{display:inline-block;background:var(--signal);color:#06210b;font-size:14px;font-weight:800;padding:13px 26px;border-radius:12px;cursor:pointer}
+  .hero .cta.hot{background:var(--hot);color:#2a0a0e}
+  .prize{display:inline-flex;align-items:center;gap:6px;background:rgba(245,165,36,.12);border:1px solid #5a4a1d;border-radius:999px;padding:5px 13px;font-size:12px;font-weight:700;color:var(--amber);margin-bottom:14px}
+  /* stream embed placeholder */
+  .stream{aspect-ratio:16/9;background:#0a0814;border:1px solid var(--line);border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:14px;gap:7px}
+  .stream .play{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--ink)}
+  .stream .st-t{font-size:11px;color:var(--ink-faint)}
+  .watch-row{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-bottom:14px}
+  .watch-chip{font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
+  /* section */
+  .sec{margin-bottom:18px}
+  .sec-h{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin:0 0 10px 2px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:14px;padding:14px}
+  /* upcoming */
+  .upcoming{display:flex;align-items:center;gap:12px}
+  .up-date{font-family:"Space Mono",monospace;text-align:center;background:#0f0c1c;border:1px solid var(--line);border-radius:10px;padding:8px 11px;flex:none}
+  .up-date .d{font-size:18px;font-weight:700;line-height:1}
+  .up-date .m{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-top:2px}
+  .up-meta{flex:1}
+  .up-name{font-size:14px;font-weight:700}
+  .up-time{font-size:11px;color:var(--ink-dim)}
+  .up-remind{font-size:11px;color:var(--signal);border:1px solid var(--signal-deep);border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+  /* leaderboard mini */
+  .lbrow{display:flex;align-items:center;gap:9px;padding:7px 0}
+  .lbrow+.lbrow{border-top:1px solid var(--line)}
+  .lbrank{font-family:"Space Mono",monospace;font-size:13px;font-weight:700;width:18px;color:var(--ink-dim)}
+  .lbrank.t{color:var(--signal)}
+  .lbav{width:30px;height:30px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:11px;border:1px solid var(--line)}
+  .lbnm{flex:1;font-size:13px;font-weight:600}
+  .lbnm small{display:block;font-size:10px;color:var(--ink-faint);font-weight:400}
+  .lbpts{font-family:"Space Mono",monospace;font-size:13px;font-weight:700}
+  /* winners empty */
+  .empty{text-align:center;padding:20px 12px;color:var(--ink-faint);font-size:12px;line-height:1.5}
+  .empty .ico{font-size:22px;margin-bottom:7px;opacity:.5}
+  /* submit strip */
+  .submit{background:linear-gradient(180deg,rgba(64,54,148,.25),rgba(64,54,148,.1));border:1px solid var(--brand-purple);border-radius:14px;padding:15px;text-align:center}
+  .submit .s-t{font-size:14px;font-weight:700;margin-bottom:4px}
+  .submit .s-s{font-size:11.5px;color:var(--ink-dim);margin-bottom:11px;line-height:1.45}
+  .submit .s-btn{display:inline-block;background:transparent;border:1px solid var(--cool);color:var(--cool);font-size:12px;font-weight:700;padding:9px 18px;border-radius:9px;cursor:pointer}
+  .howrow{display:flex;gap:8px;margin-bottom:18px}
+  .how{flex:1;background:#0f0c1c;border:1px solid var(--line);border-radius:11px;padding:11px 9px;text-align:center}
+  .how .hn{font-family:"Space Mono",monospace;font-size:11px;color:var(--signal);font-weight:700}
+  .how .ht{font-size:11px;color:var(--ink-dim);margin-top:5px;line-height:1.35}
+  .foot{text-align:center;font-size:10px;color:var(--ink-faint);margin-top:6px}
+  .note{font-size:11.5px;color:var(--ink-dim);line-height:1.55;margin:14px 4px 0}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="deck-title">Public homepage — two states</h1>
+  <p class="deck-sub">anr.makinitmag.com becomes a real front door. Session-aware: it knows whether you're live and reshapes around it.</p>
+
+  <div class="states">
+
+    <!-- BETWEEN SESSIONS -->
+    <div class="state">
+      <span class="state-label between">Between sessions · the default (23 hrs/day)</span>
+      <div class="frame"><div class="page">
+        <div class="nav">
+          <div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div>
+          <div class="nav-links"><span>Leaderboard</span><span>Winners</span><span>Submit</span></div>
+        </div>
+
+        <div class="hero">
+          <div class="prize">💰 $500 monthly cash prize</div>
+          <h1>Got an ear<br>for music?</h1>
+          <p>Rate songs, read the room, climb the leaderboard. Top tastemakers compete in A&amp;R Wars for the cash.</p>
+          <span class="cta">Get in to vote</span>
+        </div>
+
+        <div class="howrow">
+          <div class="how"><div class="hn">01</div><div class="ht">Rate the song</div></div>
+          <div class="how"><div class="hn">02</div><div class="ht">Predict the room</div></div>
+          <div class="how"><div class="hn">03</div><div class="ht">Climb &amp; qualify</div></div>
+        </div>
+
+        <div class="sec">
+          <p class="sec-h">Next session</p>
+          <div class="card upcoming">
+            <div class="up-date"><div class="d">02</div><div class="m">Jul</div></div>
+            <div class="up-meta"><div class="up-name">Weekly Music Review</div><div class="up-time">Wed · 7:00 PM ET · 6 platforms</div></div>
+            <span class="up-remind">Register</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <p class="sec-h">Series leaderboard · June</p>
+          <div class="card">
+            <div class="lbrow"><span class="lbrank t">1</span><div class="lbav">BK</div><div class="lbnm">Belafonte K.<small>Producer · Atlanta, GA</small></div><span class="lbpts">2,940</span></div>
+            <div class="lbrow"><span class="lbrank t">2</span><div class="lbav">SR</div><div class="lbnm">Sierra Rae<small>A&amp;R · Houston, TX</small></div><span class="lbpts">2,710</span></div>
+            <div class="lbrow"><span class="lbrank t">3</span><div class="lbav">DC</div><div class="lbnm">DJ Chain<small>DJ · Atlanta, GA</small></div><span class="lbpts">2,655</span></div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <p class="sec-h">Past winners</p>
+          <div class="card"><div class="empty"><div class="ico">🏆</div>First A&amp;R Wars champion crowned this month.<br>Winners appear here as the series close.</div></div>
+        </div>
+
+        <div class="submit">
+          <div class="s-t">Are you the artist?</div>
+          <div class="s-s">Get your record in front of a real, rating audience — exposure and distribution, not a lottery.</div>
+          <span class="s-btn">Submit your music</span>
+        </div>
+        <p class="foot">Makin' It Magazine · The A&amp;R Room</p>
+      </div></div>
+    </div>
+
+    <!-- LIVE NOW -->
+    <div class="state">
+      <span class="state-label live">Live right now · during a show</span>
+      <div class="frame"><div class="page">
+        <div class="nav">
+          <div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div>
+          <div class="nav-links"><span>Leaderboard</span><span>Winners</span></div>
+        </div>
+
+        <div class="live-banner">
+          <span class="pulse"></span>
+          <div class="lb-txt"><div class="lb-t">Live right now!</div><div class="lb-s">Blizm VS Smooth · 47 in the room</div></div>
+          <span class="lb-btn">Get in to vote</span>
+        </div>
+
+        <div class="stream" style="position:relative;background:#15101f">
+          <div style="position:absolute;top:9px;left:9px;display:flex;align-items:center;gap:5px;background:rgba(255,93,108,.9);color:#2a0a0e;font-size:9px;font-weight:800;padding:3px 8px;border-radius:6px;letter-spacing:.06em">● LIVE</div>
+          <div class="play">▶</div>
+          <div class="st-t">Live on YouTube · tap to watch</div>
+        </div>
+        <div class="watch-row">
+          <span class="watch-chip" style="border-color:var(--hot);color:#ff8b96">Watch on YouTube ↗</span>
+          <span class="watch-chip">Twitch ↗</span><span class="watch-chip">TikTok ↗</span><span class="watch-chip">+3 ↗</span>
+        </div>
+
+        <div class="hero" style="padding:6px 6px 16px">
+          <p style="margin-bottom:12px;font-size:13px">Watching on another screen? Jump in here and vote — rate the current song and read the room.</p>
+          <span class="cta hot">Get in to vote</span>
+        </div>
+
+        <div class="sec">
+          <p class="sec-h">Live standings · updating</p>
+          <div class="card">
+            <div class="lbrow"><span class="lbrank t">1</span><div class="lbav">DC</div><div class="lbnm">DJ Chain<small>DJ · Atlanta, GA</small></div><span class="lbpts">340</span></div>
+            <div class="lbrow"><span class="lbrank t">2</span><div class="lbav">SR</div><div class="lbnm">Sierra Rae<small>A&amp;R · Houston, TX</small></div><span class="lbpts">315</span></div>
+            <div class="lbrow"><span class="lbrank">3</span><div class="lbav">MV</div><div class="lbnm">Marcus V.<small>Manager · Atlanta, GA</small></div><span class="lbpts">290</span></div>
+          </div>
+        </div>
+        <p class="foot">Makin' It Magazine · The A&amp;R Room</p>
+      </div></div>
+    </div>
+
+  </div>
+
+  <p class="note" style="text-align:center;max-width:760px;margin:26px auto 0"><b>One page, scroll to sections, two states.</b> The site reads its own status: live → red banner + a screenshot of the YouTube stream + "watch on YouTube" links, then "get in to vote." Between shows → explainer, next session (with <b>Register</b>, not just a reminder — the real conversion), leaderboard, winners, submit funnel. <b>The voting app is a second-screen companion</b> — people watch on one device and vote on another (especially at live events and watch-alongs), so the app stays clean and never fights the audio they're already hearing. All data-driven; you run sessions, the page updates itself.</p>
+</div>
+</body>
+</html>

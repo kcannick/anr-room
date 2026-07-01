@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The A&R Room — Profile Page + Admin Users Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d0b16;--panel:#171328;--panel-2:#1d1733;--line:#2e2750;
+    --ink:#f3f0fb;--ink-dim:#a9a2c9;--ink-faint:#6f688f;
+    --signal:#4bb749;--signal-deep:#379235;--hot:#ff5d6c;--cool:#7c6ff0;--accent:#6d5fe0;--amber:#f5a524;--brand-purple:#403694;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:30px 16px 60px;background:radial-gradient(130% 80% at 50% -8%, #241a4d 0%, var(--bg) 56%);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:1080px;margin:0 auto}
+  .deck-title{text-align:center;margin:0 0 6px;font-size:22px;font-weight:800}
+  .deck-sub{text-align:center;color:var(--ink-dim);font-size:13px;margin:0 0 32px}
+  .grid{display:grid;grid-template-columns:360px 1fr;gap:30px;align-items:start}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+  .state-label{font-family:"Space Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:3px 9px;border-radius:999px;color:#fff;background:var(--accent);display:inline-block;margin-bottom:10px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px}
+  .mono{font-family:"Space Mono",monospace}
+  /* profile page */
+  .pf{background:radial-gradient(120% 60% at 50% -6%, #281d52 0%, var(--bg) 60%);border:1px solid var(--line);border-radius:22px;padding:24px 20px;text-align:center}
+  .pf-photo{width:104px;height:104px;border-radius:50%;margin:0 auto 14px;border:2px solid var(--accent);object-fit:cover;display:flex;align-items:center;justify-content:center;background:#221b3a;color:var(--accent);font-weight:800;font-size:34px}
+  .pf-name{font-size:23px;font-weight:800;letter-spacing:-.01em}
+  .pf-loc{font-size:13px;color:var(--ink-dim);margin-top:3px}
+  .pf-roles{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:14px 0 4px}
+  .role{font-size:11px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:#0f0c1c;color:var(--ink-dim)}
+  .role.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .pf-socials{display:flex;gap:9px;justify-content:center;margin:16px 0 4px}
+  .soc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink);border:1px solid var(--line);background:#0f0c1c;border-radius:10px;padding:8px 13px;cursor:pointer}
+  .soc:hover{border-color:var(--accent)}
+  .pf-stats{display:flex;gap:10px;margin-top:18px}
+  .stat{flex:1;background:#0f0c1c;border:1px solid var(--line);border-radius:13px;padding:12px 8px}
+  .stat .v{font-family:"Space Mono",monospace;font-size:21px;font-weight:700;line-height:1}
+  .stat .v.green{color:var(--signal)}
+  .stat .v.amber{color:var(--amber)}
+  .stat .l{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-top:6px}
+  .pf-back{font-size:12px;color:var(--cool);margin-top:16px;display:inline-block;cursor:pointer}
+  /* admin users */
+  .bar{display:flex;align-items:center;gap:10px;padding:13px 18px;border:1px solid var(--line);border-bottom:none;border-radius:16px 16px 0 0;background:rgba(13,11,22,.95)}
+  .bar .dot{width:10px;height:10px;border-radius:50%;background:var(--signal)}
+  .bar .ttl{font-weight:700;font-size:14px}
+  .bar .who{margin-left:auto;font-size:12px;color:var(--ink-dim)}
+  h2{margin:0 0 13px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);font-weight:600}
+  .search{width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;border-radius:10px;margin-bottom:14px}
+  .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
+  .urow+.urow{margin-top:8px}
+  .urow.blocked{opacity:.55}
+  .uav{width:38px;height:38px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:13px;border:1px solid var(--line);object-fit:cover}
+  .umeta{flex:1;min-width:0}
+  .uname{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .uemail{font-size:11px;color:var(--ink-faint);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .badge{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
+  .badge.admin{background:rgba(75,183,73,.16);color:var(--signal)}
+  .badge.blocked{background:rgba(255,93,108,.16);color:var(--hot)}
+  .badge.incomplete{background:rgba(245,165,36,.14);color:var(--amber)}
+  .upts{font-family:"Space Mono",monospace;font-size:13px;font-weight:700;color:var(--ink-dim);margin-right:4px}
+  .btn{cursor:pointer;background:var(--signal);color:#06210b;border:none;font:inherit;font-weight:700;font-size:12px;padding:7px 11px;border-radius:9px}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:500}
+  .btn.danger{background:transparent;border:1px solid var(--hot);color:var(--hot);font-weight:500}
+  .btn.amber{background:transparent;border:1px solid var(--amber);color:var(--amber);font-weight:500}
+  .uactions{display:flex;gap:6px;flex:none}
+  .note{font-size:11.5px;color:var(--ink-dim);line-height:1.55;margin:13px 2px 0}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="deck-title">Profile page + admin user management — mockups</h1>
+  <p class="deck-sub">Public profile (tap any leaderboard row / ticker item) · admin Users panel with block + delete. App tokens.</p>
+
+  <div class="grid">
+
+    <!-- PUBLIC PROFILE PAGE -->
+    <div>
+      <span class="state-label">Public profile · /u/&lt;id&gt;</span>
+      <div class="pf">
+        <div class="pf-photo">DC</div>
+        <div class="pf-name">DJ Chain</div>
+        <div class="pf-loc">📍 Atlanta, GA</div>
+        <div class="pf-roles">
+          <span class="role primary">DJ</span><span class="role">Producer</span><span class="role">Content Creator</span>
+        </div>
+        <div class="pf-socials">
+          <span class="soc">Instagram ↗</span>
+          <span class="soc">TikTok ↗</span>
+        </div>
+        <div class="pf-stats">
+          <div class="stat"><div class="v">2,655</div><div class="l">Points</div></div>
+          <div class="stat"><div class="v green">12</div><div class="l">Sessions</div></div>
+          <div class="stat"><div class="v amber">#3</div><div class="l">June rank</div></div>
+        </div>
+        <span class="pf-back">← Back to leaderboard</span>
+      </div>
+      <p class="note"><b>Tappable, screenshot-ready.</b> Linked from every leaderboard row and ticker item. PII-safe — photo, name, role(s), city, socials, and competition stats only; never email/phone. Series rank shows when they qualify. Incomplete or blocked profiles aren't linked and 404 if hit directly.</p>
+    </div>
+
+    <!-- ADMIN USERS PANEL -->
+    <div>
+      <span class="state-label" style="background:var(--signal-deep)">Admin · Users</span>
+      <div class="bar"><span class="dot"></span><span class="ttl">The A&amp;R Room · Host</span><span class="who">admin@makinitmag.com</span></div>
+      <div class="card" style="border-radius:0 0 16px 16px;border-top:none">
+        <h2>Users <span style="color:var(--ink-faint);font-weight:400;text-transform:none;letter-spacing:0">· 1,284 total</span></h2>
+        <input class="search" placeholder="Search by name or email…" value="">
+        <div class="urow">
+          <div class="uav">BK</div>
+          <div class="umeta"><div class="uname">Belafonte King <span class="badge admin">Admin</span></div><div class="uemail">belafonte@example.com</div></div>
+          <span class="upts">2,940</span>
+          <div class="uactions"><button class="btn amber">Block</button></div>
+        </div>
+        <div class="urow">
+          <div class="uav">SR</div>
+          <div class="umeta"><div class="uname">Sierra Rae</div><div class="uemail">sierra@example.com</div></div>
+          <span class="upts">2,710</span>
+          <div class="uactions"><button class="btn amber">Block</button><button class="btn danger">Delete</button></div>
+        </div>
+        <div class="urow">
+          <div class="uav">JD</div>
+          <div class="umeta"><div class="uname">Jordan D. <span class="badge incomplete">Incomplete</span></div><div class="uemail">jordan@example.com</div></div>
+          <span class="upts">410</span>
+          <div class="uactions"><button class="btn amber">Block</button><button class="btn danger">Delete</button></div>
+        </div>
+        <div class="urow blocked">
+          <div class="uav">SP</div>
+          <div class="umeta"><div class="uname">Spammy P. <span class="badge blocked">Blocked</span></div><div class="uemail">spam@example.com</div></div>
+          <span class="upts">0</span>
+          <div class="uactions"><button class="btn ghost">Unblock</button><button class="btn danger">Delete</button></div>
+        </div>
+        <p class="note"><b>Block</b> = reversible suspend: they can't log in, join, or vote, and they vanish from the leaderboard, ticker, and join feed — but their data stays (one click to unblock). <b>Delete</b> = permanent: type the name to confirm, then their account, participations, and votes are removed in one transaction (this changes any leaderboard that counted them). Admins can't be blocked/deleted from here.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
