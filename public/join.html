@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/mark-color.png">
-<title>The A&R Room · Become an A&R</title>
+<title>The A&R Room · Join the A&R Team</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -66,10 +66,10 @@
 
   <!-- STEP 1: EMAIL -->
   <section id="s-email">
-    <p class="eyebrow">Become an A&amp;R</p>
+    <p class="eyebrow">Join the A&amp;R Team</p>
     <div class="panel">
       <h2>Take your seat</h2>
-      <p class="dim">No session needed — become an A&amp;R, build your profile, and you're ready the moment the next session goes live.</p>
+      <p class="dim">No session needed — join the team, build your profile, and you're ready the moment the next session goes live.</p>
       <label>Email</label>
       <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com">
       <div id="devBox" class="dev hide"></div>
@@ -80,7 +80,7 @@
 
   <!-- STEP 2: CODE + NAME + PHONE -->
   <section id="s-code" class="hide">
-    <p class="eyebrow">Become an A&amp;R</p>
+    <p class="eyebrow">Join the A&amp;R Team</p>
     <div class="panel">
       <h2 style="font-size:18px" id="codeTitle">Confirm it's you</h2>
       <p class="dim" style="font-size:12.5px">Code sent to <span id="emailEcho" style="color:var(--ink)"></span>.</p>
@@ -95,7 +95,7 @@
         <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
         <p class="hint">We'll text you when a session goes live + about A&amp;R Room events. Msg &amp; data rates may apply; reply STOP to opt out. Optional.</p>
       </div>
-      <button class="btn" id="btnJoin">Become an A&amp;R →</button>
+      <button class="btn" id="btnJoin">Join the team →</button>
       <button class="btn ghost" id="btnBackEmail">Use a different email</button>
       <div class="err" id="codeErr"></div>
     </div>
@@ -135,7 +135,7 @@
   <section id="s-done" class="hide">
     <div class="panel" style="text-align:center">
       <div class="big-check">✓</div>
-      <h2 id="doneTitle">You're an A&amp;R!</h2>
+      <h2 id="doneTitle">You're on the team!</h2>
       <p class="dim" id="doneSub" style="margin:6px 0 0">You'll appear in <b style="color:var(--ink)">New A&Rs</b> and we'll let you know the moment the next session goes live.</p>
       <a class="btn" id="doneCta" href="/" style="display:block;text-decoration:none;text-align:center">Back to The A&amp;R Room</a>
     </div>
@@ -183,7 +183,7 @@ $('#btnSend').onclick=async()=>{
     $('#nameRow').classList.toggle('hide',known.hasName);
     $('#phoneRow').classList.toggle('hide',known.hasPhone);
     $('#codeTitle').textContent=known.exists?'Welcome back':"Confirm it's you";
-    $('#btnJoin').textContent=known.exists?'Continue →':'Become an A&R →';
+    $('#btnJoin').textContent=known.exists?'Continue →':'Join the team →';
     if(d.devCode){$('#devBox').classList.remove('hide');$('#devBox').textContent='Dev mode — your code is '+d.devCode;}
     show('code');$('#code').focus();
   }catch(e){$('#emailErr').textContent=e.message;}
@@ -269,7 +269,7 @@ async function initJoin(){
 }
 initJoin();
 function finishDone(listed){
-  if(!listed){ $('#doneTitle').textContent='Welcome, A&R!'; $('#doneSub').innerHTML='Your account is set. <b style="color:var(--ink)">Complete your profile</b> any time to get listed and qualify — we\'ll notify you when the next session is live.'; }
+  if(!listed){ $('#doneTitle').textContent='Welcome to the team!'; $('#doneSub').innerHTML='Your account is set. <b style="color:var(--ink)">Complete your profile</b> any time to get listed and qualify — we\'ll notify you when the next session is live.'; }
   show('done');
 }
 function doneReturning(){

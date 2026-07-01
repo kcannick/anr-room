@@ -249,8 +249,8 @@ function renderBetween(d){
   // With an upcoming session, "Register to play" leads and Join is secondary. With no
   // session, "Join the A&R Team" becomes the primary action (the registration that was missing).
   const heroCta=d.next
-    ? `<a class="cta" href="/?s=${encodeURIComponent(d.next.id)}">Register to play</a><a class="cta sec" href="/join">Become an A&R</a>`
-    : `<a class="cta" href="/join">Become an A&R</a><a class="cta sec" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
+    ? `<a class="cta" href="/?s=${encodeURIComponent(d.next.id)}">Register to play</a><a class="cta sec" href="/join">Join the A&R Team</a>`
+    : `<a class="cta" href="/join">Join the A&R Team</a><a class="cta sec" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
   $('#content').innerHTML=`
     <div class="hero">
       <div class="prize">💰 $500 monthly cash prize</div>
