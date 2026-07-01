@@ -131,6 +131,8 @@
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// GA4 engagement events (no-op when analytics is disabled or gtag hasn't loaded).
+function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params||{}); }catch(e){} }
 const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
 const SUBMIT_URL='https://www.makinitmag.com/review'; // artist-submission page
 
@@ -167,7 +169,7 @@ function howRow(){
 function nextCard(next){
   if(!next)return `<div class="sec"><p class="sec-h">Next session</p><div class="card"><div class="empty">No session scheduled yet — check back soon.</div></div></div>`;
   const db=dateBlock(next.scheduledAt);
-  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener">🎤 Know an artist? Submit music for this session ↗</a>`:'';
+  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener" onclick="track('music_submit_click',{action:'link'})">🎤 Know an artist? Submit music for this session ↗</a>`:'';
   return `<div class="sec" id="secNext"><p class="sec-h">Next session</p>
     <div class="card upcoming">
       <div class="up-date"><div class="d">${esc(db.d)}</div><div class="m">${esc(db.m)}</div></div>
@@ -213,6 +215,7 @@ function submitSection(sUrl){
   </div>`;
 }
 async function shareSubmit(btn,url){
+  track('music_submit_click',{action:'share'});
   if(navigator.share){ try{ await navigator.share({title:'Submit your music — The A&R Room', url}); return; }catch(e){ if(e&&e.name==='AbortError')return; } }
   try{ await navigator.clipboard.writeText(url); const t=btn.textContent; btn.textContent='Link copied ✓'; setTimeout(()=>btn.textContent=t,1600); }
   catch(e){ prompt('Copy this submit link:', url); }
@@ -250,7 +253,7 @@ function renderBetween(d){
   // With an upcoming session, "Register to play" leads and Join is secondary. With no
   // session, "Join the A&R Team" becomes the primary action (the registration that was missing).
   const heroCta=d.next
-    ? `<a class="cta" href="/?s=${encodeURIComponent(d.next.id)}">Register to play</a><a class="cta sec" href="/join">Join the A&R Team</a>`
+    ? `<a class="cta" href="/?s=${encodeURIComponent(d.next.id)}" onclick="track('register_click',{from:'home'})">Register to play</a><a class="cta sec" href="/join">Join the A&R Team</a>`
     : `<a class="cta" href="/join">Join the A&R Team</a><a class="cta sec" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
   $('#content').innerHTML=`
     <div class="hero">

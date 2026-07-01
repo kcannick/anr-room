@@ -160,6 +160,8 @@
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
+// GA4 engagement events (no-op when analytics is disabled or gtag hasn't loaded).
+function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params||{}); }catch(e){} }
 let AUTHTOK=null, CATS=[], jPrimary=null, profile={categories:[],photoUrl:null};
 let known={exists:false,hasName:false,hasPhone:false,profileComplete:false};
 let editMode=false, MEUID=null;
@@ -202,6 +204,7 @@ $('#btnJoin').onclick=async()=>{
   try{
     const d=await api('/api/auth/verify',{email:$('#emailEcho').textContent,code,name,phone});
     AUTHTOK=d.token; localStorage.setItem('rt_auth_token',AUTHTOK);
+    if(!known.exists)track('account_signup',{where:'join'});
     await loadProfile();
     // Already-complete members skip the profile step entirely.
     if(profile.complete)doneReturning(); else show('profile');
@@ -241,8 +244,10 @@ $('#btnFinish').onclick=async()=>{
   const location=$('#jLocation').value.trim();
   if(!location)return $('#profErr').textContent='Add your location to get listed.';
   $('#btnFinish').disabled=true;
+  const wasComplete=profile&&profile.complete;
   try{
-    await api('/api/me/profile',{categories:cats,primaryCategory:jPrimary||cats[0],location,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()});
+    const pr=await api('/api/me/profile',{categories:cats,primaryCategory:jPrimary||cats[0],location,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()});
+    if(pr&&pr.complete&&!wasComplete)track('profile_complete',{where:editMode?'edit':'join'});
     if(editMode){ location.href='/u/'+encodeURIComponent(MEUID); return; } // saved -> view profile
     finishDone(true);
   }catch(e){$('#profErr').textContent=e.message;}

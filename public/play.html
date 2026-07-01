@@ -560,6 +560,8 @@ const SID=new URLSearchParams(location.search).get('s');
 // Player tokens are PER SESSION. A single global token meant a token from session A
 // would authenticate you into session A even when you opened a session B link (the
 // token resolves to one participant/session server-side). Scope the key by session id.
+// GA4 engagement events (no-op when analytics is disabled or gtag hasn't loaded).
+function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params||{}); }catch(e){} }
 function tokenKey(sid){ return 'rt_token_'+(sid||''); }
 function getToken(){ return SID ? localStorage.getItem(tokenKey(SID)) : null; }
 function setToken(t){ if(SID)localStorage.setItem(tokenKey(SID),t); }
@@ -765,6 +767,7 @@ $('#btnAcctJoin').onclick=async()=>{
   try{
     const r=await fetch('/api/join/account',{method:'POST',headers:{'Content-Type':'application/json','X-Auth-Token':localStorage.getItem('rt_auth_token')},body:JSON.stringify({sessionId:SID})});
     const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not register');
+    track('session_register',{method:'account'});
     setToken(d.token); startPolling();
   }catch(e){ $('#acctErr').textContent=e.message; $('#btnAcctJoin').disabled=false; }
 };
@@ -852,6 +855,7 @@ $('#btnVerify').onclick=async()=>{
   $('#btnVerify').disabled=true;
   try{
     const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,keepPhone,ref});
+    track('session_register',{method:'otp'});
     setToken(d.token);
     localStorage.removeItem('rt_ref_'+SID);
     startPolling();
@@ -876,7 +880,7 @@ async function lockVote(payload, btnId){
     openCheckin();
     return;
   }
-  if(out.status>=200 && out.status<300){ refresh(); return; }
+  if(out.status>=200 && out.status<300){ track('vote_locked',{poll_type: payload.pick!==undefined?'binary':'rating'}); refresh(); return; }
   $('#voteErr').textContent=out.data.error||'Something went wrong';
   if(btnId)$(btnId).disabled=false;
 }
@@ -1338,7 +1342,9 @@ $('#pfSave').onclick=async()=>{
   const body={categories:cats, primaryCategory:pfPrimary||cats[0], location, instagram:$('#pfIg').value.trim(), tiktok:$('#pfTt').value.trim()};
   $('#pfSave').disabled=true;
   try{
+    const wasComplete=myProfile&&myProfile.complete;
     const d=await api('/api/me/profile',body);
+    if(d.complete&&!wasComplete)track('profile_complete',{where:'play'});
     myProfile={...myProfile, complete:d.complete, categories:cats, primaryCategory:body.primaryCategory, location, instagram:body.instagram.replace(/^@+/,''), tiktok:body.tiktok.replace(/^@+/,'')};
     $('#profileModal').style.display='none';
   }catch(e){$('#pfErr').textContent=e.message;}
