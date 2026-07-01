@@ -2264,8 +2264,22 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
-    // allow direct asset paths
-    return serveStatic(res, url.pathname.replace(/^\//, '') || 'play.html');
+    // Direct asset paths: serve the file if it exists. If not, an unknown PAGE request
+    // (no file extension, .html, or a browser navigation) redirects to the homepage;
+    // a missing asset (.js/.css/.png/etc.) still gets a plain 404 so we never hand HTML
+    // back for a script/image request. (API 404s are handled in handleApi as JSON.)
+    const rel = url.pathname.replace(/^\//, '') || 'home.html';
+    const full = path.join(PUBLIC, rel);
+    if (full.startsWith(PUBLIC) && fs.existsSync(full) && fs.statSync(full).isFile()) {
+      return serveStatic(res, rel);
+    }
+    const ext = path.extname(url.pathname).toLowerCase();
+    const wantsHtml = (req.headers.accept || '').includes('text/html');
+    if (!ext || ext === '.html' || wantsHtml) {
+      res.writeHead(302, { Location: '/' });
+      return res.end();
+    }
+    return send(res, 404, 'Not found');
   } catch (e) {
     console.error(e);
     send(res, 500, { error: 'Server error' });
