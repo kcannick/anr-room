@@ -38,11 +38,13 @@ function isEnabled() { return ENABLED; }
 // 'broadcast'|'status') the client can use; the client mostly just refreshes on any signal.
 // Awaitable + non-fatal. No debounce here: on serverless a deferred timer would be frozen
 // after the response, so we publish inline; the client coalesces bursts into one refresh.
-async function publish(sessionId, kind) {
+async function publish(sessionId, kind, data) {
   const c = client();
   if (!c || !sessionId) return;
+  const msg = { kind: kind || 'state', at: Date.now() };
+  if (data) msg.payload = data;   // optional payload (e.g. the recomputed leaderboard) clients apply directly
   try {
-    await c.channels.get(channelName(sessionId)).publish('change', { kind: kind || 'state', at: Date.now() });
+    await c.channels.get(channelName(sessionId)).publish('change', msg);
   } catch (e) {
     console.error('[realtime] publish failed:', e.message);
   }

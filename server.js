@@ -467,6 +467,24 @@ async function overlayState(session) {
   };
 }
 
+// Public series leaderboard (top N, live-computed) in the PII-safe shape the homepage
+// uses. Shared by /api/home and the realtime leaderboard push so both stay identical.
+// This is the board whose compute must be viewer-count-independent at scale: computed
+// once here on ratify and pushed to every connected client, instead of recomputed per poll.
+async function homeSeriesBoard(seriesId, limit = 5) {
+  const first = (nm) => (nm || 'A&R').toString().trim().split(/\s+/)[0];
+  const rows = await db.all(
+    `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS pts FROM votes v
+     JOIN participants p ON v.participant_id = p.id
+     JOIN users u        ON p.user_id = u.uid
+     JOIN rounds r       ON v.round_id = r.id
+     JOIN sessions s     ON r.session_id = s.id
+     WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1 AND u.blocked = 0
+     GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url ORDER BY pts DESC, u.name ASC LIMIT ?`,
+    [seriesId, limit]);
+  return rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: first(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.pts) || 0 }));
+}
+
 async function adminState(session) {
   const sessionId = session.id;
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
@@ -1570,7 +1588,14 @@ async function handleApi(req, res, url) {
       await db.run("UPDATE rounds SET status = 'closed' WHERE id = ?", [roundId]);
     }
     const out = await ratifyRound(round);
-    await realtime.publish(sessionId, 'leaderboard');
+    // Compute the public series board ONCE here and push it as payload, so every connected
+    // homepage applies it directly instead of each re-fetching + recomputing (O(1) at scale).
+    let lbData = null;
+    if (session.series_id) {
+      try { lbData = { series: { id: session.series_id, leaderboard: await homeSeriesBoard(session.series_id) } }; }
+      catch (e) { console.error('[realtime] series board compute failed:', e.message); }
+    }
+    await realtime.publish(sessionId, 'leaderboard', lbData);
     return send(res, 200, { ok: true, poll_type: out.poll_type, room_average: out.room_average ?? null, split_a: out.split_a ?? null, players: out.ranked.length });
   }
 
@@ -1844,16 +1869,8 @@ async function handleApi(req, res, url) {
       || (await db.get("SELECT id, title, status FROM series ORDER BY created_at DESC LIMIT 1", []));
     let series = null;
     if (serRow) {
-      const rows = await db.all(
-        `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS pts FROM votes v
-         JOIN participants p ON v.participant_id = p.id
-         JOIN users u        ON p.user_id = u.uid
-         JOIN rounds r       ON v.round_id = r.id
-         JOIN sessions s     ON r.session_id = s.id
-         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1 AND u.blocked = 0
-         GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url ORDER BY pts DESC, u.name ASC LIMIT 5`, [serRow.id]);
       series = { id: serRow.id, title: serRow.title, status: serRow.status,
-        leaderboard: rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: firstName(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.pts) || 0 })) };
+        leaderboard: await homeSeriesBoard(serRow.id) };
     }
     // Past winners — no winner model yet; empty until an A&R Wars close records them.
     // Recent A&Rs (activity ticker) — complete profiles only (they carry the photo/role/

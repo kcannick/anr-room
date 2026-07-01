@@ -271,6 +271,7 @@ async function load(){
     const r=await fetch('/api/home');
     const d=await r.json();
     if(d.live)renderLive(d); else renderBetween(d);
+    _homeSeriesId=(d.series && d.series.id)||null;
     _ensureRealtime(d.live && d.live.id);
     // Nav links only show when their section rendered (sections hide when empty).
     const navToggle=(id,present)=>{const el=$('#'+id);if(el)el.style.display=present?'':'none';};
@@ -287,7 +288,14 @@ setInterval(load, 30000);
 // ---- realtime: when a session is live, refresh the homepage the instant it changes ----
 // Keyed to the live session's channel (re-subscribes if a different session goes live);
 // no-op when nothing is live or the key is unset. The 30s poll remains the fallback.
-let _rt=null,_rtChan=null,_rtSid=undefined,_rtRefreshT=null;
+let _rt=null,_rtChan=null,_rtSid=undefined,_rtRefreshT=null,_homeSeriesId=null;
+// Apply a pushed series board directly (no /api/home fetch) — reuses the same row template
+// the initial render uses, so the board updates for every viewer from one server compute.
+function applySeriesBoard(rows){
+  const sec=document.getElementById('secBoard'); if(!sec)return;
+  const titleP=sec.querySelector('.sec-h'); const titleHtml=titleP?titleP.outerHTML:'';
+  sec.innerHTML=titleHtml+lbCard(rows||[]);
+}
 async function _ensureRealtime(liveId){
   liveId=liveId||null;
   if(_rtSid===liveId)return;                       // no change
@@ -301,7 +309,13 @@ async function _ensureRealtime(liveId){
     if(_rtSid!==liveId)return;                      // a newer load() superseded us
     _rt=new Ably.Realtime({ authUrl:'/api/ably/token?s='+encodeURIComponent(liveId) });
     _rtChan=_rt.channels.get('anr:session:'+liveId);
-    _rtChan.subscribe('change',()=>{ if(_rtRefreshT)return; _rtRefreshT=setTimeout(()=>{_rtRefreshT=null;load();},300); });
+    _rtChan.subscribe('change',(msg)=>{
+      const pushed=msg&&msg.data&&msg.data.payload&&msg.data.payload.series;
+      // Leaderboard payload for the series we're showing -> apply directly, skip the fetch.
+      if(pushed && pushed.id===_homeSeriesId && Array.isArray(pushed.leaderboard)){ applySeriesBoard(pushed.leaderboard); return; }
+      // Anything else (go-live, round changes) -> a coalesced refresh.
+      if(_rtRefreshT)return; _rtRefreshT=setTimeout(()=>{_rtRefreshT=null;load();},300);
+    });
   }catch(e){ /* stay on 30s poll */ }
 }
 
