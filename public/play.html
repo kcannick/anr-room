@@ -748,8 +748,8 @@ async function tryAccountRegister(info){
   $('#acctEyebrow').textContent=live?'Join this session':'Register as an A&R';
   $('#acctHi').textContent=(info&&info.name)||'This session';
   $('#acctSub').textContent=live
-    ? 'Tap Enter to join as '+(me.name||'an A&R')+' and jump into the room.'
-    : 'Tap Complete to register as '+(me.name||'an A&R')+' for this session. You’ll get a notification when it opens.';
+    ? 'Tap Enter to join as an A&R and jump into the room.'
+    : 'Tap Complete to register as an A&R for this session. You’ll get a notification when it opens.';
   $('#btnAcctJoin').textContent=live?'Enter the room':'Complete registration';
   show('account');
 }
