@@ -221,11 +221,11 @@
   <!-- JOIN: logged-in one-tap register (uses the A&R account, no code) -->
   <section id="screen-account" class="center stack hide">
     <div class="panel stack" style="text-align:center">
-      <div class="eyebrow">Welcome back</div>
-      <h2 style="margin:6px 0;font-size:24px" id="acctHi">You're logged in</h2>
-      <p class="dim" id="acctSub" style="font-size:14px;margin:0">Register for this session with your A&amp;R account — no code needed.</p>
-      <button class="btn" id="btnAcctJoin">Register</button>
-      <button class="btn ghost" id="btnAcctOther">Use a different email</button>
+      <div class="eyebrow" id="acctEyebrow">Register as an A&amp;R</div>
+      <h2 style="margin:6px 0;font-size:24px" id="acctHi">This session</h2>
+      <p class="dim" id="acctSub" style="font-size:14px;margin:0">Tap Complete to register as an A&amp;R for this session.</p>
+      <button class="btn" id="btnAcctJoin">Complete registration</button>
+      <button class="btn ghost" id="btnAcctOther">Cancel</button>
       <div class="err" id="acctErr"></div>
     </div>
   </section>
@@ -745,9 +745,12 @@ async function tryAccountRegister(info){
   let me=null; try{ me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':at}}).then(r=>r.ok?r.json():null); }catch(e){}
   if(!me||!me.uid){ show('email'); return; }
   const live=info&&info.status==='live';
-  $('#acctHi').textContent='Hey '+(me.name||'there');
-  $('#acctSub').textContent=live?'Register with your A&R account and jump into the room — no code needed.':"Register with your A&R account — you're set the moment it goes live. No code needed.";
-  $('#btnAcctJoin').textContent=live?'Enter the room':'Register';
+  $('#acctEyebrow').textContent=live?'Join this session':'Register as an A&R';
+  $('#acctHi').textContent=(info&&info.name)||'This session';
+  $('#acctSub').textContent=live
+    ? 'Tap Enter to join as '+(me.name||'an A&R')+' and jump into the room.'
+    : 'Tap Complete to register as '+(me.name||'an A&R')+' for this session. You’ll get a notification when it opens.';
+  $('#btnAcctJoin').textContent=live?'Enter the room':'Complete registration';
   show('account');
 }
 $('#btnAcctJoin').onclick=async()=>{
@@ -758,7 +761,7 @@ $('#btnAcctJoin').onclick=async()=>{
     setToken(d.token); startPolling();
   }catch(e){ $('#acctErr').textContent=e.message; $('#btnAcctJoin').disabled=false; }
 };
-$('#btnAcctOther').onclick=()=>show('email');
+$('#btnAcctOther').onclick=()=>{ if(history.length>1)history.back(); else location.href='/'; };
 
 // build rating pips 0-9 (NPS-style: no center default; 0-4 lower half, 5-9 upper half)
 (function(){
