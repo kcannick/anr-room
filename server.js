@@ -1385,7 +1385,7 @@ async function handleApi(req, res, url) {
     if (given !== token) return send(res, 401, { error: 'Bad token' }, cors);
     const clip = (s, n) => (s == null ? '' : String(s)).trim().slice(0, n);
     const rec = { title: clip(body.title, 200), artist: clip(body.artist, 200),
-      link: clip(body.link, 500) || null, note: clip(body.note, 500) || null,
+      instagram: clip((body.instagram || '').toString().replace(/^@+/, ''), 60) || null,
       source: clip(body.source, 60) || 'makinitmag', at: now() };
     if (!rec.title && !rec.artist) return send(res, 400, { error: 'Need at least a title or artist' }, cors);
     await db.run("INSERT INTO settings (k,v) VALUES ('ingest_latest', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [JSON.stringify(rec)]);

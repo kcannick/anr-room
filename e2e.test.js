@@ -925,7 +925,7 @@ async function call(path, body, method='POST', headers={}) {
   console.log('\n— review-site ingest: token-gated push, host pulls latest —');
   const ingBad = await call('/api/ingest/submission', { title: 'Hack', artist: 'X' }, 'POST', { 'X-Ingest-Token': 'wrong' });
   ok('ingest rejects a bad token', ingBad.status === 401, 'got ' + ingBad.status);
-  const ingOk = await call('/api/ingest/submission', { title: 'Neon Skyline', artist: 'The Verge', link: 'https://sc.example/track', source: 'drupal' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  const ingOk = await call('/api/ingest/submission', { title: 'Neon Skyline', artist: 'The Verge', instagram: '@theverge', source: 'drupal' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
   ok('ingest accepts a good token', ingOk.status === 200 && ingOk.d.ok, JSON.stringify(ingOk.d));
   const ingEmpty = await call('/api/ingest/submission', { title: '', artist: '' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
   ok('ingest rejects an empty song', ingEmpty.status === 400, 'got ' + ingEmpty.status);
@@ -934,6 +934,7 @@ async function call(path, body, method='POST', headers={}) {
   ok('ingest pull needs auth', pullNoAuth.status === 401, 'got ' + pullNoAuth.status);
   const pull = await call('/api/admin/ingest/latest', null, 'GET', ADMINH);
   ok('host pulls the staged submission', pull.status === 200 && pull.d.title === 'Neon Skyline' && pull.d.artist === 'The Verge', JSON.stringify(pull.d));
+  ok('ingest normalizes the IG handle (strips @)', pull.d.instagram === 'theverge', JSON.stringify(pull.d));
   // adminState surfaces it so the button can show.
   const anyLive = await call('/api/session', { name: 'Ingest Btn', status: 'live' }, 'POST', ADMINH);
   const ist = (await call('/api/admin/state?sessionId=' + anyLive.d.sessionId, null, 'GET', ADMINH)).d;

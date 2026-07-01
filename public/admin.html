@@ -1104,8 +1104,8 @@ $('#btnIngestPull').onclick=async()=>{
     if(d.empty){msg.textContent='No submission pushed from the review site yet.';}
     else{
       $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
-      if(d.note||d.link)$('#rNote').value=d.note||('Link: '+d.link);
-      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+'. Review, then Add to queue.';
+      if(d.instagram)$('#rNote').value='IG: @'+String(d.instagram).replace(/^@/,'');
+      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(d.instagram?' (IG added to note)':'')+'. Review, then Add to queue.';
       $('#rTitle').focus();
     }
   }catch(e){msg.textContent=e.message;}
