@@ -164,13 +164,13 @@
     <div><label>Session name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Session"></div>
     <div><label>Default voting window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
     <div>
-      <label>Game type</label>
+      <label>Session type</label>
       <select id="newPollType" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
-        <option value="rating">Rating (0–9) — rate a song, predict the room average</option>
-        <option value="binary">Head-to-head (Verzuz) — Song A vs B, predict the split</option>
+        <option value="rating">Standard — rate a song 0–9, predict the room average</option>
+        <option value="binary">Versus — Song A vs B, predict the split</option>
       </select>
       <div class="muted" id="typeHint" style="font-size:12px;margin-top:6px">Set once at creation — every round in the session uses this type.</div>
-      <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 Locked — this session has votes, so the game type can't change.</div>
+      <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 Locked — this session has votes, so the session type can't change.</div>
     </div>
     <div id="seriesField">
       <label>Series <span class="muted">(counts toward this monthly leaderboard)</span></label>
@@ -271,7 +271,7 @@
       <h2>Event tools</h2>
       <!-- Broadcast -->
       <label>Broadcast a message to everyone <span class="muted">(pops on all player screens)</span></label>
-      <textarea id="bcInput" placeholder="e.g. Verzuz is running 10 min late — we'll spin some indie until it kicks off"></textarea>
+      <textarea id="bcInput" placeholder="e.g. The Versus round is running 10 min late — we'll spin some indie until it kicks off"></textarea>
       <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:500;cursor:pointer">
         <input type="checkbox" id="bcOverlay" style="width:auto;margin:0">
         <span>Also show on the stream overlay <span class="muted">(uses the lower-third slot — hides the song while it's up)</span></span>
@@ -597,7 +597,7 @@ async function loadSeriesCache(){
   catch(e){SERIES=[];}
 }
 // --- session card helpers ---
-const typeLabel=s=>s.poll_type==='binary'?'Head-to-head (VS)':'Rating 0–9';
+const typeLabel=s=>s.poll_type==='binary'?'Versus':'Standard';
 const locLabel=s=>({required:'Venue-locked',optional:'Optional check-in'})[s.geo_mode]||'Open';
 const seriesTitleFor=sid=>{const x=SERIES.find(z=>z.id===sid);return x?x.title:null;};
 // --- Session times are anchored to the broadcast timezone (ET: "Wed 7–11 PM ET"),
@@ -1246,7 +1246,7 @@ function render(st){
   $('#queueFormTitle').textContent = isBin ? 'Queue a matchup' : 'Queue a song';
   $('#rTitleLabel').textContent = isBin ? 'Song A title *' : 'Song title *';
   $('#rArtistLabel').textContent = isBin ? 'Song A artist' : 'Artist';
-  $('#who').textContent=st.session.name+' · '+st.session.status+(isBin?' · ⚔️ Head-to-head':'');
+  $('#who').textContent=st.session.name+' · '+st.session.status+(isBin?' · ⚔️ Versus':'');
   // lifecycle controls reflect current status
   const stx=st.session.status;
   $('#sessStatus').textContent={upcoming:'Upcoming',live:'Live',completed:'Completed',archived:'Archived'}[stx]||stx;

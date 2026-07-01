@@ -1202,7 +1202,7 @@ async function handleApi(req, res, url) {
     if (isBinary) {
       // Binary vote: pick a side + predict the room's A/B split. Reject rating-shaped votes.
       const { pick, predict_split } = body;
-      if (body.taste != null || body.predict != null) return bad(res, 'This is a head-to-head round — pick a side and predict the split');
+      if (body.taste != null || body.predict != null) return bad(res, 'This is a Versus round — pick a side and predict the split');
       const pk = String(pick || '').toUpperCase();
       if (pk !== 'A' && pk !== 'B') return bad(res, 'Pick a side: A or B');
       const sp = Number(predict_split);
