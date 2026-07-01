@@ -18,7 +18,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + migrate.test.js + e2e.test.js). **Expected: 255 passed, 0 failed.**
+- `npm test` — full suite (scoring.test.js + migrate.test.js + e2e.test.js). **Expected: 261 passed, 0 failed.**
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state

@@ -82,7 +82,25 @@ async function sendOtp(to, code, sessionName) {
   }
 }
 
-module.exports = { sendOtp, PROVIDER, sendFeedback };
+// ----- generic transactional send (used by go-live notifications) -----
+// Returns { ok } or { ok:false, error }. Non-fatal by contract — callers log + continue.
+async function sendEmail(to, subject, html, text) {
+  if (PROVIDER === 'console') {
+    console.log(`\n[EMAIL] ${to} :: ${subject}\n`);
+    return { ok: true };
+  }
+  try {
+    if (PROVIDER === 'resend') await sendViaResend(to, subject, html, text);
+    else if (PROVIDER === 'mandrill') await sendViaMandrill(to, subject, html, text);
+    else throw new Error(`Unknown EMAIL_PROVIDER: ${PROVIDER}`);
+    return { ok: true };
+  } catch (e) {
+    console.error(`[EMAIL] send failed via ${PROVIDER}: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
+}
+
+module.exports = { sendOtp, PROVIDER, sendFeedback, sendEmail, escapeHtml };
 
 // ----- feedback email (best-effort; optional screenshot attachment) -----
 // payload: { message, sessionName, sessionId, fromName, fromEmail, userAgent,

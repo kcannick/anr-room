@@ -4,7 +4,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
-const { sendOtp, sendFeedback } = require('./email');
+const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
+const { sendSms } = require('./sms');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes } = require('./scoring');
 
 const PORT = process.env.PORT || 3000;
@@ -542,6 +543,75 @@ async function neroFetch(u) {
     if (!r.ok) throw new Error('nero ' + r.status);
     return await r.json();
   } finally { clearTimeout(t); }
+}
+
+// ----- go-live notifications: SMS + email fan-out when a session flips to live -----
+// Fires once per session (idempotent via notification_log). Bounded + capped so it stays
+// within the function budget; at large registrant counts this should move to a queued
+// drain, but for the realistic early audience an inline concurrency-limited pass covers it.
+// Audience = the session's own verified participants (registering for the session is the
+// consent basis for its go-live notice). SMS additionally requires sms_marketing_consent.
+const NOTIFY_CAP = 800;          // hard ceiling per go-live; overflow is logged, never silently dropped
+const NOTIFY_CONCURRENCY = 8;
+
+// Run fn over items with at most `limit` in flight (keeps the fan-out inside the budget).
+async function runLimited(items, limit, fn) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const idx = i++; await fn(items[idx], idx); }
+  });
+  await Promise.all(workers);
+}
+
+function publicBaseFromReq(req) {
+  const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'anr.makinitmag.com';
+  return `${proto}://${host}`;
+}
+
+async function alreadyNotified(sessionId, participantId, channel) {
+  return !!(await db.get('SELECT 1 FROM notification_log WHERE session_id = ? AND participant_id = ? AND channel = ?', [sessionId, participantId, channel]));
+}
+async function logNotify(sessionId, p, channel, destination, status, error) {
+  try {
+    await db.run('INSERT INTO notification_log (id, session_id, participant_id, user_id, channel, destination, status, error, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+      [id(12), sessionId, p.id, p.user_id || null, channel, destination || null, status, error || null, now()]);
+  } catch (e) { /* unique-index race: another worker logged first — fine */ }
+}
+
+async function dispatchGoLiveNotifications(session, base) {
+  const sessionId = session.id;
+  const parts = await db.all(
+    'SELECT id, user_id, email, phone, sms_marketing_consent FROM participants WHERE session_id = ? AND verified = 1',
+    [sessionId]);
+  if (!parts.length) return { attempted: 0, sent: 0, failed: 0 };
+  const capped = parts.slice(0, NOTIFY_CAP);
+  if (parts.length > NOTIFY_CAP) console.warn(`[NOTIFY] session ${sessionId}: ${parts.length} participants exceeds cap ${NOTIFY_CAP}; notifying first ${NOTIFY_CAP}.`);
+  const url = `${base}/?s=${encodeURIComponent(sessionId)}`;
+  const name = session.name || 'The A&R Room';
+  const smsBody = `🎧 ${name} is LIVE on The A&R Room — rate songs & read the room: ${url}\nReply STOP to opt out.`;
+  const subject = `${name} is live now 🎧`;
+  const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.5">
+    <p><strong>${escapeHtml(name)}</strong> just went live on The A&amp;R Room.</p>
+    <p>Rate songs 0–9, predict the room, and climb the leaderboard.</p>
+    <p><a href="${url}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none">Join the room →</a></p>
+    <p style="color:#666;font-size:13px">${url}</p></div>`;
+  const text = `${name} is live on The A&R Room. Join: ${url}`;
+  let sent = 0, failed = 0;
+  await runLimited(capped, NOTIFY_CONCURRENCY, async (p) => {
+    if (p.email && !(await alreadyNotified(sessionId, p.id, 'email'))) {
+      const r = await sendEmail(p.email, subject, html, text);
+      await logNotify(sessionId, p, 'email', p.email, r.ok ? 'sent' : 'failed', r.error);
+      r.ok ? sent++ : failed++;
+    }
+    if (p.phone && p.sms_marketing_consent && !(await alreadyNotified(sessionId, p.id, 'sms'))) {
+      const r = await sendSms(p.phone, smsBody);
+      await logNotify(sessionId, p, 'sms', p.phone, r.ok ? 'sent' : 'failed', r.error);
+      r.ok ? sent++ : failed++;
+    }
+  });
+  console.log(`[NOTIFY] session ${sessionId} go-live: ${sent} sent, ${failed} failed across ${capped.length} participants`);
+  return { attempted: capped.length, sent, failed };
 }
 
 // ---------- ratify: compute result, points, ranks, bump totals ----------
@@ -1475,7 +1545,15 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Admin auth failed', 401);
     const valid = ['upcoming', 'live', 'completed', 'archived'];
     if (!valid.includes(status)) return bad(res, 'Invalid status');
+    const wasLive = session.status === 'live';
     await db.run('UPDATE sessions SET status = ? WHERE id = ?', [status, sessionId]);
+    // The moment a session goes live, notify its registrants (SMS + email). Idempotent
+    // per (session, participant, channel) so a reopen never re-notifies. Non-fatal —
+    // a send hiccup must never fail the go-live itself.
+    if (status === 'live' && !wasLive) {
+      try { await dispatchGoLiveNotifications(session, publicBaseFromReq(req)); }
+      catch (e) { console.error(`[NOTIFY] go-live dispatch error: ${e.message}`); }
+    }
     return send(res, 200, { ok: true, status });
   }
 

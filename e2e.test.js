@@ -884,6 +884,33 @@ async function call(path, body, method='POST', headers={}) {
   const lbAfter = (await call(`/api/admin/series/leaderboard?seriesId=${PGSER}`, null, 'GET', ADMINH)).d;
   ok('series board drops purged session', (lbAfter.leaderboard || []).length === 0, JSON.stringify(lbAfter.leaderboard));
 
+  console.log('\n— notify on go-live: SMS + email fan-out, consent-gated + idempotent —');
+  // Upcoming session, two registrants: one with phone+consent (SMS+email), one email-only.
+  const noSess = await call('/api/session', { name: 'Notify Night', status: 'upcoming' }, 'POST', ADMINH);
+  const NOID = noSess.d.sessionId;
+  const nrq1 = await call('/api/join/request', { sessionId: NOID, email: 'smsy@test.com' });
+  await call('/api/join/verify', { sessionId: NOID, email: 'smsy@test.com', code: nrq1.d.devCode, name: 'Smsy', phone: '(555) 111-2222' });
+  const nrq2 = await call('/api/join/request', { sessionId: NOID, email: 'maily@test.com' });
+  await call('/api/join/verify', { sessionId: NOID, email: 'maily@test.com', code: nrq2.d.devCode, name: 'Maily' });
+  const before = Number((await db.get('SELECT COUNT(*) c FROM notification_log WHERE session_id = ?', [NOID])).c);
+  ok('nothing sent before go-live', before === 0, 'got ' + before);
+  // Flip to live -> dispatch fires.
+  const golive = await call('/api/admin/session/status', { sessionId: NOID, status: 'live' }, 'POST', ADMINH);
+  ok('go-live ok', golive.status === 200, JSON.stringify(golive.d));
+  const rows = await db.all('SELECT channel, status FROM notification_log WHERE session_id = ?', [NOID]);
+  const emails = rows.filter(r => r.channel === 'email'), smses = rows.filter(r => r.channel === 'sms');
+  ok('emailed both registrants', emails.length === 2 && emails.every(r => r.status === 'sent'), JSON.stringify(rows));
+  ok('SMS only to the consenting number', smses.length === 1 && smses[0].status === 'sent', JSON.stringify(smses));
+  // Idempotent: reopen (live -> upcoming -> live) must not re-notify.
+  await call('/api/admin/session/status', { sessionId: NOID, status: 'upcoming' }, 'POST', ADMINH);
+  await call('/api/admin/session/status', { sessionId: NOID, status: 'live' }, 'POST', ADMINH);
+  const after = Number((await db.get('SELECT COUNT(*) c FROM notification_log WHERE session_id = ?', [NOID])).c);
+  ok('reopen does not re-notify', after === rows.length, `before ${rows.length} after ${after}`);
+  // A session created directly as live doesn't spam (no upcoming->live transition, no registrants).
+  const liveDirect = await call('/api/session', { name: 'Born Live', status: 'live' }, 'POST', ADMINH);
+  const bornRows = Number((await db.get('SELECT COUNT(*) c FROM notification_log WHERE session_id = ?', [liveDirect.d.sessionId])).c);
+  ok('born-live session sends nothing', bornRows === 0, 'got ' + bornRows);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);
