@@ -114,8 +114,11 @@
   .pulse-wait i{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);animation:bob 1.2s infinite}
   .pulse-wait i:nth-child(2){animation-delay:.15s}.pulse-wait i:nth-child(3){animation-delay:.3s}
   @keyframes bob{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-5px)}}
-  .wait-cd{font-family:"Space Mono",monospace;font-weight:700;font-size:38px;letter-spacing:.02em;color:var(--signal);margin:16px 0 6px;line-height:1}
-  .wait-cd.soon{font-size:24px;color:var(--ink)}
+  .wait-cd{display:flex;justify-content:center;gap:12px;margin:18px 0 8px}
+  .cd-unit{display:flex;flex-direction:column;align-items:center;min-width:54px}
+  .cd-num{font-family:"Space Mono",monospace;font-weight:700;font-size:34px;line-height:1;color:var(--signal);font-variant-numeric:tabular-nums}
+  .cd-lab{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);margin-top:6px}
+  .cd-soon{font-family:"Space Mono",monospace;font-weight:700;font-size:24px;color:var(--ink)}
   .hide{display:none!important}
   .note{background:#0a0814;border-left:3px solid var(--signal);border-radius:0 10px 10px 0;padding:11px 13px;font-size:14px;color:var(--ink-dim);margin-top:12px;white-space:pre-wrap}
   .give{margin-top:12px;font-size:13px;color:var(--good);display:flex;gap:7px;align-items:center}
@@ -945,15 +948,21 @@ let closesAt=null, lastTickSec=null, buzzed=false;
 // Countdown to a scheduled session start (shown on the wait screen instead of the bounce).
 // waitStartAt is the scheduled start (ms) while that screen is up, else null.
 let waitStartAt=null;
+const CD_UNITS=[['days','days'],['hrs','hours'],['min','mins'],['sec','secs']];
 function paintWaitCountdown(){
   const el=$('#waitCountdown'); if(!el) return;
   if(waitStartAt==null){ el.classList.add('hide'); return; }
-  const diff=waitStartAt-Date.now();
-  if(diff<=0){ el.textContent='Starting shortly…'; el.classList.add('soon'); el.classList.remove('hide'); return; }
-  el.classList.remove('soon');
-  const d=Math.floor(diff/86400000), h=Math.floor(diff%86400000/3600000), m=Math.floor(diff%3600000/60000), s=Math.floor(diff%60000/1000);
-  el.textContent = d>0 ? (d+'d '+h+'h') : h>0 ? (h+'h '+String(m).padStart(2,'0')+'m') : (m+':'+String(s).padStart(2,'0'));
   el.classList.remove('hide');
+  const diff=waitStartAt-Date.now();
+  if(diff<=0){ el.innerHTML='<span class="cd-soon">Starting shortly…</span>'; return; }
+  const d=Math.floor(diff/86400000), h=Math.floor(diff%86400000/3600000), m=Math.floor(diff%3600000/60000), s=Math.floor(diff%60000/1000);
+  const vals={days:d,hrs:h,min:m,sec:s};
+  // Build the D/H/M/S segments once, then just update the numbers each tick so seconds
+  // always visibly count (keeps a far-off countdown feeling alive).
+  if(!el.querySelector('.cd-unit')){
+    el.innerHTML=CD_UNITS.map(u=>'<div class="cd-unit"><span class="cd-num" data-k="'+u[0]+'">00</span><span class="cd-lab">'+u[1]+'</span></div>').join('');
+  }
+  CD_UNITS.forEach(u=>{ const n=el.querySelector('.cd-num[data-k="'+u[0]+'"]'); if(n)n.textContent=String(vals[u[0]]).padStart(2,'0'); });
 }
 setInterval(paintWaitCountdown,1000);
 function tick(){
