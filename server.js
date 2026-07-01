@@ -3,6 +3,24 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+
+// Local dev convenience: load a gitignored .env if present (no dependency). Vercel
+// injects env vars directly, so no .env exists there — this is a no-op in prod. Never
+// overrides a var already set in the real environment, so tests/CI stay authoritative.
+(function loadDotEnv() {
+  try {
+    const p = path.join(__dirname, '.env');
+    if (!fs.existsSync(p)) return;
+    for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (!m || line.trim().startsWith('#')) continue;
+      let v = m[2];
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      if (process.env[m[1]] === undefined) process.env[m[1]] = v;
+    }
+  } catch { /* best-effort */ }
+})();
+
 const db = require('./db');
 const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
 const { sendSms } = require('./sms');
