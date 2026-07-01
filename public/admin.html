@@ -295,6 +295,8 @@
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
         <label>Watch link <span class="muted">(stream URL shown to players)</span></label>
         <input id="cfgWatch" placeholder="https://…">
+        <label style="margin-top:10px">Submission link <span class="muted">(where artists submit; a nero.fan/…/live link enables “Pull from Nero”)</span></label>
+        <input id="cfgSubmit" placeholder="https://…">
         <label style="margin-top:10px">Lobby message <span class="muted">(shown while waiting)</span></label>
         <textarea id="cfgLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea>
         <button class="btn sm" id="btnSaveConfig" style="margin-top:10px;width:100%">Save event settings</button>
@@ -1085,14 +1087,14 @@ $('#btnBroadcastClear')&&($('#btnBroadcastClear').onclick=async()=>{
 $('#btnSaveConfig')&&($('#btnSaveConfig').onclick=async()=>{
   $('#btnSaveConfig').disabled=true;
   try{
-    await api('/api/admin/session/config',{sessionId:SID,watchUrl:$('#cfgWatch').value.trim(),lobbyMessage:$('#cfgLobby').value.trim()});
+    await api('/api/admin/session/config',{sessionId:SID,watchUrl:$('#cfgWatch').value.trim(),submitUrl:$('#cfgSubmit').value.trim(),lobbyMessage:$('#cfgLobby').value.trim()});
     $('#cfgStatus').textContent='Saved ✓';setTimeout(()=>$('#cfgStatus').textContent='',2000);
   }catch(e){$('#cfgStatus').textContent=e.message;}
   $('#btnSaveConfig').disabled=false;
 });
 // Track whether the host is editing a config field, so polling doesn't clobber input.
 let cfgFocused=false;
-['cfgWatch','cfgLobby'].forEach(idr=>{const el=$('#'+idr);if(el){el.addEventListener('focus',()=>cfgFocused=true);el.addEventListener('blur',()=>setTimeout(()=>cfgFocused=false,200));}});
+['cfgWatch','cfgSubmit','cfgLobby'].forEach(idr=>{const el=$('#'+idr);if(el){el.addEventListener('focus',()=>cfgFocused=true);el.addEventListener('blur',()=>setTimeout(()=>cfgFocused=false,200));}});
 
 // ---- location check-in ----
 let geoResolvedLat=null, geoResolvedLng=null, geoTouched=false;
@@ -1291,6 +1293,7 @@ function render(st){
   if($('#overlayLink'))$('#overlayLink').textContent=location.origin+'/overlay?s='+st.session.id;
   if(!cfgFocused){
     if($('#cfgWatch'))$('#cfgWatch').value=st.session.watch_url||'';
+    if($('#cfgSubmit'))$('#cfgSubmit').value=st.session.submit_url||'';
     if($('#cfgLobby'))$('#cfgLobby').value=st.session.lobby_message||'';
   }
   // Geo panel (don't clobber while host is editing).
