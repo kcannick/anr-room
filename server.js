@@ -1542,12 +1542,15 @@ async function handleApi(req, res, url) {
     if (!s) return bad(res, 'Session not found', 404);
     if ((confirmName || '') !== s.name) return bad(res, 'Name does not match — type the exact session name to confirm');
     // Delete in FK order: votes -> rounds -> participants -> session banners -> otps -> session.
+    // Feedback merely references the session (it's general product feedback that happened to
+    // be tagged); keep the content but NULL the reference so purge leaves no dangling pointer.
     await db.tx(async (tx) => {
       await tx.run('DELETE FROM votes WHERE round_id IN (SELECT id FROM rounds WHERE session_id = ?)', [sessionId]);
       await tx.run('DELETE FROM rounds WHERE session_id = ?', [sessionId]);
       await tx.run('DELETE FROM participants WHERE session_id = ?', [sessionId]);
       await tx.run('DELETE FROM banners WHERE session_id = ?', [sessionId]);
       await tx.run('DELETE FROM otps WHERE session_id = ?', [sessionId]);
+      await tx.run('UPDATE feedback SET session_id = NULL WHERE session_id = ?', [sessionId]);
       await tx.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
     });
     return send(res, 200, { ok: true, purged: true });

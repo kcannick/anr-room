@@ -60,7 +60,7 @@ and whether it's blocking.*
 |---|------|------|-------|
 | 3.1 | **Series layer** | code/product | THE keystone build. Migration (`series` table + `series_id` on sessions + index), 6 endpoints (create/edit series, tag/untag session, leaderboard, qualification cut), admin tagging UI (mockup-first), light player/overlay surfacing. Live-computed leaderboard (no rollup). Includes the `bumpSeriesTally` recompute-on-ratify/tag cache design. |
 | 3.2 | **Binary poll full build** | code | Spec complete (`binary-poll-build-spec.md`), prototype validated. Schema done; server/UI/export branches pending. Needed before first online A&R Wars. |
-| 3.3 | **Session delete/archive model** | code/product | Per audit §G: dependent-check → delete-if-none / archive-or-cascade dialog with type-name confirmation + live counts, transactional cascade, no orphan path. Mockup-first. |
+| 3.3 | ~~Session delete/archive model~~ | code/product | ✅ **SHIPPED + TESTED** (2026-06-30). All audit §G behavior was already built (soft-delete + auto-flip live→completed; dependents check = votes OR verified participants OR ratified rounds; two-path archive/cascade dialog with live counts; type-name gate; transactional FK-ordered cascade; restore). This pass closed the one orphan gap — purge now NULLs `feedback.session_id` instead of leaving it dangling (keeps the feedback, drops the ref) — and added 13 e2e tests locking the destructive path: non-admin 403, wrong-name 400, survives-failed-purge, orphan-free cascade (rounds/votes/participants/otps/banners), feedback-kept-ref-nulled, and live series-board recompute after purge. Suite 242→255. |
 | 3.4 | **Live→upcoming admin button** | code | Small gap; console-fetch workaround today. |
 | 3.5 | **Web Push notifications** | code | Scope mapped, 3 trigger sites identified, ~1 focused session. iOS PWA coverage gap flagged. |
 
@@ -96,7 +96,7 @@ code bug (the postMigrate recompute), now fixed + prevented via deploy-step migr
 |---|------|------|-------|
 | 5.1 | ~~Lawyer pass before sponsored cash Wars~~ | legal | ✅ **CLEARED** — attorney has reviewed. |
 | 5.2 | ~~SMS / A2P 10DLC registration~~ | ops | ✅ **DONE** — registered with Twilio. |
-| 5.2b | **Confirm no-checkbox SMS-marketing consent model** | legal | One open check: confirm the "typed phone number = recurring SMS consent, disclosed via helper text" pattern is blessed for *marketing* SMS specifically (distinct from the prize clearance). Quick confirm, not a blocker. |
+| 5.2b | ~~Confirm no-checkbox SMS-marketing consent model~~ | legal | ✅ **CLEARED** (operator, 2026-06-30) — typed phone number = recurring SMS consent, disclosed via helper text, is blessed for marketing SMS. No checkbox required. |
 | 5.3 | **Keep the integrity wall enforced** | product | Artist placement $ ↔ viewer points never touch. Standing principle. |
 
 ---

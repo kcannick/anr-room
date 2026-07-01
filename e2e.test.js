@@ -835,6 +835,55 @@ async function call(path, body, method='POST', headers={}) {
   const fbBadImg = await call('/api/feedback', { message: 'x', image: 'data:text/plain;base64,aGk=' });
   ok('non-image attachment rejected', fbBadImg.status === 400, 'got ' + fbBadImg.status);
 
+  console.log('\n— session mgmt: cascade purge (admin, type-name) leaves no orphans —');
+  const db = require('./db');
+  // A session with a full dependent tree: participant (+otp from join), a ratified round
+  // with a vote, a session banner, feedback, and a series tag — all purge must handle.
+  const pgSess = await call('/api/session', { name: 'Purge Me' }, 'POST', ADMINH);
+  const PGID = pgSess.d.sessionId, PGAH = { 'X-Admin-Token': pgSess.d.adminToken };
+  const pjr = await call('/api/join/request', { sessionId: PGID, email: 'purge@test.com' }); // seeds an otp too
+  const pjv = await call('/api/join/verify', { sessionId: PGID, email: 'purge@test.com', code: pjr.d.devCode, name: 'Purgy' });
+  const pgt = pjv.d.token;
+  const pgr = await call('/api/admin/round', { sessionId: PGID, song_title: 'Doomed Track' }, 'POST', PGAH);
+  await call('/api/admin/round/open', { sessionId: PGID, roundId: pgr.d.roundId, minutes: 1 }, 'POST', PGAH);
+  await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': pgt });
+  await call('/api/admin/round/ratify', { sessionId: PGID, roundId: pgr.d.roundId }, 'POST', PGAH);
+  const FBMSG = 'PURGE-KEEP-REF-9271';
+  await call('/api/feedback', { message: FBMSG, sessionId: PGID });
+  await db.run('INSERT INTO banners (id, session_id, label, image_data, created_at) VALUES (?,?,?,?,?)',
+    ['pgbanner1', PGID, 'Purge Banner', 'data:image/png;base64,AA==', Date.now()]);
+  // Tag into a series and confirm the session contributes to that board.
+  const pgSer = await call('/api/admin/series/create', { title: 'Purge Series', qualifyCount: 10 }, 'POST', ADMINH);
+  const PGSER = pgSer.d.seriesId;
+  await call('/api/admin/series/tag', { sessionId: PGID, seriesId: PGSER }, 'POST', ADMINH);
+  const lbBefore = (await call(`/api/admin/series/leaderboard?seriesId=${PGSER}`, null, 'GET', ADMINH)).d;
+  ok('series board counts the session before purge', (lbBefore.leaderboard || []).length >= 1 && lbBefore.leaderboard[0].points > 0, JSON.stringify(lbBefore.leaderboard));
+  // Non-admin cannot purge.
+  const pgHost = await call('/api/admin/session/purge', { sessionId: PGID, confirmName: 'Purge Me' }, 'POST', { 'X-Auth-Token': HOSTTOK });
+  ok('non-admin cannot purge', pgHost.status === 403, 'got ' + pgHost.status);
+  // Wrong name is rejected (type-name gate) and leaves the session fully intact.
+  const pgWrong = await call('/api/admin/session/purge', { sessionId: PGID, confirmName: 'purge me' }, 'POST', ADMINH);
+  ok('purge rejects wrong confirm name', pgWrong.status === 400, 'got ' + pgWrong.status);
+  const stillThere = await call(`/api/admin/session/get?id=${PGID}`, null, 'GET', ADMINH);
+  ok('session survives a failed purge', stillThere.status === 200, 'got ' + stillThere.status);
+  // Exact name purges.
+  const pgOk = await call('/api/admin/session/purge', { sessionId: PGID, confirmName: 'Purge Me' }, 'POST', ADMINH);
+  ok('purge with exact name ok', pgOk.status === 200 && pgOk.d.purged, JSON.stringify(pgOk.d));
+  // Orphan audit: session gone, every child row gone, feedback kept but de-referenced.
+  const gone = await call(`/api/admin/session/get?id=${PGID}`, null, 'GET', ADMINH);
+  ok('purged session is gone', gone.status === 404, 'got ' + gone.status);
+  const cnt = async (sql) => Number((await db.get(sql, [PGID])).c);
+  ok('no orphan rounds', (await cnt('SELECT COUNT(*) c FROM rounds WHERE session_id = ?')) === 0);
+  ok('no orphan votes', (await cnt('SELECT COUNT(*) c FROM votes WHERE round_id IN (SELECT id FROM rounds WHERE session_id = ?)')) === 0);
+  ok('no orphan participants', (await cnt('SELECT COUNT(*) c FROM participants WHERE session_id = ?')) === 0);
+  ok('no orphan otps', (await cnt('SELECT COUNT(*) c FROM otps WHERE session_id = ?')) === 0);
+  ok('no orphan banners', (await cnt('SELECT COUNT(*) c FROM banners WHERE session_id = ?')) === 0);
+  const fbRow = await db.get('SELECT session_id FROM feedback WHERE message = ?', [FBMSG]);
+  ok('feedback kept, session ref nulled', !!fbRow && fbRow.session_id == null, JSON.stringify(fbRow));
+  // Series board recomputes live: the purged session no longer contributes.
+  const lbAfter = (await call(`/api/admin/series/leaderboard?seriesId=${PGSER}`, null, 'GET', ADMINH)).d;
+  ok('series board drops purged session', (lbAfter.leaderboard || []).length === 0, JSON.stringify(lbAfter.leaderboard));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);
