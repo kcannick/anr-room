@@ -4,6 +4,7 @@ process.env.EMAIL_PROVIDER = 'console';
 process.env.SQLITE_PATH = './test.db';
 process.env.PORT = '3999';
 process.env.ADMIN_EMAIL = 'admin@test.com';
+process.env.ABLY_API_KEY = '';   // realtime off in tests (the .env loader must not pull a real key)
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
 try { fs.unlinkSync('./test.db-wal'); } catch {}

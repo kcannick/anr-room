@@ -24,6 +24,7 @@ const path = require('path');
 const db = require('./db');
 const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
 const { sendSms } = require('./sms');
+const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes } = require('./scoring');
 
 const PORT = process.env.PORT || 3000;
@@ -1314,6 +1315,22 @@ async function handleApi(req, res, url) {
   }
 
   // ----- cast vote -----
+  // Ably realtime token: mint a subscribe-only token for a session's channel. The API
+  // key never leaves the server. Returns { enabled:false } when no key is configured so
+  // the client falls back to polling. Also serves as the Ably authUrl for renewals.
+  if (p === '/api/ably/token' && method === 'GET') {
+    if (!realtime.isEnabled()) return send(res, 200, { enabled: false });
+    const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
+    if (!sessionId) return bad(res, 'session required');
+    try {
+      const tr = await realtime.tokenRequest(sessionId, null);
+      return send(res, 200, tr);
+    } catch (e) {
+      console.error('[realtime] token error:', e.message);
+      return send(res, 200, { enabled: false }); // fail soft -> client polls
+    }
+  }
+
   if (p === '/api/vote' && method === 'POST') {
     const participant = await participantFromReq(req);
     if (!participant) return bad(res, 'Not authenticated', 401);
@@ -1472,6 +1489,7 @@ async function handleApi(req, res, url) {
     if (session.status === 'upcoming') {
       await db.run("UPDATE sessions SET status = 'live' WHERE id = ?", [sessionId]);
     }
+    await realtime.publish(sessionId, 'round');
     return send(res, 200, { ok: true });
   }
 
@@ -1484,6 +1502,7 @@ async function handleApi(req, res, url) {
     const add = (minutes != null ? Number(minutes) * 60 : (Number(seconds) || 30)) * 1000;
     const base = Math.max(Number(round.closes_at) || now(), now());
     await db.run("UPDATE rounds SET status = 'voting', closes_at = ? WHERE id = ?", [base + add, roundId]);
+    await realtime.publish(sessionId, 'round');
     return send(res, 200, { ok: true });
   }
 
@@ -1493,6 +1512,7 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Admin auth failed', 401);
     await db.run("UPDATE rounds SET status = 'closed', closes_at = ? WHERE id = ? AND session_id = ?",
       [now(), roundId, sessionId]);
+    await realtime.publish(sessionId, 'round');
     return send(res, 200, { ok: true });
   }
 
@@ -1509,6 +1529,7 @@ async function handleApi(req, res, url) {
     if (inPlay) return bad(res, 'Another round is currently open');
     const dur = clampMinutes(minutes != null ? minutes : DEFAULT_MINUTES) * 60 * 1000;
     await db.run("UPDATE rounds SET status = 'voting', closes_at = ? WHERE id = ?", [now() + dur, roundId]);
+    await realtime.publish(sessionId, 'round');
     return send(res, 200, { ok: true });
   }
 
@@ -1535,6 +1556,7 @@ async function handleApi(req, res, url) {
        isBinary ? 1 : 0, (option_b_artist || '').trim(),
        roundId]
     );
+    await realtime.publish(sessionId, 'round');
     return send(res, 200, { ok: true });
   }
 
@@ -1548,6 +1570,7 @@ async function handleApi(req, res, url) {
       await db.run("UPDATE rounds SET status = 'closed' WHERE id = ?", [roundId]);
     }
     const out = await ratifyRound(round);
+    await realtime.publish(sessionId, 'leaderboard');
     return send(res, 200, { ok: true, poll_type: out.poll_type, room_average: out.room_average ?? null, split_a: out.split_a ?? null, players: out.ranked.length });
   }
 
@@ -1556,6 +1579,7 @@ async function handleApi(req, res, url) {
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     await db.run("UPDATE sessions SET status = 'completed' WHERE id = ?", [sessionId]);
+    await realtime.publish(sessionId, 'status');
     return send(res, 200, { ok: true });
   }
 
@@ -1577,6 +1601,7 @@ async function handleApi(req, res, url) {
       try { await dispatchGoLiveNotifications(session, publicBaseFromReq(req), notify); }
       catch (e) { console.error(`[NOTIFY] go-live dispatch error: ${e.message}`); }
     }
+    await realtime.publish(sessionId, 'status');
     return send(res, 200, { ok: true, status });
   }
 
@@ -1940,11 +1965,13 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Admin auth failed', 401);
     if (clear) {
       await db.run('UPDATE sessions SET broadcast_text = NULL, broadcast_at = NULL, broadcast_overlay = FALSE WHERE id = ?', [sessionId]);
+      await realtime.publish(sessionId, 'broadcast');
       return send(res, 200, { ok: true, cleared: true });
     }
     const msg = (text || '').toString().trim().slice(0, 500);
     if (!msg) return bad(res, 'Broadcast message is empty');
     await db.run('UPDATE sessions SET broadcast_text = ?, broadcast_at = ?, broadcast_overlay = ? WHERE id = ?', [msg, now(), overlay ? 1 : 0, sessionId]);
+    await realtime.publish(sessionId, 'broadcast');
     return send(res, 200, { ok: true, at: now() });
   }
 

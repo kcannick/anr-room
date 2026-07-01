@@ -1221,7 +1221,26 @@ async function refresh(){
   try{const st=await api('/api/me/state',null,'GET');render(st);}
   catch(e){if(/auth/i.test(e.message)){clearToken();location.reload();}}
 }
-function startPolling(){if(pollTimer)clearInterval(pollTimer);loadProfile();refresh();pollTimer=setInterval(refresh,2500);}
+function startPolling(){if(pollTimer)clearInterval(pollTimer);loadProfile();refresh();pollTimer=setInterval(refresh,2500);initRealtime();}
+// ---- realtime: refresh instantly on server push; polling stays the fallback ----
+// Poll every 2.5s until Ably connects; once connected, push drives refreshes and the
+// poll drops to a 15s heartbeat. Any disconnect (or no key) reverts to 2.5s polling.
+let _rtInited=false,_rtOn=false,_rtRefreshT=null;
+function _setPoll(ms){ if(pollTimer)clearInterval(pollTimer); pollTimer=setInterval(refresh,ms); }
+function _rtRefresh(){ if(_rtRefreshT)return; _rtRefreshT=setTimeout(()=>{_rtRefreshT=null;refresh();},250); }
+async function initRealtime(){
+  if(_rtInited||!SID)return; _rtInited=true;
+  try{
+    const probe=await fetch('/api/ably/token?s='+encodeURIComponent(SID)).then(r=>r.json());
+    if(!probe||probe.enabled===false||!probe.keyName){_rtInited=false;return;} // off -> keep polling
+    await new Promise((res,rej)=>{ if(window.Ably)return res(); const s=document.createElement('script'); s.src='https://cdn.ably.com/lib/ably.min-2.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+    const rt=new Ably.Realtime({ authUrl:'/api/ably/token?s='+encodeURIComponent(SID) });
+    rt.connection.on('connected',()=>{ _rtOn=true; _setPoll(15000); });
+    rt.connection.on('disconnected',()=>{ if(_rtOn){_rtOn=false;_setPoll(2500);} });
+    rt.connection.on('failed',()=>{ if(_rtOn){_rtOn=false;_setPoll(2500);} });
+    rt.channels.get('anr:session:'+SID).subscribe('change',()=>_rtRefresh());
+  }catch(e){ /* stay on polling */ }
+}
 
 // ---------- LIVENESS FEED (3.5d) ----------
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
