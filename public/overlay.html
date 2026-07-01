@@ -190,6 +190,12 @@ const VIEW=(params.get('view')||'all').toLowerCase();
 const showBoard=(VIEW==='all'||VIEW==='board');
 const showLower=(VIEW==='all'||VIEW==='lower');
 const showResultView=(VIEW==='all'||VIEW==='result');
+// ?broadcast=N — how long (seconds) an overlay broadcast stays up before auto-hiding.
+// Default 12s. 0 / off / never / persist keeps it up for the whole stream.
+const BC_RAW=(params.get('broadcast')||'').trim().toLowerCase();
+const BC_MS=(BC_RAW==='0'||BC_RAW==='off'||BC_RAW==='never'||BC_RAW==='persist') ? Infinity
+  : (BC_RAW && isFinite(parseFloat(BC_RAW))) ? Math.max(1,parseFloat(BC_RAW))*1000
+  : 12000;
 
 // Fit the 1920x1080 stage into whatever the OBS source is sized to.
 function fit(){
@@ -222,12 +228,13 @@ function render(st){
   // --- broadcast (host opt-in; rides the lower-third slot, never with the song) ---
   // The overlay only receives a broadcast when the host ticked "show on overlay";
   // it takes the lower-third slot and suppresses the round card + result banner
-  // for 12s, then auto-hides (host re-sends to repin).
+  // for BC_MS (?broadcast= seconds, default 12), then auto-hides (host re-sends to
+  // repin). ?broadcast=0/persist keeps it up for the whole stream.
   let showingBroadcast=false;
   if(st.broadcast&&st.broadcast.text){
     if(st.broadcast.at!==lastBcAt){
       lastBcAt=st.broadcast.at;
-      bcVisibleUntil=Date.now()+12000;
+      bcVisibleUntil=Date.now()+BC_MS;
     }
     if(Date.now()<bcVisibleUntil){
       showingBroadcast=true;
