@@ -1059,7 +1059,8 @@ $('#btnNeroPull').onclick=async()=>{
     if(!d.playing){msg.textContent='Nothing is playing on Nero right now.';}
     else{
       $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
-      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+'. Review, then Add to queue.';
+      if(d.instagram)$('#rNote').value='IG: @'+String(d.instagram).replace(/^@/,'');
+      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(d.instagram?' (IG added to note)':'')+'. Review, then Add to queue.';
       $('#rTitle').focus();
     }
   }catch(e){msg.textContent=e.message;}
