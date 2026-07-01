@@ -234,6 +234,8 @@
       <h2 id="queueFormTitle">Queue a song</h2>
       <button class="btn ghost sm hide" id="btnNeroPull" style="margin-bottom:8px">⬇ Pull current song from Nero</button>
       <div class="muted hide" id="neroMsg" style="font-size:12px;margin-bottom:8px"></div>
+      <button class="btn ghost sm hide" id="btnIngestPull" style="margin-bottom:8px">⬇ Pull latest submission</button>
+      <div class="muted hide" id="ingestMsg" style="font-size:12px;margin-bottom:8px"></div>
       <div class="stack">
         <div><label id="rTitleLabel">Song title *</label><input id="rTitle" placeholder="Song name"></div>
         <div class="row">
@@ -1093,6 +1095,23 @@ $('#btnNeroPull').onclick=async()=>{
   finally{b.disabled=false;b.textContent=old;msg.classList.remove('hide');}
 };
 
+// Pull the latest song pushed from the magazine review site into the queue form.
+$('#btnIngestPull').onclick=async()=>{
+  const b=$('#btnIngestPull'),msg=$('#ingestMsg'),old=b.textContent;
+  b.disabled=true;b.textContent='Pulling…';msg.classList.add('hide');
+  try{
+    const d=await api('/api/admin/ingest/latest',null,'GET');
+    if(d.empty){msg.textContent='No submission pushed from the review site yet.';}
+    else{
+      $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
+      if(d.note||d.link)$('#rNote').value=d.note||('Link: '+d.link);
+      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+'. Review, then Add to queue.';
+      $('#rTitle').focus();
+    }
+  }catch(e){msg.textContent=e.message;}
+  finally{b.disabled=false;b.textContent=old;msg.classList.remove('hide');}
+};
+
 $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textContent);$('#btnCopy').textContent='Copied!';setTimeout(()=>$('#btnCopy').textContent='Copy link',1200);};
 
 // ---- event tools ----
@@ -1311,6 +1330,11 @@ function render(st){
   // "Pull from Nero" only when this session's submission link is a nero.fan live room.
   const su=(st.session&&st.session.submit_url)||'';
   $('#btnNeroPull').classList.toggle('hide', !/nero\.fan\/[^/?#]+\/live\b/i.test(su));
+  // "Pull latest submission" appears when the review site has pushed one.
+  const ing=st.ingestLatest;
+  const hasIng=!!(ing&&(ing.title||ing.artist));
+  $('#btnIngestPull').classList.toggle('hide', !hasIng);
+  if(hasIng)$('#btnIngestPull').textContent=('⬇ Pull submission: '+(ing.title||'')+(ing.artist?' — '+ing.artist:'')).slice(0,46);
   $('#who').textContent=st.session.name+' · '+st.session.status+(isBin?' · ⚔️ Versus':'');
   // lifecycle controls reflect current status
   const stx=st.session.status;

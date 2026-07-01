@@ -94,6 +94,18 @@ function send(res, status, data, headers = {}) {
   });
   res.end(body);
 }
+// CORS headers for the public ingest endpoint (the magazine's Drupal /review page posts
+// cross-origin). Echoes the Origin when it's a makinitmag.com host, else the canonical one.
+function ingestCors(req) {
+  const o = (req.headers.origin || '').toString();
+  const allow = /^https?:\/\/(www\.)?makinitmag\.com$/i.test(o) ? o : 'https://www.makinitmag.com';
+  return {
+    'Access-Control-Allow-Origin': allow,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Ingest-Token',
+    'Vary': 'Origin',
+  };
+}
 function readBody(req, maxBytes = 1.5 * 1024 * 1024) {
   return new Promise((resolve) => {
     let b = '';
@@ -539,6 +551,11 @@ async function adminState(session) {
     [sessionId]
   );
   const globalBannerId = (await db.get("SELECT v FROM settings WHERE k = 'global_banner_id'"))?.v || null;
+  // Latest song pushed from the magazine review site — drives the "Pull latest submission"
+  // button in the queue form (shown only when one has been staged).
+  let ingestLatest = null;
+  const ingRow = await db.get("SELECT v FROM settings WHERE k = 'ingest_latest'");
+  if (ingRow) { try { const r = JSON.parse(ingRow.v); ingestLatest = { title: r.title || '', artist: r.artist || '', at: r.at || null }; } catch (e) {} }
   const banners = bannerRows.map(b => ({
     id: b.id, label: b.label, link_url: b.link_url || null,
     scope: b.session_id ? 'session' : 'global',
@@ -566,6 +583,7 @@ async function adminState(session) {
     ratifiedResults,
     banners,
     globalBannerId,
+    ingestLatest,
     serverNow: now(),
   };
 }
@@ -1348,6 +1366,40 @@ async function handleApi(req, res, url) {
       console.error('[realtime] token error:', e.message);
       return send(res, 200, { enabled: false }); // fail soft -> client polls
     }
+  }
+
+  // ----- ingest a song from the magazine's review site (Drupal /review page) -----
+  // That page shows a random submission; its "Send to A&R Room" button POSTs the shown song
+  // here. We stash it as the latest staged submission; the host then clicks "Pull latest
+  // submission" in the queue form (same UX as Pull from Nero). Token-gated + CORS'd to the
+  // magazine origin; disabled (503) until INGEST_TOKEN is set in the environment.
+  if (p === '/api/ingest/submission' && method === 'OPTIONS') {
+    return send(res, 204, '', ingestCors(req));
+  }
+  if (p === '/api/ingest/submission' && method === 'POST') {
+    const cors = ingestCors(req);
+    const token = process.env.INGEST_TOKEN || '';
+    if (!token) return send(res, 503, { error: 'Ingest not configured' }, cors);
+    const body = await readBody(req);
+    const given = req.headers['x-ingest-token'] || body.token || '';
+    if (given !== token) return send(res, 401, { error: 'Bad token' }, cors);
+    const clip = (s, n) => (s == null ? '' : String(s)).trim().slice(0, n);
+    const rec = { title: clip(body.title, 200), artist: clip(body.artist, 200),
+      link: clip(body.link, 500) || null, note: clip(body.note, 500) || null,
+      source: clip(body.source, 60) || 'makinitmag', at: now() };
+    if (!rec.title && !rec.artist) return send(res, 400, { error: 'Need at least a title or artist' }, cors);
+    await db.run("INSERT INTO settings (k,v) VALUES ('ingest_latest', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [JSON.stringify(rec)]);
+    return send(res, 200, { ok: true, staged: { title: rec.title, artist: rec.artist } }, cors);
+  }
+
+  // Host pulls the latest staged submission into the queue form (mirrors nero-pull).
+  if (p === '/api/admin/ingest/latest' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user) return bad(res, 'Not logged in', 401);
+    const row = await db.get("SELECT v FROM settings WHERE k = 'ingest_latest'");
+    if (!row) return send(res, 200, { empty: true });
+    try { return send(res, 200, JSON.parse(row.v)); }
+    catch (e) { return send(res, 200, { empty: true }); }
   }
 
   if (p === '/api/vote' && method === 'POST') {

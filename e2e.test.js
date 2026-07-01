@@ -5,6 +5,7 @@ process.env.SQLITE_PATH = './test.db';
 process.env.PORT = '3999';
 process.env.ADMIN_EMAIL = 'admin@test.com';
 process.env.ABLY_API_KEY = '';   // realtime off in tests (the .env loader must not pull a real key)
+process.env.INGEST_TOKEN = 'test-ingest-secret';
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
 try { fs.unlinkSync('./test.db-wal'); } catch {}
@@ -920,6 +921,23 @@ async function call(path, body, method='POST', headers={}) {
   await call('/api/admin/session/status', { sessionId: EMID, status: 'live', notify: { email: true, sms: false } }, 'POST', ADMINH);
   const emRows = await db.all('SELECT channel FROM notification_log WHERE session_id = ?', [EMID]);
   ok('email-only selection sends no SMS', emRows.length === 1 && emRows[0].channel === 'email', JSON.stringify(emRows));
+
+  console.log('\n— review-site ingest: token-gated push, host pulls latest —');
+  const ingBad = await call('/api/ingest/submission', { title: 'Hack', artist: 'X' }, 'POST', { 'X-Ingest-Token': 'wrong' });
+  ok('ingest rejects a bad token', ingBad.status === 401, 'got ' + ingBad.status);
+  const ingOk = await call('/api/ingest/submission', { title: 'Neon Skyline', artist: 'The Verge', link: 'https://sc.example/track', source: 'drupal' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  ok('ingest accepts a good token', ingOk.status === 200 && ingOk.d.ok, JSON.stringify(ingOk.d));
+  const ingEmpty = await call('/api/ingest/submission', { title: '', artist: '' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  ok('ingest rejects an empty song', ingEmpty.status === 400, 'got ' + ingEmpty.status);
+  // Non-authed cannot pull; host can and gets the last staged song.
+  const pullNoAuth = await call('/api/admin/ingest/latest', null, 'GET');
+  ok('ingest pull needs auth', pullNoAuth.status === 401, 'got ' + pullNoAuth.status);
+  const pull = await call('/api/admin/ingest/latest', null, 'GET', ADMINH);
+  ok('host pulls the staged submission', pull.status === 200 && pull.d.title === 'Neon Skyline' && pull.d.artist === 'The Verge', JSON.stringify(pull.d));
+  // adminState surfaces it so the button can show.
+  const anyLive = await call('/api/session', { name: 'Ingest Btn', status: 'live' }, 'POST', ADMINH);
+  const ist = (await call('/api/admin/state?sessionId=' + anyLive.d.sessionId, null, 'GET', ADMINH)).d;
+  ok('adminState carries ingestLatest', ist.ingestLatest && ist.ingestLatest.title === 'Neon Skyline', JSON.stringify(ist.ingestLatest));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
