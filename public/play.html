@@ -1490,7 +1490,8 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
 
 // boot
 (async function(){
-  if(!SID){document.body.innerHTML='<div class="wrap"><div class="panel" style="margin-top:40px">No session link. Ask the host for the room QR code or link.</div></div>';return;}
+  // No / malformed session link -> send them to the front page rather than a dead end.
+  if(!SID){location.replace('/');return;}
   // Populate the room name in the header up front, even before the player logs in —
   // this is public info and avoids a blank title on a fresh session. Also lets us show
   // a clear message if the link points at a missing/closed session.
@@ -1498,13 +1499,12 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
   try{
     sessInfo=await fetch('/api/session/info?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status));
     if(sessInfo&&sessInfo.name)$('#sessName').textContent=sessInfo.name;
-    if(sessInfo&&sessInfo.closed&&!getToken()){
-      document.body.innerHTML='<div class="wrap"><div class="brand"><div class="brand-titlerow"><h1>The A&amp;R Room</h1></div></div><div class="panel" style="margin-top:24px;text-align:center"><div style="font-size:30px">🔒</div><h2 style="margin:10px 0">'+(sessInfo.name||'This session')+'</h2><p class="dim">This session has ended. Thanks for playing!</p></div></div>';
-      return;
-    }
+    // Expired (completed/archived) session and no participation to show -> front page.
+    if(sessInfo&&sessInfo.closed&&!getToken()){ location.replace('/'); return; }
   }catch(e){
-    if(e===404){document.body.innerHTML='<div class="wrap"><div class="panel" style="margin-top:40px;text-align:center"><div style="font-size:30px">🤔</div><h2 style="margin:10px 0">Session not found</h2><p class="dim">This link may be expired or incorrect. Ask the host for the current room link.</p></div></div>';return;}
-    // other errors: fall through and let the normal flow try
+    // Missing / deleted / malformed session -> front page.
+    if(e===404){ location.replace('/'); return; }
+    // other errors (transient network/500): fall through and let the normal flow try
   }
   if(getToken())startPolling();
   else if(localStorage.getItem('rt_auth_token'))await tryAccountRegister(sessInfo); // logged-in one-tap
