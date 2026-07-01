@@ -40,6 +40,8 @@
   #lower .brandtag .sess{font-size:18px;color:var(--ink-dim);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #lower .main{flex:1;min-width:0}
   #lower .nowtag{font-size:18px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
+  #lower .ovtimer{font-family:"Space Mono",monospace;font-weight:700;margin-left:14px;letter-spacing:.04em;color:var(--signal)}
+  #lower .ovtimer.warn{color:var(--hot)}
   #lower .title{font-size:54px;font-weight:800;line-height:1.04;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #lower .artist{font-size:26px;color:var(--ink-dim);margin-top:4px}
   #lower .vs{color:var(--cool);font-weight:800}
@@ -117,7 +119,7 @@
       <div class="sess" id="sessName">—</div>
     </div>
     <div class="main">
-      <div class="nowtag" id="nowTag">Now rating · Round 1</div>
+      <div class="nowtag"><span id="nowTag">Now rating · Round 1</span><span id="ovTimer" class="ovtimer hide"></span></div>
       <!-- rating: single song -->
       <div id="ratingMain">
         <div class="title" id="curTitle">—</div>
@@ -184,18 +186,25 @@
 <script>
 const $=s=>document.querySelector(s);
 const params=new URLSearchParams(location.search);
-const SID=params.get('s')||params.get('sessionId');
+// Read a param case-insensitively (hosts type Leader_board, current_song, etc.).
+const getP=(n)=>{ n=n.toLowerCase(); for(const [k,v] of params){ if(k.toLowerCase()===n) return v; } return null; };
+const boolP=(n,def)=>{ const v=getP(n); if(v==null) return def; const s=String(v).trim().toLowerCase(); return !(s==='false'||s==='0'||s==='no'||s==='off'); };
+const SID=getP('s')||getP('sessionId');
 // ?view= controls which panels show: 'all' (default), 'lower', 'board', 'result'.
-const VIEW=(params.get('view')||'all').toLowerCase();
+const VIEW=(getP('view')||'all').toLowerCase();
 const showBoard=(VIEW==='all'||VIEW==='board');
 const showLower=(VIEW==='all'||VIEW==='lower');
 const showResultView=(VIEW==='all'||VIEW==='result');
-// ?broadcast=N — how long (seconds) an overlay broadcast stays up before auto-hiding.
-// Default 12s. 0 / off / never / persist keeps it up for the whole stream.
-const BC_RAW=(params.get('broadcast')||'').trim().toLowerCase();
-const BC_MS=(BC_RAW==='0'||BC_RAW==='off'||BC_RAW==='never'||BC_RAW==='persist') ? Infinity
-  : (BC_RAW && isFinite(parseFloat(BC_RAW))) ? Math.max(1,parseFloat(BC_RAW))*1000
-  : 12000;
+// Per-element toggles (layered on top of ?view=):
+//  current_song=true|false  — show the now-playing / round card (default on)
+//  timer=true|false         — show the vote countdown on that card (default on)
+//  leader_board=N           — how many leaderboard rows: 0 hides it, default 3, max 8
+const SHOW_SONG=boolP('current_song',true);
+const SHOW_TIMER=boolP('timer',true);
+const LB_N=(()=>{ const v=getP('leader_board'); if(v==null) return 3; const n=parseInt(v,10); return isNaN(n)?3:Math.max(0,Math.min(8,n)); })();
+// ?broadcast=N — seconds an overlay broadcast stays up before auto-hiding. Default 15;
+// clamped to 1..120 so a message never persists for the whole stream.
+const BC_MS=(()=>{ const v=parseFloat(getP('broadcast')); return ((isFinite(v)&&v>0)?Math.min(120,Math.max(1,v)):15)*1000; })();
 
 // Fit the 1920x1080 stage into whatever the OBS source is sized to.
 function fit(){
@@ -208,7 +217,19 @@ window.addEventListener('resize',fit);fit();
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt1=n=>n==null?'—':(Math.round(n*10)/10).toFixed(1);
 
-let lastBcAt=0, bcVisibleUntil=0;
+let lastBcAt=0, bcVisibleUntil=0, ovClosesAt=null;
+// Vote countdown on the round card. Ticks every second off the round's closes_at
+// (same source the player uses); hidden when ovClosesAt is null (timer off / not voting).
+function paintTimer(){
+  const el=$('#ovTimer'); if(!el) return;
+  if(ovClosesAt==null){ el.classList.add('hide'); return; }
+  const left=Math.max(0,Math.round((ovClosesAt-Date.now())/1000));
+  const m=Math.floor(left/60), s=left%60;
+  el.textContent=m+':'+String(s).padStart(2,'0');
+  el.classList.toggle('warn',left<=10);
+  el.classList.remove('hide');
+}
+setInterval(paintTimer,1000);
 function showOnly(){
   // visibility driven by data + view flags
 }
@@ -228,8 +249,8 @@ function render(st){
   // --- broadcast (host opt-in; rides the lower-third slot, never with the song) ---
   // The overlay only receives a broadcast when the host ticked "show on overlay";
   // it takes the lower-third slot and suppresses the round card + result banner
-  // for BC_MS (?broadcast= seconds, default 12), then auto-hides (host re-sends to
-  // repin). ?broadcast=0/persist keeps it up for the whole stream.
+  // for BC_MS (?broadcast= seconds, default 15, clamped 1..120), then auto-hides
+  // (host re-sends to repin).
   let showingBroadcast=false;
   if(st.broadcast&&st.broadcast.text){
     if(st.broadcast.at!==lastBcAt){
@@ -244,9 +265,9 @@ function render(st){
     }else $('#bcastLower').classList.add('hide');
   }else{ lastBcAt=0; $('#bcastLower').classList.add('hide'); }
 
-  // --- leaderboard rail ---
-  if(showBoard && st.leaderboard && st.leaderboard.length){
-    $('#lbRows').innerHTML=st.leaderboard.slice(0,8).map(r=>`
+  // --- leaderboard rail (row count from ?leader_board=, 0 hides it) ---
+  if(showBoard && LB_N>0 && st.leaderboard && st.leaderboard.length){
+    $('#lbRows').innerHTML=st.leaderboard.slice(0,LB_N).map(r=>`
       <div class="lbrow ${r.rank<=3?('top'+r.rank):''}">
         <div class="rk">${r.rank}</div>
         <div class="nm">${esc(r.name)}</div>
@@ -287,8 +308,12 @@ function render(st){
   }else $('#result').classList.add('hide');
 
   // --- lower third (current round), hidden while a winner reveal or broadcast is up ---
-  if(showLower && current && !showingResult && !showingBroadcast){
+  // ?current_song=false hides it entirely.
+  if(showLower && SHOW_SONG && current && !showingResult && !showingBroadcast){
     $('#nowTag').textContent=(isBin?'Now playing · Round ':'Now rating · Round ')+current.idx+(current.status==='closed'?' · voting closed':'');
+    // Vote countdown (?timer=false hides it) — only while voting is open.
+    ovClosesAt=(SHOW_TIMER && current.status==='voting' && current.closes_at) ? Number(current.closes_at) : null;
+    paintTimer();
     if(isBin){
       // Binary live: A vs B (full title + artist each). NO split — it's the prediction
       // target and stays sealed until ratify, same as the rating room average.
@@ -313,7 +338,7 @@ function render(st){
     }
     if(current.giveaway){$('#rightSub').textContent='🎁 '+current.giveaway;}
     $('#lower').classList.remove('hide');
-  }else $('#lower').classList.add('hide');
+  }else{ $('#lower').classList.add('hide'); ovClosesAt=null; paintTimer(); }
 
   // --- idle card only when nothing else is showing ---
   const anything=!$('#lower').classList.contains('hide')||!$('#result').classList.contains('hide')||!$('#board').classList.contains('hide')||!$('#bcastLower').classList.contains('hide');

@@ -289,7 +289,11 @@
         <label>Stream overlay <span class="muted">(OBS browser source — transparent)</span></label>
         <div class="link" id="overlayLink" style="word-break:break-all"></div>
         <button class="btn ghost sm" id="btnCopyOverlay" style="margin-top:8px">Copy overlay link</button>
-        <p class="muted" style="font-size:12px;margin:8px 2px 0">Broadcast messages auto-dismiss after 12s. Add <code>&amp;broadcast=30</code> to the URL for 30s, or <code>&amp;broadcast=0</code> to keep them up the whole stream.</p>
+        <p class="muted" style="font-size:12px;margin:8px 2px 0;line-height:1.6">Tune the overlay with URL params (add to the link above):<br>
+          <code>&amp;broadcast=30</code> broadcast dismiss seconds (default 15) ·
+          <code>&amp;current_song=false</code> hide the now-playing card ·
+          <code>&amp;timer=false</code> hide the vote countdown ·
+          <code>&amp;leader_board=8</code> leaderboard rows, 0 hides it (default 3)</p>
       </div>
 
       <!-- Config -->
