@@ -271,6 +271,7 @@ async function load(){
     const r=await fetch('/api/home');
     const d=await r.json();
     if(d.live)renderLive(d); else renderBetween(d);
+    _ensureRealtime(d.live && d.live.id);
     // Nav links only show when their section rendered (sections hide when empty).
     const navToggle=(id,present)=>{const el=$('#'+id);if(el)el.style.display=present?'':'none';};
     navToggle('navBoard', !!document.getElementById('secBoard'));
@@ -280,8 +281,29 @@ async function load(){
   }
 }
 load();
-// Light refresh so the page reflects going-live and leaderboard changes without a reload.
+// Light 30s refresh as the safety net; realtime makes live updates instant below.
 setInterval(load, 30000);
+
+// ---- realtime: when a session is live, refresh the homepage the instant it changes ----
+// Keyed to the live session's channel (re-subscribes if a different session goes live);
+// no-op when nothing is live or the key is unset. The 30s poll remains the fallback.
+let _rt=null,_rtChan=null,_rtSid=undefined,_rtRefreshT=null;
+async function _ensureRealtime(liveId){
+  liveId=liveId||null;
+  if(_rtSid===liveId)return;                       // no change
+  if(_rt){ try{_rt.close();}catch(e){} _rt=null;_rtChan=null; }
+  _rtSid=liveId;
+  if(!liveId)return;                               // nothing live -> 30s poll only
+  try{
+    const probe=await fetch('/api/ably/token?s='+encodeURIComponent(liveId)).then(r=>r.json());
+    if(!probe||probe.enabled===false||!probe.keyName){ _rtSid=undefined; return; }
+    if(!window.Ably) await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.ably.com/lib/ably.min-2.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+    if(_rtSid!==liveId)return;                      // a newer load() superseded us
+    _rt=new Ably.Realtime({ authUrl:'/api/ably/token?s='+encodeURIComponent(liveId) });
+    _rtChan=_rt.channels.get('anr:session:'+liveId);
+    _rtChan.subscribe('change',()=>{ if(_rtRefreshT)return; _rtRefreshT=setTimeout(()=>{_rtRefreshT=null;load();},300); });
+  }catch(e){ /* stay on 30s poll */ }
+}
 
 // Logged-in A&Rs see "My Profile" (-> their editable profile) instead of "Join".
 (async function initNav(){

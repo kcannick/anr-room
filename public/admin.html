@@ -1504,9 +1504,29 @@ async function refresh(){
 function boot(){
   showScreen('console');
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
+  initRealtime();
   setInterval(()=>{ // local timer repaint without server hit
     const t=document.querySelector('.timer-big');if(!t)return;
   },1000);
+}
+// ---- realtime: refresh instantly on server push; polling stays the fallback ----
+// Poll every 2s until Ably connects; once connected, push drives refreshes and the poll
+// drops to a 15s heartbeat. Any disconnect (or no key) reverts to 2s polling.
+let _rtInited=false,_rtOn=false,_rtRefreshT=null;
+function _setPoll(ms){ if(poll)clearInterval(poll); poll=setInterval(refresh,ms); }
+function _rtRefresh(){ if(_rtRefreshT)return; _rtRefreshT=setTimeout(()=>{_rtRefreshT=null;refresh();},250); }
+async function initRealtime(){
+  if(_rtInited||!SID)return; _rtInited=true;
+  try{
+    const probe=await fetch('/api/ably/token?s='+encodeURIComponent(SID)).then(r=>r.json());
+    if(!probe||probe.enabled===false||!probe.keyName){_rtInited=false;return;}
+    await new Promise((res,rej)=>{ if(window.Ably)return res(); const s=document.createElement('script'); s.src='https://cdn.ably.com/lib/ably.min-2.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+    const rt=new Ably.Realtime({ authUrl:'/api/ably/token?s='+encodeURIComponent(SID) });
+    rt.connection.on('connected',()=>{ _rtOn=true; _setPoll(15000); });
+    rt.connection.on('disconnected',()=>{ if(_rtOn){_rtOn=false;_setPoll(2000);} });
+    rt.connection.on('failed',()=>{ if(_rtOn){_rtOn=false;_setPoll(2000);} });
+    rt.channels.get('anr:session:'+SID).subscribe('change',()=>_rtRefresh());
+  }catch(e){ /* stay on polling */ }
 }
 // ---- startup routing ----
 // Preferred: identity login → session picker. Legacy: a saved per-session token
