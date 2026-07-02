@@ -32,8 +32,15 @@ async function call(path, body, method='POST', headers={}) {
   await server.ensureInit();
   await new Promise((res) => server.listen(3999, res));
 
+  // Session creation is invite-only (host|admin). Establish the platform admin up front
+  // (admin@test.com = ADMIN_EMAIL) and route all test session-creation through it. BOOTH
+  // being the first account also keeps host@test.com a non-admin later.
+  const bootReq = await call('/api/auth/request', { email: 'admin@test.com' });
+  const bootVer = await call('/api/auth/verify', { email: 'admin@test.com', code: bootReq.d.devCode });
+  const BOOTH = { 'X-Auth-Token': bootVer.d.token };
+
   console.log('\n— create session —');
-  const cs = await call('/api/session', { name: 'Test Night' });
+  const cs = await call('/api/session', { name: 'Test Night' }, 'POST', BOOTH);
   ok('session created', cs.status === 200 && cs.d.sessionId && cs.d.adminToken, JSON.stringify(cs.d));
   const SID = cs.d.sessionId, ATOK = cs.d.adminToken;
   const AH = { 'X-Admin-Token': ATOK };
@@ -230,10 +237,10 @@ async function call(path, body, method='POST', headers={}) {
   // default exposed in admin state (this session was created without one → defaults to 5)
   ok('session default_minutes present', st.session.default_minutes === 5, 'got ' + st.session.default_minutes);
   // a session created with a custom default stores it (clamped)
-  const cs2 = await call('/api/session', { name: 'Custom Default', defaultMinutes: 10 });
+  const cs2 = await call('/api/session', { name: 'Custom Default', defaultMinutes: 10 }, 'POST', BOOTH);
   const st2 = (await call(`/api/admin/state?sessionId=${cs2.d.sessionId}`, null, 'GET', { 'X-Admin-Token': cs2.d.adminToken })).d;
   ok('custom default stored (10)', st2.session.default_minutes === 10, 'got ' + st2.session.default_minutes);
-  const cs3 = await call('/api/session', { name: 'Clamped Default', defaultMinutes: 200 });
+  const cs3 = await call('/api/session', { name: 'Clamped Default', defaultMinutes: 200 }, 'POST', BOOTH);
   const st3 = (await call(`/api/admin/state?sessionId=${cs3.d.sessionId}`, null, 'GET', { 'X-Admin-Token': cs3.d.adminToken })).d;
   ok('out-of-range default clamps to 60', st3.session.default_minutes === 60, 'got ' + st3.session.default_minutes);
 
@@ -289,7 +296,7 @@ async function call(path, body, method='POST', headers={}) {
   console.log('\n— durable user identity across sessions —');
   // Maya (a@test.com) already played this session. Create a SECOND session and
   // have the same email join → must resolve to the same uid, not a duplicate user.
-  const s2 = await call('/api/session', { name: 'Second Night' });
+  const s2 = await call('/api/session', { name: 'Second Night' }, 'POST', BOOTH);
   const SID2 = s2.d.sessionId, AH2 = { 'X-Admin-Token': s2.d.adminToken };
   const r2 = await call('/api/join/request', { sessionId: SID2, email: 'a@test.com' });
   await call('/api/join/verify', { sessionId: SID2, email: 'a@test.com', code: r2.d.devCode, name: 'Maya' });
@@ -346,6 +353,9 @@ async function call(path, body, method='POST', headers={}) {
   ok('auth verify returns token + role', authVer.status === 200 && authVer.d.token && authVer.d.role === 'player', JSON.stringify(authVer.d));
   const HOSTTOK = authVer.d.token;
   const AUTHH = { 'X-Auth-Token': HOSTTOK };
+  // Upgrade to host so they can create sessions (invite-only). The existing token now
+  // resolves to role=host — userFromAuth reads role live, so no re-login is needed.
+  await call('/api/admin/users/role', { uid: authVer.d.uid, role: 'host' }, 'POST', BOOTH);
 
   // /auth/me validates the token.
   const me = await call('/api/auth/me', null, 'GET', AUTHH);
@@ -366,6 +376,11 @@ async function call(path, body, method='POST', headers={}) {
   const OTHERH = { 'X-Auth-Token': av2.d.token };
   const denied = await call(`/api/admin/state?sessionId=${OSID}`, null, 'GET', OTHERH);
   ok('non-owner host is denied', denied.status === 401, 'got ' + denied.status);
+  // Invite-only: a plain player and an anonymous caller cannot create a session.
+  const playerCreate = await call('/api/session', { name: 'Nope' }, 'POST', OTHERH);
+  ok('a plain player cannot create a session', playerCreate.status === 403, 'got ' + playerCreate.status);
+  const anonCreate = await call('/api/session', { name: 'Nope' });
+  ok('an anonymous caller cannot create a session', anonCreate.status === 403, 'got ' + anonCreate.status);
 
   // The admin (promoted via ADMIN_EMAIL=admin@test.com in the test run) sees ALL sessions.
   const ara = await call('/api/auth/request', { email: 'admin@test.com' });
@@ -427,18 +442,18 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— returning prefill + phone-as-consent combined —');
   const pfEmail = 'combo@test.com';
-  const pfSessA = await call('/api/session', { name: 'Combo One' });
+  const pfSessA = await call('/api/session', { name: 'Combo One' }, 'POST', BOOTH);
   const pfReqA = await call('/api/join/request', { sessionId: pfSessA.d.sessionId, email: pfEmail });
   ok('first visit not returning', pfReqA.d.returning === false, JSON.stringify(pfReqA.d.returning));
   await call('/api/join/verify', { sessionId: pfSessA.d.sessionId, email: pfEmail, code: pfReqA.d.devCode, name: 'Combo Kid', phone: '4045550101' });
-  const pfSessB = await call('/api/session', { name: 'Combo Two' });
+  const pfSessB = await call('/api/session', { name: 'Combo Two' }, 'POST', BOOTH);
   const pfReqB = await call('/api/join/request', { sessionId: pfSessB.d.sessionId, email: pfEmail });
   ok('return visit flagged returning', pfReqB.d.returning === true, JSON.stringify(pfReqB.d.returning));
   ok('prefill name present', pfReqB.d.prefill && pfReqB.d.prefill.name === 'Combo Kid', JSON.stringify(pfReqB.d.prefill));
   ok('phone hint masked', pfReqB.d.prefill && pfReqB.d.prefill.phoneHint === '••• 0101', JSON.stringify(pfReqB.d.prefill && pfReqB.d.prefill.phoneHint));
   ok('full phone not leaked in request', !JSON.stringify(pfReqB.d).includes('4045550101') && !JSON.stringify(pfReqB.d).includes('5550101'));
   await call('/api/join/verify', { sessionId: pfSessB.d.sessionId, email: pfEmail, code: pfReqB.d.devCode, name: 'Combo Kid', phone: '', keepPhone: true });
-  const pfSessC = await call('/api/session', { name: 'Combo Three' });
+  const pfSessC = await call('/api/session', { name: 'Combo Three' }, 'POST', BOOTH);
   const pfReqC = await call('/api/join/request', { sessionId: pfSessC.d.sessionId, email: pfEmail });
   ok('kept phone preserved (still on file)', pfReqC.d.prefill && pfReqC.d.prefill.phoneHint === '••• 0101', JSON.stringify(pfReqC.d.prefill && pfReqC.d.prefill.phoneHint));
 
@@ -463,7 +478,7 @@ async function call(path, body, method='POST', headers={}) {
   // session, players, round, votes, ratify, results, recap, and export.
   // ======================================================================
   console.log('\n— binary poll: create a binary session —');
-  const bcs = await call('/api/session', { name: 'Verzuz Night', pollType: 'binary' });
+  const bcs = await call('/api/session', { name: 'Verzuz Night', pollType: 'binary' }, 'POST', BOOTH);
   ok('binary session created', bcs.status === 200 && bcs.d.sessionId, JSON.stringify(bcs.d));
   ok('create echoes pollType=binary', bcs.d.pollType === 'binary', 'got ' + bcs.d.pollType);
   const BSID = bcs.d.sessionId, BATOK = bcs.d.adminToken;
@@ -574,7 +589,7 @@ async function call(path, body, method='POST', headers={}) {
   // EVENT TOOLS — watch link, lobby message, sign-up prompt, broadcast, overlay
   // ======================================================================
   console.log('\n— event tools: session config at creation —');
-  const ecs = await call('/api/session', { name: 'Event Night', watchUrl: 'https://twitch.tv/example', lobbyMessage: 'Starting soon!', signupPrompt: 'Drop your IG + city' });
+  const ecs = await call('/api/session', { name: 'Event Night', watchUrl: 'https://twitch.tv/example', lobbyMessage: 'Starting soon!', signupPrompt: 'Drop your IG + city' }, 'POST', BOOTH);
   ok('session created with config', ecs.status === 200 && ecs.d.sessionId, JSON.stringify(ecs.d));
   const ESID = ecs.d.sessionId, EATOK = ecs.d.adminToken, EAH = { 'X-Admin-Token': EATOK };
   let es = (await call(`/api/admin/state?sessionId=${ESID}`, null, 'GET', EAH)).d;
@@ -583,7 +598,7 @@ async function call(path, body, method='POST', headers={}) {
   ok('signup_prompt stored', es.session.signup_prompt === 'Drop your IG + city', es.session.signup_prompt);
 
   console.log('\n— event tools: bad watch url is rejected (sanitized to null) —');
-  const badUrl = await call('/api/session', { name: 'Bad URL', watchUrl: 'javascript:alert(1)' });
+  const badUrl = await call('/api/session', { name: 'Bad URL', watchUrl: 'javascript:alert(1)' }, 'POST', BOOTH);
   const buState = (await call(`/api/admin/state?sessionId=${badUrl.d.sessionId}`, null, 'GET', { 'X-Admin-Token': badUrl.d.adminToken })).d;
   ok('non-http watch url sanitized to null', buState.session.watch_url === null, 'got ' + buState.session.watch_url);
 
@@ -633,7 +648,7 @@ async function call(path, body, method='POST', headers={}) {
   // REFERRALS — code issued, attribution on join, credit on first vote
   // ======================================================================
   console.log('\n— referrals: each player gets a code; referred join is attributed —');
-  const rcs = await call('/api/session', { name: 'Referral Test' });
+  const rcs = await call('/api/session', { name: 'Referral Test' }, 'POST', BOOTH);
   const RSID = rcs.d.sessionId, RATOK = rcs.d.adminToken, RAH = { 'X-Admin-Token': RATOK };
   // Inviter joins.
   async function rjoin(email, name, ref) {
@@ -689,7 +704,7 @@ async function call(path, body, method='POST', headers={}) {
   // GEOFENCED CHECK-IN — venue pin, modes, lock-in gate, pooling, privacy
   // ======================================================================
   console.log('\n— geo: venue can be set ahead, enforcement off; config independent —');
-  const gcs = await call('/api/session', { name: 'LA Event' });
+  const gcs = await call('/api/session', { name: 'LA Event' }, 'POST', BOOTH);
   const GSID = gcs.d.sessionId, GATOK = gcs.d.adminToken, GAH = { 'X-Admin-Token': GATOK };
   // Set venue pin now (as if geocoded), leave geo_mode off.
   const VENUE = { lat: 34.0430, lng: -118.2673 }; // ~ LA live venue
@@ -766,8 +781,8 @@ async function call(path, body, method='POST', headers={}) {
   // must produce two distinct participants/tokens, each scoped to its session.
   // ======================================================================
   console.log('\n— regression: same email across two sessions = two scoped tokens —');
-  const sA = await call('/api/session', { name: 'Session Alpha' });
-  const sB = await call('/api/session', { name: 'Session Bravo' });
+  const sA = await call('/api/session', { name: 'Session Alpha' }, 'POST', BOOTH);
+  const sB = await call('/api/session', { name: 'Session Bravo' }, 'POST', BOOTH);
   const SA = sA.d.sessionId, SB = sB.d.sessionId;
   const EMAIL = 'dualjoin@test.com';
   // Join A.
@@ -789,7 +804,7 @@ async function call(path, body, method='POST', headers={}) {
   // ======================================================================
   console.log('\n— session mgmt: edit name + config after creation —');
   const smA = ADMINH; // admin auth header from earlier in the suite
-  const sm = await call('/api/session', { name: 'Original Name', lobbyMessage: 'hi' });
+  const sm = await call('/api/session', { name: 'Original Name', lobbyMessage: 'hi' }, 'POST', BOOTH);
   const SMID = sm.d.sessionId, SMAH = { 'X-Admin-Token': sm.d.adminToken };
   await call('/api/admin/session/config', { sessionId: SMID, name: 'Renamed Event', lobbyMessage: 'updated' }, 'POST', SMAH);
   let sms = (await call(`/api/admin/state?sessionId=${SMID}`, null, 'GET', SMAH)).d;
@@ -799,7 +814,7 @@ async function call(path, body, method='POST', headers={}) {
   ok('empty name rejected', emptyName.status === 400, 'got ' + emptyName.status);
 
   console.log('\n— session mgmt: default ad + venue settable at creation —');
-  const smCreate = await call('/api/session', { name: 'Preconfigured', geoLat: 34.04, geoLng: -118.26, geoRadius: 150, geoLabel: 'Venue X' });
+  const smCreate = await call('/api/session', { name: 'Preconfigured', geoLat: 34.04, geoLng: -118.26, geoRadius: 150, geoLabel: 'Venue X' }, 'POST', BOOTH);
   const PCID = smCreate.d.sessionId, PCAH = { 'X-Admin-Token': smCreate.d.adminToken };
   const pcs = (await call(`/api/admin/state?sessionId=${PCID}`, null, 'GET', PCAH)).d;
   ok('venue set at creation', pcs.session.geo_lat === 34.04 && pcs.session.geo_label === 'Venue X', JSON.stringify([pcs.session.geo_lat, pcs.session.geo_label]));
@@ -825,7 +840,7 @@ async function call(path, body, method='POST', headers={}) {
   ok('restored session back in list', listRestored.sessions.some(s => s.id === SMID), 'not listed');
 
   console.log('\n— beta feedback: logs to DB, validates, never blocks —');
-  const fbSess = await call('/api/session', { name: 'Feedback Night' });
+  const fbSess = await call('/api/session', { name: 'Feedback Night' }, 'POST', BOOTH);
   const FBSID = fbSess.d.sessionId;
   const fb1 = await call('/api/feedback', { message: 'Lock button was confusing', sessionId: FBSID, contactEmail: 'fan@x.com' });
   ok('text feedback accepted', fb1.status === 200 && fb1.d.ok, JSON.stringify([fb1.status, fb1.d]));

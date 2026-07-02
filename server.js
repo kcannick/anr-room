@@ -736,6 +736,10 @@ async function handleApi(req, res, url) {
 
   // ----- create session (admin bootstrap) -----
   if (p === '/api/session' && method === 'POST') {
+    // Session creation is invite-only: only a platform admin or an upgraded host may create.
+    // (Regular viewers never should have been able to — this closes that gap.)
+    const creator = await userFromAuth(req);
+    if (!creator || !(creator.role === 'admin' || creator.role === 'host')) return bad(res, 'Host access required', 403);
     const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, submitUrl, lobbyMessage, signupPrompt, bannerId, geoLabel, geoLat, geoLng, geoRadius } = await readBody(req);
     if (!name || !name.trim()) return bad(res, 'Session name required');
     const sid = id(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || id(4);
@@ -756,8 +760,7 @@ async function handleApi(req, res, url) {
     const grad = Number.isFinite(Number(geoRadius)) ? Math.min(5000, Math.max(25, Math.round(Number(geoRadius)))) : null;
     const glabel = (geoLabel || '').toString().trim().slice(0, 200) || null;
     // Owner = the logged-in user creating it (if any). Falls back to null (legacy token still works).
-    const creator = await userFromAuth(req);
-    const ownerUid = creator ? creator.uid : null;
+    const ownerUid = creator.uid; // gated above → always present
     // New sessions are 'live' by default, or 'upcoming' if a future start is given.
     const st = (status === 'upcoming' || (scheduledAt && Number(scheduledAt) > now())) ? 'upcoming' : 'live';
     await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, submit_url, lobby_message, signup_prompt, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
