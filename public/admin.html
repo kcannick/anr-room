@@ -112,6 +112,9 @@
   .badge{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
   .badge.admin{background:rgba(75,183,73,.16);color:var(--signal)}
   .badge.host{background:rgba(109,95,224,.18);color:var(--accent)}
+  .permrow{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .permchip{font-size:10px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink-faint);cursor:pointer}
+  .permchip.on{background:rgba(75,183,73,.16);border-color:var(--signal-deep);color:var(--signal)}
   .badge.blocked{background:rgba(255,93,108,.16);color:var(--hot)}
   .badge.incomplete{background:rgba(245,165,36,.14);color:var(--amber)}
   .uactions{display:flex;gap:6px;flex:none}
@@ -274,7 +277,8 @@
 
     <div class="card">
       <h2>Event tools</h2>
-      <!-- Broadcast -->
+      <!-- Broadcast (host-gated by the 'broadcast' perm) -->
+      <div id="bcBlock">
       <label>Broadcast a message to everyone <span class="muted">(pops on all player screens)</span></label>
       <textarea id="bcInput" placeholder="e.g. The Versus round is running 10 min late — we'll spin some indie until it kicks off"></textarea>
       <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:500;cursor:pointer">
@@ -286,6 +290,7 @@
         <button class="btn ghost sm" id="btnBroadcastClear">Clear</button>
       </div>
       <div class="muted" id="bcStatus" style="font-size:12px;margin-top:6px"></div>
+      </div><!-- /bcBlock -->
 
       <!-- Overlay link -->
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
@@ -347,7 +352,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="adsCard">
       <h2>Ads <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">· lobby · voting · locked</span></h2>
       <div id="adsBox"></div>
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
@@ -384,7 +389,7 @@
     <div class="card">
       <h2>Leaderboard</h2>
       <div id="board"><div class="empty">Nobody's joined yet.</div></div>
-      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+      <div id="exportBlock" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
         <label style="display:block;margin-bottom:8px">Export data <span class="muted">(ratified rounds)</span></label>
         <div class="row">
           <button class="btn ghost sm" id="btnExpCsv">CSV (full)</button>
@@ -615,7 +620,7 @@ $('#btnLoginVerify').onclick=async()=>{
   if(!code)return $('#loginErr').textContent='Enter the code';
   try{
     const d=await api('/api/auth/verify',{email,code});
-    AUTHTOK=d.token;ME={uid:d.uid,email:d.email,role:d.role,name:d.name};
+    AUTHTOK=d.token;ME={uid:d.uid,email:d.email,role:d.role,name:d.name,perms:d.perms};
     localStorage.setItem('rt_auth_token',AUTHTOK);
     // reset login form
     $('#loginStep2').classList.add('hide');$('#loginStep1').classList.remove('hide');$('#loginCode').value='';$('#loginDev').classList.add('hide');
@@ -633,6 +638,8 @@ const STATUS_LABEL={upcoming:'Upcoming',live:'Live',completed:'Completed',archiv
 const STATUS_ORDER=['live','upcoming','completed','archived'];
 let SERIES=[]; // admin-only cache of series for the inline tag dropdowns
 const isAdmin=()=>ME&&ME.role==='admin';
+// Feature permission: admin = always; host = per-grant. Drives host-facing tool visibility.
+const hasP=(k)=>!!(ME&&(ME.role==='admin'||(ME.perms&&ME.perms[k])));
 async function loadSeriesCache(){
   if(!isAdmin()){SERIES=[];return;}
   try{const d=await api('/api/admin/series/list',null,'GET');SERIES=d.series||[];}
@@ -842,12 +849,20 @@ async function loadUsers(){
         `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
         `<button class="btn ${u.blocked?'ghost':'amber'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
         `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
-      return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname">${esc(u.name||'(no name)')}${badges}</div><div class="usub">${esc(sub)}</div></div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
+      // Per-host feature toggles (only for hosts). None granted by default.
+      const permRow=u.role==='host'&&u.perms
+        ? '<div class="permrow">'+[['broadcast','Broadcast'],['sms','SMS'],['ads','Ads'],['export','Export']].map(([k,lbl])=>{
+            const on=!!u.perms[k];
+            return `<button class="permchip${on?' on':''}" onclick="togglePerm('${u.id}','${k}',${on?0:1})">${lbl}</button>`;
+          }).join('')+'</div>'
+        : '';
+      return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname">${esc(u.name||'(no name)')}${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
     }).join('');
   }catch(e){box.innerHTML='<div class="err">'+e.message+'</div>';}
 }
 window.toggleBlock=async(uid,blocked)=>{try{await api('/api/admin/users/block',{uid,blocked:!!blocked});await loadUsers();}catch(e){alert(e.message);}};
 window.setRole=async(uid,role)=>{try{await api('/api/admin/users/role',{uid,role});await loadUsers();}catch(e){alert(e.message);}};
+window.togglePerm=async(uid,key,on)=>{try{await api('/api/admin/users/perms',{uid,perms:{[key]:!!on}});await loadUsers();}catch(e){alert(e.message);}};
 ['uSearch','uLocation'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('input',()=>{clearTimeout(usersFilterTimer);usersFilterTimer=setTimeout(loadUsers,320);}));
 ['uStatus','uSkill','uSkillMode','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
 // delete-user modal (type-name confirm)
@@ -1202,10 +1217,10 @@ $('#btnGoLive').onclick=()=>{
   $('#glName').textContent=(lastState&&lastState.session&&lastState.session.name)||'this session';
   const n=(lastState&&lastState.verifiedCount)||0;
   $('#glCount').textContent=n?(n+' registered A&R'+(n===1?'':'s')+' can be notified.'):'No one is registered yet — notifications will reach only opted-in registrants.';
-  // Hosts are email-only — hide the SMS channel for non-admins.
+  // SMS channel only for accounts with the sms permission (admins always).
   const smsLabel=$('#glSms').closest('label');
-  if(smsLabel)smsLabel.classList.toggle('hide', !isAdmin());
-  if(!isAdmin())$('#glSms').checked=false;
+  if(smsLabel)smsLabel.classList.toggle('hide', !hasP('sms'));
+  if(!hasP('sms'))$('#glSms').checked=false;
   $('#glErr').textContent='';
   $('#goliveModal').style.display='flex';
 };
@@ -1364,7 +1379,11 @@ function render(st){
   const ing=st.ingestLatest;
   const hasIng=!!(ing&&(ing.title||ing.artist));
   $('#btnIngestPull').classList.toggle('hide', !hasIng || !isAdmin()); // Drupal ingest is platform-only
-  if($('#smsTestRow'))$('#smsTestRow').classList.toggle('hide', !isAdmin()); // SMS is platform-only; hosts are email-only
+  if($('#smsTestRow'))$('#smsTestRow').classList.toggle('hide', !isAdmin()); // SMS test is platform-only
+  // Per-host feature gating (admins see everything).
+  if($('#bcBlock'))$('#bcBlock').classList.toggle('hide', !hasP('broadcast'));
+  if($('#adsCard'))$('#adsCard').classList.toggle('hide', !hasP('ads'));
+  if($('#exportBlock'))$('#exportBlock').classList.toggle('hide', !hasP('export'));
   if(hasIng)$('#btnIngestPull').textContent=('⬇ Pull submission: '+(ing.title||'')+(ing.artist?' — '+ing.artist:'')).slice(0,46);
   $('#who').textContent=st.session.name+' · '+st.session.status+(isBin?' · ⚔️ Versus':'');
   // lifecycle controls reflect current status
@@ -1590,7 +1609,7 @@ async function startup(){
   if(AUTHTOK){
     try{
       const me=await api('/api/auth/me',null,'GET');
-      ME={uid:me.uid,email:me.email,role:me.role,name:me.name};
+      ME={uid:me.uid,email:me.email,role:me.role,name:me.name,perms:me.perms};
       // If a session was already open on this device, reopen it; else show picker.
       if(SID){boot();}else{openPicker();}
       return;

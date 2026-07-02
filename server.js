@@ -853,7 +853,7 @@ async function handleApi(req, res, url) {
     await db.run('INSERT INTO auth_tokens (token, uid, created_at, last_used, expires_at) VALUES (?,?,?,?,?)',
       [token, user.uid, now(), now(), now() + AUTH_TTL]);
     await db.run("DELETE FROM otps WHERE email = ? AND session_id = '__auth__'", [em]);
-    return send(res, 200, { token, role: user.role, uid: user.uid, email: user.email, name: user.name || null });
+    return send(res, 200, { token, role: user.role, uid: user.uid, email: user.email, name: user.name || null, perms: effectivePerms(user) });
   }
 
   // Who am I? (validates a stored auth token)
@@ -1166,12 +1166,13 @@ async function handleApi(req, res, url) {
       : sort === 'sessions' ? `${sessSub} DESC` : sort === 'series' ? `${seriesSub} DESC` : 'u.last_seen DESC';
     const total = (await db.get(`SELECT COUNT(*) AS c FROM users u ${whereSql}`, params)).c;
     const rows = await db.all(
-      `SELECT u.uid, u.name, u.email, u.role, u.blocked, u.profile_complete, u.primary_category, u.location, u.photo_url, u.lifetime_points, u.last_seen,
+      `SELECT u.uid, u.name, u.email, u.role, u.blocked, u.host_perms, u.profile_complete, u.primary_category, u.location, u.photo_url, u.lifetime_points, u.last_seen,
          ${sessSub} AS sessions, ${seriesSub} AS series_participated
        FROM users u ${whereSql} ORDER BY ${orderSql} LIMIT 100`, params);
     return send(res, 200, {
       total: Number(total) || 0,
       users: rows.map(r => ({ id: r.uid, name: r.name || null, email: r.email, role: r.role, blocked: !!r.blocked,
+        perms: r.role === 'host' ? effectivePerms(r) : null,
         profileComplete: !!r.profile_complete, primaryCategory: r.primary_category || null, location: r.location || null,
         photoUrl: r.photo_url || null, points: Number(r.lifetime_points) || 0, sessions: Number(r.sessions) || 0,
         seriesParticipated: Number(r.series_participated) || 0,
@@ -1217,10 +1218,12 @@ async function handleApi(req, res, url) {
     if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
     const { uid, perms } = await readBody(req);
     if (!uid) return bad(res, 'uid required');
-    const u = await db.get('SELECT uid FROM users WHERE uid = ?', [uid]);
+    const u = await db.get('SELECT uid, host_perms FROM users WHERE uid = ?', [uid]);
     if (!u) return bad(res, 'User not found', 404);
+    // Merge: only the provided keys change; the rest keep their current value.
+    let merged = {}; try { merged = JSON.parse(u.host_perms || '{}') || {}; } catch (e) {}
     const clean = {};
-    HOST_PERMS.forEach(k => { clean[k] = !!(perms && perms[k]); });
+    HOST_PERMS.forEach(k => { clean[k] = (perms && k in perms) ? !!perms[k] : !!merged[k]; });
     await db.run('UPDATE users SET host_perms = ? WHERE uid = ?', [JSON.stringify(clean), uid]);
     return send(res, 200, { ok: true, uid, perms: clean });
   }
