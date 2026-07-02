@@ -237,6 +237,11 @@ function renderAvatar(){
   if(profile.photoUrl){av.textContent='';av.style.backgroundImage=`url(${profile.photoUrl})`;$('#jPhotoLabel').textContent='Photo added ✓';}
   else{av.style.backgroundImage='';av.textContent='+';$('#jPhotoLabel').textContent='Add a photo';}
 }
+// Leave the profile editor: back to where they came from, else their profile view.
+function dismissProfile(){
+  if(history.length>1){ history.back(); }
+  else { window.location.href = MEUID ? ('/u/'+encodeURIComponent(MEUID)) : '/'; }
+}
 $('#btnFinish').onclick=async()=>{
   $('#profErr').textContent='';
   const cats=jSelected();
@@ -248,12 +253,12 @@ $('#btnFinish').onclick=async()=>{
   try{
     const pr=await api('/api/me/profile',{categories:cats,primaryCategory:jPrimary||cats[0],location:loc,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()});
     if(pr&&pr.complete&&!wasComplete)track('profile_complete',{where:editMode?'edit':'join'});
-    if(editMode){ window.location.href='/u/'+encodeURIComponent(MEUID); return; } // saved -> view profile
+    if(editMode){ dismissProfile(); return; } // saved -> back where they came from
     finishDone(true);
   }catch(e){$('#profErr').textContent=e.message;}
   $('#btnFinish').disabled=false;
 };
-$('#btnSkip').onclick=()=>{ if(editMode){ location.href=MEUID?('/u/'+encodeURIComponent(MEUID)):'/'; } else finishDone(false); };
+$('#btnSkip').onclick=()=>{ if(editMode){ dismissProfile(); } else finishDone(false); };
 // Edit mode: a logged-in A&R lands straight on their (pre-filled) profile to view/edit.
 async function initJoin(){
   const tok=localStorage.getItem('rt_auth_token');
