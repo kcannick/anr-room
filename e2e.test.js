@@ -991,6 +991,22 @@ async function call(path, body, method='POST', headers={}) {
   ok('host does NOT see participant email', !!hp && hp.email === undefined, JSON.stringify(hp));
   ok('admin DOES see participant email', !!ap && ap.email === 'fan@redact.com', JSON.stringify(ap));
 
+  console.log('\n— per-host feature permissions (default NONE; admin grants; server-enforced) —');
+  const meNoPerm = await call('/api/auth/me', null, 'GET', HOSTH);
+  ok('new host has no feature perms by default', !!meNoPerm.d.perms && meNoPerm.d.perms.broadcast === false && meNoPerm.d.perms.sms === false, JSON.stringify(meNoPerm.d.perms));
+  const bcDenied = await call('/api/admin/session/broadcast', { sessionId: HS, text: 'hi' }, 'POST', HOSTH);
+  ok('host without broadcast perm is blocked (403)', bcDenied.status === 403, 'got ' + bcDenied.status);
+  const permForbidden = await call('/api/admin/users/perms', { uid: hostUser.id, perms: { sms: true } }, 'POST', HOSTH);
+  ok('a host cannot set permissions', permForbidden.status === 403, 'got ' + permForbidden.status);
+  const grant = await call('/api/admin/users/perms', { uid: hostUser.id, perms: { broadcast: true } }, 'POST', ADMINH);
+  ok('admin grants a host the broadcast perm', grant.status === 200 && grant.d.perms.broadcast === true, JSON.stringify(grant.d));
+  const meWithPerm = await call('/api/auth/me', null, 'GET', HOSTH);
+  ok('host now reports broadcast perm', meWithPerm.d.perms.broadcast === true && meWithPerm.d.perms.sms === false, JSON.stringify(meWithPerm.d.perms));
+  const bcOk = await call('/api/admin/session/broadcast', { sessionId: HS, text: 'hi from host' }, 'POST', HOSTH);
+  ok('host with broadcast perm can broadcast', bcOk.status === 200, JSON.stringify(bcOk.d));
+  const adminBc = await call('/api/admin/session/broadcast', { sessionId: HS, text: 'admin msg' }, 'POST', ADMINH);
+  ok('admin can broadcast regardless of perms', adminBc.status === 200, JSON.stringify(adminBc.d));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

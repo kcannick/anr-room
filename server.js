@@ -173,6 +173,24 @@ async function userFromAuth(req) {
   return db.get('SELECT * FROM users WHERE uid = ?', [t.uid]);
 }
 
+// Per-host feature permissions. A host gets NONE by default; an admin grants them. Admins
+// are unrestricted. The client reads these (via /api/auth/me) to show/hide tools, and every
+// gated endpoint re-checks server-side so a hidden feature can't be called directly.
+const HOST_PERMS = ['sms', 'ads', 'export', 'broadcast'];
+function effectivePerms(user) {
+  const out = {};
+  const isAdmin = !!(user && user.role === 'admin');
+  let granted = {};
+  if (user && user.role === 'host') { try { granted = JSON.parse(user.host_perms || '{}') || {}; } catch (e) {} }
+  HOST_PERMS.forEach(k => { out[k] = isAdmin ? true : !!granted[k]; });
+  return out;
+}
+// Does this user have a given feature? Admin = always; host = per-grant; anyone else = no.
+function hasPerm(user, key) { return !!(user && (user.role === 'admin' || (user.role === 'host' && effectivePerms(user)[key]))); }
+// Gate for session-management features: block ONLY an identity host that lacks the grant.
+// Admins and legacy per-session-token callers (no identity user) pass through unchanged.
+function blockedByPerm(user, key) { return !!(user && user.role === 'host' && !effectivePerms(user)[key]); }
+
 // Can this request administer this session? True if:
 //   - the user is logged in AND (role 'admin' OR they own the session), OR
 //   - the legacy per-session admin token matches (back-compat / fallback).
@@ -842,7 +860,7 @@ async function handleApi(req, res, url) {
   if (p === '/api/auth/me' && method === 'GET') {
     const user = await userFromAuth(req);
     if (!user) return bad(res, 'Not logged in', 401);
-    return send(res, 200, { uid: user.uid, email: user.email, name: user.name || null, role: user.role });
+    return send(res, 200, { uid: user.uid, email: user.email, name: user.name || null, role: user.role, perms: effectivePerms(user) });
   }
 
   // Log out this device, or all devices for this user.
@@ -1191,6 +1209,20 @@ async function handleApi(req, res, url) {
     if (u.role === 'admin') return bad(res, "Can't change an admin's role here");
     await db.run('UPDATE users SET role = ? WHERE uid = ?', [role, uid]);
     return send(res, 200, { ok: true, uid, role });
+  }
+
+  // Set a host's feature permissions (platform-admin only): { sms, ads, export, broadcast }.
+  if (p === '/api/admin/users/perms' && method === 'POST') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const { uid, perms } = await readBody(req);
+    if (!uid) return bad(res, 'uid required');
+    const u = await db.get('SELECT uid FROM users WHERE uid = ?', [uid]);
+    if (!u) return bad(res, 'User not found', 404);
+    const clean = {};
+    HOST_PERMS.forEach(k => { clean[k] = !!(perms && perms[k]); });
+    await db.run('UPDATE users SET host_perms = ? WHERE uid = ?', [JSON.stringify(clean), uid]);
+    return send(res, 200, { ok: true, uid, perms: clean });
   }
 
   if (p === '/api/admin/users/delete' && method === 'POST') {
@@ -1717,7 +1749,9 @@ async function handleApi(req, res, url) {
     // (session, participant, channel) so a reopen never re-notifies. Non-fatal — a send
     // hiccup must never fail the go-live itself.
     if (status === 'live' && !wasLive && notify) {
-      try { await dispatchGoLiveNotifications(session, publicBaseFromReq(req), notify); }
+      // SMS requires the sms permission (hosts are email-only unless granted); email is always allowed.
+      const channels = { email: !!notify.email, push: !!notify.push, sms: !!notify.sms && !blockedByPerm(await userFromAuth(req), 'sms') };
+      try { await dispatchGoLiveNotifications(session, publicBaseFromReq(req), channels); }
       catch (e) { console.error(`[NOTIFY] go-live dispatch error: ${e.message}`); }
     }
     await realtime.publish(sessionId, 'status');
@@ -2074,6 +2108,7 @@ async function handleApi(req, res, url) {
     const { sessionId, text, clear, overlay } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (blockedByPerm(await userFromAuth(req), 'broadcast')) return bad(res, 'Broadcast is not enabled for this account', 403);
     if (clear) {
       await db.run('UPDATE sessions SET broadcast_text = NULL, broadcast_at = NULL, broadcast_overlay = FALSE WHERE id = ?', [sessionId]);
       await realtime.publish(sessionId, 'broadcast');
@@ -2095,6 +2130,7 @@ async function handleApi(req, res, url) {
     const { sessionId, scope, image_data, link_url, label } = body;
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (blockedByPerm(await userFromAuth(req), 'ads')) return bad(res, 'Ads are not enabled for this account', 403);
     if (!image_data || !/^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(image_data)) {
       return bad(res, 'Provide a PNG, JPG, GIF, or WebP image');
     }
@@ -2127,6 +2163,7 @@ async function handleApi(req, res, url) {
     const { sessionId, target, bannerId, roundId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (blockedByPerm(await userFromAuth(req), 'ads')) return bad(res, 'Ads are not enabled for this account', 403);
     const val = bannerId || null;
     if (target === 'global') {
       if (val) await db.run("INSERT INTO settings (k,v) VALUES ('global_banner_id', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [val]);
@@ -2147,6 +2184,7 @@ async function handleApi(req, res, url) {
     const { sessionId, bannerId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (blockedByPerm(await userFromAuth(req), 'ads')) return bad(res, 'Ads are not enabled for this account', 403);
     await db.tx(async (tx) => {
       await tx.run('UPDATE sessions SET banner_id = NULL WHERE banner_id = ?', [bannerId]);
       await tx.run('UPDATE rounds SET banner_id = NULL WHERE banner_id = ?', [bannerId]);
@@ -2165,6 +2203,9 @@ async function handleApi(req, res, url) {
     const sessionId = url.searchParams.get('sessionId');
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    const exporter = await userFromAuth(req);
+    if (blockedByPerm(exporter, 'export')) return bad(res, 'Export is not enabled for this account', 403);
+    const redact = !!(exporter && exporter.role === 'host'); // hosts export engagement, never contact PII
     const format = (url.searchParams.get('format') || 'json').toLowerCase();
     const anon = url.searchParams.get('anon') === '1';
     const isBinary = session.poll_type === 'binary';
@@ -2193,9 +2234,10 @@ async function handleApi(req, res, url) {
     const cleanParticipants = participants.map((pt, i) => {
       const referredByLabel = pt.referred_by ? (labelById[pt.referred_by] || null) : null;
       const credited = (pt.ref_credited === 1 || pt.ref_credited === true) ? 1 : 0;
-      return anon
-        ? { player: labelById[pt.id], total_points: pt.total_points, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null }
-        : { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, signup_answer: pt.signup_answer || null, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null, checkin_distance: pt.checkin_distance ?? null, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) };
+      if (anon) return { player: labelById[pt.id], total_points: pt.total_points, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null };
+      // Host export: engagement only — no email/phone/consent/answer.
+      if (redact) return { player: labelById[pt.id], name: pt.name, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null, total_points: pt.total_points, joined_at: Number(pt.created_at) };
+      return { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, signup_answer: pt.signup_answer || null, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null, checkin_distance: pt.checkin_distance ?? null, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) };
     });
 
     const cleanVotes = votes.map(v => {
