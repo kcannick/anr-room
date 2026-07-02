@@ -115,6 +115,10 @@
   .permrow{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
   .permchip{font-size:10px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink-faint);cursor:pointer}
   .permchip.on{background:rgba(75,183,73,.16);border-color:var(--signal-deep);color:var(--signal)}
+  .permchip.give.on{background:rgba(109,95,224,.2);border-color:var(--accent);color:var(--accent)}
+  ol.host-intro{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:11px}
+  ol.host-intro li{font-size:13.5px;line-height:1.55;color:var(--ink-dim)}
+  ol.host-intro li b{color:var(--ink)}
   .badge.blocked{background:rgba(255,93,108,.16);color:var(--hot)}
   .badge.incomplete{background:rgba(245,165,36,.14);color:var(--amber)}
   .uactions{display:flex;gap:6px;flex:none}
@@ -516,6 +520,22 @@
   </div>
 </div>
 
+<!-- HOST WELCOME: first-run "you're a host" how-to, once per device. Host-role only. -->
+<div id="hostIntroModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.84);z-index:40;align-items:center;justify-content:center;padding:18px;overflow:auto">
+  <div class="card" style="max-width:470px;width:100%">
+    <div style="font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700">You're a host</div>
+    <h2 style="margin:6px 0 4px">Welcome — run your own rooms</h2>
+    <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim);margin:0 0 14px">The A&amp;R Room is your free engagement tool. Three steps:</p>
+    <ol class="host-intro">
+      <li><b>Create a session.</b> Use <b>New session</b> to spin up a room for your stream — pick 0–9 rating or Versus (A/B).</li>
+      <li><b>Share your links.</b> Give viewers the <b>Play</b> link to vote, and drop the <b>Overlay</b> onto your broadcast for the live results.</li>
+      <li><b>Promote the $500.</b> Tell your audience the top A&amp;Rs each month win <b>$500 cash</b> — that's the hook that keeps them voting.</li>
+    </ol>
+    <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:12px 0 14px">You manage only your own sessions. Viewer contact info stays with Makin' It.</p>
+    <button class="btn" id="hostIntroGo" style="width:100%">Got it — let's go</button>
+  </div>
+</div>
+
 <!-- EDIT SONG MODAL -->
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
   <div class="card" style="max-width:440px;width:100%">
@@ -625,6 +645,7 @@ $('#btnLoginVerify').onclick=async()=>{
     // reset login form
     $('#loginStep2').classList.add('hide');$('#loginStep1').classList.remove('hide');$('#loginCode').value='';$('#loginDev').classList.add('hide');
     openPicker();
+    maybeShowHostIntro();
   }catch(e){$('#loginErr').textContent=e.message;}
 };
 $('#btnLogout').onclick=async()=>{
@@ -640,6 +661,17 @@ let SERIES=[]; // admin-only cache of series for the inline tag dropdowns
 const isAdmin=()=>ME&&ME.role==='admin';
 // Feature permission: admin = always; host = per-grant. Drives host-facing tool visibility.
 const hasP=(k)=>!!(ME&&(ME.role==='admin'||(ME.perms&&ME.perms[k])));
+// First-run host welcome — once per device, host-role only.
+function maybeShowHostIntro(){
+  if(!ME||ME.role!=='host'||localStorage.getItem('anr_host_intro_seen')==='1')return;
+  const m=document.getElementById('hostIntroModal'); if(m)m.style.display='flex';
+}
+(function(){
+  const go=document.getElementById('hostIntroGo'), m=document.getElementById('hostIntroModal');
+  const close=()=>{ localStorage.setItem('anr_host_intro_seen','1'); if(m)m.style.display='none'; };
+  if(go)go.onclick=close;
+  if(m)m.onclick=(e)=>{ if(e.target===m)close(); };
+})();
 async function loadSeriesCache(){
   if(!isAdmin()){SERIES=[];return;}
   try{const d=await api('/api/admin/series/list',null,'GET');SERIES=d.series||[];}
@@ -849,12 +881,15 @@ async function loadUsers(){
         `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
         `<button class="btn ${u.blocked?'ghost':'amber'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
         `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
-      // Per-host feature toggles (only for hosts). None granted by default.
+      // Per-host feature toggles (only for hosts). None granted by default. The giveaway
+      // chip (distinct accent) controls whether this host's sessions count toward $500.
       const permRow=u.role==='host'&&u.perms
         ? '<div class="permrow">'+[['broadcast','Broadcast'],['sms','SMS'],['ads','Ads'],['export','Export']].map(([k,lbl])=>{
             const on=!!u.perms[k];
             return `<button class="permchip${on?' on':''}" onclick="togglePerm('${u.id}','${k}',${on?0:1})">${lbl}</button>`;
-          }).join('')+'</div>'
+          }).join('')
+          +`<button class="permchip give${u.giveaway?' on':''}" title="Count this host's series-tagged sessions toward the monthly $500" onclick="toggleGiveaway('${u.id}',${u.giveaway?0:1})">💵 $500</button>`
+          +'</div>'
         : '';
       return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname">${esc(u.name||'(no name)')}${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
     }).join('');
@@ -863,6 +898,7 @@ async function loadUsers(){
 window.toggleBlock=async(uid,blocked)=>{try{await api('/api/admin/users/block',{uid,blocked:!!blocked});await loadUsers();}catch(e){alert(e.message);}};
 window.setRole=async(uid,role)=>{try{await api('/api/admin/users/role',{uid,role});await loadUsers();}catch(e){alert(e.message);}};
 window.togglePerm=async(uid,key,on)=>{try{await api('/api/admin/users/perms',{uid,perms:{[key]:!!on}});await loadUsers();}catch(e){alert(e.message);}};
+window.toggleGiveaway=async(uid,on)=>{try{await api('/api/admin/users/giveaway',{uid,on:!!on});await loadUsers();}catch(e){alert(e.message);}};
 ['uSearch','uLocation'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('input',()=>{clearTimeout(usersFilterTimer);usersFilterTimer=setTimeout(loadUsers,320);}));
 ['uStatus','uSkill','uSkillMode','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
 // delete-user modal (type-name confirm)
@@ -1612,6 +1648,7 @@ async function startup(){
       ME={uid:me.uid,email:me.email,role:me.role,name:me.name,perms:me.perms};
       // If a session was already open on this device, reopen it; else show picker.
       if(SID){boot();}else{openPicker();}
+      maybeShowHostIntro();
       return;
     }catch(e){ // token invalid/expired
       AUTHTOK=null;localStorage.removeItem('rt_auth_token');

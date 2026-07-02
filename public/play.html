@@ -123,6 +123,23 @@
   .hide{display:none!important}
   .note{background:#0a0814;border-left:3px solid var(--signal);border-radius:0 10px 10px 0;padding:11px 13px;font-size:14px;color:var(--ink-dim);margin-top:12px;white-space:pre-wrap}
   .give{margin-top:12px;font-size:13px;color:var(--good);display:flex;gap:7px;align-items:center}
+  /* $500 monthly-giveaway hook (lobby) — the incentive a host promotes. */
+  .give-hook{background:linear-gradient(180deg,rgba(109,95,224,.14),rgba(109,95,224,.05));border:1px solid rgba(109,95,224,.42)}
+  .gh-prize{font-size:16px;font-weight:700;color:var(--ink)}
+  .gh-prize b{color:var(--accent)}
+  .gh-series{font-size:12px;color:var(--ink-faint);margin-top:2px;text-transform:uppercase;letter-spacing:.1em}
+  .gh-board{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+  .gh-row{display:flex;align-items:center;gap:10px;font-size:14px}
+  .gh-rank{font-family:"Space Mono",monospace;font-size:12px;color:var(--accent);width:20px;flex:none;text-align:center}
+  .gh-name{flex:1;text-align:left;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gh-pts{font-family:"Space Mono",monospace;font-size:13px;color:var(--signal)}
+  .gh-foot{font-size:11px;color:var(--ink-faint);margin-top:10px}
+  /* how-to-play onboarding steps */
+  .ht-steps{display:flex;flex-direction:column;gap:14px}
+  .ht-step{display:flex;gap:12px;align-items:flex-start;text-align:left}
+  .ht-n{font-size:22px;color:var(--signal);line-height:1;flex:none}
+  .ht-step b{font-size:15px;color:var(--ink)}
+  .ht-d{font-size:13px;color:var(--ink-dim);margin-top:3px;line-height:1.45}
   /* ad slots — filled from the banner cascade; hidden entirely when no banner. */
   .ad-slot{margin-top:14px;border-radius:12px;display:none;align-items:center;justify-content:center;overflow:hidden}
   .ad-slot.filled{display:flex;background:rgba(255,255,255,.02)}
@@ -279,6 +296,13 @@
       <div id="waitCountdown" class="wait-cd hide"></div>
       <div class="pulse-wait" id="waitBounce"><i></i><i></i><i></i></div>
       <div class="tag" style="margin-top:6px">🎧 <span id="waitCount">0</span> A&amp;Rs in the room</div>
+    </div>
+    <!-- $500 GIVEAWAY HOOK — shown only when this session competes for the monthly series. -->
+    <div class="panel give-hook hide" id="giveHook" style="margin-top:14px;text-align:center">
+      <div class="gh-prize">🏆 Playing for <b id="ghPrize">$500</b> this month</div>
+      <div class="gh-series" id="ghSeries"></div>
+      <div class="gh-board" id="ghBoard"></div>
+      <div class="gh-foot">Top A&amp;Rs on the monthly board win. Rate songs, read the room, climb.</div>
     </div>
     <!-- LIVENESS FEED (3.5d) — recent joins, count-only -->
     <div class="panel" id="livenessPanel" style="margin-top:14px;display:none">
@@ -451,6 +475,21 @@
   <div class="foot">
     <span class="tag">🎧 <span id="footCount">0</span> playing</span>
     <span class="mono" id="footPts">0 pts</span>
+  </div>
+</div>
+
+<!-- HOW-TO-PLAY MODAL: first-run onboarding for new A&Rs, once per device. Copy adapts to
+     rating vs Versus (binary) rounds, and to whether this session plays for the $500. -->
+<div id="howToModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.84);z-index:85;align-items:center;justify-content:center;padding:22px;overflow:auto">
+  <div class="panel" style="max-width:390px;width:100%">
+    <div class="eyebrow" style="text-align:center">New here? How to play</div>
+    <h2 id="htTitle" style="text-align:center;font-size:22px;margin:8px 0 16px">Read the room, win the month</h2>
+    <div class="ht-steps">
+      <div class="ht-step"><span class="ht-n">①</span><div><b id="htS1t">Rate the song 0–9</b><div class="ht-d" id="htS1d"></div></div></div>
+      <div class="ht-step"><span class="ht-n">②</span><div><b id="htS2t">Read the Room</b><div class="ht-d" id="htS2d"></div></div></div>
+      <div class="ht-step"><span class="ht-n">③</span><div><b id="htS3t">Climb the leaderboard</b><div class="ht-d" id="htS3d"></div></div></div>
+    </div>
+    <button class="btn" id="htGo" style="width:100%;margin-top:18px">Got it — let's play</button>
   </div>
 </div>
 
@@ -1145,11 +1184,61 @@ $('#streamToggle').onclick=()=>{
   $('#streamChevron').textContent=streamCollapsed?'▸':'▾';
 };
 
+// $500 monthly-giveaway hook — populate whenever the session competes for a series.
+// Lives inside the lobby panel, so it only shows while the wait screen is up.
+let lastGiveaway=null;
+function renderGiveHook(st){
+  const g=st.giveaway, el=$('#giveHook'); if(!el)return;
+  lastGiveaway=g||null;
+  if(!g){ el.classList.add('hide'); return; }
+  $('#ghPrize').textContent=g.prize||'$500';
+  $('#ghSeries').textContent=g.title||'';
+  const top=(g.board||[]).slice(0,3);
+  $('#ghBoard').innerHTML = top.length
+    ? top.map(p=>`<div class="gh-row"><span class="gh-rank">${p.rank}</span><span class="gh-name">${esc(p.name)}</span><span class="gh-pts">${Number(p.points)||0} pts</span></div>`).join('')
+    : '<div class="gh-foot" style="margin:0">Be the first to put points on the board.</div>';
+  el.classList.remove('hide');
+}
+
+// First-run "how to play" — once per device. Copy adapts to the poll type and to whether
+// this session competes for the $500. Shown the first time an A&R lands in the room.
+let howToShown=false;
+function maybeShowHowTo(st){
+  if(howToShown || localStorage.getItem('rt_howto_seen')==='1' || !st) return;
+  howToShown=true;
+  const isBin=(st.poll_type==='binary'), g=st.giveaway;
+  $('#htTitle').textContent = isBin ? 'Pick a side, read the room' : 'Read the room, win the month';
+  if(isBin){
+    $('#htS1t').textContent='Pick your side';
+    $('#htS1d').textContent='Two songs go head-to-head — choose the one you’re riding with.';
+    $('#htS2t').textContent='Read the Room';
+    $('#htS2d').textContent='Predict how the whole room will split between them. Points come from how well you read it — not just who you picked.';
+  }else{
+    $('#htS1t').textContent='Rate the song 0–9';
+    $('#htS1d').textContent='How good is it? 0 = worst, 9 = best.';
+    $('#htS2t').textContent='Read the Room';
+    $('#htS2d').textContent='Predict the room’s average rating. Points come from how close you are — not just what you like.';
+  }
+  if(g){
+    $('#htS3t').textContent='Climb for the '+(g.prize||'$500');
+    $('#htS3d').textContent='Top A&Rs on this month’s leaderboard win '+(g.prize||'$500')+' cash. Every round you play adds up.';
+  }else{
+    $('#htS3t').textContent='Climb the leaderboard';
+    $('#htS3d').textContent='Rack up points across the month’s sessions and rise up the board.';
+  }
+  $('#howToModal').style.display='flex';
+}
+function dismissHowTo(){ localStorage.setItem('rt_howto_seen','1'); $('#howToModal').style.display='none'; }
+$('#htGo').onclick=dismissHowTo;
+$('#howToModal').onclick=(e)=>{ if(e.target===$('#howToModal')) dismissHowTo(); };
+
 function render(st){
   pollType = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary')) ? 'binary' : 'rating';
   $('#sessName').textContent=st.session.name;
   $('#footCount').textContent=st.participants;$('#waitCount').textContent=st.participants;
   renderJoins(st);
+  renderGiveHook(st);
+  maybeShowHowTo(st);
   $('#footPts').textContent=(st.me.total_points||0)+' pts';
   $('#rTotal').textContent=st.me.total_points||0;
 

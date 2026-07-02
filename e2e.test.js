@@ -1007,6 +1007,31 @@ async function call(path, body, method='POST', headers={}) {
   const adminBc = await call('/api/admin/session/broadcast', { sessionId: HS, text: 'admin msg' }, 'POST', ADMINH);
   ok('admin can broadcast regardless of perms', adminBc.status === 200, JSON.stringify(adminBc.d));
 
+  console.log('\n— per-host giveaway flag (admin-set; gates the $500 hook; needs a series tag) —');
+  // A participant on the host's session, to read the play-state giveaway context.
+  const gjr = await call('/api/join/request', { sessionId: HS, email: 'giv@fan.com' });
+  const gVer = await call('/api/join/verify', { sessionId: HS, email: 'giv@fan.com', code: gjr.d.devCode, name: 'Giv Fan' });
+  const GTOK = { 'X-Player-Token': gVer.d.token };
+  // Untagged session -> no giveaway hook even though the host defaults to eligible.
+  const preTag = (await call('/api/me/state', null, 'GET', GTOK)).d;
+  ok('untagged session surfaces no giveaway', preTag.giveaway == null, JSON.stringify(preTag.giveaway));
+  ok('host defaults to giveaway-eligible in admin list', (((await call('/api/admin/users', null, 'GET', ADMINH)).d.users || []).find(u => u.email === 'host@test.com') || {}).giveaway === true, 'default flag');
+  // Tag the host session into an active series.
+  const serC = await call('/api/admin/series/create', { title: 'E2E Giveaway Series', status: 'active' }, 'POST', ADMINH);
+  await call('/api/admin/series/tag', { sessionId: HS, seriesId: serC.d.seriesId }, 'POST', ADMINH);
+  const tagged = (await call('/api/me/state', null, 'GET', GTOK)).d;
+  ok('tagged + eligible host surfaces the $500 hook', !!tagged.giveaway && tagged.giveaway.title === 'E2E Giveaway Series' && tagged.giveaway.prize === '$500', JSON.stringify(tagged.giveaway));
+  // A host cannot flip its own giveaway flag.
+  const givForbidden = await call('/api/admin/users/giveaway', { uid: hostUser.id, on: false }, 'POST', HOSTH);
+  ok('a host cannot set the giveaway flag', givForbidden.status === 403, 'got ' + givForbidden.status);
+  // Admin excludes the host -> hook disappears even though the session stays tagged.
+  const givOff = await call('/api/admin/users/giveaway', { uid: hostUser.id, on: false }, 'POST', ADMINH);
+  ok('admin excludes the host from the giveaway', givOff.status === 200 && givOff.d.giveaway === false, JSON.stringify(givOff.d));
+  const excluded = (await call('/api/me/state', null, 'GET', GTOK)).d;
+  ok('excluded host no longer surfaces the hook (still tagged)', excluded.giveaway == null, JSON.stringify(excluded.giveaway));
+  const offInList = (((await call('/api/admin/users', null, 'GET', ADMINH)).d.users || []).find(u => u.email === 'host@test.com') || {}).giveaway;
+  ok('admin list reflects the excluded flag', offInList === false, 'flag ' + offInList);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

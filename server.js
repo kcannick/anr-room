@@ -191,6 +191,31 @@ function hasPerm(user, key) { return !!(user && (user.role === 'admin' || (user.
 // Admins and legacy per-session-token callers (no identity user) pass through unchanged.
 function blockedByPerm(user, key) { return !!(user && user.role === 'host' && !effectivePerms(user)[key]); }
 
+// The monthly audience prize. Fixed today; could become per-series later.
+const GIVEAWAY_PRIZE = '$500';
+// Whether a host is included in the giveaway program (opt-out: NULL/1 = in, 0 = out).
+function hostGiveawayEligible(user) { return !!(user && user.giveaway_eligible !== 0); }
+// Giveaway context for a session's play page: the series it competes in + a PII-safe top
+// board, but ONLY when the session is tagged into a series AND its owner is eligible
+// (admin always; host per flag; legacy admin-token sessions with no owner count as Makin'
+// It's own). Returns null when the $500 hook should not show. Points are already public
+// (homepage board) — this never exposes the sealed round average/split.
+async function giveawayContext(session) {
+  if (!session || !session.series_id) return null;
+  let ownerEligible = true; // no owner_uid = legacy admin-token session (Makin' It's own)
+  if (session.owner_uid) {
+    const owner = await db.get('SELECT role, giveaway_eligible FROM users WHERE uid = ?', [session.owner_uid]);
+    if (!owner) ownerEligible = false;
+    else if (owner.role === 'admin') ownerEligible = true;
+    else if (owner.role === 'host') ownerEligible = hostGiveawayEligible(owner);
+    else ownerEligible = false; // a plain player shouldn't own a session post-gate
+  }
+  if (!ownerEligible) return null;
+  const ser = await db.get('SELECT id, title, status FROM series WHERE id = ?', [session.series_id]);
+  if (!ser) return null;
+  return { series_id: ser.id, title: ser.title, status: ser.status, prize: GIVEAWAY_PRIZE, board: await homeSeriesBoard(ser.id) };
+}
+
 // Can this request administer this session? True if:
 //   - the user is logged in AND (role 'admin' OR they own the session), OR
 //   - the legacy per-session admin token matches (back-compat / fallback).
@@ -342,7 +367,7 @@ async function buildRecap(participant) {
 
 async function playerState(participant) {
   const sessionId = participant.session_id;
-  const session = await db.get('SELECT id, name, status, scheduled_at, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius FROM sessions WHERE id = ?', [sessionId]);
+  const session = await db.get('SELECT id, name, status, scheduled_at, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius, owner_uid, series_id FROM sessions WHERE id = ?', [sessionId]);
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
@@ -409,6 +434,10 @@ async function playerState(participant) {
      ORDER BY p.created_at DESC LIMIT 6`, [sessionId]);
   const joins = joinRows.map(r => ({ name: r.profile_complete ? ((r.uname || '').toString().trim().split(/\s+/)[0] || null) : null, at: Number(r.created_at) }));
 
+  // $500 monthly-series hook (null unless this session competes for it) — drives the play
+  // page giveaway banner + the third onboarding step.
+  const giveaway = await giveawayContext(session);
+
   const out = {
     session: { id: sessionId, name: session.name, status: session.status, poll_type: pollType,
       scheduled_at: session.scheduled_at ? Number(session.scheduled_at) : null,
@@ -425,6 +454,7 @@ async function playerState(participant) {
     pool: participant.pool || null,
     participants: count,
     joins,
+    giveaway,
     ...view,
   };
   // Ad banner — shown on lobby, voting, and locked only. Never on results/recap.
@@ -1166,13 +1196,14 @@ async function handleApi(req, res, url) {
       : sort === 'sessions' ? `${sessSub} DESC` : sort === 'series' ? `${seriesSub} DESC` : 'u.last_seen DESC';
     const total = (await db.get(`SELECT COUNT(*) AS c FROM users u ${whereSql}`, params)).c;
     const rows = await db.all(
-      `SELECT u.uid, u.name, u.email, u.role, u.blocked, u.host_perms, u.profile_complete, u.primary_category, u.location, u.photo_url, u.lifetime_points, u.last_seen,
+      `SELECT u.uid, u.name, u.email, u.role, u.blocked, u.host_perms, u.giveaway_eligible, u.profile_complete, u.primary_category, u.location, u.photo_url, u.lifetime_points, u.last_seen,
          ${sessSub} AS sessions, ${seriesSub} AS series_participated
        FROM users u ${whereSql} ORDER BY ${orderSql} LIMIT 100`, params);
     return send(res, 200, {
       total: Number(total) || 0,
       users: rows.map(r => ({ id: r.uid, name: r.name || null, email: r.email, role: r.role, blocked: !!r.blocked,
         perms: r.role === 'host' ? effectivePerms(r) : null,
+        giveaway: r.role === 'host' ? hostGiveawayEligible(r) : null,
         profileComplete: !!r.profile_complete, primaryCategory: r.primary_category || null, location: r.location || null,
         photoUrl: r.photo_url || null, points: Number(r.lifetime_points) || 0, sessions: Number(r.sessions) || 0,
         seriesParticipated: Number(r.series_participated) || 0,
@@ -1226,6 +1257,19 @@ async function handleApi(req, res, url) {
     HOST_PERMS.forEach(k => { clean[k] = (perms && k in perms) ? !!perms[k] : !!merged[k]; });
     await db.run('UPDATE users SET host_perms = ? WHERE uid = ?', [JSON.stringify(clean), uid]);
     return send(res, 200, { ok: true, uid, perms: clean });
+  }
+
+  // Include / exclude a host from the monthly $500 giveaway (platform-admin only): { uid, on }.
+  // Only meaningful for hosts (admins are always in); the session must still be series-tagged.
+  if (p === '/api/admin/users/giveaway' && method === 'POST') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const { uid, on } = await readBody(req);
+    if (!uid) return bad(res, 'uid required');
+    const u = await db.get('SELECT uid FROM users WHERE uid = ?', [uid]);
+    if (!u) return bad(res, 'User not found', 404);
+    await db.run('UPDATE users SET giveaway_eligible = ? WHERE uid = ?', [on ? 1 : 0, uid]);
+    return send(res, 200, { ok: true, uid, giveaway: !!on });
   }
 
   if (p === '/api/admin/users/delete' && method === 'POST') {

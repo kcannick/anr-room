@@ -71,11 +71,22 @@ promote the $500. One short page or modal — no branding setup needed.
 ---
 
 ## Phases
-- **Phase 1 (the toolset):** items 1–6 — gate creation, assign role, role-aware UI, **PII redaction**,
-  email-only, isolation tests. Ships a safe, invite-only host engagement tool.
-- **Phase 2 (the incentive):** items 7–8 — giveaway hook on the play page + host onboarding.
+- **Phase 1 (the toolset) — ✅ DONE:** items 1–6 — gate creation, assign role, role-aware UI,
+  **PII redaction**, email-only, isolation tests. Plus per-host feature permissions
+  (SMS/Ads/Export/Broadcast, default NONE). Ships a safe, invite-only host engagement tool.
+- **Phase 2 (the incentive) — ✅ DONE:** items 7–8.
+  - **Per-host giveaway flag** (migration 017 `users.giveaway_eligible`, opt-out; admin toggle
+    on the Users panel; server helper `giveawayContext`). A session surfaces the $500 hook only
+    when it's series-tagged AND its owner is eligible.
+  - **$500 hook on the play page** — a lobby card ("Playing for $500 this month" + the series'
+    top board), plus the third step of the new-A&R onboarding adapts to it.
+  - **Host onboarding** — a first-run "you're a host" modal in the admin console (create a
+    session → share Play/Overlay links → promote the $500), once per device.
+  - Also shipped alongside: **standard-user onboarding** — a first-run "how to play" modal on
+    the play page (Rate/Pick → Read the Room → Climb for the $500), copy adapts to rating vs
+    Versus and to whether the session plays for the giveaway; once per device.
 
-Phase 1 is the whole product; Phase 2 is polish + the promo hook.
+Phase 1 is the whole product; Phase 2 is polish + the promo hook. Both are now live.
 
 ---
 
