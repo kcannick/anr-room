@@ -498,14 +498,19 @@ async function homeSeriesBoard(seriesId, limit = 5) {
   return rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: first(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.pts) || 0 }));
 }
 
-async function adminState(session) {
+async function adminState(session, opts = {}) {
+  // Hosts (non-admin owners) see engagement — names, points, counts, socials — but NEVER
+  // contact PII (email/phone). Only the platform admin (Makin' It) sees emails.
+  const isAdmin = !!(opts.viewer && opts.viewer.role === 'admin');
   const sessionId = session.id;
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
   const participants = await db.all(`
     SELECT p.id, p.name, p.email, p.verified, p.total_points, p.signup_answer, p.referred_by, p.pool, p.checkin_distance,
+           u.instagram, u.tiktok,
            (SELECT COUNT(*) FROM participants c WHERE c.session_id = p.session_id AND c.referred_by = p.id AND c.ref_credited = 1) AS brought
-    FROM participants p WHERE p.session_id = ? ORDER BY p.total_points DESC, p.created_at ASC`, [sessionId]);
+    FROM participants p LEFT JOIN users u ON u.uid = p.user_id
+    WHERE p.session_id = ? ORDER BY p.total_points DESC, p.created_at ASC`, [sessionId]);
   const rounds = await db.all('SELECT * FROM rounds WHERE session_id = ? ORDER BY idx ASC', [sessionId]);
   const round = await activeRound(sessionId);
   let liveVotes = [];
@@ -572,7 +577,13 @@ async function adminState(session) {
       unchecked: participants.filter(p => !p.pool).length,
     },
     poll_type: pollType,
-    participants,
+    participants: participants.map(p => {
+      const base = { id: p.id, name: p.name, verified: p.verified, total_points: p.total_points,
+        referred_by: p.referred_by, pool: p.pool, checkin_distance: p.checkin_distance, brought: p.brought,
+        instagram: p.instagram || null, tiktok: p.tiktok || null };
+      if (isAdmin) { base.email = p.email; base.signup_answer = p.signup_answer; } // contact PII: platform admin only
+      return base;
+    }),
     verifiedCount: participants.filter(p => p.verified).length,
     rounds,
     queue,
@@ -1164,6 +1175,21 @@ async function handleApi(req, res, url) {
 
   // Hard-delete a user (admin). PERMANENT — removes the account, its participations, and
   // its votes in one transaction (changes any leaderboard that counted them). Name-confirmed.
+  // Grant/revoke the host role (platform-admin only) — the invite-only upgrade. Only toggles
+  // between 'host' and 'player'; never touches admins.
+  if (p === '/api/admin/users/role' && method === 'POST') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const { uid, role } = await readBody(req);
+    if (!uid) return bad(res, 'uid required');
+    if (role !== 'host' && role !== 'player') return bad(res, 'Role must be host or player');
+    const u = await db.get('SELECT uid, role FROM users WHERE uid = ?', [uid]);
+    if (!u) return bad(res, 'User not found', 404);
+    if (u.role === 'admin') return bad(res, "Can't change an admin's role here");
+    await db.run('UPDATE users SET role = ? WHERE uid = ?', [role, uid]);
+    return send(res, 200, { ok: true, uid, role });
+  }
+
   if (p === '/api/admin/users/delete' && method === 'POST') {
     const admin = await userFromAuth(req);
     if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
@@ -1468,7 +1494,8 @@ async function handleApi(req, res, url) {
     const sessionId = url.searchParams.get('sessionId');
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
-    return send(res, 200, await adminState(session));
+    const viewer = await userFromAuth(req); // null for legacy per-session token → treated as non-admin (redacted)
+    return send(res, 200, await adminState(session, { viewer }));
   }
 
   // ----- pull the currently-playing song from a nero.fan live page -----

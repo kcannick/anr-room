@@ -948,6 +948,34 @@ async function call(path, body, method='POST', headers={}) {
   const smsTest = await call('/api/admin/sms/test', { to: '+13055551234' }, 'POST', ADMINH);
   ok('sms test sends (console provider in tests)', smsTest.status === 200 && smsTest.d.ok === true && smsTest.d.provider === 'console', JSON.stringify(smsTest.d));
 
+  console.log('\n— host role: assignment (admin-only) + engagement-only visibility (no PII) —');
+  const usersList = (await call('/api/admin/users', null, 'GET', ADMINH)).d;
+  const hostUser = (usersList.users || []).find(u => u.email === 'host@test.com');
+  ok('host user present in admin list', !!(hostUser && hostUser.id), JSON.stringify((usersList.users||[]).map(u=>u.email)));
+  const up = await call('/api/admin/users/role', { uid: hostUser.id, role: 'host' }, 'POST', ADMINH);
+  ok('admin upgrades user to host', up.status === 200 && up.d.role === 'host', JSON.stringify(up.d));
+  const badRole = await call('/api/admin/users/role', { uid: hostUser.id, role: 'admin' }, 'POST', ADMINH);
+  ok('cannot mint an admin via role endpoint', badRole.status === 400, 'got ' + badRole.status);
+  // Fresh login for the now-host (the earlier AUTHH token was logged out at line ~407).
+  const hReq = await call('/api/auth/request', { email: 'host@test.com' });
+  const hVer = await call('/api/auth/verify', { email: 'host@test.com', code: hReq.d.devCode });
+  const HOSTH = { 'X-Auth-Token': hVer.d.token };
+  ok('re-login reflects role=host', hVer.d.role === 'host', JSON.stringify(hVer.d));
+  const roleForbidden = await call('/api/admin/users/role', { uid: hostUser.id, role: 'player' }, 'POST', HOSTH);
+  ok('a host cannot assign roles', roleForbidden.status === 403, 'got ' + roleForbidden.status);
+  // A host viewing their OWN session sees engagement but no contact PII; admin sees email.
+  const hs = await call('/api/session', { name: 'Host Redact' }, 'POST', HOSTH);
+  const HS = hs.d.sessionId;
+  const hjr = await call('/api/join/request', { sessionId: HS, email: 'fan@redact.com' });
+  await call('/api/join/verify', { sessionId: HS, email: 'fan@redact.com', code: hjr.d.devCode, name: 'RedactFan' });
+  const asHost = (await call('/api/admin/state?sessionId=' + HS, null, 'GET', HOSTH)).d;
+  const asAdmin = (await call('/api/admin/state?sessionId=' + HS, null, 'GET', ADMINH)).d;
+  const hp = (asHost.participants || []).find(p => p.name === 'RedactFan');
+  const ap = (asAdmin.participants || []).find(p => p.name === 'RedactFan');
+  ok('host sees the participant (name + points)', !!(hp && hp.total_points !== undefined), JSON.stringify(hp));
+  ok('host does NOT see participant email', !!hp && hp.email === undefined, JSON.stringify(hp));
+  ok('admin DOES see participant email', !!ap && ap.email === 'fan@redact.com', JSON.stringify(ap));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

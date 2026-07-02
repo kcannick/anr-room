@@ -89,10 +89,16 @@ Phase 1 is the whole product; Phase 2 is polish + the promo hook.
 
 ---
 
-## Open questions to confirm
-1. **Host email notify:** OK for a host to trigger a go-live email to their registrants (platform-sent,
-   addresses hidden)? *Rec: yes, email-only.* Or should only Makin' It send?
-2. **Giveaway curation:** Makin' It manually tags which host sessions count toward the $500? *Rec: yes —
-   curated tagging (already works).* Or auto-include every host session?
-3. **Host engagement visibility:** hosts see counts/points/leaderboard (no PII) — confirm that's the
-   right line (engagement yes, contact data no).
+## Decisions (operator, 2026-07-02)
+1. **Host email notify:** ✅ Yes — a host can trigger a go-live **email** to their registrants;
+   platform-sent, addresses never shown to the host.
+2. **Giveaway inclusion:** **per-host configurable** — a flag Makin' It sets per host controlling
+   whether that host's sessions count toward the monthly $500 (Phase 2).
+3. **Host visibility line:** hosts see display name, points, counts, leaderboard, **+ Instagram/TikTok**
+   (the useful public bits) — but **never email/phone**. Server-side redaction, not just UI hiding.
+
+## Build note — the invite-only gate is a behavior change
+Today **any logged-in user (even a `player`) can create + own a session** (e2e verifies this). "Invite-
+only" = gate `POST /api/session` to `role in (host, admin)`. This removes hosting from regular viewers and
+requires updating the ~23 unauthenticated session-creations in the e2e suite to authenticate. Done as
+increment **1b** after the non-breaking pieces (1a).
