@@ -241,14 +241,14 @@ $('#btnFinish').onclick=async()=>{
   $('#profErr').textContent='';
   const cats=jSelected();
   if(!cats.length)return $('#profErr').textContent='Pick at least one category.';
-  const location=$('#jLocation').value.trim();
-  if(!location)return $('#profErr').textContent='Add your location to get listed.';
+  const loc=$('#jLocation').value.trim();
+  if(!loc)return $('#profErr').textContent='Add your location to get listed.';
   $('#btnFinish').disabled=true;
   const wasComplete=profile&&profile.complete;
   try{
-    const pr=await api('/api/me/profile',{categories:cats,primaryCategory:jPrimary||cats[0],location,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()});
+    const pr=await api('/api/me/profile',{categories:cats,primaryCategory:jPrimary||cats[0],location:loc,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()});
     if(pr&&pr.complete&&!wasComplete)track('profile_complete',{where:editMode?'edit':'join'});
-    if(editMode){ location.href='/u/'+encodeURIComponent(MEUID); return; } // saved -> view profile
+    if(editMode){ window.location.href='/u/'+encodeURIComponent(MEUID); return; } // saved -> view profile
     finishDone(true);
   }catch(e){$('#profErr').textContent=e.message;}
   $('#btnFinish').disabled=false;

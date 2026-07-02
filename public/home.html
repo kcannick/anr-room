@@ -270,10 +270,16 @@ function renderBetween(d){
     ${submitSection(d.next&&d.next.submitUrl)}`;
 }
 
+let _homeSig=null;
 async function load(){
   try{
     const r=await fetch('/api/home');
     const d=await r.json();
+    // Skip the re-render when nothing changed — rebuilding #content restarts the
+    // "New A&Rs" ticker's CSS animation, which looked like it wasn't scrolling.
+    const sig=JSON.stringify(d);
+    if(sig===_homeSig){ _ensureRealtime(d.live && d.live.id); return; }
+    _homeSig=sig;
     if(d.live)renderLive(d); else renderBetween(d);
     _homeSeriesId=(d.series && d.series.id)||null;
     _ensureRealtime(d.live && d.live.id);
