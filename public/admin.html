@@ -111,6 +111,7 @@
   .usub{font-size:11px;color:var(--ink-faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .badge{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
   .badge.admin{background:rgba(75,183,73,.16);color:var(--signal)}
+  .badge.host{background:rgba(109,95,224,.18);color:var(--accent)}
   .badge.blocked{background:rgba(255,93,108,.16);color:var(--hot)}
   .badge.incomplete{background:rgba(245,165,36,.14);color:var(--amber)}
   .uactions{display:flex;gap:6px;flex:none}
@@ -311,8 +312,8 @@
         <div class="muted" id="cfgStatus" style="font-size:12px;margin-top:6px"></div>
       </div>
 
-      <!-- SMS test: verify the Twilio config (sends one text; no session needed) -->
-      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+      <!-- SMS test: verify the Twilio config (sends one text; no session needed) — platform-only -->
+      <div id="smsTestRow" class="hide" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
         <label>Test SMS setup <span class="muted">(sends one text to check Twilio)</span></label>
         <div class="row" style="gap:6px;margin-top:2px">
           <input id="smsTestNum" type="tel" inputmode="tel" placeholder="+1 305 555 1234" style="flex:1">
@@ -835,9 +836,10 @@ async function loadUsers(){
     if(!d.users.length){box.innerHTML='<div class="empty">No users match.</div>';return;}
     box.innerHTML=d.users.map(u=>{
       const av=u.photoUrl?`<img class="uav" src="${esc(u.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(u.name||u.email))}</div>`;
-      const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', (!u.blocked&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
+      const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.role==='host'?'<span class="badge host">Host</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', (!u.blocked&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
       const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', u.seriesParticipated?(u.seriesParticipated+' series'):'', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
       const actions=u.role==='admin'?'<span class="muted" style="font-size:11px">protected</span>':
+        `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
         `<button class="btn ${u.blocked?'ghost':'amber'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
         `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
       return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname">${esc(u.name||'(no name)')}${badges}</div><div class="usub">${esc(sub)}</div></div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
@@ -845,6 +847,7 @@ async function loadUsers(){
   }catch(e){box.innerHTML='<div class="err">'+e.message+'</div>';}
 }
 window.toggleBlock=async(uid,blocked)=>{try{await api('/api/admin/users/block',{uid,blocked:!!blocked});await loadUsers();}catch(e){alert(e.message);}};
+window.setRole=async(uid,role)=>{try{await api('/api/admin/users/role',{uid,role});await loadUsers();}catch(e){alert(e.message);}};
 ['uSearch','uLocation'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('input',()=>{clearTimeout(usersFilterTimer);usersFilterTimer=setTimeout(loadUsers,320);}));
 ['uStatus','uSkill','uSkillMode','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
 // delete-user modal (type-name confirm)
@@ -1199,6 +1202,10 @@ $('#btnGoLive').onclick=()=>{
   $('#glName').textContent=(lastState&&lastState.session&&lastState.session.name)||'this session';
   const n=(lastState&&lastState.verifiedCount)||0;
   $('#glCount').textContent=n?(n+' registered A&R'+(n===1?'':'s')+' can be notified.'):'No one is registered yet — notifications will reach only opted-in registrants.';
+  // Hosts are email-only — hide the SMS channel for non-admins.
+  const smsLabel=$('#glSms').closest('label');
+  if(smsLabel)smsLabel.classList.toggle('hide', !isAdmin());
+  if(!isAdmin())$('#glSms').checked=false;
   $('#glErr').textContent='';
   $('#goliveModal').style.display='flex';
 };
@@ -1356,7 +1363,8 @@ function render(st){
   // "Pull latest submission" appears when the review site has pushed one.
   const ing=st.ingestLatest;
   const hasIng=!!(ing&&(ing.title||ing.artist));
-  $('#btnIngestPull').classList.toggle('hide', !hasIng);
+  $('#btnIngestPull').classList.toggle('hide', !hasIng || !isAdmin()); // Drupal ingest is platform-only
+  if($('#smsTestRow'))$('#smsTestRow').classList.toggle('hide', !isAdmin()); // SMS is platform-only; hosts are email-only
   if(hasIng)$('#btnIngestPull').textContent=('⬇ Pull submission: '+(ing.title||'')+(ing.artist?' — '+ing.artist:'')).slice(0,46);
   $('#who').textContent=st.session.name+' · '+st.session.status+(isBin?' · ⚔️ Versus':'');
   // lifecycle controls reflect current status
