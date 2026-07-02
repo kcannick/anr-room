@@ -16,15 +16,15 @@
   }
   *{box-sizing:border-box}
   body{margin:0;padding:34px 16px 70px;background:radial-gradient(130% 90% at 50% -10%, #241a4d 0%, var(--bg) 58%);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif}
-  .wrap{max-width:1240px;margin:0 auto}
+  .wrap{max-width:1580px;margin:0 auto}
   .deck-title{text-align:center;margin:0 0 6px;font-size:24px;font-weight:900;letter-spacing:-.01em}
   .deck-sub{text-align:center;color:var(--ink-dim);font-size:13.5px;margin:0 0 8px;line-height:1.6}
-  .deck-note{text-align:center;color:var(--ink-faint);font-size:12px;margin:0 auto 34px;max-width:720px;line-height:1.6}
-  .gallery{display:flex;gap:46px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+  .deck-note{text-align:center;color:var(--ink-faint);font-size:12px;margin:0 auto 34px;max-width:820px;line-height:1.6}
+  .deck-note b{color:var(--ink-dim)}
+  .gallery{display:flex;gap:40px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
   .item{width:360px}
   .item .cap{font-family:"Space Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);text-align:center;margin:0 0 12px}
   .item .cap small{display:block;color:var(--ink-faint);font-weight:400;letter-spacing:.04em;margin-top:3px;text-transform:none;font-family:"DM Sans",sans-serif;font-size:11px}
-  /* Scale the true 1080×1350 card down to 360×450 for gallery viewing. */
   .thumb{width:360px;height:450px;border-radius:20px;overflow:hidden;box-shadow:0 20px 55px rgba(0,0,0,.5);border:1px solid var(--line)}
   .thumb .card{transform:scale(.33333);transform-origin:top left}
 
@@ -35,7 +35,6 @@
   .card .glow{position:absolute;inset:0;pointer-events:none;
     background:radial-gradient(60% 40% at 85% 12%, rgba(109,95,224,.20), transparent 60%),
                radial-gradient(50% 34% at 8% 42%, rgba(75,183,73,.12), transparent 60%)}
-  /* header */
   .c-head{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:2}
   .c-brand{display:flex;align-items:center;gap:18px}
   .c-brand img.mk{width:74px;height:74px;object-fit:contain}
@@ -44,14 +43,15 @@
   .c-brand .bs{font-family:"Space Mono",monospace;font-size:14px;letter-spacing:.28em;color:var(--ink-faint);text-transform:uppercase;margin-top:6px}
   .c-win{font-family:"Space Mono",monospace;font-weight:700;font-size:17px;letter-spacing:.06em;color:#0d0b16;background:var(--gold);
     padding:11px 20px;border-radius:999px;box-shadow:0 6px 20px rgba(245,197,24,.35)}
-  /* card title band */
   .c-title{position:relative;z-index:2;margin-top:30px}
-  .c-title .kicker{font-family:"Space Mono",monospace;font-size:18px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--accent)}
+  .c-title .kicker{font-family:"Space Mono",monospace;font-size:18px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--accent)}
   .c-title h1{margin:10px 0 0;font-size:58px;font-weight:900;letter-spacing:-.02em;line-height:1.02}
-  .c-title .sub{margin-top:14px;font-size:24px;color:var(--ink-dim)}
-  /* body fills */
+  /* session/scope tag under the title — session name always present */
+  .c-sess{margin-top:14px;display:inline-flex;align-items:center;gap:10px;background:rgba(23,19,40,.7);border:1px solid var(--line);
+    border-radius:999px;padding:9px 20px;font-size:22px;color:var(--ink-dim)}
+  .c-sess b{color:var(--ink);font-weight:700}
+  .c-sess .dot{width:7px;height:7px;border-radius:50%;background:var(--signal);flex:none}
   .c-body{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:center;padding:16px 0}
-  /* footer band */
   .c-foot{position:relative;z-index:2;margin:0 -68px;padding:34px 68px 40px;
     background:linear-gradient(180deg, rgba(23,19,40,0), rgba(12,10,22,.9));
     border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
@@ -60,156 +60,199 @@
   .c-foot .follow{text-align:right}
   .c-foot .follow .l{font-size:16px;color:var(--ink-faint);letter-spacing:.04em}
   .c-foot .follow .h{font-size:26px;font-weight:800;color:var(--ink)}
-  .c-foot .mklogo{height:40px;object-fit:contain;opacity:.95}
 
-  /* avatar */
   .av{border-radius:50%;object-fit:cover;background:linear-gradient(150deg,#3a2f6e,#241a4d);
     display:flex;align-items:center;justify-content:center;font-weight:800;color:#cfc7f4;flex:none;
     border:2px solid rgba(255,255,255,.10)}
 
-  /* ---- CARD 1: PLAYER SCORE CARD ---- */
+  /* ---- CARD 1: PLAYER SCORE CARD (rank-forward; raw points optional) ---- */
   .sc-hero{display:flex;flex-direction:column;align-items:center;text-align:center}
-  .sc-av{width:230px;height:230px;font-size:76px;border:4px solid rgba(109,95,224,.6);box-shadow:0 0 0 8px rgba(109,95,224,.12)}
-  .sc-name{margin-top:30px;font-size:58px;font-weight:900;letter-spacing:-.02em}
+  .sc-av{width:210px;height:210px;font-size:70px;border:4px solid rgba(109,95,224,.6);box-shadow:0 0 0 8px rgba(109,95,224,.12)}
+  .sc-name{margin-top:26px;font-size:56px;font-weight:900;letter-spacing:-.02em}
   .sc-ig{margin-top:8px;font-size:26px;color:var(--accent);font-weight:600}
-  .sc-points{margin-top:40px;font-family:"Space Mono",monospace;font-weight:700;font-size:180px;line-height:.9;color:var(--signal);text-shadow:0 0 40px rgba(75,183,73,.35)}
-  .sc-plabel{font-family:"Space Mono",monospace;font-size:24px;letter-spacing:.3em;color:var(--ink-faint);text-transform:uppercase;margin-top:6px}
-  .sc-rank{margin-top:30px;display:inline-flex;align-self:center;gap:12px;align-items:center;background:rgba(245,197,24,.14);border:1px solid rgba(245,197,24,.5);
-    color:var(--gold);font-weight:800;font-size:30px;padding:14px 30px;border-radius:999px}
-  .sc-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:46px}
-  .sc-stat{background:rgba(23,19,40,.7);border:1px solid var(--line);border-radius:20px;padding:26px 10px;text-align:center}
-  .sc-stat .v{font-family:"Space Mono",monospace;font-weight:700;font-size:52px;color:var(--ink)}
+  .sc-rankbig{margin-top:34px;font-family:"Space Mono",monospace;font-weight:700;font-size:172px;line-height:.9;color:var(--signal);text-shadow:0 0 40px rgba(75,183,73,.35)}
+  .sc-ranklabel{font-family:"Space Mono",monospace;font-size:24px;letter-spacing:.24em;color:var(--ink-faint);text-transform:uppercase;margin-top:8px}
+  .sc-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:44px}
+  .sc-stat{background:rgba(23,19,40,.7);border:1px solid var(--line);border-radius:20px;padding:24px 10px;text-align:center}
+  .sc-stat.opt{border-style:dashed;border-color:#3a3363}
+  .sc-stat .v{font-family:"Space Mono",monospace;font-weight:700;font-size:50px;color:var(--ink)}
   .sc-stat .k{font-size:19px;color:var(--ink-faint);margin-top:6px;letter-spacing:.02em}
 
-  /* ---- CARD 2 & 3: RANKED LISTS ---- */
+  /* ---- CARDS 2 & 3: RANKED LISTS (rank-only default; medals for top 3) ---- */
   .rows{display:flex;flex-direction:column;gap:11px}
-  .row{display:flex;align-items:center;gap:22px;background:rgba(23,19,40,.66);border:1px solid var(--line);border-radius:18px;padding:13px 26px}
-  .row .rk{font-family:"Space Mono",monospace;font-weight:700;font-size:38px;color:var(--ink-faint);width:52px;text-align:center;flex:none}
-  .row.top1 .rk{color:var(--gold)} .row.top2 .rk{color:#cdd1e6} .row.top3 .rk{color:#e59b6b}
+  .row{display:flex;align-items:center;gap:22px;background:rgba(23,19,40,.66);border:1px solid var(--line);border-radius:18px;padding:14px 26px}
+  .row .rk{font-family:"Space Mono",monospace;font-weight:700;font-size:40px;color:var(--ink-faint);width:60px;text-align:center;flex:none}
+  .row.top1 .rk,.row.top2 .rk,.row.top3 .rk{font-size:44px}
   .row.top1{border-color:rgba(245,197,24,.45);background:rgba(245,197,24,.08)}
-  .row .rav{width:72px;height:72px;font-size:28px}
+  .row .rav{width:74px;height:74px;font-size:28px}
   .row .who{flex:1;min-width:0}
-  .row .who .nm{font-size:32px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .row .who .ig{font-size:21px;color:var(--accent);font-weight:600;margin-top:2px}
-  .row .who .art{font-size:22px;color:var(--ink-dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .row .pts{text-align:right;flex:none}
-  .row .pts .n{font-family:"Space Mono",monospace;font-weight:700;font-size:42px;color:var(--signal);line-height:1}
-  .row .pts .u{font-size:16px;color:var(--ink-faint);letter-spacing:.14em;text-transform:uppercase}
-  .row .score{font-family:"Space Mono",monospace;font-weight:700;font-size:48px;color:var(--signal);flex:none}
-  .qual-note{margin-top:16px;text-align:center;font-family:"Space Mono",monospace;font-size:18px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
-  .qual-note b{color:var(--accent)}
+  .row .who .nm{font-size:34px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .who .ig{font-size:22px;color:var(--accent);font-weight:600;margin-top:2px}
+  .row .who .art{font-size:23px;color:var(--ink-dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .who .art span{color:var(--accent)}
+  /* optional raw-number column (hidden by default; toggle) */
+  .row .num{font-family:"Space Mono",monospace;font-weight:700;font-size:40px;color:var(--signal);flex:none}
+  .rows.rankonly .num{display:none}
+
+  /* ---- CARD 4: PROMO / REGISTER ---- */
+  .pr{display:flex;flex-direction:column;align-items:center;text-align:center;justify-content:center;height:100%}
+  .pr .lead{font-size:52px;font-weight:800;letter-spacing:-.01em;line-height:1.12;color:var(--ink)}
+  .pr .lead b{color:var(--signal)}
+  .pr .cash{margin-top:26px;font-family:"Space Mono",monospace;font-weight:700;font-size:150px;line-height:.9;color:var(--gold);text-shadow:0 0 40px rgba(245,197,24,.3)}
+  .pr .cashsub{font-family:"Space Mono",monospace;font-size:22px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);margin-top:8px}
+  .pr .steps{display:flex;gap:14px;margin-top:44px}
+  .pr .step{flex:1;background:rgba(23,19,40,.7);border:1px solid var(--line);border-radius:18px;padding:22px 12px}
+  .pr .step .n{font-family:"Space Mono",monospace;color:var(--accent);font-size:24px;font-weight:700}
+  .pr .step .t{font-size:22px;font-weight:700;margin-top:8px}
+  .pr .cta{margin-top:46px;background:var(--signal);color:#08240a;font-weight:800;font-size:30px;padding:22px 44px;border-radius:16px;box-shadow:0 10px 30px rgba(75,183,73,.35)}
+
+  /* ---- carousel explainer ---- */
+  .flow{max-width:1180px;margin:56px auto 0;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:28px 30px}
+  .flow h3{margin:0 0 6px;font-size:16px;font-weight:800}
+  .flow p{margin:0 0 18px;color:var(--ink-dim);font-size:13px;line-height:1.6}
+  .flow .strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .flow .slide{flex:1;min-width:140px;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+  .flow .slide .n{font-family:"Space Mono",monospace;font-size:11px;color:var(--accent);letter-spacing:.1em}
+  .flow .slide .t{font-size:13px;font-weight:700;margin-top:4px}
+  .flow .slide .d{font-size:11px;color:var(--ink-faint);margin-top:4px;line-height:1.4}
+  .flow .arw{color:var(--ink-faint);font-size:20px;flex:none}
+  .flow .collab{margin-top:18px;font-size:12.5px;color:var(--ink-dim);background:rgba(109,95,224,.1);border:1px solid rgba(109,95,224,.35);border-radius:12px;padding:14px 16px;line-height:1.6}
+  .flow .collab b{color:var(--ink)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1 class="deck-title">The A&R Room — Shareable Report Graphics</h1>
-  <p class="deck-sub">3:4 portrait · <b>1080 × 1350</b> · Instagram / story-ready · built on the app's real design tokens</p>
-  <p class="deck-note">Three end-of-session (or end-of-series) graphics. Every card carries the Makin' It mark, “The A&R Room”,
-    <b>ANR.makinitmag.com</b>, <b>Win $500</b>, and <b>Follow @Makinit4indies</b>. Instagram handles are pulled per person.
-    Cards below are shown at 1/3 size — the artwork itself is full 1080×1350.</p>
+  <p class="deck-sub">3:4 portrait · <b>1080 × 1350</b> · rank-only by default (raw numbers = optional toggle) · session name on every card</p>
+  <p class="deck-note">Generated per <b>session</b>, per <b>series</b>, or per <b>round</b> (personal). Players pull a personal card for any round they
+    voted in; hosts pull Top Songs / Top A&Rs for any session they ran. Every card carries the Makin' It mark, “The A&R Room”,
+    <b>ANR.makinitmag.com</b>, <b>Win $500</b>, and <b>Follow @Makinit4indies</b>, with Instagram handles pulled per person.
+    Cards shown at 1/3 size — artwork is full 1080×1350.</p>
 
   <div class="gallery">
 
     <!-- ============ CARD 1 — PLAYER SCORE CARD ============ -->
     <div class="item">
-      <p class="cap">1 · Player Score Card<small>One A&R shares their own result</small></p>
+      <p class="cap">1 · Player Score Card<small>Self-share, any round / session / series</small></p>
       <div class="thumb"><div class="card">
         <div class="glow"></div>
         <div class="c-head">
-          <div class="c-brand">
-            <img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'">
-            <div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div>
-          </div>
+          <div class="c-brand"><img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'"><div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div></div>
           <div class="c-win">WIN $500</div>
         </div>
-        <div class="c-title"><div class="kicker">My Score</div></div>
+        <div class="c-title"><div class="kicker">My Result</div><div class="c-sess"><span class="dot"></span><b>ATL Live Review</b> · Jul 2</div></div>
         <div class="c-body">
           <div class="sc-hero">
             <div class="av sc-av">MJ</div>
             <div class="sc-name">Maya Jordan</div>
             <div class="sc-ig">@mayaonthebeat</div>
-            <div class="sc-points">1,284</div>
-            <div class="sc-plabel">Points</div>
-            <div class="sc-rank">🏆 Ranked #3 of 214</div>
+            <div class="sc-rankbig">#3</div>
+            <div class="sc-ranklabel">of 214 A&amp;Rs</div>
           </div>
           <div class="sc-stats">
             <div class="sc-stat"><div class="v">6</div><div class="k">Bullseyes</div></div>
             <div class="sc-stat"><div class="v">8.6</div><div class="k">Best read</div></div>
-            <div class="sc-stat"><div class="v">18</div><div class="k">Rounds</div></div>
+            <div class="sc-stat opt"><div class="v">1,284</div><div class="k">Points (optional)</div></div>
           </div>
         </div>
-        <div class="c-foot">
-          <div class="site">ANR.makinitmag<b>.com</b></div>
-          <div class="follow"><div class="l">Follow</div><div class="h">@Makinit4indies</div></div>
-        </div>
+        <div class="c-foot"><div class="site">ANR.makinitmag<b>.com</b></div><div class="follow"><div class="l">Follow</div><div class="h">@Makinit4indies</div></div></div>
       </div></div>
     </div>
 
-    <!-- ============ CARD 2 — TOP 8 A&Rs ============ -->
+    <!-- ============ CARD 2 — TOP 8 A&Rs (rank-only) ============ -->
     <div class="item">
-      <p class="cap">2 · Top 8 A&Rs<small>Series leaderboard cut (the A&R Wars 8)</small></p>
+      <p class="cap">2 · Top 8 A&Rs<small>Session or series · rank-only</small></p>
       <div class="thumb"><div class="card">
         <div class="glow"></div>
         <div class="c-head">
-          <div class="c-brand">
-            <img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'">
-            <div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div>
-          </div>
+          <div class="c-brand"><img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'"><div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div></div>
           <div class="c-win">WIN $500</div>
         </div>
-        <div class="c-title"><div class="kicker">Summer Series</div><h1>Top 8 A&amp;Rs</h1></div>
+        <div class="c-title"><div class="kicker">Top 8 A&amp;Rs</div><div class="c-sess"><span class="dot"></span><b>Summer Series</b> · Jun–Aug</div></div>
         <div class="c-body">
-          <div class="rows">
-            <div class="row top1"><div class="rk">1</div><div class="av rav">DL</div><div class="who"><div class="nm">Dre Lucas</div><div class="ig">@drelucas</div></div><div class="pts"><div class="n">4,910</div><div class="u">pts</div></div></div>
-            <div class="row top2"><div class="rk">2</div><div class="av rav">KP</div><div class="who"><div class="nm">Kiana Price</div><div class="ig">@kianaprice</div></div><div class="pts"><div class="n">4,655</div><div class="u">pts</div></div></div>
-            <div class="row top3"><div class="rk">3</div><div class="av rav">MJ</div><div class="who"><div class="nm">Maya Jordan</div><div class="ig">@mayaonthebeat</div></div><div class="pts"><div class="n">4,402</div><div class="u">pts</div></div></div>
-            <div class="row"><div class="rk">4</div><div class="av rav">TW</div><div class="who"><div class="nm">Tevin Ward</div><div class="ig">@tevindubs</div></div><div class="pts"><div class="n">4,120</div><div class="u">pts</div></div></div>
-            <div class="row"><div class="rk">5</div><div class="av rav">RS</div><div class="who"><div class="nm">Rosa Santos</div><div class="ig">@rosahears</div></div><div class="pts"><div class="n">3,988</div><div class="u">pts</div></div></div>
-            <div class="row"><div class="rk">6</div><div class="av rav">JC</div><div class="who"><div class="nm">Jae Cole</div><div class="ig">@jaecole</div></div><div class="pts"><div class="n">3,760</div><div class="u">pts</div></div></div>
-            <div class="row"><div class="rk">7</div><div class="av rav">BN</div><div class="who"><div class="nm">Bri Nakamura</div><div class="ig">@brinak</div></div><div class="pts"><div class="n">3,540</div><div class="u">pts</div></div></div>
-            <div class="row"><div class="rk">8</div><div class="av rav">OA</div><div class="who"><div class="nm">Omar Ali</div><div class="ig">@omarali</div></div><div class="pts"><div class="n">3,301</div><div class="u">pts</div></div></div>
+          <div class="rows rankonly">
+            <div class="row top1"><div class="rk">🥇</div><div class="av rav">DL</div><div class="who"><div class="nm">Dre Lucas</div><div class="ig">@drelucas</div></div><div class="num">4,910</div></div>
+            <div class="row top2"><div class="rk">🥈</div><div class="av rav">KP</div><div class="who"><div class="nm">Kiana Price</div><div class="ig">@kianaprice</div></div><div class="num">4,655</div></div>
+            <div class="row top3"><div class="rk">🥉</div><div class="av rav">MJ</div><div class="who"><div class="nm">Maya Jordan</div><div class="ig">@mayaonthebeat</div></div><div class="num">4,402</div></div>
+            <div class="row"><div class="rk">4</div><div class="av rav">TW</div><div class="who"><div class="nm">Tevin Ward</div><div class="ig">@tevindubs</div></div><div class="num">4,120</div></div>
+            <div class="row"><div class="rk">5</div><div class="av rav">RS</div><div class="who"><div class="nm">Rosa Santos</div><div class="ig">@rosahears</div></div><div class="num">3,988</div></div>
+            <div class="row"><div class="rk">6</div><div class="av rav">JC</div><div class="who"><div class="nm">Jae Cole</div><div class="ig">@jaecole</div></div><div class="num">3,760</div></div>
+            <div class="row"><div class="rk">7</div><div class="av rav">BN</div><div class="who"><div class="nm">Bri Nakamura</div><div class="ig">@brinak</div></div><div class="num">3,540</div></div>
+            <div class="row"><div class="rk">8</div><div class="av rav">OA</div><div class="who"><div class="nm">Omar Ali</div><div class="ig">@omarali</div></div><div class="num">3,301</div></div>
           </div>
-          <div class="qual-note">These 8 qualify for <b>A&amp;R Wars</b></div>
         </div>
-        <div class="c-foot">
-          <div class="site">ANR.makinitmag<b>.com</b></div>
-          <div class="follow"><div class="l">Follow</div><div class="h">@Makinit4indies</div></div>
-        </div>
+        <div class="c-foot"><div class="site">ANR.makinitmag<b>.com</b></div><div class="follow"><div class="l">Follow</div><div class="h">@Makinit4indies</div></div></div>
       </div></div>
     </div>
 
-    <!-- ============ CARD 3 — TOP 8 SONGS ============ -->
+    <!-- ============ CARD 3 — TOP 8 SONGS (rank-only) ============ -->
     <div class="item">
-      <p class="cap">3 · Top 8 Songs<small>Highest room average, pulled from the rounds</small></p>
+      <p class="cap">3 · Top 8 Songs<small>Pulled from the rounds · rank-only</small></p>
       <div class="thumb"><div class="card">
         <div class="glow"></div>
         <div class="c-head">
-          <div class="c-brand">
-            <img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'">
-            <div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div>
-          </div>
+          <div class="c-brand"><img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'"><div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div></div>
           <div class="c-win">WIN $500</div>
         </div>
-        <div class="c-title"><div class="kicker">Wed · Jul 2</div><h1>Top 8 Songs</h1></div>
+        <div class="c-title"><div class="kicker">Top 8 Songs</div><div class="c-sess"><span class="dot"></span><b>ATL Live Review</b> · Jul 2</div></div>
         <div class="c-body">
-          <div class="rows">
-            <div class="row top1"><div class="rk">1</div><div class="who"><div class="nm">Nightcrawler</div><div class="art">Sasha Vibe · @sashavibe</div></div><div class="score">8.7</div></div>
-            <div class="row top2"><div class="rk">2</div><div class="who"><div class="nm">Paper Planes</div><div class="art">Lil Marlo · @lilmarlo</div></div><div class="score">8.4</div></div>
-            <div class="row top3"><div class="rk">3</div><div class="who"><div class="nm">Golden Hour</div><div class="art">Neon Ivy · @neonivy</div></div><div class="score">8.2</div></div>
-            <div class="row"><div class="rk">4</div><div class="who"><div class="nm">Backroads</div><div class="art">Cole Reeves · @colereeves</div></div><div class="score">7.9</div></div>
-            <div class="row"><div class="rk">5</div><div class="who"><div class="nm">Static</div><div class="art">Mona Blue · @monablue</div></div><div class="score">7.7</div></div>
-            <div class="row"><div class="rk">6</div><div class="who"><div class="nm">Riptide</div><div class="art">Deja &amp; the Wave · @dejawave</div></div><div class="score">7.5</div></div>
-            <div class="row"><div class="rk">7</div><div class="who"><div class="nm">Concrete Roses</div><div class="art">Trey Amaro · @treyamaro</div></div><div class="score">7.3</div></div>
-            <div class="row"><div class="rk">8</div><div class="who"><div class="nm">Afterglow</div><div class="art">Suki Lane · @sukilane</div></div><div class="score">7.1</div></div>
+          <div class="rows rankonly">
+            <div class="row top1"><div class="rk">🥇</div><div class="who"><div class="nm">Nightcrawler</div><div class="art">Sasha Vibe · <span>@sashavibe</span></div></div><div class="num">8.7</div></div>
+            <div class="row top2"><div class="rk">🥈</div><div class="who"><div class="nm">Paper Planes</div><div class="art">Lil Marlo · <span>@lilmarlo</span></div></div><div class="num">8.4</div></div>
+            <div class="row top3"><div class="rk">🥉</div><div class="who"><div class="nm">Golden Hour</div><div class="art">Neon Ivy · <span>@neonivy</span></div></div><div class="num">8.2</div></div>
+            <div class="row"><div class="rk">4</div><div class="who"><div class="nm">Backroads</div><div class="art">Cole Reeves · <span>@colereeves</span></div></div><div class="num">7.9</div></div>
+            <div class="row"><div class="rk">5</div><div class="who"><div class="nm">Static</div><div class="art">Mona Blue · <span>@monablue</span></div></div><div class="num">7.7</div></div>
+            <div class="row"><div class="rk">6</div><div class="who"><div class="nm">Riptide</div><div class="art">Deja &amp; the Wave · <span>@dejawave</span></div></div><div class="num">7.5</div></div>
+            <div class="row"><div class="rk">7</div><div class="who"><div class="nm">Concrete Roses</div><div class="art">Trey Amaro · <span>@treyamaro</span></div></div><div class="num">7.3</div></div>
+            <div class="row"><div class="rk">8</div><div class="who"><div class="nm">Afterglow</div><div class="art">Suki Lane · <span>@sukilane</span></div></div><div class="num">7.1</div></div>
           </div>
         </div>
-        <div class="c-foot">
-          <div class="site">ANR.makinitmag<b>.com</b></div>
-          <div class="follow"><div class="l">Follow</div><div class="h">@Makinit4indies</div></div>
-        </div>
+        <div class="c-foot"><div class="site">ANR.makinitmag<b>.com</b></div><div class="follow"><div class="l">Follow</div><div class="h">@Makinit4indies</div></div></div>
       </div></div>
     </div>
 
+    <!-- ============ CARD 4 — PROMO / REGISTER ============ -->
+    <div class="item">
+      <p class="cap">4 · Promo / Register<small>Carousel closer — pulls new A&Rs in</small></p>
+      <div class="thumb"><div class="card">
+        <div class="glow"></div>
+        <div class="c-head">
+          <div class="c-brand"><img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'"><div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div></div>
+          <div class="c-win">WIN $500</div>
+        </div>
+        <div class="c-body">
+          <div class="pr">
+            <div class="lead">Rate the music.<br>Read the room.<br><b>Win $500.</b></div>
+            <div class="cash">$500</div>
+            <div class="cashsub">Top A&amp;Rs every month</div>
+            <div class="steps">
+              <div class="step"><div class="n">1</div><div class="t">Rate 0–9</div></div>
+              <div class="step"><div class="n">2</div><div class="t">Read the room</div></div>
+              <div class="step"><div class="n">3</div><div class="t">Climb &amp; win</div></div>
+            </div>
+            <div class="cta">Play free → ANR.makinitmag.com</div>
+          </div>
+        </div>
+        <div class="c-foot"><div class="site">ANR.makinitmag<b>.com</b></div><div class="follow"><div class="l">Follow</div><div class="h">@Makinit4indies</div></div></div>
+      </div></div>
+    </div>
+
+  </div>
+
+  <!-- Post-session email carousel explainer -->
+  <div class="flow">
+    <h3>Post-session email → one IG carousel</h3>
+    <p>Every A&amp;R who voted gets an email with their four graphics in carousel order, plus copy on how to post it.</p>
+    <div class="strip">
+      <div class="slide"><div class="n">SLIDE 1</div><div class="t">Your Score Card</div><div class="d">Personal — their rank that night</div></div>
+      <div class="arw">→</div>
+      <div class="slide"><div class="n">SLIDE 2</div><div class="t">Top 8 Songs</div><div class="d">That session's best-rated</div></div>
+      <div class="arw">→</div>
+      <div class="slide"><div class="n">SLIDE 3</div><div class="t">Top 8 A&amp;Rs</div><div class="d">The leaderboard cut</div></div>
+      <div class="arw">→</div>
+      <div class="slide"><div class="n">SLIDE 4</div><div class="t">Register / $500</div><div class="d">Pulls their friends in</div></div>
+    </div>
+    <div class="collab">📣 <b>Reach hack:</b> the email tells them to post the carousel and add <b>@Makinit4indies as a collaborator</b> on the IG post — it then shows on both feeds, doubling reach. (Collaborator is added by hand at upload; Instagram has no API for it — we supply the step-by-step.)</div>
   </div>
 </div>
 </body>
