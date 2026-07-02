@@ -14,8 +14,11 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@vercel/blob": "^2.5.0",
     "ably": "^2.23.0",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "satori": "^0.26.0",
+    "satori-html": "^0.3.2"
   }
 }

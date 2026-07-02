@@ -1,0 +1,210 @@
+// share-cards.js — server-side render of the shareable report graphics (3:4, 1080×1440)
+// to PNG, using Satori (HTML/flex -> SVG) + resvg (SVG -> PNG). No headless browser, so it
+// stays serverless-friendly (the whole point — see docs/multi-tenant-roadmap + the outage rule).
+//
+// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Songs), 'promo'.
+// Rank-only by default; raw numbers optional. Every card carries the eyebrow "The A&R Room",
+// the big card title, the session/scope subhead, WIN $500, ANR.makinitmag.com, @Makinit4indies.
+//
+// Design tokens mirror the app + docs/mockups/anr-share-graphics-mockups.html.
+
+const fs = require('fs');
+const path = require('path');
+
+const W = 1080, H = 1440;
+const PRIZE = '$500';
+
+// ---- design tokens ----
+const C = {
+  bg: '#0d0b16', ink: '#f3f0fb', inkDim: '#a9a2c9', inkFaint: '#6f688f',
+  signal: '#4bb749', accent: '#6d5fe0', gold: '#f5c518',
+  line: '#2e2750', panel: 'rgba(23,19,40,0.66)', avBg: '#2c2352',
+};
+const MONO = 'Space Mono', SANS = 'DM Sans';
+
+// ---- fonts (loaded once) ----
+let _fonts = null;
+function fonts() {
+  if (_fonts) return _fonts;
+  const dir = path.join(__dirname, 'assets', 'fonts');
+  const f = (file, name, weight) => ({ name, weight, style: 'normal', data: fs.readFileSync(path.join(dir, file)) });
+  _fonts = [
+    f('dm-sans-v17-latin-regular.ttf', SANS, 400),
+    f('dm-sans-v17-latin-700.ttf', SANS, 700),
+    f('dm-sans-v17-latin-800.ttf', SANS, 800),
+    f('dm-sans-v17-latin-900.ttf', SANS, 900),
+    f('space-mono-v17-latin-regular.ttf', MONO, 400),
+    f('space-mono-v17-latin-700.ttf', MONO, 700),
+  ];
+  return _fonts;
+}
+
+// ---- hyperscript: build Satori's element tree directly ----
+// Satori requires an explicit display:flex on any node with >1 child; `col`/`row` set it.
+function h(style, children) {
+  return { type: 'div', props: { style, children } };
+}
+function col(style, children) { return h({ display: 'flex', flexDirection: 'column', ...style }, children); }
+function row(style, children) { return h({ display: 'flex', flexDirection: 'row', alignItems: 'center', ...style }, children); }
+function text(style, str) { return { type: 'div', props: { style, children: String(str == null ? '' : str) } }; }
+function esc(s) { return String(s == null ? '' : s); }
+
+// A small round avatar with initials (photo support comes later via <img>).
+function avatar(name, size) {
+  const initials = (esc(name).trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2) || 'A').toUpperCase();
+  return h({
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: size, height: size, borderRadius: size, background: C.avBg,
+    border: '2px solid rgba(255,255,255,0.10)', color: '#cfc7f4',
+    fontFamily: SANS, fontWeight: 800, fontSize: Math.round(size * 0.34),
+  }, initials);
+}
+
+// ---- shared frame: header (eyebrow / title / sub + WIN pill), body, footer ----
+function frame(opts) {
+  const { title, sub, body } = opts;
+  const eyeStyle = { fontFamily: MONO, fontWeight: 700, fontSize: 21, letterSpacing: 5, textTransform: 'uppercase' };
+  const eyebrow = row({}, [
+    text({ ...eyeStyle, color: C.inkDim }, 'The A&R'),
+    text({ ...eyeStyle, color: C.signal, marginLeft: 12 }, 'Room'),
+  ]);
+  const header = row({ justifyContent: 'space-between', alignItems: 'flex-start' }, [
+    col({}, [
+      eyebrow,
+      text({ marginTop: 16, fontFamily: SANS, fontWeight: 900, fontSize: 78, color: C.ink, lineHeight: 1 }, title),
+      sub ? row({ marginTop: 18 }, [
+        h({ width: 12, height: 12, borderRadius: 12, background: C.signal, marginRight: 12, flexShrink: 0 }, ''),
+        text({ fontFamily: SANS, fontWeight: 700, fontSize: 27, color: C.ink }, sub),
+      ]) : text({}, ''),
+    ]),
+    text({
+      fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.bg,
+      background: C.gold, padding: '11px 20px', borderRadius: 999, flexShrink: 0,
+    }, `WIN ${PRIZE}`),
+  ]);
+  const footer = row({ justifyContent: 'space-between', alignItems: 'center',
+    borderTop: `1px solid ${C.line}`, paddingTop: 30 }, [
+    row({}, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: C.ink }, 'ANR.makinitmag'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: C.signal }, '.com'),
+    ]),
+    col({ alignItems: 'flex-end' }, [
+      text({ fontFamily: SANS, fontWeight: 400, fontSize: 16, color: C.inkFaint }, 'Follow'),
+      text({ fontFamily: SANS, fontWeight: 800, fontSize: 26, color: C.ink }, '@Makinit4indies'),
+    ]),
+  ]);
+  return col({
+    width: W, height: H, background: `linear-gradient(176deg, #241a4d 0%, ${C.bg} 50%)`,
+    padding: '58px 68px 44px', justifyContent: 'flex-start',
+  }, [
+    header,
+    col({ flexGrow: 1, justifyContent: 'center', paddingTop: 16, paddingBottom: 16 }, [body]),
+    footer,
+  ]);
+}
+
+const RANK_COLOR = ['#f5c518', '#cdd1e6', '#e59b6b']; // gold / silver / bronze for 1–3
+
+// ---- Top 8 A&Rs (rank-only default; showNumbers adds points) ----
+function bodyArs(list, showNumbers) {
+  return col({ gap: 11 }, list.slice(0, 8).map((p, i) => {
+    const rc = RANK_COLOR[i] || C.inkFaint;
+    return row({
+      background: C.panel, border: `1px solid ${i === 0 ? 'rgba(245,197,24,0.45)' : C.line}`,
+      borderRadius: 18, padding: '14px 26px',
+    }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: rc, width: 60, textAlign: 'center', flexShrink: 0 }, i + 1),
+      avatar(p.name, 74),
+      col({ flexGrow: 1, marginLeft: 22, overflow: 'hidden' }, [
+        text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink }, p.name),
+        text({ fontFamily: SANS, fontWeight: 700, fontSize: 22, color: C.accent }, p.ig ? '@' + p.ig.replace(/^@/, '') : ''),
+      ]),
+      showNumbers ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: C.signal, flexShrink: 0 }, (p.points || 0).toLocaleString()) : text({}, ''),
+    ]);
+  }));
+}
+
+// ---- Top 8 Songs (rank-only default; showNumbers adds the room score) ----
+function bodySongs(list, showNumbers) {
+  return col({ gap: 11 }, list.slice(0, 8).map((s, i) => {
+    const rc = RANK_COLOR[i] || C.inkFaint;
+    const artist = [s.artist, s.ig ? '@' + s.ig.replace(/^@/, '') : ''].filter(Boolean).join(' · ');
+    return row({
+      background: C.panel, border: `1px solid ${i === 0 ? 'rgba(245,197,24,0.45)' : C.line}`,
+      borderRadius: 18, padding: '18px 26px',
+    }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: rc, width: 60, textAlign: 'center', flexShrink: 0 }, i + 1),
+      col({ flexGrow: 1, marginLeft: 20, overflow: 'hidden' }, [
+        text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink }, s.title),
+        text({ fontFamily: SANS, fontWeight: 400, fontSize: 23, color: C.inkDim }, artist),
+      ]),
+      showNumbers ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 46, color: C.signal, flexShrink: 0 }, (s.score != null ? Number(s.score).toFixed(1) : '')) : text({}, ''),
+    ]);
+  }));
+}
+
+// ---- Player Score Card (rank-forward; points optional) ----
+function bodyScore(d) {
+  const stat = (v, k, dashed) => col({
+    flexGrow: 1, flexBasis: 0, alignItems: 'center', background: 'rgba(23,19,40,0.7)',
+    border: `1px ${dashed ? 'dashed' : 'solid'} ${dashed ? '#3a3363' : C.line}`, borderRadius: 20, padding: '24px 10px',
+  }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 50, color: C.ink }, v),
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 19, color: C.inkFaint, marginTop: 6 }, k),
+  ]);
+  const stats = [];
+  if (d.bullseyes != null) stats.push(stat(d.bullseyes, 'Bullseyes', false));
+  if (d.bestRead != null) stats.push(stat(Number(d.bestRead).toFixed(1), 'Best read', false));
+  if (d.points != null) stats.push(stat((d.points || 0).toLocaleString(), 'Points', true));
+  return col({ alignItems: 'center' }, [
+    avatar(d.name, 210),
+    text({ fontFamily: SANS, fontWeight: 900, fontSize: 56, color: C.ink, marginTop: 26 }, d.name),
+    text({ fontFamily: SANS, fontWeight: 700, fontSize: 26, color: C.accent, marginTop: 8 }, d.ig ? '@' + d.ig.replace(/^@/, '') : ''),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 168, color: C.signal, marginTop: 30, lineHeight: 1 }, '#' + d.rank),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, 'of ' + d.total + ' A&Rs'),
+    stats.length ? row({ marginTop: 44, gap: 20, width: '100%' }, stats) : text({}, ''),
+  ]);
+}
+
+// ---- Promo / Register ----
+function bodyPromo() {
+  const step = (n, t) => col({
+    flexGrow: 1, flexBasis: 0, alignItems: 'center', background: 'rgba(23,19,40,0.7)',
+    border: `1px solid ${C.line}`, borderRadius: 18, padding: '22px 12px',
+  }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, color: C.accent }, n),
+    text({ fontFamily: SANS, fontWeight: 700, fontSize: 22, color: C.ink, marginTop: 8, textAlign: 'center' }, t),
+  ]);
+  return col({ alignItems: 'center' }, [
+    col({ alignItems: 'center' }, [
+      text({ fontFamily: SANS, fontWeight: 800, fontSize: 52, color: C.ink, textAlign: 'center', lineHeight: 1.15 }, 'Rate the music.'),
+      text({ fontFamily: SANS, fontWeight: 800, fontSize: 52, color: C.ink, textAlign: 'center', lineHeight: 1.15 }, 'Read the room.'),
+    ]),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 150, color: C.gold, marginTop: 26, lineHeight: 1 }, PRIZE),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, 'Top A&Rs every month'),
+    row({ marginTop: 44, gap: 14, width: '100%' }, [step('1', 'Rate 0–9'), step('2', 'Read the room'), step('3', 'Climb & win')]),
+    text({ fontFamily: SANS, fontWeight: 800, fontSize: 30, color: '#08240a', background: C.signal, padding: '22px 44px', borderRadius: 16, marginTop: 46 }, 'Play free at ANR.makinitmag.com'),
+  ]);
+}
+
+// ---- element builders per type ----
+function element(type, data = {}) {
+  const showNumbers = !!data.showNumbers;
+  if (type === 'score') return frame({ title: 'Score Card', sub: data.session || null, body: bodyScore(data) });
+  if (type === 'ars')   return frame({ title: 'Top 8 A&Rs', sub: data.scope || data.session || null, body: bodyArs(data.list || [], showNumbers) });
+  if (type === 'songs') return frame({ title: 'Top 8 Songs', sub: data.session || null, body: bodySongs(data.list || [], showNumbers) });
+  if (type === 'promo') return frame({ title: 'Become an A&R', sub: 'Free to play', body: bodyPromo() });
+  throw new Error('unknown card type: ' + type);
+}
+
+// ---- render to PNG ----
+let _satori = null, _Resvg = null;
+async function renderPng(type, data) {
+  if (!_satori) { const m = require('satori'); _satori = m.default || m; }
+  if (!_Resvg) { _Resvg = require('@resvg/resvg-js').Resvg; }
+  const svg = await _satori(element(type, data), { width: W, height: H, fonts: fonts() });
+  const png = new _Resvg(svg, { fitTo: { mode: 'width', value: W } }).render().asPng();
+  return png;
+}
+
+module.exports = { renderPng, element, W, H, PRIZE };
