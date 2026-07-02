@@ -1025,6 +1025,16 @@ async function call(path, body, method='POST', headers={}) {
   const scoreImg = await img('/api/card/score', { 'X-Player-Token': t1 });
   ok('score card renders a PNG for the player', isPng(scoreImg), JSON.stringify(scoreImg));
 
+  console.log('\n— recap email carousel (queue + chunked processing) —');
+  const recapStatus = await call('/api/admin/session/recap/status?sessionId=' + SID, null, 'GET', AH);
+  ok('recap status lists eligible voters', recapStatus.status === 200 && recapStatus.d.eligible >= 1, JSON.stringify(recapStatus.d));
+  const recapNoAuth = await call('/api/admin/session/recap/status?sessionId=' + SID, null, 'GET');
+  ok('recap status needs authorization (403)', recapNoAuth.status === 403, 'got ' + recapNoAuth.status);
+  const recapStart = await call('/api/admin/session/recap/start', { sessionId: SID }, 'POST', AH);
+  ok('recap start blocked without Blob hosting (409)', recapStart.status === 409, 'got ' + recapStart.status + ' ' + JSON.stringify(recapStart.d));
+  const recapProc = await call('/api/admin/session/recap/process', { sessionId: SID }, 'POST', AH);
+  ok('recap process requires a started job (400)', recapProc.status === 400, 'got ' + recapProc.status);
+
   console.log('\n— per-host giveaway flag (admin-set; gates the $500 hook; needs a series tag) —');
   // A participant on the host's session, to read the play-state giveaway context.
   const gjr = await call('/api/join/request', { sessionId: HS, email: 'giv@fan.com' });

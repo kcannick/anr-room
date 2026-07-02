@@ -728,6 +728,8 @@ function sessionCardHtml(s){
       <span class="gfx-lbl">Share graphics ↓</span>
       <button class="btn ghost sm" onclick="dlCard('ars','${s.id}',this)">Top 8 A&amp;Rs</button>
       ${s.poll_type==='binary'?'':`<button class="btn ghost sm" onclick="dlCard('songs','${s.id}',this)">Top 8 Songs</button>`}
+      <span class="spacer"></span>
+      <button class="btn good sm" onclick="emailRecap('${s.id}',this)">✉ Email recap</button>
     </div>`:''}
   </div>`;
 }
@@ -764,6 +766,33 @@ window.dlCard=async(kind,sid,btn)=>{
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),2000);
   }catch(e){ alert('Download failed: '+e.message); }
   finally{ if(btn){btn.disabled=false;btn.textContent=label;} }
+};
+// Email the recap carousel to everyone who voted. Renders shared cards once, then processes
+// per-recipient in small chunks (loop) so no single request runs long. Resume-safe.
+window.emailRecap=async(sid,btn)=>{
+  const orig=btn.textContent;
+  try{
+    const st=await api('/api/admin/session/recap/status?sessionId='+encodeURIComponent(sid),null,'GET');
+    if(!st.configured){ alert('Image hosting isn’t set up yet (BLOB_READ_WRITE_TOKEN). Recap emails need it to host the graphics.'); return; }
+    if(!st.eligible){ alert('No voters with an email address to send to yet.'); return; }
+    const already=st.sent?(' ('+st.sent+' already sent — only new ones will go out)'):'';
+    if(!confirm('Email the recap to '+st.eligible+' A&R'+(st.eligible==1?'':'s')+' who voted?'+already+'\n\nEach gets their Score Card + Top 8 Songs + Top 8 A&Rs + a promo card, with instructions to post it as an Instagram carousel.'))return;
+    btn.disabled=true;btn.textContent='Preparing…';
+    const start=await api('/api/admin/session/recap/start',{sessionId:sid});
+    const total=start.total||0;
+    if(!total){ alert('Nothing to send.'); return; }
+    let done=total-(start.pending||0),guard=0;
+    btn.textContent='Sending '+done+'/'+total+'…';
+    while(guard++<1000){
+      const r=await api('/api/admin/session/recap/process',{sessionId:sid,limit:6});
+      done=total-r.remaining;
+      btn.textContent='Sending '+done+'/'+total+'…';
+      if(r.remaining<=0)break;
+    }
+    const fin=await api('/api/admin/session/recap/status?sessionId='+encodeURIComponent(sid),null,'GET');
+    alert('Recap emailed — '+fin.sent+' sent'+(fin.failed?(', '+fin.failed+' failed'):'')+'.');
+  }catch(e){ alert(e.message||'Failed'); }
+  finally{ btn.disabled=false;btn.textContent=orig; }
 };
 window.loadSession=(sid)=>{
   SID=sid;ATOK=null;localStorage.setItem('rt_admin_sid',sid);localStorage.removeItem('rt_admin_token');

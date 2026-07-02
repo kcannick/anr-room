@@ -606,6 +606,49 @@ async function cardScoreData(participant) {
   };
 }
 
+// Upload a PNG to Vercel Blob and return its public URL. Deterministic path (re-runnable).
+async function uploadPng(pathname, buf) {
+  const { put } = require('@vercel/blob');
+  const r = await put(pathname, buf, {
+    access: 'public', contentType: 'image/png', addRandomSuffix: false, allowOverwrite: true,
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
+  return r.url;
+}
+
+// Recap email — a light, email-safe HTML wrapper around the four graphics (hosted URLs).
+const GIVEAWAY_PRIZE_LABEL = shareCards.PRIZE;
+function recapEmailText(d, sessionName) {
+  return `Your A&R Room recap — ${sessionName}\n\nYou ranked #${d.rank} of ${d.total}. `
+    + `Post your Score Card, the Top 8 Songs and Top 8 A&Rs as one Instagram carousel and add `
+    + `@Makinit4indies as a collaborator to double your reach. Play again at ANR.makinitmag.com.`;
+}
+function recapEmailHtml({ name, sessionName, rank, total, cards }) {
+  const first = (name || 'A&R').split(/\s+/)[0];
+  const imgs = [
+    ['Your Score Card', cards.score],
+    ['Top 8 Songs', cards.songs],
+    ['Top 8 A&Rs', cards.ars],
+    [`Win ${GIVEAWAY_PRIZE_LABEL}`, cards.promo],
+  ].filter(([, u]) => !!u);
+  const block = imgs.map(([alt, u]) =>
+    `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="${escapeHtml(alt)}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
+  ).join('');
+  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
+    <div style="max-width:360px;margin:0 auto;text-align:center">
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">The A&amp;R Room</div>
+      <h1 style="font-size:22px;margin:8px 0 4px">Nice ears, ${escapeHtml(first)}.</h1>
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">You ranked <b style="color:#4bb749">#${rank}</b> of ${total} in <b style="color:#f3f0fb">${escapeHtml(sessionName)}</b>. Here's your recap to share.</p>
+      ${block}
+      <div style="background:#171328;border:1px solid #6d5fe0;border-radius:14px;padding:16px;text-align:left;margin-top:6px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">📲 Post it — and double your reach</div>
+        <div style="font-size:13px;line-height:1.6;color:#a9a2c9">Post all four as one Instagram <b>carousel</b>. When you upload, add <b style="color:#f3f0fb">@Makinit4indies</b> as a <b>collaborator</b> — it shows on both feeds. Tag us + use <b>#TheARoom</b>.</div>
+      </div>
+      <p style="font-size:13px;color:#6f688f;margin:22px 0 0">Play again → <a href="https://anr.makinitmag.com" style="color:#4bb749;text-decoration:none">ANR.makinitmag.com</a></p>
+    </div>
+  </div>`;
+}
+
 async function adminState(session, opts = {}) {
   // Hosts (non-admin owners) see engagement — names, points, counts, socials — but NEVER
   // contact PII (email/phone). Only the platform admin (Makin' It) sees emails.
@@ -2297,6 +2340,78 @@ async function handleApi(req, res, url) {
       console.error('[card] render failed:', e.message);
       return bad(res, 'Card render failed', 500);
     }
+  }
+
+  // ---- Post-session recap email carousel (admin/owner). Renders the shared cards once, then
+  // emails each voter their Score Card + the Top 8s + Promo. Processed in chunks off the
+  // request path (client loops /process); requires Vercel Blob to host the images. ----
+  if (p === '/api/admin/session/recap/status' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId');
+    if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
+    const one = async (sql, args) => (await db.get(sql, args)).c;
+    const eligibleSql = `SELECT COUNT(*) AS c FROM participants p WHERE p.session_id = ? AND p.verified = 1 AND p.email IS NOT NULL AND p.email <> '' AND EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = p.id)`;
+    const eligible = await one(eligibleSql, [sessionId]);
+    const total = await one('SELECT COUNT(*) AS c FROM recap_emails WHERE session_id = ?', [sessionId]);
+    const sent = await one("SELECT COUNT(*) AS c FROM recap_emails WHERE session_id = ? AND status = 'sent'", [sessionId]);
+    const failed = await one("SELECT COUNT(*) AS c FROM recap_emails WHERE session_id = ? AND status = 'failed'", [sessionId]);
+    return send(res, 200, { configured: !!process.env.BLOB_READ_WRITE_TOKEN, eligible, total, sent, failed, pending: total - sent - failed });
+  }
+
+  // Start (or refresh) a recap job: render + host the shared cards, enqueue eligible voters.
+  if (p === '/api/admin/session/recap/start' && method === 'POST') {
+    const { sessionId } = await readBody(req);
+    if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return bad(res, 'Image hosting not configured (set BLOB_READ_WRITE_TOKEN)', 409);
+    const session = await db.get('SELECT id, name, poll_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
+    if (!session) return bad(res, 'Session not found', 404);
+    try {
+      const arsUrl = await uploadPng(`recap/${sessionId}/ars.png`, await shareCards.renderPng('ars', { list: await cardArsData({ sessionId }), session: session.name }));
+      let songsUrl = null;
+      if (session.poll_type !== 'binary') {
+        const songs = await cardSongsData(sessionId);
+        if (songs.length) songsUrl = await uploadPng(`recap/${sessionId}/songs.png`, await shareCards.renderPng('songs', { list: songs, session: session.name }));
+      }
+      const promoUrl = await uploadPng(`recap/${sessionId}/promo.png`, await shareCards.renderPng('promo', {}));
+      await db.run('INSERT INTO recap_jobs (session_id, ars_url, songs_url, promo_url, created_at) VALUES (?,?,?,?,?) ON CONFLICT (session_id) DO UPDATE SET ars_url = excluded.ars_url, songs_url = excluded.songs_url, promo_url = excluded.promo_url',
+        [sessionId, arsUrl, songsUrl, promoUrl, now()]);
+      const voters = await db.all(`SELECT p.id, p.email FROM participants p WHERE p.session_id = ? AND p.verified = 1 AND p.email IS NOT NULL AND p.email <> '' AND EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = p.id)`, [sessionId]);
+      for (const v of voters) {
+        await db.run("INSERT INTO recap_emails (id, session_id, participant_id, email, status, created_at) VALUES (?,?,?,?, 'pending', ?) ON CONFLICT (session_id, participant_id) DO NOTHING", [id(12), sessionId, v.id, v.email, now()]);
+      }
+      const total = (await db.get('SELECT COUNT(*) AS c FROM recap_emails WHERE session_id = ?', [sessionId])).c;
+      const pending = (await db.get("SELECT COUNT(*) AS c FROM recap_emails WHERE session_id = ? AND status = 'pending'", [sessionId])).c;
+      return send(res, 200, { ok: true, total, pending });
+    } catch (e) {
+      console.error('[recap] start failed:', e.message);
+      return bad(res, 'Recap setup failed: ' + e.message, 500);
+    }
+  }
+
+  // Process a chunk of pending recap emails (render+host each score card, send). Idempotent.
+  if (p === '/api/admin/session/recap/process' && method === 'POST') {
+    const { sessionId, limit } = await readBody(req);
+    if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
+    const job = await db.get('SELECT * FROM recap_jobs WHERE session_id = ?', [sessionId]);
+    if (!job) return bad(res, 'No recap job — start it first', 400);
+    const session = await db.get('SELECT name FROM sessions WHERE id = ?', [sessionId]);
+    const n = Math.min(Math.max(parseInt(limit, 10) || 6, 1), 20);
+    const batch = await db.all("SELECT * FROM recap_emails WHERE session_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT ?", [sessionId, n]);
+    let sent = 0, failed = 0;
+    for (const row of batch) {
+      try {
+        const participant = await db.get('SELECT * FROM participants WHERE id = ?', [row.participant_id]);
+        const d = await cardScoreData(participant);
+        const scoreUrl = await uploadPng(`recap/${sessionId}/score-${row.participant_id}.png`, await shareCards.renderPng('score', d));
+        const html = recapEmailHtml({ name: d.name, sessionName: session.name, rank: d.rank, total: d.total, cards: { score: scoreUrl, songs: job.songs_url, ars: job.ars_url, promo: job.promo_url } });
+        const r = await sendEmail(row.email, `Your A&R Room recap — ${session.name}`, html, recapEmailText(d, session.name));
+        if (r.ok) { await db.run("UPDATE recap_emails SET status = 'sent', score_url = ?, sent_at = ?, error = NULL WHERE id = ?", [scoreUrl, now(), row.id]); sent++; }
+        else { await db.run("UPDATE recap_emails SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
+      } catch (e) {
+        await db.run("UPDATE recap_emails SET status = 'failed', error = ? WHERE id = ?", [(e.message || 'error').slice(0, 300), row.id]); failed++;
+      }
+    }
+    const remaining = (await db.get("SELECT COUNT(*) AS c FROM recap_emails WHERE session_id = ? AND status = 'pending'", [sessionId])).c;
+    return send(res, 200, { ok: true, sent, failed, remaining });
   }
 
   // Serve a banner image by id (used by <img src>). Public — banners are shown to players.
