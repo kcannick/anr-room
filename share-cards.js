@@ -154,7 +154,7 @@ function bodyScore(d) {
   ]);
   const stats = [];
   if (d.bullseyes != null) stats.push(stat(d.bullseyes, 'Bullseyes', false));
-  if (d.bestRead != null) stats.push(stat(Number(d.bestRead).toFixed(1), 'Best read', false));
+  if (d.rounds != null) stats.push(stat(d.rounds, 'Rounds', false));
   if (d.points != null) stats.push(stat((d.points || 0).toLocaleString(), 'Points', true));
   return col({ alignItems: 'center' }, [
     avatar(d.name, 210),

@@ -26,6 +26,7 @@ const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
 const { sendSms, PROVIDER: SMS_PROVIDER } = require('./sms');
 const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes } = require('./scoring');
+const shareCards = require('./share-cards');
 
 const PORT = process.env.PORT || 3000;
 const now = () => Date.now();
@@ -544,6 +545,65 @@ async function homeSeriesBoard(seriesId, limit = 5) {
      GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url ORDER BY pts DESC, u.name ASC LIMIT ?`,
     [seriesId, limit]);
   return rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: first(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.pts) || 0 }));
+}
+
+// ---- share-card data assembly (feeds share-cards.js) ----
+// Names + Instagram are public promotional data (display name is already public per the PII
+// rule; email/phone never appear here). Qualified A&Rs only (complete profile, not blocked).
+const igClean = (s) => (s || '').toString().trim().replace(/^@+/, '').replace(/[^A-Za-z0-9_.]/g, '') || null;
+
+// Top 8 A&Rs. Session scope = that night's top participants (matches the overlay board — all
+// verified players). Series scope = the $500 competition board (QUALIFIED only: complete
+// profile, not blocked), summed across the series' tagged sessions.
+async function cardArsData({ sessionId, seriesId }, limit = 8) {
+  if (sessionId) {
+    const rows = await db.all(
+      `SELECT p.name AS pname, u.name AS uname, u.instagram, p.total_points AS pts
+         FROM participants p LEFT JOIN users u ON p.user_id = u.uid
+        WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+        ORDER BY pts DESC, p.created_at ASC LIMIT ?`, [sessionId, limit]);
+    return rows.map(r => ({ name: r.uname || r.pname || 'A&R', ig: igClean(r.instagram), points: Number(r.pts) || 0 }));
+  }
+  const rows = await db.all(
+    `SELECT u.name, u.instagram, SUM(v.points) AS pts
+       FROM votes v
+       JOIN participants p ON v.participant_id = p.id
+       JOIN users u        ON p.user_id = u.uid
+       JOIN rounds r       ON v.round_id = r.id
+       JOIN sessions s     ON r.session_id = s.id
+      WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1 AND u.blocked = 0
+      GROUP BY u.uid, u.name, u.instagram
+      ORDER BY pts DESC, u.name ASC LIMIT ?`, [seriesId, limit]);
+  return rows.map(r => ({ name: r.name || 'A&R', ig: igClean(r.instagram), points: Number(r.pts) || 0 }));
+}
+
+// Top 8 songs by room average — RATING sessions only (binary/Versus excluded; they have a
+// split, not a 0–9 average — see the parked Versus-infographic idea). IG parsed from the note.
+async function cardSongsData(sessionId, limit = 8) {
+  const rows = await db.all(
+    `SELECT song_title, song_artist, song_note, room_average FROM rounds
+      WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
+      ORDER BY room_average DESC, idx ASC LIMIT ?`, [sessionId, limit]);
+  return rows.map(r => {
+    const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+    return { title: r.song_title || '—', artist: r.song_artist || '', ig: m ? m[1] : null, score: Number(r.room_average) };
+  });
+}
+
+// A participant's personal score card for their session.
+async function cardScoreData(participant) {
+  const sessionId = participant.session_id;
+  const session = await db.get('SELECT name FROM sessions WHERE id = ?', [sessionId]);
+  const u = participant.user_id ? await db.get('SELECT name, instagram FROM users WHERE uid = ?', [participant.user_id]) : null;
+  const pts = Number(participant.total_points) || 0;
+  const rank = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1 AND total_points > ?', [sessionId, pts])).c + 1;
+  const total = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
+  const bullseyes = (await db.get("SELECT COUNT(*) AS c FROM votes WHERE participant_id = ? AND tier = 'bullseye'", [participant.id])).c;
+  const rounds = (await db.get('SELECT COUNT(*) AS c FROM votes WHERE participant_id = ? AND points IS NOT NULL', [participant.id])).c;
+  return {
+    name: (u && u.name) || participant.name || 'A&R', ig: igClean(u && u.instagram),
+    rank, total, bullseyes, rounds, points: pts, session: session ? session.name : null,
+  };
 }
 
 async function adminState(session, opts = {}) {
@@ -2190,6 +2250,53 @@ async function handleApi(req, res, url) {
       [bid, ownerSession, (label || '').trim() || null, image_data, (link_url || '').trim() || null, now()]
     );
     return send(res, 200, { bannerId: bid });
+  }
+
+  // ---- Shareable report graphics (PNG, 1080×1440). Rendered on demand from live data. ----
+  // score = personal (player token); songs/ars/promo = public promo (display name + IG + points,
+  // no email/phone). Binary/Versus sessions are excluded from Top 8 Songs.
+  if (p.startsWith('/api/card/') && method === 'GET') {
+    const kind = p.slice('/api/card/'.length);
+    const numbers = url.searchParams.get('numbers') === '1';
+    const sid = url.searchParams.get('s');
+    const seriesId = url.searchParams.get('series');
+    const sendPng = (buf, cache) => { res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': cache }); return res.end(buf); };
+    try {
+      if (kind === 'promo') {
+        return sendPng(await shareCards.renderPng('promo', {}), 'public, max-age=86400');
+      }
+      if (kind === 'songs') {
+        const session = sid ? await db.get('SELECT id, name, poll_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]) : null;
+        if (!session) return bad(res, 'Session not found', 404);
+        if (session.poll_type === 'binary') return bad(res, 'Top Songs is not available for Versus sessions', 409);
+        const list = await cardSongsData(sid);
+        if (!list.length) return bad(res, 'No rated songs yet', 404);
+        return sendPng(await shareCards.renderPng('songs', { list, session: session.name, showNumbers: numbers }), 'public, max-age=300');
+      }
+      if (kind === 'ars') {
+        let data;
+        if (seriesId) {
+          const ser = await db.get('SELECT id, title FROM series WHERE id = ?', [seriesId]);
+          if (!ser) return bad(res, 'Series not found', 404);
+          data = { list: await cardArsData({ seriesId }), scope: ser.title, showNumbers: numbers };
+        } else {
+          const session = sid ? await db.get('SELECT id, name FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]) : null;
+          if (!session) return bad(res, 'Session not found', 404);
+          data = { list: await cardArsData({ sessionId: sid }), session: session.name, showNumbers: numbers };
+        }
+        if (!data.list.length) return bad(res, 'No ranked A&Rs yet', 404);
+        return sendPng(await shareCards.renderPng('ars', data), 'public, max-age=300');
+      }
+      if (kind === 'score') {
+        const participant = await participantFromReq(req);
+        if (!participant) return bad(res, 'Not logged in', 401);
+        return sendPng(await shareCards.renderPng('score', await cardScoreData(participant)), 'private, max-age=120');
+      }
+      return bad(res, 'Unknown card', 404);
+    } catch (e) {
+      console.error('[card] render failed:', e.message);
+      return bad(res, 'Card render failed', 500);
+    }
   }
 
   // Serve a banner image by id (used by <img src>). Public — banners are shown to players.

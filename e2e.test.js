@@ -1007,6 +1007,24 @@ async function call(path, body, method='POST', headers={}) {
   const adminBc = await call('/api/admin/session/broadcast', { sessionId: HS, text: 'admin msg' }, 'POST', ADMINH);
   ok('admin can broadcast regardless of perms', adminBc.status === 200, JSON.stringify(adminBc.d));
 
+  console.log('\n— shareable report graphics (PNG endpoints) —');
+  const img = async (path, headers = {}) => { const r = await fetch(base + path, { headers }); return { status: r.status, type: r.headers.get('content-type') || '' }; };
+  const isPng = (x) => x.status === 200 && /image\/png/.test(x.type);
+  const promoImg = await img('/api/card/promo');
+  ok('promo card renders a PNG', isPng(promoImg), JSON.stringify(promoImg));
+  const songsImg = await img('/api/card/songs?s=' + SID);
+  ok('songs card renders a PNG for a rating session', isPng(songsImg), JSON.stringify(songsImg));
+  const songsBin = await img('/api/card/songs?s=' + BSID);
+  ok('songs card is excluded for a Versus session (409)', songsBin.status === 409, 'got ' + songsBin.status);
+  const songsBad = await img('/api/card/songs?s=nope');
+  ok('songs card 404s for an unknown session', songsBad.status === 404, 'got ' + songsBad.status);
+  const arsImg = await img('/api/card/ars?s=' + SID);
+  ok('A&Rs card renders a PNG for a session', isPng(arsImg), JSON.stringify(arsImg));
+  const scoreNoAuth = await img('/api/card/score');
+  ok('score card requires a player token (401)', scoreNoAuth.status === 401, 'got ' + scoreNoAuth.status);
+  const scoreImg = await img('/api/card/score', { 'X-Player-Token': t1 });
+  ok('score card renders a PNG for the player', isPng(scoreImg), JSON.stringify(scoreImg));
+
   console.log('\n— per-host giveaway flag (admin-set; gates the $500 hook; needs a series tag) —');
   // A participant on the host's session, to read the play-state giveaway context.
   const gjr = await call('/api/join/request', { sessionId: HS, email: 'giv@fan.com' });
