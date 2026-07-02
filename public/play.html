@@ -155,6 +155,7 @@
   @keyframes gradePop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
   .grade-label{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);margin-top:2px}
   .recap-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:18px;text-align:left}
+  .dl-row{display:flex;gap:10px;margin-top:10px}
   .rcell{background:#0a0814;border:1px solid var(--line);border-radius:13px;padding:13px}
   .rcell .k{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}
   .rcell .v{font-family:"Space Mono",monospace;font-size:26px;font-weight:700;margin-top:3px}
@@ -468,6 +469,10 @@
         <div class="reveal-row" id="recapBestRow"><span>Your best round</span><strong id="recapBest" class="mono">—</strong></div>
       </div>
       <button class="btn" id="btnShare" style="margin-top:18px">Share my card</button>
+      <div class="dl-row">
+        <button class="btn ghost" id="btnDlArs" style="flex:1">Top 8 A&amp;Rs</button>
+        <button class="btn ghost" id="btnDlSongs" style="flex:1">Top 8 Songs</button>
+      </div>
       <p class="faint" style="text-align:center;font-size:13px;margin:14px 0 0">Thanks for sitting in. 🎧</p>
     </div>
   </section>
@@ -1259,7 +1264,7 @@ function render(st){
   // Live broadcast from the host — pop once per (at) timestamp.
   applyBroadcast(st.broadcast);
 
-  if(st.session.status==='completed'){renderRecap(st);lastRecap=st.recap;show('ended');closesAt=null;return;}
+  if(st.session.status==='completed'){renderRecap(st);lastRecap=st.recap;$('#btnDlSongs').classList.toggle('hide', pollType==='binary');show('ended');closesAt=null;return;}
 
   const newPhase=st.phase;
   if(st.phase==='waiting'){
@@ -1568,6 +1573,22 @@ function renderRecapGraphic(r){
   return c;
 }
 function canvasToBlob(c){return new Promise(res=>c.toBlob(res,'image/png',0.92));}
+
+// Download a session share graphic (Top 8 A&Rs / Songs). Public PNG endpoint; blob-download
+// so we can show a friendly message when there's no data yet.
+async function dlSessionCard(kind, btn){
+  const orig=btn.textContent; btn.disabled=true; btn.textContent='…';
+  try{
+    const r=await fetch('/api/card/'+kind+'?s='+encodeURIComponent(SID));
+    if(!r.ok){ let m='Not available yet'; try{const e=await r.json();if(e.error)m=e.error;}catch(_){} alert(m); return; }
+    const blob=await r.blob(), u=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=u; a.download=(kind==='ars'?'top-8-ars':'top-8-songs')+'.png';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),2000);
+  }catch(e){ alert('Download failed'); }
+  finally{ btn.disabled=false; btn.textContent=orig; }
+}
+$('#btnDlArs')&&($('#btnDlArs').onclick=e=>dlSessionCard('ars',e.currentTarget));
+$('#btnDlSongs')&&($('#btnDlSongs').onclick=e=>dlSessionCard('songs',e.currentTarget));
 
 $('#btnShare')&&($('#btnShare').onclick=async()=>{
   if(!lastRecap)return;

@@ -95,6 +95,8 @@
   .attr.series{color:var(--signal);border-color:var(--signal-deep);background:rgba(75,183,73,.07)}
   .attr.series.none{color:var(--ink-faint);border-color:var(--line);background:#140f24}
   .sc-actions{display:flex;gap:7px;margin-top:13px;padding-top:12px;border-top:1px solid var(--line);align-items:center}
+  .sc-actions.gfx{margin-top:9px;padding-top:9px;border-top-style:dashed;flex-wrap:wrap}
+  .gfx-lbl{font-size:11px;color:var(--ink-faint);letter-spacing:.04em;margin-right:2px}
   .sc-actions .spacer{flex:1}
   .grouplbl{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);margin:14px 0 8px}
   .pill.completed{border-color:var(--line);color:var(--ink-faint)}
@@ -722,6 +724,11 @@ function sessionCardHtml(s){
       <span class="spacer"></span>
       <button class="btn danger sm" onclick="deleteSession('${s.id}','${esc(s.name).replace(/'/g,"\\'")}')">Delete</button>
     </div>
+    ${s.status!=='upcoming'?`<div class="sc-actions gfx">
+      <span class="gfx-lbl">Share graphics ↓</span>
+      <button class="btn ghost sm" onclick="dlCard('ars','${s.id}',this)">Top 8 A&amp;Rs</button>
+      ${s.poll_type==='binary'?'':`<button class="btn ghost sm" onclick="dlCard('songs','${s.id}',this)">Top 8 Songs</button>`}
+    </div>`:''}
   </div>`;
 }
 async function openPicker(){
@@ -745,6 +752,19 @@ async function openPicker(){
     box.innerHTML=html;
   }catch(e){$('#pickerList').innerHTML='<div class="err">'+e.message+'</div>';}
 }
+// Download a share graphic (Top 8 A&Rs / Top 8 Songs) for a session. Public PNG endpoints;
+// fetch as a blob so we can surface a friendly message when there's no data yet.
+window.dlCard=async(kind,sid,btn)=>{
+  const label=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='…';}
+  try{
+    const r=await fetch('/api/card/'+kind+'?s='+encodeURIComponent(sid));
+    if(!r.ok){ let m='Could not generate ('+r.status+')'; try{const e=await r.json();if(e.error)m=e.error;}catch(_){} alert(m); return; }
+    const blob=await r.blob(), url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download=(kind==='ars'?'top-8-ars':'top-8-songs')+'-'+sid+'.png';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),2000);
+  }catch(e){ alert('Download failed: '+e.message); }
+  finally{ if(btn){btn.disabled=false;btn.textContent=label;} }
+};
 window.loadSession=(sid)=>{
   SID=sid;ATOK=null;localStorage.setItem('rt_admin_sid',sid);localStorage.removeItem('rt_admin_token');
   boot();
