@@ -35,22 +35,17 @@
   .card .glow{position:absolute;inset:0;pointer-events:none;
     background:radial-gradient(60% 40% at 85% 12%, rgba(109,95,224,.20), transparent 60%),
                radial-gradient(50% 34% at 8% 42%, rgba(75,183,73,.12), transparent 60%)}
-  .c-head{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:2}
-  .c-brand{display:flex;align-items:center;gap:18px}
-  .c-brand img.mk{width:74px;height:74px;object-fit:contain}
-  .c-brand .bt{font-weight:900;font-size:30px;letter-spacing:-.02em;line-height:1}
-  .c-brand .bt span{color:var(--signal)}
-  .c-brand .bs{font-family:"Space Mono",monospace;font-size:14px;letter-spacing:.28em;color:var(--ink-faint);text-transform:uppercase;margin-top:6px}
+  /* header hierarchy: eyebrow "The A&R Room" -> big card title -> session subhead.
+     (No Makin' It mark — the website + IG in the footer carry that.) */
+  .c-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;position:relative;z-index:2}
+  .c-eyebrow{font-family:"Space Mono",monospace;font-size:21px;font-weight:700;letter-spacing:.26em;text-transform:uppercase;color:var(--ink-dim)}
+  .c-eyebrow span{color:var(--signal)}
+  .c-h1{margin:16px 0 0;font-size:78px;font-weight:900;letter-spacing:-.02em;line-height:1}
+  .c-sub{margin-top:18px;display:flex;align-items:center;gap:12px;font-size:27px;color:var(--ink-dim)}
+  .c-sub .dot{width:9px;height:9px;border-radius:50%;background:var(--signal);flex:none}
+  .c-sub b{color:var(--ink);font-weight:700}
   .c-win{font-family:"Space Mono",monospace;font-weight:700;font-size:17px;letter-spacing:.06em;color:#0d0b16;background:var(--gold);
-    padding:11px 20px;border-radius:999px;box-shadow:0 6px 20px rgba(245,197,24,.35)}
-  .c-title{position:relative;z-index:2;margin-top:30px}
-  .c-title .kicker{font-family:"Space Mono",monospace;font-size:18px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--accent)}
-  .c-title h1{margin:10px 0 0;font-size:58px;font-weight:900;letter-spacing:-.02em;line-height:1.02}
-  /* session/scope tag under the title — session name always present */
-  .c-sess{margin-top:14px;display:inline-flex;align-items:center;gap:10px;background:rgba(23,19,40,.7);border:1px solid var(--line);
-    border-radius:999px;padding:9px 20px;font-size:22px;color:var(--ink-dim)}
-  .c-sess b{color:var(--ink);font-weight:700}
-  .c-sess .dot{width:7px;height:7px;border-radius:50%;background:var(--signal);flex:none}
+    padding:11px 20px;border-radius:999px;box-shadow:0 6px 20px rgba(245,197,24,.35);flex:none}
   .c-body{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:center;padding:16px 0}
   .c-foot{position:relative;z-index:2;margin:0 -68px;padding:34px 68px 40px;
     background:linear-gradient(180deg, rgba(23,19,40,0), rgba(12,10,22,.9));
@@ -137,10 +132,9 @@
       <div class="thumb"><div class="card">
         <div class="glow"></div>
         <div class="c-head">
-          <div class="c-brand"><img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'"><div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div></div>
+          <div><div class="c-eyebrow">The A&amp;R <span>Room</span></div><h1 class="c-h1">Score Card</h1><div class="c-sub"><span class="dot"></span><b>ATL Live Review</b> · Jul 2</div></div>
           <div class="c-win">WIN $500</div>
         </div>
-        <div class="c-title"><div class="kicker">My Result</div><div class="c-sess"><span class="dot"></span><b>ATL Live Review</b> · Jul 2</div></div>
         <div class="c-body">
           <div class="sc-hero">
             <div class="av sc-av">MJ</div>
@@ -165,10 +159,9 @@
       <div class="thumb"><div class="card">
         <div class="glow"></div>
         <div class="c-head">
-          <div class="c-brand"><img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'"><div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div></div>
+          <div><div class="c-eyebrow">The A&amp;R <span>Room</span></div><h1 class="c-h1">Top 8 A&amp;Rs</h1><div class="c-sub"><span class="dot"></span><b>Summer Series</b> · Jun–Aug</div></div>
           <div class="c-win">WIN $500</div>
         </div>
-        <div class="c-title"><div class="kicker">Top 8 A&amp;Rs</div><div class="c-sess"><span class="dot"></span><b>Summer Series</b> · Jun–Aug</div></div>
         <div class="c-body">
           <div class="rows rankonly">
             <div class="row top1"><div class="rk">🥇</div><div class="av rav">DL</div><div class="who"><div class="nm">Dre Lucas</div><div class="ig">@drelucas</div></div><div class="num">4,910</div></div>
@@ -191,10 +184,9 @@
       <div class="thumb"><div class="card">
         <div class="glow"></div>
         <div class="c-head">
-          <div class="c-brand"><img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'"><div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div></div>
+          <div><div class="c-eyebrow">The A&amp;R <span>Room</span></div><h1 class="c-h1">Top 8 Songs</h1><div class="c-sub"><span class="dot"></span><b>ATL Live Review</b> · Jul 2</div></div>
           <div class="c-win">WIN $500</div>
         </div>
-        <div class="c-title"><div class="kicker">Top 8 Songs</div><div class="c-sess"><span class="dot"></span><b>ATL Live Review</b> · Jul 2</div></div>
         <div class="c-body">
           <div class="rows rankonly">
             <div class="row top1"><div class="rk">🥇</div><div class="who"><div class="nm">Nightcrawler</div><div class="art">Sasha Vibe · <span>@sashavibe</span></div></div><div class="num">8.7</div></div>
@@ -217,12 +209,12 @@
       <div class="thumb"><div class="card">
         <div class="glow"></div>
         <div class="c-head">
-          <div class="c-brand"><img class="mk" src="/mark-color.png" alt="" onerror="this.style.display='none'"><div><div class="bt">The A&amp;R <span>Room</span></div><div class="bs">Makin' It</div></div></div>
+          <div><div class="c-eyebrow">The A&amp;R <span>Room</span></div><h1 class="c-h1">Become an A&amp;R</h1><div class="c-sub"><span class="dot"></span>Free to play</div></div>
           <div class="c-win">WIN $500</div>
         </div>
         <div class="c-body">
           <div class="pr">
-            <div class="lead">Rate the music.<br>Read the room.<br><b>Win $500.</b></div>
+            <div class="lead">Rate the music.<br>Read the room.</div>
             <div class="cash">$500</div>
             <div class="cashsub">Top A&amp;Rs every month</div>
             <div class="steps">
