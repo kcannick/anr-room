@@ -59,8 +59,8 @@
   #vsRow .sartist{font-size:22px;color:var(--ink-dim);margin-left:32px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #vsRow .vsmid{color:var(--cool);font-weight:800;font-size:34px;flex:none}
 
-  /* ---- LEADERBOARD: right rail ---- */
-  #board{position:absolute;top:60px;right:60px;width:440px;padding:28px 30px}
+  /* ---- LEADERBOARD: transient, top-left (the QR takes the top-right rail) ---- */
+  #board{position:absolute;top:60px;left:60px;width:440px;padding:28px 30px}
   #board h3{font-size:22px;font-weight:800;letter-spacing:.02em;display:flex;align-items:center;gap:10px;margin-bottom:16px}
   #board h3 .dotlive{width:12px;height:12px;border-radius:50%;background:var(--signal);box-shadow:0 0 0 0 rgba(75,183,73,.7);animation:pulse 2s infinite}
   .lbrow{display:flex;align-items:center;gap:14px;padding:11px 0;border-top:1px solid var(--line)}
@@ -115,8 +115,9 @@
   #vHeader .vh-live{display:flex;align-items:center;gap:12px;font-family:"Space Mono",monospace;font-weight:700;font-size:24px;color:var(--hot);
     background:rgba(255,93,108,.14);border:1px solid rgba(255,93,108,.5);border-radius:999px;padding:8px 18px}
   #vHeader .vh-live .dot{width:14px;height:14px;border-radius:50%;background:var(--hot);box-shadow:0 0 0 0 rgba(255,93,108,.7);animation:pulse 2s infinite}
-  /* persistent join QR, upper-right, inside the live area (always scannable) */
-  #vQr{position:absolute;right:120px;top:354px;width:288px;padding:22px 22px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+  /* persistent join QR — top-right rail on horizontal; upper-right (safe zone) on vertical */
+  #vQr{position:absolute;top:60px;right:60px;width:300px;padding:22px 22px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+  body.vertical #vQr{top:354px;right:120px;width:288px}
   #vQr .qbox{width:236px;height:236px;background:#fff;border-radius:16px;padding:16px;border:3px solid var(--gold)}
   #vQr .qbox img{width:100%;height:100%;display:block}
   #vQr .label{font-weight:800;font-size:31px;color:var(--gold);line-height:1.08}
@@ -263,12 +264,9 @@ document.documentElement.style.setProperty('--panel','rgba(16,12,26,'+PANEL_A+')
 // zones, shows a top brand + a persistent "Scan to Win $500" join QR, and turns the
 // leaderboard into a transient pop that rides the winner reveal.
 const VERTICAL=/^v/.test((getP('orientation')||getP('o')||'').toLowerCase());
-const SHOW_QR=boolP('qr',true); // vertical join QR ("Scan to Win $500"); default on
-if(VERTICAL){
-  document.body.classList.add('vertical');
-  $('#vHeader').classList.remove('hide');
-  if(SID && SHOW_QR){ $('#vQrImg').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID); $('#vQr').classList.remove('hide'); }
-}
+const SHOW_QR=boolP('qr',true); // join QR ("Scan to Win $500"); default on, BOTH orientations
+if(VERTICAL){ document.body.classList.add('vertical'); $('#vHeader').classList.remove('hide'); }
+if(SID && SHOW_QR){ $('#vQrImg').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID); $('#vQr').classList.remove('hide'); }
 
 // Fit the stage (1920×1080, or 1080×1920 vertical) into whatever the OBS source is sized to.
 function fit(){
@@ -282,9 +280,11 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 const fmt1=n=>n==null?'—':(Math.round(n*10)/10).toFixed(1);
 
 let lastBcAt=0, bcVisibleUntil=0, ovClosesAt=null;
-// vertical: the leaderboard is transient — it pops with a fresh winner reveal, then hides.
+// The leaderboard is transient (both orientations): it pops with a fresh winner reveal,
+// holds for ?leader_secs= (default 10, clamped 2..120), then hides.
 let boardHideAt=0, lastResultKey=null;
-const BOARD_HOLD_MS=10000;
+const LB_SECS=(()=>{ const v=parseFloat(getP('leader_secs')); return (isFinite(v)&&v>0)?Math.min(120,Math.max(2,v)):10; })();
+const BOARD_HOLD_MS=LB_SECS*1000;
 // Vote countdown on the round card. Ticks every second off the round's closes_at
 // (same source the player uses); hidden when ovClosesAt is null (timer off / not voting).
 function paintTimer(){
@@ -297,8 +297,8 @@ function paintTimer(){
   el.classList.remove('hide');
 }
 setInterval(paintTimer,1000);
-// vertical: hide the transient leaderboard on time even if the next poll is far off (realtime 15s heartbeat).
-setInterval(()=>{ if(VERTICAL && boardHideAt && Date.now()>=boardHideAt && !$('#board').classList.contains('hide')) $('#board').classList.add('hide'); },1000);
+// hide the transient leaderboard on time even if the next poll is far off (realtime 15s heartbeat).
+setInterval(()=>{ if(boardHideAt && Date.now()>=boardHideAt && !$('#board').classList.contains('hide')) $('#board').classList.add('hide'); },1000);
 
 async function poll(){
   if(!SID){$('#idleT').textContent='No session';$('#idleS').textContent='Add ?s=SESSION_ID to the overlay URL';return;}
@@ -362,17 +362,15 @@ function render(st){
     $('#result').classList.remove('hide');
   }else $('#result').classList.add('hide');
 
-  // --- leaderboard --- horizontal: always on (rows from ?leader_board=). vertical: transient,
-  // pops with a FRESH winner reveal and auto-hides after BOARD_HOLD_MS so it never clutters
-  // the rating rounds. (Placed after the result block so it can read showingResult.)
-  const rows = LB_N>0 ? (VERTICAL?Math.max(5,Math.min(8,LB_N)):LB_N) : 0;
+  // --- leaderboard (both orientations): TRANSIENT — pops with a FRESH winner reveal and
+  // auto-hides after BOARD_HOLD_MS (?leader_secs=), so it never clutters the rating rounds.
+  // (Placed after the result block so it can read showingResult.)
+  const rows = LB_N;
   let wantBoard = showBoard && rows>0 && st.leaderboard && st.leaderboard.length;
-  if(VERTICAL){
-    const rKey = showingResult ? (result.winner+'|'+(result.song_title||'')) : null;
-    if(rKey && rKey!==lastResultKey){ lastResultKey=rKey; boardHideAt=Date.now()+BOARD_HOLD_MS; }
-    if(!showingResult) lastResultKey=null;
-    wantBoard = wantBoard && Date.now()<boardHideAt;
-  }
+  const rKey = showingResult ? (result.winner+'|'+(result.song_title||'')) : null;
+  if(rKey && rKey!==lastResultKey){ lastResultKey=rKey; boardHideAt=Date.now()+BOARD_HOLD_MS; }
+  if(!showingResult) lastResultKey=null;
+  wantBoard = wantBoard && Date.now()<boardHideAt;
   if(wantBoard){
     $('#lbRows').innerHTML=st.leaderboard.slice(0,rows).map(r=>`
       <div class="lbrow ${r.rank<=3?('top'+r.rank):''}">

@@ -37,6 +37,9 @@
   .ob-row span{display:flex;flex-direction:column;line-height:1.25}
   .ob-row b{font-size:13px} .ob-row small{color:var(--ink-faint);font-size:11px}
   .ob-row.dis{opacity:.45;pointer-events:none}
+  .ob-nums{margin-left:auto;display:flex;align-items:center;gap:5px}
+  .ob-nums input{width:48px}
+  .ob-nums small{color:var(--ink-faint);font-size:10px}
   .ob-preview{border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:12px;
     background:radial-gradient(120% 80% at 50% 0%, #2a1f57, #0d0b16 60%)}
   .ob-preview iframe{border:0;background:transparent;display:block}
@@ -568,9 +571,9 @@
         </div>
         <label class="ob-row"><input type="checkbox" id="obSong" checked><span><b>Now playing</b><small>current song / matchup card</small></span></label>
         <label class="ob-row"><input type="checkbox" id="obTimer" checked><span><b>Vote timer</b><small>countdown on the card</small></span></label>
-        <label class="ob-row"><input type="checkbox" id="obBoard" checked><span><b>Leaderboard</b><small id="obBoardHint">right rail · rows below</small></span>
-          <input type="number" id="obRows" min="1" max="8" value="3" style="width:56px;margin-left:auto"></label>
-        <label class="ob-row" id="obQrRow"><input type="checkbox" id="obQr" checked><span><b>Join QR</b><small>“Scan to Win $500” · vertical only</small></span></label>
+        <label class="ob-row"><input type="checkbox" id="obBoard" checked><span><b>Leaderboard</b><small>pops in for a few seconds after each win</small></span>
+          <span class="ob-nums"><input type="number" id="obRows" min="1" max="8" value="3"><small>rows</small><input type="number" id="obSecs" min="2" max="120" value="10"><small>sec</small></span></label>
+        <label class="ob-row"><input type="checkbox" id="obQr" checked><span><b>Join QR</b><small>“Scan to Win $500” join code</small></span></label>
         <div class="ob-opt">
           <div class="ob-t">Panel opacity <span class="muted" id="obPanelVal">92%</span></div>
           <input type="range" id="obPanel" min="50" max="100" value="92" style="width:100%;margin-top:6px">
@@ -1285,15 +1288,15 @@ $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textCont
 // ---- event tools ----
 // ---- Overlay builder: form -> overlay URL (+ live preview) ----
 (function(){
-  const OB={orient:'horizontal',song:true,timer:true,board:true,rows:3,qr:true,panel:92};
+  const OB={orient:'horizontal',song:true,timer:true,board:true,rows:3,lbSecs:10,qr:true,panel:92};
   function buildUrl(){
     if(!SID) return location.origin+'/overlay';
     const p=[];
     if(OB.orient==='vertical') p.push('orientation=vertical');
     if(!OB.song) p.push('current_song=false');
     if(!OB.timer) p.push('timer=false');
-    if(!OB.board) p.push('leader_board=0'); else if(OB.rows!==3) p.push('leader_board='+OB.rows);
-    if(OB.orient==='vertical' && !OB.qr) p.push('qr=false');
+    if(!OB.board) p.push('leader_board=0'); else { if(OB.rows!==3) p.push('leader_board='+OB.rows); if(OB.lbSecs!==10) p.push('leader_secs='+OB.lbSecs); }
+    if(!OB.qr) p.push('qr=false');
     if(OB.panel!==92) p.push('panel='+(OB.panel/100));
     return location.origin+'/overlay?s='+encodeURIComponent(SID)+(p.length?('&'+p.join('&')):'');
   }
@@ -1301,10 +1304,8 @@ $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textCont
   function render(){
     document.querySelectorAll('#obOrient button').forEach(b=>b.classList.toggle('on',b.dataset.v===OB.orient));
     $('#obSong').checked=OB.song;$('#obTimer').checked=OB.timer;$('#obBoard').checked=OB.board;
-    $('#obRows').value=OB.rows;$('#obQr').checked=OB.qr;$('#obPanel').value=OB.panel;
-    $('#obPanelVal').textContent=OB.panel+'%';$('#obRows').disabled=!OB.board;
-    $('#obQrRow').classList.toggle('dis',OB.orient!=='vertical');   // QR is vertical-only
-    $('#obBoardHint').textContent=OB.orient==='vertical'?'pops in after each win (auto-hides)':'right rail · rows below';
+    $('#obRows').value=OB.rows;$('#obSecs').value=OB.lbSecs;$('#obQr').checked=OB.qr;$('#obPanel').value=OB.panel;
+    $('#obPanelVal').textContent=OB.panel+'%';$('#obRows').disabled=!OB.board;$('#obSecs').disabled=!OB.board;
     $('#obPrevWrap').className='ob-preview '+(OB.orient==='vertical'?'vertical':'horizontal');
     const url=buildUrl();$('#obUrl').textContent=url;$('#obOpen').href=url;
     clearTimeout(prevT);prevT=setTimeout(()=>{$('#obPreview').src=url;},260); // debounce iframe reload
@@ -1312,11 +1313,13 @@ $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textCont
   function readControls(){
     OB.song=$('#obSong').checked;OB.timer=$('#obTimer').checked;OB.board=$('#obBoard').checked;
     OB.rows=Math.max(1,Math.min(8,parseInt($('#obRows').value,10)||3));OB.qr=$('#obQr').checked;
+    OB.lbSecs=Math.max(2,Math.min(120,parseInt($('#obSecs').value,10)||10));
     OB.panel=parseInt($('#obPanel').value,10)||92;render();
   }
   document.querySelectorAll('#obOrient button').forEach(b=>b.onclick=()=>{OB.orient=b.dataset.v;render();});
   ['#obSong','#obTimer','#obBoard','#obQr'].forEach(s=>$(s).addEventListener('change',readControls));
   $('#obRows').addEventListener('input',readControls);
+  $('#obSecs').addEventListener('input',readControls);
   $('#obPanel').addEventListener('input',readControls);
   window.openOverlayBuilder=()=>{ if(!SID){alert('Open a session first.');return;} $('#overlayModal').style.display='flex'; render(); };
   const closeOb=()=>{ $('#overlayModal').style.display='none'; $('#obPreview').src='about:blank'; };
