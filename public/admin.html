@@ -1559,13 +1559,15 @@ function render(st){
   $('#queueFormTitle').textContent = isBin ? 'Queue a matchup' : 'Queue a song';
   $('#rTitleLabel').textContent = isBin ? 'Song A title *' : 'Song title *';
   $('#rArtistLabel').textContent = isBin ? 'Song A artist' : 'Artist';
-  // "Pull from Nero" only when this session's submission link is a nero.fan live room.
+  // The submission link picks the source. A nero.fan/…/live link = Nero; anything else = the
+  // review-site push. Only ONE pull button shows at a time so switching sources is clean.
   const su=(st.session&&st.session.submit_url)||'';
-  $('#btnNeroPull').classList.toggle('hide', !/nero\.fan\/[^/?#]+\/live\b/i.test(su));
-  // "Pull latest submission" appears when the review site has pushed one.
+  const isNero=/nero\.fan\/[^/?#]+\/live\b/i.test(su);
+  $('#btnNeroPull').classList.toggle('hide', !isNero);
+  // "Pull latest submission" (review-site push) — hidden while Nero is the active source.
   const ing=st.ingestLatest;
   const hasIng=!!(ing&&(ing.title||ing.artist));
-  $('#btnIngestPull').classList.toggle('hide', !hasIng || !isAdmin()); // Drupal ingest is platform-only
+  $('#btnIngestPull').classList.toggle('hide', !hasIng || !isAdmin() || isNero); // Drupal ingest is platform-only
   if($('#smsTestRow'))$('#smsTestRow').classList.toggle('hide', !isAdmin()); // SMS test is platform-only
   // Per-host feature gating (admins see everything).
   if($('#bcBlock'))$('#bcBlock').classList.toggle('hide', !hasP('broadcast'));
