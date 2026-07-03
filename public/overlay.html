@@ -263,10 +263,11 @@ document.documentElement.style.setProperty('--panel','rgba(16,12,26,'+PANEL_A+')
 // zones, shows a top brand + a persistent "Scan to Win $500" join QR, and turns the
 // leaderboard into a transient pop that rides the winner reveal.
 const VERTICAL=/^v/.test((getP('orientation')||getP('o')||'').toLowerCase());
+const SHOW_QR=boolP('qr',true); // vertical join QR ("Scan to Win $500"); default on
 if(VERTICAL){
   document.body.classList.add('vertical');
   $('#vHeader').classList.remove('hide');
-  if(SID){ $('#vQrImg').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID); $('#vQr').classList.remove('hide'); }
+  if(SID && SHOW_QR){ $('#vQrImg').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID); $('#vQr').classList.remove('hide'); }
 }
 
 // Fit the stage (1920×1080, or 1080×1920 vertical) into whatever the OBS source is sized to.
