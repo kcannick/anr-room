@@ -264,7 +264,7 @@
     </div>
 
     <div class="card">
-      <h2 id="queueFormTitle">Queue a song</h2>
+      <h2 id="queueFormTitle">Add a song</h2>
       <button class="btn ghost sm hide" id="btnNeroPull" style="margin-bottom:8px">⬇ Pull current song from Nero</button>
       <div class="muted hide" id="neroMsg" style="font-size:12px;margin-bottom:8px"></div>
       <button class="btn ghost sm hide" id="btnIngestPull" style="margin-bottom:8px">⬇ Pull latest submission</button>
@@ -280,7 +280,7 @@
           <div style="margin-top:10px"><label>Song B artist</label><input id="rBArtist" placeholder="optional"></div>
         </div>
         <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
-        <button class="btn" id="btnAddRound">Add to queue</button>
+        <button class="btn" id="btnAddRound">▶ Add &amp; play now</button>
         <div class="err" id="addErr"></div>
       </div>
     </div>
@@ -1259,7 +1259,7 @@ $('#btnNeroPull').onclick=async()=>{
     else{
       $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
       if(d.instagram)$('#rNote').value='IG: @'+String(d.instagram).replace(/^@/,'');
-      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(d.instagram?' (IG added to note)':'')+'. Review, then Add to queue.';
+      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(d.instagram?' (IG added to note)':'')+'. Review, then add it.';
       $('#rTitle').focus();
     }
   }catch(e){msg.textContent=e.message;}
@@ -1276,7 +1276,7 @@ $('#btnIngestPull').onclick=async()=>{
     else{
       $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
       if(d.instagram)$('#rNote').value='IG: @'+String(d.instagram).replace(/^@/,'');
-      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(d.instagram?' (IG added to note)':'')+'. Review, then Add to queue.';
+      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(d.instagram?' (IG added to note)':'')+'. Review, then add it.';
       $('#rTitle').focus();
     }
   }catch(e){msg.textContent=e.message;}
@@ -1460,8 +1460,12 @@ $('#btnExpJsonAnon').onclick=()=>downloadExport('json',true);
 // ---- round control render ----
 function roundControls(st){
   const r=st.activeRound;
+  // A song added now goes straight to open unless a round is in play (voting or tallying).
+  const inPlay=!!(r&&(r.status==='voting'||r.status==='closed'));
+  const addBtn=$('#btnAddRound'); if(addBtn)addBtn.textContent=inPlay?'Add to queue':'▶ Add & play now';
+  const qft=$('#queueFormTitle'); if(qft)qft.textContent=inPlay?'Queue a song':'Add a song';
   const box=$('#roundBox');
-  if(!r){box.innerHTML='<div class="empty">No round in play. Open a song from the queue below to start a round.</div>';return;}
+  if(!r){box.innerHTML='<div class="empty">No round in play. Add a song below — it starts a round right away.</div>';return;}
   const statusPill={voting:'<span class="pill live">● Voting open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
   let timer='';
   if(r.status==='voting'&&r.closes_at){

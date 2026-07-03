@@ -127,30 +127,38 @@ async function call(path, body, method='POST', headers={}) {
   ok('BLIND: exact err not leaked to players mid-session', m3.myResult.err === undefined, 'leaked ' + m3.myResult.err);
   ok('BLIND: winner guess not leaked mid-session', m3.winner && m3.winner.predict === undefined, JSON.stringify(m3.winner));
 
-  console.log('\n— queue: add two songs, both persist (the old bug) —');
-  const qa = await call('/api/admin/round', { sessionId: SID, song_title: 'Queue Song A' }, 'POST', AH);
-  const qb = await call('/api/admin/round', { sessionId: SID, song_title: 'Queue Song B' }, 'POST', AH);
+  console.log('\n— add-song: straight to open; extras queue; none lost —');
+  // Prior round is ratified, so nothing is in play — the first add opens immediately.
+  const qa = await call('/api/admin/round', { sessionId: SID, song_title: 'Auto Open A' }, 'POST', AH);
+  ok('first add opens immediately (no round in play)', qa.d.opened === true, JSON.stringify(qa.d));
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
-  ok('both queued songs present (round 1 not lost)', st.queue.length === 2, 'queue len ' + st.queue.length);
-  ok('queue in add order: A then B', st.queue[0].song_title === 'Queue Song A' && st.queue[1].song_title === 'Queue Song B');
+  ok('auto-opened Song A, numbered 2', st.activeRound && st.activeRound.song_title === 'Auto Open A' && st.activeRound.idx === 2, JSON.stringify(st.activeRound));
+  // While A is live, further adds go to the queue (both persist — the old bug).
+  const qb = await call('/api/admin/round', { sessionId: SID, song_title: 'Queue Song B' }, 'POST', AH);
+  const qc0 = await call('/api/admin/round', { sessionId: SID, song_title: 'Queue Song C' }, 'POST', AH);
+  ok('adds during a live round go to the queue', qb.d.opened === false && qc0.d.opened === false, JSON.stringify([qb.d, qc0.d]));
+  st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
+  ok('both queued songs present (none lost)', st.queue.length === 2 && st.queue[0].song_title === 'Queue Song B' && st.queue[1].song_title === 'Queue Song C', 'queue len ' + st.queue.length);
   ok('queued songs have no round number yet', st.queue.every(r => !r.idx), JSON.stringify(st.queue.map(r=>r.idx)));
 
   console.log('\n— reorder queue, then delete one —');
-  await call('/api/admin/round/move', { sessionId: SID, roundId: qb.d.roundId, dir: 'up' }, 'POST', AH);
+  await call('/api/admin/round/move', { sessionId: SID, roundId: qc0.d.roundId, dir: 'up' }, 'POST', AH);
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
-  ok('after move up: B then A', st.queue[0].song_title === 'Queue Song B' && st.queue[1].song_title === 'Queue Song A');
-  await call('/api/admin/round/delete', { sessionId: SID, roundId: qa.d.roundId }, 'POST', AH);
+  ok('after move up: C then B', st.queue[0].song_title === 'Queue Song C' && st.queue[1].song_title === 'Queue Song B');
+  await call('/api/admin/round/delete', { sessionId: SID, roundId: qc0.d.roundId }, 'POST', AH);
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   ok('after delete: 1 left (B)', st.queue.length === 1 && st.queue[0].song_title === 'Queue Song B');
 
-  console.log('\n— open queued B: becomes round 2, Iris-only vote —');
+  console.log('\n— ratify the live round, then open queued B as round 3 —');
+  await call('/api/vote', { taste: 9, predict: 9 }, 'POST', { 'X-Player-Token': t3 }); // Iris votes on the live A
+  await call('/api/admin/round/ratify', { sessionId: SID, roundId: qa.d.roundId }, 'POST', AH);
   const RID2 = qb.d.roundId;
   const op2 = await call('/api/admin/round/open', { sessionId: SID, roundId: RID2, minutes: 1 }, 'POST', AH);
   ok('open queued round ok', op2.status === 200, JSON.stringify(op2.d));
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
-  ok('opened round numbered 2 (idx assigned at open)', st.activeRound.idx === 2, 'idx ' + st.activeRound.idx);
+  ok('opened queued B numbered 3', st.activeRound.idx === 3, 'idx ' + st.activeRound.idx);
   ok('queue now empty', st.queue.length === 0);
-  await call('/api/vote', { taste: 9, predict: 9 }, 'POST', { 'X-Player-Token': t3 }); // Iris only, exact -> 125
+  await call('/api/vote', { taste: 9, predict: 9 }, 'POST', { 'X-Player-Token': t3 }); // Iris solo -> 125
   await call('/api/admin/round/ratify', { sessionId: SID, roundId: RID2 }, 'POST', AH);
   const m3b = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': t3 })).d;
   ok('Iris solo round: rank 1, exact 125', m3b.myResult.rank === 1 && m3b.myResult.points === 125, JSON.stringify(m3b.myResult));
@@ -182,12 +190,18 @@ async function call(path, body, method='POST', headers={}) {
   ok('Zed lifetime total floored at 0', zed.myTotalPoints === 0, 'total ' + zed.myTotalPoints);
 
   console.log('\n— edit a queued song, and reopen an accidentally-closed round —');
+  // Put a round in play first so the next add queues (instead of auto-opening).
+  const qFill = await call('/api/admin/round', { sessionId: SID, song_title: 'Filler (live)' }, 'POST', AH);
   const qe = await call('/api/admin/round', { sessionId: SID, song_title: 'Wrong Title', song_artist: 'Wrong Artist' }, 'POST', AH);
+  ok('added while a round is live -> queued', qe.d.opened === false, JSON.stringify(qe.d));
   const ed = await call('/api/admin/round/edit', { sessionId: SID, roundId: qe.d.roundId, song_title: 'Right Title', song_artist: 'Right Artist', giveaway: 'Hat' }, 'POST', AH);
   ok('edit queued song ok', ed.status === 200);
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   const editedInQueue = st.queue.find(r => r.id === qe.d.roundId);
   ok('queued song now shows edited title + artist', editedInQueue && editedInQueue.song_title === 'Right Title' && editedInQueue.song_artist === 'Right Artist');
+  // clear the live filler, then open the edited song
+  await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': t1 });
+  await call('/api/admin/round/ratify', { sessionId: SID, roundId: qFill.d.roundId }, 'POST', AH);
   // open it, close by accident, then reopen
   await call('/api/admin/round/open', { sessionId: SID, roundId: qe.d.roundId, minutes: 2 }, 'POST', AH);
   await call('/api/vote', { taste: 6, predict: 6 }, 'POST', { 'X-Player-Token': t1 });

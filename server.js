@@ -1729,7 +1729,19 @@ async function handleApi(req, res, url) {
       [rid, sessionId, 0, Number(maxPos) + 1, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
        isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null, now()]
     );
-    return send(res, 200, { roundId: rid });
+    // Straight to open unless a round is already in play (voting or awaiting tally) — then it
+    // waits in the queue. Removes the mandatory add-then-open two-step for the common case.
+    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('voting','closed')", [sessionId]);
+    if (!inPlay) {
+      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [sessionId])).c;
+      const dur = clampMinutes(session.default_minutes != null ? session.default_minutes : DEFAULT_MINUTES) * 60 * 1000;
+      await db.run("UPDATE rounds SET status = 'voting', idx = ?, opens_at = ?, closes_at = ? WHERE id = ?",
+        [Number(started) + 1, now(), now() + dur, rid]);
+      if (session.status === 'upcoming') await db.run("UPDATE sessions SET status = 'live' WHERE id = ?", [sessionId]);
+      await realtime.publish(sessionId, 'round');
+      return send(res, 200, { roundId: rid, opened: true });
+    }
+    return send(res, 200, { roundId: rid, opened: false });
   }
 
   // Reorder a queued song up/down, or delete it from the queue.
