@@ -2338,6 +2338,18 @@ async function handleApi(req, res, url) {
     }
   }
 
+  // QR code as SVG (self-hosted; used by the vertical overlay's "Scan to Win $500" join code).
+  if (p === '/api/qr' && method === 'GET') {
+    const data = url.searchParams.get('d') || '';
+    if (!data) return bad(res, 'missing d', 400);
+    try {
+      const QRCode = require('qrcode');
+      const svg = await QRCode.toString(data.slice(0, 1024), { type: 'svg', margin: 1, color: { dark: '#0c0a15', light: '#ffffff' } });
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+      return res.end(svg);
+    } catch (e) { console.error('[qr] failed:', e.message); return bad(res, 'qr failed', 500); }
+  }
+
   // ---- Post-session recap email carousel (admin/owner). Renders the shared cards once, then
   // emails each voter their Score Card + the Top 8s + Promo. Processed in chunks off the
   // request path (client loops /process); requires Vercel Blob to host the images. ----

@@ -1016,6 +1016,10 @@ async function call(path, body, method='POST', headers={}) {
   ok('score card requires a player token (401)', scoreNoAuth.status === 401, 'got ' + scoreNoAuth.status);
   const scoreImg = await img('/api/card/score', { 'X-Player-Token': t1 });
   ok('score card renders a PNG for the player', isPng(scoreImg), JSON.stringify(scoreImg));
+  const qrImg = await img('/api/qr?d=' + encodeURIComponent('https://anr.makinitmag.com/?s=abc'));
+  ok('QR endpoint returns an SVG', qrImg.status === 200 && /svg/.test(qrImg.type), JSON.stringify(qrImg));
+  const qrBad = await call('/api/qr', null, 'GET');
+  ok('QR endpoint requires the d param (400)', qrBad.status === 400, 'got ' + qrBad.status);
 
   console.log('\n— recap email carousel (queue + chunked processing) —');
   const recapStatus = await call('/api/admin/session/recap/status?sessionId=' + SID, null, 'GET', AH);
