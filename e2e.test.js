@@ -589,13 +589,12 @@ async function call(path, body, method='POST', headers={}) {
   // EVENT TOOLS — watch link, lobby message, sign-up prompt, broadcast, overlay
   // ======================================================================
   console.log('\n— event tools: session config at creation —');
-  const ecs = await call('/api/session', { name: 'Event Night', watchUrl: 'https://twitch.tv/example', lobbyMessage: 'Starting soon!', signupPrompt: 'Drop your IG + city' }, 'POST', BOOTH);
+  const ecs = await call('/api/session', { name: 'Event Night', watchUrl: 'https://twitch.tv/example', lobbyMessage: 'Starting soon!' }, 'POST', BOOTH);
   ok('session created with config', ecs.status === 200 && ecs.d.sessionId, JSON.stringify(ecs.d));
   const ESID = ecs.d.sessionId, EATOK = ecs.d.adminToken, EAH = { 'X-Admin-Token': EATOK };
   let es = (await call(`/api/admin/state?sessionId=${ESID}`, null, 'GET', EAH)).d;
   ok('watch_url stored', es.session.watch_url === 'https://twitch.tv/example', es.session.watch_url);
   ok('lobby_message stored', es.session.lobby_message === 'Starting soon!', es.session.lobby_message);
-  ok('signup_prompt stored', es.session.signup_prompt === 'Drop your IG + city', es.session.signup_prompt);
 
   console.log('\n— event tools: bad watch url is rejected (sanitized to null) —');
   const badUrl = await call('/api/session', { name: 'Bad URL', watchUrl: 'javascript:alert(1)' }, 'POST', BOOTH);
@@ -603,22 +602,15 @@ async function call(path, body, method='POST', headers={}) {
   ok('non-http watch url sanitized to null', buState.session.watch_url === null, 'got ' + buState.session.watch_url);
 
   console.log('\n— event tools: update config after creation —');
-  await call('/api/admin/session/config', { sessionId: ESID, watchUrl: 'https://youtube.com/live', lobbyMessage: '', signupPrompt: 'IG only' }, 'POST', EAH);
+  await call('/api/admin/session/config', { sessionId: ESID, watchUrl: 'https://youtube.com/live', lobbyMessage: '' }, 'POST', EAH);
   es = (await call(`/api/admin/state?sessionId=${ESID}`, null, 'GET', EAH)).d;
   ok('watch_url updated', es.session.watch_url === 'https://youtube.com/live', es.session.watch_url);
   ok('lobby_message cleared via empty string', es.session.lobby_message === null, JSON.stringify(es.session.lobby_message));
-  ok('signup_prompt updated', es.session.signup_prompt === 'IG only', es.session.signup_prompt);
 
-  console.log('\n— event tools: sign-up prompt surfaced at join + answer captured —');
+  console.log('\n— event tools: config surfaced at join —');
   const ejr = await call('/api/join/request', { sessionId: ESID, email: 'fan@test.com' });
-  ok('join/request returns signup prompt', ejr.d.signupPrompt === 'IG only', ejr.d.signupPrompt);
   ok('join/request returns watch url', ejr.d.watchUrl === 'https://youtube.com/live', ejr.d.watchUrl);
-  await call('/api/join/verify', { sessionId: ESID, email: 'fan@test.com', code: ejr.d.devCode, name: 'Fan One', signupAnswer: '@fanone · Atlanta' });
-  const eexp = await fetch(base + `/api/admin/export?sessionId=${ESID}&format=json`, { headers: EAH }).then(r => r.json());
-  const fanRow = eexp.participants.find(p => p.email === 'fan@test.com');
-  ok('signup_answer captured + exported', fanRow && fanRow.signup_answer === '@fanone · Atlanta', JSON.stringify(fanRow && fanRow.signup_answer));
-  const eexpAnon = await fetch(base + `/api/admin/export?sessionId=${ESID}&format=json&anon=1`, { headers: EAH }).then(r => r.json());
-  ok('signup_answer NOT in anon export', eexpAnon.participants.every(p => !('signup_answer' in p)), JSON.stringify(eexpAnon.participants[0]));
+  await call('/api/join/verify', { sessionId: ESID, email: 'fan@test.com', code: ejr.d.devCode, name: 'Fan One' });
 
   console.log('\n— event tools: broadcast push + clear —');
   const bc = await call('/api/admin/session/broadcast', { sessionId: ESID, text: 'Running 10 min late!' }, 'POST', EAH);

@@ -38,7 +38,7 @@ const SCHEMA = [
      poll_type TEXT NOT NULL DEFAULT 'rating', -- 'rating' (0-9 game) | 'binary' (Verzuz A/B)
      watch_url TEXT,                         -- optional stream/watch link shown to players
      lobby_message TEXT,                     -- optional admin text shown in the lobby/waiting screen
-     signup_prompt TEXT,                     -- optional custom question asked at join (e.g. "IG + city")
+     signup_prompt TEXT,                     -- LEGACY (unused): custom join question — superseded by profiles
      broadcast_text TEXT,                    -- current live broadcast message (null = none)
      broadcast_at BIGINT,                    -- when the current broadcast was set (drives client dedupe)
      geo_mode TEXT NOT NULL DEFAULT 'off',   -- 'off' | 'optional' (dual pool) | 'required' (in-room only)
@@ -79,7 +79,7 @@ const SCHEMA = [
      name TEXT,
      phone TEXT,                            -- optional; captured at registration
      sms_marketing_consent INTEGER NOT NULL DEFAULT 0,  -- explicit opt-in for this signup
-     signup_answer TEXT,                    -- answer to the session's custom sign-up prompt
+     signup_answer TEXT,                    -- LEGACY (unused): answer to the retired custom sign-up prompt
      ref_code TEXT,                          -- this participant's shareable referral code
      referred_by TEXT,                       -- participant.id of whoever referred them (null = organic)
      ref_credited INTEGER NOT NULL DEFAULT 0, -- 1 once they verified AND played a round (real referral)

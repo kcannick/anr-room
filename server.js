@@ -657,7 +657,7 @@ async function adminState(session, opts = {}) {
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
   const isBinary = pollType === 'binary';
   const participants = await db.all(`
-    SELECT p.id, p.name, p.email, p.verified, p.total_points, p.signup_answer, p.referred_by, p.pool, p.checkin_distance,
+    SELECT p.id, p.name, p.email, p.verified, p.total_points, p.referred_by, p.pool, p.checkin_distance,
            u.instagram, u.tiktok,
            (SELECT COUNT(*) FROM participants c WHERE c.session_id = p.session_id AND c.referred_by = p.id AND c.ref_credited = 1) AS brought
     FROM participants p LEFT JOIN users u ON u.uid = p.user_id
@@ -719,7 +719,7 @@ async function adminState(session, opts = {}) {
   }));
   return {
     session: { id: session.id, name: session.name, status: session.status, admin_token: session.admin_token, banner_id: session.banner_id || null, default_minutes: session.default_minutes || DEFAULT_MINUTES, poll_type: pollType,
-      watch_url: session.watch_url || null, submit_url: session.submit_url || null, lobby_message: session.lobby_message || null, signup_prompt: session.signup_prompt || null,
+      watch_url: session.watch_url || null, submit_url: session.submit_url || null, lobby_message: session.lobby_message || null,
       broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
       geo_mode: session.geo_mode || 'off', geo_lat: session.geo_lat ?? null, geo_lng: session.geo_lng ?? null, geo_radius: session.geo_radius || null, geo_label: session.geo_label || null },
     pools: {
@@ -732,7 +732,7 @@ async function adminState(session, opts = {}) {
       const base = { id: p.id, name: p.name, verified: p.verified, total_points: p.total_points,
         referred_by: p.referred_by, pool: p.pool, checkin_distance: p.checkin_distance, brought: p.brought,
         instagram: p.instagram || null, tiktok: p.tiktok || null };
-      if (isAdmin) { base.email = p.email; base.signup_answer = p.signup_answer; } // contact PII: platform admin only
+      if (isAdmin) { base.email = p.email; } // contact PII: platform admin only
       return base;
     }),
     verifiedCount: participants.filter(p => p.verified).length,
@@ -891,18 +891,17 @@ async function handleApi(req, res, url) {
     // (Regular viewers never should have been able to — this closes that gap.)
     const creator = await userFromAuth(req);
     if (!creator || !(creator.role === 'admin' || creator.role === 'host')) return bad(res, 'Host access required', 403);
-    const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, submitUrl, lobbyMessage, signupPrompt, bannerId, geoLabel, geoLat, geoLng, geoRadius } = await readBody(req);
+    const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, submitUrl, lobbyMessage, bannerId, geoLabel, geoLat, geoLng, geoRadius } = await readBody(req);
     if (!name || !name.trim()) return bad(res, 'Session name required');
     const sid = id(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || id(4);
     const adminToken = id(18);
     const dm = clampMinutes(defaultMinutes != null ? defaultMinutes : DEFAULT_MINUTES);
     // Poll type is fixed at creation; rounds inherit it. 'rating' (0-9) is the default.
     const pt = pollType === 'binary' ? 'binary' : 'rating';
-    // Optional event config — a stream link, a lobby message, a custom sign-up prompt.
+    // Optional event config — a stream link and a lobby message.
     const wu = cleanUrl(watchUrl);
     const su = cleanUrl(submitUrl);
     const lm = (lobbyMessage || '').toString().trim().slice(0, 500) || null;
-    const sp = (signupPrompt || '').toString().trim().slice(0, 200) || null;
     const bid = bannerId || null; // optional default ad set at creation
     // Optional venue, settable at creation (geocoded address). Enforcement stays off
     // until the host turns geo_mode on later.
@@ -914,8 +913,8 @@ async function handleApi(req, res, url) {
     const ownerUid = creator.uid; // gated above → always present
     // New sessions are 'live' by default, or 'upcoming' if a future start is given.
     const st = (status === 'upcoming' || (scheduledAt && Number(scheduledAt) > now())) ? 'upcoming' : 'live';
-    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, submit_url, lobby_message, signup_prompt, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, su, lm, sp, bid, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, now()]);
+    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, submit_url, lobby_message, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, su, lm, bid, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, now()]);
     return send(res, 200, { sessionId: sid, adminToken, pollType: pt });
   }
 
@@ -1053,19 +1052,18 @@ async function handleApi(req, res, url) {
       };
     }
     return send(res, 200, { sent: true, devCode: r.devCode || null,
-      sessionName: session.name, signupPrompt: session.signup_prompt || null, watchUrl: session.watch_url || null,
+      sessionName: session.name, watchUrl: session.watch_url || null,
       returning: !!prior, prefill });
   }
 
   // ----- verify OTP + create/return participant -----
   if (p === '/api/join/verify' && method === 'POST') {
-    const { sessionId, email, code, name, phone, keepPhone, signupAnswer, ref } = await readBody(req);
+    const { sessionId, email, code, name, phone, keepPhone, ref } = await readBody(req);
     const em = (email || '').toLowerCase();
     // Phone handling: ignore the masked hint if it's ever echoed back; only a value with
     // real digits counts as a newly typed number.
     const phRaw = (phone || '').trim();
     const newPhone = (phRaw && !phRaw.includes('•') && phRaw.replace(/\D/g, '').length >= 7) ? phRaw : '';
-    const ans = (signupAnswer || '').toString().trim().slice(0, 300) || null;
     const refIn = (ref || '').toString().trim().toUpperCase().slice(0, 12) || null;
     const otp = await db.get('SELECT * FROM otps WHERE email = ? AND session_id = ?', [em, sessionId]);
     if (!otp) return bad(res, 'Request a code first');
@@ -1119,8 +1117,8 @@ async function handleApi(req, res, url) {
     let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
     const token = id(18);
     if (participant) {
-      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END, signup_answer = COALESCE(NULLIF(?,\'\'), signup_answer) WHERE id = ?',
-        [token, user.uid, (name || '').trim(), ph, consent, ans || '', participant.id]);
+      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END WHERE id = ?',
+        [token, user.uid, (name || '').trim(), ph, consent, participant.id]);
       // Give an existing referral-less participant a code if they somehow lack one.
       if (!participant.ref_code) await db.run('UPDATE participants SET ref_code = ? WHERE id = ?', [refCode(), participant.id]);
     } else {
@@ -1139,8 +1137,8 @@ async function handleApi(req, res, url) {
         if (!clash) break;
         myCode = refCode();
       }
-      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, signup_answer, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,0,?)',
-        [pid, sessionId, user.uid, em, (name || '').trim(), ph || null, consent, ans, myCode, referredBy, token, now()]);
+      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?)',
+        [pid, sessionId, user.uid, em, (name || '').trim(), ph || null, consent, myCode, referredBy, token, now()]);
       // First time this user appears in this session → count it toward sessions_played.
       await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }
@@ -1171,8 +1169,8 @@ async function handleApi(req, res, url) {
       const pid = id(9);
       let myCode = refCode();
       for (let tries = 0; tries < 5; tries++) { const clash = await db.get('SELECT 1 FROM participants WHERE session_id = ? AND ref_code = ?', [sessionId, myCode]); if (!clash) break; myCode = refCode(); }
-      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, signup_answer, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,0,?)',
-        [pid, sessionId, user.uid, em, (user.name || '').trim(), user.phone || null, consent, null, myCode, null, token, now()]);
+      await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?)',
+        [pid, sessionId, user.uid, em, (user.name || '').trim(), user.phone || null, consent, myCode, null, token, now()]);
       await db.run('UPDATE users SET sessions_played = sessions_played + 1, last_seen = ? WHERE uid = ?', [now(), user.uid]);
     }
     return send(res, 200, { token });
@@ -1497,14 +1495,13 @@ async function handleApi(req, res, url) {
   // + lightweight join context only.
   if (p === '/api/session/info' && method === 'GET') {
     const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
-    const session = sessionId ? await db.get('SELECT id, name, status, deleted_at, signup_prompt, watch_url, lobby_message FROM sessions WHERE id = ?', [sessionId]) : null;
+    const session = sessionId ? await db.get('SELECT id, name, status, deleted_at, watch_url, lobby_message FROM sessions WHERE id = ?', [sessionId]) : null;
     if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
     return send(res, 200, {
       id: session.id,
       name: session.name,
       status: session.status,
       closed: session.status === 'completed' || session.status === 'archived',
-      signupPrompt: session.signup_prompt || null,
       watchUrl: session.watch_url || null,
       lobbyMessage: session.lobby_message || null,
     });
@@ -2175,7 +2172,6 @@ async function handleApi(req, res, url) {
     if ('watchUrl' in body)      { sets.push('watch_url = ?');     vals.push(cleanUrl(body.watchUrl)); }
     if ('submitUrl' in body)     { sets.push('submit_url = ?');    vals.push(cleanUrl(body.submitUrl)); }
     if ('lobbyMessage' in body)  { sets.push('lobby_message = ?'); vals.push((body.lobbyMessage || '').toString().trim().slice(0, 500) || null); }
-    if ('signupPrompt' in body)  { sets.push('signup_prompt = ?'); vals.push((body.signupPrompt || '').toString().trim().slice(0, 200) || null); }
     // Geo: enforcement mode is independent of the venue pin (set venue early, enforce later).
     if ('geoMode' in body) {
       const m = ['off', 'optional', 'required'].includes(body.geoMode) ? body.geoMode : 'off';
@@ -2480,7 +2476,7 @@ async function handleApi(req, res, url) {
     const isBinary = session.poll_type === 'binary';
 
     const participants = await db.all(
-      'SELECT id, user_id, name, email, phone, sms_marketing_consent, signup_answer, ref_code, referred_by, ref_credited, pool, checkin_distance, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
+      'SELECT id, user_id, name, email, phone, sms_marketing_consent, ref_code, referred_by, ref_credited, pool, checkin_distance, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
       [sessionId]
     );
     const rounds = await db.all(
@@ -2506,7 +2502,7 @@ async function handleApi(req, res, url) {
       if (anon) return { player: labelById[pt.id], total_points: pt.total_points, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null };
       // Host export: engagement only — no email/phone/consent/answer.
       if (redact) return { player: labelById[pt.id], name: pt.name, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null, total_points: pt.total_points, joined_at: Number(pt.created_at) };
-      return { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, signup_answer: pt.signup_answer || null, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null, checkin_distance: pt.checkin_distance ?? null, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) };
+      return { player: labelById[pt.id], name: pt.name, email: pt.email, phone: pt.phone || null, sms_marketing_consent: (pt.sms_marketing_consent === 1 || pt.sms_marketing_consent === true) ? 1 : 0, referred_by: referredByLabel, referral_credited: credited, pool: pt.pool || null, checkin_distance: pt.checkin_distance ?? null, user_id: pt.user_id, total_points: pt.total_points, joined_at: Number(pt.created_at) };
     });
 
     const cleanVotes = votes.map(v => {

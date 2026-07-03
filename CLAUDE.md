@@ -61,14 +61,13 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   recomputes only when it actually CHANGES (a round is ratified, ~10x/hour), then is pushed
   to all connected clients at once — so compute cost is independent of viewer count. This
   replaces today's polling (where cost = viewers × poll-rate). Under push, a leaderboard
-  cache is optional/unnecessary. NOTE: the current code still POLLS; until the push migration
-  ships, a short-lived leaderboard cache (Upstash) is the stopgap if a large event lands
-  first. But the plan is push.
+  cache is unnecessary. STATUS: the push migration (Ably) has SHIPPED — the board recomputes
+  on ratify and is pushed to all connected clients, so no leaderboard cache is needed.
 - **Series membership = the explicit `sessions.series_id` tag.** Dates/target_sessions are
   DISPLAY ONLY, never filters. qualify_count (per-series) drives the A&R Wars cut.
 - **Closing a series is a status flip** (`series.status = 'closed'`); qualifiers are read live
   off the final board. No snapshot/lock needed (the board only moves when tagged sessions get
-  new votes). [2.0 idea: auto-seed an A&R Wars session with the top N.]
+  new votes).
 - **Legal:** free-entry, skill-only audience competition; artist placement $ and viewer points
   stay walled. SMS marketing consent separate from 2FA (TCPA). Attorney has cleared the prize
   structure; A2P 10DLC registered.
