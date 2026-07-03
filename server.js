@@ -31,6 +31,11 @@ const shareCards = require('./share-cards');
 const PORT = process.env.PORT || 3000;
 const now = () => Date.now();
 const id = (n = 9) => crypto.randomBytes(n).toString('base64url');
+// Display name shown publicly. The FULL chosen name — never split on spaces ("DJ Sussex"
+// must stay whole, not become "DJ"; "Black Crown Records" must not become "Black"). Capped
+// as a layout backstop for legacy over-long names; surfaces with ellipsis trim by width.
+const MAX_NAME = 32; // hard cap applied when a name is set (registration / signup)
+const dispName = (nm) => { const s = (nm || '').toString().trim(); return s ? s.slice(0, 40) : 'A&R'; };
 const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
 // Profile categories (3.5a) — the creative/industry roles an A&R can pick. Server-side
 // allowlist so the client can't inject arbitrary values; the chips render from this list.
@@ -433,7 +438,7 @@ async function playerState(participant) {
      FROM participants p LEFT JOIN users u ON p.user_id = u.uid
      WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
      ORDER BY p.created_at DESC LIMIT 6`, [sessionId]);
-  const joins = joinRows.map(r => ({ name: r.profile_complete ? ((r.uname || '').toString().trim().split(/\s+/)[0] || null) : null, at: Number(r.created_at) }));
+  const joins = joinRows.map(r => ({ name: r.profile_complete ? ((r.uname || '').toString().trim().slice(0, 40) || null) : null, at: Number(r.created_at) }));
 
   // $500 monthly-series hook (null unless this session competes for it) — drives the play
   // page giveaway banner + the third onboarding step.
@@ -487,7 +492,7 @@ async function overlayState(session) {
   const isBinary = session.poll_type === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
   const round = await activeRound(sessionId);
-  const onlyFirst = (nm) => (nm || 'A&R').toString().trim().split(/\s+/)[0];
+  const onlyFirst = dispName; // full display name (no first-word splitting)
 
   let current = null, result = null;
   if (round) {
@@ -534,7 +539,7 @@ async function overlayState(session) {
 // This is the board whose compute must be viewer-count-independent at scale: computed
 // once here on ratify and pushed to every connected client, instead of recomputed per poll.
 async function homeSeriesBoard(seriesId, limit = 5) {
-  const first = (nm) => (nm || 'A&R').toString().trim().split(/\s+/)[0];
+  const first = dispName; // full display name (no first-word splitting)
   const rows = await db.all(
     `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS pts FROM votes v
      JOIN participants p ON v.participant_id = p.id
@@ -624,7 +629,7 @@ function recapEmailText(d, sessionName) {
     + `@Makinit4indies as a collaborator to double your reach. Play again at ANR.makinitmag.com.`;
 }
 function recapEmailHtml({ name, sessionName, rank, total, cards }) {
-  const first = (name || 'A&R').split(/\s+/)[0];
+  const first = dispName(name); // greet with the full display name, not just the first word
   const imgs = [
     ['Your Score Card', cards.score],
     ['Top 8 Songs', cards.songs],
@@ -965,7 +970,7 @@ async function handleApi(req, res, url) {
     if (user.blocked) return bad(res, 'This account has been suspended.', 403);
     // "Join the A&R Team" signup carries a display name + optional phone — set them on
     // the account (phone present => SMS opt-in, same model as a session join).
-    const sName = (name || '').toString().trim().slice(0, 80);
+    const sName = (name || '').toString().trim().slice(0, MAX_NAME);
     if (sName) { await db.run("UPDATE users SET name = COALESCE(NULLIF(?, ''), name) WHERE uid = ?", [sName, user.uid]); user.name = user.name || sName; }
     const sPhoneRaw = (phone || '').toString().trim();
     if (sPhoneRaw && !sPhoneRaw.includes('•') && sPhoneRaw.replace(/\D/g, '').length >= 7) {
@@ -1092,7 +1097,7 @@ async function handleApi(req, res, url) {
 
     if (user) {
       await db.run('UPDATE users SET last_seen = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE uid = ?',
-        [now(), (name || '').trim(), user.uid]);
+        [now(), (name || '').trim().slice(0, MAX_NAME), user.uid]);
       // Save a newly typed number (masked/echoed values were filtered out above).
       if (newPhone) await db.run('UPDATE users SET phone = ? WHERE uid = ?', [newPhone, user.uid]);
       // Consent reconciliation. A phone present (new or kept) => opted in (stamp on a
@@ -1107,7 +1112,7 @@ async function handleApi(req, res, url) {
     } else {
       const uid = id(12);
       await db.run('INSERT INTO users (uid, email, name, phone, sms_marketing_consent, sms_consent_at, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,?,?,?,0,0)',
-        [uid, em, (name || '').trim(), effectivePhone || null, consent, consent ? now() : null, now(), now()]);
+        [uid, em, (name || '').trim().slice(0, MAX_NAME), effectivePhone || null, consent, consent ? now() : null, now(), now()]);
       user = { uid, email: em };
     }
     // The per-session participant records the phone + consent for THIS signup.
@@ -1118,7 +1123,7 @@ async function handleApi(req, res, url) {
     const token = id(18);
     if (participant) {
       await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END WHERE id = ?',
-        [token, user.uid, (name || '').trim(), ph, consent, participant.id]);
+        [token, user.uid, (name || '').trim().slice(0, MAX_NAME), ph, consent, participant.id]);
       // Give an existing referral-less participant a code if they somehow lack one.
       if (!participant.ref_code) await db.run('UPDATE participants SET ref_code = ? WHERE id = ?', [refCode(), participant.id]);
     } else {
@@ -1138,7 +1143,7 @@ async function handleApi(req, res, url) {
         myCode = refCode();
       }
       await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?)',
-        [pid, sessionId, user.uid, em, (name || '').trim(), ph || null, consent, myCode, referredBy, token, now()]);
+        [pid, sessionId, user.uid, em, (name || '').trim().slice(0, MAX_NAME), ph || null, consent, myCode, referredBy, token, now()]);
       // First time this user appears in this session → count it toward sessions_played.
       await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }
@@ -2127,7 +2132,7 @@ async function handleApi(req, res, url) {
        LIMIT ?`, [seriesId, limit]);
     return send(res, 200, {
       series: { id: series.id, title: series.title, status: series.status },
-      leaderboard: rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: onlyFirst(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.series_points) || 0 })),
+      leaderboard: rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: dispName(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.series_points) || 0 })),
     });
   }
 
@@ -2135,7 +2140,7 @@ async function handleApi(req, res, url) {
   // upcoming session, the active series leaderboard, and past winners. PII-safe — first
   // name + points only, never email/phone. One call powers the whole front door.
   if (p === '/api/home' && method === 'GET') {
-    const firstName = (nm) => (nm || 'A&R').toString().trim().split(/\s+/)[0];
+    const firstName = dispName; // full display name (no first-word splitting)
     // Live session (most recent if more than one is somehow live).
     const liveRow = await db.get("SELECT * FROM sessions WHERE status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1", []);
     let live = null;

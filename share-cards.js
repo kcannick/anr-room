@@ -48,6 +48,9 @@ function col(style, children) { return h({ display: 'flex', flexDirection: 'colu
 function row(style, children) { return h({ display: 'flex', flexDirection: 'row', alignItems: 'center', ...style }, children); }
 function text(style, str) { return { type: 'div', props: { style, children: String(str == null ? '' : str) } }; }
 function esc(s) { return String(s == null ? '' : s); }
+// Satori has no reliable CSS ellipsis, so hard-clip long names/titles to one clean line.
+function clip(s, n) { s = (s == null ? '' : String(s)).trim(); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; }
+const NOWRAP = { whiteSpace: 'nowrap' };
 
 // A small round avatar with initials (photo support comes later via <img>).
 function avatar(name, size) {
@@ -115,9 +118,9 @@ function bodyArs(list, showNumbers) {
     }, [
       text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: rc, width: 60, textAlign: 'center', flexShrink: 0 }, i + 1),
       avatar(p.name, 74),
-      col({ flexGrow: 1, marginLeft: 22, overflow: 'hidden' }, [
-        text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink }, p.name),
-        text({ fontFamily: SANS, fontWeight: 700, fontSize: 22, color: C.accent }, p.ig ? '@' + p.ig.replace(/^@/, '') : ''),
+      col({ flexGrow: 1, flexShrink: 1, marginLeft: 22, overflow: 'hidden' }, [
+        text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink, ...NOWRAP }, clip(p.name, 24)),
+        text({ fontFamily: SANS, fontWeight: 700, fontSize: 22, color: C.accent, ...NOWRAP }, p.ig ? '@' + clip(p.ig.replace(/^@/, ''), 24) : ''),
       ]),
       showNumbers ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: C.signal, flexShrink: 0 }, (p.points || 0).toLocaleString()) : text({}, ''),
     ]);
@@ -134,9 +137,9 @@ function bodySongs(list, showNumbers) {
       borderRadius: 18, padding: '18px 26px',
     }, [
       text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: rc, width: 60, textAlign: 'center', flexShrink: 0 }, i + 1),
-      col({ flexGrow: 1, marginLeft: 20, overflow: 'hidden' }, [
-        text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink }, s.title),
-        text({ fontFamily: SANS, fontWeight: 400, fontSize: 23, color: C.inkDim }, artist),
+      col({ flexGrow: 1, flexShrink: 1, marginLeft: 20, overflow: 'hidden' }, [
+        text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink, ...NOWRAP }, clip(s.title, 26)),
+        text({ fontFamily: SANS, fontWeight: 400, fontSize: 23, color: C.inkDim, ...NOWRAP }, clip(artist, 34)),
       ]),
       showNumbers ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 46, color: C.signal, flexShrink: 0 }, (s.score != null ? Number(s.score).toFixed(1) : '')) : text({}, ''),
     ]);
@@ -158,7 +161,7 @@ function bodyScore(d) {
   if (d.points != null) stats.push(stat((d.points || 0).toLocaleString(), 'Points', true));
   return col({ alignItems: 'center' }, [
     avatar(d.name, 210),
-    text({ fontFamily: SANS, fontWeight: 900, fontSize: 56, color: C.ink, marginTop: 26 }, d.name),
+    text({ fontFamily: SANS, fontWeight: 900, fontSize: 56, color: C.ink, marginTop: 26, ...NOWRAP }, clip(d.name, 20)),
     text({ fontFamily: SANS, fontWeight: 700, fontSize: 26, color: C.accent, marginTop: 8 }, d.ig ? '@' + d.ig.replace(/^@/, '') : ''),
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 168, color: C.signal, marginTop: 30, lineHeight: 1 }, '#' + d.rank),
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, 'of ' + d.total + ' A&Rs'),

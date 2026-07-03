@@ -643,7 +643,7 @@ async function call(path, body, method='POST', headers={}) {
   const ov = await fetch(base + `/api/overlay/state?s=${ESID}`).then(r => r.json());
   ok('overlay needs no auth', !!ov.session, JSON.stringify(ov.session && ov.session.name));
   ok('overlay carries leaderboard', Array.isArray(ov.leaderboard), JSON.stringify(ov.leaderboard && ov.leaderboard.length));
-  ok('overlay first-names only (no spaces)', ov.leaderboard.every(r => !/\s/.test(r.name)), JSON.stringify(ov.leaderboard.map(r=>r.name)));
+  ok('overlay shows the full display name (not first-word only)', ov.leaderboard.some(r => r.name === 'Fan One'), JSON.stringify(ov.leaderboard.map(r=>r.name)));
   const ovStr = JSON.stringify(ov);
   ok('overlay leaks no emails', !/@test\.com/.test(ovStr));
   ok('overlay leaks no signup answers', !/Atlanta/.test(ovStr) && !/fanone/.test(ovStr));
