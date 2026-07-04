@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/mark-color.png"><title>The A&R Room · Host</title>
-<link rel="stylesheet" href="/tokens.css?v=1">
+<link rel="stylesheet" href="/tokens.css?v=2">
 <link rel="stylesheet" href="/ui.css?v=1">
 <style>
   *{box-sizing:border-box}
@@ -14,8 +14,13 @@
   .bar .dot{width:10px;height:10px;border-radius:50%;background:var(--signal)}
   .bar h1{font-size:16px;margin:0;font-weight:600}
   .bar .who{margin-left:auto;font-size:13px;color:var(--ink-dim)}
-  .grid{max-width:1080px;margin:0 auto;padding:20px;display:grid;grid-template-columns:1.15fr .85fr;gap:18px}
-  @media(max-width:840px){.grid{grid-template-columns:1fr}}
+  /* minmax(0,…) floors the tracks: a wide child (table, long token) scrolls inside
+     its card instead of stretching the column past the viewport on phones. */
+  .grid{max-width:1080px;margin:0 auto;padding:20px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:18px}
+  @media(max-width:840px){.grid{grid-template-columns:minmax(0,1fr)}}
+  body{overflow-x:clip}
+  .card{min-width:0}
+  #paneVotes,#paneResults,#paneBoard,.feed{overflow-x:auto}
   .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px}
   /* overlay builder */
   .ob-cols{display:flex;gap:18px;flex-wrap:wrap}

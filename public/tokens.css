@@ -56,6 +56,10 @@
   --w-form:440px;
 }
 
+/* Mobile Safari inflates text on pages it deems "desktop" (font boosting),
+   widening min-content until layouts burst the viewport. Lock it off everywhere. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+
 /* Overlay dialect — translucent components over live video.
    Lighter inks + glass panels are earned there; nowhere else. */
 .overlay-scope{
