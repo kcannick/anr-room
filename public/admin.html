@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/mark-color.png"><title>The A&R Room · Host</title>
 <link rel="stylesheet" href="/tokens.css?v=1">
+<link rel="stylesheet" href="/ui.css?v=1">
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
@@ -45,12 +46,7 @@
   input:focus,textarea:focus{border-color:var(--signal)}
   textarea{resize:vertical;min-height:54px}
   .row{display:flex;gap:10px}.row>*{flex:1}
-  .btn{cursor:pointer;background:var(--signal);color:#06210b;border:none;font:inherit;font-weight:700;font-size:14px;padding:11px 14px;border-radius:10px;transition:filter .15s}
-  .btn:hover{filter:brightness(1.07)}.btn[disabled]{opacity:.4;cursor:default}
-  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:500}
-  .btn.warn{background:transparent;border:1px solid var(--hot);color:var(--hot)}
-  .btn.good{background:var(--good);color:#06210b}
-  .btn.sm{padding:8px 11px;font-size:13px}
+  /* buttons come from the shared system (/ui.css) */
   .stack{display:flex;flex-direction:column;gap:11px}
   .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#0a0814;color:var(--ink-dim)}
   .pill.live{border-color:var(--signal);color:var(--signal)}
@@ -118,8 +114,6 @@
   .grouplbl{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);margin:14px 0 8px}
   .pill.completed{border-color:var(--line);color:var(--ink-faint)}
   .pill.archived{border-color:var(--line);color:var(--ink-faint)}
-  .btn.danger{background:transparent;border:1px solid var(--hot);color:var(--hot);font-weight:500}
-  .btn.amber{background:transparent;border:1px solid var(--amber);color:var(--amber);font-weight:500}
   /* ---- admin users panel ---- */
   .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
   .urow+.urow{margin-top:8px}
@@ -979,7 +973,7 @@ async function loadUsers(){
       const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', u.seriesParticipated?(u.seriesParticipated+' series'):'', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
       const actions=u.role==='admin'?'<span class="muted" style="font-size:11px">protected</span>':
         `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
-        `<button class="btn ${u.blocked?'ghost':'amber'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
+        `<button class="btn ${u.blocked?'ghost':'warn'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
         `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
       // Per-host feature toggles (only for hosts). None granted by default. The giveaway
       // chip (distinct accent) controls whether this host's sessions count toward $500.

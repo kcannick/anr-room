@@ -1,0 +1,28 @@
+/* ============================================================
+   The A&R Room — shared UI components (layered on tokens.css)
+   One button vocabulary: .btn + size (sm / lg) + intent
+   (ghost / danger / warn / accent / hot). The default .btn is the
+   green primary — keep at most ONE visible per view; everything
+   else is ghost. Surfaces may set layout-only overrides (width,
+   margins), never colors or radii.
+   ============================================================ */
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+  background:var(--signal);color:var(--on-signal);border:1px solid transparent;
+  font-family:inherit;font-weight:700;font-size:14px;line-height:1.2;
+  padding:11px 16px;border-radius:var(--r-md);letter-spacing:.01em;text-decoration:none;
+  transition:filter .15s,transform .05s}
+.btn:hover{filter:brightness(1.07)}
+.btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.4;cursor:default;filter:none;transform:none}
+.btn.ghost{background:transparent;border-color:var(--line);color:var(--ink-dim);font-weight:600}
+.btn.danger{background:transparent;border-color:var(--hot);color:var(--hot);font-weight:600}
+.btn.warn{background:transparent;border-color:var(--gold);color:var(--gold);font-weight:600}
+.btn.accent{background:transparent;border-color:var(--accent);color:var(--accent)}
+.btn.accent:hover{background:rgba(109,95,224,.12);filter:none}
+.btn.hot{background:var(--hot);color:var(--on-hot)}
+.btn.good{background:var(--signal);color:var(--on-signal)} /* legacy alias for shipped markup */
+.btn.sm{padding:8px 12px;font-size:13px;border-radius:var(--r-sm);white-space:nowrap}
+.btn.lg{padding:14px 24px;font-size:15px;font-weight:800}
+.btn.block{display:flex;width:100%}

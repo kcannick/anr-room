@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/tokens.css?v=1">
+<link rel="stylesheet" href="/ui.css?v=1">
 <style>
   *{box-sizing:border-box}
   body{margin:0;padding:0 16px 60px;background:radial-gradient(130% 70% at 50% -6%, #241a4d 0%, var(--bg) 52%);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
@@ -30,16 +31,14 @@
   .live-banner .lb-txt{flex:1;min-width:0}
   .live-banner .lb-t{font-weight:800;font-size:15px;color:#ff8b96}
   .live-banner .lb-s{font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .live-banner .lb-btn{background:var(--hot);color:#2a0a0e;font-size:13px;font-weight:800;padding:10px 16px;border-radius:10px;white-space:nowrap}
+  .live-banner .btn{font-weight:800;padding:10px 16px}
   /* hero */
   .hero{text-align:center;padding:18px 6px 20px}
   .hero h1{font-size:33px;font-weight:800;line-height:1.08;letter-spacing:-.02em;margin:0 0 12px}
   .hero h1 .grad{color:var(--signal)}
   .hero p{font-size:15px;color:var(--ink-dim);line-height:1.5;margin:0 auto 18px;max-width:360px}
-  .cta{display:inline-block;background:var(--signal);color:#06210b;font-size:15px;font-weight:800;padding:14px 28px;border-radius:12px;cursor:pointer;border:none}
-  .cta:hover{filter:brightness(1.07)}
-  .cta.hot{background:var(--hot);color:#2a0a0e}
-  .cta.sec{display:inline-block;background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600;margin-top:10px}
+  .hero .btn{padding:14px 28px}
+  .hero .btn.ghost{margin-top:10px}
   .nav-join{font-size:12px;font-weight:700;color:#06210b;background:var(--signal);padding:6px 12px;border-radius:8px}
   .prize{display:inline-flex;align-items:center;gap:6px;background:rgba(245,165,36,.12);border:1px solid #5a4a1d;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;color:var(--amber);margin-bottom:16px}
   /* stream */
@@ -104,8 +103,7 @@
   .submit .s-t{font-size:15px;font-weight:700;margin-bottom:5px}
   .submit .s-s{font-size:12.5px;color:var(--ink-dim);margin-bottom:13px;line-height:1.45}
   .submit .s-actions{display:flex;gap:9px;justify-content:center;flex-wrap:wrap}
-  .submit .s-btn{display:inline-block;background:transparent;border:1px solid var(--cool);color:var(--cool);font-size:13px;font-weight:700;padding:10px 20px;border-radius:9px;cursor:pointer;font-family:inherit}
-  .submit .s-btn:hover{background:rgba(124,111,240,.12)}
+  .submit .btn{padding:10px 20px}
   .foot{text-align:center;font-size:11px;color:var(--ink-faint);margin-top:8px}
   .hide{display:none!important}
 </style>
@@ -209,8 +207,8 @@ function submitSection(sUrl){
     <div class="s-t">Know an artist we need to hear?</div>
     <div class="s-s">Send them here to submit — the room reviews new music live, so a real audience gives it real ears.</div>
     <div class="s-actions">
-      <a class="s-btn" href="${esc(href)}" target="_blank" rel="noopener">Have them submit</a>
-      <button class="s-btn" onclick="shareSubmit(this,'${esc(href)}')">Share link</button>
+      <a class="btn accent sm" href="${esc(href)}" target="_blank" rel="noopener">Have them submit</a>
+      <button class="btn accent sm" onclick="shareSubmit(this,'${esc(href)}')">Share link</button>
     </div>
   </div>`;
 }
@@ -231,7 +229,7 @@ function renderLive(d){
     <div class="live-banner">
       <span class="pulse"></span>
       <div class="lb-txt"><div class="lb-t">Live right now!</div><div class="lb-s">${esc(live.nowPlaying||live.name)} · ${live.arCount} A&Rs in the room</div></div>
-      <a class="lb-btn" href="${voteHref}">Get in to vote</a>
+      <a class="btn hot sm" href="${voteHref}">Get in to vote</a>
     </div>
     <div class="stream">
       <span class="lvtag">● LIVE</span>
@@ -242,7 +240,7 @@ function renderLive(d){
     </div>
     <div class="hero" style="padding:6px 6px 18px">
       <p style="margin-bottom:14px;max-width:380px">Watching on another screen? Jump in here and vote — rate the current song and read the room.</p>
-      <a class="cta hot" href="${voteHref}">Get in to vote</a>
+      <a class="btn hot lg" href="${voteHref}">Get in to vote</a>
     </div>
     ${tickerSection(d.recentARs)}
     ${boardSection(d.series,'Live standings · updating')}
@@ -253,8 +251,8 @@ function renderBetween(d){
   // With an upcoming session, "Register to play" leads and Join is secondary. With no
   // session, "Join the A&R Team" becomes the primary action (the registration that was missing).
   const heroCta=d.next
-    ? `<a class="cta" href="/?s=${encodeURIComponent(d.next.id)}" onclick="track('register_click',{from:'home'})">Register to play</a><a class="cta sec" href="/join">Join the A&R Team</a>`
-    : `<a class="cta" href="/join">Join the A&R Team</a><a class="cta sec" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
+    ? `<a class="btn lg" href="/?s=${encodeURIComponent(d.next.id)}" onclick="track('register_click',{from:'home'})">Register to play</a><a class="btn ghost lg" href="/join">Join the A&R Team</a>`
+    : `<a class="btn lg" href="/join">Join the A&R Team</a><a class="btn ghost lg" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
   $('#content').innerHTML=`
     <div class="hero">
       <div class="prize">💰 $500 monthly cash prize</div>

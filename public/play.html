@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/png" href="/mark-color.png"><title>The A&R Room</title>
 <link rel="stylesheet" href="/tokens.css?v=1">
+<link rel="stylesheet" href="/ui.css?v=1">
 <style>
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
@@ -48,12 +49,8 @@
     font-size:17px;padding:14px 15px;border-radius:12px;font-family:inherit;outline:none}
   input:focus{border-color:var(--signal)}
   input.code{text-align:center;letter-spacing:.5em;font-size:26px;font-family:"Space Mono",monospace;padding-right:10px}
-  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;cursor:pointer;
-    background:var(--signal);color:#06210b;border:none;font-family:inherit;font-weight:700;font-size:16px;
-    padding:15px;border-radius:12px;letter-spacing:.01em;transition:filter .15s,transform .05s}
-  .btn:active{transform:translateY(1px)} .btn:hover{filter:brightness(1.06)}
-  .btn[disabled]{opacity:.4;cursor:default;filter:none}
-  .btn.ghost{background:transparent;color:var(--ink-dim);border:1px solid var(--line);font-weight:500}
+  /* player surface: every .btn is a full-width lg tap target (system css in /ui.css) */
+  .btn{display:flex;width:100%;font-size:15px;padding:14px 16px}
   .err{color:var(--hot);font-size:13px;min-height:16px;margin:4px 2px 0}
   .stack{display:flex;flex-direction:column;gap:13px}
   /* rating dial */
