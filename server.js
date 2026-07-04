@@ -248,13 +248,10 @@ async function getBanner(bannerId) {
 }
 
 // Resolve which banner to show, most-specific wins:
-//   per-song (round.banner_id) -> session (session.banner_id) -> global default -> none.
-// `round` may be null (e.g. lobby), in which case we skip the per-song level.
-async function resolveBanner(session, round) {
-  if (round && round.banner_id) {
-    const b = await getBanner(round.banner_id);
-    if (b) return b;
-  }
+//   session (session.banner_id) -> global default -> none.
+// (A per-song level existed briefly; it was cut as over-engineering. rounds.banner_id
+// stays in the schema, dormant.)
+async function resolveBanner(session) {
   if (session && session.banner_id) {
     const b = await getBanner(session.banner_id);
     if (b) return b;
@@ -464,9 +461,8 @@ async function playerState(participant) {
     ...view,
   };
   // Ad banner — shown on lobby, voting, and locked only. Never on results/recap.
-  // Per-song banner uses the active round; otherwise session/global apply.
   if (out.phase === 'waiting' || out.phase === 'voting' || out.phase === 'locked') {
-    out.banner = await resolveBanner(session, round);
+    out.banner = await resolveBanner(session);
   }
   if (session.status === 'completed') {
     out.phase = 'recap';
@@ -2452,9 +2448,10 @@ async function handleApi(req, res, url) {
   }
 
   // Assign / clear a banner at a given level.
-  // target: 'global' | 'session' | 'song'.  bannerId null/empty clears it.
+  // target: 'global' | 'session'.  bannerId null/empty clears it.
+  // (The 'song' target was removed — per-round ads were over-engineering.)
   if (p === '/api/admin/banner/assign' && method === 'POST') {
-    const { sessionId, target, bannerId, roundId } = await readBody(req);
+    const { sessionId, target, bannerId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     if (blockedByPerm(await userFromAuth(req), 'ads')) return bad(res, 'Ads are not enabled for this account', 403);
@@ -2464,9 +2461,6 @@ async function handleApi(req, res, url) {
       else await db.run("DELETE FROM settings WHERE k = 'global_banner_id'");
     } else if (target === 'session') {
       await db.run('UPDATE sessions SET banner_id = ? WHERE id = ?', [val, sessionId]);
-    } else if (target === 'song') {
-      if (!roundId) return bad(res, 'roundId required for song-level banner');
-      await db.run('UPDATE rounds SET banner_id = ? WHERE id = ? AND session_id = ?', [val, roundId, sessionId]);
     } else {
       return bad(res, 'Unknown target');
     }

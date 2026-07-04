@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + migrate.test.js + e2e.test.js). **Expected: 261 passed, 0 failed.**
+- `npm test` — full suite (scoring.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (307 passed as of 2026-07; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -35,7 +35,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   statements separated by a line of exactly `--->`. Heavy/destructive conversion goes behind
   the allowHeavy gate. Indexes that depend on a migration-added column belong in the migration,
   NOT the base SCHEMA array in db.js (SCHEMA runs before migrations).
-- **Test before delivering.** Keep the suite green (242/0). Run `npm test` after changes.
+- **Test before delivering.** Keep the suite green (0 failures). Run `npm test` after changes.
 - **Mockup-first for UI.** Build/approve a visual mockup before writing front-end code.
   Approved mockups exist (see Design assets below) — build to match them.
 - **Live vote split/lean is SEALED until results.** Never expose the room's average or A/B

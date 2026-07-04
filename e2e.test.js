@@ -258,16 +258,15 @@ async function call(path, body, method='POST', headers={}) {
   const st3 = (await call(`/api/admin/state?sessionId=${cs3.d.sessionId}`, null, 'GET', { 'X-Admin-Token': cs3.d.adminToken })).d;
   ok('out-of-range default clamps to 60', st3.session.default_minutes === 60, 'got ' + st3.session.default_minutes);
 
-  console.log('\n— ad banner cascade: global → session → song —');
+  console.log('\n— ad banner cascade: global → session (song level removed) —');
   // 1x1 transparent PNG data URI (tiny valid image)
   const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMCAQGk4+nAAAAAAElFTkSuQmCC';
   const upG = await call('/api/admin/banner/upload', { sessionId: SID, scope: 'global', image_data: PNG, label: 'Global', link_url: 'https://makinitmag.com' }, 'POST', AH);
   ok('global banner uploaded', upG.status === 200 && upG.d.bannerId, JSON.stringify(upG.d));
   await call('/api/admin/banner/assign', { sessionId: SID, target: 'global', bannerId: upG.d.bannerId }, 'POST', AH);
   const upS = await call('/api/admin/banner/upload', { sessionId: SID, scope: 'session', image_data: PNG, label: 'Session' }, 'POST', AH);
-  const upSong = await call('/api/admin/banner/upload', { sessionId: SID, scope: 'session', image_data: PNG, label: 'Song' }, 'POST', AH);
 
-  // open a fresh round so we have an active song to attach to
+  // open a fresh round so players are in the voting phase
   const qbn = await call("/api/admin/round", { sessionId: SID, song_title: "Banner Song" }, 'POST', AH);
   const BRID = qbn.d.roundId;
   await call('/api/admin/round/open', { sessionId: SID, roundId: BRID, minutes: 2 }, 'POST', AH);
@@ -284,13 +283,12 @@ async function call(path, body, method='POST', headers={}) {
   bs = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': jb })).d;
   ok('session banner overrides global', bs.banner.id === upS.d.bannerId, JSON.stringify(bs.banner));
 
-  // Assign song-level → now song wins over session.
-  await call('/api/admin/banner/assign', { sessionId: SID, target: 'song', bannerId: upSong.d.bannerId, roundId: BRID }, 'POST', AH);
-  bs = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': jb })).d;
-  ok('song banner overrides session', bs.banner.id === upSong.d.bannerId, JSON.stringify(bs.banner));
+  // The removed song-level target must be rejected, not silently accepted.
+  const songAssign = await call('/api/admin/banner/assign', { sessionId: SID, target: 'song', bannerId: upS.d.bannerId, roundId: BRID }, 'POST', AH);
+  ok('song-level banner target is rejected', songAssign.status === 400, 'status ' + songAssign.status);
 
   // The banner image actually serves.
-  const imgRes = await fetch(base + '/api/banner/image?id=' + upSong.d.bannerId);
+  const imgRes = await fetch(base + '/api/banner/image?id=' + upS.d.bannerId);
   ok('banner image serves with image content-type', imgRes.ok && /^image\//.test(imgRes.headers.get('content-type') || ''), imgRes.status + ' ' + imgRes.headers.get('content-type'));
 
   // Vote + ratify → results phase must NOT carry a banner.
@@ -299,8 +297,6 @@ async function call(path, body, method='POST', headers={}) {
   bs = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': jb })).d;
   ok('results phase carries NO banner', bs.phase === 'results' && (bs.banner === undefined || bs.banner === null), 'banner=' + JSON.stringify(bs.banner));
 
-  // Clearing song banner falls back to session.
-  await call('/api/admin/banner/assign', { sessionId: SID, target: 'song', bannerId: null, roundId: BRID }, 'POST', AH);
   // Delete session banner → falls back to global for the next active round.
   await call('/api/admin/banner/delete', { sessionId: SID, bannerId: upS.d.bannerId }, 'POST', AH);
   const adminAfter = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;

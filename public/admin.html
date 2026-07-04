@@ -1700,7 +1700,6 @@ function adsBox(st){
         <option value="">Use as…</option>
         <option value="global">Global default</option>
         <option value="session">This session</option>
-        <option value="song">Current song</option>
       </select>
       <button class="btn ghost sm" title="Delete" onclick="deleteBanner('${b.id}')">✕</button>
     </div>`;
@@ -1708,18 +1707,12 @@ function adsBox(st){
   `<div class="row" style="margin-top:4px">
      <button class="btn ghost sm" onclick="assignBanner('','global')">Clear global</button>
      <button class="btn ghost sm" onclick="assignBanner('','session')">Clear session</button>
-     <button class="btn ghost sm" onclick="assignBanner('','song')">Clear song</button>
    </div>`;
 }
 
 window.assignBanner=async(bannerId,target)=>{
   if(!target)return;
-  const body={sessionId:SID,target,bannerId:bannerId||null};
-  if(target==='song'){
-    if(!lastState||!lastState.activeRound){alert('No song is currently active to attach a banner to.');return;}
-    body.roundId=lastState.activeRound.id;
-  }
-  try{await api('/api/admin/banner/assign',body);}catch(e){alert(e.message);}
+  try{await api('/api/admin/banner/assign',{sessionId:SID,target,bannerId:bannerId||null});}catch(e){alert(e.message);}
   refresh();
 };
 window.deleteBanner=async(bannerId)=>{
