@@ -777,6 +777,26 @@ async function call(path, body, method='POST', headers={}) {
   const gexpStr = JSON.stringify(gexp);
   ok('no raw player coords in export', !gexpStr.includes('40.7128') && !gexpStr.includes('34.0432'), 'coords leaked');
 
+  console.log('\n— geo: REQUIRED mode demands an AT-VENUE pool for every new vote —');
+  // Fresh round under required mode (close out the optional-phase round first).
+  await call('/api/admin/round/close', { sessionId: GSID, roundId: gRound2.d.roundId }, 'POST', GAH);
+  await call('/api/admin/round/ratify', { sessionId: GSID, roundId: gRound2.d.roundId }, 'POST', GAH);
+  await call('/api/admin/round', { sessionId: GSID, song_title: 'Strict Round' }, 'POST', GAH); // auto-opens
+  // Rita kept her 'online' pool from the optional phase — required mode must NOT accept it.
+  const ritaStrict = await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': farTok });
+  ok('online pool from the optional phase is NOT enough in required mode (428)', ritaStrict.status === 428 && ritaStrict.d.error === 'checkin_required', JSON.stringify([ritaStrict.status, ritaStrict.d]));
+  // A never-checked-in player is gated too.
+  const samStrict = await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': strictTok });
+  ok('unchecked player is gated in required mode (428)', samStrict.status === 428 && samStrict.d.error === 'checkin_required', JSON.stringify([samStrict.status, samStrict.d]));
+  // The at-venue player sails through.
+  const inStrict = await call('/api/vote', { taste: 8, predict: 7 }, 'POST', { 'X-Player-Token': inTok });
+  ok('at-venue player votes in required mode', inStrict.d.locked === true, JSON.stringify(inStrict.d));
+  // Rita shows up at the venue → re-check-in upgrades her pool → she can vote.
+  const ritaUp = await call('/api/checkin', { lat: near.lat, lng: near.lng, accuracy: 15 }, 'POST', { 'X-Player-Token': farTok });
+  ok('re-check-in at the venue upgrades online → in_person', ritaUp.d.pool === 'in_person' && ritaUp.d.checked_in, JSON.stringify(ritaUp.d));
+  const ritaVote = await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': farTok });
+  ok('upgraded player can now vote', ritaVote.d.locked === true, JSON.stringify(ritaVote.d));
+
   // ======================================================================
   // REGRESSION: per-session tokens — a token must resolve to ITS OWN session
   // (the "Session A link showed Session B" bug). Same email in two sessions

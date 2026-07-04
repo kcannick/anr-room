@@ -1660,8 +1660,14 @@ async function handleApi(req, res, url) {
     const isBinary = session && session.poll_type === 'binary';
     // Geo gate: when enforcement is on, a player must check in before their FIRST
     // lock-in. The client intercepts this code and shows the check-in prompt.
-    if (session && session.geo_mode && session.geo_mode !== 'off' && !participant.pool) {
-      return send(res, 428, { error: 'checkin_required', geo_mode: session.geo_mode });
+    // 'required' demands an at-venue check-in specifically — an 'online' pool from an
+    // earlier optional phase doesn't count once the host tightens the mode; the player
+    // is sent back through check-in (which upgrades them to in_person at the venue).
+    if (session && session.geo_mode && session.geo_mode !== 'off') {
+      const needCheckin = session.geo_mode === 'required'
+        ? participant.pool !== 'in_person'
+        : !participant.pool;
+      if (needCheckin) return send(res, 428, { error: 'checkin_required', geo_mode: session.geo_mode });
     }
 
     if (isBinary) {
