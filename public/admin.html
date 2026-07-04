@@ -48,14 +48,7 @@
   .row{display:flex;gap:10px}.row>*{flex:1}
   /* buttons come from the shared system (/ui.css) */
   .stack{display:flex;flex-direction:column;gap:11px}
-  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#0a0814;color:var(--ink-dim)}
-  .pill.live{border-color:var(--signal);color:var(--signal)}
-  .pill.closed{border-color:var(--hot);color:var(--hot)}
-  .pill.done{border-color:var(--good);color:var(--good)}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
-  td{padding:8px;border-bottom:1px solid #241d3d}
-  td.mono,th.mono{font-family:"Space Mono",monospace}
+  /* pills + .data-table come from the shared system (/ui.css) */
   .rank1{color:var(--signal);font-weight:700}
   .muted{color:var(--ink-faint)}
   .share{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
@@ -72,8 +65,6 @@
   .err{color:var(--hot);font-size:13px;min-height:16px}
   a{color:var(--cool)}
   /* ---- series admin ---- */
-  .pill.upcoming{border-color:var(--cool);color:var(--cool)}
-  .pill.active{border-color:var(--signal);color:var(--signal)}
   .ser{display:flex;align-items:center;gap:11px;padding:11px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c;cursor:pointer}
   .ser+.ser{margin-top:8px}
   .ser.sel{border-color:var(--signal-deep);background:rgba(75,183,73,.06)}
@@ -112,8 +103,6 @@
   .gfx-lbl{font-size:11px;color:var(--ink-faint);letter-spacing:.04em;margin-right:2px}
   .sc-actions .spacer{flex:1}
   .grouplbl{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);margin:14px 0 8px}
-  .pill.completed{border-color:var(--line);color:var(--ink-faint)}
-  .pill.archived{border-color:var(--line);color:var(--ink-faint)}
   /* ---- admin users panel ---- */
   .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
   .urow+.urow{margin-top:8px}
@@ -122,9 +111,7 @@
   .umeta{flex:1;min-width:0}
   .uname{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .usub{font-size:11px;color:var(--ink-faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .badge{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
-  .badge.admin{background:rgba(75,183,73,.16);color:var(--signal)}
-  .badge.host{background:rgba(109,95,224,.18);color:var(--accent)}
+  /* badges come from the shared system (/ui.css) */
   .permrow{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
   .permchip{font-size:10px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink-faint);cursor:pointer}
   .permchip.on{background:rgba(75,183,73,.16);border-color:var(--signal-deep);color:var(--signal)}
@@ -132,8 +119,6 @@
   ol.host-intro{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:11px}
   ol.host-intro li{font-size:13.5px;line-height:1.55;color:var(--ink-dim)}
   ol.host-intro li b{color:var(--ink)}
-  .badge.blocked{background:rgba(255,93,108,.16);color:var(--hot)}
-  .badge.incomplete{background:rgba(245,165,36,.14);color:var(--amber)}
   .uactions{display:flex;gap:6px;flex:none}
   .ufilters{display:flex;gap:8px;flex-wrap:wrap}
   .ufilters select,.ufilters input{flex:1;min-width:130px;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:9px 10px;border-radius:9px}
@@ -515,7 +500,7 @@
 </div>
 
 <!-- DELETE USER MODAL -->
-<div id="userDelModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
+<div id="userDelModal" class="modal-scrim" style="z-index:30">
   <div class="card" style="max-width:440px;width:100%">
     <h2>Delete user</h2>
     <p id="udBody" class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)"></p>
@@ -528,7 +513,7 @@
 </div>
 
 <!-- HOST WELCOME: first-run "you're a host" how-to, once per device. Host-role only. -->
-<div id="hostIntroModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.84);z-index:40;align-items:center;justify-content:center;padding:18px;overflow:auto">
+<div id="hostIntroModal" class="modal-scrim" style="z-index:40">
   <div class="card" style="max-width:470px;width:100%">
     <div style="font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700">You're a host</div>
     <h2 style="margin:6px 0 4px">Welcome — run your own rooms</h2>
@@ -544,7 +529,7 @@
 </div>
 
 <!-- OVERLAY BUILDER: pick orientation + elements, preview, copy the URL for OBS -->
-<div id="overlayModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.86);z-index:45;align-items:center;justify-content:center;padding:18px;overflow:auto">
+<div id="overlayModal" class="modal-scrim" style="z-index:45">
   <div class="card" style="max-width:820px;width:100%">
     <h2 style="margin:0 0 2px">Overlay builder</h2>
     <p class="muted" style="font-size:12.5px;margin:0 0 14px">Choose what shows, preview it, then copy the URL into an OBS browser source.</p>
@@ -584,7 +569,7 @@
 </div>
 
 <!-- EDIT SONG MODAL -->
-<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
+<div id="editModal" class="modal-scrim" style="z-index:30">
   <div class="card" style="max-width:440px;width:100%">
     <h2 id="editTitle">Edit song</h2>
     <div class="stack">
@@ -608,7 +593,7 @@
 </div>
 
 <!-- DELETE SESSION MODAL (archive / cascade) -->
-<div id="deleteModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
+<div id="deleteModal" class="modal-scrim" style="z-index:30">
   <div class="card" style="max-width:460px;width:100%">
     <h2>Delete session</h2>
     <p id="delBody" class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)"></p>
@@ -626,7 +611,7 @@
 </div>
 
 <!-- GO LIVE MODAL (confirm + choose notify channels) -->
-<div id="goliveModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.7);z-index:30;align-items:center;justify-content:center;padding:18px">
+<div id="goliveModal" class="modal-scrim" style="z-index:30">
   <div class="card" style="max-width:440px;width:100%">
     <h2>Go live?</h2>
     <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)">Opens <b id="glName" style="color:var(--ink)"></b> for voting and notifies your registered A&amp;Rs on the channels you pick.</p>
@@ -1521,13 +1506,13 @@ function reviewBox(st){
       const A=st.activeRound.split_a;
       const splitTxt = A!=null ? `Song A ${Math.round(A)}% · Song B ${100-Math.round(A)}%` : '—';
       box.innerHTML=`<p style="margin:0 0 10px"><strong>Result: <span class="mono" style="color:var(--cool)">${splitTxt}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
-        <table><thead><tr><th>#</th><th>Name</th><th class="mono">Pick</th><th class="mono">Guess A%</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
+        <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Pick</th><th class="mono">Guess A%</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
         ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${r.pick||'—'}</td><td class="mono">${r.predict_split!=null?Math.round(r.predict_split)+'%':'—'}</td><td class="mono muted">${r.err!=null?Math.round(r.err):'—'}</td><td class="mono" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
         </tbody></table>`;
       return;
     }
     box.innerHTML=`<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(st.activeRound.room_average)}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
-      <table><thead><tr><th>#</th><th>Name</th><th class="mono">Guess</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
+      <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Guess</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
       ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${(+r.predict).toFixed(1)}</td><td class="mono muted">${(+r.err).toFixed(1)}</td><td class="mono" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
       </tbody></table>`;
     return;
@@ -1612,10 +1597,10 @@ function render(st){
       const splitHdr = st.liveSplit!=null
         ? `<div style="margin:0 0 8px;font-size:13px"><strong style="color:var(--signal)">A ${st.liveSplit}%</strong> · <strong style="color:var(--cool)">${100-st.liveSplit}% B</strong> <span class="muted">(so far)</span></div>`
         : '';
-      feed.innerHTML=splitHdr+'<table><thead><tr><th>Name</th><th class="mono">Pick</th><th class="mono">Predicts A%</th></tr></thead><tbody>'+
+      feed.innerHTML=splitHdr+'<table class="data-table"><thead><tr><th>Name</th><th class="mono">Pick</th><th class="mono">Predicts A%</th></tr></thead><tbody>'+
         st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono" style="color:${v.pick==='A'?'var(--signal)':'var(--cool)'}">${v.pick}</td><td class="mono" style="color:var(--signal)">${v.predict_split!=null?Math.round(v.predict_split)+'%':'—'}</td></tr>`).join('')+'</tbody></table>';
     }else{
-      feed.innerHTML='<table><thead><tr><th>Name</th><th class="mono">Rated</th><th class="mono">Predicts</th></tr></thead><tbody>'+
+      feed.innerHTML='<table class="data-table"><thead><tr><th>Name</th><th class="mono">Rated</th><th class="mono">Predicts</th></tr></thead><tbody>'+
         st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono">${v.taste}</td><td class="mono" style="color:var(--signal)">${(+v.predict).toFixed(1)}</td></tr>`).join('')+'</tbody></table>';
     }
   }else{$('#feedCount').textContent='';feed.innerHTML='<div class="empty">No votes yet.</div>';}
@@ -1623,7 +1608,7 @@ function render(st){
   const b=$('#board');
   if(st.participants.length){
     const anyBrought=st.participants.some(p=>p.brought>0);
-    b.innerHTML='<table><thead><tr><th>#</th><th>Name</th><th class="mono">Total</th></tr></thead><tbody>'+
+    b.innerHTML='<table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Total</th></tr></thead><tbody>'+
       st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.pool==='in_person'?' <span style="color:var(--signal);font-size:11px">·in-room</span>':p.pool==='online'?' <span style="color:var(--cool);font-size:11px">·remote</span>':''}${p.brought>0?` <span class="muted" style="font-size:11px">· brought ${p.brought}</span>`:''}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+(anyBrought?'<p class="muted" style="font-size:11px;margin:8px 0 0">“Brought N” = friends they referred who actually played.</p>':'');
   }else b.innerHTML='<div class="empty">Nobody\'s joined yet — share the QR code.</div>';
 }

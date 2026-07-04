@@ -40,10 +40,7 @@
   .steplabel{font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px}
   .stepnum{font-family:"Space Mono",monospace;color:var(--signal)}
   .stepsub{font-size:11px;color:var(--ink-faint);font-weight:400}
-  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 2px}
-  .chip{font-size:12px;padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:#0a0814;color:var(--ink-dim);cursor:pointer;user-select:none}
-  .chip.on{background:rgba(109,95,224,.18);border-color:var(--accent);color:var(--ink)}
-  .chip.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 2px} /* .chip itself comes from /ui.css */
   .loc-drop{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:6;background:#15101f;border:1px solid var(--line);border-radius:11px;overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.55)}
   .loc-opt{padding:11px 13px;font-size:15px;cursor:pointer}
   .loc-opt+.loc-opt{border-top:1px solid var(--line)}
@@ -52,7 +49,7 @@
   .avph{width:44px;height:44px;border-radius:50%;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;border:1px solid var(--line);flex:none;background-size:cover;background-position:center}
   .big-check{width:74px;height:74px;border-radius:50%;background:rgba(75,183,73,.14);border:1px solid var(--signal-deep);display:flex;align-items:center;justify-content:center;font-size:36px;margin:6px auto 14px}
   /* crop modal */
-  #cropModal{display:none;position:fixed;inset:0;background:rgba(8,5,18,.92);z-index:30;align-items:center;justify-content:center;padding:18px}
+  #cropModal{z-index:30} /* scrim styles come from /ui.css .modal-scrim */
   .cropbox{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px;max-width:340px;width:100%}
   #cropStage{position:relative;width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;background:#000;touch-action:none;cursor:move}
   #cropImg{position:absolute;left:0;top:0;-webkit-user-drag:none;user-select:none;pointer-events:none}
@@ -141,7 +138,7 @@
 </div>
 
 <!-- PHOTO CROP MODAL -->
-<div id="cropModal">
+<div id="cropModal" class="modal-scrim">
   <div class="cropbox">
     <div style="font-size:15px;font-weight:700;margin-bottom:3px">Crop your photo</div>
     <p class="dim" style="font-size:12px;margin:0 0 12px">Drag to position · slider to zoom</p>

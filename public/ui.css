@@ -26,3 +26,55 @@
 .btn.sm{padding:8px 12px;font-size:13px;border-radius:var(--r-sm);white-space:nowrap}
 .btn.lg{padding:14px 24px;font-size:15px;font-weight:800}
 .btn.block{display:flex;width:100%}
+
+/* Chips — selectable pill (categories, filters). Lift-on-select is the app's
+   signature selected state; .on is the chip equivalent. */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:7px 11px;
+  border-radius:var(--r-pill);border:1px solid var(--line);background:var(--inset);
+  color:var(--ink-dim);cursor:pointer;user-select:none;font-family:inherit}
+.chip.on{background:rgba(109,95,224,.18);border-color:var(--accent);color:var(--ink)}
+.chip.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+
+/* Status pills — non-interactive state markers. Terminal states are muted. */
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;
+  border-radius:var(--r-pill);border:1px solid var(--line);background:var(--inset);color:var(--ink-dim)}
+.pill.live,.pill.active,.pill.done{border-color:var(--signal);color:var(--signal)}
+.pill.closed{border-color:var(--hot);color:var(--hot)}
+.pill.upcoming{border-color:var(--accent);color:var(--accent)}
+.pill.completed,.pill.archived{border-color:var(--line);color:var(--ink-faint)}
+
+/* Role / account badges */
+.badge{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  padding:2px 7px;border-radius:var(--r-pill)}
+.badge.admin{background:rgba(75,183,73,.16);color:var(--signal)}
+.badge.host{background:rgba(109,95,224,.18);color:var(--accent)}
+.badge.blocked{background:rgba(255,93,108,.16);color:var(--hot)}
+.badge.incomplete{background:rgba(245,197,24,.14);color:var(--gold)}
+
+/* Modals — one scrim; cards size on a width scale. Stacking (z-index) stays
+   per-instance: some flows deliberately layer (profile → photo crop). */
+.modal-scrim{display:none;position:fixed;inset:0;background:rgba(8,6,16,.82);
+  align-items:center;justify-content:center;padding:18px;overflow:auto}
+.modal-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:var(--pad-panel);width:100%}
+.modal-card.sm{max-width:340px}
+.modal-card.md{max-width:420px}
+.modal-card.lg{max-width:640px}
+
+/* Board rows — rank + name (ellipsis) + mono value. Medal colors on 1–3. */
+.board-row{display:flex;align-items:center;gap:10px;padding:8px 0}
+.board-row+.board-row{border-top:1px solid var(--line)}
+.board-row .rank{font-family:"Space Mono",ui-monospace,monospace;font-size:13px;color:var(--ink-faint);width:24px;flex:none;text-align:center}
+.board-row .rank.r1{color:var(--gold)}
+.board-row .rank.r2{color:#cdd1e6}
+.board-row .rank.r3{color:#e59b6b}
+.board-row .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.board-row .val{font-family:"Space Mono",ui-monospace,monospace;font-size:14px}
+
+/* Data tables — uppercase eyebrow headers, mono numeric cells */
+.data-table{width:100%;border-collapse:collapse;font-size:14px}
+.data-table th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-faint);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.data-table td{padding:8px;border-bottom:1px solid #241d3d}
+.data-table th.mono,.data-table td.mono{font-family:"Space Mono",ui-monospace,monospace}
+.data-table th.num,.data-table td.num{text-align:right;font-family:"Space Mono",ui-monospace,monospace}

@@ -186,10 +186,7 @@
   .stream-play{position:relative;width:56px;height:56px;border-radius:50%;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px;padding-left:3px}
   .stream-cap{position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:11px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85)}
   /* profile completion modal (3.5a) */
-  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 2px}
-  .chip{font-size:12px;padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:#0f0c1c;color:var(--ink-dim);cursor:pointer;user-select:none}
-  .chip.on{background:rgba(109,95,224,.18);border-color:var(--accent);color:var(--ink)}
-  .chip.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 2px} /* .chip itself comes from /ui.css */
   .pf-steplabel{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .pf-num{font-family:"Space Mono",monospace;color:var(--signal);font-weight:700}
   .pf-sub{font-size:11px;color:var(--ink-faint);font-weight:400}
@@ -475,7 +472,7 @@
 
 <!-- HOW-TO-PLAY MODAL: first-run onboarding for new A&Rs, once per device. Copy adapts to
      rating vs Versus (binary) rounds, and to whether this session plays for the $500. -->
-<div id="howToModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.84);z-index:85;align-items:center;justify-content:center;padding:22px;overflow:auto">
+<div id="howToModal" class="modal-scrim" style="z-index:85">
   <div class="panel" style="max-width:390px;width:100%">
     <div class="eyebrow" style="text-align:center">New here? How to play</div>
     <h2 id="htTitle" style="text-align:center;font-size:22px;margin:8px 0 16px">Read the room, win the month</h2>
@@ -489,7 +486,7 @@
 </div>
 
 <!-- BROADCAST MODAL: host message pushed to all players mid-session -->
-<div id="bcModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.78);z-index:60;align-items:center;justify-content:center;padding:22px">
+<div id="bcModal" class="modal-scrim" style="z-index:60">
   <div class="panel" style="max-width:420px;width:100%;text-align:center">
     <div style="font-size:30px">📣</div>
     <div class="eyebrow" style="margin-top:6px">From the host</div>
@@ -501,7 +498,7 @@
 <canvas id="shareCanvas" width="1080" height="1920" style="display:none"></canvas>
 
 <!-- FEEDBACK MODAL (beta) -->
-<div id="fbModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.82);z-index:80;align-items:center;justify-content:center;padding:22px;overflow:auto">
+<div id="fbModal" class="modal-scrim" style="z-index:80">
   <div class="panel" style="max-width:440px;width:100%">
     <div style="display:flex;align-items:center;gap:8px"><span style="font-size:24px">💬</span><span class="beta-pill">BETA</span></div>
     <h2 style="margin:10px 0 6px;font-size:21px">Tell us how it's going</h2>
@@ -524,7 +521,7 @@
 </div>
 
 <!-- CHECK-IN MODAL: shown when a geofenced session requires check-in at first lock-in -->
-<div id="ciModal" style="display:none;position:fixed;inset:0;background:rgba(8,6,16,.82);z-index:70;align-items:center;justify-content:center;padding:22px">
+<div id="ciModal" class="modal-scrim" style="z-index:70">
   <div class="panel" style="max-width:430px;width:100%;text-align:center">
     <div style="font-size:34px">📍</div>
     <div class="eyebrow" style="margin-top:6px">Check in to vote</div>
@@ -541,7 +538,7 @@
 </div>
 
 <!-- PROFILE COMPLETION MODAL (3.5a) — dead-time, dismissible -->
-<div id="profileModal" style="display:none;position:fixed;inset:0;background:rgba(8,5,18,.82);z-index:90;align-items:center;justify-content:center;padding:18px;overflow:auto">
+<div id="profileModal" class="modal-scrim" style="z-index:90">
   <div class="panel" style="max-width:440px;width:100%;border-color:var(--accent)">
     <div class="eyebrow" style="color:var(--signal)">Round closed · results soon</div>
     <div style="font-size:17px;font-weight:700;margin:2px 0 3px">Complete your profile to qualify</div>
@@ -571,7 +568,7 @@
 </div>
 
 <!-- PHOTO CROP MODAL (3.5a) — client-side square crop, then upload -->
-<div id="cropModal" style="display:none;position:fixed;inset:0;background:rgba(8,5,18,.92);z-index:95;align-items:center;justify-content:center;padding:18px">
+<div id="cropModal" class="modal-scrim" style="z-index:95">
   <div class="panel" style="max-width:340px;width:100%">
     <div style="font-size:15px;font-weight:700;margin-bottom:3px">Crop your photo</div>
     <p class="dim" style="font-size:12px;margin:0 0 12px">Drag to position · slider to zoom</p>
