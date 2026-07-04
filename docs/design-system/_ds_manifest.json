@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "cards": [
+    { "path": "tokens-colors.html", "name": "Colors", "group": "Tokens", "subtitle": "Foundation / ink / signal + accents — with drift audit", "viewport": { "width": 800, "height": 760 } },
+    { "path": "tokens-type.html", "name": "Typography", "group": "Tokens", "subtitle": "DM Sans voice + Space Mono data", "viewport": { "width": 800, "height": 720 } },
+    { "path": "buttons.html", "name": "Buttons", "group": "Components", "subtitle": "4 surfaces, 4 systems — as shipped", "viewport": { "width": 800, "height": 700 } },
+    { "path": "cards.html", "name": "Cards & panels", "group": "Components", "subtitle": "One card, five radii", "viewport": { "width": 850, "height": 560 } },
+    { "path": "pills-badges.html", "name": "Pills & badges", "group": "Components", "subtitle": "Status / roles / perms / marketing", "viewport": { "width": 800, "height": 560 } },
+    { "path": "forms.html", "name": "Forms", "group": "Components", "subtitle": "Inputs, code entry, slider", "viewport": { "width": 580, "height": 700 } },
+    { "path": "game.html", "name": "Game kit", "group": "Components", "subtitle": "Pips, A/B picks, timer, reactions — the personality", "viewport": { "width": 620, "height": 760 } },
+    { "path": "data.html", "name": "Data display", "group": "Components", "subtitle": "Boards, tables, KPIs, result cells", "viewport": { "width": 620, "height": 760 } },
+    { "path": "modals.html", "name": "Modals", "group": "Components", "subtitle": "Onboarding / broadcast / destructive confirm", "viewport": { "width": 1000, "height": 560 } },
+    { "path": "overlay-kit.html", "name": "Overlay kit", "group": "Components", "subtitle": "OBS lower-third, winner, QR — the video dialect", "viewport": { "width": 650, "height": 640 } },
+    { "path": "proposal.html", "name": "Unification proposal", "group": "Proposal", "subtitle": "One vocabulary: tokens, radii, buttons, primitives", "viewport": { "width": 700, "height": 860 } }
+  ]
+}
