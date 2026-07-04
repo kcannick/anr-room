@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/mark-color.png"><title>The A&R Room · Host</title>
-<link rel="stylesheet" href="/tokens.css?v=2">
+<link rel="stylesheet" href="/tokens.css?v=3">
 <link rel="stylesheet" href="/ui.css?v=1">
 <style>
   *{box-sizing:border-box}
@@ -35,7 +35,7 @@
   .ob-row{display:flex;align-items:center;gap:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:11px 14px;cursor:pointer}
   .ob-row input[type=checkbox]{width:auto;margin:0;flex:none}
   .ob-row span{display:flex;flex-direction:column;line-height:1.25}
-  .ob-row b{font-size:13px} .ob-row small{color:var(--ink-faint);font-size:11px}
+  .ob-row b{font-size:13px} .ob-row small{color:var(--ink-faint);font-size:12px}
   .ob-row.dis{opacity:.45;pointer-events:none}
   .ob-nums{margin-left:auto;display:flex;align-items:center;gap:5px}
   .ob-nums input{width:48px}
@@ -61,6 +61,7 @@
     font:inherit;font-size:13px;font-weight:600;padding:8px 11px;cursor:pointer;margin-bottom:-1px}
   .tab:hover{color:var(--ink-dim)}
   .tab.on{color:var(--ink);border-bottom-color:var(--signal)}
+  .tb{display:inline-block;width:1.4em;text-align:center} /* tier emoji: fixed slot so names align */
   /* sticky round mini-bar */
   #miniBar{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:20;
     display:flex;gap:10px;align-items:center;background:rgba(13,11,22,.96);border:1px solid var(--line);
@@ -69,7 +70,7 @@
   /* session settings summary (read-only; edit lives in the modal) */
   .sum{display:flex;gap:10px;padding:7px 0;border-top:1px solid #241d3d;font-size:13px}
   .sum:first-child{border-top:none}
-  .sum b{flex:0 0 92px;font-weight:600;color:var(--ink-faint);font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding-top:1px}
+  .sum b{flex:0 0 92px;font-weight:600;color:var(--ink-faint);font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding-top:1px}
   .sum span{flex:1;min-width:0;color:var(--ink-dim);overflow-wrap:anywhere}
   .muted{color:var(--ink-faint)}
   .share{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
@@ -82,7 +83,7 @@
   .hide{display:none!important}
   .kpi{display:flex;gap:18px;margin-bottom:6px}
   .kpi div b{font-family:"Space Mono",monospace;font-size:22px;display:block}
-  .kpi div span{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.08em}
+  .kpi div span{font-size:12px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.08em}
   .err{color:var(--hot);font-size:13px;min-height:16px}
   a{color:var(--cool)}
   /* ---- series admin ---- */
@@ -91,10 +92,10 @@
   .ser.sel{border-color:var(--signal-deep);background:rgba(75,183,73,.06)}
   .ser-meta{flex:1;min-width:0}
   .ser-name{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
-  .ser-sub{font-size:11px;color:var(--ink-faint);margin-top:2px}
+  .ser-sub{font-size:12px;color:var(--ink-faint);margin-top:2px}
   .tagsel{width:auto;max-width:160px;font-size:12px;padding:7px 9px;font-size:13px}
   .lbhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-  .lbcut{font-size:11px;color:var(--amber);font-weight:600}
+  .lbcut{font-size:12px;color:var(--amber);font-weight:600}
   .lrow{display:flex;align-items:center;gap:11px;padding:8px 6px}
   .lrow+.lrow{border-top:1px solid var(--line)}
   .lrow.qualifies{background:rgba(245,165,36,.05)}
@@ -103,27 +104,27 @@
   .lav{width:32px;height:32px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:12px;border:1px solid var(--line)}
   .lmeta{flex:1;min-width:0}
   .lname{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .lsub{font-size:10px;color:var(--ink-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lsub{font-size:11px;color:var(--ink-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lpts{font-family:"Space Mono",monospace;font-size:14px;font-weight:700}
   .cutline{display:flex;align-items:center;gap:8px;margin:4px 0;color:var(--amber);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
   .cutline::before,.cutline::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--amber),transparent);opacity:.4}
   .note{font-size:11.5px;color:var(--ink-dim);line-height:1.55;margin:12px 2px 0}
   .note b{color:var(--ink)}
-  .hint{font-size:11px;color:var(--ink-faint);margin:7px 2px 0;line-height:1.5}
+  .hint{font-size:12px;color:var(--ink-faint);margin:7px 2px 0;line-height:1.5}
   /* ---- session cards ---- */
   .sc{border:1px solid var(--line);border-radius:13px;background:#0f0c1c;padding:14px;margin-bottom:12px}
   .sc.live{border-color:rgba(255,93,108,.4)}
   .sc-top{display:flex;align-items:flex-start;gap:10px}
   .sc-name{font-size:15px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
   .sc-attrs{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
-  .attr{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-dim);background:#140f24;border:1px solid var(--line);border-radius:8px;padding:4px 8px}
+  .attr{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-dim);background:#140f24;border:1px solid var(--line);border-radius:8px;padding:4px 8px}
   .attr.series{color:var(--signal);border-color:var(--signal-deep);background:rgba(75,183,73,.07)}
   .attr.series.none{color:var(--ink-faint);border-color:var(--line);background:#140f24}
   .sc-actions{display:flex;gap:7px;margin-top:13px;padding-top:12px;border-top:1px solid var(--line);align-items:center}
   .sc-actions.gfx{margin-top:9px;padding-top:9px;border-top-style:dashed;flex-wrap:wrap}
-  .gfx-lbl{font-size:11px;color:var(--ink-faint);letter-spacing:.04em;margin-right:2px}
+  .gfx-lbl{font-size:12px;color:var(--ink-faint);letter-spacing:.04em;margin-right:2px}
   .sc-actions .spacer{flex:1}
-  .grouplbl{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);margin:14px 0 8px}
+  .grouplbl{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);margin:14px 0 8px}
   /* ---- admin users panel ---- */
   .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
   .urow+.urow{margin-top:8px}
@@ -131,7 +132,7 @@
   .uav{width:38px;height:38px;border-radius:50%;flex:none;background:#221b3a;display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:13px;border:1px solid var(--line);object-fit:cover}
   .umeta{flex:1;min-width:0}
   .uname{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-  .usub{font-size:11px;color:var(--ink-faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .usub{font-size:12px;color:var(--ink-faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* badges come from the shared system (/ui.css) */
   .permrow{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
   .permchip{font-size:10px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink-faint);cursor:pointer}
@@ -284,7 +285,7 @@
             <button class="btn ghost sm" id="btnExpCsvAnon">CSV (anon)</button>
             <button class="btn ghost sm" id="btnExpJsonAnon">JSON (anon)</button>
           </div>
-          <p class="muted" style="font-size:11px;margin:8px 0 0">Full versions include emails (for your list). Anon versions use “Player 1, 2…” — safe to share for analysis.</p>
+          <p class="muted" style="font-size:12px;margin:8px 0 0">Full versions include emails (for your list). Anon versions use “Player 1, 2…” — safe to share for analysis.</p>
         </div>
       </div>
     </div>
@@ -346,10 +347,10 @@
           <button class="btn ghost sm" id="wuArs">Top 8 A&amp;Rs</button>
           <button class="btn ghost sm" id="wuSongs">Top 8 Songs</button>
         </div>
-        <div class="muted" style="font-size:11px;margin-top:6px">Recap emails carry each A&amp;R’s score card + the Top 8 graphics. Data exports live on the Leaderboard tab.</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Recap emails carry each A&amp;R’s score card + the Top 8 graphics. Data exports live on the Leaderboard tab.</div>
       </div>
       <button class="btn ghost sm" id="btnEditSession" style="margin-top:12px;width:100%">✎ Edit session settings</button>
-      <div class="muted" style="font-size:11px;margin-top:6px">Delete is on each session in <b>My sessions</b>.</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">Delete is on each session in <b>My sessions</b>.</div>
     </div>
 
     <div class="card">
@@ -357,8 +358,11 @@
       <div class="share">
         <img id="qr" width="132" height="132" alt="QR">
         <div style="flex:1;min-width:180px">
-          <div class="link" id="playLink"></div>
-          <button class="btn ghost sm" id="btnCopy" style="margin-top:8px">Copy link</button>
+          <div class="link" id="playLink" style="white-space:nowrap;overflow-x:auto;word-break:normal"></div>
+          <div class="row" style="margin-top:8px;gap:6px">
+            <button class="btn ghost sm" id="btnCopy" style="flex:0 0 auto">Copy link</button>
+            <button class="btn ghost sm" id="btnQrDl" style="flex:0 0 auto" title="For flyers, slides, or screens at the venue">Download QR</button>
+          </div>
         </div>
       </div>
     </div>
@@ -378,30 +382,27 @@
         <button class="btn ghost sm" id="btnBroadcastClear">Clear</button>
       </div>
       <div class="muted" id="bcStatus" style="font-size:12px;margin-top:6px"></div>
+      <!-- Active-broadcast chip: what players are seeing right now, with a one-tap clear -->
+      <div class="hide" id="bcActive" style="display:flex;align-items:center;gap:8px;margin-top:8px;background:rgba(245,197,24,.09);border:1px solid var(--gold);border-radius:10px;padding:8px 11px;font-size:12px">
+        <span style="color:var(--gold);font-weight:700;flex:none">LIVE</span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-dim)" id="bcActiveTxt"></span>
+        <button class="btn ghost sm" id="bcActiveClear" style="padding:2px 8px;flex:none" title="Clear the broadcast">✕</button>
+      </div>
       </div><!-- /bcBlock -->
 
       <!-- Overlay builder -->
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
         <label>Stream overlay <span class="muted">(OBS browser source — transparent)</span></label>
-        <button class="btn sm" id="btnGetOverlay" style="margin-top:8px;width:100%">🎛️ Get overlay link</button>
+        <button class="btn ghost sm" id="btnGetOverlay" style="margin-top:8px;width:100%">🎛️ Get overlay link</button>
         <p class="muted" style="font-size:12px;margin:8px 2px 0">Pick orientation + what shows, preview it, and copy the URL into OBS.</p>
-      </div>
-
-      <!-- SMS test: verify the Twilio config (sends one text; no session needed) — platform-only -->
-      <div id="smsTestRow" class="hide" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
-        <label>Test SMS setup <span class="muted">(sends one text to check Twilio)</span></label>
-        <div class="row" style="gap:6px;margin-top:2px">
-          <input id="smsTestNum" type="tel" inputmode="tel" placeholder="+1 305 555 1234" style="flex:1">
-          <button class="btn ghost sm" id="btnSmsTest" style="flex:0 0 auto">Send test</button>
-        </div>
-        <div class="muted" id="smsTestStatus" style="font-size:12px;margin-top:6px"></div>
       </div>
     </div>
 
     <div class="card" id="adsCard">
-      <h2>Ads <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">· lobby · voting · locked</span></h2>
+      <h2>Ads <span class="muted" style="font-size:12px;text-transform:none;letter-spacing:0">· shown in the lobby, during voting, and on the locked screen</span></h2>
       <div id="adsBox"></div>
-      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+      <button class="btn ghost sm" id="btnAdUploadToggle" style="margin-top:10px;width:100%">＋ Upload a banner</button>
+      <div class="hide" id="adUploadWrap" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
         <label>Upload a banner <span class="muted">(≈320×100, under 500KB, PNG/JPG)</span></label>
         <input type="file" id="adFile" accept="image/png,image/jpeg,image/gif,image/webp" style="font-size:13px">
         <div class="row" style="margin-top:10px">
@@ -425,7 +426,7 @@
 <!-- Sticky round mini-bar: keeps the live round controllable once the round card is
      scrolled away (especially mid-page on a phone). Click = jump back to the round. -->
 <div id="miniBar" class="hide" title="Jump to the round">
-  <span class="pill live" id="mbStatus" style="font-size:11px">● Voting</span>
+  <span class="pill live" id="mbStatus" style="font-size:12px">● Voting</span>
   <span id="mbTitle" style="font-weight:600;font-size:13px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
   <span class="mono" id="mbTimer" style="font-weight:700;color:var(--signal);font-size:13px"></span>
   <span class="muted mono" id="mbVotes" style="font-size:12px"></span>
@@ -451,7 +452,7 @@
         </select>
         <label style="margin-top:10px">Room code <span class="muted">(optional — players must enter it to join)</span></label>
         <input id="cfgAccessCode" placeholder="e.g. VIP2026 — leave empty for open join" maxlength="24" autocomplete="off" style="text-transform:uppercase">
-        <div class="muted" style="font-size:11px;margin-top:6px">Unlisted + a room code = a private, invite-only room. Anyone already in keeps playing; the code guards new joins.</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Unlisted + a room code = a private, invite-only room. Anyone already in keeps playing; the code guards new joins.</div>
       </div>
       <div style="border-top:1px solid var(--line);padding-top:12px">
         <label>Event location <span class="muted">(for on-premise check-in)</span></label>
@@ -470,7 +471,7 @@
           <option value="optional">Optional — check in as in-room or remote (dual pool)</option>
           <option value="required">Required — must be at the venue to vote</option>
         </select>
-        <div class="muted" style="font-size:11px;margin-top:6px">Set the venue any time (even before the event). Turn the mode on when you're ready to enforce — players check in at their first lock-in.</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Set the venue any time (even before the event). Turn the mode on when you're ready to enforce — players check in at their first lock-in.</div>
       </div>
       <div class="row" style="margin-top:4px">
         <button class="btn ghost" id="seCancel">Cancel</button>
@@ -555,6 +556,16 @@
         <select id="uSort"><option value="recent">Sort: Last seen</option><option value="points">Sort: Points</option><option value="sessions">Sort: Sessions</option><option value="series">Sort: Series</option><option value="name">Sort: Name</option></select>
       </div>
       <div id="usersList" style="margin-top:14px"><div class="empty">Loading…</div></div>
+      <!-- SMS test: platform-level Twilio check (admin-only screen), moved out of the
+           per-session console where it was noise. -->
+      <div id="smsTestRow" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+        <label>Test SMS setup <span class="muted">(sends one text to check Twilio)</span></label>
+        <div class="row" style="gap:6px;margin-top:2px">
+          <input id="smsTestNum" type="tel" inputmode="tel" placeholder="+1 305 555 1234" style="flex:1">
+          <button class="btn ghost sm" id="btnSmsTest" style="flex:0 0 auto">Send test</button>
+        </div>
+        <div class="muted" id="smsTestStatus" style="font-size:12px;margin-top:6px"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -575,7 +586,7 @@
 <!-- HOST WELCOME: first-run "you're a host" how-to, once per device. Host-role only. -->
 <div id="hostIntroModal" class="modal-scrim" style="z-index:40">
   <div class="card" style="max-width:470px;width:100%">
-    <div style="font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700">You're a host</div>
+    <div style="font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700">You're a host</div>
     <h2 style="margin:6px 0 4px">Welcome — run your own rooms</h2>
     <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim);margin:0 0 14px">The A&amp;R Room is your free engagement tool. Three steps:</p>
     <ol class="host-intro">
@@ -677,8 +688,8 @@
     <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)">Opens <b id="glName" style="color:var(--ink)"></b> for voting and notifies your registered A&amp;Rs on the channels you pick.</p>
     <div style="margin:12px 0 2px">
       <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;cursor:pointer"><input type="checkbox" id="glEmail" checked style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>Email</span></label>
-      <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;cursor:pointer"><input type="checkbox" id="glSms" checked style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>SMS <span class="muted" style="font-size:11px">(only A&amp;Rs who opted in)</span></span></label>
-      <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;opacity:.5"><input type="checkbox" id="glPush" disabled style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>Push <span class="muted" style="font-size:11px">(coming with the app update)</span></span></label>
+      <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;cursor:pointer"><input type="checkbox" id="glSms" checked style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>SMS <span class="muted" style="font-size:12px">(only A&amp;Rs who opted in)</span></span></label>
+      <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;opacity:.5"><input type="checkbox" id="glPush" disabled style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>Push <span class="muted" style="font-size:12px">(coming with the app update)</span></span></label>
     </div>
     <div class="muted" id="glCount" style="font-size:12px;margin:4px 2px 0"></div>
     <div class="row" style="margin-top:14px">
@@ -1035,7 +1046,7 @@ async function loadUsers(){
       const av=u.photoUrl?`<img class="uav" src="${esc(u.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(u.name||u.email))}</div>`;
       const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.role==='host'?'<span class="badge host">Host</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', (!u.blocked&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
       const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', u.seriesParticipated?(u.seriesParticipated+' series'):'', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
-      const actions=u.role==='admin'?'<span class="muted" style="font-size:11px">protected</span>':
+      const actions=u.role==='admin'?'<span class="muted" style="font-size:12px">protected</span>':
         `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
         `<button class="btn ${u.blocked?'ghost':'warn'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
         `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
@@ -1160,7 +1171,7 @@ async function loadSeriesBoard(sid){
       html+=`<div class="lrow${r.qualifies?' qualifies':''}">
         <span class="lrank${r.qualifies?' q':''}">${r.rank}</span>
         <div class="lav">${esc(initials(r.name))}</div>
-        <div class="lmeta"><div class="lname">${esc(r.name||'—')}${incomplete?' <span style="color:var(--amber);font-size:10px;font-weight:600">· profile incomplete</span>':''}</div><div class="lsub">${sub}</div></div>
+        <div class="lmeta"><div class="lname">${esc(r.name||'—')}${incomplete?' <span style="color:var(--amber);font-size:11px;font-weight:600">· profile incomplete</span>':''}</div><div class="lsub">${sub}</div></div>
         <span class="lpts">${(Number(r.points)||0).toLocaleString()}</span>
       </div>`;
       if(r.qualifies)qSeen++;
@@ -1338,6 +1349,14 @@ $('#btnIngestPull').onclick=async()=>{
 };
 
 $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textContent);$('#btnCopy').textContent='Copied!';setTimeout(()=>$('#btnCopy').textContent='Copy link',1200);};
+$('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
+  try{
+    const blob=await fetch($('#qr').src).then(r=>r.blob());
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='join-qr-'+(SID||'session')+'.svg';
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }catch(e){alert('Download failed: '+e.message);}
+});
 
 // ---- event tools ----
 // ---- Overlay builder: form -> overlay URL (+ live preview) ----
@@ -1385,9 +1404,18 @@ $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textCont
 $('#btnBroadcast')&&($('#btnBroadcast').onclick=async()=>{
   const text=$('#bcInput').value.trim();if(!text)return $('#bcStatus').textContent='Type a message first.';
   $('#btnBroadcast').disabled=true;
-  try{await api('/api/admin/session/broadcast',{sessionId:SID,text,overlay:$('#bcOverlay').checked});$('#bcStatus').textContent=$('#bcOverlay').checked?'Sent to players + overlay ✓':'Sent to all players ✓';setTimeout(()=>$('#bcStatus').textContent='',2500);}
+  try{
+    await api('/api/admin/session/broadcast',{sessionId:SID,text,overlay:$('#bcOverlay').checked});
+    $('#bcInput').value=''; // sent message lives in the active chip now, not the input
+    $('#bcStatus').textContent=$('#bcOverlay').checked?'Sent to players + overlay ✓':'Sent to all players ✓';setTimeout(()=>$('#bcStatus').textContent='',2500);
+    refresh();
+  }
   catch(e){$('#bcStatus').textContent=e.message;}
   $('#btnBroadcast').disabled=false;
+});
+$('#bcActiveClear')&&($('#bcActiveClear').onclick=async()=>{
+  try{await api('/api/admin/session/broadcast',{sessionId:SID,clear:true});refresh();}
+  catch(e){$('#bcStatus').textContent=e.message;}
 });
 $('#btnBroadcastClear')&&($('#btnBroadcastClear').onclick=async()=>{
   try{await api('/api/admin/session/broadcast',{sessionId:SID,clear:true});$('#bcInput').value='';$('#bcStatus').textContent='Cleared.';setTimeout(()=>$('#bcStatus').textContent='',2000);}
@@ -1611,14 +1639,14 @@ function reviewBox(st){
       const A=st.activeRound.split_a;
       const splitTxt = A!=null ? `Song A ${Math.round(A)}% · Song B ${100-Math.round(A)}%` : '—';
       box.innerHTML=`<p style="margin:0 0 10px"><strong>Result: <span class="mono" style="color:var(--cool)">${splitTxt}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
-        <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Pick</th><th class="mono">Guess A%</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
-        ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${r.pick||'—'}</td><td class="mono">${r.predict_split!=null?Math.round(r.predict_split)+'%':'—'}</td><td class="mono muted">${r.err!=null?Math.round(r.err):'—'}</td><td class="mono" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
+        <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Pick</th><th class="num">Guess A%</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
+        ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${r.pick||'—'}</td><td class="num">${r.predict_split!=null?Math.round(r.predict_split)+'%':'—'}</td><td class="num muted">${r.err!=null?Math.round(r.err):'—'}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
         </tbody></table>`;
       return;
     }
     box.innerHTML=`<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(st.activeRound.room_average)}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
-      <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Guess</th><th class="mono">Off</th><th class="mono">Pts</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${(+r.predict).toFixed(1)}</td><td class="mono muted">${(+r.err).toFixed(1)}</td><td class="mono" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
+      <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="num">Guess</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="num">${(+r.predict).toFixed(1)}</td><td class="num muted">${(+r.err).toFixed(1)}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
       </tbody></table>`;
     return;
   }
@@ -1646,7 +1674,7 @@ function render(st){
   const ing=st.ingestLatest;
   const hasIng=!!(ing&&(ing.title||ing.artist));
   $('#btnIngestPull').classList.toggle('hide', !hasIng || !isAdmin() || isNero); // Drupal ingest is platform-only
-  if($('#smsTestRow'))$('#smsTestRow').classList.toggle('hide', !isAdmin()); // SMS test is platform-only
+  // (SMS test lives on the admin-only Users screen now.)
   // Per-host feature gating (admins see everything).
   if($('#bcBlock'))$('#bcBlock').classList.toggle('hide', !hasP('broadcast'));
   if($('#adsCard'))$('#adsCard').classList.toggle('hide', !hasP('ads'));
@@ -1677,6 +1705,13 @@ function render(st){
   // Read-only settings summary — editing happens in the modal (openSessEdit).
   const sess=st.session;
   const sumRow=(k,v,dim)=>`<div class="sum"><b>${k}</b><span${dim?' style="color:var(--ink-faint)"':''}>${v}</span></div>`;
+  // URL rows: clickable, middle-truncated — the full value lives in the Edit modal.
+  const linkVal=(u)=>{
+    if(!u)return null;
+    let short=u.replace(/^https?:\/\/(www\.)?/,'');
+    if(short.length>38)short=short.slice(0,22)+'…'+short.slice(-12);
+    return `<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">${esc(short)} ↗</a>`;
+  };
   const geoTxt = (!sess.geo_mode||sess.geo_mode==='off') ? null
     : `${sess.geo_mode==='required'?'Required — must be at the venue to vote':'Optional — in-room / remote pools'}${sess.geo_label?' · 📍 '+esc(sess.geo_label):''}${sess.geo_radius?' · '+sess.geo_radius+' yd':''}`;
   const accessTxt = (sess.visibility==='unlisted'?'Unlisted — link/QR only':'Public — featured when live')
@@ -1684,8 +1719,8 @@ function render(st){
   $('#sessSummary').innerHTML=
     sumRow('Name',esc(sess.name||'—'))+
     sumRow('Description',sess.lobby_message?esc(sess.lobby_message):'None — players see the default lobby',!sess.lobby_message)+
-    sumRow('Watch link',sess.watch_url?esc(sess.watch_url):'Not set',!sess.watch_url)+
-    sumRow('Submit link',sess.submit_url?esc(sess.submit_url):'Not set',!sess.submit_url)+
+    sumRow('Watch link',linkVal(sess.watch_url)||'Not set',!sess.watch_url)+
+    sumRow('Submit link',linkVal(sess.submit_url)||'Not set',!sess.submit_url)+
     sumRow('Access',accessTxt,sess.visibility!=='unlisted'&&!sess.access_code)+
     sumRow('Location',geoTxt||'Off — no check-in',!geoTxt);
   serverSkew=(st.serverNow||Date.now())-Date.now();
@@ -1705,7 +1740,7 @@ function render(st){
   // share
   const link=location.origin+'/?s='+st.session.id;
   $('#playLink').textContent=link;
-  $('#qr').src='https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data='+encodeURIComponent(link);
+  $('#qr').src='/api/qr?d='+encodeURIComponent(link); // self-hosted SVG (same generator as the overlay)
   // event tools
   if($('#overlayLink'))$('#overlayLink').textContent=location.origin+'/overlay?s='+st.session.id;
   if($('#poolCounts')&&st.pools){
@@ -1714,8 +1749,11 @@ function render(st){
       ? `Checked in — <strong style="color:var(--signal)">${st.pools.in_person} in-room</strong> · <strong style="color:var(--cool)">${st.pools.online} remote</strong>${st.pools.unchecked?` · ${st.pools.unchecked} not yet`:''}`
       : '';
   }
-  if($('#bcStatus')&&st.session.broadcast&&!$('#bcStatus').textContent){
-    $('#bcStatus').textContent='Live broadcast active — players see it.';
+  // Active-broadcast chip: shows the exact message players see, with a ✕ to clear.
+  if($('#bcActive')){
+    const bc=st.session.broadcast;
+    $('#bcActive').classList.toggle('hide',!bc);
+    if(bc)$('#bcActiveTxt').textContent=bc.text;
   }
   roundControls(st);queueBox(st);reviewBox(st);adsBox(st);smartTab(st);
   // feed — the tab badge always shows the count so the host can watch it without switching
@@ -1726,24 +1764,24 @@ function render(st){
       const splitHdr = st.liveSplit!=null
         ? `<div style="margin:0 0 8px;font-size:13px"><strong style="color:var(--signal)">A ${st.liveSplit}%</strong> · <strong style="color:var(--cool)">${100-st.liveSplit}% B</strong> <span class="muted">(so far)</span></div>`
         : '';
-      feed.innerHTML=splitHdr+'<table class="data-table"><thead><tr><th>Name</th><th class="mono">Pick</th><th class="mono">Predicts A%</th></tr></thead><tbody>'+
-        st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono" style="color:${v.pick==='A'?'var(--signal)':'var(--cool)'}">${v.pick}</td><td class="mono" style="color:var(--signal)">${v.predict_split!=null?Math.round(v.predict_split)+'%':'—'}</td></tr>`).join('')+'</tbody></table>';
+      feed.innerHTML=splitHdr+'<table class="data-table"><thead><tr><th>Name</th><th class="mono">Pick</th><th class="num">Predicts A%</th></tr></thead><tbody>'+
+        st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono" style="color:${v.pick==='A'?'var(--signal)':'var(--cool)'}">${v.pick}</td><td class="num" style="color:var(--signal)">${v.predict_split!=null?Math.round(v.predict_split)+'%':'—'}</td></tr>`).join('')+'</tbody></table>';
     }else{
-      feed.innerHTML='<table class="data-table"><thead><tr><th>Name</th><th class="mono">Rated</th><th class="mono">Predicts</th></tr></thead><tbody>'+
-        st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono">${v.taste}</td><td class="mono" style="color:var(--signal)">${(+v.predict).toFixed(1)}</td></tr>`).join('')+'</tbody></table>';
+      feed.innerHTML='<table class="data-table"><thead><tr><th>Name</th><th class="num">Rated</th><th class="num">Predicts</th></tr></thead><tbody>'+
+        st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="num">${v.taste}</td><td class="num" style="color:var(--signal)">${(+v.predict).toFixed(1)}</td></tr>`).join('')+'</tbody></table>';
     }
   }else{feed.innerHTML='<div class="empty">No votes yet.</div>';}
   // board
   const b=$('#board');
   if(st.participants.length){
     const anyBrought=st.participants.some(p=>p.brought>0);
-    b.innerHTML='<table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Total</th></tr></thead><tbody>'+
-      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.pool==='in_person'?' <span style="color:var(--signal);font-size:11px">·in-room</span>':p.pool==='online'?' <span style="color:var(--cool);font-size:11px">·remote</span>':''}${p.brought>0?` <span class="muted" style="font-size:11px">· brought ${p.brought}</span>`:''}</td><td class="mono" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+(anyBrought?'<p class="muted" style="font-size:11px;margin:8px 0 0">“Brought N” = friends they referred who actually played.</p>':'');
+    b.innerHTML='<table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="num">Total</th></tr></thead><tbody>'+
+      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.pool==='in_person'?' <span style="color:var(--signal);font-size:12px">·in-room</span>':p.pool==='online'?' <span style="color:var(--cool);font-size:12px">·remote</span>':''}${p.brought>0?` <span class="muted" style="font-size:12px">· brought ${p.brought}</span>`:''}</td><td class="num" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+(anyBrought?'<p class="muted" style="font-size:12px;margin:8px 0 0">“Brought N” = friends they referred who actually played.</p>':'');
   }else b.innerHTML='<div class="empty">Nobody\'s joined yet — share the QR code.</div>';
 }
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const TIER_BADGE={bullseye:'🎯',sharp:'🔥',close:'👌',off:'😬',wayoff:'💀'};
-const tierBadge=t=>t?`<span title="${t}">${TIER_BADGE[t]||''}</span>`:'';
+const tierBadge=t=>t?`<span class="tb" title="${t}">${TIER_BADGE[t]||''}</span>`:'<span class="tb"></span>';
 
 // ---- ads ----
 function adsBox(st){
@@ -1762,7 +1800,7 @@ function adsBox(st){
       <img src="/api/banner/image?id=${b.id}" alt="" style="height:34px;width:auto;max-width:90px;border-radius:5px;background:#0a0814">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.label||'Banner')} <span class="muted" style="font-weight:400">· ${b.scope}</span></div>
-        <div style="margin-top:3px;display:flex;gap:5px;flex-wrap:wrap">${tags.join('')||'<span class="muted" style="font-size:11px">not assigned</span>'}</div>
+        <div style="margin-top:3px;display:flex;gap:5px;flex-wrap:wrap">${tags.join('')||'<span class="muted" style="font-size:12px">not assigned</span>'}</div>
       </div>
       <select onchange="assignBanner('${b.id}',this.value);this.selectedIndex=0" style="background:#0a0814;border:1px solid var(--line);color:var(--ink-dim);font:inherit;font-size:12px;padding:6px;border-radius:8px">
         <option value="">Use as…</option>
@@ -1788,6 +1826,10 @@ window.deleteBanner=async(bannerId)=>{
   await api('/api/admin/banner/delete',{sessionId:SID,bannerId});refresh();
 };
 
+$('#btnAdUploadToggle')&&($('#btnAdUploadToggle').onclick=()=>{
+  const open=$('#adUploadWrap').classList.toggle('hide');
+  $('#btnAdUploadToggle').textContent=open?'＋ Upload a banner':'－ Hide upload';
+});
 $('#btnAdUpload').onclick=async()=>{
   $('#adErr').textContent='';
   const f=$('#adFile').files[0];
@@ -1894,6 +1936,8 @@ function tickTimers(){
 function boot(){
   showScreen('console');
   tabManual=false;setTab('paneVotes',false); // fresh session → tab follows round state again
+  // A "Pulled: …" note from the previous session would misdescribe this one.
+  $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
   initRealtime();
   if(!window._timerTick)window._timerTick=setInterval(tickTimers,1000);

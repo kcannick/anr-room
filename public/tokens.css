@@ -13,10 +13,11 @@
   --line:#2e2750;
   --inset:#0a0814;            /* inputs, pips, wells */
 
-  /* Ink */
+  /* Ink. --ink-faint was #6f688f (≈3.3:1 on panel — under WCAG AA for the small
+     hint text it's used on); lifted to the overlay dialect's value, ≈4.5:1. */
   --ink:#f3f0fb;
   --ink-dim:#a9a2c9;
-  --ink-faint:#6f688f;
+  --ink-faint:#8c84ad;
 
   /* Signal — THE green */
   --signal:#4bb749;
