@@ -61,6 +61,11 @@
     font:inherit;font-size:13px;font-weight:600;padding:8px 11px;cursor:pointer;margin-bottom:-1px}
   .tab:hover{color:var(--ink-dim)}
   .tab.on{color:var(--ink);border-bottom-color:var(--signal)}
+  /* sticky round mini-bar */
+  #miniBar{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:20;
+    display:flex;gap:10px;align-items:center;background:rgba(13,11,22,.96);border:1px solid var(--line);
+    border-radius:999px;padding:8px 14px;backdrop-filter:blur(8px);cursor:pointer;
+    box-shadow:0 12px 34px rgba(0,0,0,.55);max-width:calc(100vw - 24px)}
   /* session settings summary (read-only; edit lives in the modal) */
   .sum{display:flex;gap:10px;padding:7px 0;border-top:1px solid #241d3d;font-size:13px}
   .sum:first-child{border-top:none}
@@ -240,20 +245,57 @@
 
 <!-- CONSOLE -->
 <div id="console" class="grid hide">
-  <!-- LEFT: round control -->
+  <!-- LEFT: run the show — round, live activity, songs -->
   <div class="stack">
-    <div class="card">
+    <div class="card" id="roundCard">
       <h2>This round</h2>
       <div id="roundBox"></div>
     </div>
 
-    <!-- Hidden entirely while the queue is empty — adding a song IS the queue UI then. -->
-    <div class="card hide" id="queueCard">
-      <h2>Up next <span id="queueCount" class="muted"></span></h2>
-      <div id="queueBox"></div>
+    <!-- Room activity: KPI strip + three tabs. The default tab follows the round
+         state (voting → Votes, tallying/ratified → Results, idle → Leaderboard)
+         until the host picks one by hand. -->
+    <div class="card">
+      <div class="kpi">
+        <div><b id="kJoined">0</b><span id="kJoinedLbl">A&amp;Rs</span></div>
+        <div><b id="kRound" class="mono">—</b><span id="kRoundLbl">Round</span></div>
+        <div><b id="kVotes">0</b><span id="kVotesLbl">Votes in</span></div>
+      </div>
+      <div class="tabbar" style="margin-top:8px">
+        <button class="tab on" id="tabVotes" data-pane="paneVotes">Votes <span id="feedCount"></span></button>
+        <button class="tab" id="tabResults" data-pane="paneResults">Results</button>
+        <button class="tab" id="tabBoard" data-pane="paneBoard">Leaderboard</button>
+      </div>
+      <div id="paneVotes">
+        <div class="feed" id="feed"><div class="empty">No votes yet.</div></div>
+      </div>
+      <div id="paneResults" class="hide">
+        <div id="reviewBox"><div class="empty">Open and close a round to see results here before you ratify.</div></div>
+      </div>
+      <div id="paneBoard" class="hide">
+        <div id="board"><div class="empty">Nobody's joined yet.</div></div>
+        <div id="exportBlock" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+          <label style="display:block;margin-bottom:8px">Export data <span class="muted">(ratified rounds)</span></label>
+          <div class="row">
+            <button class="btn ghost sm" id="btnExpCsv">CSV (full)</button>
+            <button class="btn ghost sm" id="btnExpJson">JSON (full)</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn ghost sm" id="btnExpCsvAnon">CSV (anon)</button>
+            <button class="btn ghost sm" id="btnExpJsonAnon">JSON (anon)</button>
+          </div>
+          <p class="muted" style="font-size:11px;margin:8px 0 0">Full versions include emails (for your list). Anon versions use “Player 1, 2…” — safe to share for analysis.</p>
+        </div>
+      </div>
     </div>
 
     <div class="card">
+      <!-- Queue lives inside the add-a-song card: visible only when something is
+           actually queued (straight-to-open makes an empty queue the normal state). -->
+      <div class="hide" id="queueSection" style="border-bottom:1px solid var(--line);margin-bottom:14px;padding-bottom:6px">
+        <h2>Up next <span id="queueCount" class="muted"></span></h2>
+        <div id="queueBox"></div>
+      </div>
       <h2 id="queueFormTitle">Add a song</h2>
       <button class="btn ghost sm hide" id="btnNeroPull" style="margin-bottom:8px">⬇ Pull current song from Nero</button>
       <div class="muted hide" id="neroMsg" style="font-size:12px;margin-bottom:8px"></div>
@@ -277,7 +319,7 @@
     </div>
   </div>
 
-  <!-- RIGHT: room -->
+  <!-- RIGHT: setup & share -->
   <div class="stack">
     <!-- Session: status + state-aware actions + read-only settings summary.
          Everything editable lives in the Edit-session modal. -->
@@ -294,12 +336,7 @@
           <button class="btn good sm hide" id="btnReopen">Reopen</button>
         </div>
       </div>
-      <div class="kpi">
-        <div><b id="kJoined">0</b><span>A&amp;Rs</span></div>
-        <div><b id="kRound" class="mono">—</b><span>Round</span></div>
-        <div><b id="kVotes">0</b><span>Votes in</span></div>
-      </div>
-      <div id="sessSummary" style="margin-top:10px"></div>
+      <div id="sessSummary" style="margin-top:4px"></div>
       <div id="poolCounts" class="muted" style="font-size:12px;margin-top:8px"></div>
       <button class="btn ghost sm" id="btnEditSession" style="margin-top:12px;width:100%">✎ Edit session settings</button>
       <div class="muted" style="font-size:11px;margin-top:6px">Delete is on each session in <b>My sessions</b>.</div>
@@ -371,40 +408,17 @@
       </div>
     </div>
 
-    <!-- Room activity: one card, three tabs. The default tab follows the round
-         state (voting → Live votes, tallying/ratified → Results, idle → Leaderboard)
-         until the host picks one by hand. -->
-    <div class="card">
-      <div class="tabbar">
-        <button class="tab on" id="tabVotes" data-pane="paneVotes">Live votes <span id="feedCount"></span></button>
-        <button class="tab" id="tabResults" data-pane="paneResults">Results</button>
-        <button class="tab" id="tabBoard" data-pane="paneBoard">Leaderboard</button>
-      </div>
-      <div id="paneVotes">
-        <div class="feed" id="feed"><div class="empty">No votes yet.</div></div>
-      </div>
-      <div id="paneResults" class="hide">
-        <div id="reviewBox"><div class="empty">Open and close a round to see results here before you ratify.</div></div>
-      </div>
-      <div id="paneBoard" class="hide">
-        <div id="board"><div class="empty">Nobody's joined yet.</div></div>
-        <div id="exportBlock" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
-          <label style="display:block;margin-bottom:8px">Export data <span class="muted">(ratified rounds)</span></label>
-          <div class="row">
-            <button class="btn ghost sm" id="btnExpCsv">CSV (full)</button>
-            <button class="btn ghost sm" id="btnExpJson">JSON (full)</button>
-          </div>
-          <div class="row" style="margin-top:8px">
-            <button class="btn ghost sm" id="btnExpCsvAnon">CSV (anon)</button>
-            <button class="btn ghost sm" id="btnExpJsonAnon">JSON (anon)</button>
-          </div>
-          <p class="muted" style="font-size:11px;margin:8px 0 0">Full versions include emails (for your list). Anon versions use “Player 1, 2…” — safe to share for analysis.</p>
-        </div>
-      </div>
-    </div>
-
     <button class="btn ghost sm" id="btnBackToSessions">← My sessions</button>
   </div>
+</div>
+
+<!-- Sticky round mini-bar: keeps the live round controllable once the round card is
+     scrolled away (especially mid-page on a phone). Click = jump back to the round. -->
+<div id="miniBar" class="hide" title="Jump to the round">
+  <span class="pill live" id="mbStatus" style="font-size:11px">● Voting</span>
+  <span id="mbTitle" style="font-weight:600;font-size:13px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+  <span class="mono" id="mbTimer" style="font-weight:700;color:var(--signal);font-size:13px"></span>
+  <span class="muted mono" id="mbVotes" style="font-size:12px"></span>
 </div>
 
 <!-- EDIT SESSION MODAL: every session setting in one place, explicit Save/Cancel -->
@@ -1547,8 +1561,8 @@ function queueBox(st){
   const box=$('#queueBox');
   const q=st.queue||[];
   $('#queueCount').textContent=q.length?('· '+q.length):'';
-  // No queue → no queue card. Adding a song is the whole UI then.
-  $('#queueCard').classList.toggle('hide',!q.length);
+  // No queue → the "Up next" section inside the add-a-song card stays hidden.
+  $('#queueSection').classList.toggle('hide',!q.length);
   const roundBusy=(st.activeRound&&(st.activeRound.status==='voting'||st.activeRound.status==='closed'))||sessLocked;
   const prevMins=$('#openMins')?$('#openMins').value:'';
   const fillMins=prevMins!==''?prevMins:(st.session.default_minutes||5);
@@ -1672,10 +1686,10 @@ function render(st){
     $('#bcStatus').textContent='Live broadcast active — players see it.';
   }
   roundControls(st);queueBox(st);reviewBox(st);adsBox(st);smartTab(st);
-  // feed
+  // feed — the tab badge always shows the count so the host can watch it without switching
+  $('#feedCount').textContent='('+st.liveVotes.length+')';
   const feed=$('#feed');
   if(st.liveVotes.length){
-    $('#feedCount').textContent='('+st.liveVotes.length+')';
     if(isBin){
       const splitHdr = st.liveSplit!=null
         ? `<div style="margin:0 0 8px;font-size:13px"><strong style="color:var(--signal)">A ${st.liveSplit}%</strong> · <strong style="color:var(--cool)">${100-st.liveSplit}% B</strong> <span class="muted">(so far)</span></div>`
@@ -1686,7 +1700,7 @@ function render(st){
       feed.innerHTML='<table class="data-table"><thead><tr><th>Name</th><th class="mono">Rated</th><th class="mono">Predicts</th></tr></thead><tbody>'+
         st.liveVotes.map(v=>`<tr><td>${esc(v.name)}</td><td class="mono">${v.taste}</td><td class="mono" style="color:var(--signal)">${(+v.predict).toFixed(1)}</td></tr>`).join('')+'</tbody></table>';
     }
-  }else{$('#feedCount').textContent='';feed.innerHTML='<div class="empty">No votes yet.</div>';}
+  }else{feed.innerHTML='<div class="empty">No votes yet.</div>';}
   // board
   const b=$('#board');
   if(st.participants.length){
@@ -1812,14 +1826,45 @@ async function refresh(){
   try{const st=await api('/api/admin/state?sessionId='+encodeURIComponent(SID),null,'GET');render(st);}
   catch(e){if(/auth/i.test(e.message)){localStorage.removeItem('rt_admin_sid');localStorage.removeItem('rt_admin_token');location.reload();}}
 }
+// ---- sticky round mini-bar + 1s timer repaint ----
+// The poll can be as slow as 15s under Ably push, so the countdowns tick locally
+// off lastState. The mini-bar shows only while a round is in play AND the round
+// card is scrolled out of view; clicking it jumps back to the round.
+function roundCardVisible(){
+  const rc=document.getElementById('roundCard');if(!rc)return true;
+  const r=rc.getBoundingClientRect();
+  return r.bottom>70&&r.top<innerHeight; // 70 ≈ below the sticky top bar
+}
+const mb=$('#miniBar');
+if(mb)mb.onclick=()=>{const rc=$('#roundCard');if(rc)rc.scrollIntoView({block:'start'});};
+function secsLeft(closesAt){return Math.max(0,Math.round((Number(closesAt)-(Date.now()+serverSkew))/1000));}
+function fmtLeft(closesAt){const s=secsLeft(closesAt);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function tickTimers(){
+  const r=lastState&&lastState.activeRound;
+  const inPlay=!!(r&&(r.status==='voting'||r.status==='closed'));
+  // big timer on the round card
+  const t=document.querySelector('.timer-big');
+  if(t&&r&&r.status==='voting'&&r.closes_at){
+    t.textContent=fmtLeft(r.closes_at);
+    t.classList.toggle('warn',secsLeft(r.closes_at)<=10);
+  }
+  // mini-bar
+  if(!mb)return;
+  const show=inPlay&&!roundCardVisible()&&!document.getElementById('console').classList.contains('hide');
+  mb.classList.toggle('hide',!show);
+  if(!show)return;
+  $('#mbStatus').textContent=r.status==='voting'?'● Voting':'Tallying';
+  $('#mbStatus').className='pill '+(r.status==='voting'?'live':'closed');
+  $('#mbTitle').textContent=r.song_title+(r.option_b_title?' vs '+r.option_b_title:'');
+  $('#mbTimer').textContent=(r.status==='voting'&&r.closes_at)?fmtLeft(r.closes_at):'';
+  $('#mbVotes').textContent=(lastState.liveVotes?lastState.liveVotes.length:0)+' in';
+}
 function boot(){
   showScreen('console');
   tabManual=false;setTab('paneVotes',false); // fresh session → tab follows round state again
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
   initRealtime();
-  setInterval(()=>{ // local timer repaint without server hit
-    const t=document.querySelector('.timer-big');if(!t)return;
-  },1000);
+  if(!window._timerTick)window._timerTick=setInterval(tickTimers,1000);
 }
 // ---- realtime: refresh instantly on server push; polling stays the fallback ----
 // Poll every 2s until Ably connects; once connected, push drives refreshes and the poll
