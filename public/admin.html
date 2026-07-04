@@ -333,11 +333,21 @@
           <button class="btn ghost sm hide" id="btnUnlive">Back to upcoming</button>
           <button class="btn warn sm" id="btnEnd">Complete</button>
           <button class="btn ghost sm hide" id="btnArchive">Archive</button>
-          <button class="btn good sm hide" id="btnReopen">Reopen</button>
+          <button class="btn ghost sm hide" id="btnReopen">Reopen</button>
         </div>
       </div>
       <div id="sessSummary" style="margin-top:4px"></div>
       <div id="poolCounts" class="muted" style="font-size:12px;margin-top:8px"></div>
+      <!-- Wrap-up: post-show actions, shown only on completed sessions -->
+      <div class="hide" id="wrapUpRow" style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+        <label style="display:block;margin-bottom:8px">Wrap up <span class="muted">(share the night with your A&amp;Rs)</span></label>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          <button class="btn sm" id="wuEmail">✉ Email recap</button>
+          <button class="btn ghost sm" id="wuArs">Top 8 A&amp;Rs</button>
+          <button class="btn ghost sm" id="wuSongs">Top 8 Songs</button>
+        </div>
+        <div class="muted" style="font-size:11px;margin-top:6px">Recap emails carry each A&amp;R’s score card + the Top 8 graphics. Data exports live on the Leaderboard tab.</div>
+      </div>
       <button class="btn ghost sm" id="btnEditSession" style="margin-top:12px;width:100%">✎ Edit session settings</button>
       <div class="muted" style="font-size:11px;margin-top:6px">Delete is on each session in <b>My sessions</b>.</div>
     </div>
@@ -353,7 +363,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="toolsCard">
       <h2>Event tools</h2>
       <!-- Broadcast (host-gated by the 'broadcast' perm) -->
       <div id="bcBlock">
@@ -1402,6 +1412,10 @@ function openSessEdit(){
   $('#sessEditModal').style.display='flex';
 }
 $('#btnEditSession')&&($('#btnEditSession').onclick=openSessEdit);
+// Wrap-up actions (completed sessions) reuse the recap/graphics plumbing from My sessions.
+$('#wuEmail')&&($('#wuEmail').onclick=()=>emailRecap(SID,$('#wuEmail')));
+$('#wuArs')&&($('#wuArs').onclick=()=>dlCard('ars',SID,$('#wuArs')));
+$('#wuSongs')&&($('#wuSongs').onclick=()=>dlCard('songs',SID,$('#wuSongs')));
 $('#seCancel').onclick=()=>{$('#sessEditModal').style.display='none';};
 $('#sessEditModal').onclick=(e)=>{if(e.target===$('#sessEditModal'))$('#sessEditModal').style.display='none';};
 $('#seSave').onclick=async()=>{
@@ -1522,7 +1536,9 @@ function roundControls(st){
   const addBtn=$('#btnAddRound'); if(addBtn)addBtn.textContent=inPlay?'Add to queue':'▶ Add & play now';
   const qft=$('#queueFormTitle'); if(qft)qft.textContent=inPlay?'Queue a song':'Add a song';
   const box=$('#roundBox');
-  if(!r){box.innerHTML='<div class="empty">No round in play. Add a song below — it starts a round right away.</div>';return;}
+  if(!r){box.innerHTML=sessLocked
+    ?'<div class="empty">Session complete — no rounds were played.</div>'
+    :'<div class="empty">No round in play. Add a song below — it starts a round right away.</div>';return;}
   const statusPill={voting:'<span class="pill live">● Voting open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
   let timer='';
   if(r.status==='voting'&&r.closes_at){
@@ -1547,7 +1563,9 @@ function roundControls(st){
       <button class="btn good" style="margin-top:8px;width:100%" onclick="ratifyRound('${r.id}')">Tally the room → review winners</button>`;
   }else if(r.status==='ratified'){
     const qn=(st.queue||[]).length;
-    actions=`<p class="muted" style="font-size:13px;margin:8px 0 0">Results are live on players' screens. ${qn?'Open the next song from the queue when ready.':'Add the next song below when ready.'}</p>`;
+    actions=sessLocked
+      ?`<p class="muted" style="font-size:13px;margin:8px 0 0">Final round ratified — the session is complete. Players see their recap; wrap-up actions are in the Session panel.</p>`
+      :`<p class="muted" style="font-size:13px;margin:8px 0 0">Results are live on players' screens. ${qn?'Open the next song from the queue when ready.':'Add the next song below when ready.'}</p>`;
   }
   box.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center">
       <div><div class="muted" style="font-size:12px">Round ${r.idx}</div>
@@ -1652,6 +1670,10 @@ function render(st){
   $('#btnAddRound').disabled=locked;
   $('#addLockNote').classList.toggle('hide',!locked);
   if(locked){$('#btnNeroPull').classList.add('hide');$('#btnIngestPull').classList.add('hide');}
+  // Post-show mode: wrap-up actions surface, live-only tools go away.
+  $('#wrapUpRow').classList.toggle('hide',stx!=='completed');
+  if($('#wuSongs'))$('#wuSongs').classList.toggle('hide',isBin); // Versus has no Top-8-Songs card
+  if($('#toolsCard'))$('#toolsCard').classList.toggle('hide',locked);
   // Read-only settings summary — editing happens in the modal (openSessEdit).
   const sess=st.session;
   const sumRow=(k,v,dim)=>`<div class="sum"><b>${k}</b><span${dim?' style="color:var(--ink-faint)"':''}>${v}</span></div>`;
@@ -1668,8 +1690,18 @@ function render(st){
     sumRow('Location',geoTxt||'Off — no check-in',!geoTxt);
   serverSkew=(st.serverNow||Date.now())-Date.now();
   $('#kJoined').textContent=st.verifiedCount;
-  $('#kRound').textContent=st.activeRound?('#'+st.activeRound.idx):'—';
-  $('#kVotes').textContent=st.liveVotes.length;
+  if(locked){
+    // Post-show: totals, not live-round numbers.
+    $('#kRound').textContent=st.activeRound?st.activeRound.idx:'0';
+    $('#kRoundLbl').textContent='Rounds';
+    $('#kVotes').textContent=(st.participants||[]).reduce((s,p)=>s+(Number(p.total_points)||0),0);
+    $('#kVotesLbl').textContent='Pts awarded';
+  }else{
+    $('#kRound').textContent=st.activeRound?('#'+st.activeRound.idx):'—';
+    $('#kRoundLbl').textContent='Round';
+    $('#kVotes').textContent=st.liveVotes.length;
+    $('#kVotesLbl').textContent='Votes in';
+  }
   // share
   const link=location.origin+'/?s='+st.session.id;
   $('#playLink').textContent=link;
