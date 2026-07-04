@@ -1,0 +1,50 @@
+<!-- @dsCard group="Proposal" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px;max-width:640px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 18px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#4bb749;margin:22px 0 10px}
+p,li{font-size:13px;color:#a9a2c9;line-height:1.65}
+code{font-family:"Space Mono",monospace;font-size:11px;color:#f3f0fb;background:#171328;border:1px solid #2e2750;border-radius:6px;padding:1px 6px}
+ul{padding-left:18px;margin:6px 0}
+</style></head><body>
+<h1>Proposed unification</h1>
+<p class="sub">One shared vocabulary; per-surface dialects only where earned (overlay)</p>
+
+<h2>1 · One token sheet</h2>
+<ul>
+<li><b>Kill duplicate names:</b> <code>--signal</code> is THE green (drop good/brand-green); <code>--gold: #f5a524</code> is THE warm accent (drop amber; share cards adopt it); pick ONE purple — <code>--accent: #6d5fe0</code> — and retire cool or give it a real job.</li>
+<li><b>Tokenize the strays:</b> <code>--inset: #0a0814</code> (inputs, pips, wells); overlay's lighter inks become <code>--ink-dim-video / --ink-faint-video</code>.</li>
+<li>Ship as one <code>tokens.css</code> imported by all five surfaces.</li>
+</ul>
+
+<h2>2 · One radius + spacing scale</h2>
+<ul>
+<li><code>--r-sm: 10px</code> (chips, small buttons) · <code>--r-md: 12px</code> (buttons, inputs, cells) · <code>--r-lg: 16px</code> (cards) · <code>--r-xl: 18px</code> (page panels) · overlay keeps 22 as its dialect.</li>
+</ul>
+
+<h2>3 · One button system</h2>
+<ul>
+<li><code>.btn</code> + size (<code>sm / md / lg</code>) + intent (<code>primary / ghost / danger / warn</code>).</li>
+<li><b>Hierarchy rule:</b> max ONE green primary visible per view — the show-critical action. Saves, utilities, uploads are ghost.</li>
+</ul>
+
+<h2>4 · Primitives to extract</h2>
+<ul>
+<li><code>.chip</code> — one pill primitive (status/badge/perm) with size + intent; distinct muted style for terminal states (completed/archived).</li>
+<li><code>.board-row</code> — rank (medal colors everywhere) + name (ellipsis) + mono value. Used by home, overlay, admin, share cards.</li>
+<li><code>.data-table</code> — right-aligned mono numeric columns.</li>
+<li><code>.modal</code> — one scrim (.82), width scale (sm 340 / md 420 / lg 640), scrim-dismiss unless destructive, gold border = host/system attention.</li>
+</ul>
+
+<h2>5 · Keep untouched (it works)</h2>
+<ul>
+<li>DM Sans + Space Mono pairing; the game kit (pips, A/B picks, tier reactions, mono timer); the lift-on-select rule (<code>translateY(-2px)</code> + green fill) — codify it as THE selected state.</li>
+</ul>
+
+<h2>6 · Type floor</h2>
+<ul>
+<li>Minimum 12px for any readable text (13px on mobile); eyebrow locked to <code>11px / 700 / .2em</code>; hints locked to <code>12px ink-faint</code>.</li>
+</ul>
+</body></html>

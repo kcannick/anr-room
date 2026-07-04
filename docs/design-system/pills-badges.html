@@ -1,0 +1,50 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#6f688f;margin:22px 0 10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+/* admin pills (session/round status) */
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid #2e2750;background:#0a0814;color:#a9a2c9}
+.pill.live{border-color:#4bb749;color:#4bb749}
+.pill.closed{border-color:#ff5d6c;color:#ff5d6c}
+.pill.done{border-color:#4bb749;color:#4bb749}
+.pill.upcoming{border-color:#7c6ff0;color:#7c6ff0}
+.pill.completed,.pill.archived{border-color:#2e2750;color:#6f688f}
+/* user badges */
+.badge{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
+.badge.admin{background:rgba(75,183,73,.16);color:#4bb749}
+.badge.host{background:rgba(109,95,224,.18);color:#6d5fe0}
+.badge.blocked{background:rgba(255,93,108,.16);color:#ff5d6c}
+.badge.incomplete{background:rgba(245,165,36,.14);color:#f5a524}
+/* perm chips */
+.permchip{font-size:10px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:999px;border:1px solid #2e2750;background:transparent;color:#6f688f;cursor:pointer}
+.permchip.on{background:rgba(75,183,73,.16);border-color:#379235;color:#4bb749}
+.permchip.give.on{background:rgba(109,95,224,.2);border-color:#6d5fe0;color:#6d5fe0}
+/* player tags */
+.tag{display:inline-flex;align-items:center;gap:6px;background:#171328;border:1px solid #2e2750;border-radius:999px;padding:5px 11px;font-size:12px;color:#a9a2c9}
+.beta{font-family:"Space Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.12em;color:#4bb749;border:1px solid #379235;background:rgba(75,183,73,.12);border-radius:999px;padding:2px 7px;text-transform:uppercase}
+.prize{font-family:"Space Mono",monospace;font-weight:700;font-size:12px;letter-spacing:.06em;color:#0d0b16;background:#f5c518;padding:6px 12px;border-radius:999px}
+.lbtag{display:inline-block;font-size:9px;color:#7c6ff0;background:rgba(124,111,240,.14);border-radius:5px;padding:1px 5px;font-weight:600}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:22px;line-height:1.6}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Pills, badges &amp; chips</h1>
+<p class="sub">Status, roles, permissions, and marketing pills</p>
+
+<h2>Session / round status (admin)</h2>
+<div class="row"><span class="pill live">● Voting open</span><span class="pill closed">Closed — tallying</span><span class="pill done">Ratified ✓</span><span class="pill upcoming">Upcoming</span><span class="pill live">Live</span><span class="pill completed">Completed</span><span class="pill archived">Archived</span></div>
+
+<h2>User badges (admin)</h2>
+<div class="row"><span class="badge admin">Admin</span><span class="badge host">Host</span><span class="badge blocked">Blocked</span><span class="badge incomplete">Incomplete</span></div>
+
+<h2>Host permission chips (admin)</h2>
+<div class="row"><span class="permchip on">Broadcast</span><span class="permchip">SMS</span><span class="permchip">Ads</span><span class="permchip on">Export</span><span class="permchip give on">💵 $500</span></div>
+
+<h2>Player-facing pills</h2>
+<div class="row"><span class="beta">BETA</span><span class="tag">🎧 142 A&amp;Rs in the room</span><span class="lbtag">Producer</span><span class="prize">WIN $500</span></div>
+
+<div class="note"><b>Audit:</b> a solid pattern family — the drift is scale (9/10/12px across pill types) and semantics: “done/Ratified” and “live” share the same green treatment; completed vs archived are indistinguishable. Worth one .chip primitive with size + intent, and a distinct treatment for terminal states.</div>
+</body></html>

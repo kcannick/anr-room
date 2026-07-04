@@ -1,0 +1,36 @@
+<!-- @dsCard group="Tokens" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#6f688f;margin:24px 0 12px}
+.spec{display:flex;align-items:baseline;gap:16px;padding:9px 0;border-bottom:1px solid #2e2750}
+.spec code{font-family:"Space Mono",monospace;font-size:10.5px;color:#6f688f;min-width:250px}
+.mono{font-family:"Space Mono",monospace}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:20px;line-height:1.6}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Typography</h1>
+<p class="sub">DM Sans (UI/body) + Space Mono (data, timers, labels)</p>
+
+<h2>DM Sans — headings &amp; body</h2>
+<div class="spec"><code>800 / 22–24px · screen heading</code><span style="font-size:22px;font-weight:800">Take your seat</span></div>
+<div class="spec"><code>800 / 54px · overlay title</code><span style="font-size:34px;font-weight:800">Nightcrawler</span></div>
+<div class="spec"><code>700 / 15–16px · button label</code><span style="font-size:16px;font-weight:700;color:#06210b;background:#4bb749;padding:4px 14px;border-radius:8px">Lock it in</span></div>
+<div class="spec"><code>400 / 14–15px · body dim</code><span style="font-size:15px;color:#a9a2c9">Hang tight — the next song is being cued up.</span></div>
+<div class="spec"><code>400 / 11–12px · helper faint</code><span style="font-size:12px;color:#6f688f">Optional — not required to play.</span></div>
+
+<h2>Eyebrow (section label)</h2>
+<div class="spec"><code>600 / 11px / .28em caps · play</code><span style="font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:#6f688f;font-weight:600">Now playing · Round 7</span></div>
+<div class="spec"><code>700 / 18px / .26em caps · overlay</code><span style="font-size:14px;letter-spacing:.26em;text-transform:uppercase;color:#4bb749;font-weight:700">Leaderboard</span></div>
+
+<h2>Space Mono — data</h2>
+<div class="spec"><code>700 / 84px · big number (overlay votes)</code><span class="mono" style="font-size:44px;font-weight:700;color:#4bb749">142</span></div>
+<div class="spec"><code>700 / 88px · recap grade</code><span class="mono" style="font-size:44px;font-weight:700;color:#7fa3c9">A+</span></div>
+<div class="spec"><code>700 / 22–26px · points, ranks</code><span class="mono" style="font-size:24px;font-weight:700;color:#4bb749">4,910</span></div>
+<div class="spec"><code>400 / 24px .45em · OTP code input</code><span class="mono" style="font-size:24px;letter-spacing:.45em">824193</span></div>
+<div class="spec"><code>700 / 10px .12em · BETA pill</code><span class="mono" style="font-size:10px;font-weight:700;letter-spacing:.12em;color:#4bb749;border:1px solid #379235;background:rgba(75,183,73,.12);border-radius:999px;padding:2px 7px;text-transform:uppercase">BETA</span></div>
+
+<div class="note"><b>Audit:</b> the pairing is consistent and strong (DM Sans voice + Space Mono data) — the drift is in the details: eyebrow letter-spacing ranges .16–.28em and weight 600–700 depending on surface; helper text runs 10–12px with no fixed floor (hurts mobile); heading sizes are per-page rather than a scale.</div>
+</body></html>

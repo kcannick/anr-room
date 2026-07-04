@@ -1,0 +1,47 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+.stage{background:rgba(8,6,16,.84);border-radius:14px;padding:26px;display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.modal{background:linear-gradient(180deg,#171328,#1d1733);border:1px solid #2e2750;border-radius:18px;padding:20px;width:280px}
+.eyebrow{font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:#6f688f;font-weight:600;text-align:center}
+.modal h2{font-size:19px;margin:8px 0 12px;text-align:center}
+.step{display:flex;gap:10px;margin-top:10px;text-align:left}
+.step .n{font-size:18px;color:#4bb749}
+.step b{font-size:13px} .step .d{font-size:11.5px;color:#a9a2c9;line-height:1.4}
+.btn{display:block;width:100%;background:#4bb749;color:#06210b;border:none;font-family:inherit;font-weight:700;font-size:14px;padding:12px;border-radius:12px;margin-top:14px;cursor:pointer;box-sizing:border-box}
+.btn.ghost{background:transparent;color:#a9a2c9;border:1px solid #2e2750;font-weight:500;margin-top:8px}
+.modal.gold{border-color:#f5a524}
+.bc-icon{font-size:26px;text-align:center}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:22px;line-height:1.6}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Modals</h1>
+<p class="sub">Scrim + centered panel — onboarding, broadcast, confirms</p>
+<div class="stage">
+  <div class="modal">
+    <div class="eyebrow">New here? How to play</div>
+    <h2>Read the room, win the month</h2>
+    <div class="step"><span class="n">①</span><span><b>Rate the song 0–9</b><div class="d">How good is it? 0 = worst, 9 = best.</div></span></div>
+    <div class="step"><span class="n">②</span><span><b>Read the Room</b><div class="d">Predict the room's average rating.</div></span></div>
+    <div class="step"><span class="n">③</span><span><b>Climb for the $500</b><div class="d">Top A&amp;Rs this month win $500 cash.</div></span></div>
+    <button class="btn">Got it — let's play</button>
+  </div>
+  <div class="modal gold" style="text-align:center">
+    <div class="bc-icon">📣</div>
+    <div class="eyebrow" style="margin-top:6px">From the host</div>
+    <p style="font-size:15px;line-height:1.5;margin:12px 0 4px">The Versus round is running 10 min late — hang tight!</p>
+    <button class="btn">Got it</button>
+  </div>
+  <div class="modal">
+    <h2 style="text-align:left;font-size:17px">Delete session</h2>
+    <p style="font-size:12.5px;color:#a9a2c9;line-height:1.55;margin:0">“Friday Night” has 9 A&amp;Rs and 41 votes. Archive keeps everything and just hides it (reversible).</p>
+    <button class="btn">Archive (recommended)</button>
+    <button class="btn ghost">Cancel</button>
+    <button class="btn ghost" style="border-color:#ff5d6c;color:#ff5d6c">Cascade delete — permanent</button>
+  </div>
+</div>
+<div class="note"><b>Audit:</b> modal chrome is consistent (dark scrim ~.8, gradient panel). Variation is ad-hoc per modal: z-index ranges 30–95, widths 390–470px, some close on scrim-tap and some don't, gold border marks "host/system attention" only sometimes. Codify: one scrim, one width scale, always scrim-dismiss unless destructive, gold = attention rule.</div>
+</body></html>

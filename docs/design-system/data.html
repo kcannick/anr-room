@@ -1,0 +1,58 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px;max-width:560px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#6f688f;margin:22px 0 10px}
+.mono{font-family:"Space Mono",monospace}
+/* leaderboard row (overlay style) */
+.lbrow{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:1px solid #2e2750}
+.lbrow:first-of-type{border-top:none}
+.lbrow .rk{font-family:"Space Mono",monospace;font-size:16px;font-weight:700;width:34px;color:#6f688f}
+.lbrow.top1 .rk{color:#f5a524}.lbrow.top2 .rk{color:#f3f0fb}.lbrow.top3 .rk{color:#cd7f32}
+.lbrow .nm{flex:1;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lbrow .pts{font-family:"Space Mono",monospace;font-size:15px;font-weight:700;color:#4bb749}
+/* admin table */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6f688f;font-weight:600;padding:6px 8px;border-bottom:1px solid #2e2750}
+td{padding:7px 8px;border-bottom:1px solid #1d1733}
+/* KPI */
+.kpi{display:flex;gap:22px}
+.kpi b{font-family:"Space Mono",monospace;font-size:22px;display:block}
+.kpi span{font-size:11px;color:#6f688f;text-transform:uppercase;letter-spacing:.08em}
+/* result cells */
+.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;max-width:300px}
+.cell{background:#0a0814;border:1px solid #2e2750;border-radius:12px;padding:12px;text-align:center}
+.cell .k{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#6f688f}
+.cell .v{font-family:"Space Mono",monospace;font-weight:700;font-size:22px;margin-top:3px}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:22px;line-height:1.6}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Data display</h1>
+<p class="sub">Leaderboards, tables, KPIs, result cells</p>
+
+<h2>Leaderboard rows (overlay / home)</h2>
+<div class="lbrow top1"><div class="rk">1</div><div class="nm">Fvcecvrd</div><div class="pts">801</div></div>
+<div class="lbrow top2"><div class="rk">2</div><div class="nm">Black Crown Records</div><div class="pts">769</div></div>
+<div class="lbrow top3"><div class="rk">3</div><div class="nm">KIANA</div><div class="pts">703</div></div>
+<div class="lbrow"><div class="rk">4</div><div class="nm">Kiiwii babe</div><div class="pts">677</div></div>
+
+<h2>Admin review table</h2>
+<table><thead><tr><th>#</th><th>Name</th><th>Guess</th><th>Off</th><th>Pts</th></tr></thead>
+<tbody>
+<tr><td class="mono" style="color:#f5a524">1</td><td>KIANA 🔥</td><td class="mono">5.0</td><td class="mono" style="color:#6f688f">0.1</td><td class="mono" style="color:#4bb749">+93</td></tr>
+<tr><td class="mono">2</td><td>Fvcecvrd 🔥</td><td class="mono">5.2</td><td class="mono" style="color:#6f688f">0.3</td><td class="mono" style="color:#4bb749">+84</td></tr>
+</tbody></table>
+
+<h2>Room KPIs (admin)</h2>
+<div class="kpi"><div><b>9</b><span>A&amp;Rs</span></div><div><b class="mono">#10</b><span>Round</span></div><div><b>0</b><span>Votes in</span></div></div>
+
+<h2>Result cells (player)</h2>
+<div class="result-grid">
+  <div class="cell"><div class="k">Your rating</div><div class="v">7</div></div>
+  <div class="cell"><div class="k">Your guess</div><div class="v" style="color:#4bb749">5.2</div></div>
+</div>
+
+<div class="note"><b>Audit:</b> the mono-numbers + medal-rank convention is strong and repeated. Drift: rank colors differ per surface (gold/silver/bronze on overlay+cards vs plain green rank-1 on admin); row paddings/font sizes vary; numeric columns aren't consistently right-aligned. One "board row" and one "data table" primitive would cover all five surfaces.</div>
+</body></html>

@@ -1,0 +1,52 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#6f688f;margin:24px 0 10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+code{font-family:"Space Mono",monospace;font-size:10px;color:#6f688f;display:block;margin-top:6px}
+/* ---- play.html ---- */
+.p-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;background:#4bb749;color:#06210b;border:none;font-family:inherit;font-weight:700;font-size:16px;padding:15px 22px;border-radius:12px;letter-spacing:.01em}
+.p-btn.ghost{background:transparent;color:#a9a2c9;border:1px solid #2e2750;font-weight:500}
+.p-btn[disabled]{opacity:.4;cursor:default}
+/* ---- join.html ---- */
+.j-btn{background:#4bb749;color:#06210b;border:none;border-radius:12px;padding:14px 22px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer}
+.j-btn.ghost{background:transparent;border:1px solid #2e2750;color:#a9a2c9;font-weight:600}
+/* ---- admin.html ---- */
+.a-btn{cursor:pointer;background:#4bb749;color:#06210b;border:none;font:inherit;font-weight:700;font-size:14px;padding:11px 14px;border-radius:10px}
+.a-btn.ghost{background:transparent;border:1px solid #2e2750;color:#a9a2c9;font-weight:500}
+.a-btn.danger{background:transparent;border:1px solid #ff5d6c;color:#ff5d6c;font-weight:500}
+.a-btn.amber{background:transparent;border:1px solid #f5a524;color:#f5a524;font-weight:500}
+.a-btn.sm{padding:8px 11px;font-size:13px}
+/* ---- home.html ---- */
+.h-cta{display:inline-block;background:#4bb749;color:#06210b;font-size:15px;font-weight:800;padding:14px 28px;border-radius:12px;cursor:pointer;border:none;font-family:inherit}
+.h-cta.hot{background:#ff5d6c;color:#2a0a0e}
+.h-cta.sec{background:transparent;border:1px solid #2e2750;color:#a9a2c9;font-weight:600}
+.h-sbtn{display:inline-block;background:transparent;border:1px solid #7c6ff0;color:#7c6ff0;font-size:13px;font-weight:700;padding:10px 20px;border-radius:9px;cursor:pointer;font-family:inherit}
+.h-lbbtn{background:#ff5d6c;color:#2a0a0e;font-size:13px;font-weight:800;padding:10px 16px;border-radius:10px;border:none;font-family:inherit}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:22px;line-height:1.6}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Buttons — all variants as shipped</h1>
+<p class="sub">Four surfaces, four button systems</p>
+
+<h2>Play page (.btn)</h2>
+<div class="row"><button class="p-btn">Lock it in</button><button class="p-btn ghost">← Back</button><button class="p-btn" disabled>Next →</button></div>
+<code>weight 700 · 16px · pad 15 · radius 12</code>
+
+<h2>Join page (.btn)</h2>
+<div class="row"><button class="j-btn">Join the team →</button><button class="j-btn ghost">Use a different email</button></div>
+<code>weight 800 · 15px · pad 14 · radius 12</code>
+
+<h2>Admin console (.btn)</h2>
+<div class="row"><button class="a-btn">Go live</button><button class="a-btn ghost">Duplicate</button><button class="a-btn danger">Delete</button><button class="a-btn amber">Block</button><button class="a-btn sm">Open</button><button class="a-btn ghost sm">Edit</button></div>
+<code>weight 700 · 14px · pad 11/14 · radius 10 (+ sm: 13px, pad 8/11)</code>
+
+<h2>Homepage (.cta / .s-btn / .lb-btn)</h2>
+<div class="row"><button class="h-cta">Register to play</button><button class="h-cta hot">Get in to vote</button><button class="h-cta sec">See how it works</button><button class="h-sbtn">Have them submit</button><button class="h-lbbtn">Get in to vote</button></div>
+<code>.cta: weight 800 · 15px · pad 14/28 · radius 12 &nbsp;·&nbsp; .s-btn: radius 9 &nbsp;·&nbsp; .lb-btn: radius 10</code>
+
+<div class="note"><b>Audit:</b> one visual idea (green primary + outlined ghost) implemented four times with drifting specs — radius 9/10/12, weight 700/800, font 13–16px, three different class vocabularies (btn / cta / s-btn / lb-btn). In the console nearly every action is the full-green primary, so hierarchy is flat. Proposal: one .btn with size (sm/md/lg) + intent (primary/ghost/danger/amber) variants, green reserved for the single most important action per view.</div>
+</body></html>

@@ -1,0 +1,49 @@
+<!-- @dsCard group="Tokens" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#6f688f;margin:22px 0 10px}
+.rowset{display:flex;gap:12px;flex-wrap:wrap}
+.sw{width:118px;border:1px solid #2e2750;border-radius:12px;overflow:hidden}
+.sw .c{height:56px} .sw .m{padding:8px 10px;font-size:11px;line-height:1.5}
+.sw .m b{display:block;font-size:11.5px} .sw .m code{font-family:"Space Mono",monospace;font-size:10px;color:#a9a2c9}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:18px;line-height:1.6}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Color tokens</h1>
+<p class="sub">The A&amp;R Room · extracted from home / play / join / admin / overlay</p>
+
+<h2>Foundation</h2>
+<div class="rowset">
+  <div class="sw"><div class="c" style="background:#0d0b16"></div><div class="m"><b>bg</b><code>#0d0b16</code></div></div>
+  <div class="sw"><div class="c" style="background:#171328"></div><div class="m"><b>panel</b><code>#171328</code></div></div>
+  <div class="sw"><div class="c" style="background:#1d1733"></div><div class="m"><b>panel-2</b><code>#1d1733</code></div></div>
+  <div class="sw"><div class="c" style="background:#2e2750"></div><div class="m"><b>line</b><code>#2e2750</code></div></div>
+  <div class="sw"><div class="c" style="background:#0a0814"></div><div class="m"><b>input bg (ad-hoc)</b><code>#0a0814</code></div></div>
+</div>
+
+<h2>Ink</h2>
+<div class="rowset">
+  <div class="sw"><div class="c" style="background:#f3f0fb"></div><div class="m"><b>ink</b><code>#f3f0fb</code></div></div>
+  <div class="sw"><div class="c" style="background:#a9a2c9"></div><div class="m"><b>ink-dim</b><code>#a9a2c9</code></div></div>
+  <div class="sw"><div class="c" style="background:#6f688f"></div><div class="m"><b>ink-faint</b><code>#6f688f</code></div></div>
+  <div class="sw"><div class="c" style="background:#bdb6d8"></div><div class="m"><b>ink-dim (overlay only)</b><code>#bdb6d8</code></div></div>
+  <div class="sw"><div class="c" style="background:#8c84ad"></div><div class="m"><b>ink-faint (overlay only)</b><code>#8c84ad</code></div></div>
+</div>
+
+<h2>Signal &amp; accents</h2>
+<div class="rowset">
+  <div class="sw"><div class="c" style="background:#4bb749"></div><div class="m"><b>signal / good / brand-green</b><code>#4bb749 ×3 names</code></div></div>
+  <div class="sw"><div class="c" style="background:#379235"></div><div class="m"><b>signal-deep</b><code>#379235</code></div></div>
+  <div class="sw"><div class="c" style="background:#6d5fe0"></div><div class="m"><b>accent</b><code>#6d5fe0</code></div></div>
+  <div class="sw"><div class="c" style="background:#7c6ff0"></div><div class="m"><b>cool</b><code>#7c6ff0</code></div></div>
+  <div class="sw"><div class="c" style="background:#ff5d6c"></div><div class="m"><b>hot</b><code>#ff5d6c</code></div></div>
+  <div class="sw"><div class="c" style="background:#f5a524"></div><div class="m"><b>amber / gold</b><code>#f5a524 ×2 names</code></div></div>
+  <div class="sw"><div class="c" style="background:#f5c518"></div><div class="m"><b>gold (share cards)</b><code>#f5c518</code></div></div>
+  <div class="sw"><div class="c" style="background:#403694"></div><div class="m"><b>brand-purple</b><code>#403694 (unused?)</code></div></div>
+</div>
+
+<div class="note"><b>Audit:</b> one green carries three token names (signal / good / brand-green); #f5a524 is “amber” in the app but “gold” on the overlay, while the share cards use a different gold (#f5c518); the overlay runs its own lighter ink-dim/faint pair; accent (#6d5fe0) vs cool (#7c6ff0) are near-duplicates used interchangeably; input background #0a0814 is hardcoded, never tokenized; brand-purple appears defined but unused.</div>
+</body></html>

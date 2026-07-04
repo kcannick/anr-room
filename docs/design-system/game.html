@@ -1,0 +1,63 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px;max-width:560px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#6f688f;margin:22px 0 10px}
+/* rate pips */
+.rate-row{display:flex;gap:7px}
+.pip{flex:1;aspect-ratio:1/1.15;border:1px solid #2e2750;border-radius:10px;background:#0a0814;display:flex;align-items:center;justify-content:center;font-size:18px;color:#a9a2c9;cursor:pointer;font-family:"Space Mono",monospace}
+.pip.on{background:#4bb749;color:#06210b;border-color:#4bb749;font-weight:700;transform:translateY(-2px)}
+/* A/B option */
+.opt{display:flex;align-items:center;gap:13px;width:100%;text-align:left;cursor:pointer;background:#0a0814;border:1px solid #2e2750;border-radius:14px;padding:14px;color:#f3f0fb;font:inherit;margin-top:8px;box-sizing:border-box}
+.opt .letter{font-family:"Space Mono",monospace;font-weight:700;font-size:20px;color:#7c6ff0}
+.opt.on{background:linear-gradient(180deg,rgba(75,183,73,.16),rgba(75,183,73,.05));border-color:#4bb749;transform:translateY(-2px)}
+.opt.on .letter{color:#4bb749}
+/* step head */
+.step-head{display:flex;align-items:center;gap:9px;font-weight:800;font-size:19px}
+.step-num{color:#4bb749;font-size:26px}
+/* timer */
+.timer{display:inline-flex;flex-direction:column;align-items:center;gap:3px}
+.timer .t{font-family:"Space Mono",monospace;font-weight:700;font-size:26px;color:#4bb749}
+.timer .lbl{font-size:10px;letter-spacing:.15em;color:#6f688f}
+.timer.warn .t{color:#ff5d6c}
+/* reactions */
+.rx{display:inline-flex;flex-direction:column;align-items:center;width:100px;text-align:center}
+.rx .e{font-size:34px} .rx .t{font-weight:800;font-size:13px;margin-top:4px} .rx .s{font-size:10.5px;color:#a9a2c9}
+.grade{font-family:"Space Mono",monospace;font-weight:700;font-size:56px;color:#7fa3c9}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:22px;line-height:1.6}
+.note b{color:#f5a524}
+.row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+</style></head><body>
+<h1>Game components</h1>
+<p class="sub">The signature interactions — pips, picks, timer, reactions</p>
+
+<h2>Step header</h2>
+<div class="step-head"><span class="step-num">①</span> Rate</div>
+
+<h2>Rating pips (0–9)</h2>
+<div class="rate-row"><div class="pip">0</div><div class="pip">1</div><div class="pip">2</div><div class="pip">3</div><div class="pip">4</div><div class="pip on">5</div><div class="pip">6</div><div class="pip">7</div><div class="pip">8</div><div class="pip">9</div></div>
+
+<h2>Versus pick (A/B)</h2>
+<button class="opt on"><span class="letter">A</span><span><b>Nightcrawler</b><br><span style="color:#a9a2c9;font-size:13px">Sasha Vibe</span></span></button>
+<button class="opt"><span class="letter">B</span><span><b>Paper Planes</b><br><span style="color:#a9a2c9;font-size:13px">Lil Marlo</span></span></button>
+
+<h2>Timer &amp; grade</h2>
+<div class="row">
+  <div class="timer"><div class="t">2:41</div><div class="lbl">LEFT</div></div>
+  <div class="timer warn"><div class="t">0:08</div><div class="lbl">LEFT</div></div>
+  <div class="grade">A+</div>
+</div>
+
+<h2>Result reactions</h2>
+<div class="row">
+  <div class="rx"><div class="e">🎯</div><div class="t">Bullseye!</div><div class="s">+25 bonus</div></div>
+  <div class="rx"><div class="e">🔥</div><div class="t">Sharp read</div><div class="s">knows the room</div></div>
+  <div class="rx"><div class="e">👌</div><div class="t">Nice — close</div><div class="s">read it well</div></div>
+  <div class="rx"><div class="e">😬</div><div class="t">Off the mark</div><div class="s">room disagreed</div></div>
+  <div class="rx"><div class="e">💀</div><div class="t">Way off</div><div class="s">cost you</div></div>
+</div>
+
+<div class="note"><b>Audit:</b> this family is the app's personality and it's consistent — pips, picks, tier emojis, mono timer all reinforce the game feel. Keep as-is; codify the lift-on-select (translateY(-2px) + green fill) as THE selected-state rule so future components inherit it.</div>
+</body></html>

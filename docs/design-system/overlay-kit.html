@@ -1,0 +1,59 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:radial-gradient(60% 42% at 50% 40%, #3a3550 0%, #1a1626 55%, #0c0a15 100%);color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#8c84ad;font-size:12px;margin:0 0 20px}
+.card{background:rgba(16,12,26,.92);border:1px solid rgba(255,255,255,.10);border-radius:22px;backdrop-filter:blur(8px);box-shadow:0 24px 60px rgba(0,0,0,.45)}
+/* lower third */
+.lower{display:flex;align-items:center;gap:20px;padding:16px 22px;max-width:560px;margin-bottom:16px}
+.lower .brand{border-right:1px solid rgba(255,255,255,.1);padding-right:20px}
+.lower .brand .room{font-weight:800;font-size:16px}
+.lower .brand .sess{font-size:11px;color:#bdb6d8}
+.lower .nowtag{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8c84ad;font-weight:700}
+.lower .title{font-size:26px;font-weight:800;line-height:1.05}
+.lower .artist{font-size:13px;color:#bdb6d8}
+.lower .right{margin-left:auto;text-align:right}
+.lower .cnt{font-family:"Space Mono",monospace;font-size:34px;font-weight:700;color:#4bb749;line-height:.95}
+.lower .cl{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:#8c84ad;font-weight:700}
+.timer{font-family:"Space Mono",monospace;font-weight:700;color:#4bb749;margin-left:10px}
+/* winner */
+.win{display:flex;align-items:center;gap:16px;padding:14px 22px;max-width:560px;border-color:#f5a524;margin-bottom:16px}
+.win .crown{font-size:30px;border-right:1px solid rgba(255,255,255,.1);padding-right:16px}
+.win .lab{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#f5a524;font-weight:700}
+.win .nm{font-size:24px;font-weight:800}
+.win .avg{margin-left:auto;text-align:right}
+.win .avg .v{font-family:"Space Mono",monospace;font-size:30px;font-weight:700;color:#4bb749}
+/* QR */
+.qr{width:150px;padding:14px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.qr .box{width:100px;height:100px;background:#fff;border-radius:10px;border:3px solid #f5a524;display:flex;align-items:center;justify-content:center;color:#0c0a15;font-family:"Space Mono",monospace;font-size:10px}
+.qr .lbl{font-weight:800;font-size:14px;color:#f5a524;line-height:1.1}
+.live{display:inline-flex;align-items:center;gap:8px;font-family:"Space Mono",monospace;font-weight:700;font-size:12px;color:#ff5d6c;background:rgba(255,93,108,.14);border:1px solid rgba(255,93,108,.5);border-radius:999px;padding:5px 12px;margin-bottom:16px}
+.live .dot{width:9px;height:9px;border-radius:50%;background:#ff5d6c}
+.row{display:flex;gap:16px;align-items:flex-start}
+.note{background:rgba(16,12,26,.92);border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#bdb6d8;margin-top:20px;line-height:1.6;max-width:560px}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Stream overlay kit</h1>
+<p class="sub">OBS components — translucent over live video</p>
+
+<span class="live"><span class="dot"></span>LIVE</span>
+
+<div class="card lower">
+  <div class="brand"><div class="room">The A&amp;R Room</div><div class="sess">Friday Night Session</div></div>
+  <div><div class="nowtag">Now rating · Round 7 <span class="timer">0:38</span></div><div class="title">Nightcrawler</div><div class="artist">Sasha Vibe</div></div>
+  <div class="right"><div class="cl">Votes in</div><div class="cnt">142</div></div>
+</div>
+
+<div class="card win">
+  <div class="crown">👑</div>
+  <div><div class="lab">Round winner</div><div class="nm">Maya Jordan</div></div>
+  <div class="avg"><div class="cl" style="font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:#8c84ad;font-weight:700">Room average</div><div class="v">8.7</div></div>
+</div>
+
+<div class="row">
+  <div class="card qr"><div class="box">QR</div><div class="lbl">Scan to Win $500!</div></div>
+</div>
+
+<div class="note"><b>Audit:</b> the overlay is its own dialect by design (translucency, bigger type, gold accents) — correct for video. But it redefines ink-dim/faint and calls #f5a524 “gold” while the app calls it “amber”; unify the token names so the dialect shares the vocabulary.</div>
+</body></html>

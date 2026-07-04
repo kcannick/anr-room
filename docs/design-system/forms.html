@@ -1,0 +1,37 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px;max-width:520px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#6f688f;margin:22px 0 10px}
+label{display:block;font-size:13px;font-weight:600;margin:12px 0 6px}
+label .muted{color:#6f688f;font-weight:400}
+input,select,textarea{width:100%;background:#0a0814;border:1px solid #2e2750;color:#f3f0fb;font:inherit;font-size:16px;padding:13px 14px;border-radius:12px;outline:none;box-sizing:border-box}
+input:focus{border-color:#4bb749}
+input.code{text-align:center;letter-spacing:.45em;font-size:24px;font-family:"Space Mono",monospace}
+input[type=range]{-webkit-appearance:none;appearance:none;height:8px;background:linear-gradient(90deg,#7c6ff0,#4bb749,#ff5d6c);border-radius:8px;padding:0;border:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:30px;height:30px;border-radius:50%;background:#fff;border:4px solid #4bb749;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.5)}
+.consent{display:flex;gap:9px;font-size:11.5px;color:#6f688f;line-height:1.5;margin-top:10px}
+.err{color:#ff5d6c;font-size:13px;margin-top:8px}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:22px;line-height:1.6}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Form fields</h1>
+<p class="sub">Inputs, code entry, selects, sliders</p>
+
+<label>Email</label>
+<input placeholder="you@email.com">
+<label>6-digit code</label>
+<input class="code" placeholder="••••••" value="824193">
+<label>Session type <span class="muted">(set once at creation)</span></label>
+<select><option>Standard — rate a song 0–9, predict the room average</option><option>Versus — Song A vs B, predict the split</option></select>
+<label>Note for players</label>
+<textarea rows="2" placeholder="optional — anything you want them to see"></textarea>
+<label>Read the Room — prediction slider</label>
+<input type="range" min="0" max="9" step="0.1" value="4.5">
+<div class="consent"><input type="checkbox" style="width:18px;height:18px;margin:0"> <span>By entering your number you agree to get texts when this room goes live…</span></div>
+<div class="err">Enter a valid email</div>
+
+<div class="note"><b>Audit:</b> fields are consistent where they exist (dark inset #0a0814, radius 12, green focus). Gaps: the inset background is hardcoded rather than a token; select/textarea don't restyle focus; error text is bare red with no field-border tie-in; label/hint hierarchy (600 label + faint parenthetical) is good and worth codifying.</div>
+</body></html>

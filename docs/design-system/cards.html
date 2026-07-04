@@ -1,0 +1,34 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d0b16;color:#f3f0fb;font-family:"DM Sans",system-ui,sans-serif;padding:26px}
+h1{font-size:18px;font-weight:800;margin:0 0 4px} .sub{color:#6f688f;font-size:12px;margin:0 0 20px}
+.grid{display:flex;gap:14px;flex-wrap:wrap}
+.demo{width:250px}
+code{font-family:"Space Mono",monospace;font-size:10px;color:#6f688f;display:block;margin-top:6px}
+.t{font-weight:700;font-size:14px;margin-bottom:4px} .d{font-size:12.5px;color:#a9a2c9;line-height:1.5}
+/* variants as shipped */
+.play-panel{background:linear-gradient(180deg,#171328,#1d1733);border:1px solid #2e2750;border-radius:18px;padding:20px}
+.admin-card{background:linear-gradient(180deg,#171328,#1d1733);border:1px solid #2e2750;border-radius:16px;padding:18px}
+.home-card{background:linear-gradient(180deg,#171328,#1d1733);border:1px solid #2e2750;border-radius:15px;padding:15px}
+.picker-sc{border:1px solid #2e2750;border-radius:13px;background:#0f0c1c;padding:14px}
+.overlay-card{background:rgba(16,12,26,.92);border:1px solid rgba(255,255,255,.10);border-radius:22px;padding:18px;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+.note-box{background:#0a0814;border-left:3px solid #4bb749;border-radius:0 10px 10px 0;padding:11px 13px;font-size:13px;color:#a9a2c9}
+.note{background:#171328;border:1px solid #f5a524;border-radius:10px;padding:10px 14px;font-size:12px;color:#a9a2c9;margin-top:22px;line-height:1.6}
+.note b{color:#f5a524}
+</style></head><body>
+<h1>Cards &amp; panels</h1>
+<p class="sub">Same gradient card, five different corner radii</p>
+
+<div class="grid">
+  <div class="demo"><div class="play-panel"><div class="t">Play .panel</div><div class="d">Player screens — registration, lobby, voting, results.</div></div><code>radius 18 · pad 20</code></div>
+  <div class="demo"><div class="admin-card"><div class="t">Admin .card</div><div class="d">Console sections — round, queue, event tools, room.</div></div><code>radius 16 · pad 18</code></div>
+  <div class="demo"><div class="home-card"><div class="t">Home .card</div><div class="d">Homepage — leaderboard, next session, winners.</div></div><code>radius 15 · pad 15</code></div>
+  <div class="demo"><div class="picker-sc"><div class="t">Picker .sc</div><div class="d">Session cards in “My sessions” — flat bg, no gradient.</div></div><code>radius 13 · pad 14 · bg #0f0c1c</code></div>
+  <div class="demo"><div class="overlay-card"><div class="t">Overlay .card</div><div class="d">OBS overlay — translucent, blurred, heavy shadow.</div></div><code>radius 22 · rgba panel + blur</code></div>
+  <div class="demo"><div class="note-box">Host note — green-edged callout used for lobby messages and hints.</div><code>.note · left border signal</code></div>
+</div>
+
+<div class="note"><b>Audit:</b> the card idea is coherent (panel gradient + line border) but radius drifts 13→22 and padding 14→20 with no rule. The overlay's translucent variant is intentional (over video); the rest should share one radius/padding scale (e.g. card 16/18, panel-lg 18/20).</div>
+</body></html>
