@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="overlay-scope">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,15 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=1">
 <style>
   /* OBS browser source: transparent background by design. The page paints nothing
-     full-bleed — only the cards have backgrounds — so the stream shows through. */
-  :root{
-    --ink:#f3f0fb; --ink-dim:#bdb6d8; --ink-faint:#8c84ad;
-    --signal:#4bb749; --cool:#7c6ff0; --hot:#ff5d6c; --gold:#f5a524;
-    --panel:rgba(16,12,26,.92); --panel-2:rgba(10,8,20,.82);
-    --line:rgba(255,255,255,.10);
-  }
+     full-bleed — only the cards have backgrounds — so the stream shows through.
+     Color vars come from tokens.css; .overlay-scope on <html> applies the video
+     dialect (lighter inks, glass panels). */
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{background:transparent}
   body{

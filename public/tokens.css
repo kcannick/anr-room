@@ -1,0 +1,67 @@
+/* ============================================================
+   The A&R Room — design tokens (single source of truth)
+   Generated from the Design System unification (docs/design-system/).
+   Every surface links this BEFORE its own <style>. New code uses
+   the canonical names; the legacy aliases exist only so shipped
+   CSS keeps working — don't reach for them in new work.
+   ============================================================ */
+:root{
+  /* Foundation */
+  --bg:#0d0b16;
+  --panel:#171328;
+  --panel-2:#1d1733;
+  --line:#2e2750;
+  --inset:#0a0814;            /* inputs, pips, wells */
+
+  /* Ink */
+  --ink:#f3f0fb;
+  --ink-dim:#a9a2c9;
+  --ink-faint:#6f688f;
+
+  /* Signal — THE green */
+  --signal:#4bb749;
+  --signal-deep:#379235;
+  --on-signal:#06210b;
+
+  /* Accents */
+  --accent:#6d5fe0;           /* THE purple */
+  --gold:#f5c518;             /* THE warm accent (host/system attention, rank #1) */
+  --hot:#ff5d6c;
+  --on-hot:#2a0a0e;
+
+  /* Legacy aliases — shipped CSS only */
+  --good:var(--signal);
+  --brand-green:var(--signal);
+  --amber:var(--gold);
+  --cool:var(--accent);
+  --brand-purple:#403694;
+
+  /* Radius scale */
+  --r-sm:10px;                /* chips, small buttons */
+  --r-md:12px;                /* buttons, inputs, cells */
+  --r-lg:16px;                /* cards */
+  --r-xl:18px;                /* page panels */
+  --r-pill:999px;
+  --r-overlay:22px;           /* overlay dialect only */
+
+  /* Spacing — 4px base */
+  --sp-1:4px;  --sp-2:8px;  --sp-3:12px; --sp-4:16px;
+  --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-12:48px;
+  --pad-card:18px;
+  --pad-panel:20px;
+
+  /* Content widths */
+  --w-player:480px;
+  --w-page:560px;
+  --w-form:440px;
+}
+
+/* Overlay dialect — translucent components over live video.
+   Lighter inks + glass panels are earned there; nowhere else. */
+.overlay-scope{
+  --ink-dim:#bdb6d8;
+  --ink-faint:#8c84ad;
+  --panel:rgba(16,12,26,.92);
+  --panel-2:rgba(10,8,20,.82);
+  --line:rgba(255,255,255,.10);
+}
