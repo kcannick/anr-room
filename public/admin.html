@@ -415,6 +415,16 @@
       <div><label>Submission link <span class="muted">(where artists submit; a nero.fan/…/live link enables “Pull from Nero”)</span></label>
         <input id="cfgSubmit" placeholder="https://…"></div>
       <div style="border-top:1px solid var(--line);padding-top:12px">
+        <label>Who can find this session</label>
+        <select id="cfgVisibility" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+          <option value="public">Public — featured on the homepage when live</option>
+          <option value="unlisted">Unlisted — only people with the link or QR</option>
+        </select>
+        <label style="margin-top:10px">Room code <span class="muted">(optional — players must enter it to join)</span></label>
+        <input id="cfgAccessCode" placeholder="e.g. VIP2026 — leave empty for open join" maxlength="24" autocomplete="off" style="text-transform:uppercase">
+        <div class="muted" style="font-size:11px;margin-top:6px">Unlisted + a room code = a private, invite-only room. Anyone already in keeps playing; the code guards new joins.</div>
+      </div>
+      <div style="border-top:1px solid var(--line);padding-top:12px">
         <label>Event location <span class="muted">(for on-premise check-in)</span></label>
         <div class="row" style="gap:6px">
           <input id="geoAddr" placeholder="Type the venue address" style="flex:1">
@@ -1362,6 +1372,8 @@ function openSessEdit(){
   $('#cfgLobby').value=s.lobby_message||'';
   $('#cfgWatch').value=s.watch_url||'';
   $('#cfgSubmit').value=s.submit_url||'';
+  $('#cfgVisibility').value=(s.visibility==='unlisted')?'unlisted':'public';
+  $('#cfgAccessCode').value=s.access_code||'';
   $('#geoAddr').value='';
   $('#geoMode').value=s.geo_mode||'off';
   $('#geoRadius').value=s.geo_radius||200;
@@ -1381,6 +1393,8 @@ $('#seSave').onclick=async()=>{
     watchUrl:$('#cfgWatch').value.trim(),
     submitUrl:$('#cfgSubmit').value.trim(),
     lobbyMessage:$('#cfgLobby').value.trim(),
+    visibility:$('#cfgVisibility').value,
+    accessCode:$('#cfgAccessCode').value.trim(),
     geoMode:$('#geoMode').value,
     geoRadius:Number($('#geoRadius').value)||200};
   if(geoResolvedLat!=null&&geoResolvedLng!=null){
@@ -1624,11 +1638,14 @@ function render(st){
   const sumRow=(k,v,dim)=>`<div class="sum"><b>${k}</b><span${dim?' style="color:var(--ink-faint)"':''}>${v}</span></div>`;
   const geoTxt = (!sess.geo_mode||sess.geo_mode==='off') ? null
     : `${sess.geo_mode==='required'?'Required — must be at the venue to vote':'Optional — in-room / remote pools'}${sess.geo_label?' · 📍 '+esc(sess.geo_label):''}${sess.geo_radius?' · '+sess.geo_radius+' yd':''}`;
+  const accessTxt = (sess.visibility==='unlisted'?'Unlisted — link/QR only':'Public — featured when live')
+    +(sess.access_code?' · 🔑 code '+esc(sess.access_code):'');
   $('#sessSummary').innerHTML=
     sumRow('Name',esc(sess.name||'—'))+
     sumRow('Description',sess.lobby_message?esc(sess.lobby_message):'None — players see the default lobby',!sess.lobby_message)+
     sumRow('Watch link',sess.watch_url?esc(sess.watch_url):'Not set',!sess.watch_url)+
     sumRow('Submit link',sess.submit_url?esc(sess.submit_url):'Not set',!sess.submit_url)+
+    sumRow('Access',accessTxt,sess.visibility!=='unlisted'&&!sess.access_code)+
     sumRow('Location',geoTxt||'Off — no check-in',!geoTxt);
   serverSkew=(st.serverNow||Date.now())-Date.now();
   $('#kJoined').textContent=st.verifiedCount;

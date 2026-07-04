@@ -1066,6 +1066,44 @@ async function call(path, body, method='POST', headers={}) {
   const offInList = (((await call('/api/admin/users', null, 'GET', ADMINH)).d.users || []).find(u => u.email === 'host@test.com') || {}).giveaway;
   ok('admin list reflects the excluded flag', offInList === false, 'flag ' + offInList);
 
+  console.log('\n— invite-only sessions: unlisted visibility + join access code —');
+  const invC = await call('/api/session', { name: 'Private Listening' }, 'POST', BOOTH);
+  const IVID = invC.d.sessionId, IVAH = { 'X-Admin-Token': invC.d.adminToken };
+  // Make it live so it WOULD be the featured session if it were public.
+  await call('/api/admin/session/status', { sessionId: IVID, status: 'live' }, 'POST', IVAH);
+  await call('/api/admin/session/config', { sessionId: IVID, visibility: 'unlisted', accessCode: 'vip2026' }, 'POST', IVAH);
+  const ivState = (await call(`/api/admin/state?sessionId=${IVID}`, null, 'GET', IVAH)).d;
+  ok('admin state carries visibility + code (uppercased)', ivState.session.visibility === 'unlisted' && ivState.session.access_code === 'VIP2026', JSON.stringify([ivState.session.visibility, ivState.session.access_code]));
+  // Unlisted sessions never surface as the homepage feature.
+  const homeIv = (await call('/api/home', null, 'GET')).d;
+  ok('unlisted live session hidden from /api/home', !homeIv.live || homeIv.live.id !== IVID, JSON.stringify(homeIv.live && homeIv.live.id));
+  // Join gate: no code → 403 access_code_required; wrong code → 403; right code (any case) → OTP.
+  const noCode = await call('/api/join/request', { sessionId: IVID, email: 'inv@fan.com' });
+  ok('join without code is refused', noCode.status === 403 && noCode.d.error === 'access_code_required', JSON.stringify(noCode.d));
+  const badCode = await call('/api/join/request', { sessionId: IVID, email: 'inv@fan.com', accessCode: 'NOPE' });
+  ok('join with wrong code is refused', badCode.status === 403 && badCode.d.error === 'access_code_required', JSON.stringify(badCode.d));
+  const goodCode = await call('/api/join/request', { sessionId: IVID, email: 'inv@fan.com', accessCode: ' Vip2026 ' });
+  ok('join with the right code (case/space-insensitive) works', goodCode.status === 200 && goodCode.d.sent, JSON.stringify(goodCode.d));
+  const invVer = await call('/api/join/verify', { sessionId: IVID, email: 'inv@fan.com', code: goodCode.d.devCode, name: 'Invited Fan' });
+  ok('invited player verifies and gets a seat', invVer.status === 200 && invVer.d.token, JSON.stringify(invVer.d).slice(0, 80));
+  // The one-tap account join obeys the same gate (fresh identity, not yet seated).
+  const invAuthReq = await call('/api/auth/request', { email: 'inv3@fan.com' });
+  const invAuthVer = await call('/api/auth/verify', { email: 'inv3@fan.com', code: invAuthReq.d.devCode });
+  const INVAUTH = { 'X-Auth-Token': invAuthVer.d.token };
+  const acctNo = await call('/api/join/account', { sessionId: IVID }, 'POST', INVAUTH);
+  ok('account join without code is refused', acctNo.status === 403 && acctNo.d.error === 'access_code_required', JSON.stringify(acctNo.d));
+  const acctYes = await call('/api/join/account', { sessionId: IVID, accessCode: 'vip2026' }, 'POST', INVAUTH);
+  ok('account join with the code seats the user', acctYes.status === 200 && !!acctYes.d.token, 'status ' + acctYes.status);
+  // Clearing the code reopens the join.
+  await call('/api/admin/session/config', { sessionId: IVID, accessCode: '' }, 'POST', IVAH);
+  const opened = await call('/api/join/request', { sessionId: IVID, email: 'inv2@fan.com' });
+  ok('clearing the code reopens joins', opened.status === 200 && opened.d.sent, 'status ' + opened.status);
+  // Back to public → it can feature again (and doesn't break state).
+  await call('/api/admin/session/config', { sessionId: IVID, visibility: 'public' }, 'POST', IVAH);
+  const ivState2 = (await call(`/api/admin/state?sessionId=${IVID}`, null, 'GET', IVAH)).d;
+  ok('visibility flips back to public', ivState2.session.visibility === 'public', ivState2.session.visibility);
+  await call('/api/admin/session/status', { sessionId: IVID, status: 'archived' }, 'POST', IVAH); // tidy up
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

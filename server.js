@@ -722,7 +722,8 @@ async function adminState(session, opts = {}) {
     session: { id: session.id, name: session.name, status: session.status, admin_token: session.admin_token, banner_id: session.banner_id || null, default_minutes: session.default_minutes || DEFAULT_MINUTES, poll_type: pollType,
       watch_url: session.watch_url || null, submit_url: session.submit_url || null, lobby_message: session.lobby_message || null,
       broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
-      geo_mode: session.geo_mode || 'off', geo_lat: session.geo_lat ?? null, geo_lng: session.geo_lng ?? null, geo_radius: session.geo_radius || null, geo_label: session.geo_label || null },
+      geo_mode: session.geo_mode || 'off', geo_lat: session.geo_lat ?? null, geo_lng: session.geo_lng ?? null, geo_radius: session.geo_radius || null, geo_label: session.geo_label || null,
+      visibility: session.visibility || 'public', access_code: session.access_code || null },
     pools: {
       in_person: participants.filter(p => p.pool === 'in_person').length,
       online: participants.filter(p => p.pool === 'online').length,
@@ -1027,10 +1028,19 @@ async function handleApi(req, res, url) {
 
   // ----- request OTP -----
   if (p === '/api/join/request' && method === 'POST') {
-    const { sessionId, email } = await readBody(req);
+    const { sessionId, email, accessCode } = await readBody(req);
     const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
     if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
     if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This session is closed');
+    // Invite-only gate: a session with an access code only mints OTPs for people who
+    // have it. Returning players re-joining still pass through here, so the code
+    // guards every entry into the room. Case/whitespace-insensitive.
+    if (session.access_code) {
+      const given = (accessCode || '').toString().trim().toUpperCase();
+      if (given !== session.access_code.trim().toUpperCase()) {
+        return send(res, 403, { error: 'access_code_required', message: given ? 'That room code isn’t right.' : 'This room is invite-only — enter the room code.' });
+      }
+    }
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad(res, 'Enter a valid email');
     const code = code6();
     await db.run('DELETE FROM otps WHERE email = ? AND session_id = ?', [email.toLowerCase(), sessionId]);
@@ -1154,14 +1164,22 @@ async function handleApi(req, res, url) {
     const user = await userFromAuth(req);
     if (!user) return bad(res, 'Not logged in', 401);
     if (user.blocked) return bad(res, 'This account has been suspended.', 403);
-    const { sessionId } = await readBody(req);
-    const session = await db.get('SELECT id, status, deleted_at FROM sessions WHERE id = ?', [sessionId]);
+    const { sessionId, accessCode } = await readBody(req);
+    const session = await db.get('SELECT id, status, deleted_at, access_code FROM sessions WHERE id = ?', [sessionId]);
     if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
     if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This session is closed — you can only register for upcoming or live sessions', 400);
     const em = (user.email || '').toLowerCase();
     const consent = ((user.phone || '').replace(/\D/g, '').length >= 7) ? 1 : 0;
     const token = id(18);
     let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
+    // Invite-only gate for the one-tap account join: same rule as /api/join/request.
+    // Someone already seated in this session re-authing doesn't need the code again.
+    if (session.access_code && !participant) {
+      const given = (accessCode || '').toString().trim().toUpperCase();
+      if (given !== session.access_code.trim().toUpperCase()) {
+        return send(res, 403, { error: 'access_code_required', message: given ? 'That room code isn’t right.' : 'This room is invite-only — enter the room code.' });
+      }
+    }
     if (participant) {
       await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone) WHERE id = ?',
         [token, user.uid, (user.name || '').trim(), user.phone || '', participant.id]);
@@ -2137,8 +2155,9 @@ async function handleApi(req, res, url) {
   // name + points only, never email/phone. One call powers the whole front door.
   if (p === '/api/home' && method === 'GET') {
     const firstName = dispName; // full display name (no first-word splitting)
-    // Live session (most recent if more than one is somehow live).
-    const liveRow = await db.get("SELECT * FROM sessions WHERE status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1", []);
+    // Live session (most recent if more than one is somehow live). Unlisted sessions
+    // never surface here — they're reachable only by direct link/QR.
+    const liveRow = await db.get("SELECT * FROM sessions WHERE status = 'live' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY created_at DESC LIMIT 1", []);
     let live = null;
     if (liveRow) {
       const arCount = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [liveRow.id])).c;
@@ -2150,7 +2169,7 @@ async function handleApi(req, res, url) {
       live = { id: liveRow.id, name: liveRow.name, pollType: liveRow.poll_type, watchUrl: liveRow.watch_url || null, submitUrl: liveRow.submit_url || null, arCount: Number(arCount) || 0, nowPlaying };
     }
     // Next upcoming session: earliest future start, else most recently created upcoming.
-    const nextRow = await db.get("SELECT id, name, scheduled_at, watch_url, submit_url FROM sessions WHERE status = 'upcoming' AND deleted_at IS NULL ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", []);
+    const nextRow = await db.get("SELECT id, name, scheduled_at, watch_url, submit_url FROM sessions WHERE status = 'upcoming' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", []);
     const next = nextRow ? { id: nextRow.id, name: nextRow.name, scheduledAt: nextRow.scheduled_at, watchUrl: nextRow.watch_url || null, submitUrl: nextRow.submit_url || null } : null;
     // Active series (else most recent) + its live-computed top 5.
     const serRow = (await db.get("SELECT id, title, status FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []))
@@ -2202,6 +2221,15 @@ async function handleApi(req, res, url) {
       sets.push('geo_radius = ?'); vals.push(Number.isFinite(r) && r > 0 ? Math.min(5000, Math.max(25, r)) : DEFAULT_GEO_RADIUS);
     }
     if ('geoLabel' in body) { sets.push('geo_label = ?'); vals.push((body.geoLabel || '').toString().trim().slice(0, 200) || null); }
+    // Invite-only controls: unlisted visibility + optional join access code.
+    if ('visibility' in body) {
+      const v = body.visibility === 'unlisted' ? 'unlisted' : 'public';
+      sets.push('visibility = ?'); vals.push(v);
+    }
+    if ('accessCode' in body) {
+      const c = (body.accessCode || '').toString().trim().toUpperCase().slice(0, 24);
+      sets.push('access_code = ?'); vals.push(c || null);
+    }
     if (!sets.length) return bad(res, 'Nothing to update');
     vals.push(body.sessionId);
     await db.run(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`, vals);

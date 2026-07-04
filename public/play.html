@@ -235,6 +235,9 @@
       <div class="eyebrow" id="acctEyebrow">Register as an A&amp;R</div>
       <h2 style="margin:6px 0;font-size:24px" id="acctHi">This session</h2>
       <p class="dim" id="acctSub" style="font-size:14px;margin:0">Tap Complete to register as an A&amp;R for this session.</p>
+      <!-- Invite-only rooms: revealed when the server asks for a room code -->
+      <div class="hide" id="acctCodeRow" style="width:100%"><label>Room code <span class="dim" style="font-weight:400">(from your invite)</span></label>
+        <input id="acctCode" autocomplete="off" placeholder="e.g. VIP2026" maxlength="24" style="text-transform:uppercase"></div>
       <button class="btn" id="btnAcctJoin">Complete registration</button>
       <button class="btn ghost" id="btnAcctOther">Cancel</button>
       <div class="err" id="acctErr"></div>
@@ -247,6 +250,9 @@
       <div><div class="eyebrow">Step 1</div><h2 style="margin-top:6px">Take your seat</h2>
         <p class="dim" style="margin:8px 0 0;font-size:14px">Enter your email and we'll send a six-digit code to confirm it's you.</p></div>
       <div><label>Email</label><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com"></div>
+      <!-- Invite-only rooms: revealed when the server asks for a room code -->
+      <div class="hide" id="roomCodeRow"><label>Room code <span class="dim" style="font-weight:400">(from your invite)</span></label>
+        <input id="roomCode" autocomplete="off" placeholder="e.g. VIP2026" maxlength="24" style="text-transform:uppercase"></div>
       <button class="btn" id="btnRequest">Send my code</button>
       <div class="err" id="emailErr"></div>
     </div>
@@ -796,8 +802,15 @@ async function tryAccountRegister(info){
 $('#btnAcctJoin').onclick=async()=>{
   $('#acctErr').textContent=''; $('#btnAcctJoin').disabled=true;
   try{
-    const r=await fetch('/api/join/account',{method:'POST',headers:{'Content-Type':'application/json','X-Auth-Token':localStorage.getItem('rt_auth_token')},body:JSON.stringify({sessionId:SID})});
-    const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not register');
+    const r=await fetch('/api/join/account',{method:'POST',headers:{'Content-Type':'application/json','X-Auth-Token':localStorage.getItem('rt_auth_token')},body:JSON.stringify({sessionId:SID,accessCode:$('#acctCode').value.trim()})});
+    const d=await r.json();
+    if(r.status===403&&d.error==='access_code_required'){
+      $('#acctCodeRow').classList.remove('hide');
+      $('#acctErr').textContent=d.message||'This room is invite-only — enter the room code.';
+      $('#acctCode').focus(); $('#btnAcctJoin').disabled=false;
+      return;
+    }
+    if(!r.ok)throw new Error(d.error||'Could not register');
     track('session_register',{method:'account'});
     setToken(d.token); startPolling();
   }catch(e){ $('#acctErr').textContent=e.message; $('#btnAcctJoin').disabled=false; }
@@ -844,7 +857,17 @@ $('#btnRequest').onclick=async()=>{
   if(!email)return $('#emailErr').textContent='Enter your email';
   $('#btnRequest').disabled=true;
   try{
-    const d=await api('/api/join/request',{sessionId:SID,email});
+    const out=await apiRaw('/api/join/request',{sessionId:SID,email,accessCode:$('#roomCode').value.trim()});
+    if(out.status===403&&out.data.error==='access_code_required'){
+      // Invite-only room: surface the code field and let them retry.
+      $('#roomCodeRow').classList.remove('hide');
+      $('#emailErr').textContent=out.data.message||'This room is invite-only — enter the room code.';
+      $('#roomCode').focus();
+      $('#btnRequest').disabled=false;
+      return;
+    }
+    if(out.status!==200)throw new Error(out.data.error||'Something went wrong');
+    const d=out.data;
     $('#emailEcho').textContent=email;localStorage.setItem('rt_email',email);
     if(d.devCode){$('#devCodeBox').classList.remove('hide');$('#devCodeBox').textContent='Dev mode — your code is '+d.devCode;}
     else $('#devCodeBox').classList.add('hide');
