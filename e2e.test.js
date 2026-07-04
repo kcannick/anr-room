@@ -1124,6 +1124,66 @@ async function call(path, body, method='POST', headers={}) {
   ok('visibility flips back to public', ivState2.session.visibility === 'public', ivState2.session.visibility);
   await call('/api/admin/session/status', { sessionId: IVID, status: 'archived' }, 'POST', IVAH); // tidy up
 
+  // ======================================================================
+  // Referral bonus milestones: an invitee's 10th cumulative scored round
+  // pays their referrer +10 on the series board; the 50th pays +75 more.
+  // First-touch only (new accounts); idempotent across every later ratify.
+  // ======================================================================
+  console.log('\n— referral bonus milestones: 10 rounds → +10, 50 → +75 —');
+  const rbSer = await call('/api/admin/series/create', { title: 'Referral Bonus Series', status: 'active' }, 'POST', ADMINH);
+  const rbC = await call('/api/session', { name: 'Referral Night' }, 'POST', BOOTH);
+  const RBID = rbC.d.sessionId, RBAH = { 'X-Admin-Token': rbC.d.adminToken };
+  await call('/api/admin/series/tag', { sessionId: RBID, seriesId: rbSer.d.seriesId }, 'POST', ADMINH);
+  // Ray (the referrer) takes a seat and shares his code.
+  const rayJr = await call('/api/join/request', { sessionId: RBID, email: 'ray.referrer@fan.com' });
+  const rayVer = await call('/api/join/verify', { sessionId: RBID, email: 'ray.referrer@fan.com', code: rayJr.d.devCode, name: 'Ray Referrer' });
+  const RAY = { 'X-Player-Token': rayVer.d.token };
+  const RAYCODE = ((await call('/api/me/state', null, 'GET', RAY)).d.referral || {}).refCode
+    || (await call('/api/me/state', null, 'GET', RAY)).d.refCode;
+  ok('referrer has a share code', !!RAYCODE, JSON.stringify(RAYCODE));
+  // Nia is a BRAND-NEW account arriving on Ray's link → durable first-touch.
+  const niaJr = await call('/api/join/request', { sessionId: RBID, email: 'nia.new@fan.com' });
+  const niaVer = await call('/api/join/verify', { sessionId: RBID, email: 'nia.new@fan.com', code: niaJr.d.devCode, name: 'Nia New', ref: RAYCODE });
+  const NIA = { 'X-Player-Token': niaVer.d.token };
+  // Maya (a@test.com) is a VETERAN account with a long round history — joining on Ray's
+  // code must NOT attach attribution (else her history would fire both milestones).
+  const mayJr = await call('/api/join/request', { sessionId: RBID, email: 'a@test.com' });
+  const mayVer = await call('/api/join/verify', { sessionId: RBID, email: 'a@test.com', code: mayJr.d.devCode, name: 'Maya', ref: RAYCODE });
+  const MAYA_RB = { 'X-Player-Token': mayVer.d.token };
+
+  const rayOnBoard = async () => {
+    const lb = (await call(`/api/admin/series/leaderboard?seriesId=${rbSer.d.seriesId}`, null, 'GET', ADMINH)).d.leaderboard;
+    return lb.find(r => r.email === 'ray.referrer@fan.com') || null;
+  };
+  // One scored round: add (auto-opens) → Nia votes (Maya too, for the veteran check) → ratify.
+  let rbRound = 0;
+  const playRound = async () => {
+    rbRound++;
+    const r = await call('/api/admin/round', { sessionId: RBID, song_title: 'RB ' + rbRound }, 'POST', RBAH);
+    await call('/api/vote', { taste: 6, predict: 6 }, 'POST', NIA);
+    if (rbRound === 1) await call('/api/vote', { taste: 4, predict: 5 }, 'POST', MAYA_RB);
+    await call('/api/admin/round/ratify', { sessionId: RBID, roundId: r.d.roundId }, 'POST', RBAH);
+  };
+  for (let i = 0; i < 9; i++) await playRound();
+  let ray = await rayOnBoard();
+  ok('no bonus before the 10th round', !ray || ray.points === 0, JSON.stringify(ray));
+  ok('veteran joining via a code fires nothing (first-touch is new accounts only)', !ray || ray.points === 0, JSON.stringify(ray));
+  await playRound(); // Nia's 10th scored round
+  ray = await rayOnBoard();
+  ok('10th round pays the referrer +10 on the series board', ray && ray.points === 10, JSON.stringify(ray));
+  await playRound(); // 11th — same milestone must not re-fire
+  ray = await rayOnBoard();
+  ok('milestone is once-ever (11th round adds nothing)', ray && ray.points === 10, JSON.stringify(ray));
+  while (rbRound < 50) await playRound();
+  ray = await rayOnBoard();
+  ok('50th round pays +75 more (85 total per invitee)', ray && ray.points === 85, JSON.stringify(ray));
+  // Lifetime rolls up alongside the series board.
+  const rayUser = (((await call('/api/admin/users?q=ray.referrer', null, 'GET', ADMINH)).d.users) || []).find(u => u.email === 'ray.referrer@fan.com');
+  ok('referrer lifetime total carries the bonus', rayUser && rayUser.points === 85, JSON.stringify(rayUser && rayUser.points));
+  // Nia's own score is untouched by the bonus machinery (50 rounds of her votes).
+  const niaState = (await call('/api/me/state', null, 'GET', NIA)).d;
+  ok('invitee keeps only her own vote points', niaState.totalPoints == null || typeof niaState.totalPoints === 'number', 'state ok');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

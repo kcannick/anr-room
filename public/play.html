@@ -747,7 +747,7 @@ function playLink(){
 }
 $('#inviteBtn')&&($('#inviteBtn').onclick=async()=>{
   const url=playLink();
-  const data={title:'The A&R Room',text:'Come play The A&R Room with me 🎧 Rate the drops, read the room, climb the board.',url};
+  const data={title:'The A&R Room',text:'Come play The A&R Room with me 🎧 Rate the drops, read the room, climb the board. (New A&Rs you bring earn you bonus points as they play!)',url};
   try{
     if(navigator.share){await navigator.share(data);}
     else{await navigator.clipboard.writeText(url);$('#inviteBtn').textContent='Link copied!';setTimeout(()=>updateInviteBtn(),1400);}

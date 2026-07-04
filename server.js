@@ -425,7 +425,9 @@ async function playerState(participant) {
   }
 
   // Referral: this player's own share code + how many people they've brought who
-  // actually played (credited). Informational only — no reward attached.
+  // actually played (credited). The DISPLAY here is per-session; the reward is the
+  // milestone bonus (creditReferralMilestones): a NEW account you bring in earns you
+  // +10 pts at their 10th scored round and +75 at their 50th.
   const referredCount = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND referred_by = ? AND ref_credited = 1', [sessionId, participant.id])).c;
 
   // Liveness join feed (3.5d) — recent verified joiners. Names show only for COMPLETE
@@ -478,6 +480,45 @@ async function playerState(participant) {
 async function creditReferral(participant) {
   if (!participant || !participant.referred_by || participant.ref_credited) return;
   await db.run('UPDATE participants SET ref_credited = 1 WHERE id = ? AND referred_by IS NOT NULL AND ref_credited = 0', [participant.id]);
+}
+
+// Referral bonus milestones (2026-07 operator decision): when a REFERRED user (durable
+// first-touch, users.referrer_uid) crosses a cumulative-scored-rounds threshold, their
+// referrer earns leaderboard points:
+//   10 rounds → +10 pts     50 rounds → +75 pts   (one invitee is worth 85 max, ever)
+// Runs at ratify for that round's voters only (bounded by room size — never on the
+// boot/request path). The bonus lands on the ratified session's series board via the
+// point_events ledger (live-summed with votes, per the no-stored-rollup rule) and on the
+// referrer's lifetime total. Idempotency lives in the DB: the unique
+// (reason, source_uid, milestone) index makes a re-fired ratify a no-op.
+const REFERRAL_MILESTONES = [{ rounds: 10, points: 10 }, { rounds: 50, points: 75 }];
+async function creditReferralMilestones(round, session) {
+  const voters = await db.all(
+    `SELECT DISTINCT u.uid, u.referrer_uid FROM votes v
+       JOIN participants p ON v.participant_id = p.id
+       JOIN users u        ON p.user_id = u.uid
+      WHERE v.round_id = ? AND u.referrer_uid IS NOT NULL`, [round.id]);
+  for (const inv of voters) {
+    // Cumulative scored rounds for this invitee, across ALL sessions.
+    const c = Number((await db.get(
+      `SELECT COUNT(*) AS c FROM votes v
+         JOIN participants p ON v.participant_id = p.id
+         JOIN rounds r       ON v.round_id = r.id
+        WHERE p.user_id = ? AND r.status = 'ratified'`, [inv.uid])).c) || 0;
+    const due = REFERRAL_MILESTONES.filter(m => c >= m.rounds);
+    if (!due.length) continue;
+    const ref = await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [inv.referrer_uid]);
+    if (!ref || ref.blocked) continue;
+    for (const m of due) {
+      const ins = await db.run(
+        `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
+         VALUES (?,?,?,?,?,?,?,?)
+         ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
+        [id(9), ref.uid, m.points, session.series_id || null, 'referral', inv.uid, m.rounds, now()]);
+      // Lifetime rolls up only when the event actually landed (changes = 0 on replays).
+      if (ins.changes) await db.run('UPDATE users SET lifetime_points = lifetime_points + ? WHERE uid = ?', [m.points, ref.uid]);
+    }
+  }
 }
 
 // Public, PII-safe state for the on-stream overlay. Shows the live truth (unlike the
@@ -534,17 +575,28 @@ async function overlayState(session) {
 // uses. Shared by /api/home and the realtime leaderboard push so both stay identical.
 // This is the board whose compute must be viewer-count-independent at scale: computed
 // once here on ratify and pushed to every connected client, instead of recomputed per poll.
+// Series points = vote points over the series' tagged sessions PLUS bonus point_events
+// tagged to the series (referral milestones). Both live-summed — never a stored rollup.
+// The UNION shape is shared by every series board (home, admin, public, share card).
+const SERIES_POINTS_SRC = `
+    SELECT p.user_id AS puid, v.points AS pts FROM votes v
+      JOIN participants p ON v.participant_id = p.id
+      JOIN rounds r       ON v.round_id = r.id
+      JOIN sessions s     ON r.session_id = s.id
+     WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL
+    UNION ALL
+    SELECT pe.user_id AS puid, pe.points AS pts FROM point_events pe WHERE pe.series_id = ?`;
+
 async function homeSeriesBoard(seriesId, limit = 5) {
   const first = dispName; // full display name (no first-word splitting)
   const rows = await db.all(
-    `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS pts FROM votes v
-     JOIN participants p ON v.participant_id = p.id
-     JOIN users u        ON p.user_id = u.uid
-     JOIN rounds r       ON v.round_id = r.id
-     JOIN sessions s     ON r.session_id = s.id
-     WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1 AND u.blocked = 0
-     GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url ORDER BY pts DESC, u.name ASC LIMIT ?`,
-    [seriesId, limit]);
+    `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(t.pts) AS pts
+       FROM (${SERIES_POINTS_SRC}) t
+       JOIN users u ON t.puid = u.uid
+      WHERE u.profile_complete = 1 AND u.blocked = 0
+      GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
+      ORDER BY pts DESC, u.name ASC LIMIT ?`,
+    [seriesId, seriesId, limit]);
   return rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: first(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.pts) || 0 }));
 }
 
@@ -566,15 +618,12 @@ async function cardArsData({ sessionId, seriesId }, limit = 8) {
     return rows.map(r => ({ name: r.uname || r.pname || 'A&R', ig: igClean(r.instagram), points: Number(r.pts) || 0 }));
   }
   const rows = await db.all(
-    `SELECT u.name, u.instagram, SUM(v.points) AS pts
-       FROM votes v
-       JOIN participants p ON v.participant_id = p.id
-       JOIN users u        ON p.user_id = u.uid
-       JOIN rounds r       ON v.round_id = r.id
-       JOIN sessions s     ON r.session_id = s.id
-      WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1 AND u.blocked = 0
+    `SELECT u.name, u.instagram, SUM(t.pts) AS pts
+       FROM (${SERIES_POINTS_SRC}) t
+       JOIN users u ON t.puid = u.uid
+      WHERE u.profile_complete = 1 AND u.blocked = 0
       GROUP BY u.uid, u.name, u.instagram
-      ORDER BY pts DESC, u.name ASC LIMIT ?`, [seriesId, limit]);
+      ORDER BY pts DESC, u.name ASC LIMIT ?`, [seriesId, seriesId, limit]);
   return rows.map(r => ({ name: r.name || 'A&R', ig: igClean(r.instagram), points: Number(r.pts) || 0 }));
 }
 
@@ -1119,7 +1168,7 @@ async function handleApi(req, res, url) {
       const uid = id(12);
       await db.run('INSERT INTO users (uid, email, name, phone, sms_marketing_consent, sms_consent_at, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,?,?,?,0,0)',
         [uid, em, (name || '').trim().slice(0, MAX_NAME), effectivePhone || null, consent, consent ? now() : null, now(), now()]);
-      user = { uid, email: em };
+      user = { uid, email: em, isNewAccount: true };
     }
     // The per-session participant records the phone + consent for THIS signup.
     const ph = effectivePhone;
@@ -1138,8 +1187,17 @@ async function handleApi(req, res, url) {
       // THIS session, and must not be a self-referral by email. Anything else -> organic.
       let referredBy = null;
       if (refIn) {
-        const inviter = await db.get('SELECT id, email FROM participants WHERE session_id = ? AND ref_code = ? AND verified = 1', [sessionId, refIn]);
-        if (inviter && inviter.email !== em) referredBy = inviter.id;
+        const inviter = await db.get('SELECT id, email, user_id FROM participants WHERE session_id = ? AND ref_code = ? AND verified = 1', [sessionId, refIn]);
+        if (inviter && inviter.email !== em) {
+          referredBy = inviter.id;
+          // Durable FIRST-TOUCH attribution for the referral bonus: only a brand-new
+          // account counts as "brought in" — referring an existing player never earns
+          // milestone points (their round history would fire instantly otherwise).
+          // Set once; the referrer_uid IS NULL guard means it's never reassigned.
+          if (user.isNewAccount && inviter.user_id && inviter.user_id !== user.uid) {
+            await db.run('UPDATE users SET referrer_uid = ? WHERE uid = ? AND referrer_uid IS NULL', [inviter.user_id, user.uid]);
+          }
+        }
       }
       // Generate a unique-per-session code for the new player.
       let myCode = refCode();
@@ -1898,6 +1956,9 @@ async function handleApi(req, res, url) {
       await db.run("UPDATE rounds SET status = 'closed' WHERE id = ?", [roundId]);
     }
     const out = await ratifyRound(round);
+    // Referral bonuses fire BEFORE the board compute so the pushed board includes them.
+    try { await creditReferralMilestones(round, session); }
+    catch (e) { console.error('[referral] milestone credit failed:', e.message); }
     // Compute the public series board ONCE here and push it as payload, so every connected
     // homepage applies it directly instead of each re-fetching + recomputing (O(1) at scale).
     let lbData = null;
@@ -2106,16 +2167,13 @@ async function handleApi(req, res, url) {
     // line is drawn at qualifyCount. An explicit ?limit= overrides.
     const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 200);
     const rows = await db.all(
-      `SELECT u.uid AS user_id, u.name, u.email, u.profile_complete, u.primary_category, u.location, SUM(v.points) AS series_points
-       FROM votes v
-       JOIN participants p ON v.participant_id = p.id
-       JOIN users u        ON p.user_id = u.uid
-       JOIN rounds r       ON v.round_id = r.id
-       JOIN sessions s     ON r.session_id = s.id
-       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.blocked = 0
+      `SELECT u.uid AS user_id, u.name, u.email, u.profile_complete, u.primary_category, u.location, SUM(t.pts) AS series_points
+       FROM (${SERIES_POINTS_SRC}) t
+       JOIN users u ON t.puid = u.uid
+       WHERE u.blocked = 0
        GROUP BY u.uid, u.name, u.email, u.profile_complete, u.primary_category, u.location
        ORDER BY series_points DESC, u.name ASC
-       LIMIT ?`, [seriesId, limit]);
+       LIMIT ?`, [seriesId, seriesId, limit]);
     // Admin sees everyone (incl. incomplete), but the A&R Wars cut only counts qualified
     // (complete) profiles — an incomplete top scorer doesn't take a qualifying slot.
     let q = 0;
@@ -2140,16 +2198,13 @@ async function handleApi(req, res, url) {
     // Qualified-only: only complete profiles appear publicly (3.5c gate). Category +
     // location are public by design (they're what makes a leaderboard row "real").
     const rows = await db.all(
-      `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(v.points) AS series_points
-       FROM votes v
-       JOIN participants p ON v.participant_id = p.id
-       JOIN users u        ON p.user_id = u.uid
-       JOIN rounds r       ON v.round_id = r.id
-       JOIN sessions s     ON r.session_id = s.id
-       WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u.profile_complete = 1 AND u.blocked = 0
+      `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(t.pts) AS series_points
+       FROM (${SERIES_POINTS_SRC}) t
+       JOIN users u ON t.puid = u.uid
+       WHERE u.profile_complete = 1 AND u.blocked = 0
        GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
        ORDER BY series_points DESC, u.name ASC
-       LIMIT ?`, [seriesId, limit]);
+       LIMIT ?`, [seriesId, seriesId, limit]);
     return send(res, 200, {
       series: { id: series.id, title: series.title, status: series.status },
       leaderboard: rows.map((r, i) => ({ rank: i + 1, id: r.uid, name: dispName(r.name), category: r.primary_category || null, location: r.location || null, photoUrl: r.photo_url || null, points: Number(r.series_points) || 0 })),
