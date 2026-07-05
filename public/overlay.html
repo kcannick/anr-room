@@ -109,22 +109,24 @@
      zones (120px): header (brand + dual QR CTAs) → round card → transient board. */
   body.vertical{width:1080px;height:1920px}
   /* header card: brand + LIVE pill + two QR calls-to-action (join + submit) */
-  #vHero{position:absolute;top:230px;left:120px;right:120px;padding:24px 34px 28px}
+  #vHero{position:absolute;top:230px;left:120px;right:120px;padding:20px 34px 22px}
   #vHero .brandrow{display:flex;align-items:center;justify-content:center;gap:18px}
   #vHero .room{font-weight:800;font-size:38px;letter-spacing:-.01em}
   #vHero .room span{color:var(--signal)}
   /* No LIVE pill here — every platform already badges its own live state. */
-  #vHero .ctas{display:flex;margin-top:22px}
-  #vHero .cta{flex:1;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
-  #vHero .cta+.cta{border-left:1px solid var(--line)}
-  #vHero .qbox{width:230px;height:230px;background:#fff;border-radius:16px;padding:12px}
-  #vHero .cta.win .qbox{border:5px solid var(--gold)}
-  #vHero .cta.sub .qbox{border:5px solid var(--accent)}
+  /* stacked CTA rows: small QR on the left, the call-to-action carries the size */
+  #vHero .ctas{margin-top:14px}
+  #vHero .cta{display:flex;align-items:center;gap:26px;padding:12px 6px}
+  #vHero .cta+.cta{border-top:1px solid var(--line)}
+  #vHero .qbox{width:140px;height:140px;flex:none;background:#fff;border-radius:14px;padding:8px}
+  #vHero .cta.win .qbox{border:4px solid var(--gold)}
+  #vHero .cta.sub .qbox{border:4px solid var(--accent)}
   #vHero .qbox img{width:100%;height:100%;display:block}
-  #vHero .lbl{font-weight:800;font-size:34px;line-height:1}
+  #vHero .ctxt{flex:1;min-width:0}
+  #vHero .lbl{font-weight:800;font-size:44px;line-height:1.05;letter-spacing:-.01em}
   #vHero .cta.win .lbl{color:var(--gold)}
   #vHero .cta.sub .lbl{color:#a99cff}
-  #vHero .sub2{font-size:20px;color:var(--ink-dim);margin-top:-4px}
+  #vHero .sub2{font-size:23px;color:var(--ink-dim);margin-top:4px}
   /* single join QR card — horizontal's top-right rail only (the header replaces it on vertical) */
   #vQr{position:absolute;top:60px;right:60px;width:300px;padding:22px 22px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
   body.vertical #vQr{display:none!important}
@@ -177,13 +179,17 @@
     <div class="ctas" id="vHeroCtas">
       <div class="cta win">
         <div class="qbox"><img id="qrWin" alt="Join QR"></div>
-        <div class="lbl">WIN $500</div>
-        <div class="sub2">Scan to Rate Songs</div>
+        <div class="ctxt">
+          <div class="lbl">WIN $500</div>
+          <div class="sub2">Scan to Rate Songs</div>
+        </div>
       </div>
       <div class="cta sub">
         <div class="qbox"><img id="qrSubmit" alt="Submit QR"></div>
-        <div class="lbl">SUBMIT MUSIC</div>
-        <div class="sub2">Get Reviewed Live on Air</div>
+        <div class="ctxt">
+          <div class="lbl">SUBMIT MUSIC</div>
+          <div class="sub2">Get Reviewed Live on Air</div>
+        </div>
       </div>
     </div>
   </div>
