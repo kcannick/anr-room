@@ -108,25 +108,26 @@
      ~58% screen height. Everything stacks in the top band, inside the side safe
      zones (120px): header (brand + dual QR CTAs) → round card → transient board. */
   body.vertical{width:1080px;height:1920px}
-  /* header card: brand + LIVE pill + two QR calls-to-action (join + submit) */
-  #vHero{position:absolute;top:230px;left:120px;right:120px;padding:20px 34px 22px}
-  #vHero .brandrow{display:flex;align-items:center;justify-content:center;gap:18px}
-  #vHero .room{font-weight:800;font-size:38px;letter-spacing:-.01em}
-  #vHero .room span{color:var(--signal)}
-  /* No LIVE pill here — every platform already badges its own live state. */
-  /* stacked CTA rows: small QR on the left, the call-to-action carries the size */
-  #vHero .ctas{margin-top:14px}
-  #vHero .cta{display:flex;align-items:center;gap:26px;padding:12px 6px}
-  #vHero .cta+.cta{border-top:1px solid var(--line)}
-  #vHero .qbox{width:140px;height:140px;flex:none;background:#fff;border-radius:14px;padding:8px}
-  #vHero .cta.win .qbox{border:4px solid var(--gold)}
-  #vHero .cta.sub .qbox{border:4px solid var(--accent)}
+  /* header card — one compact row, minimal vertical footprint:
+     [win QR]   The A&R Room / ◄ WIN $500 / ─ / SUBMIT MUSIC ►   [submit QR]
+     Arrows point each call-to-action at its code.
+     (No LIVE pill — every platform already badges its own live state.) */
+  #vHero{position:absolute;top:230px;left:120px;right:120px;padding:16px 26px}
+  #vHero .cta-row{display:flex;align-items:center;gap:26px}
+  #vHero .qbox{width:150px;height:150px;flex:none;background:#fff;border-radius:14px;padding:8px}
+  #vHero .qbox.win{border:4px solid var(--gold)}
+  #vHero .qbox.sub{border:4px solid var(--accent)}
   #vHero .qbox img{width:100%;height:100%;display:block}
-  #vHero .ctxt{flex:1;min-width:0}
-  #vHero .lbl{font-weight:800;font-size:44px;line-height:1.05;letter-spacing:-.01em}
-  #vHero .cta.win .lbl{color:var(--gold)}
-  #vHero .cta.sub .lbl{color:#a99cff}
-  #vHero .sub2{font-size:23px;color:var(--ink-dim);margin-top:4px}
+  #vHero .mid{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
+  #vHero .room{font-weight:800;font-size:28px;letter-spacing:-.01em}
+  #vHero .room span{color:var(--signal)}
+  #vHero .lbl{font-weight:800;font-size:40px;line-height:1;letter-spacing:-.01em;white-space:nowrap}
+  #vHero .lbl.win{color:var(--gold)}
+  #vHero .lbl.sub{color:#a99cff}
+  #vHero .lbl .arr{font-size:30px;vertical-align:3px}
+  #vHero .sep{width:64%;height:1px;background:var(--line)}
+  /* ?qr=false → just the brand strip (codes + CTAs off) */
+  body.noqr #vHero .qbox,body.noqr #vHero .lbl,body.noqr #vHero .sep{display:none}
   /* single join QR card — horizontal's top-right rail only (the header replaces it on vertical) */
   #vQr{position:absolute;top:60px;right:60px;width:300px;padding:22px 22px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
   body.vertical #vQr{display:none!important}
@@ -135,7 +136,7 @@
   #vQr .label{font-weight:800;font-size:31px;color:var(--gold);line-height:1.08}
   /* round card / result / broadcast -> directly under the header (top band) */
   body.vertical #lower,body.vertical #result,body.vertical #bcastLower{
-    left:120px;right:120px;top:690px;bottom:auto;flex-direction:column;align-items:stretch;gap:0}
+    left:120px;right:120px;top:450px;bottom:auto;flex-direction:column;align-items:stretch;gap:0}
   body.vertical #lower .brandtag,body.vertical #bcastLower .brandtag{display:none}
   body.vertical #lower .main{flex:none;width:100%}
   body.vertical #lower .title{font-size:58px}
@@ -150,9 +151,9 @@
   body.vertical #result .rlabel::before{content:"👑 "}
   body.vertical #result .rroom{flex:none;min-width:0;text-align:left;display:flex;align-items:center;justify-content:space-between;
     margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
-  body.vertical #idle{left:120px;right:120px;top:690px;bottom:auto}
+  body.vertical #idle{left:120px;right:120px;top:450px;bottom:auto}
   /* leaderboard -> transient card under the round card */
-  body.vertical #board{top:990px;left:120px;right:auto;width:540px;padding:22px 28px}
+  body.vertical #board{top:700px;left:120px;right:auto;width:540px;padding:22px 28px}
 
   /* ============ SINGLE-ELEMENT MODE — ?el=header|song|board ============ */
   /* Renders ONE element on a snug transparent canvas so each can be its own OBS
@@ -160,7 +161,7 @@
      Uses the vertical card styling; 'song' includes the winner reveal + broadcast
      swaps (they share the slot and are never visible together). */
   body.el #vHero,body.el #lower,body.el #result,body.el #bcastLower,body.el #idle{top:20px;left:20px;right:20px}
-  body.el-header{width:880px;height:520px}
+  body.el-header{width:880px;height:260px}
   body.el-song{width:880px;height:420px}
   body.el-board{width:580px;height:660px}
   body.el-board #board{top:20px;left:20px;width:540px}
@@ -173,24 +174,15 @@
   <!-- VERTICAL header (shown when ?orientation=vertical or ?el=header):
        brand + LIVE pill + the two QR calls-to-action (join to play / submit music) -->
   <div id="vHero" class="card hide">
-    <div class="brandrow">
-      <div class="room">The A&amp;R <span>Room</span></div>
-    </div>
-    <div class="ctas" id="vHeroCtas">
-      <div class="cta win">
-        <div class="qbox"><img id="qrWin" alt="Join QR"></div>
-        <div class="ctxt">
-          <div class="lbl">WIN $500</div>
-          <div class="sub2">Scan to Rate Songs</div>
-        </div>
+    <div class="cta-row">
+      <div class="qbox win"><img id="qrWin" alt="Join QR"></div>
+      <div class="mid">
+        <div class="room">The A&amp;R <span>Room</span></div>
+        <div class="lbl win"><span class="arr">◄</span> WIN $500</div>
+        <div class="sep"></div>
+        <div class="lbl sub">SUBMIT MUSIC <span class="arr">►</span></div>
       </div>
-      <div class="cta sub">
-        <div class="qbox"><img id="qrSubmit" alt="Submit QR"></div>
-        <div class="ctxt">
-          <div class="lbl">SUBMIT MUSIC</div>
-          <div class="sub2">Get Reviewed Live on Air</div>
-        </div>
-      </div>
+      <div class="qbox sub"><img id="qrSubmit" alt="Submit QR"></div>
     </div>
   </div>
   <!-- horizontal-only single join QR (top-right rail) -->
@@ -317,7 +309,7 @@ const SHOW_QR=boolP('qr',true); // QR CTAs (header on vertical, top-right card o
 if(VERTICAL||EL){ document.body.classList.add('vertical'); }
 if(EL){ document.body.classList.add('el','el-'+EL); }
 const wantHero=(VERTICAL&&!EL)||EL==='header';
-if(wantHero){ $('#vHero').classList.remove('hide'); $('#vHeroCtas').style.display=SHOW_QR?'':'none'; }
+if(wantHero){ $('#vHero').classList.remove('hide'); if(!SHOW_QR)document.body.classList.add('noqr'); }
 if(SID){
   $('#qrWin').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID);
   // Stable route: the server 302s /submit?s= to the session's CURRENT submission link.
@@ -327,7 +319,7 @@ if(SID){
 
 // Fit the stage into whatever the OBS source is sized to.
 function fit(){
-  const [W,H]= EL==='header'?[880,520] : EL==='song'?[880,420] : EL==='board'?[580,660]
+  const [W,H]= EL==='header'?[880,260] : EL==='song'?[880,420] : EL==='board'?[580,660]
     : VERTICAL?[1080,1920]:[1920,1080];
   const s=Math.min(window.innerWidth/W, window.innerHeight/H);
   document.body.style.transform='scale('+s+')';
