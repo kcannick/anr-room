@@ -1591,8 +1591,17 @@ async function dlSessionCard(kind, btn){
   try{
     const r=await fetch('/api/card/'+kind+'?s='+encodeURIComponent(SID));
     if(!r.ok){ let m='Not available yet'; try{const e=await r.json();if(e.error)m=e.error;}catch(_){} alert(m); return; }
-    const blob=await r.blob(), u=URL.createObjectURL(blob), a=document.createElement('a');
-    a.href=u; a.download=(kind==='ars'?'top-8-ars':'top-8-songs')+'.png';
+    const blob=await r.blob();
+    const name=(kind==='ars'?'top-8-ars':'top-8-songs')+'.png';
+    // Phones: the share sheet ("Save Image" → Photos, or straight to Instagram).
+    // An <a download> on iOS lands in Files, where sharing to IG is a dead end.
+    const file=new File([blob],name,{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file],title:'The A&R Room'}); return; }
+      catch(e){ if(e&&e.name==='AbortError')return; /* fall through to download */ }
+    }
+    const u=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=u; a.download=name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),2000);
   }catch(e){ alert('Download failed'); }
   finally{ btn.disabled=false; btn.textContent=orig; }
