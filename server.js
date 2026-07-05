@@ -943,7 +943,7 @@ async function handleApi(req, res, url) {
     const creator = await userFromAuth(req);
     if (!creator || !(creator.role === 'admin' || creator.role === 'host')) return bad(res, 'Host access required', 403);
     const { name, defaultMinutes, scheduledAt, status, pollType, watchUrl, submitUrl, lobbyMessage, bannerId, geoLabel, geoLat, geoLng, geoRadius } = await readBody(req);
-    if (!name || !name.trim()) return bad(res, 'Session name required');
+    if (!name || !name.trim()) return bad(res, 'Room name required');
     const sid = id(5).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || id(4);
     const adminToken = id(18);
     const dm = clampMinutes(defaultMinutes != null ? defaultMinutes : DEFAULT_MINUTES);
@@ -1079,8 +1079,8 @@ async function handleApi(req, res, url) {
   if (p === '/api/join/request' && method === 'POST') {
     const { sessionId, email, accessCode } = await readBody(req);
     const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
-    if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
-    if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This session is closed');
+    if (!session || session.deleted_at) return bad(res, 'Room not found', 404);
+    if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This room is closed');
     // Invite-only gate: a session with an access code only mints OTPs for people who
     // have it. Returning players re-joining still pass through here, so the code
     // guards every entry into the room. Case/whitespace-insensitive.
@@ -1136,7 +1136,7 @@ async function handleApi(req, res, url) {
     // Re-check the session is still open (belt-and-suspenders: could close between
     // requesting a code and verifying). You can only register for upcoming/live sessions.
     const vSession = await db.get('SELECT status, deleted_at FROM sessions WHERE id = ?', [sessionId]);
-    if (!vSession || vSession.deleted_at || vSession.status === 'completed' || vSession.status === 'archived') return bad(res, 'This session is closed', 400);
+    if (!vSession || vSession.deleted_at || vSession.status === 'completed' || vSession.status === 'archived') return bad(res, 'This room is closed', 400);
     // ---- durable user identity (keyed on email, spans all sessions) ----
     // Recognize a returning player by email; create a permanent uid the first time.
     let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
@@ -1224,8 +1224,8 @@ async function handleApi(req, res, url) {
     if (user.blocked) return bad(res, 'This account has been suspended.', 403);
     const { sessionId, accessCode } = await readBody(req);
     const session = await db.get('SELECT id, status, deleted_at, access_code FROM sessions WHERE id = ?', [sessionId]);
-    if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
-    if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This session is closed — you can only register for upcoming or live sessions', 400);
+    if (!session || session.deleted_at) return bad(res, 'Room not found', 404);
+    if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This room is closed — you can only register for upcoming or live rooms', 400);
     const em = (user.email || '').toLowerCase();
     const consent = ((user.phone || '').replace(/\D/g, '').length >= 7) ? 1 : 0;
     const token = id(18);
@@ -1573,7 +1573,7 @@ async function handleApi(req, res, url) {
   if (p === '/api/session/info' && method === 'GET') {
     const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
     const session = sessionId ? await db.get('SELECT id, name, status, deleted_at, watch_url, lobby_message FROM sessions WHERE id = ?', [sessionId]) : null;
-    if (!session || session.deleted_at) return bad(res, 'Session not found', 404);
+    if (!session || session.deleted_at) return bad(res, 'Room not found', 404);
     return send(res, 200, {
       id: session.id,
       name: session.name,
@@ -1587,7 +1587,7 @@ async function handleApi(req, res, url) {
   if (p === '/api/overlay/state' && method === 'GET') {
     const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
     const session = sessionId ? await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]) : null;
-    if (!session) return bad(res, 'Session not found', 404);
+    if (!session) return bad(res, 'Room not found', 404);
     return send(res, 200, await overlayState(session));
   }
 
@@ -1630,7 +1630,7 @@ async function handleApi(req, res, url) {
     // Out of radius.
     if (mode === 'required') {
       return send(res, 200, { pool: null, checked_in: false, geofenced: true, distance: coarse,
-        message: 'You\u2019re not at the event location, so you can\u2019t vote in this in-room session.' });
+        message: 'You\u2019re not at the event location, so you can\u2019t vote in this in-person room.' });
     }
     await db.run("UPDATE participants SET pool = 'online', checkin_distance = ? WHERE id = ?", [coarse, participant.id]);
     return send(res, 200, { pool: 'online', checked_in: true, geofenced: true, distance: coarse });
@@ -1773,7 +1773,7 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Admin auth failed', 401);
     const su = session.submit_url || '';
     const m = /nero\.fan\/([^/?#]+)\/live\b/i.exec(su);
-    if (!m) return bad(res, 'This session has no nero.fan live link', 400);
+    if (!m) return bad(res, 'This room has no nero.fan live link', 400);
     const username = m[1];
     try {
       const resolved = await neroFetch(`https://api.nero.fan/sessions/overlay/resolve/${encodeURIComponent(username)}`);
@@ -2011,7 +2011,7 @@ async function handleApi(req, res, url) {
     const user = await userFromAuth(req);
     if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
     const session = await db.get('SELECT id FROM sessions WHERE id = ?', [sessionId]);
-    if (!session) return bad(res, 'Session not found', 404);
+    if (!session) return bad(res, 'Room not found', 404);
     if (restore) {
       await db.run('UPDATE sessions SET deleted_at = NULL WHERE id = ?', [sessionId]);
       return send(res, 200, { ok: true, restored: true });
@@ -2036,7 +2036,7 @@ async function handleApi(req, res, url) {
     if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
     const sessionId = url.searchParams.get('id') || url.searchParams.get('sessionId');
     const s = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
-    if (!s) return bad(res, 'Session not found', 404);
+    if (!s) return bad(res, 'Room not found', 404);
     const votes = await db.get('SELECT COUNT(*) AS n FROM votes WHERE round_id IN (SELECT id FROM rounds WHERE session_id = ?)', [sessionId]);
     const parts = await db.get('SELECT COUNT(*) AS n FROM participants WHERE session_id = ? AND verified = 1', [sessionId]);
     const rrounds = await db.get("SELECT COUNT(*) AS n FROM rounds WHERE session_id = ? AND status = 'ratified'", [sessionId]);
@@ -2063,8 +2063,8 @@ async function handleApi(req, res, url) {
     if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
     const { sessionId, confirmName } = await readBody(req);
     const s = await db.get('SELECT id, name FROM sessions WHERE id = ?', [sessionId]);
-    if (!s) return bad(res, 'Session not found', 404);
-    if ((confirmName || '') !== s.name) return bad(res, 'Name does not match — type the exact session name to confirm');
+    if (!s) return bad(res, 'Room not found', 404);
+    if ((confirmName || '') !== s.name) return bad(res, 'Name does not match — type the exact room name to confirm');
     // Delete in FK order: votes -> rounds -> participants -> session banners -> otps -> session.
     // Feedback merely references the session (it's general product feedback that happened to
     // be tagged); keep the content but NULL the reference so purge leaves no dangling pointer.
@@ -2144,7 +2144,7 @@ async function handleApi(req, res, url) {
     if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
     const { sessionId, seriesId } = await readBody(req);
     const session = await db.get('SELECT id FROM sessions WHERE id = ?', [sessionId]);
-    if (!session) return bad(res, 'Session not found', 404);
+    if (!session) return bad(res, 'Room not found', 404);
     if (seriesId) {
       const series = await db.get('SELECT id FROM series WHERE id = ?', [seriesId]);
       if (!series) return bad(res, 'Series not found', 404);
@@ -2259,7 +2259,7 @@ async function handleApi(req, res, url) {
     const session = await canAdminSession(req, body.sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const sets = [], vals = [];
-    if ('name' in body)         { const nm = (body.name || '').toString().trim(); if (!nm) return bad(res, 'Session name can\'t be empty'); sets.push('name = ?'); vals.push(nm.slice(0, 120)); }
+    if ('name' in body)         { const nm = (body.name || '').toString().trim(); if (!nm) return bad(res, 'Room name can\'t be empty'); sets.push('name = ?'); vals.push(nm.slice(0, 120)); }
     if ('bannerId' in body)     { sets.push('banner_id = ?'); vals.push(body.bannerId || null); }
     if ('defaultMinutes' in body) { sets.push('default_minutes = ?'); vals.push(clampMinutes(body.defaultMinutes)); }
     if ('watchUrl' in body)      { sets.push('watch_url = ?');     vals.push(cleanUrl(body.watchUrl)); }
@@ -2408,7 +2408,7 @@ async function handleApi(req, res, url) {
       }
       if (kind === 'songs') {
         const session = sid ? await db.get('SELECT id, name, poll_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]) : null;
-        if (!session) return bad(res, 'Session not found', 404);
+        if (!session) return bad(res, 'Room not found', 404);
         if (session.poll_type === 'binary') return bad(res, 'Top Songs is not available for Versus sessions', 409);
         const list = await cardSongsData(sid);
         if (!list.length) return bad(res, 'No rated songs yet', 404);
@@ -2422,7 +2422,7 @@ async function handleApi(req, res, url) {
           data = { list: await cardArsData({ seriesId }), scope: ser.title, showNumbers: numbers };
         } else {
           const session = sid ? await db.get('SELECT id, name FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]) : null;
-          if (!session) return bad(res, 'Session not found', 404);
+          if (!session) return bad(res, 'Room not found', 404);
           data = { list: await cardArsData({ sessionId: sid }), session: session.name, showNumbers: numbers };
         }
         if (!data.list.length) return bad(res, 'No ranked A&Rs yet', 404);
@@ -2473,7 +2473,7 @@ async function handleApi(req, res, url) {
     if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
     if (!process.env.BLOB_READ_WRITE_TOKEN) return bad(res, 'Image hosting not configured (set BLOB_READ_WRITE_TOKEN)', 409);
     const session = await db.get('SELECT id, name, poll_type FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
-    if (!session) return bad(res, 'Session not found', 404);
+    if (!session) return bad(res, 'Room not found', 404);
     try {
       const arsUrl = await uploadPng(`recap/${sessionId}/ars.png`, await shareCards.renderPng('ars', { list: await cardArsData({ sessionId }), session: session.name }));
       let songsUrl = null;

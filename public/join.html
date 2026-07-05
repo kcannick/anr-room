@@ -64,7 +64,7 @@
     <p class="eyebrow">Join the A&amp;R Team</p>
     <div class="panel">
       <h2>Take your seat</h2>
-      <p class="dim">No session needed — join the team, build your profile, and you're ready the moment the next session goes live.</p>
+      <p class="dim">No live room needed — join the team, build your profile, and you're ready the moment the next room opens.</p>
       <label>Email</label>
       <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com">
       <div id="devBox" class="dev hide"></div>
@@ -88,7 +88,7 @@
       <div id="phoneRow">
         <label>Mobile <span class="dim" style="font-size:11px">(optional)</span></label>
         <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
-        <p class="hint">We'll text you when a session goes live + about A&amp;R Room events. Msg &amp; data rates may apply; reply STOP to opt out. Optional.</p>
+        <p class="hint">We'll text you when a room goes live + about A&amp;R Room events. Msg &amp; data rates may apply; reply STOP to opt out. Optional.</p>
       </div>
       <button class="btn" id="btnJoin">Join the team →</button>
       <button class="btn ghost" id="btnBackEmail">Use a different email</button>
@@ -131,7 +131,7 @@
     <div class="panel" style="text-align:center">
       <div class="big-check">✓</div>
       <h2 id="doneTitle">You're on the team!</h2>
-      <p class="dim" id="doneSub" style="margin:6px 0 0">You'll appear in <b style="color:var(--ink)">New A&Rs</b> and we'll let you know the moment the next session goes live.</p>
+      <p class="dim" id="doneSub" style="margin:6px 0 0">You'll appear in <b style="color:var(--ink)">New A&Rs</b> and we'll let you know the moment the next room goes live.</p>
       <a class="btn" id="doneCta" href="/" style="display:block;text-decoration:none;text-align:center">Back to The A&amp;R Room</a>
     </div>
   </section>
@@ -274,12 +274,12 @@ async function initJoin(){
 }
 initJoin();
 function finishDone(listed){
-  if(!listed){ $('#doneTitle').textContent='Welcome to the team!'; $('#doneSub').innerHTML='Your account is set. <b style="color:var(--ink)">Complete your profile</b> any time to get listed and qualify — we\'ll notify you when the next session is live.'; }
+  if(!listed){ $('#doneTitle').textContent='Welcome to the team!'; $('#doneSub').innerHTML='Your account is set. <b style="color:var(--ink)">Complete your profile</b> any time to get listed and qualify — we\'ll notify you when the next room is live.'; }
   show('done');
 }
 function doneReturning(){
   $('#doneTitle').textContent='Welcome back!';
-  $('#doneSub').innerHTML='Your profile is all set — you\'re on the board, and we\'ll notify you the moment the next session goes live.';
+  $('#doneSub').innerHTML='Your profile is all set — you\'re on the board, and we\'ll notify you the moment the next room goes live.';
   show('done');
 }
 

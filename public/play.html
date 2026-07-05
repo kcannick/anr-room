@@ -233,8 +233,8 @@
   <section id="screen-account" class="center stack hide">
     <div class="panel stack" style="text-align:center">
       <div class="eyebrow" id="acctEyebrow">Register as an A&amp;R</div>
-      <h2 style="margin:6px 0;font-size:24px" id="acctHi">This session</h2>
-      <p class="dim" id="acctSub" style="font-size:14px;margin:0">Tap Complete to register as an A&amp;R for this session.</p>
+      <h2 style="margin:6px 0;font-size:24px" id="acctHi">This room</h2>
+      <p class="dim" id="acctSub" style="font-size:14px;margin:0">Tap Complete to register as an A&amp;R for this room.</p>
       <!-- Invite-only rooms: revealed when the server asks for a room code -->
       <div class="hide" id="acctCodeRow" style="width:100%"><label>Room code <span class="dim" style="font-weight:400">(from your invite)</span></label>
         <input id="acctCode" autocomplete="off" placeholder="e.g. VIP2026" maxlength="24" style="text-transform:uppercase"></div>
@@ -443,7 +443,7 @@
     <div class="panel recap" id="recapCard">
       <div class="recap-head">
         <img class="mark" src="/mark.png" alt="" style="height:40px;margin-bottom:10px" onerror="this.style.display='none'">
-        <div class="eyebrow">The A&amp;R Room · Session recap</div>
+        <div class="eyebrow">The A&amp;R Room · Recap</div>
         <h2 id="recapName" style="font-size:22px;margin-top:6px">Your card</h2>
       </div>
       <div class="grade-wrap" id="recapGradeWrap">
@@ -791,11 +791,11 @@ async function tryAccountRegister(info){
   let me=null; try{ me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':at}}).then(r=>r.ok?r.json():null); }catch(e){}
   if(!me||!me.uid){ show('email'); return; }
   const live=info&&info.status==='live';
-  $('#acctEyebrow').textContent=live?'Join this session':'Register as an A&R';
-  $('#acctHi').textContent=(info&&info.name)||'This session';
+  $('#acctEyebrow').textContent=live?'Join this room':'Register as an A&R';
+  $('#acctHi').textContent=(info&&info.name)||'This room';
   $('#acctSub').textContent=live
     ? 'Tap Enter to join as an A&R and jump into the room.'
-    : 'Tap Complete to register as an A&R for this session. You’ll get a notification when it opens.';
+    : 'Tap Complete to register as an A&R for this room. You’ll get a notification when it opens.';
   $('#btnAcctJoin').textContent=live?'Enter the room':'Complete registration';
   show('account');
 }
@@ -1239,7 +1239,7 @@ function maybeShowHowTo(st){
     $('#htS3d').textContent='Top A&Rs on this month’s leaderboard win '+(g.prize||'$500')+' cash. Every round you play adds up.';
   }else{
     $('#htS3t').textContent='Climb the leaderboard';
-    $('#htS3d').textContent='Rack up points across the month’s sessions and rise up the board.';
+    $('#htS3d').textContent='Rack up points across the month’s rooms and rise up the board.';
   }
   $('#howToModal').style.display='flex';
 }

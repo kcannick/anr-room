@@ -153,7 +153,7 @@
 <div id="login" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:420px;margin:60px auto 0">
     <h2>Host sign in</h2>
-    <p class="muted" style="font-size:13px;margin:0 0 4px">Sign in with your email to manage your sessions from any device.</p>
+    <p class="muted" style="font-size:13px;margin:0 0 4px">Sign in with your email to manage your rooms from any device.</p>
     <div id="loginStep1">
       <div><label>Email</label><input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email"></div>
       <button class="btn" id="btnLoginCode" style="margin-top:10px;width:100%">Email me a code</button>
@@ -173,11 +173,11 @@
 <div id="picker" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:640px;margin:40px auto 0">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2 style="margin:0">Your sessions</h2>
+      <h2 style="margin:0">Your rooms</h2>
       <div class="row" style="gap:8px;flex:0 0 auto">
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnManageSeries">Series</button>
-        <button class="btn sm" id="btnNewFromPicker">+ New session</button>
+        <button class="btn sm" id="btnNewFromPicker">+ New room</button>
       </div>
     </div>
     <div id="pickerList"><div class="empty">Loading…</div></div>
@@ -188,17 +188,17 @@
 <!-- CREATE -->
 <div id="create" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:460px;margin:40px auto 0">
-    <h2 id="createTitle">Start a session</h2>
-    <div><label>Session name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Session"></div>
+    <h2 id="createTitle">Start a room</h2>
+    <div><label>Room name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Night"></div>
     <div><label>Default voting window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
     <div>
-      <label>Session type</label>
+      <label>Room type</label>
       <select id="newPollType" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
         <option value="rating">Standard — rate a song 0–9, predict the room average</option>
         <option value="binary">Versus — Song A vs B, predict the split</option>
       </select>
-      <div class="muted" id="typeHint" style="font-size:12px;margin-top:6px">Set once at creation — every round in the session uses this type.</div>
-      <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 Locked — this session has votes, so the session type can't change.</div>
+      <div class="muted" id="typeHint" style="font-size:12px;margin-top:6px">Set once at creation — every round in the room uses this type.</div>
+      <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 Locked — this room has votes, so the room type can't change.</div>
     </div>
     <div id="seriesField">
       <label>Series <span class="muted">(counts toward this monthly leaderboard)</span></label>
@@ -218,7 +218,7 @@
       <summary style="cursor:pointer;color:var(--ink-dim);font-size:13px">Event extras (optional) — watch link, lobby message, sign-up prompt, venue</summary>
       <div style="margin-top:10px">
         <label>Watch link</label><input id="newWatch" placeholder="https://twitch.tv/…">
-        <label style="margin-top:10px">Submission link <span class="muted">(where artists submit for this session)</span></label><input id="newSubmit" placeholder="https://…">
+        <label style="margin-top:10px">Submission link <span class="muted">(where artists submit for this room)</span></label><input id="newSubmit" placeholder="https://…">
         <label style="margin-top:10px">Lobby message</label><textarea id="newLobby" placeholder="Shown while players wait"></textarea>
         <label style="margin-top:10px">Venue address <span class="muted">(for check-in; enable enforcement later)</span></label>
         <div class="row" style="gap:6px">
@@ -238,9 +238,9 @@
         </div>
       </div>
     </details>
-    <button class="btn" id="btnCreate">Create session</button>
+    <button class="btn" id="btnCreate">Create room</button>
     <div class="err" id="createErr"></div>
-    <button class="btn ghost sm" id="btnCreateBack">← Back to my sessions</button>
+    <button class="btn ghost sm" id="btnCreateBack">← Back to my rooms</button>
   </div>
 </div>
 
@@ -314,7 +314,7 @@
         </div>
         <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
         <button class="btn" id="btnAddRound">▶ Add &amp; play now</button>
-        <div class="muted hide" id="addLockNote" style="font-size:12px">This session is completed — reopen it (Session panel) to add songs.</div>
+        <div class="muted hide" id="addLockNote" style="font-size:12px">This room is completed — reopen it (Room panel) to add songs.</div>
         <div class="err" id="addErr"></div>
       </div>
     </div>
@@ -326,7 +326,7 @@
          Everything editable lives in the Edit-session modal. -->
     <div class="card" id="sessionCard">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-        <h2 style="margin:0">Session</h2>
+        <h2 style="margin:0">Room</h2>
         <span class="pill" id="sessStatusPill">—</span>
         <div style="flex:1"></div>
         <div class="row" style="gap:6px;flex-wrap:wrap">
@@ -349,8 +349,8 @@
         </div>
         <div class="muted" style="font-size:12px;margin-top:6px">Recap emails carry each A&amp;R’s score card + the Top 8 graphics. Data exports live on the Leaderboard tab.</div>
       </div>
-      <button class="btn ghost sm" id="btnEditSession" style="margin-top:12px;width:100%">✎ Edit session settings</button>
-      <div class="muted" style="font-size:12px;margin-top:6px">Delete is on each session in <b>My sessions</b>.</div>
+      <button class="btn ghost sm" id="btnEditSession" style="margin-top:12px;width:100%">✎ Edit room settings</button>
+      <div class="muted" style="font-size:12px;margin-top:6px">Delete is on each room in <b>My rooms</b>.</div>
     </div>
 
     <div class="card">
@@ -411,15 +411,15 @@
         </div>
         <label style="margin-top:10px">Use as</label>
         <select id="adScope" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
-          <option value="global">Global default (all sessions)</option>
-          <option value="session">This session only</option>
+          <option value="global">Global default (all rooms)</option>
+          <option value="session">This room only</option>
         </select>
         <button class="btn ghost" id="btnAdUpload" style="margin-top:10px;width:100%">Upload &amp; apply</button>
         <div class="err" id="adErr"></div>
       </div>
     </div>
 
-    <button class="btn ghost sm" id="btnBackToSessions">← My sessions</button>
+    <button class="btn ghost sm" id="btnBackToSessions">← My rooms</button>
   </div>
 </div>
 
@@ -435,9 +435,9 @@
 <!-- EDIT SESSION MODAL: every session setting in one place, explicit Save/Cancel -->
 <div id="sessEditModal" class="modal-scrim" style="z-index:35">
   <div class="modal-card md">
-    <h2>Edit session</h2>
+    <h2>Edit room</h2>
     <div class="stack" style="margin-top:10px">
-      <div><label>Session name</label><input id="editName" placeholder="Session name"></div>
+      <div><label>Room name</label><input id="editName" placeholder="Room name"></div>
       <div><label>Description <span class="muted">(players see this while they wait)</span></label>
         <textarea id="cfgLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea></div>
       <div><label>Watch link <span class="muted">(stream URL shown to players)</span></label>
@@ -445,7 +445,7 @@
       <div><label>Submission link <span class="muted">(where artists submit; a nero.fan/…/live link enables “Pull from Nero”)</span></label>
         <input id="cfgSubmit" placeholder="https://…"></div>
       <div style="border-top:1px solid var(--line);padding-top:12px">
-        <label>Who can find this session</label>
+        <label>Who can find this room</label>
         <select id="cfgVisibility" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
           <option value="public">Public — featured on the homepage when live</option>
           <option value="unlisted">Unlisted — only people with the link or QR</option>
@@ -489,7 +489,7 @@
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <h2 style="margin:0">Series</h2>
-        <button class="btn ghost sm" id="btnSeriesBack">← My sessions</button>
+        <button class="btn ghost sm" id="btnSeriesBack">← My rooms</button>
       </div>
       <div id="seriesList"><div class="empty">Loading…</div></div>
     </div>
@@ -509,13 +509,13 @@
           <div><label>Qualify count <span class="muted">top-N → Wars</span></label><input id="sfQualify" type="number" min="1" max="100" value="8"></div>
         </div>
         <div class="row">
-          <div><label>Target sessions <span class="muted">display only</span></label><input id="sfTarget" type="number" min="0" placeholder="optional"></div>
+          <div><label>Target rooms <span class="muted">display only</span></label><input id="sfTarget" type="number" min="0" placeholder="optional"></div>
           <div><label>Description <span class="muted">optional</span></label><input id="sfDesc" placeholder="optional"></div>
         </div>
         <button class="btn" id="btnSeriesSave">Create series</button>
         <button class="btn ghost sm hide" id="btnSeriesNew">+ New series instead</button>
         <div class="err" id="seriesErr"></div>
-        <p class="hint"><b>Qualify count is per-series</b> — a small month can cut at 4, a big one at 8. It drives the leaderboard cut line. Dates &amp; target are labels only; membership is the tag (set it on each session in your session list).</p>
+        <p class="hint"><b>Qualify count is per-series</b> — a small month can cut at 4, a big one at 8. It drives the leaderboard cut line. Dates &amp; target are labels only; membership is the tag (set it on each room in your room list).</p>
       </div>
     </div>
   </div>
@@ -532,7 +532,7 @@
         <button class="btn good" id="btnCloseSeries">Close series</button>
         <button class="btn ghost" id="btnExportSeries" style="flex:0 0 auto">Export</button>
       </div>
-      <p class="note"><b>No "locking" needed.</b> The board only moves when a tagged session gets new votes — once the month's sessions are done, the top N are already final. <b>Close series</b> is just a status flip; the qualifiers are read live off the standings.</p>
+      <p class="note"><b>No "locking" needed.</b> The board only moves when a tagged room gets new votes — once the month's rooms are done, the top N are already final. <b>Close series</b> is just a status flip; the qualifiers are read live off the standings.</p>
     </div>
   </div>
 </div>
@@ -543,7 +543,7 @@
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:13px">
         <h2 style="margin:0">Users <span class="muted" id="usersTotal" style="font-weight:400;text-transform:none;letter-spacing:0"></span></h2>
-        <button class="btn ghost sm" id="btnUsersBack">← My sessions</button>
+        <button class="btn ghost sm" id="btnUsersBack">← My rooms</button>
       </div>
       <input id="uSearch" placeholder="Search by name or email…" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;border-radius:10px">
       <div class="ufilters" style="margin-top:9px">
@@ -553,7 +553,7 @@
       </div>
       <div class="ufilters" style="margin-top:8px">
         <input id="uLocation" placeholder="Filter by location…">
-        <select id="uSort"><option value="recent">Sort: Last seen</option><option value="points">Sort: Points</option><option value="sessions">Sort: Sessions</option><option value="series">Sort: Series</option><option value="name">Sort: Name</option></select>
+        <select id="uSort"><option value="recent">Sort: Last seen</option><option value="points">Sort: Points</option><option value="sessions">Sort: Rooms</option><option value="series">Sort: Series</option><option value="name">Sort: Name</option></select>
       </div>
       <div id="usersList" style="margin-top:14px"><div class="empty">Loading…</div></div>
       <!-- SMS test: platform-level Twilio check (admin-only screen), moved out of the
@@ -590,11 +590,11 @@
     <h2 style="margin:6px 0 4px">Welcome — run your own rooms</h2>
     <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim);margin:0 0 14px">The A&amp;R Room is your free engagement tool. Three steps:</p>
     <ol class="host-intro">
-      <li><b>Create a session.</b> Use <b>New session</b> to spin up a room for your stream — pick 0–9 rating or Versus (A/B).</li>
+      <li><b>Create a room.</b> Use <b>New room</b> to spin up a room for your stream — pick 0–9 rating or Versus (A/B).</li>
       <li><b>Share your links.</b> Give viewers the <b>Play</b> link to vote, and drop the <b>Overlay</b> onto your broadcast for the live results.</li>
       <li><b>Promote the $500.</b> Tell your audience the top A&amp;Rs each month win <b>$500 cash</b> — that's the hook that keeps them voting.</li>
     </ol>
-    <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:12px 0 14px">You manage only your own sessions. Viewer contact info stays with Makin' It.</p>
+    <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:12px 0 14px">You manage only your own rooms. Viewer contact info stays with Makin' It.</p>
     <button class="btn" id="hostIntroGo" style="width:100%">Got it — let's go</button>
   </div>
 </div>
@@ -624,7 +624,7 @@
         </div>
       </div>
       <div class="ob-right">
-        <div class="ob-t" style="margin-bottom:6px">Preview <span class="muted">(live session state)</span></div>
+        <div class="ob-t" style="margin-bottom:6px">Preview <span class="muted">(live room state)</span></div>
         <div class="ob-preview horizontal" id="obPrevWrap"><iframe id="obPreview" title="overlay preview"></iframe></div>
         <label style="margin-top:12px">Overlay URL</label>
         <div class="link" id="obUrl" style="word-break:break-all;font-size:12px"></div>
@@ -677,7 +677,7 @@
 <!-- DELETE SESSION MODAL (archive / cascade) -->
 <div id="deleteModal" class="modal-scrim" style="z-index:30">
   <div class="card" style="max-width:460px;width:100%">
-    <h2>Delete session</h2>
+    <h2>Delete room</h2>
     <p id="delBody" class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)"></p>
     <div class="row" style="margin-top:6px">
       <button class="btn good" id="delArchive">Archive (recommended)</button>
@@ -685,7 +685,7 @@
     </div>
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
       <label>Permanently delete everything? Type <b id="delName" style="color:var(--ink)"></b> to confirm</label>
-      <input id="delConfirm" placeholder="Type the exact session name" autocomplete="off">
+      <input id="delConfirm" placeholder="Type the exact room name" autocomplete="off">
       <button class="btn danger" id="delPurge" style="width:100%;margin-top:10px" disabled>Cascade delete — permanent</button>
     </div>
     <div class="err" id="delErr"></div>
@@ -961,8 +961,8 @@ function openCreateForm(){
   $('#seriesField').classList.toggle('hide',!isAdmin());
   $('#whenBlock').classList.remove('hide');
   populateSeriesSelect('');
-  $('#createTitle').textContent='Start a session';
-  $('#btnCreate').textContent='Create session';
+  $('#createTitle').textContent='Start a room';
+  $('#btnCreate').textContent='Create room';
   $('#btnCreateBack').classList.remove('hide');
   showScreen('create');
 }
@@ -1001,7 +1001,7 @@ window.editSession=async(sid)=>{
     const d=await api('/api/admin/session/get?id='+encodeURIComponent(sid),null,'GET');
     sessForm={mode:'edit',id:sid,_series:d.session.seriesId||''};
     fillSessionForm(d.session,d.dependents,'edit');
-    $('#createTitle').textContent='Edit session';$('#btnCreate').textContent='Save changes';
+    $('#createTitle').textContent='Edit room';$('#btnCreate').textContent='Save changes';
     $('#btnCreateBack').classList.remove('hide');
     showScreen('create');
   }catch(e){alert(e.message);}
@@ -1012,7 +1012,7 @@ window.duplicateSession=async(sid)=>{
     const d=await api('/api/admin/session/get?id='+encodeURIComponent(sid),null,'GET');
     sessForm={mode:'create',id:null,_series:d.session.seriesId||''};
     fillSessionForm(d.session,null,'duplicate');
-    $('#createTitle').textContent='New session (from a copy)';$('#btnCreate').textContent='Create session';
+    $('#createTitle').textContent='New room (from a copy)';$('#btnCreate').textContent='Create room';
     $('#btnCreateBack').classList.remove('hide');
     showScreen('create');
   }catch(e){alert(e.message);}
@@ -1068,7 +1068,7 @@ async function loadUsers(){
             const on=!!u.perms[k];
             return `<button class="permchip${on?' on':''}" onclick="togglePerm('${u.id}','${k}',${on?0:1})">${lbl}</button>`;
           }).join('')
-          +`<button class="permchip give${u.giveaway?' on':''}" title="Count this host's series-tagged sessions toward the monthly $500" onclick="toggleGiveaway('${u.id}',${u.giveaway?0:1})">💵 $500</button>`
+          +`<button class="permchip give${u.giveaway?' on':''}" title="Count this host's series-tagged rooms toward the monthly $500" onclick="toggleGiveaway('${u.id}',${u.giveaway?0:1})">💵 $500</button>`
           +'</div>'
         : '';
       return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname">${esc(u.name||'(no name)')}${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
@@ -1106,7 +1106,7 @@ async function renderSeriesList(){
       html+=`<div class="ser${s.id===selectedSeriesId?' sel':''}" onclick="selectSeries('${s.id}')">
         <div class="ser-meta">
           <div class="ser-name">${esc(s.title)} <span class="pill ${SER_PILL[s.status]||'upcoming'}">${esc(s.status)}</span></div>
-          <div class="ser-sub">${cnt} session${cnt==1?'':'s'} · top <b>${s.qualify_count||8}</b> → A&amp;R Wars</div>
+          <div class="ser-sub">${cnt} room${cnt==1?'':'s'} · top <b>${s.qualify_count||8}</b> → A&amp;R Wars</div>
         </div>
         <button class="btn ghost sm" onclick="event.stopPropagation();editSeries('${s.id}')">Edit</button>
       </div>`;
@@ -1174,7 +1174,7 @@ async function loadSeriesBoard(sid){
     $('#lbCut').textContent='Top '+d.qualifyCount+' qualify';
     $('#seriesActions').classList.remove('hide');
     $('#btnCloseSeries').classList.toggle('hide',s&&s.status==='closed');
-    if(!d.leaderboard.length){$('#seriesBoard').innerHTML='<div class="empty">No votes in tagged sessions yet. Tag sessions from your session list to populate the board.</div>';return;}
+    if(!d.leaderboard.length){$('#seriesBoard').innerHTML='<div class="empty">No votes in tagged rooms yet. Tag rooms from your room list to populate the board.</div>';return;}
     let html='',qSeen=0,cutDrawn=false;
     for(const r of d.leaderboard){
       const incomplete=r.profileComplete===false;
@@ -1405,7 +1405,7 @@ $('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
   $('#obRows').addEventListener('input',readControls);
   $('#obSecs').addEventListener('input',readControls);
   $('#obPanel').addEventListener('input',readControls);
-  window.openOverlayBuilder=()=>{ if(!SID){alert('Open a session first.');return;} $('#overlayModal').style.display='flex'; render(); };
+  window.openOverlayBuilder=()=>{ if(!SID){alert('Open a room first.');return;} $('#overlayModal').style.display='flex'; render(); };
   const closeOb=()=>{ $('#overlayModal').style.display='none'; $('#obPreview').src='about:blank'; };
   $('#obClose').onclick=closeOb;
   $('#overlayModal').onclick=e=>{ if(e.target===$('#overlayModal')) closeOb(); };
@@ -1465,7 +1465,7 @@ $('#sessEditModal').onclick=(e)=>{if(e.target===$('#sessEditModal'))$('#sessEdit
 $('#seSave').onclick=async()=>{
   $('#seErr').textContent='';
   const nm=$('#editName').value.trim();
-  if(!nm)return $('#seErr').textContent='Session name can’t be empty.';
+  if(!nm)return $('#seErr').textContent='Room name can’t be empty.';
   const body={sessionId:SID,name:nm,
     watchUrl:$('#cfgWatch').value.trim(),
     submitUrl:$('#cfgSubmit').value.trim(),
@@ -1517,7 +1517,7 @@ $('#btnUseMyLoc')&&($('#btnUseMyLoc').onclick=()=>{
     {enableHighAccuracy:true,timeout:10000}
   );
 });
-$('#btnEnd').onclick=async()=>{if(!confirm('Complete the session for everyone? Final scores lock in.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'completed'});refresh();};
+$('#btnEnd').onclick=async()=>{if(!confirm('Complete the room for everyone? Final scores lock in.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'completed'});refresh();};
 // Go live is a confirm step: pick which channels notify the registered A&Rs.
 $('#btnGoLive').onclick=()=>{
   $('#glName').textContent=(lastState&&lastState.session&&lastState.session.name)||'this session';
@@ -1540,8 +1540,8 @@ $('#glConfirm').onclick=async()=>{
   }catch(e){$('#glErr').textContent=e.message;}
   $('#glConfirm').disabled=false;
 };
-$('#btnUnlive').onclick=async()=>{if(!confirm('Move this session back to Upcoming? It leaves the live state — players can pre-register again.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'upcoming'});refresh();};
-$('#btnArchive').onclick=async()=>{if(!confirm('Archive this session? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
+$('#btnUnlive').onclick=async()=>{if(!confirm('Move this room back to Upcoming? It leaves the live state — players can pre-register again.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'upcoming'});refresh();};
+$('#btnArchive').onclick=async()=>{if(!confirm('Archive this room? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
 $('#btnReopen').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
 // Name editing lives in the edit-session modal (openSessEdit / seSave).
 // Session delete lives on the My-sessions list (archive/cascade dialog) — not here.
@@ -1581,7 +1581,7 @@ function roundControls(st){
   const qft=$('#queueFormTitle'); if(qft)qft.textContent=inPlay?'Queue a song':'Add a song';
   const box=$('#roundBox');
   if(!r){box.innerHTML=sessLocked
-    ?'<div class="empty">Session complete — no rounds were played.</div>'
+    ?'<div class="empty">Room complete — no rounds were played.</div>'
     :'<div class="empty">No round in play. Add a song below — it starts a round right away.</div>';return;}
   const statusPill={voting:'<span class="pill live">● Voting open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
   let timer='';
@@ -1608,7 +1608,7 @@ function roundControls(st){
   }else if(r.status==='ratified'){
     const qn=(st.queue||[]).length;
     actions=sessLocked
-      ?`<p class="muted" style="font-size:13px;margin:8px 0 0">Final round ratified — the session is complete. Players see their recap; wrap-up actions are in the Session panel.</p>`
+      ?`<p class="muted" style="font-size:13px;margin:8px 0 0">Final round ratified — the room is complete. Players see their recap; wrap-up actions are in the Room panel.</p>`
       :`<p class="muted" style="font-size:13px;margin:8px 0 0">Results are live on players' screens. ${qn?'Open the next song from the queue when ready.':'Add the next song below when ready.'}</p>`;
   }
   box.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center">
@@ -1631,7 +1631,7 @@ function queueBox(st){
   if(!q.length){box.innerHTML='';return;}
   box.innerHTML=`<div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:12px">
       <div style="flex:0 0 150px"><label>Voting window <span class="muted">(min, 2–60)</span></label><input id="openMins" type="number" value="${fillMins}" min="2" max="60" step="1"></div>
-      <div class="muted" style="font-size:12px;padding-bottom:11px">${sessLocked?'Session is completed — reopen it to run more rounds.':roundBusy?'Finish the current round before opening the next.':'Opens the top song as the next round.'}</div>
+      <div class="muted" style="font-size:12px;padding-bottom:11px">${sessLocked?'Room is completed — reopen it to run more rounds.':roundBusy?'Finish the current round before opening the next.':'Opens the top song as the next round.'}</div>
     </div>`+
     q.map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;${i===0?'border-color:var(--signal)':''}">
         <div style="flex:1;min-width:0">
@@ -1811,7 +1811,7 @@ function adsBox(st){
   box.innerHTML=banners.map(b=>{
     const tags=[];
     if(b.isGlobalDefault)tags.push('<span class="pill done" style="font-size:10px">Global default</span>');
-    if(b.id===sessionBannerId)tags.push('<span class="pill live" style="font-size:10px">This session</span>');
+    if(b.id===sessionBannerId)tags.push('<span class="pill live" style="font-size:10px">This room</span>');
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">
       <img src="/api/banner/image?id=${b.id}" alt="" style="height:34px;width:auto;max-width:90px;border-radius:5px;background:#0a0814">
       <div style="flex:1;min-width:0">
@@ -1821,14 +1821,14 @@ function adsBox(st){
       <select onchange="assignBanner('${b.id}',this.value);this.selectedIndex=0" style="background:#0a0814;border:1px solid var(--line);color:var(--ink-dim);font:inherit;font-size:12px;padding:6px;border-radius:8px">
         <option value="">Use as…</option>
         <option value="global">Global default</option>
-        <option value="session">This session</option>
+        <option value="session">This room</option>
       </select>
       <button class="btn ghost sm" title="Delete" onclick="deleteBanner('${b.id}')">✕</button>
     </div>`;
   }).join('')+
   `<div class="row" style="margin-top:4px">
      <button class="btn ghost sm" onclick="assignBanner('','global')">Clear global</button>
-     <button class="btn ghost sm" onclick="assignBanner('','session')">Clear session</button>
+     <button class="btn ghost sm" onclick="assignBanner('','session')">Clear room</button>
    </div>`;
 }
 

@@ -113,9 +113,7 @@
   #vHero .brandrow{display:flex;align-items:center;justify-content:center;gap:18px}
   #vHero .room{font-weight:800;font-size:38px;letter-spacing:-.01em}
   #vHero .room span{color:var(--signal)}
-  #vHero .vh-live{display:inline-flex;align-items:center;gap:10px;font-family:"Space Mono",monospace;font-weight:700;font-size:22px;color:var(--hot);
-    background:rgba(255,93,108,.14);border:1px solid rgba(255,93,108,.5);border-radius:999px;padding:6px 16px}
-  #vHero .vh-live .dot{width:13px;height:13px;border-radius:50%;background:var(--hot);box-shadow:0 0 0 0 rgba(255,93,108,.7);animation:pulse 2s infinite}
+  /* No LIVE pill here — every platform already badges its own live state. */
   #vHero .ctas{display:flex;margin-top:22px}
   #vHero .cta{flex:1;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
   #vHero .cta+.cta{border-left:1px solid var(--line)}
@@ -175,7 +173,6 @@
   <div id="vHero" class="card hide">
     <div class="brandrow">
       <div class="room">The A&amp;R <span>Room</span></div>
-      <div class="vh-live"><span class="dot"></span>LIVE</div>
     </div>
     <div class="ctas" id="vHeroCtas">
       <div class="cta win">
@@ -198,7 +195,7 @@
 
   <!-- LEADERBOARD (horizontal: always on unless ?view hides. vertical: transient after a win) -->
   <div id="board" class="card hide">
-    <h3><span class="dotlive"></span> Leaderboard</h3>
+    <h3><span class="dotlive"></span> Top A&amp;Rs</h3>
     <div id="lbRows"></div>
   </div>
 
@@ -357,7 +354,7 @@ setInterval(paintTimer,1000);
 setInterval(()=>{ if(boardHideAt && Date.now()>=boardHideAt && !$('#board').classList.contains('hide')) $('#board').classList.add('hide'); },1000);
 
 async function poll(){
-  if(!SID){$('#idleT').textContent='No session';$('#idleS').textContent='Add ?s=SESSION_ID to the overlay URL';return;}
+  if(!SID){$('#idleT').textContent='No room';$('#idleS').textContent='Use “Get overlay link” in the host console to build this URL';return;}
   let st;
   try{ st=await fetch('/api/overlay/state?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status)); }
   catch(e){ $('#idle').classList.remove('hide');$('#idleS').textContent='Reconnecting…'; return; }

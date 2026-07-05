@@ -149,7 +149,7 @@ function whenLine(ms){
 }
 
 function lbCard(rows){
-  if(!rows||!rows.length)return `<div class="card"><div class="empty"><div class="ico">📊</div>No standings yet — they fill in as A&Rs rate songs in tagged sessions.</div></div>`;
+  if(!rows||!rows.length)return `<div class="card"><div class="empty"><div class="ico">📊</div>No standings yet — they fill in as A&Rs rate songs in tagged rooms.</div></div>`;
   return '<div class="card">'+rows.map(r=>{
     const sub=[r.category?`<span class="tag">${esc(r.category)}</span>`:'', r.location?esc(r.location):''].filter(Boolean).join('');
     const av=r.photoUrl?`<img class="lbav" src="${esc(r.photoUrl)}" alt="">`:`<div class="lbav">${esc(initials(r.name))}</div>`;
@@ -165,10 +165,10 @@ function howRow(){
   </div>`;
 }
 function nextCard(next){
-  if(!next)return `<div class="sec"><p class="sec-h">Next session</p><div class="card"><div class="empty">No session scheduled yet — check back soon.</div></div></div>`;
+  if(!next)return `<div class="sec"><p class="sec-h">Next room</p><div class="card"><div class="empty">No room scheduled yet — check back soon.</div></div></div>`;
   const db=dateBlock(next.scheduledAt);
-  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener" onclick="track('music_submit_click',{action:'link'})">🎤 Know an artist? Submit music for this session ↗</a>`:'';
-  return `<div class="sec" id="secNext"><p class="sec-h">Next session</p>
+  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener" onclick="track('music_submit_click',{action:'link'})">🎤 Know an artist? Submit music for this room ↗</a>`:'';
+  return `<div class="sec" id="secNext"><p class="sec-h">Next room</p>
     <div class="card upcoming">
       <div class="up-date"><div class="d">${esc(db.d)}</div><div class="m">${esc(db.m)}</div></div>
       <div class="up-meta"><div class="up-name">${esc(next.name)}</div><div class="up-time">${esc(whenLine(next.scheduledAt))}</div></div>
