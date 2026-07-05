@@ -103,30 +103,42 @@
   .card{transition:opacity .25s ease}
 
   /* ============ VERTICAL (9:16, 1080×1920) — ?orientation=vertical ============ */
-  /* Same live elements re-anchored to the platform safe zones: sides 120, top 250,
-     bottom 380. Center stays clear for the performer. */
+  /* Redesigned after real TikTok testing: the platform owns the whole lower half
+     (chat, pinned comment, CTA banner, input bar), so NOTHING of ours goes below
+     ~58% screen height. Everything stacks in the top band, inside the side safe
+     zones (120px): header (brand + dual QR CTAs) → round card → transient board. */
   body.vertical{width:1080px;height:1920px}
-  /* top brand + LIVE pill (replaces the lower-third brandtag, hidden below) */
-  #vHeader{position:absolute;left:120px;right:120px;top:272px;display:flex;align-items:center;justify-content:space-between;gap:16px}
-  #vHeader .vh-brand{font-weight:800;font-size:38px;letter-spacing:-.01em}
-  #vHeader .vh-brand span{color:var(--signal)}
-  #vHeader .vh-live{display:flex;align-items:center;gap:12px;font-family:"Space Mono",monospace;font-weight:700;font-size:24px;color:var(--hot);
-    background:rgba(255,93,108,.14);border:1px solid rgba(255,93,108,.5);border-radius:999px;padding:8px 18px}
-  #vHeader .vh-live .dot{width:14px;height:14px;border-radius:50%;background:var(--hot);box-shadow:0 0 0 0 rgba(255,93,108,.7);animation:pulse 2s infinite}
-  /* persistent join QR — top-right rail on horizontal; upper-right (safe zone) on vertical */
+  /* header card: brand + LIVE pill + two QR calls-to-action (join + submit) */
+  #vHero{position:absolute;top:230px;left:120px;right:120px;padding:24px 34px 28px}
+  #vHero .brandrow{display:flex;align-items:center;justify-content:center;gap:18px}
+  #vHero .room{font-weight:800;font-size:38px;letter-spacing:-.01em}
+  #vHero .room span{color:var(--signal)}
+  #vHero .vh-live{display:inline-flex;align-items:center;gap:10px;font-family:"Space Mono",monospace;font-weight:700;font-size:22px;color:var(--hot);
+    background:rgba(255,93,108,.14);border:1px solid rgba(255,93,108,.5);border-radius:999px;padding:6px 16px}
+  #vHero .vh-live .dot{width:13px;height:13px;border-radius:50%;background:var(--hot);box-shadow:0 0 0 0 rgba(255,93,108,.7);animation:pulse 2s infinite}
+  #vHero .ctas{display:flex;margin-top:22px}
+  #vHero .cta{flex:1;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+  #vHero .cta+.cta{border-left:1px solid var(--line)}
+  #vHero .qbox{width:230px;height:230px;background:#fff;border-radius:16px;padding:12px}
+  #vHero .cta.win .qbox{border:5px solid var(--gold)}
+  #vHero .cta.sub .qbox{border:5px solid var(--accent)}
+  #vHero .qbox img{width:100%;height:100%;display:block}
+  #vHero .lbl{font-weight:800;font-size:34px;line-height:1}
+  #vHero .cta.win .lbl{color:var(--gold)}
+  #vHero .cta.sub .lbl{color:#a99cff}
+  #vHero .sub2{font-size:20px;color:var(--ink-dim);margin-top:-4px}
+  /* single join QR card — horizontal's top-right rail only (the header replaces it on vertical) */
   #vQr{position:absolute;top:60px;right:60px;width:300px;padding:22px 22px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
-  body.vertical #vQr{top:354px;right:120px;width:288px}
+  body.vertical #vQr{display:none!important}
   #vQr .qbox{width:236px;height:236px;background:#fff;border-radius:16px;padding:16px;border:3px solid var(--gold)}
   #vQr .qbox img{width:100%;height:100%;display:block}
   #vQr .label{font-weight:800;font-size:31px;color:var(--gold);line-height:1.08}
-  /* leaderboard -> transient card, upper-left */
-  body.vertical #board{top:354px;left:120px;right:auto;width:470px;padding:24px 28px}
-  /* lower-third / result / broadcast -> stack, anchored above the bottom safe zone */
+  /* round card / result / broadcast -> directly under the header (top band) */
   body.vertical #lower,body.vertical #result,body.vertical #bcastLower{
-    left:120px;right:120px;bottom:410px;flex-direction:column;align-items:stretch;gap:0}
+    left:120px;right:120px;top:690px;bottom:auto;flex-direction:column;align-items:stretch;gap:0}
   body.vertical #lower .brandtag,body.vertical #bcastLower .brandtag{display:none}
   body.vertical #lower .main{flex:none;width:100%}
-  body.vertical #lower .title{font-size:62px}
+  body.vertical #lower .title{font-size:58px}
   body.vertical #lower .right{flex:none;min-width:0;text-align:left;display:flex;align-items:baseline;gap:14px;
     margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
   body.vertical #lower .right .countlabel{order:2}
@@ -138,15 +150,47 @@
   body.vertical #result .rlabel::before{content:"👑 "}
   body.vertical #result .rroom{flex:none;min-width:0;text-align:left;display:flex;align-items:center;justify-content:space-between;
     margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
-  body.vertical #idle{left:120px;bottom:410px}
+  body.vertical #idle{left:120px;right:120px;top:690px;bottom:auto}
+  /* leaderboard -> transient card under the round card */
+  body.vertical #board{top:990px;left:120px;right:auto;width:540px;padding:22px 28px}
+
+  /* ============ SINGLE-ELEMENT MODE — ?el=header|song|board ============ */
+  /* Renders ONE element on a snug transparent canvas so each can be its own OBS
+     browser source, placed/scaled independently (dodges each platform's chrome).
+     Uses the vertical card styling; 'song' includes the winner reveal + broadcast
+     swaps (they share the slot and are never visible together). */
+  body.el #vHero,body.el #lower,body.el #result,body.el #bcastLower,body.el #idle{top:20px;left:20px;right:20px}
+  body.el-header{width:880px;height:520px}
+  body.el-song{width:880px;height:420px}
+  body.el-board{width:580px;height:660px}
+  body.el-board #board{top:20px;left:20px;width:540px}
+  body.el-header #lower,body.el-header #result,body.el-header #bcastLower,body.el-header #board,body.el-header #idle{display:none!important}
+  body.el-song #vHero,body.el-song #board{display:none!important}
+  body.el-board #vHero,body.el-board #lower,body.el-board #result,body.el-board #bcastLower,body.el-board #idle{display:none!important}
 </style>
 </head>
 <body>
-  <!-- VERTICAL-ONLY chrome (shown when ?orientation=vertical): top brand + persistent join QR -->
-  <div id="vHeader" class="hide">
-    <div class="vh-brand">The A&amp;R <span>Room</span></div>
-    <div class="vh-live"><span class="dot"></span>LIVE</div>
+  <!-- VERTICAL header (shown when ?orientation=vertical or ?el=header):
+       brand + LIVE pill + the two QR calls-to-action (join to play / submit music) -->
+  <div id="vHero" class="card hide">
+    <div class="brandrow">
+      <div class="room">The A&amp;R <span>Room</span></div>
+      <div class="vh-live"><span class="dot"></span>LIVE</div>
+    </div>
+    <div class="ctas" id="vHeroCtas">
+      <div class="cta win">
+        <div class="qbox"><img id="qrWin" alt="Join QR"></div>
+        <div class="lbl">WIN $500</div>
+        <div class="sub2">Scan to Rate Songs</div>
+      </div>
+      <div class="cta sub">
+        <div class="qbox"><img id="qrSubmit" alt="Submit QR"></div>
+        <div class="lbl">SUBMIT MUSIC</div>
+        <div class="sub2">Get Reviewed Live on Air</div>
+      </div>
+    </div>
   </div>
+  <!-- horizontal-only single join QR (top-right rail) -->
   <div id="vQr" class="card hide">
     <div class="qbox"><img id="vQrImg" alt=""></div>
     <div class="label">Scan to Win $500!</div>
@@ -258,19 +302,33 @@ const PANEL_A=(()=>{ const raw=getP('panel')!=null?getP('panel'):getP('opacity')
 document.documentElement.style.setProperty('--panel','rgba(16,12,26,'+PANEL_A+')');
 
 // ?orientation= (or ?o=) — 'horizontal' (default, 1920×1080) or 'vertical' (1080×1920 for
-// TikTok / IG Reels & Live). Vertical re-anchors the same elements to the platform safe
-// zones, shows a top brand + a persistent "Scan to Win $500" join QR, and turns the
-// leaderboard into a transient pop that rides the winner reveal.
+// TikTok / IG Reels & Live). Vertical stacks everything in the TOP band (the platforms
+// own the lower half): header card (brand + WIN $500 and SUBMIT MUSIC QRs) → round
+// card → transient leaderboard.
+// ?el=header|song|board — single-element mode: renders just that piece on a snug
+// transparent canvas so each can be its own OBS source ('song' includes the winner
+// reveal + broadcast, which share its slot).
 const VERTICAL=/^v/.test((getP('orientation')||getP('o')||'').toLowerCase());
-const SHOW_QR=boolP('qr',true); // join QR ("Scan to Win $500"); default on, BOTH orientations
-if(VERTICAL){ document.body.classList.add('vertical'); $('#vHeader').classList.remove('hide'); }
-if(SID && SHOW_QR){ $('#vQrImg').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID); $('#vQr').classList.remove('hide'); }
+const EL=(()=>{ const v=(getP('el')||'').toLowerCase(); return ['header','song','board'].includes(v)?v:null; })();
+const SHOW_QR=boolP('qr',true); // QR CTAs (header on vertical, top-right card on horizontal)
+if(VERTICAL||EL){ document.body.classList.add('vertical'); }
+if(EL){ document.body.classList.add('el','el-'+EL); }
+const wantHero=(VERTICAL&&!EL)||EL==='header';
+if(wantHero){ $('#vHero').classList.remove('hide'); $('#vHeroCtas').style.display=SHOW_QR?'':'none'; }
+if(SID){
+  $('#qrWin').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID);
+  // Stable route: the server 302s /submit?s= to the session's CURRENT submission link.
+  $('#qrSubmit').src='/api/qr?d='+encodeURIComponent(location.origin+'/submit?s='+SID);
+  if(SHOW_QR && !VERTICAL && !EL){ $('#vQrImg').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID); $('#vQr').classList.remove('hide'); }
+}
 
-// Fit the stage (1920×1080, or 1080×1920 vertical) into whatever the OBS source is sized to.
+// Fit the stage into whatever the OBS source is sized to.
 function fit(){
-  const W=VERTICAL?1080:1920, H=VERTICAL?1920:1080;
+  const [W,H]= EL==='header'?[880,520] : EL==='song'?[880,420] : EL==='board'?[580,660]
+    : VERTICAL?[1080,1920]:[1920,1080];
   const s=Math.min(window.innerWidth/W, window.innerHeight/H);
   document.body.style.transform='scale('+s+')';
+  document.body.style.width=W+'px'; document.body.style.height=H+'px';
 }
 window.addEventListener('resize',fit);fit();
 

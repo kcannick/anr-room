@@ -634,6 +634,17 @@
           <span class="spacer"></span>
           <button class="btn ghost sm" id="obClose">Close</button>
         </div>
+        <!-- per-element sources: one OBS browser source each, so every piece can be
+             placed/scaled independently around each platform's own chrome -->
+        <div id="obElBlock" style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+          <label>Individual elements <span class="muted">(one OBS source each — place them around the platform's chat/buttons)</span></label>
+          <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn ghost sm" data-el="header" style="flex:1">Copy: Header + QRs</button>
+            <button class="btn ghost sm" data-el="song" style="flex:1">Copy: Now playing</button>
+            <button class="btn ghost sm" data-el="board" style="flex:1">Copy: Leaderboard</button>
+          </div>
+          <p class="muted" style="font-size:11px;margin:8px 0 0">“Now playing” includes the winner reveal and host announcements — they share that slot.</p>
+        </div>
       </div>
     </div>
   </div>
@@ -1399,6 +1410,11 @@ $('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
   $('#obClose').onclick=closeOb;
   $('#overlayModal').onclick=e=>{ if(e.target===$('#overlayModal')) closeOb(); };
   $('#obCopy').onclick=()=>{ navigator.clipboard.writeText(buildUrl()); $('#obCopy').textContent='Copied!'; setTimeout(()=>$('#obCopy').textContent='Copy URL',1200); };
+  // Per-element URLs: the current settings + &el= (orientation is implied by el mode).
+  document.querySelectorAll('#obElBlock [data-el]').forEach(b=>{
+    const orig=b.textContent;
+    b.onclick=()=>{ navigator.clipboard.writeText(buildUrl()+'&el='+b.dataset.el); b.textContent='Copied ✓'; setTimeout(()=>b.textContent=orig,1200); };
+  });
   $('#btnGetOverlay')&&($('#btnGetOverlay').onclick=window.openOverlayBuilder);
 })();
 $('#btnBroadcast')&&($('#btnBroadcast').onclick=async()=>{

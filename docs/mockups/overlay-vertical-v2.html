@@ -1,0 +1,123 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#f3f0fb; --ink-dim:#bdb6d8; --ink-faint:#8c84ad;
+    --signal:#4bb749; --accent:#6d5fe0; --hot:#ff5d6c; --gold:#f5c518;
+    --panel:rgba(16,12,26,.92); --line:rgba(255,255,255,.10);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#111}
+  body{font-family:"DM Sans",system-ui,sans-serif;color:var(--ink)}
+  .stage{width:1080px;height:1920px;position:relative;overflow:hidden;
+    transform:scale(.5);transform-origin:top left;
+    background:
+      radial-gradient(90% 60% at 50% 45%, #4a4458 0%, #2a2632 55%, #17141d 100%)}
+  /* ------- fake TikTok chrome to prove clearance ------- */
+  .tk{position:absolute;background:rgba(255,255,255,.14);border-radius:14px;color:#fff}
+  .tk-top{top:64px;left:40px;right:40px;height:88px;display:flex;align-items:center;gap:18px;padding:0 22px;font-size:30px;font-weight:700;background:rgba(0,0,0,.35)}
+  .tk-top .lv{background:#fe2c55;border-radius:12px;padding:6px 18px;font-size:26px}
+  .tk-chat{left:40px;width:640px;background:transparent}
+  .tk-line{display:flex;gap:14px;margin-top:22px;align-items:flex-start}
+  .tk-line .av{width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.25);flex:none}
+  .tk-line .tx{font-size:30px;line-height:1.25;color:rgba(255,255,255,.92);text-shadow:0 1px 6px rgba(0,0,0,.6)}
+  .tk-line .tx b{display:block;font-size:28px;color:rgba(255,255,255,.75)}
+  .tk-pin{position:absolute;left:40px;bottom:470px;width:760px;background:rgba(80,90,240,.45);border-radius:16px;padding:16px 20px;font-size:30px}
+  .tk-cta{position:absolute;left:40px;right:40px;bottom:250px;height:140px;background:#e02b3f;border-radius:22px;display:flex;align-items:center;padding:0 34px;font-size:36px;font-weight:800}
+  .tk-input{position:absolute;left:40px;right:200px;bottom:90px;height:110px;border-radius:55px;background:rgba(255,255,255,.16);display:flex;align-items:center;padding:0 34px;font-size:32px;color:rgba(255,255,255,.6)}
+  /* ------- THE OVERLAY (ours) ------- */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:22px;backdrop-filter:blur(8px);box-shadow:0 24px 60px rgba(0,0,0,.45)}
+  /* header: brand + dual QR CTAs. Top-center, inside safe zones (sides 120, top 250) */
+  #hdr{position:absolute;top:230px;left:120px;right:120px;padding:24px 34px 26px}
+  #hdr .brandrow{display:flex;align-items:center;gap:16px;justify-content:center}
+  #hdr .brandrow .room{font-weight:900;font-size:38px;letter-spacing:-.01em}
+  #hdr .brandrow .livepill{display:inline-flex;align-items:center;gap:8px;font-family:"Space Mono",monospace;font-weight:700;font-size:20px;color:var(--hot);background:rgba(255,93,108,.14);border:1px solid rgba(255,93,108,.5);border-radius:999px;padding:4px 14px}
+  #hdr .brandrow .dot{width:12px;height:12px;border-radius:50%;background:var(--hot)}
+  #hdr .ctas{display:flex;gap:0;margin-top:22px}
+  #hdr .cta{flex:1;display:flex;flex-direction:column;align-items:center;gap:14px}
+  #hdr .cta+.cta{border-left:1px solid var(--line)}
+  #hdr .qr{width:230px;height:230px;background:#fff;border-radius:16px;display:flex;align-items:center;justify-content:center}
+  #hdr .cta.win .qr{border:5px solid var(--gold)}
+  #hdr .cta.sub .qr{border:5px solid var(--accent)}
+  #hdr .qr svg{width:88%;height:88%}
+  #hdr .lbl{font-weight:900;font-size:34px;letter-spacing:.01em}
+  #hdr .cta.win .lbl{color:var(--gold)}
+  #hdr .cta.sub .lbl{color:#a99cff}
+  #hdr .sub2{font-size:20px;color:var(--ink-dim);margin-top:-6px}
+  /* now-rating card: directly under the header — the lower third is platform territory */
+  #song{position:absolute;top:680px;left:120px;right:120px;padding:26px 36px;display:flex;align-items:center;gap:30px}
+  #song .main{flex:1;min-width:0}
+  #song .nowtag{font-size:22px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
+  #song .nowtag .t{font-family:"Space Mono",monospace;color:var(--signal);margin-left:12px;letter-spacing:.04em}
+  #song .title{font-size:52px;font-weight:800;line-height:1.05;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #song .artist{font-size:28px;color:var(--ink-dim);margin-top:4px}
+  #song .right{flex:none;text-align:right}
+  #song .cl{font-size:18px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
+  #song .cnt{font-family:"Space Mono",monospace;font-size:64px;font-weight:700;color:var(--signal);line-height:1}
+  /* transient leaderboard pops UNDER the song card after each win */
+  #board{position:absolute;top:910px;left:120px;width:540px;padding:20px 26px;opacity:.96}
+  #board h3{font-size:24px;font-weight:800;display:flex;gap:10px;align-items:center;margin-bottom:10px}
+  #board h3 .d{width:12px;height:12px;border-radius:50%;background:var(--signal)}
+  .lbrow{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--line);font-size:26px}
+  .lbrow:first-of-type{border-top:none}
+  .lbrow .rk{font-family:"Space Mono",monospace;font-weight:700;width:40px;color:var(--ink-faint)}
+  .lbrow.t1 .rk{color:var(--gold)}
+  .lbrow .nm{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lbrow .pt{font-family:"Space Mono",monospace;font-weight:700;color:var(--signal)}
+  .note{width:540px;font-size:12px;color:#9c94bd;background:rgba(0,0,0,.5);border:1px dashed rgba(255,255,255,.25);border-radius:8px;padding:8px 10px;line-height:1.5;margin:6px 0 0}
+  body{height:1040px;overflow:hidden}
+</style></head><body>
+<div class="stage">
+  <!-- fake platform chrome -->
+  <div class="tk tk-top">@makinit4indies <span class="lv">LIVE</span> <span style="margin-left:auto;opacity:.7">👁 312</span></div>
+  <div class="tk-chat" style="position:absolute;bottom:500px">
+    <div class="tk-line"><div class="av"></div><div class="tx"><b>kiiwiibabe ✔</b>#ANR</div></div>
+    <div class="tk-line"><div class="av"></div><div class="tx"><b>mondojmalone</b>July is smooth</div></div>
+    <div class="tk-line"><div class="av"></div><div class="tx"><b>kiiwiibabe ✔</b>Timing too</div></div>
+  </div>
+  <div class="tk-pin">📌 Comment #ANR to Win $500 Cash!</div>
+  <div class="tk-cta">🔗 Submit Music — Go to website</div>
+  <div class="tk-input">Add a comment…</div>
+
+  <!-- ============ OUR OVERLAY ============ -->
+  <div class="card" id="hdr">
+    <div class="brandrow">
+      <span class="room">The A&amp;R Room</span>
+      <span class="livepill"><span class="dot"></span>LIVE</span>
+    </div>
+    <div class="ctas">
+      <div class="cta win">
+        <div class="qr"><svg viewBox="0 0 29 29"><rect width="29" height="29" fill="#fff"/><path fill="#0c0a15" d="M2 2h7v7H2zM4 4h3v3H4zM20 2h7v7h-7zM22 4h3v3h-3zM2 20h7v7H2zM4 22h3v3H4zM12 2h2v3h-2zM16 3h2v2h-2zM12 7h3v2h-3zM17 7h2v4h-2zM11 11h2v2h-2zM15 12h3v2h-3zM20 11h2v3h-2zM24 12h3v2h-3zM2 12h3v2H2zM6 15h3v2H6zM3 16h2v2H3zM11 16h2v3h-2zM15 17h2v2h-2zM19 16h3v2h-3zM24 16h2v3h-2zM11 21h3v2h-3zM16 21h2v3h-2zM20 21h3v2h-3zM24 21h3v3h-3zM12 25h2v2h-2zM17 25h3v2h-3zM22 25h2v2h-2z"/></svg></div>
+        <div class="lbl">WIN $500</div>
+        <div class="sub2">Scan to rate &amp; read the room</div>
+      </div>
+      <div class="cta sub">
+        <div class="qr"><svg viewBox="0 0 29 29"><rect width="29" height="29" fill="#fff"/><path fill="#0c0a15" d="M2 2h7v7H2zM4 4h3v3H4zM20 2h7v7h-7zM22 4h3v3h-3zM2 20h7v7H2zM4 22h3v3H4zM11 2h2v4h-2zM15 3h3v2h-3zM12 7h4v2h-4zM18 8h2v3h-2zM11 12h3v2h-3zM16 11h2v3h-2zM21 12h2v2h-2zM25 11h2v3h-2zM2 13h4v2H2zM7 15h2v3H7zM3 17h2v2H3zM12 16h2v2h-2zM16 16h3v3h-3zM21 16h2v3h-2zM25 16h2v2h-2zM11 20h2v4h-2zM15 21h3v2h-3zM20 20h2v3h-2zM24 21h3v2h-3zM13 25h3v2h-3zM19 25h2v2h-2zM23 25h3v2h-3z"/></svg></div>
+        <div class="lbl">SUBMIT MUSIC</div>
+        <div class="sub2">Get reviewed live on air</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="song">
+    <div class="main">
+      <div class="nowtag">Now rating · Round 12 <span class="t">0:49</span></div>
+      <div class="title">Barz Freestyle</div>
+      <div class="artist">Young Boog</div>
+    </div>
+    <div class="right"><div class="cl">Votes in</div><div class="cnt">36</div></div>
+  </div>
+
+  <div class="card" id="board">
+    <h3><span class="d"></span>Top A&amp;Rs tonight</h3>
+    <div class="lbrow t1"><span class="rk">1</span><span class="nm">KIANA</span><span class="pt">412</span></div>
+    <div class="lbrow"><span class="rk">2</span><span class="nm">Black Crown Records</span><span class="pt">377</span></div>
+    <div class="lbrow"><span class="rk">3</span><span class="nm">DayOne Suave</span><span class="pt">340</span></div>
+  </div>
+
+</div>
+<div class="note">Grey boxes = TikTok's own chrome (chat, pinned, CTA, input) — untouchable. Ours lives in the
+TOP band only: header (brand + two QR CTAs) → now-rating card → transient leaderboard (pops a few
+seconds after each win, then hides). The winner/results card swaps into the now-rating slot at
+reveal. No lower third at all on vertical.</div>
+</body></html>

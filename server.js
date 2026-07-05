@@ -2724,6 +2724,22 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
+    // Stable submit link for QR codes: /submit?s=<session> 302s to wherever that
+    // session's submission link points RIGHT NOW (Nero, review site, anything).
+    // The QR encodes this route, so the host can change the destination mid-show
+    // and every printed/on-screen code keeps working. no-store: never cache a 302
+    // to a stale destination.
+    if (url.pathname === '/submit') {
+      const sid = url.searchParams.get('s');
+      let dest = null;
+      if (sid) {
+        try { const row = await db.get('SELECT submit_url FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]); dest = row && row.submit_url; }
+        catch (e) { /* fall through to the house default */ }
+      }
+      dest = dest || 'https://www.makinitmag.com/review'; // house submission page
+      res.writeHead(302, { Location: dest, 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     // Google Analytics bootstrap, generated from GA_MEASUREMENT_ID (GA4, e.g. G-XXXX).
     // Pages include <script async src="/analytics.js">; with no id set it's a no-op, so
     // analytics is off in dev/preview and until the operator configures it in prod.

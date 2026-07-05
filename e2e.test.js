@@ -1124,6 +1124,18 @@ async function call(path, body, method='POST', headers={}) {
   ok('visibility flips back to public', ivState2.session.visibility === 'public', ivState2.session.visibility);
   await call('/api/admin/session/status', { sessionId: IVID, status: 'archived' }, 'POST', IVAH); // tidy up
 
+  console.log('\n— /submit QR route: 302 to the session\'s CURRENT submission link —');
+  await call('/api/admin/session/config', { sessionId: IVID, submitUrl: 'https://nero.fan/e2e/live' }, 'POST', IVAH);
+  const sub1 = await fetch(base + '/submit?s=' + IVID, { redirect: 'manual' });
+  ok('session submit link redirects (302)', sub1.status === 302 && sub1.headers.get('location') === 'https://nero.fan/e2e/live', sub1.status + ' -> ' + sub1.headers.get('location'));
+  ok('submit redirect is never cached', /no-store/.test(sub1.headers.get('cache-control') || ''), sub1.headers.get('cache-control'));
+  // Host swaps the destination mid-show — same QR now lands on the new link.
+  await call('/api/admin/session/config', { sessionId: IVID, submitUrl: 'https://makinitmag.com/review2' }, 'POST', IVAH);
+  const sub2 = await fetch(base + '/submit?s=' + IVID, { redirect: 'manual' });
+  ok('destination swap takes effect on the same route', sub2.headers.get('location') === 'https://makinitmag.com/review2', sub2.headers.get('location'));
+  const sub3 = await fetch(base + '/submit?s=does-not-exist', { redirect: 'manual' });
+  ok('unknown session falls back to the house page', sub3.status === 302 && /makinitmag\.com\/review/.test(sub3.headers.get('location') || ''), sub3.headers.get('location'));
+
   // ======================================================================
   // Referral bonus milestones: an invitee's 10th cumulative scored round
   // pays their referrer +10 on the series board; the 50th pays +75 more.
