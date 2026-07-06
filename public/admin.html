@@ -1655,6 +1655,39 @@ function queueBox(st){
       </div>`).join('');
 }
 
+// Song Report (paid artist tier): fetch the 3 pages with host credentials, then hand
+// them to the phone share sheet (Photos/IG-ready) or download on desktop. Page 3 needs
+// 8+ votes — a smaller round just delivers pages 1–2 with a heads-up.
+window.dlSongReport=async(rid,btn)=>{
+  const label=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='Building report…';}
+  try{
+    const hdr={}; if(AUTHTOK)hdr['X-Auth-Token']=AUTHTOK; if(ATOK)hdr['X-Admin-Token']=ATOK;
+    const files=[]; let segNote='';
+    for(const page of [1,2,3]){
+      const r=await fetch('/api/card/song-report?r='+encodeURIComponent(rid)+'&page='+page,{headers:hdr});
+      if(!r.ok){
+        let m='page '+page+' failed ('+r.status+')'; try{const e=await r.json();if(e.error)m=e.error;}catch(_){}
+        if(page===3){ segNote=m; continue; } // small round: ship pages 1–2
+        alert(m); return;
+      }
+      files.push(new File([await r.blob()],'song-report-p'+page+'.png',{type:'image/png'}));
+    }
+    if(navigator.canShare&&navigator.canShare({files})){
+      try{ await navigator.share({files,title:'The A&R Room · Song Report'}); }
+      catch(e){ if(!(e&&e.name==='AbortError')) throw e; }
+    }else{
+      for(const f of files){
+        const u=URL.createObjectURL(f), a=document.createElement('a');
+        a.href=u; a.download=f.name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(u),2000);
+        await new Promise(r=>setTimeout(r,350)); // let each download start
+      }
+    }
+    if(segNote)alert('Pages 1–2 generated. Segments page skipped: '+segNote);
+  }catch(e){ alert('Report failed: '+e.message); }
+  finally{ if(btn){btn.disabled=false;btn.textContent=label;} }
+};
+
 function reviewBox(st){
   const box=$('#reviewBox');
   const isBin = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary'));
@@ -1672,7 +1705,8 @@ function reviewBox(st){
     box.innerHTML=`<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(st.activeRound.room_average)}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
       <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="num">Guess</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
       ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="num">${(+r.predict).toFixed(1)}</td><td class="num muted">${(+r.err).toFixed(1)}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
-      </tbody></table>`;
+      </tbody></table>
+      <button class="btn ghost sm" style="margin-top:12px" onclick="dlSongReport('${st.activeRound.id}',this)">📊 Song Report — artist analytics (3 pages)</button>`;
     return;
   }
   if(st.activeRound&&(st.activeRound.status==='voting'||st.activeRound.status==='closed')){

@@ -640,6 +640,90 @@ async function cardSongsData(sessionId, limit = 8) {
   });
 }
 
+// Song Report (paid artist tier): everything the 3-page report needs, computed live
+// from one ratified rating round. Host-triggered only — never on the boot/poll path.
+// Aggregates only: segments (role/city/pool) surface at 3+ voters; individual scores
+// never leave the server.
+async function songReportData(round, session) {
+  const votes = await db.all(
+    `SELECT v.taste, v.predict, p.pool, u.primary_category AS cat, u.location AS loc
+       FROM votes v
+       JOIN participants p ON v.participant_id = p.id
+       LEFT JOIN users u   ON p.user_id = u.uid
+      WHERE v.round_id = ? AND v.taste IS NOT NULL`, [round.id]);
+  const n = votes.length;
+  if (!n) return null;
+  const tastes = votes.map(v => Number(v.taste)).sort((a, b) => a - b);
+  const mean = tastes.reduce((a, x) => a + x, 0) / n;
+  const median = n % 2 ? tastes[(n - 1) / 2] : (tastes[n / 2 - 1] + tastes[n / 2]) / 2;
+  const hist = Array(10).fill(0);
+  tastes.forEach(t => { if (t >= 0 && t <= 9) hist[t]++; });
+  const maxC = Math.max(...hist);
+  const modes = hist.map((c, i) => [i, c]).filter(([, c]) => c === maxC && c > 0).map(([i]) => i);
+  const heatPct = Math.round(tastes.filter(t => t >= 8).length / n * 100);
+  const preds = votes.map(v => Number(v.predict)).filter(Number.isFinite);
+  const predictMean = preds.length ? preds.reduce((a, x) => a + x, 0) / preds.length : null;
+  const gap = predictMean != null ? mean - predictMean : null;
+  const fmt = x => Number.isInteger(x) ? String(x) : x.toFixed(1);
+  // Segments: only groups with 3+ voters, top 4 by score.
+  const segment = key => {
+    const m = {};
+    votes.forEach(v => { const k = (v[key] || '').toString().trim(); if (k) (m[k] = m[k] || []).push(Number(v.taste)); });
+    return Object.entries(m)
+      .filter(([, a]) => a.length >= 3)
+      .map(([name, a]) => ({ name, n: a.length, avg: a.reduce((x, y) => x + y, 0) / a.length }))
+      .sort((a, b) => b.avg - a.avg).slice(0, 4);
+  };
+  const poolAvg = pool => {
+    const a = votes.filter(v => v.pool === pool).map(v => Number(v.taste));
+    return a.length >= 3 ? { n: a.length, avg: a.reduce((x, y) => x + y, 0) / a.length } : null;
+  };
+  const inP = poolAvg('in_person'), rem = poolAvg('online');
+  // Context: rank among this room's ratified rating rounds; percentile across the series.
+  const roomRows = await db.all(
+    "SELECT room_average FROM rounds WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL", [session.id]);
+  const rankInRoom = { rank: roomRows.filter(r => Number(r.room_average) > Number(round.room_average)).length + 1, total: roomRows.length };
+  let seriesPct = null;
+  if (session.series_id) {
+    const sr = await db.all(
+      `SELECT r.room_average FROM rounds r JOIN sessions s ON r.session_id = s.id
+        WHERE s.series_id = ? AND s.deleted_at IS NULL AND r.status = 'ratified' AND r.room_average IS NOT NULL`, [session.series_id]);
+    if (sr.length >= 5) {
+      const better = sr.filter(r => Number(r.room_average) > Number(round.room_average)).length;
+      seriesPct = { pct: Math.max(1, Math.ceil((better + 1) / sr.length * 100)), total: sr.length };
+    }
+  }
+  const igM = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(round.song_note || '');
+  const dateLabel = new Date(Number(session.created_at) || Date.now())
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
+  return {
+    votes: n,
+    title: round.song_title || 'Untitled',
+    sub: [round.song_artist || null, igM ? '@' + igM[1] : null].filter(Boolean).join(' · ') || session.name,
+    // pages 2-3 identify the song in the subhead (the page title takes the header)
+    sub23: [String(round.song_title || 'Untitled').slice(0, 24), (round.song_artist || '').slice(0, 18) || null, n + ' votes'].filter(Boolean).join(' · '),
+    mean: mean.toFixed(1),
+    median: fmt(median),
+    mode: modes.slice(0, 2).join(' & '),
+    modes,
+    hist,
+    heatPct,
+    predictMean: predictMean != null ? predictMean.toFixed(1) : null,
+    gapUp: gap != null && gap >= 0,
+    gapLabel: gap == null ? '' : (gap >= 0 ? '+' : '') + gap.toFixed(1),
+    gapWord: gap == null ? '' : (gap >= 0.05 ? 'It over-delivered on first impressions'
+      : gap <= -0.05 ? 'Expectations ran ahead of the room' : 'It landed right on expectations'),
+    medianNote: 'Half the room scored it ' + fmt(median) + ' or higher.'
+      + (median > mean + 0.2 ? ' The typical listener heard more than the mean shows — a few tough critics pulled it down.' : ''),
+    roles: segment('cat'),
+    cities: segment('loc'),
+    pools: (inP && rem) ? { in: inP, remote: rem } : null,
+    rankInRoom: rankInRoom.total > 1 ? rankInRoom : null,
+    seriesPct,
+    dateLabel,
+  };
+}
+
 // A participant's personal score card for their session.
 async function cardScoreData(participant) {
   const sessionId = participant.session_id;
@@ -2432,6 +2516,25 @@ async function handleApi(req, res, url) {
         const participant = await participantFromReq(req);
         if (!participant) return bad(res, 'Not logged in', 401);
         return sendPng(await shareCards.renderPng('score', await cardScoreData(participant)), 'private, max-age=120');
+      }
+      // Song Report (paid artist tier) — HOST-ONLY: the host generates it and delivers
+      // it to the paying artist; there's no in-app paywall. Per ratified rating round.
+      // ?r=<roundId>&page=1|2|3 -> one PNG page. Page 3 (segments) needs 8+ votes so
+      // small samples never decompose into near-individual scores.
+      if (kind === 'song-report') {
+        const roundId = url.searchParams.get('r');
+        const page = Math.max(1, Math.min(3, parseInt(url.searchParams.get('page') || '1', 10) || 1));
+        if (!roundId) return bad(res, 'r (roundId) required');
+        const round = await db.get('SELECT * FROM rounds WHERE id = ?', [roundId]);
+        if (!round) return bad(res, 'Round not found', 404);
+        const session = await canAdminSession(req, round.session_id);
+        if (!session) return bad(res, 'Host auth required', 401);
+        if (session.poll_type === 'binary') return bad(res, 'Song Reports cover rating rounds (Versus reports come later)', 409);
+        if (round.status !== 'ratified' || round.room_average == null) return bad(res, 'Ratify the round first — the report reads final scores');
+        const d = await songReportData(round, session);
+        if (!d) return bad(res, 'No votes to report', 404);
+        if (page === 3 && d.votes < 8) return bad(res, 'The segments page needs at least 8 votes', 409);
+        return sendPng(await shareCards.renderPng('report' + page, page === 1 ? d : { ...d, sub: d.sub23 }), 'private, no-store');
       }
       return bad(res, 'Unknown card', 404);
     } catch (e) {

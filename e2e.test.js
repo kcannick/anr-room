@@ -1136,6 +1136,37 @@ async function call(path, body, method='POST', headers={}) {
   const sub3 = await fetch(base + '/submit?s=does-not-exist', { redirect: 'manual' });
   ok('unknown session falls back to the house page', sub3.status === 302 && /makinitmag\.com\/review/.test(sub3.headers.get('location') || ''), sub3.headers.get('location'));
 
+  console.log('\n— Song Report (paid artist tier): host-only, 3 PNG pages, ratified rounds —');
+  const rpC = await call('/api/session', { name: 'Report Night' }, 'POST', BOOTH);
+  const RPID = rpC.d.sessionId, RPAH = { 'X-Admin-Token': rpC.d.adminToken };
+  const rpRound = await call('/api/admin/round', { sessionId: RPID, song_title: 'Report Song', song_artist: 'Test Artist', song_note: 'IG: @testartist' }, 'POST', RPAH);
+  const RPRID = rpRound.d.roundId; // auto-opened
+  const tastes = [3, 5, 6, 7, 7, 8, 8, 9];
+  for (let i = 0; i < tastes.length; i++) {
+    const jr = await call('/api/join/request', { sessionId: RPID, email: `rpt${i}@fan.com` });
+    const ver = await call('/api/join/verify', { sessionId: RPID, email: `rpt${i}@fan.com`, code: jr.d.devCode, name: 'Rpt ' + i });
+    await call('/api/vote', { taste: tastes[i], predict: 6 }, 'POST', { 'X-Player-Token': ver.d.token });
+  }
+  // Not ratified yet -> refused.
+  const early = await call(`/api/card/song-report?r=${RPRID}`, null, 'GET', RPAH);
+  ok('report refused before ratify', early.status === 400, 'status ' + early.status);
+  await call('/api/admin/round/ratify', { sessionId: RPID, roundId: RPRID }, 'POST', RPAH);
+  // Host-only: no credentials -> 401.
+  const noAuth = await fetch(base + `/api/card/song-report?r=${RPRID}&page=1`);
+  ok('report is host-only (401 without credentials)', noAuth.status === 401, 'status ' + noAuth.status);
+  // All three pages render as PNGs with 8 votes.
+  for (const page of [1, 2, 3]) {
+    const r = await fetch(base + `/api/card/song-report?r=${RPRID}&page=${page}`, { headers: RPAH });
+    const buf = Buffer.from(await r.arrayBuffer());
+    ok(`report page ${page} renders a PNG`, r.status === 200 && (r.headers.get('content-type') || '').includes('image/png') && buf.length > 5000,
+      `status ${r.status}, ${buf.length} bytes`);
+  }
+  // Binary rounds are excluded (Versus flavor comes later).
+  const rpBinC = await call('/api/session', { name: 'Report Versus', pollType: 'binary' }, 'POST', BOOTH);
+  const rpBinR = await call('/api/admin/round', { sessionId: rpBinC.d.sessionId, song_title: 'A', option_b_title: 'B' }, 'POST', { 'X-Admin-Token': rpBinC.d.adminToken });
+  const binRep = await call(`/api/card/song-report?r=${rpBinR.d.roundId}`, null, 'GET', { 'X-Admin-Token': rpBinC.d.adminToken });
+  ok('Versus rounds are excluded (409)', binRep.status === 409, 'status ' + binRep.status);
+
   // ======================================================================
   // Referral bonus milestones: an invitee's 10th cumulative scored round
   // pays their referrer +10 on the series board; the 50th pays +75 more.

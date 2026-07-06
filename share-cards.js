@@ -71,19 +71,23 @@ function frame(opts) {
     text({ ...eyeStyle, color: C.inkDim }, 'The A&R'),
     text({ ...eyeStyle, color: C.signal, marginLeft: 12 }, 'Room'),
   ]);
+  // Top-right pill: the WIN hook by default; Song Reports carry their own badge
+  // (they're a paid artist product — the $500 pitch stays in the footer instead).
+  const pill = opts.pill === 'report'
+    ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.gold,
+        border: `2px solid ${C.gold}`, padding: '9px 18px', borderRadius: 999, flexShrink: 0 }, 'SONG REPORT')
+    : text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.bg,
+        background: C.gold, padding: '11px 20px', borderRadius: 999, flexShrink: 0 }, `WIN ${PRIZE}`);
   const header = row({ justifyContent: 'space-between', alignItems: 'flex-start' }, [
     col({}, [
       eyebrow,
-      text({ marginTop: 16, fontFamily: SANS, fontWeight: 900, fontSize: 78, color: C.ink, lineHeight: 1 }, title),
+      text({ marginTop: 16, fontFamily: SANS, fontWeight: 900, fontSize: opts.titleSize || 78, color: C.ink, lineHeight: 1, ...NOWRAP }, title),
       sub ? row({ marginTop: 18 }, [
         h({ width: 12, height: 12, borderRadius: 12, background: C.signal, marginRight: 12, flexShrink: 0 }, ''),
-        text({ fontFamily: SANS, fontWeight: 700, fontSize: 27, color: C.ink }, sub),
+        text({ fontFamily: SANS, fontWeight: 700, fontSize: 27, color: C.ink, ...NOWRAP }, sub),
       ]) : text({}, ''),
     ]),
-    text({
-      fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.bg,
-      background: C.gold, padding: '11px 20px', borderRadius: 999, flexShrink: 0,
-    }, `WIN ${PRIZE}`),
+    pill,
   ]);
   const footer = row({ justifyContent: 'space-between', alignItems: 'center',
     borderTop: `1px solid ${C.line}`, paddingTop: 30 }, [
@@ -190,6 +194,112 @@ function bodyPromo() {
   ]);
 }
 
+// ============ Song Report (paid artist tier) — 3 pages ============
+// Design: docs/mockups/song-report-v1.html. All aggregate data; no emoji
+// (no emoji font is bundled) and no mixed-weight paragraphs (Satori has no
+// inline rich text) — explainers are a bold lead line + a plain line.
+
+// Page 1 — the flex: big room score, heat + votes chips. Share-friendly.
+function bodyReport1(d) {
+  const chip = (str, goldish) => text({
+    fontFamily: SANS, fontWeight: 800, fontSize: 28, color: goldish ? C.gold : C.ink,
+    border: `2px solid ${goldish ? 'rgba(245,197,24,0.55)' : C.line}`, background: C.panel,
+    borderRadius: 999, padding: '16px 30px',
+  }, str);
+  return col({ alignItems: 'center' }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 290, color: C.signal, lineHeight: 1 }, d.mean),
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 32, color: C.inkFaint, marginTop: 4 }, 'out of 9'),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 25, letterSpacing: 7, textTransform: 'uppercase', color: C.inkDim, marginTop: 22 }, 'Room score'),
+    row({ marginTop: 48, gap: 18 }, [
+      chip(`${d.heatPct}% scored it 8+`, true),
+      chip(`${d.votes} verified A&Rs`, false),
+    ]),
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 25, color: C.inkDim, marginTop: 46 }, `Rated live by a real audience · ${d.dateLabel}`),
+  ]);
+}
+
+// Page 2 — the numbers: stat tiles + plain-English explainers + histogram + perception gap.
+function bodyReport2(d) {
+  const tile = (v, k, gold) => col({
+    flexGrow: 1, flexBasis: 0, alignItems: 'center', background: C.panel,
+    border: `1px solid ${gold ? 'rgba(245,197,24,0.45)' : C.line}`, borderRadius: 20, padding: '20px 8px',
+  }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 60, color: gold ? C.gold : C.signal }, v),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 18, letterSpacing: 4, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, k),
+  ]);
+  const expl = (dotColor, lead, rest) => row({ alignItems: 'flex-start' }, [
+    h({ width: 12, height: 12, borderRadius: 12, background: dotColor, marginTop: 11, marginRight: 16, flexShrink: 0 }, ''),
+    col({ flexGrow: 1, flexShrink: 1 }, [
+      text({ fontFamily: SANS, fontWeight: 800, fontSize: 25, color: C.ink }, lead),
+      text({ fontFamily: SANS, fontWeight: 400, fontSize: 23, color: C.inkDim, lineHeight: 1.35, marginTop: 2 }, rest),
+    ]),
+  ]);
+  const maxC = Math.max(1, ...d.hist);
+  const bars = row({ alignItems: 'flex-end', marginTop: 14, gap: 12 }, d.hist.map((c, i) => col(
+    { flexGrow: 1, flexBasis: 0, alignItems: 'center', justifyContent: 'flex-end' }, [
+      text({ fontFamily: MONO, fontWeight: 400, fontSize: 19, color: C.inkDim, marginBottom: 6 }, c || ' '),
+      h({ width: '100%', height: Math.max(6, Math.round(c / maxC * 150)),
+          background: d.modes.includes(i) && c > 0 ? C.gold : C.signal, borderRadius: 8 }, ''),
+      text({ fontFamily: MONO, fontWeight: 400, fontSize: 19, color: C.inkFaint, marginTop: 6 }, i),
+    ])));
+  const gap = d.predictMean == null ? text({}, '') : row({
+    marginTop: 34, background: C.panel, border: `1px solid rgba(109,95,224,0.6)`,
+    borderRadius: 20, padding: '22px 28px', alignItems: 'center',
+  }, [
+    col({ flexGrow: 1, flexShrink: 1 }, [
+      text({ fontFamily: SANS, fontWeight: 800, fontSize: 24, color: C.ink }, 'First impressions vs. final score'),
+      text({ fontFamily: SANS, fontWeight: 400, fontSize: 22, color: C.inkDim, lineHeight: 1.35, marginTop: 4 },
+        `The room predicted ${d.predictMean} before the reveal, then scored it ${d.mean}. ${d.gapWord}.`),
+    ]),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 52, color: d.gapUp ? C.signal : C.inkDim, marginLeft: 24, flexShrink: 0 }, d.gapLabel),
+  ]);
+  return col({}, [
+    row({ gap: 18 }, [tile(d.votes, 'Votes', false), tile(d.mean, 'Mean', false), tile(d.median, 'Median', true), tile(d.mode, 'Mode', true)]),
+    col({ marginTop: 30, gap: 16 }, [
+      expl(C.signal, `Mean ${d.mean}`, 'The overall room score — every vote weighs the same.'),
+      expl(C.gold, `Median ${d.median}`, d.medianNote),
+      expl(C.gold, `Mode ${d.mode}`, 'The single most common score in the room.'),
+    ]),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 21, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginTop: 34 }, 'How the room scored it'),
+    bars,
+    gap,
+  ]);
+}
+
+// Page 3 — who felt it: segments (3+ voters each) + context tiles.
+function bodyReport3(d) {
+  // Fixed column widths — Satori's flexGrow tracks are unreliable inside nested rows.
+  const segBlock = (label, items, unit) => !items.length ? col({}, []) : col({ marginTop: 26 }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 21, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginBottom: 12 }, label),
+    col({ gap: 10 }, items.map((it, i) => row({}, [
+      text({ fontFamily: SANS, fontWeight: 700, fontSize: 26, color: C.ink, width: 258, flexShrink: 0, ...NOWRAP }, clip(it.name, 17)),
+      h({ width: 396, height: 22, background: '#1c1631', borderRadius: 11, display: 'flex', flexShrink: 0 }, [
+        h({ width: Math.round(it.avg / 9 * 396), height: 22, borderRadius: 11, background: i === 0 ? C.gold : C.signal }, ''),
+      ]),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, color: i === 0 ? C.gold : C.signal, width: 104, textAlign: 'right', flexShrink: 0 }, it.avg.toFixed(1)),
+      text({ fontFamily: SANS, fontWeight: 400, fontSize: 20, color: C.inkFaint, width: 128, textAlign: 'right', flexShrink: 0 }, `${it.n} ${unit}`),
+    ]))),
+  ]);
+  const ctxBox = (v, k) => col({
+    flexGrow: 1, flexBasis: 0, alignItems: 'center', background: C.panel,
+    border: `1px solid ${C.line}`, borderRadius: 20, padding: '24px 10px',
+  }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 50, color: C.gold, ...NOWRAP }, v),
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 21, color: C.inkDim, marginTop: 8, textAlign: 'center', lineHeight: 1.3 }, k),
+  ]);
+  const boxes = [];
+  if (d.rankInRoom) boxes.push(ctxBox(`#${d.rankInRoom.rank}`, `of ${d.rankInRoom.total} songs in this room`));
+  if (d.seriesPct) boxes.push(ctxBox(`Top ${d.seriesPct.pct}%`, `of ${d.seriesPct.total} songs this series`));
+  if (d.pools) boxes.push(ctxBox(`${d.pools.in.avg.toFixed(1)} / ${d.pools.remote.avg.toFixed(1)}`, 'in-room vs. remote score'));
+  return col({}, [
+    segBlock('By role', d.roles || [], 'votes'),
+    segBlock('By city', d.cities || [], 'votes'),
+    boxes.length ? row({ marginTop: 34, gap: 18 }, boxes) : col({}, []),
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 19, color: C.inkFaint, lineHeight: 1.45, marginTop: 30 },
+      `Aggregates only — a segment is shown when 3+ A&Rs are in it. Based on ${d.votes} verified votes, one per A&R, locked before the reveal.`),
+  ]);
+}
+
 // ---- element builders per type ----
 function element(type, data = {}) {
   const showNumbers = !!data.showNumbers;
@@ -197,6 +307,9 @@ function element(type, data = {}) {
   if (type === 'ars')   return frame({ title: 'Top 8 A&Rs', sub: data.scope || data.session || null, body: bodyArs(data.list || [], showNumbers) });
   if (type === 'songs') return frame({ title: 'Top 8 Songs', sub: data.session || null, body: bodySongs(data.list || [], showNumbers) });
   if (type === 'promo') return frame({ title: 'Become an A&R', sub: 'Free to play', body: bodyPromo() });
+  if (type === 'report1') return frame({ pill: 'report', title: clip(data.title, 18), sub: data.sub, body: bodyReport1(data) });
+  if (type === 'report2') return frame({ pill: 'report', titleSize: 60, title: 'The numbers', sub: data.sub, body: bodyReport2(data) });
+  if (type === 'report3') return frame({ pill: 'report', titleSize: 60, title: 'Who felt it', sub: data.sub, body: bodyReport3(data) });
   throw new Error('unknown card type: ' + type);
 }
 
