@@ -237,6 +237,13 @@ async function canAdminSession(req, sessionId) {
   return null;
 }
 
+// Platform admin (the role) — for platform-scope operations with no room context
+// (global banners, system settings, SMS test).
+async function platformAdmin(req) {
+  const u = await userFromAuth(req);
+  return (u && u.role === 'admin') ? u : null;
+}
+
 // ---------- state builders ----------
 // Fetch a banner's public shape by id, or null. Returns the id + link; the
 // image itself is served separately via /api/banner/image to keep the frequent
@@ -1918,6 +1925,33 @@ async function handleApi(req, res, url) {
     })) });
   }
 
+  // ===== PLATFORM CONTROL PANEL (admin role only) =====
+  // Everything platform-scoped in one payload: the banner library + system settings.
+  if (p === '/api/admin/platform' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const banners = await db.all('SELECT id, session_id, label, link_url, created_at FROM banners ORDER BY created_at DESC', []);
+    const globalBannerId = (await db.get("SELECT v FROM settings WHERE k = 'global_banner_id'"))?.v || null;
+    const houseSubmitUrl = (await db.get("SELECT v FROM settings WHERE k = 'house_submit_url'"))?.v || null;
+    return send(res, 200, {
+      banners: banners.map(b => ({ id: b.id, label: b.label || null, link: b.link_url || null,
+        scope: b.session_id ? 'room' : 'global', roomId: b.session_id || null,
+        isGlobalDefault: b.id === globalBannerId })),
+      settings: { houseSubmitUrl },
+      smsProvider: (process.env.SMS_PROVIDER || 'none'),
+    });
+  }
+  // System settings — allowlisted keys only; empty string clears back to the default.
+  if (p === '/api/admin/settings' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    if ('houseSubmitUrl' in body) {
+      const v = cleanUrl(body.houseSubmitUrl);
+      if (v) await db.run("INSERT INTO settings (k,v) VALUES ('house_submit_url', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [v]);
+      else await db.run("DELETE FROM settings WHERE k = 'house_submit_url'");
+    }
+    return send(res, 200, { ok: true });
+  }
+
   // Results for ONE past round — powers the Rounds tab's click-to-expand.
   // Host-only; ratified rounds only (live vote direction stays sealed).
   if (p === '/api/admin/round/results' && method === 'GET') {
@@ -2567,8 +2601,9 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (body.__tooBig) return bad(res, 'Image too large — keep banners under ~500KB', 413);
     const { sessionId, scope, image_data, link_url, label } = body;
-    const session = await canAdminSession(req, sessionId);
-    if (!session) return bad(res, 'Admin auth failed', 401);
+    // Room context OR platform admin (control panel uploads are global by definition).
+    const session = sessionId ? await canAdminSession(req, sessionId) : null;
+    if (!session && !(await platformAdmin(req))) return bad(res, 'Admin auth failed', 401);
     if (blockedByPerm(await userFromAuth(req), 'ads')) return bad(res, 'Ads are not enabled for this account', 403);
     if (!image_data || !/^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(image_data)) {
       return bad(res, 'Provide a PNG, JPG, GIF, or WebP image');
@@ -2576,7 +2611,7 @@ async function handleApi(req, res, url) {
     if (image_data.length > 900000) return bad(res, 'Image too large — keep banners under ~500KB');
     if (link_url && !/^https?:\/\//i.test(link_url)) return bad(res, 'Link must start with http:// or https://');
     const bid = id(9);
-    const ownerSession = scope === 'global' ? null : sessionId;
+    const ownerSession = (scope === 'global' || !sessionId) ? null : sessionId;
     await db.run(
       'INSERT INTO banners (id, session_id, label, image_data, link_url, created_at) VALUES (?,?,?,?,?,?)',
       [bid, ownerSession, (label || '').trim() || null, image_data, (link_url || '').trim() || null, now()]
@@ -2751,8 +2786,8 @@ async function handleApi(req, res, url) {
   // (The 'song' target was removed — per-round ads were over-engineering.)
   if (p === '/api/admin/banner/assign' && method === 'POST') {
     const { sessionId, target, bannerId } = await readBody(req);
-    const session = await canAdminSession(req, sessionId);
-    if (!session) return bad(res, 'Admin auth failed', 401);
+    const session = sessionId ? await canAdminSession(req, sessionId) : null;
+    if (!session && !(target === 'global' && await platformAdmin(req))) return bad(res, 'Admin auth failed', 401);
     if (blockedByPerm(await userFromAuth(req), 'ads')) return bad(res, 'Ads are not enabled for this account', 403);
     const val = bannerId || null;
     if (target === 'global') {
@@ -2769,8 +2804,8 @@ async function handleApi(req, res, url) {
   // Delete a banner from the library (and clear any assignments pointing at it).
   if (p === '/api/admin/banner/delete' && method === 'POST') {
     const { sessionId, bannerId } = await readBody(req);
-    const session = await canAdminSession(req, sessionId);
-    if (!session) return bad(res, 'Admin auth failed', 401);
+    const session = sessionId ? await canAdminSession(req, sessionId) : null;
+    if (!session && !(await platformAdmin(req))) return bad(res, 'Admin auth failed', 401);
     if (blockedByPerm(await userFromAuth(req), 'ads')) return bad(res, 'Ads are not enabled for this account', 403);
     await db.tx(async (tx) => {
       await tx.run('UPDATE sessions SET banner_id = NULL WHERE banner_id = ?', [bannerId]);
@@ -2946,7 +2981,8 @@ const server = http.createServer(async (req, res) => {
         try { const row = await db.get('SELECT submit_url FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]); dest = row && row.submit_url; }
         catch (e) { /* fall through to the house default */ }
       }
-      dest = dest || 'https://www.makinitmag.com/review'; // house submission page
+      if (!dest) dest = (await db.get("SELECT v FROM settings WHERE k = 'house_submit_url'"))?.v || null;
+      dest = dest || 'https://www.makinitmag.com/review'; // built-in last resort
       res.writeHead(302, { Location: dest, 'Cache-Control': 'no-store' });
       return res.end();
     }

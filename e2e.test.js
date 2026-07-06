@@ -1136,6 +1136,27 @@ async function call(path, body, method='POST', headers={}) {
   const sub3 = await fetch(base + '/submit?s=does-not-exist', { redirect: 'manual' });
   ok('unknown session falls back to the house page', sub3.status === 302 && /makinitmag\.com\/review/.test(sub3.headers.get('location') || ''), sub3.headers.get('location'));
 
+  console.log('\n— platform control panel: admin-only; settings drive the /submit fallback —');
+  const platNoAuth = await call('/api/admin/platform', null, 'GET', { 'X-Auth-Token': HOSTTOK });
+  ok('platform panel is admin-role only (403 for hosts)', platNoAuth.status === 403, 'status ' + platNoAuth.status);
+  const plat = await call('/api/admin/platform', null, 'GET', ADMINH);
+  ok('platform payload has banners + settings', plat.status === 200 && Array.isArray(plat.d.banners) && 'houseSubmitUrl' in plat.d.settings, JSON.stringify(Object.keys(plat.d)));
+  await call('/api/admin/settings', { houseSubmitUrl: 'https://example.com/subm' }, 'POST', ADMINH);
+  const subFb = await fetch(base + '/submit', { redirect: 'manual' });
+  ok('house submit setting drives the /submit fallback', subFb.headers.get('location') === 'https://example.com/subm', subFb.headers.get('location'));
+  await call('/api/admin/settings', { houseSubmitUrl: '' }, 'POST', ADMINH); // clear back to built-in
+  const subFb2 = await fetch(base + '/submit', { redirect: 'manual' });
+  ok('clearing the setting restores the built-in fallback', /makinitmag\.com\/review/.test(subFb2.headers.get('location') || ''), subFb2.headers.get('location'));
+  // Global banner ops without a room context (the panel's whole point).
+  const PNG2 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMCAQGk4+nAAAAAAElFTkSuQmCC';
+  const pUp = await call('/api/admin/banner/upload', { scope: 'global', image_data: PNG2, label: 'Panel E2E' }, 'POST', ADMINH);
+  ok('admin uploads a global banner with no room', pUp.status === 200 && pUp.d.bannerId, JSON.stringify(pUp.d));
+  const pAsg = await call('/api/admin/banner/assign', { target: 'global', bannerId: pUp.d.bannerId }, 'POST', ADMINH);
+  ok('admin sets the global default with no room', pAsg.status === 200, 'status ' + pAsg.status);
+  const hostUp = await call('/api/admin/banner/upload', { scope: 'global', image_data: PNG2, label: 'Host Try' }, 'POST', { 'X-Auth-Token': HOSTTOK });
+  ok('a host cannot use the room-less banner path', hostUp.status === 401, 'status ' + hostUp.status);
+  await call('/api/admin/banner/delete', { bannerId: pUp.d.bannerId }, 'POST', ADMINH); // tidy up
+
   console.log('\n— watch-embed resolver: direct ids parse locally; non-YouTube stays null —');
   // (The channel-/live network resolution isn’t exercised here — no YouTube in CI.)
   const weC = await call('/api/session', { name: 'Embed Check' }, 'POST', BOOTH);

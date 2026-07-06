@@ -176,6 +176,7 @@
       <h2 style="margin:0">Your rooms</h2>
       <div class="row" style="gap:8px;flex:0 0 auto">
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
+        <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
         <button class="btn ghost sm hide" id="btnManageSeries">Series</button>
         <button class="btn sm" id="btnNewFromPicker">+ New room</button>
       </div>
@@ -564,16 +565,52 @@
         <select id="uSort"><option value="recent">Sort: Last seen</option><option value="points">Sort: Points</option><option value="sessions">Sort: Rooms</option><option value="series">Sort: Series</option><option value="name">Sort: Name</option></select>
       </div>
       <div id="usersList" style="margin-top:14px"><div class="empty">Loading…</div></div>
-      <!-- SMS test: platform-level Twilio check (admin-only screen), moved out of the
-           per-session console where it was noise. -->
-      <div id="smsTestRow" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
-        <label>Test SMS setup <span class="muted">(sends one text to check Twilio)</span></label>
-        <div class="row" style="gap:6px;margin-top:2px">
-          <input id="smsTestNum" type="tel" inputmode="tel" placeholder="+1 305 555 1234" style="flex:1">
-          <button class="btn ghost sm" id="btnSmsTest" style="flex:0 0 auto">Send test</button>
-        </div>
-        <div class="muted" id="smsTestStatus" style="font-size:12px;margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PLATFORM CONTROL PANEL (admin role only): global banners, system settings, SMS test -->
+<div id="platform" class="grid hide">
+  <div class="stack">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0">Banner library</h2>
+        <button class="btn ghost sm" id="btnPlatformBack">← My rooms</button>
       </div>
+      <p class="muted" style="font-size:12px;margin:0 0 12px">The <b>global default</b> shows in every room's ad slot (lobby · voting · locked) unless a room sets its own. Room-scoped banners are managed inside each room's console.</p>
+      <div id="plBanners"><div class="empty">Loading…</div></div>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+        <label>Upload a global banner <span class="muted">(≈320×100, under 500KB, PNG/JPG)</span></label>
+        <input type="file" id="plFile" accept="image/png,image/jpeg,image/gif,image/webp" style="font-size:13px">
+        <div class="row" style="margin-top:10px">
+          <div><label>Click link (optional)</label><input id="plLink" placeholder="https://…"></div>
+          <div><label>Label</label><input id="plLabel" placeholder="e.g. House banner"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:500;cursor:pointer">
+          <input type="checkbox" id="plDefault" checked style="width:auto;margin:0">
+          <span>Set as the global default right away</span>
+        </label>
+        <button class="btn ghost" id="plUpload" style="margin-top:10px;width:100%">Upload</button>
+        <div class="err" id="plErr"></div>
+      </div>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="card">
+      <h2>System settings</h2>
+      <label>House submission link <span class="muted">(fallback for the Submit QR + homepage when a room has none)</span></label>
+      <input id="plSubmitUrl" placeholder="https://www.makinitmag.com/review">
+      <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
+      <div class="muted" id="plStatus" style="font-size:12px;margin-top:6px"></div>
+    </div>
+    <div class="card">
+      <h2>SMS test</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 8px">Sends one text to verify the Twilio setup. Provider: <span id="plSmsProvider" class="mono">—</span></p>
+      <div class="row" style="gap:6px;margin-top:2px">
+        <input id="smsTestNum" type="tel" inputmode="tel" placeholder="+1 305 555 1234" style="flex:1">
+        <button class="btn ghost sm" id="btnSmsTest" style="flex:0 0 auto">Send test</button>
+      </div>
+      <div class="muted" id="smsTestStatus" style="font-size:12px;margin-top:6px"></div>
     </div>
   </div>
 </div>
@@ -807,7 +844,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','picker','create','console','series','users'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','picker','create','console','series','users','platform'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -928,6 +965,7 @@ async function openPicker(){
   $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
   $('#btnManageSeries').classList.toggle('hide',!isAdmin());
   $('#btnManageUsers').classList.toggle('hide',!isAdmin());
+  $('#btnPlatform').classList.toggle('hide',!isAdmin());
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
@@ -1104,6 +1142,67 @@ $('#btnSeriesBack').onclick=()=>openPicker();
 // ---------- USERS ADMIN ----------
 let usersFilterTimer=null, usersCats=[];
 $('#btnManageUsers').onclick=()=>openUsers();
+
+// ---- Platform control panel (admin role): global banners, system settings, SMS test ----
+async function openPlatform(){
+  showScreen('platform');
+  const box=$('#plBanners'); box.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const d=await api('/api/admin/platform',null,'GET');
+    $('#plSubmitUrl').value=d.settings.houseSubmitUrl||'';
+    $('#plSmsProvider').textContent=d.smsProvider||'none';
+    const bs=d.banners||[];
+    box.innerHTML=bs.length?bs.map(b=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">
+        <img src="/api/banner/image?id=${b.id}" alt="" style="height:34px;width:auto;max-width:90px;border-radius:5px;background:#0a0814">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.label||'Banner')} <span class="muted" style="font-weight:400">· ${b.scope==='global'?'global':'room-scoped'}</span></div>
+          <div style="margin-top:3px;display:flex;gap:5px;flex-wrap:wrap">${b.isGlobalDefault?'<span class="pill done" style="font-size:10px">Global default</span>':''}</div>
+        </div>
+        ${b.isGlobalDefault
+          ?`<button class="btn ghost sm" onclick="plAssign(null,this)">Clear default</button>`
+          :`<button class="btn ghost sm" onclick="plAssign('${b.id}',this)">Set default</button>`}
+        <button class="btn ghost sm" title="Delete" onclick="plDelete('${b.id}')">✕</button>
+      </div>`).join(''):'<div class="empty">No banners yet — upload one below.</div>';
+  }catch(e){ box.innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
+window.plAssign=async(bid,btn)=>{
+  if(btn)btn.disabled=true;
+  try{await api('/api/admin/banner/assign',{target:'global',bannerId:bid});}catch(e){alert(e.message);}
+  openPlatform();
+};
+window.plDelete=async(bid)=>{
+  if(!confirm('Delete this banner? It will be removed from anywhere it is used.'))return;
+  try{await api('/api/admin/banner/delete',{bannerId:bid});}catch(e){alert(e.message);}
+  openPlatform();
+};
+$('#plUpload')&&($('#plUpload').onclick=async()=>{
+  $('#plErr').textContent='';
+  const f=$('#plFile').files[0];
+  if(!f)return $('#plErr').textContent='Choose an image first';
+  if(f.size>500*1024)return $('#plErr').textContent='Image is over 500KB — please shrink it';
+  const link=$('#plLink').value.trim();
+  if(link&&!/^https?:\/\//i.test(link))return $('#plErr').textContent='Link must start with http:// or https://';
+  $('#plUpload').disabled=true;$('#plUpload').textContent='Uploading…';
+  try{
+    const dataUri=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+    const r=await api('/api/admin/banner/upload',{scope:'global',image_data:dataUri,link_url:link,label:$('#plLabel').value.trim()});
+    if($('#plDefault').checked)await api('/api/admin/banner/assign',{target:'global',bannerId:r.bannerId});
+    $('#plFile').value='';$('#plLink').value='';$('#plLabel').value='';
+    openPlatform();
+  }catch(e){$('#plErr').textContent=e.message;}
+  $('#plUpload').disabled=false;$('#plUpload').textContent='Upload';
+});
+$('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
+  $('#plSaveSettings').disabled=true;
+  try{
+    await api('/api/admin/settings',{houseSubmitUrl:$('#plSubmitUrl').value.trim()});
+    $('#plStatus').textContent='Saved ✓';setTimeout(()=>$('#plStatus').textContent='',2000);
+  }catch(e){$('#plStatus').textContent=e.message;}
+  $('#plSaveSettings').disabled=false;
+});
+$('#btnPlatform')&&($('#btnPlatform').onclick=openPlatform);
+$('#btnPlatformBack')&&($('#btnPlatformBack').onclick=()=>showScreen('picker'));
 $('#btnUsersBack').onclick=()=>openPicker();
 async function openUsers(){
   showScreen('users');
