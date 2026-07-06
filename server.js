@@ -469,9 +469,16 @@ async function playerState(participant) {
     giveaway,
     ...view,
   };
-  // Ad banner — shown on lobby, voting, and locked only. Never on results/recap.
+  // Ad slot — lobby, voting, and locked only. Never on results/recap.
+  // Cascade: the room's own banner -> Revive zone (when configured) -> global banner.
   if (out.phase === 'waiting' || out.phase === 'voting' || out.phase === 'locked') {
-    out.banner = await resolveBanner(session);
+    const own = session.banner_id ? await getBanner(session.banner_id) : null;
+    if (own) out.banner = own;
+    else {
+      const rv = await getReviveCfg();
+      if (rv) out.revive = { base: rv.base, zone: out.phase === 'waiting' ? rv.lobby : rv.game };
+      else out.banner = await resolveBanner(session); // banner_id is null here -> global level
+    }
   }
   if (session.status === 'completed') {
     out.phase = 'recap';
@@ -484,6 +491,21 @@ async function playerState(participant) {
 // A referral counts as "real" only once the referred player actually plays — flip
 // ref_credited on their first vote. Idempotent: the WHERE clause makes re-calls no-ops.
 // This is the anti-farming gate (a fake account that never plays never counts).
+// Revive ad-server config (Platform panel settings), cached per instance for 60s so
+// the 2.5s player poll never adds settings reads to the hot path.
+let _reviveCfg = { at: 0, cfg: null };
+async function getReviveCfg() {
+  if (Date.now() - _reviveCfg.at < 60000) return _reviveCfg.cfg;
+  const rows = await db.all("SELECT k, v FROM settings WHERE k IN ('revive_delivery_url','revive_zone_lobby','revive_zone_game')", []);
+  const m = Object.fromEntries(rows.map(r => [r.k, r.v]));
+  const base = (m.revive_delivery_url || '').replace(/\/+$/, '');
+  const cfg = (base && (m.revive_zone_lobby || m.revive_zone_game))
+    ? { base, lobby: m.revive_zone_lobby || m.revive_zone_game, game: m.revive_zone_game || m.revive_zone_lobby }
+    : null;
+  _reviveCfg = { at: Date.now(), cfg };
+  return cfg;
+}
+
 // per-instance cache for /api/watch-embed channel-live lookups (sid -> {videoId, at})
 const _liveEmbedCache = new Map();
 
@@ -2003,7 +2025,10 @@ async function handleApi(req, res, url) {
       banners: banners.map(b => ({ id: b.id, label: b.label || null, link: b.link_url || null,
         scope: b.session_id ? 'room' : 'global', roomId: b.session_id || null,
         isGlobalDefault: b.id === globalBannerId })),
-      settings: { houseSubmitUrl },
+      settings: { houseSubmitUrl,
+        reviveDeliveryUrl: (await db.get("SELECT v FROM settings WHERE k = 'revive_delivery_url'"))?.v || null,
+        reviveZoneLobby: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_lobby'"))?.v || null,
+        reviveZoneGame: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_game'"))?.v || null },
       smsProvider: (process.env.SMS_PROVIDER || 'none'),
     });
   }
@@ -2016,6 +2041,15 @@ async function handleApi(req, res, url) {
       if (v) await db.run("INSERT INTO settings (k,v) VALUES ('house_submit_url', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [v]);
       else await db.run("DELETE FROM settings WHERE k = 'house_submit_url'");
     }
+    // Revive ad server: delivery base URL + a zone per placement. Empty clears.
+    const setOrClear = async (k, v) => {
+      if (v) await db.run(`INSERT INTO settings (k,v) VALUES ('${k}', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v`, [v]);
+      else await db.run(`DELETE FROM settings WHERE k = '${k}'`);
+    };
+    if ('reviveDeliveryUrl' in body) await setOrClear('revive_delivery_url', cleanUrl(body.reviveDeliveryUrl));
+    if ('reviveZoneLobby' in body) await setOrClear('revive_zone_lobby', String(parseInt(body.reviveZoneLobby, 10) || '') || null);
+    if ('reviveZoneGame' in body) await setOrClear('revive_zone_game', String(parseInt(body.reviveZoneGame, 10) || '') || null);
+    _reviveCfg.at = 0; // bust the poll-path cache so changes apply within a poll
     return send(res, 200, { ok: true });
   }
 

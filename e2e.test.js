@@ -1174,6 +1174,29 @@ async function call(path, body, method='POST', headers={}) {
   ok('a host cannot use the room-less banner path', hostUp.status === 401, 'status ' + hostUp.status);
   await call('/api/admin/banner/delete', { bannerId: pUp.d.bannerId }, 'POST', ADMINH); // tidy up
 
+  console.log('\n— Revive ad zones: phase-aware, room banners always win —');
+  await call('/api/admin/settings', { reviveDeliveryUrl: 'https://ads.cannick.com/www/delivery', reviveZoneLobby: '8', reviveZoneGame: '9' }, 'POST', ADMINH);
+  const rvC = await call('/api/session', { name: 'Revive Night' }, 'POST', BOOTH);
+  const RVAH = { 'X-Admin-Token': rvC.d.adminToken };
+  const rvJr = await call('/api/join/request', { sessionId: rvC.d.sessionId, email: 'rv@fan.com' });
+  const rvVer = await call('/api/join/verify', { sessionId: rvC.d.sessionId, email: 'rv@fan.com', code: rvJr.d.devCode, name: 'Rev Fan' });
+  const RVTOK = { 'X-Player-Token': rvVer.d.token };
+  const rvWait = (await call('/api/me/state', null, 'GET', RVTOK)).d;
+  ok('lobby phase serves the lobby zone', rvWait.phase === 'waiting' && rvWait.revive && rvWait.revive.zone === '8' && !rvWait.banner, JSON.stringify(rvWait.revive));
+  await call('/api/admin/round', { sessionId: rvC.d.sessionId, song_title: 'Rv Song' }, 'POST', RVAH); // auto-opens
+  const rvVote = (await call('/api/me/state', null, 'GET', RVTOK)).d;
+  ok('voting phase serves the in-game zone', rvVote.phase === 'voting' && rvVote.revive && rvVote.revive.zone === '9', JSON.stringify(rvVote.revive));
+  // A room banner beats the network ads.
+  const rvUp = await call('/api/admin/banner/upload', { sessionId: rvC.d.sessionId, scope: 'session', image_data: PNG, label: 'Room Sponsor' }, 'POST', RVAH);
+  await call('/api/admin/banner/assign', { sessionId: rvC.d.sessionId, target: 'session', bannerId: rvUp.d.bannerId }, 'POST', RVAH);
+  const rvOwn = (await call('/api/me/state', null, 'GET', RVTOK)).d;
+  ok('room banner wins over the Revive zone', rvOwn.banner && rvOwn.banner.id === rvUp.d.bannerId && !rvOwn.revive, JSON.stringify([!!rvOwn.banner, !!rvOwn.revive]));
+  // Clearing the config turns network ads off (global banner level returns).
+  await call('/api/admin/settings', { reviveDeliveryUrl: '', reviveZoneLobby: '', reviveZoneGame: '' }, 'POST', ADMINH);
+  await call('/api/admin/banner/assign', { sessionId: rvC.d.sessionId, target: 'session', bannerId: null }, 'POST', RVAH);
+  const rvOff = (await call('/api/me/state', null, 'GET', RVTOK)).d;
+  ok('clearing the config turns Revive off', !rvOff.revive, JSON.stringify(rvOff.revive || null));
+
   console.log('\n— watch-embed resolver: direct ids parse locally; non-YouTube stays null —');
   // (The channel-/live network resolution isn’t exercised here — no YouTube in CI.)
   const weC = await call('/api/session', { name: 'Embed Check' }, 'POST', BOOTH);

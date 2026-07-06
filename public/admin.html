@@ -601,6 +601,15 @@
       <h2>System settings</h2>
       <label>House submission link <span class="muted">(fallback for the Submit QR + homepage when a room has none)</span></label>
       <input id="plSubmitUrl" placeholder="https://www.makinitmag.com/review">
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <label>Revive ad server <span class="muted">(shows in the play-page ad slot when a room has no banner of its own; clear the URL to turn off)</span></label>
+        <input id="plReviveUrl" placeholder="https://ads.cannick.com/www/delivery">
+        <div class="row" style="margin-top:8px">
+          <div><label>Lobby zone ID</label><input id="plReviveLobby" type="number" min="1" placeholder="8"></div>
+          <div><label>In-game zone ID</label><input id="plReviveGame" type="number" min="1" placeholder="9"></div>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">320×100 iframe zones. Rotation: ~30s in the lobby, ~60s during gameplay. Room banners always win over network ads.</p>
+      </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
       <div class="muted" id="plStatus" style="font-size:12px;margin-top:6px"></div>
     </div>
@@ -1226,6 +1235,9 @@ async function openPlatform(){
   try{
     const d=await api('/api/admin/platform',null,'GET');
     $('#plSubmitUrl').value=d.settings.houseSubmitUrl||'';
+    $('#plReviveUrl').value=d.settings.reviveDeliveryUrl||'';
+    $('#plReviveLobby').value=d.settings.reviveZoneLobby||'';
+    $('#plReviveGame').value=d.settings.reviveZoneGame||'';
     $('#plSmsProvider').textContent=d.smsProvider||'none';
     const bs=d.banners||[];
     box.innerHTML=bs.length?bs.map(b=>`
@@ -1272,7 +1284,10 @@ $('#plUpload')&&($('#plUpload').onclick=async()=>{
 $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=true;
   try{
-    await api('/api/admin/settings',{houseSubmitUrl:$('#plSubmitUrl').value.trim()});
+    await api('/api/admin/settings',{houseSubmitUrl:$('#plSubmitUrl').value.trim(),
+      reviveDeliveryUrl:$('#plReviveUrl').value.trim(),
+      reviveZoneLobby:$('#plReviveLobby').value.trim(),
+      reviveZoneGame:$('#plReviveGame').value.trim()});
     $('#plStatus').textContent='Saved ✓';setTimeout(()=>$('#plStatus').textContent='',2000);
   }catch(e){$('#plStatus').textContent=e.message;}
   $('#plSaveSettings').disabled=false;

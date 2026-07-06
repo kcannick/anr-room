@@ -135,6 +135,7 @@
   .ad-slot.filled{display:flex;background:rgba(255,255,255,.02)}
   .ad-slot a,.ad-slot img{display:block;width:100%}
   .ad-slot img{width:100%;height:auto;max-height:120px;object-fit:contain;border-radius:12px}
+  .ad-slot iframe{width:320px;height:100px;border:0;display:block;border-radius:12px}
   /* recap */
   .recap{text-align:center}
   .recap-head{margin-bottom:8px}
@@ -1165,6 +1166,28 @@ function shareText(r){
   return `The A&R Room — my card\nGrade: ${r.grade||'—'} · ${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} · ${r.bullseyes} bullseye${r.bullseyes===1?'':'s'}\nRoom average revealed: ${r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—'}`;
 }
 
+// Ad slot dispatcher — first-party banner wins; else the Revive zone iframe (fresh
+// cache-buster per load); else clear. Rotation rides the poll: a new creative every
+// ~30s in the lobby, ~60s during gameplay (fixed 320×100 box, so no reflow mid-vote).
+let adMode=null, adZone=null, adLoadedAt=0;
+function renderAd(st){
+  const slot=$('#adTop'); if(!slot)return;
+  if(st.banner&&st.banner.image){ adMode='banner'; adZone=null; renderBanner('adTop',st.banner); return; }
+  if(st.revive&&st.revive.base&&st.revive.zone){
+    const interval=st.phase==='waiting'?30000:60000;
+    const due=adMode!=='revive'||adZone!==st.revive.zone||(Date.now()-adLoadedAt)>=interval;
+    adMode='revive';
+    if(due){
+      adZone=st.revive.zone; adLoadedAt=Date.now();
+      slot.dataset.bid='';
+      const cb=Math.floor(Math.random()*1e12);
+      slot.innerHTML=`<iframe src="${st.revive.base}/afr.php?zoneid=${encodeURIComponent(st.revive.zone)}&cb=${cb}" width="320" height="100" frameborder="0" scrolling="no" title="Sponsor" allow="autoplay"></iframe>`;
+      slot.classList.add('filled');
+    }
+    return;
+  }
+  adMode=null; adZone=null; renderBanner('adTop',null);
+}
 let lastBannerId=null;
 function renderBanner(slotId, banner){
   const slot=$('#'+slotId);if(!slot)return;
@@ -1305,9 +1328,9 @@ function render(st){
 
   // Live stream embed at the top (YouTube only; tap-to-start, never autoplay).
   updateStreamEmbed(st);
-  // Sponsor banner right under the embed — the server only sends st.banner on
-  // lobby/voting/locked, so this clears itself for results/recap automatically.
-  renderBanner('adTop',st.banner);
+  // Ad slot right under the embed — room banner, Revive zone, or empty; the server
+  // sends nothing on results/recap so it clears itself there.
+  renderAd(st);
 
   // Referral: remember my code (for the invite link) + my credited count.
   if(st.refCode)myRefCode=st.refCode;
