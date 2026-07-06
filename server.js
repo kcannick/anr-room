@@ -477,6 +477,9 @@ async function playerState(participant) {
 // A referral counts as "real" only once the referred player actually plays — flip
 // ref_credited on their first vote. Idempotent: the WHERE clause makes re-calls no-ops.
 // This is the anti-farming gate (a fake account that never plays never counts).
+// per-instance cache for /api/watch-embed channel-live lookups (sid -> {videoId, at})
+const _liveEmbedCache = new Map();
+
 async function creditReferral(participant) {
   if (!participant || !participant.referred_by || participant.ref_credited) return;
   await db.run('UPDATE participants SET ref_credited = 1 WHERE id = ? AND referred_by IS NOT NULL AND ref_credited = 0', [participant.id]);
@@ -1844,6 +1847,42 @@ async function handleApi(req, res, url) {
       [id(9), round.id, participant.id, t, pr, now()]);
     await creditReferral(participant);
     return send(res, 200, { locked: true });
+  }
+
+  // Resolve a channel "/live" watch link to the CURRENT live video id, so the host
+  // can keep a permanent link (youtube.com/@handle/live) and the play page still
+  // gets a real embed whenever the channel is live. Direct video URLs short-circuit
+  // without any network call. Cached per instance for 2 minutes; the client asks at
+  // most every few minutes — this never rides the 2.5s poll.
+  if (p === '/api/watch-embed' && method === 'GET') {
+    const sid = url.searchParams.get('s');
+    if (!sid) return bad(res, 'session required');
+    const sess = await db.get('SELECT watch_url FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]);
+    const wu = (sess && sess.watch_url || '').trim();
+    if (!wu) return send(res, 200, { videoId: null });
+    const direct = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|live\/|embed\/|shorts\/)|[?&]v=)([A-Za-z0-9_-]{11})/.exec(wu);
+    if (direct) return send(res, 200, { videoId: direct[1] });
+    // Only channel-live forms get resolved (@handle, /c/, /user/, /channel/, legacy vanity).
+    if (!/^https?:\/\/(?:www\.)?youtube\.com\/[^?#]+\/live\/?(?:[?#].*)?$/i.test(wu)) {
+      return send(res, 200, { videoId: null });
+    }
+    const cached = _liveEmbedCache.get(sid);
+    if (cached && Date.now() - cached.at < 120000) return send(res, 200, { videoId: cached.videoId, cached: true });
+    let videoId = null;
+    try {
+      const r = await fetch(wu, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(6000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', 'Accept-Language': 'en' },
+      });
+      const html = await r.text();
+      const canon = /<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/.exec(html);
+      // Trust the id only when the page says the stream is live RIGHT NOW — a
+      // scheduled or ended stream would embed as a countdown/replay, not the show.
+      if (canon && /"isLiveNow"\s*:\s*true/.test(html)) videoId = canon[1];
+    } catch (e) { /* unreachable/slow -> treat as not live; cache the miss */ }
+    _liveEmbedCache.set(sid, { videoId, at: Date.now() });
+    return send(res, 200, { videoId });
   }
 
   // ===== ADMIN =====

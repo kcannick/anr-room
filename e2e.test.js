@@ -1136,6 +1136,17 @@ async function call(path, body, method='POST', headers={}) {
   const sub3 = await fetch(base + '/submit?s=does-not-exist', { redirect: 'manual' });
   ok('unknown session falls back to the house page', sub3.status === 302 && /makinitmag\.com\/review/.test(sub3.headers.get('location') || ''), sub3.headers.get('location'));
 
+  console.log('\n— watch-embed resolver: direct ids parse locally; non-YouTube stays null —');
+  // (The channel-/live network resolution isn’t exercised here — no YouTube in CI.)
+  const weC = await call('/api/session', { name: 'Embed Check' }, 'POST', BOOTH);
+  const WEAH = { 'X-Admin-Token': weC.d.adminToken };
+  await call('/api/admin/session/config', { sessionId: weC.d.sessionId, watchUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }, 'POST', WEAH);
+  const weDirect = await call('/api/watch-embed?s=' + weC.d.sessionId, null, 'GET');
+  ok('direct watch URL returns its video id (no fetch)', weDirect.status === 200 && weDirect.d.videoId === 'dQw4w9WgXcQ', JSON.stringify(weDirect.d));
+  await call('/api/admin/session/config', { sessionId: weC.d.sessionId, watchUrl: 'https://twitch.tv/makinitmag' }, 'POST', WEAH);
+  const weOther = await call('/api/watch-embed?s=' + weC.d.sessionId, null, 'GET');
+  ok('non-YouTube watch link resolves to null', weOther.status === 200 && weOther.d.videoId === null, JSON.stringify(weOther.d));
+
   console.log('\n— Song Report (paid artist tier): host-only, 3 PNG pages, ratified rounds —');
   const rpC = await call('/api/session', { name: 'Report Night' }, 'POST', BOOTH);
   const RPID = rpC.d.sessionId, RPAH = { 'X-Admin-Token': rpC.d.adminToken };
