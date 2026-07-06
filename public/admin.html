@@ -294,7 +294,9 @@
       </div>
     </div>
 
-    <div class="card">
+    <!-- Whole card hides on completed/archived rooms — a dead form is just noise;
+         the round card + Room panel carry the "reopen to keep playing" context. -->
+    <div class="card" id="addSongCard">
       <!-- Queue lives inside the add-a-song card: visible only when something is
            actually queued (straight-to-open makes an empty queue the normal state). -->
       <div class="hide" id="queueSection" style="border-bottom:1px solid var(--line);margin-bottom:14px;padding-bottom:6px">
@@ -318,7 +320,6 @@
         </div>
         <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
         <button class="btn" id="btnAddRound">▶ Add &amp; play now</button>
-        <div class="muted hide" id="addLockNote" style="font-size:12px">This room is completed — reopen it (Room panel) to add songs.</div>
         <div class="err" id="addErr"></div>
       </div>
     </div>
@@ -1828,11 +1829,12 @@ function render(st){
   $('#btnEnd').classList.toggle('hide',stx!=='live');
   $('#btnArchive').classList.toggle('hide',stx!=='completed');
   $('#btnReopen').classList.toggle('hide',!(stx==='completed'||stx==='archived'));
-  // Completed/archived sessions are read-only for round work: no adding or opening songs.
+  // Completed/archived rooms are read-only for round work: the whole add-a-song
+  // card (queue included) disappears — the Room panel's Reopen is the way back.
   const locked=(stx==='completed'||stx==='archived');
   sessLocked=locked;
+  $('#addSongCard').classList.toggle('hide',locked);
   $('#btnAddRound').disabled=locked;
-  $('#addLockNote').classList.toggle('hide',!locked);
   if(locked){$('#btnNeroPull').classList.add('hide');$('#btnIngestPull').classList.add('hide');}
   // Post-show mode: wrap-up actions surface, live-only tools go away.
   $('#wrapUpRow').classList.toggle('hide',stx!=='completed');
