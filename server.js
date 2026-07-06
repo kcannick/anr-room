@@ -895,7 +895,8 @@ async function adminState(session, opts = {}) {
       watch_url: session.watch_url || null, submit_url: session.submit_url || null, lobby_message: session.lobby_message || null,
       broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
       geo_mode: session.geo_mode || 'off', geo_lat: session.geo_lat ?? null, geo_lng: session.geo_lng ?? null, geo_radius: session.geo_radius || null, geo_label: session.geo_label || null,
-      visibility: session.visibility || 'public', access_code: session.access_code || null },
+      visibility: session.visibility || 'public', access_code: session.access_code || null,
+      scheduled_at: session.scheduled_at ? Number(session.scheduled_at) : null },
     pools: {
       in_person: participants.filter(p => p.pool === 'in_person').length,
       online: participants.filter(p => p.pool === 'online').length,
@@ -2616,6 +2617,11 @@ async function handleApi(req, res, url) {
       sets.push('geo_radius = ?'); vals.push(Number.isFinite(r) && r > 0 ? Math.min(5000, Math.max(25, r)) : DEFAULT_GEO_RADIUS);
     }
     if ('geoLabel' in body) { sets.push('geo_label = ?'); vals.push((body.geoLabel || '').toString().trim().slice(0, 200) || null); }
+    // Scheduled start: epoch ms, or empty to clear (countdown shows while Upcoming).
+    if ('scheduledAt' in body) {
+      const t = Number(body.scheduledAt);
+      sets.push('scheduled_at = ?'); vals.push(Number.isFinite(t) && t > 0 ? t : null);
+    }
     // Invite-only controls: unlisted visibility + optional join access code.
     if ('visibility' in body) {
       const v = body.visibility === 'unlisted' ? 'unlisted' : 'public';
