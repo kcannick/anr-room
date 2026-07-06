@@ -1161,6 +1161,15 @@ async function call(path, body, method='POST', headers={}) {
     ok(`report page ${page} renders a PNG`, r.status === 200 && (r.headers.get('content-type') || '').includes('image/png') && buf.length > 5000,
       `status ${r.status}, ${buf.length} bytes`);
   }
+  // Round history browser: host-only list with scores + vote counts per round.
+  const histNoAuth = await call(`/api/admin/rounds?sessionId=${RPID}`, null, 'GET');
+  ok('round history is host-only (401)', histNoAuth.status === 401, 'status ' + histNoAuth.status);
+  const hist = await call(`/api/admin/rounds?sessionId=${RPID}`, null, 'GET', RPAH);
+  const hr = (hist.d.rounds || [])[0];
+  ok('round history lists the ratified round with score + votes',
+    hist.status === 200 && hr && hr.id === RPRID && hr.status === 'ratified' && hr.votes === 8 && hr.room_average != null,
+    JSON.stringify(hr));
+
   // Binary rounds are excluded (Versus flavor comes later).
   const rpBinC = await call('/api/session', { name: 'Report Versus', pollType: 'binary' }, 'POST', BOOTH);
   const rpBinR = await call('/api/admin/round', { sessionId: rpBinC.d.sessionId, song_title: 'A', option_b_title: 'B' }, 'POST', { 'X-Admin-Token': rpBinC.d.adminToken });

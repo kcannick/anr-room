@@ -266,12 +266,17 @@
         <button class="tab on" id="tabVotes" data-pane="paneVotes">Votes <span id="feedCount"></span></button>
         <button class="tab" id="tabResults" data-pane="paneResults">Results</button>
         <button class="tab" id="tabBoard" data-pane="paneBoard">Leaderboard</button>
+        <button class="tab" id="tabRounds" data-pane="paneRounds">Rounds</button>
       </div>
       <div id="paneVotes">
         <div class="feed" id="feed"><div class="empty">No votes yet.</div></div>
       </div>
       <div id="paneResults" class="hide">
         <div id="reviewBox"><div class="empty">Open and close a round to see results here before you ratify.</div></div>
+      </div>
+      <!-- Round history: every song played, with scores + per-round Song Reports -->
+      <div id="paneRounds" class="hide">
+        <div id="roundsList"><div class="empty">Loading…</div></div>
       </div>
       <div id="paneBoard" class="hide">
         <div id="board"><div class="empty">Nobody's joined yet.</div></div>
@@ -724,10 +729,46 @@ let poll=null, serverSkew=0, lastState=null, sessLocked=false;
 let tabManual=false, curTab='paneVotes';
 function setTab(pane,manual){
   curTab=pane; if(manual)tabManual=true;
-  ['paneVotes','paneResults','paneBoard'].forEach(p=>{const el=document.getElementById(p);if(el)el.classList.toggle('hide',p!==pane);});
+  ['paneVotes','paneResults','paneBoard','paneRounds'].forEach(p=>{const el=document.getElementById(p);if(el)el.classList.toggle('hide',p!==pane);});
   document.querySelectorAll('.tabbar .tab').forEach(t=>t.classList.toggle('on',t.dataset.pane===pane));
+  if(pane==='paneRounds')loadRounds(); // lazy: fetched on open, not on the 2s poll
 }
 document.querySelectorAll('.tabbar .tab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pane,true)));
+// Round history — every song played this room, newest first, with a Song Report
+// button on each ratified rating round (the paid artist product works after the
+// show, not just on the freshest round).
+async function loadRounds(){
+  const box=$('#roundsList'); if(!box)return;
+  box.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const d=await api('/api/admin/rounds?sessionId='+encodeURIComponent(SID),null,'GET');
+    const rounds=(d.rounds||[]).filter(r=>r.status!=='pending').reverse(); // queued songs live in the queue card
+    if(!rounds.length){box.innerHTML='<div class="empty">No rounds played yet.</div>';return;}
+    box.innerHTML=rounds.map(r=>{
+      const isVs=!!r.option_b_title;
+      const title=isVs?esc(r.song_title)+' vs '+esc(r.option_b_title):esc(r.song_title);
+      const score=r.status==='ratified'
+        ? (isVs ? (r.split_a!=null?Math.round(r.split_a)+'% A':'—') : (r.room_average!=null?(+r.room_average).toFixed(1):'—'))
+        : '—';
+      const pill=r.status==='ratified'?'<span class="pill done">Ratified</span>'
+        :r.status==='voting'?'<span class="pill live">● Voting</span>'
+        :'<span class="pill closed">Tallying</span>';
+      const report=(!isVs&&r.status==='ratified'&&r.votes>0)
+        ?`<button class="btn ghost sm" onclick="dlSongReport('${r.id}',this)">📊 Report</button>`:'';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #241d3d">
+        <span class="mono" style="color:var(--ink-faint);width:38px;flex:none">#${r.idx}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</div>
+          ${r.song_artist?`<div class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.song_artist)}</div>`:''}
+        </div>
+        ${pill}
+        <span class="mono" style="color:var(--signal);width:56px;text-align:right;flex:none">${score}</span>
+        <span class="muted" style="font-size:12px;width:58px;text-align:right;flex:none">${r.votes}&nbsp;vote${r.votes==1?'':'s'}</span>
+        ${report}
+      </div>`;
+    }).join('');
+  }catch(e){ box.innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
 function smartTab(st){
   if(tabManual)return;
   const r=st.activeRound;

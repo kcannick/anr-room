@@ -1839,6 +1839,26 @@ async function handleApi(req, res, url) {
   }
 
   // ===== ADMIN =====
+  // Round history for the console's Rounds tab. Fetched lazily when the tab opens
+  // (NOT on the 2s poll), so it adds nothing to the steady-state request path.
+  // Powers per-round Song Reports after the show.
+  if (p === '/api/admin/rounds' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId');
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const rounds = await db.all(
+      `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.option_b_title, r.room_average, r.split_a,
+              (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
+         FROM rounds r WHERE r.session_id = ? ORDER BY r.idx ASC`, [sessionId]);
+    return send(res, 200, { rounds: rounds.map(r => ({
+      id: r.id, idx: r.idx, status: r.status, song_title: r.song_title, song_artist: r.song_artist,
+      option_b_title: r.option_b_title || null,
+      room_average: r.room_average != null ? Number(r.room_average) : null,
+      split_a: r.split_a != null ? Number(r.split_a) : null,
+      votes: Number(r.votes) || 0,
+    })) });
+  }
+
   if (p === '/api/admin/state' && method === 'GET') {
     const sessionId = url.searchParams.get('sessionId');
     const session = await canAdminSession(req, sessionId);
