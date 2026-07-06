@@ -603,11 +603,12 @@
       <input id="plSubmitUrl" placeholder="https://www.makinitmag.com/review">
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
         <label>Revive ad server <span class="muted">(shows in the play-page ad slot when a room has no banner of its own; clear the URL to turn off)</span></label>
-        <input id="plReviveUrl" placeholder="https://ads.cannick.com/www/delivery">
+        <input id="plReviveUrl" placeholder="https://…/www/delivery">
         <div class="row" style="margin-top:8px">
-          <div><label>Lobby zone ID</label><input id="plReviveLobby" type="number" min="1" placeholder="8"></div>
-          <div><label>In-game zone ID</label><input id="plReviveGame" type="number" min="1" placeholder="9"></div>
+          <div><label>Lobby zone ID</label><input id="plReviveLobby" type="number" min="1" placeholder="zone id"></div>
+          <div><label>In-game zone ID</label><input id="plReviveGame" type="number" min="1" placeholder="zone id"></div>
         </div>
+        <div id="plReviveStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
         <p class="muted" style="font-size:11px;margin:8px 0 0">320×100 iframe zones. Rotation: ~30s in the lobby, ~60s during gameplay. Room banners always win over network ads.</p>
       </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
@@ -1238,6 +1239,7 @@ async function openPlatform(){
     $('#plReviveUrl').value=d.settings.reviveDeliveryUrl||'';
     $('#plReviveLobby').value=d.settings.reviveZoneLobby||'';
     $('#plReviveGame').value=d.settings.reviveZoneGame||'';
+    plReviveStatus(d.settings);
     $('#plSmsProvider').textContent=d.smsProvider||'none';
     const bs=d.banners||[];
     box.innerHTML=bs.length?bs.map(b=>`
@@ -1253,6 +1255,15 @@ async function openPlatform(){
         <button class="btn ghost sm" title="Delete" onclick="plDelete('${b.id}')">✕</button>
       </div>`).join(''):'<div class="empty">No banners yet — upload one below.</div>';
   }catch(e){ box.innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+}
+// Unambiguous ON/OFF readout — placeholder ghost-text once masqueraded as saved zones.
+function plReviveStatus(st){
+  const el=$('#plReviveStatus'); if(!el)return;
+  const on=!!(st.reviveDeliveryUrl&&(st.reviveZoneLobby||st.reviveZoneGame));
+  el.style.color=on?'var(--signal)':'var(--gold)';
+  el.textContent=on
+    ?`Network ads: ON — lobby zone ${st.reviveZoneLobby||st.reviveZoneGame}, in-game zone ${st.reviveZoneGame||st.reviveZoneLobby}`
+    :'Network ads: OFF — needs the delivery URL AND at least one zone id (typed, not the grey hint text).';
 }
 window.plAssign=async(bid,btn)=>{
   if(btn)btn.disabled=true;
@@ -1288,6 +1299,7 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
       reviveDeliveryUrl:$('#plReviveUrl').value.trim(),
       reviveZoneLobby:$('#plReviveLobby').value.trim(),
       reviveZoneGame:$('#plReviveGame').value.trim()});
+    plReviveStatus({reviveDeliveryUrl:$('#plReviveUrl').value.trim(),reviveZoneLobby:$('#plReviveLobby').value.trim(),reviveZoneGame:$('#plReviveGame').value.trim()});
     $('#plStatus').textContent='Saved ✓';setTimeout(()=>$('#plStatus').textContent='',2000);
   }catch(e){$('#plStatus').textContent=e.message;}
   $('#plSaveSettings').disabled=false;
