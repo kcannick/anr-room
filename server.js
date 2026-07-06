@@ -1867,8 +1867,13 @@ async function handleApi(req, res, url) {
       return send(res, 200, { videoId: null });
     }
     const cached = _liveEmbedCache.get(sid);
-    if (cached && Date.now() - cached.at < 120000) return send(res, 200, { videoId: cached.videoId, cached: true });
-    let videoId = null;
+    if (cached && Date.now() - cached.at < 120000) return send(res, 200, { videoId: cached.videoId, channelId: cached.channelId || null, live: !!cached.live, cached: true });
+    let videoId = null, channelId = null, live = false;
+    // A /channel/UC…/live URL carries the channel id in plain sight — grab it up front
+    // (it also powers the embed/live_stream?channel= fallback the operator uses on
+    // the magazine site).
+    const ucInUrl = /youtube\.com\/channel\/(UC[0-9A-Za-z_-]{22})\//.exec(wu);
+    if (ucInUrl) channelId = ucInUrl[1];
     try {
       const r = await fetch(wu, {
         redirect: 'follow',
@@ -1876,13 +1881,20 @@ async function handleApi(req, res, url) {
         headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', 'Accept-Language': 'en' },
       });
       const html = await r.text();
+      live = /"isLiveNow"\s*:\s*true/.test(html);
       const canon = /<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/.exec(html);
-      // Trust the id only when the page says the stream is live RIGHT NOW — a
-      // scheduled or ended stream would embed as a countdown/replay, not the show.
-      if (canon && /"isLiveNow"\s*:\s*true/.test(html)) videoId = canon[1];
+      // Trust the video id only when the stream is live RIGHT NOW — a scheduled or
+      // ended stream would embed as a countdown/replay, not the show.
+      if (canon && live) videoId = canon[1];
+      // Channel id appears under different keys depending on live state — try each.
+      const uc = /"channelId"\s*:\s*"(UC[0-9A-Za-z_-]{22})"/.exec(html)
+        || /"externalId"\s*:\s*"(UC[0-9A-Za-z_-]{22})"/.exec(html)
+        || /itemprop="(?:channelId|identifier)" content="(UC[0-9A-Za-z_-]{22})"/.exec(html)
+        || /youtube\.com\/channel\/(UC[0-9A-Za-z_-]{22})/.exec(html);
+      if (uc) channelId = uc[1]; // never changes for a channel
     } catch (e) { /* unreachable/slow -> treat as not live; cache the miss */ }
-    _liveEmbedCache.set(sid, { videoId, at: Date.now() });
-    return send(res, 200, { videoId });
+    _liveEmbedCache.set(sid, { videoId, channelId, live, at: Date.now() });
+    return send(res, 200, { videoId, channelId, live });
   }
 
   // ===== ADMIN =====

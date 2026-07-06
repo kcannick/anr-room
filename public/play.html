@@ -1194,7 +1194,7 @@ let streamVid=null, streamCollapsed=false;
 // Channel "/live" links (youtube.com/@handle/live etc.) carry no video id — the server
 // resolves them to the CURRENT live video when the channel is actually live, so the
 // host can keep one permanent link. Checked at most every 3 minutes, off the poll.
-let resolvedVid=null, liveCheckAt=0;
+let resolvedVid=null, resolvedChannel=null, resolvedLive=false, liveCheckAt=0;
 function isChannelLive(u){ return !!u && /youtube\.com\/[^?#]+\/live\/?([?#]|$)/i.test(u) && !ytId(u); }
 function maybeResolveLive(st){
   if(!isChannelLive(st.watch_url))return;
@@ -1202,22 +1202,31 @@ function maybeResolveLive(st){
   if(Date.now()-liveCheckAt<180000)return;
   liveCheckAt=Date.now();
   fetch('/api/watch-embed?s='+encodeURIComponent(SID)).then(r=>r.json())
-    .then(d=>{ resolvedVid=d.videoId||null; }).catch(()=>{});
+    .then(d=>{ resolvedVid=d.videoId||null; resolvedChannel=d.channelId||null; resolvedLive=!!d.live; }).catch(()=>{});
 }
 function updateStreamEmbed(st){
   const box=$('#streamEmbed'); if(!box)return;
   maybeResolveLive(st);
+  // Best embed source wins: exact video id (real thumbnail), else the channel-id
+  // live_stream embed while the channel is live (YouTube routes it itself).
   const vid=ytId(st.watch_url)||resolvedVid;
-  const showable=vid && st.session && st.session.status!=='completed' && st.session.status!=='archived';
+  const chan=(!vid&&resolvedLive&&resolvedChannel)?resolvedChannel:null;
+  const showable=(vid||chan) && st.session && st.session.status!=='completed' && st.session.status!=='archived';
   if(!showable){ box.classList.add('hide'); streamVid=null; $('#streamPlayer').innerHTML=''; return; }
   box.classList.remove('hide');
-  if(vid!==streamVid){
-    // New (or first) video — render the tap-to-start poster. Guarded so the 2.5s poll
+  const srcKey=vid||('chan:'+chan);
+  if(srcKey!==streamVid){
+    // New (or first) source — render the tap-to-start poster. Guarded so the 2.5s poll
     // never rebuilds (and never interrupts) a stream the viewer already started.
-    streamVid=vid;
-    $('#streamPlayer').innerHTML=`<button class="stream-poster" id="streamPoster" aria-label="Play the live stream"><img src="https://i.ytimg.com/vi/${vid}/hqdefault.jpg" alt=""><span class="stream-play">▶</span><span class="stream-cap">Tap to watch the stream</span></button>`;
+    streamVid=srcKey;
+    // Exact video → real thumbnail; channel live_stream → branded poster (no thumb exists).
+    const posterImg=vid?`<img src="https://i.ytimg.com/vi/${vid}/hqdefault.jpg" alt="">`:'';
+    $('#streamPlayer').innerHTML=`<button class="stream-poster" id="streamPoster" aria-label="Play the live stream"${vid?'':' style="background:radial-gradient(120% 100% at 50% 0%, #2a1f55 0%, #15101f 70%)"'}>${posterImg}<span class="stream-play">▶</span><span class="stream-cap">Tap to watch the stream</span></button>`;
+    const src=vid
+      ?`https://www.youtube.com/embed/${vid}?autoplay=1&playsinline=1&rel=0`
+      :`https://www.youtube.com/embed/live_stream?channel=${chan}&autoplay=1&playsinline=1&rel=0`;
     $('#streamPoster').onclick=()=>{
-      $('#streamPlayer').innerHTML=`<iframe src="https://www.youtube.com/embed/${vid}?autoplay=1&playsinline=1&rel=0" title="Live stream" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+      $('#streamPlayer').innerHTML=`<iframe src="${src}" title="Live stream" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
     };
   }
 }
