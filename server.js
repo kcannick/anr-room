@@ -896,7 +896,8 @@ async function adminState(session, opts = {}) {
       broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
       geo_mode: session.geo_mode || 'off', geo_lat: session.geo_lat ?? null, geo_lng: session.geo_lng ?? null, geo_radius: session.geo_radius || null, geo_label: session.geo_label || null,
       visibility: session.visibility || 'public', access_code: session.access_code || null,
-      scheduled_at: session.scheduled_at ? Number(session.scheduled_at) : null },
+      scheduled_at: session.scheduled_at ? Number(session.scheduled_at) : null,
+      series_id: session.series_id || null },
     pools: {
       in_person: participants.filter(p => p.pool === 'in_person').length,
       online: participants.filter(p => p.pool === 'online').length,
@@ -2380,6 +2381,7 @@ async function handleApi(req, res, url) {
         watchUrl: s.watch_url || null, submitUrl: s.submit_url || null, lobbyMessage: s.lobby_message || null,
         geoMode: s.geo_mode || 'off', geoLat: s.geo_lat, geoLng: s.geo_lng,
         geoRadius: s.geo_radius, geoLabel: s.geo_label || null,
+        visibility: s.visibility || 'public', accessCode: s.access_code || null,
       },
       dependents: { votes: v, participants: pc, ratifiedRounds: rr, hasDependents: (v > 0 || pc > 0 || rr > 0) },
     });

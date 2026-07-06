@@ -447,6 +447,13 @@
       <div><label>Room name</label><input id="editName" placeholder="Room name"></div>
       <div><label>Scheduled start <span class="muted">(Eastern Time — players see a countdown while the room is Upcoming; leave empty for none)</span></label>
         <input id="seSched" type="datetime-local"></div>
+      <div class="row">
+        <div><label>Voting window <span class="muted">(min, 2–60)</span></label><input id="seMins" type="number" min="2" max="60" step="1"></div>
+        <div><label>Game type <span class="muted">(set at creation)</span></label>
+          <div id="seType" class="mono" style="font-size:13px;color:var(--ink-dim);border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:var(--inset)">—</div></div>
+      </div>
+      <div id="seSeriesRow" class="hide"><label>Series <span class="muted">(the monthly board this room counts toward)</span></label>
+        <select id="seSeries" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px"></select></div>
       <div><label>Description <span class="muted">(players see this while they wait)</span></label>
         <textarea id="cfgLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea></div>
       <div><label>Watch link <span class="muted">(stream URL shown to players)</span></label>
@@ -1187,28 +1194,21 @@ function fillSessionForm(s,deps,mode){
   else{newGeoLat=newGeoLng=null;$('#newGeoResolved').textContent='';$('#newGeoAddr').value='';}
   $('#seriesField').classList.toggle('hide',!isAdmin());
   sessForm._series=s.seriesId||'';populateSeriesSelect(s.seriesId||'');
-  if(mode==='edit'){
-    $('#whenBlock').classList.add('hide');$('#newSchedRow').classList.add('hide');
-    const lock=deps&&deps.hasDependents;
-    $('#newPollType').disabled=!!lock;
-    $('#typeLockMsg').classList.toggle('hide',!lock);
-    $('#typeHint').classList.toggle('hide',!!lock);
-  }else{ // duplicate -> fresh upcoming session
-    $('#whenBlock').classList.remove('hide');
-    $('#newWhen').value='upcoming';$('#newSchedRow').classList.remove('hide');$('#newSched').value='';
-    $('#newPollType').disabled=false;$('#typeLockMsg').classList.add('hide');$('#typeHint').classList.remove('hide');
-  }
+  // duplicate -> fresh upcoming room ('edit' mode retired: edits go through the modal)
+  $('#whenBlock').classList.remove('hide');
+  $('#newWhen').value='upcoming';$('#newSchedRow').classList.remove('hide');$('#newSched').value='';
+  $('#newPollType').disabled=false;$('#typeLockMsg').classList.add('hide');$('#typeHint').classList.remove('hide');
   $('#createErr').textContent='';
 }
 window.editSession=async(sid)=>{
   try{
-    await loadSeriesCache();
     const d=await api('/api/admin/session/get?id='+encodeURIComponent(sid),null,'GET');
-    sessForm={mode:'edit',id:sid,_series:d.session.seriesId||''};
-    fillSessionForm(d.session,d.dependents,'edit');
-    $('#createTitle').textContent='Edit room';$('#btnCreate').textContent='Save changes';
-    $('#btnCreateBack').classList.remove('hide');
-    showScreen('create');
+    const m=d.session;
+    // Same modal the console uses — one form, two entry points.
+    await openSessEdit({ id:m.id, name:m.name, scheduled_at:m.scheduledAt, default_minutes:m.defaultMinutes,
+      poll_type:m.pollType, series_id:m.seriesId, lobby_message:m.lobbyMessage, watch_url:m.watchUrl,
+      submit_url:m.submitUrl, visibility:m.visibility, access_code:m.accessCode,
+      geo_mode:m.geoMode, geo_radius:m.geoRadius, geo_label:m.geoLabel });
   }catch(e){alert(e.message);}
 };
 window.duplicateSession=async(sid)=>{
@@ -1511,14 +1511,7 @@ $('#btnCreate').onclick=async()=>{
   if(!Number.isFinite(geoRadius))geoRadius=200; geoRadius=Math.min(5000,Math.max(25,geoRadius));
   const geoLabel=newGeoLat!=null?($('#newGeoResolved').textContent.replace(/^📍 /,'')||$('#newGeoAddr').value.trim()):'';
   try{
-    if(sessForm.mode==='edit'){
-      // Persist editable settings via the partial-update config endpoint; series via tag.
-      const body={sessionId:sessForm.id,name,defaultMinutes:mins,watchUrl:$('#newWatch').value.trim(),submitUrl:$('#newSubmit').value.trim(),lobbyMessage:$('#newLobby').value.trim(),geoMode,geoRadius};
-      if(newGeoLat!=null&&newGeoLng!=null){body.geoLat=newGeoLat;body.geoLng=newGeoLng;body.geoLabel=geoLabel;}
-      await api('/api/admin/session/config',body);
-      if(isAdmin())await api('/api/admin/series/tag',{sessionId:sessForm.id,seriesId:seriesId||null});
-      openPicker();
-    }else{
+    { // create or duplicate — pure creation path (edits live in the room modal now)
       const when=$('#newWhen').value;
       const body={name,defaultMinutes:mins,pollType:$('#newPollType').value};
       if($('#newWatch').value.trim())body.watchUrl=$('#newWatch').value.trim();
@@ -1722,10 +1715,15 @@ $('#btnBroadcastClear')&&($('#btnBroadcastClear').onclick=async()=>{
 });
 // ---- edit-session modal: populate on open, one Save writes everything ----
 // Inputs are only written when the modal opens, so polling can never clobber typing.
-function openSessEdit(){
-  const s=(lastState&&lastState.session)||{};
+// THE room-settings form — one modal for both entry points (console header +
+// the room list's Edit), so the fields can never drift apart again.
+let seEditingId=null, seSeriesOrig='';
+async function openSessEdit(s){
+  seEditingId=s.id;
   $('#editName').value=s.name||'';
   $('#seSched').value=s.scheduled_at?epochToEtInput(Number(s.scheduled_at)):'';
+  $('#seMins').value=s.default_minutes||5;
+  $('#seType').textContent=s.poll_type==='binary'?'⚔️ Versus (A/B)':'0–9 rating';
   $('#cfgLobby').value=s.lobby_message||'';
   $('#cfgWatch').value=s.watch_url||'';
   $('#cfgSubmit').value=s.submit_url||'';
@@ -1737,10 +1735,19 @@ function openSessEdit(){
   $('#geoResolved').textContent=s.geo_label?('📍 '+s.geo_label):'';
   geoResolvedLat=null;geoResolvedLng=null;
   syncGeoFields();
+  // Series tag (admins only): live-load the list so the options are current.
+  seSeriesOrig=s.series_id||'';
+  if(isAdmin()){
+    try{await loadSeriesCache();}catch(e){}
+    let html='<option value="">— Unassigned —</option>';
+    for(const ser of SERIES)html+=`<option value="${ser.id}"${ser.id===seSeriesOrig?' selected':''}>${esc(ser.title)}</option>`;
+    $('#seSeries').innerHTML=html;
+    $('#seSeriesRow').classList.remove('hide');
+  }else $('#seSeriesRow').classList.add('hide');
   $('#seErr').textContent='';
   $('#sessEditModal').style.display='flex';
 }
-$('#btnEditSession')&&($('#btnEditSession').onclick=openSessEdit);
+$('#btnEditSession')&&($('#btnEditSession').onclick=()=>openSessEdit((lastState&&lastState.session)||{id:SID}));
 // Venue/radius fields only show when check-in is actually on.
 function syncGeoFields(){ $('#geoFields').classList.toggle('hide', $('#geoMode').value==='off'); }
 $('#geoMode')&&$('#geoMode').addEventListener('change',syncGeoFields);
@@ -1754,8 +1761,10 @@ $('#seSave').onclick=async()=>{
   $('#seErr').textContent='';
   const nm=$('#editName').value.trim();
   if(!nm)return $('#seErr').textContent='Room name can’t be empty.';
-  const body={sessionId:SID,name:nm,
+  let mins=Math.round(+($('#seMins').value||5)); mins=Math.min(60,Math.max(2,Number.isFinite(mins)?mins:5));
+  const body={sessionId:seEditingId,name:nm,
     scheduledAt:$('#seSched').value?etInputToEpoch($('#seSched').value):'',
+    defaultMinutes:mins,
     watchUrl:$('#cfgWatch').value.trim(),
     submitUrl:$('#cfgSubmit').value.trim(),
     lobbyMessage:$('#cfgLobby').value.trim(),
@@ -1770,7 +1779,13 @@ $('#seSave').onclick=async()=>{
   $('#seSave').disabled=true;
   try{
     await api('/api/admin/session/config',body);
-    $('#sessEditModal').style.display='none';refresh();
+    if(isAdmin()&&!$('#seSeriesRow').classList.contains('hide')&&$('#seSeries').value!==seSeriesOrig){
+      await api('/api/admin/series/tag',{sessionId:seEditingId,seriesId:$('#seSeries').value||null});
+    }
+    $('#sessEditModal').style.display='none';
+    // Route back to wherever the edit started: the open console or the room list.
+    if(seEditingId===SID&&!$('#console').classList.contains('hide'))refresh();
+    else openPicker();
   }catch(e){$('#seErr').textContent=e.message;}
   $('#seSave').disabled=false;
 };
