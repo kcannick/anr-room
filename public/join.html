@@ -102,6 +102,11 @@
     <div class="panel">
       <h2 style="font-size:18px" id="profileH2">Complete your profile</h2>
       <p class="dim" id="profileSub" style="font-size:12.5px;margin-bottom:4px">This is what puts you on the leaderboard and the New A&Rs ticker.</p>
+      <!-- Display name: edit mode only (signup captures it on the code step) -->
+      <div id="jNameRow" class="hide">
+        <label>Display name</label>
+        <input id="jName" maxlength="32" placeholder="e.g. DJ Chain">
+      </div>
       <div class="steplabel"><span class="stepnum">①</span> What do you do? <span class="stepsub">select all that apply</span></div>
       <div class="chips" id="jCats"></div>
       <div class="steplabel" style="margin-top:10px"><span class="stepnum">②</span> Most focused on? <span class="stepsub">your primary</span></div>
@@ -245,7 +250,13 @@ $('#btnFinish').onclick=async()=>{
   $('#btnFinish').disabled=true;
   const wasComplete=profile&&profile.complete;
   try{
-    const pr=await api('/api/me/profile',{categories:cats,primaryCategory:jPrimary||cats[0],location:loc,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()});
+    const payload={categories:cats,primaryCategory:jPrimary||cats[0],location:loc,instagram:$('#jIg').value.trim(),tiktok:$('#jTt').value.trim()};
+    if(editMode){
+      const nm=$('#jName').value.trim();
+      if(!nm)return ($('#profErr').textContent='Display name can’t be empty.'),$('#btnFinish').disabled=false;
+      payload.name=nm;
+    }
+    const pr=await api('/api/me/profile',payload);
     if(pr&&pr.complete&&!wasComplete)track('profile_complete',{where:editMode?'edit':'join'});
     if(editMode){ dismissProfile(); return; } // saved -> back where they came from
     finishDone(true);
@@ -261,6 +272,7 @@ async function initJoin(){
     try{
       const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
       if(me&&me.uid){ AUTHTOK=tok; MEUID=me.uid; editMode=true; await loadProfile();
+        $('#jNameRow').classList.remove('hide'); $('#jName').value=profile.name||'';
         $('#profileEyebrow').textContent='Your A&R profile';
         $('#profileH2').textContent='Edit your profile';
         $('#profileSub').innerHTML='Update your skills, location, socials, or photo. <a href="/u/'+encodeURIComponent(me.uid)+'" style="color:var(--cool)">View public profile ↗</a>';

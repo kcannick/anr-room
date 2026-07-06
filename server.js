@@ -1385,6 +1385,14 @@ async function handleApi(req, res, url) {
     const location = (body.location || '').toString().trim().slice(0, 120) || null;
     const instagram = (body.instagram || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
     const tiktok = (body.tiktok || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
+    // Display-name edit (optional; applied only when non-empty). The durable name
+    // lives on users; the player's per-room participant rows sync too so boards,
+    // cards, and the overlay all agree. A handful of rows, user-triggered.
+    const newName = ('name' in body) ? (body.name || '').toString().trim().slice(0, MAX_NAME) : '';
+    if (newName) {
+      await db.run('UPDATE users SET name = ? WHERE uid = ?', [newName, userId]);
+      await db.run('UPDATE participants SET name = ? WHERE user_id = ?', [newName, userId]);
+    }
     const u = await db.get('SELECT name FROM users WHERE uid = ?', [userId]);
     const complete = isProfileComplete({ name: u && u.name, categories: JSON.stringify(cats), primary_category: primary, location }) ? 1 : 0;
     await db.run('UPDATE users SET categories = ?, primary_category = ?, location = ?, instagram = ?, tiktok = ?, profile_complete = ? WHERE uid = ?',
