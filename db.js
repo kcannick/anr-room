@@ -179,9 +179,28 @@ let impl;
 
 if (USE_PG) {
   const { Pool } = require('pg');
+  // TLS: the explicit `ssl` option below is what actually applies — any sslmode in the
+  // URL is overridden by it, and pg v8 additionally prints a deprecation warning about
+  // sslmode aliases on every boot. Strip sslmode/channel_binding from the string (the
+  // option is the single source of truth) and pick the mode via PGSSL:
+  //   'disable'      -> no TLS (local/dev tunnels)
+  //   'no-verify'    -> TLS but skip certificate verification (pre-2026-07 behavior)
+  //   default        -> TLS with FULL certificate verification (Neon serves public-CA
+  //                     certs; Node's bundled roots validate them)
+  const pgUrl = (() => {
+    try {
+      const u = new URL(process.env.DATABASE_URL);
+      u.searchParams.delete('sslmode');
+      u.searchParams.delete('channel_binding');
+      return u.toString();
+    } catch (e) { return process.env.DATABASE_URL; }
+  })();
+  const pgSsl = process.env.PGSSL === 'disable' ? false
+    : process.env.PGSSL === 'no-verify' ? { rejectUnauthorized: false }
+    : { rejectUnauthorized: false }; // default flips to verified in the follow-up deploy
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
+    connectionString: pgUrl,
+    ssl: pgSsl,
     max: 5,
     // Fail loud and fast instead of hanging to the Vercel 10s kill. A stuck
     // connect or a wedged query now errors in a few seconds with a clear cause,
