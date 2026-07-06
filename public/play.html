@@ -1202,7 +1202,13 @@ function maybeResolveLive(st){
   if(Date.now()-liveCheckAt<180000)return;
   liveCheckAt=Date.now();
   fetch('/api/watch-embed?s='+encodeURIComponent(SID)).then(r=>r.json())
-    .then(d=>{ resolvedVid=d.videoId||null; resolvedChannel=d.channelId||null; resolvedLive=!!d.live; }).catch(()=>{});
+    .then(d=>{
+      const had=resolvedVid||resolvedChannel;
+      resolvedVid=d.videoId||null; resolvedChannel=d.channelId||null; resolvedLive=!!d.live;
+      // Don't make a fresh resolution wait for the next poll (15s heartbeat under
+      // realtime) — repaint now so the embed appears the moment we know it exists.
+      if((resolvedVid||(resolvedLive&&resolvedChannel))&&!had)refresh();
+    }).catch(()=>{});
 }
 function updateStreamEmbed(st){
   const box=$('#streamEmbed'); if(!box)return;
