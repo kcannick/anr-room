@@ -18,6 +18,17 @@ eq('roomAverage empty', roomAverage([]), null);
 // 5.6538... displays as 5.7 — and now SCORES as 5.7 too (the on-screen bug: a 5.6
 // guess showed "avg 5.7 · off 0.1 · 🎯 bullseye +122" because the raw mean was the target).
 eq('roomAverage rounds to displayed tenth', roomAverage([{taste:5},{taste:6},{taste:6},{taste:5},{taste:6},{taste:6},{taste:5},{taste:6},{taste:6},{taste:6},{taste:5},{taste:6},{taste:6}]), 5.7);
+// HALF-UP at the boundary: a true mean of exactly 5.65 (sum 113 over 20 votes) must
+// round UP to 5.7 — naive float rounding sees 56.4999…93 and drops it to 5.6.
+const halfUp = [ ...Array(16).fill({taste:6}), {taste:5},{taste:4},{taste:4},{taste:4} ]; // 96+17=113, n=20
+eq('exact .x5 mean rounds UP (5.65 -> 5.7)', roomAverage(halfUp), 5.7);
+// ...and the player who guessed 5.7 gets the full bullseye: 100 + 25.
+{
+  const avg = roomAverage(halfUp);
+  const r = rankVotes([{ user:'W', taste:6, predict:5.7, locked_at:1 }], avg)[0];
+  eq('5.7 guess vs 5.65 mean = exact hit', [r.err, r.points, r.tier], [0, 125, 'bullseye']);
+}
+eq('exact .x5 mean rounds UP (6.45 -> 6.5)', roomAverage([...Array(9).fill({taste:7}), ...Array(11).fill({taste:6})]), 6.5);
 
 // ---- points model: exp k=0.5, +25 on an EXACT hit only, -10 penalty>5.0 ----
 // Bullseye = nailed the tenth = always exactly 125.

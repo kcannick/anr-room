@@ -19,11 +19,15 @@ const BONUS = 25;
 const FAR = 5.0;        // more than 5.0 off => penalty
 const PENALTY = 10;
 
-// Room average = mean of all taste ratings (0..9), rounded to ONE DECIMAL — the
-// displayed value and the scoring target are the same number by construction.
+// Room average = mean of all taste ratings (0..9), rounded HALF-UP to ONE DECIMAL —
+// the displayed value and the scoring target are the same number by construction.
+// Integer-safe: (sum*10)/n is IEEE-exact whenever the true mean lands on a half-tenth,
+// so 5.65 rounds UP to 5.7 as expected. (Math.round(mean*10) would see 56.4999…93 and
+// round 5.65 DOWN — the float trap this function exists to avoid.)
 function roomAverage(votes) {
   if (!votes.length) return null;
-  return Math.round(votes.reduce((a, v) => a + v.taste, 0) / votes.length * 10) / 10;
+  const sum = votes.reduce((a, v) => a + v.taste, 0); // integers: tastes are 0..9
+  return Math.round((sum * 10) / votes.length) / 10;
 }
 
 // Exact-tenths error: both sides are 0.1-resolution values, so compute in integer
