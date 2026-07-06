@@ -1,0 +1,175 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0d0b16;--ink:#f3f0fb;--dim:#a9a2c9;--faint:#6f688f;--sig:#4bb749;--acc:#6d5fe0;--gold:#f5c518;--line:#2e2750;--panel:rgba(23,19,40,.66)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#151221;font-family:"DM Sans",sans-serif;color:var(--ink);padding:24px;display:flex;gap:18px}
+  .mono{font-family:"Space Mono",monospace}
+  .wrap{width:432px;height:576px;overflow:hidden;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .page{width:1080px;height:1440px;transform:scale(.4);transform-origin:top left;
+    background:radial-gradient(120% 70% at 50% -8%, #241a4d 0%, var(--bg) 55%);
+    padding:64px 72px 56px;display:flex;flex-direction:column;position:relative}
+  /* shared header/footer (mirrors share-cards.js frame) */
+  .eyebrow{font-size:30px;letter-spacing:.3em;color:var(--sig);font-weight:800;text-transform:uppercase}
+  .h-row{display:flex;justify-content:space-between;align-items:flex-start}
+  .rpill{font-family:"Space Mono",monospace;font-weight:700;font-size:26px;color:var(--gold);border:3px solid var(--gold);border-radius:999px;padding:10px 26px}
+  .title{font-size:84px;font-weight:900;letter-spacing:-.02em;line-height:1;margin-top:18px}
+  .sub{font-size:36px;color:var(--dim);margin-top:12px}
+  .sub b{color:var(--ink)}
+  .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;border-top:2px solid var(--line);padding-top:32px}
+  .foot .l{font-family:"Space Mono",monospace;font-weight:700;font-size:26px}
+  .foot .r{font-weight:800;font-size:26px}
+  .foot .win{font-weight:800;font-size:24px;color:#08240a;background:var(--sig);border-radius:12px;padding:10px 22px}
+  .pageno{position:absolute;top:20px;right:26px;font-family:"Space Mono",monospace;font-size:22px;color:var(--faint)}
+  /* page 1 */
+  .bigscore{display:flex;flex-direction:column;align-items:center;margin:70px 0 10px}
+  .bigscore .n{font-family:"Space Mono",monospace;font-weight:700;font-size:340px;line-height:.9;color:var(--sig)}
+  .bigscore .of{font-size:40px;color:var(--faint);margin-top:6px}
+  .bigscore .lab{font-size:30px;letter-spacing:.28em;color:var(--dim);font-weight:800;margin-top:26px;text-transform:uppercase}
+  .chips{display:flex;gap:20px;justify-content:center;margin-top:56px;flex-wrap:wrap}
+  .chip1{font-size:32px;font-weight:800;border:2px solid var(--line);background:var(--panel);border-radius:999px;padding:18px 34px}
+  .chip1.hot{border-color:var(--gold);color:var(--gold)}
+  .p1line{font-size:30px;color:var(--dim);text-align:center;margin-top:52px}
+  /* page 2 */
+  .stats{display:flex;gap:22px;margin-top:38px}
+  .stat{flex:1;background:var(--panel);border:2px solid var(--line);border-radius:22px;padding:30px 10px;display:flex;flex-direction:column;align-items:center}
+  .stat .v{font-family:"Space Mono",monospace;font-weight:700;font-size:76px;color:var(--sig)}
+  .stat.g .v{color:var(--gold)}
+  .stat .k{font-size:24px;letter-spacing:.2em;color:var(--faint);font-weight:800;margin-top:10px}
+  .expl{margin-top:28px;display:flex;flex-direction:column;gap:14px}
+  .expl .e{display:flex;gap:18px;font-size:29px;color:var(--dim);line-height:1.45}
+  .expl .e b{color:var(--ink)}
+  .expl .dot{width:14px;height:14px;border-radius:50%;background:var(--sig);margin-top:14px;flex:none}
+  .expl .dot.g{background:var(--gold)}
+  .histo{margin-top:36px}
+  .histo .hl{font-size:26px;letter-spacing:.22em;color:var(--faint);font-weight:800;text-transform:uppercase;margin-bottom:22px}
+  .bars{display:flex;align-items:flex-end;gap:14px;height:210px}
+  .bcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;justify-content:flex-end}
+  .bar{width:100%;background:linear-gradient(180deg,#5ecb5c,#379235);border-radius:10px 10px 4px 4px}
+  .bcol.m .bar{background:linear-gradient(180deg,#ffd84d,#d9a912)}
+  .bcol .bn{font-family:"Space Mono",monospace;font-size:24px;color:var(--faint)}
+  .bcol .bc{font-family:"Space Mono",monospace;font-size:22px;color:var(--dim)}
+  .gap{margin-top:32px;background:var(--panel);border:2px solid var(--acc);border-radius:22px;padding:24px 32px;display:flex;align-items:center;gap:26px}
+  .gap .arr{font-size:44px;color:var(--acc)}
+  .gap .gt{font-size:30px;color:var(--dim);line-height:1.45}
+  .gap .gt b{color:var(--ink)}
+  .gap .plus{font-family:"Space Mono",monospace;font-weight:700;font-size:56px;color:var(--sig);margin-left:auto}
+  /* page 3 */
+  .seg{margin-top:32px}
+  .seg .hl{font-size:26px;letter-spacing:.22em;color:var(--faint);font-weight:800;text-transform:uppercase;margin-bottom:24px}
+  .srow{display:flex;align-items:center;gap:22px;padding:9px 0}
+  .srow .sn{width:300px;font-size:31px;font-weight:700}
+  .srow .track{flex:1;height:26px;background:#1c1631;border-radius:13px;display:flex;overflow:hidden}
+  .srow .fill{background:linear-gradient(90deg,#379235,#5ecb5c);border-radius:13px}
+  .srow.gold .fill{background:linear-gradient(90deg,#d9a912,#ffd84d)}
+  .srow .sv{width:150px;text-align:right;font-family:"Space Mono",monospace;font-weight:700;font-size:34px;color:var(--sig)}
+  .srow.gold .sv{color:var(--gold)}
+  .srow .sc{width:110px;font-size:24px;color:var(--faint)}
+  .ctx{margin-top:30px;display:flex;gap:22px}
+  .ctxbox{flex:1;background:var(--panel);border:2px solid var(--line);border-radius:22px;padding:24px;display:flex;flex-direction:column;align-items:center;text-align:center}
+  .ctxbox .cv{font-family:"Space Mono",monospace;font-weight:700;font-size:64px;color:var(--gold)}
+  .ctxbox .ck{font-size:25px;color:var(--dim);margin-top:10px;line-height:1.4}
+  .fine{margin-top:24px;font-size:22px;color:var(--faint);line-height:1.5}
+</style></head><body>
+
+<!-- PAGE 1 — THE FLEX (share-friendly) -->
+<div class="wrap"><div class="page">
+  <div class="pageno">1 / 3</div>
+  <div class="h-row">
+    <div>
+      <div class="eyebrow">The A&amp;R Room</div>
+      <div class="title">Midnight Drive</div>
+      <div class="sub"><b>Kali Reign</b> · @kalireign</div>
+    </div>
+    <div class="rpill">SONG REPORT</div>
+  </div>
+  <div class="bigscore">
+    <div class="n">7.2</div>
+    <div class="of">out of 9</div>
+    <div class="lab">Room Score</div>
+  </div>
+  <div class="chips">
+    <div class="chip1 hot">🔥 63% scored it 8+</div>
+    <div class="chip1">41 verified A&amp;Rs</div>
+  </div>
+  <div class="p1line">Rated live by a real audience · The A&amp;R Room · Jul 9, 2026</div>
+  <div class="foot"><div class="l">ANR.makinitmag</div><div class="win">WIN $500</div><div class="r">@Makinit4indies</div></div>
+</div></div>
+
+<!-- PAGE 2 — THE NUMBERS -->
+<div class="wrap"><div class="page">
+  <div class="pageno">2 / 3</div>
+  <div class="h-row">
+    <div>
+      <div class="eyebrow">Song Report</div>
+      <div class="title" style="font-size:64px">The numbers</div>
+      <div class="sub" style="font-size:30px">Midnight Drive · Kali Reign · 41 votes</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="v">41</div><div class="k">VOTES</div></div>
+    <div class="stat"><div class="v">7.2</div><div class="k">MEAN</div></div>
+    <div class="stat g"><div class="v">8</div><div class="k">MEDIAN</div></div>
+    <div class="stat g"><div class="v">8</div><div class="k">MODE</div></div>
+  </div>
+  <div class="expl">
+    <div class="e"><div class="dot"></div><div><b>Mean 7.2</b> — the overall room score; every vote weighs the same.</div></div>
+    <div class="e"><div class="dot g"></div><div><b>Median 8</b> — half the room scored it 8 or higher. The typical listener heard an 8; a few tough critics pulled the mean down.</div></div>
+    <div class="e"><div class="dot g"></div><div><b>Mode 8</b> — the single most common score in the room.</div></div>
+  </div>
+  <div class="histo">
+    <div class="hl">How the room scored it</div>
+    <div class="bars">
+      <div class="bcol"><div class="bc">0</div><div class="bar" style="height:2%"></div><div class="bn">0</div></div>
+      <div class="bcol"><div class="bc">0</div><div class="bar" style="height:2%"></div><div class="bn">1</div></div>
+      <div class="bcol"><div class="bc">1</div><div class="bar" style="height:9%"></div><div class="bn">2</div></div>
+      <div class="bcol"><div class="bc">2</div><div class="bar" style="height:18%"></div><div class="bn">3</div></div>
+      <div class="bcol"><div class="bc">3</div><div class="bar" style="height:27%"></div><div class="bn">4</div></div>
+      <div class="bcol"><div class="bc">4</div><div class="bar" style="height:36%"></div><div class="bn">5</div></div>
+      <div class="bcol"><div class="bc">6</div><div class="bar" style="height:55%"></div><div class="bn">6</div></div>
+      <div class="bcol"><div class="bc">9</div><div class="bar" style="height:82%"></div><div class="bn">7</div></div>
+      <div class="bcol m"><div class="bc">11</div><div class="bar" style="height:100%"></div><div class="bn">8</div></div>
+      <div class="bcol"><div class="bc">5</div><div class="bar" style="height:45%"></div><div class="bn">9</div></div>
+    </div>
+  </div>
+  <div class="gap">
+    <div class="arr">⤴</div>
+    <div class="gt">The room <b>predicted 6.4</b> before scores were revealed — then <b>scored it 7.2</b>. It over-delivered on first impressions.</div>
+    <div class="plus">+0.8</div>
+  </div>
+  <div class="foot"><div class="l">ANR.makinitmag</div><div class="win">WIN $500</div><div class="r">@Makinit4indies</div></div>
+</div></div>
+
+<!-- PAGE 3 — WHO FELT IT -->
+<div class="wrap"><div class="page">
+  <div class="pageno">3 / 3</div>
+  <div class="h-row">
+    <div>
+      <div class="eyebrow">Song Report</div>
+      <div class="title" style="font-size:64px">Who felt it</div>
+      <div class="sub" style="font-size:30px">Midnight Drive · Kali Reign · 41 votes</div>
+    </div>
+  </div>
+  <div class="seg">
+    <div class="hl">By role</div>
+    <div class="srow gold"><div class="sn">DJs</div><div class="track"><div class="fill" style="width:87%"></div></div><div class="sv">7.8</div><div class="sc">11 votes</div></div>
+    <div class="srow"><div class="sn">Content creators</div><div class="track"><div class="fill" style="width:82%"></div></div><div class="sv">7.4</div><div class="sc">8 votes</div></div>
+    <div class="srow"><div class="sn">Producers</div><div class="track"><div class="fill" style="width:79%"></div></div><div class="sv">7.1</div><div class="sc">9 votes</div></div>
+    <div class="srow"><div class="sn">Artists</div><div class="track"><div class="fill" style="width:77%"></div></div><div class="sv">6.9</div><div class="sc">13 votes</div></div>
+  </div>
+  <div class="seg">
+    <div class="hl">By city</div>
+    <div class="srow gold"><div class="sn">Atlanta</div><div class="track"><div class="fill" style="width:90%"></div></div><div class="sv">8.1</div><div class="sc">7 votes</div></div>
+    <div class="srow"><div class="sn">Miami</div><div class="track"><div class="fill" style="width:81%"></div></div><div class="sv">7.3</div><div class="sc">6 votes</div></div>
+    <div class="srow"><div class="sn">Los Angeles</div><div class="track"><div class="fill" style="width:76%"></div></div><div class="sv">6.8</div><div class="sc">5 votes</div></div>
+  </div>
+  <div class="ctx">
+    <div class="ctxbox"><div class="cv">#2</div><div class="ck">of 14 songs<br>in this room</div></div>
+    <div class="ctxbox"><div class="cv">Top 12%</div><div class="ck">of 87 songs<br>this series</div></div>
+    <div class="ctxbox"><div class="cv">7.5 / 7.0</div><div class="ck">in-room vs.<br>remote score</div></div>
+  </div>
+  <div class="fine">Aggregates only — a segment is shown when 3+ A&amp;Rs are in it. Based on 41 verified votes, one per A&amp;R, locked before the reveal.</div>
+  <div class="foot"><div class="l">ANR.makinitmag</div><div class="win">WIN $500</div><div class="r">@Makinit4indies</div></div>
+</div></div>
+
+</body></html>
