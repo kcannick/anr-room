@@ -1642,7 +1642,7 @@ function roundControls(st){
   const statusPill={voting:'<span class="pill live">● Voting open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
   let timer='';
   if(r.status==='voting'&&r.closes_at){
-    const left=Math.max(0,Math.round((Number(r.closes_at)-(Date.now()+serverSkew))/1000));
+    const left=secsLeft(r.closes_at); // same math as the 250ms ticker — no flicker on re-render
     const m=Math.floor(left/60),s=left%60;
     timer=`<div class="timer-big ${left<=10?'warn':''}" style="margin:10px 0">${m}:${String(s).padStart(2,'0')}</div>`;
   }
@@ -1829,7 +1829,13 @@ function render(st){
     sumRow('Submit link',linkVal(sess.submit_url)||'Not set',!sess.submit_url)+
     sumRow('Access',accessTxt,sess.visibility!=='unlisted'&&!sess.access_code)+
     sumRow('Location',geoTxt||'Off — no check-in',!geoTxt);
-  serverSkew=(st.serverNow||Date.now())-Date.now();
+  // Clock sync, NOT latency tracking: adopt the server offset only when it's off by
+  // seconds (a genuinely wrong client clock). Re-sampling every poll folded network
+  // jitter into the deadline and made the countdown stutter/jump between ticks.
+  {
+    const skewSample=(st.serverNow||Date.now())-Date.now();
+    if(Math.abs(skewSample-serverSkew)>2000)serverSkew=skewSample;
+  }
   $('#kJoined').textContent=st.verifiedCount;
   if(locked){
     // Post-show: totals, not live-round numbers.
@@ -2017,7 +2023,7 @@ function roundCardVisible(){
 }
 const mb=$('#miniBar');
 if(mb)mb.onclick=()=>{const rc=$('#roundCard');if(rc)rc.scrollIntoView({block:'start'});};
-function secsLeft(closesAt){return Math.max(0,Math.round((Number(closesAt)-(Date.now()+serverSkew))/1000));}
+function secsLeft(closesAt){return Math.max(0,Math.ceil((Number(closesAt)-(Date.now()+serverSkew))/1000));}
 function fmtLeft(closesAt){const s=secsLeft(closesAt);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
 function tickTimers(){
   const r=lastState&&lastState.activeRound;
@@ -2046,7 +2052,10 @@ function boot(){
   $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
   initRealtime();
-  if(!window._timerTick)window._timerTick=setInterval(tickTimers,1000);
+  // 250ms tick = the display flips within a quarter-second of each real second
+  // boundary, whatever phase the interval starts on. Pure client-side countdown;
+  // the server only supplies the deadline (closes_at) and big clock corrections.
+  if(!window._timerTick)window._timerTick=setInterval(tickTimers,250);
 }
 // ---- realtime: refresh instantly on server push; polling stays the fallback ----
 // Poll every 2s until Ably connects; once connected, push drives refreshes and the poll
