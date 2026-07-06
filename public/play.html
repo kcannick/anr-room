@@ -210,8 +210,12 @@
 <div class="wrap">
   <div class="brand">
     <div class="brand-stack">
-      <img id="brandLogo" class="brand-wordmark" src="/logo.png" alt="Makin'It" onerror="this.style.display='none';document.getElementById('brandDot').style.display='inline-block'">
-      <span class="dot" id="brandDot" style="display:none"></span>
+      <!-- Logo = way home (players expect it). Only the logo is linked — the title row
+           carries the room name, and a stray tap there mid-round shouldn't navigate. -->
+      <a href="/" title="The A&R Room — home" aria-label="Home" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">
+        <img id="brandLogo" class="brand-wordmark" src="/logo.png" alt="Makin'It" onerror="this.style.display='none';document.getElementById('brandDot').style.display='inline-block'">
+        <span class="dot" id="brandDot" style="display:none"></span>
+      </a>
       <div class="brand-titlerow">
         <h1>The A&amp;R Room</h1>
         <span class="beta-pill">BETA</span>
