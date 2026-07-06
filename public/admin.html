@@ -177,6 +177,7 @@
       <div class="row" style="gap:8px;flex:0 0 auto">
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
+        <button class="btn ghost sm" id="btnHostDefaults">Defaults</button>
         <button class="btn ghost sm hide" id="btnManageSeries">Series</button>
         <button class="btn sm" id="btnNewFromPicker">+ New room</button>
       </div>
@@ -615,6 +616,31 @@
   </div>
 </div>
 
+<!-- HOST DEFAULTS MODAL: prefill for every new room this host creates -->
+<div id="hdModal" class="modal-scrim" style="z-index:35">
+  <div class="modal-card md">
+    <h2>My room defaults</h2>
+    <p class="muted" style="font-size:12.5px;margin:6px 0 4px">Prefilled into every new room you create — you can still change them per room.</p>
+    <div class="stack" style="margin-top:8px">
+      <div><label>Default watch link</label><input id="hdWatch" placeholder="https://www.youtube.com/@you/live"></div>
+      <div><label>Default submission link</label><input id="hdSubmit" placeholder="https://…"></div>
+      <div><label>Default description <span class="muted">(players see this while they wait)</span></label>
+        <textarea id="hdLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea></div>
+      <div style="border-top:1px solid var(--line);padding-top:12px">
+        <label>Default banner <span class="muted">(auto-assigned to rooms you create)</span></label>
+        <div id="hdBannerRow" class="muted" style="font-size:12.5px;margin:4px 0 8px">None set.</div>
+        <input type="file" id="hdFile" accept="image/png,image/jpeg,image/gif,image/webp" style="font-size:13px">
+        <div class="muted" style="font-size:11px;margin-top:6px">≈320×100, under 500KB. Uploading replaces the default for future rooms; rooms already using the old one keep it.</div>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <button class="btn ghost" id="hdCancel">Cancel</button>
+        <button class="btn good" id="hdSave">Save defaults</button>
+      </div>
+      <div class="err" id="hdErr"></div>
+    </div>
+  </div>
+</div>
+
 <!-- DELETE USER MODAL -->
 <div id="userDelModal" class="modal-scrim" style="z-index:30">
   <div class="card" style="max-width:440px;width:100%">
@@ -961,6 +987,7 @@ function sessionCardHtml(s){
   </div>`;
 }
 async function openPicker(){
+  loadHostDefaults(); // fire-and-forget: warm the prefill cache before "+ New room"
   showScreen('picker');
   $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
   $('#btnManageSeries').classList.toggle('hide',!isAdmin());
@@ -1070,6 +1097,14 @@ function blankSessionForm(){
 function openCreateForm(){
   sessForm={mode:'create',id:null,_series:''};
   blankSessionForm();
+  // Prefill from the host's saved defaults (per-room edits always win — these are
+  // just starting values; the default banner is applied server-side at creation).
+  const hd=hostDefaults&&hostDefaults.defaults;
+  if(hd){
+    if(hd.watchUrl)$('#newWatch').value=hd.watchUrl;
+    if(hd.submitUrl)$('#newSubmit').value=hd.submitUrl;
+    if(hd.lobbyMessage)$('#newLobby').value=hd.lobbyMessage;
+  }else{ loadHostDefaults(); } // warm the cache for next open
   $('#seriesField').classList.toggle('hide',!isAdmin());
   $('#whenBlock').classList.remove('hide');
   populateSeriesSelect('');
@@ -1078,6 +1113,47 @@ function openCreateForm(){
   $('#btnCreateBack').classList.remove('hide');
   showScreen('create');
 }
+// ---- host defaults: prefill for every new room this host creates ----
+let hostDefaults=null; // cached; refreshed when the modal saves
+async function loadHostDefaults(){
+  try{ const d=await api('/api/me/host-defaults',null,'GET'); hostDefaults=d; }catch(e){ hostDefaults=null; }
+  return hostDefaults;
+}
+async function openHostDefaults(){
+  const d=await loadHostDefaults();
+  if(!d){alert('Sign in with your host account first.');return;}
+  $('#hdWatch').value=d.defaults.watchUrl||'';
+  $('#hdSubmit').value=d.defaults.submitUrl||'';
+  $('#hdLobby').value=d.defaults.lobbyMessage||'';
+  $('#hdBannerRow').innerHTML=d.banner
+    ?`<img src="/api/banner/image?id=${d.banner.id}" alt="" style="height:34px;width:auto;max-width:120px;border-radius:5px;vertical-align:middle;background:#0a0814"> <span>${esc(d.banner.label||'Default banner')}</span> <button class="btn ghost sm" style="margin-left:8px" onclick="hdClearBanner()">Remove</button>`
+    :'None set.';
+  $('#hdFile').value='';$('#hdErr').textContent='';
+  $('#hdModal').style.display='flex';
+}
+window.hdClearBanner=async()=>{
+  try{await api('/api/me/host-defaults',{bannerId:null,watchUrl:$('#hdWatch').value.trim(),submitUrl:$('#hdSubmit').value.trim(),lobbyMessage:$('#hdLobby').value.trim()});}catch(e){alert(e.message);return;}
+  openHostDefaults();
+};
+$('#hdCancel').onclick=()=>{$('#hdModal').style.display='none';};
+$('#hdModal').onclick=(e)=>{if(e.target===$('#hdModal'))$('#hdModal').style.display='none';};
+$('#hdSave').onclick=async()=>{
+  $('#hdErr').textContent='';$('#hdSave').disabled=true;
+  try{
+    // A newly chosen file becomes the default banner first, then the text fields save.
+    const f=$('#hdFile').files[0];
+    if(f){
+      if(f.size>500*1024)throw new Error('Banner is over 500KB — please shrink it');
+      const dataUri=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+      await api('/api/me/host-defaults/banner',{image_data:dataUri,label:'Default banner'});
+    }
+    await api('/api/me/host-defaults',{watchUrl:$('#hdWatch').value.trim(),submitUrl:$('#hdSubmit').value.trim(),lobbyMessage:$('#hdLobby').value.trim()});
+    await loadHostDefaults();
+    $('#hdModal').style.display='none';
+  }catch(e){$('#hdErr').textContent=e.message;}
+  $('#hdSave').disabled=false;
+};
+$('#btnHostDefaults')&&($('#btnHostDefaults').onclick=openHostDefaults);
 $('#btnNewFromPicker').onclick=openCreateForm;
 $('#btnCreateBack').onclick=()=>openPicker();
 

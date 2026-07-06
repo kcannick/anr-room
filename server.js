@@ -847,8 +847,10 @@ async function adminState(session, opts = {}) {
   // short preview (not the full base64) to keep admin state light; the image
   // itself is fetched on demand or shown via its own id.
   const bannerRows = await db.all(
-    "SELECT id, session_id, label, link_url, created_at FROM banners WHERE session_id = ? OR session_id IS NULL ORDER BY created_at DESC",
-    [sessionId]
+    `SELECT id, session_id, label, link_url, created_at FROM banners
+      WHERE session_id = ? OR (session_id IS NULL AND (owner_uid IS NULL OR owner_uid = ?))
+      ORDER BY created_at DESC`,
+    [sessionId, session.owner_uid || '']
   );
   const globalBannerId = (await db.get("SELECT v FROM settings WHERE k = 'global_banner_id'"))?.v || null;
   // Latest song pushed from the magazine review site — drives the "Pull latest submission"
@@ -1058,8 +1060,20 @@ async function handleApi(req, res, url) {
     const ownerUid = creator.uid; // gated above → always present
     // New sessions are 'live' by default, or 'upcoming' if a future start is given.
     const st = (status === 'upcoming' || (scheduledAt && Number(scheduledAt) > now())) ? 'upcoming' : 'live';
+    // Host default banner: applied when the creator set one and no explicit banner came in.
+    // (Watch/submit/description defaults prefill CLIENT-side so the host can clear them.)
+    let bidFinal = bid;
+    if (!bidFinal && creator.host_defaults) {
+      try {
+        const hd = JSON.parse(creator.host_defaults);
+        if (hd && hd.bannerId) {
+          const b = await db.get('SELECT id FROM banners WHERE id = ? AND (owner_uid = ? OR owner_uid IS NULL)', [hd.bannerId, creator.uid]);
+          if (b) bidFinal = b.id;
+        }
+      } catch (e) { /* malformed defaults never block creation */ }
+    }
     await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, submit_url, lobby_message, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, su, lm, bid, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, now()]);
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, su, lm, bidFinal, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, now()]);
     return send(res, 200, { sessionId: sid, adminToken, pollType: pt });
   }
 
@@ -1365,6 +1379,59 @@ async function handleApi(req, res, url) {
   }
 
   // Player's profile (3.5a) — lives on the durable `users` row behind the participant.
+  // ===== HOST DEFAULTS (prefill for new rooms: watch/submit/description/banner) =====
+  if (p === '/api/me/host-defaults' && method === 'GET') {
+    const u = await userFromAuth(req);
+    if (!u || !(u.role === 'admin' || u.role === 'host')) return bad(res, 'Host access required', 403);
+    let d = {}; try { d = JSON.parse(u.host_defaults || '{}') || {}; } catch (e) {}
+    let banner = null;
+    if (d.bannerId) {
+      const b = await db.get('SELECT id, label FROM banners WHERE id = ?', [d.bannerId]);
+      if (b) banner = { id: b.id, label: b.label || null }; else d.bannerId = null;
+    }
+    return send(res, 200, { defaults: { watchUrl: d.watchUrl || '', submitUrl: d.submitUrl || '', lobbyMessage: d.lobbyMessage || '', bannerId: d.bannerId || null }, banner });
+  }
+  if (p === '/api/me/host-defaults' && method === 'POST') {
+    const u = await userFromAuth(req);
+    if (!u || !(u.role === 'admin' || u.role === 'host')) return bad(res, 'Host access required', 403);
+    const body = await readBody(req);
+    let cur = {}; try { cur = JSON.parse(u.host_defaults || '{}') || {}; } catch (e) {}
+    const d = {
+      watchUrl: cleanUrl(body.watchUrl) || null,
+      submitUrl: cleanUrl(body.submitUrl) || null,
+      lobbyMessage: (body.lobbyMessage || '').toString().trim().slice(0, 500) || null,
+      bannerId: ('bannerId' in body) ? (body.bannerId || null) : (cur.bannerId || null),
+    };
+    if (d.bannerId) {
+      const b = await db.get('SELECT id FROM banners WHERE id = ? AND (owner_uid = ? OR owner_uid IS NULL)', [d.bannerId, u.uid]);
+      if (!b) d.bannerId = null;
+    }
+    await db.run('UPDATE users SET host_defaults = ? WHERE uid = ?', [JSON.stringify(d), u.uid]);
+    return send(res, 200, { ok: true, defaults: d });
+  }
+  // Upload a personal default banner (room-less, owned by the host). It only ever
+  // shows in the OWNER's rooms — assigned automatically to rooms they create.
+  if (p === '/api/me/host-defaults/banner' && method === 'POST') {
+    const u = await userFromAuth(req);
+    if (!u || !(u.role === 'admin' || u.role === 'host')) return bad(res, 'Host access required', 403);
+    if (blockedByPerm(u, 'ads')) return bad(res, 'Ads are not enabled for this account', 403);
+    const body = await readBody(req);
+    if (body.__tooBig) return bad(res, 'Image too large — keep banners under ~500KB', 413);
+    const { image_data, link_url, label } = body;
+    if (!image_data || !/^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(image_data)) {
+      return bad(res, 'Provide a PNG, JPG, GIF, or WebP image');
+    }
+    if (image_data.length > 900000) return bad(res, 'Image too large — keep banners under ~500KB');
+    if (link_url && !/^https?:\/\//i.test(link_url)) return bad(res, 'Link must start with http:// or https://');
+    const bid2 = id(9);
+    await db.run('INSERT INTO banners (id, session_id, owner_uid, label, image_data, link_url, created_at) VALUES (?,NULL,?,?,?,?,?)',
+      [bid2, u.uid, (label || '').trim() || null, image_data, (link_url || '').trim() || null, now()]);
+    let cur = {}; try { cur = JSON.parse(u.host_defaults || '{}') || {}; } catch (e) {}
+    cur.bannerId = bid2;
+    await db.run('UPDATE users SET host_defaults = ? WHERE uid = ?', [JSON.stringify(cur), u.uid]);
+    return send(res, 200, { bannerId: bid2 });
+  }
+
   if (p === '/api/me/profile' && method === 'GET') {
     const userId = await resolveUserId(req);
     if (!userId) return bad(res, 'Not authenticated', 401);

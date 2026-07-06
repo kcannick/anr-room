@@ -1136,6 +1136,23 @@ async function call(path, body, method='POST', headers={}) {
   const sub3 = await fetch(base + '/submit?s=does-not-exist', { redirect: 'manual' });
   ok('unknown session falls back to the house page', sub3.status === 302 && /makinitmag\.com\/review/.test(sub3.headers.get('location') || ''), sub3.headers.get('location'));
 
+  console.log('\n— host defaults: saved once, prefill new rooms; default banner auto-assigns —');
+  const hdSave = await call('/api/me/host-defaults', { watchUrl: 'https://youtube.com/@e2e/live', submitUrl: 'https://nero.fan/e2e/live', lobbyMessage: 'Default lobby copy' }, 'POST', BOOTH);
+  ok('host defaults save', hdSave.status === 200 && hdSave.d.defaults.watchUrl === 'https://youtube.com/@e2e/live', JSON.stringify(hdSave.d));
+  const hdGet = await call('/api/me/host-defaults', null, 'GET', BOOTH);
+  ok('host defaults round-trip', hdGet.d.defaults.submitUrl === 'https://nero.fan/e2e/live' && hdGet.d.defaults.lobbyMessage === 'Default lobby copy', JSON.stringify(hdGet.d.defaults));
+  const hdNoAuth = await call('/api/me/host-defaults', null, 'GET');
+  ok('host defaults need a host account', hdNoAuth.status === 403 || hdNoAuth.status === 401, 'status ' + hdNoAuth.status);
+  // Personal default banner: uploads room-less + owned, then auto-assigns at creation.
+  const PNG3 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMCAQGk4+nAAAAAAElFTkSuQmCC';
+  const hdBan = await call('/api/me/host-defaults/banner', { image_data: PNG3, label: 'My Default' }, 'POST', BOOTH);
+  ok('personal default banner uploads', hdBan.status === 200 && hdBan.d.bannerId, JSON.stringify(hdBan.d));
+  const hdRoom = await call('/api/session', { name: 'Defaults Night' }, 'POST', BOOTH);
+  const hdState = (await call(`/api/admin/state?sessionId=${hdRoom.d.sessionId}`, null, 'GET', { 'X-Admin-Token': hdRoom.d.adminToken })).d;
+  ok('new room auto-assigned the default banner', hdState.session.banner_id === hdBan.d.bannerId, JSON.stringify(hdState.session.banner_id));
+  // Tidy: clear the default so later banner tests see a clean slate.
+  await call('/api/me/host-defaults', { bannerId: null, watchUrl: '', submitUrl: '', lobbyMessage: '' }, 'POST', BOOTH);
+
   console.log('\n— platform control panel: admin-only; settings drive the /submit fallback —');
   const platNoAuth = await call('/api/admin/platform', null, 'GET', { 'X-Auth-Token': HOSTTOK });
   ok('platform panel is admin-role only (403 for hosts)', platNoAuth.status === 403, 'status ' + platNoAuth.status);
