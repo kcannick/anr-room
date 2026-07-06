@@ -218,7 +218,10 @@
         <div class="session-name" id="sessName">—</div>
       </div>
     </div>
-    <button id="feedbackBtn" title="Send feedback" aria-label="Send feedback" style="margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;height:38px;padding:0 12px;font-size:13px;cursor:pointer;flex:none;display:flex;align-items:center;gap:6px">💬 Feedback</button>
+    <!-- Always-available room share: mid-game invites are the referral engine, so this
+         never disappears the way the lobby's Invite button does when rounds start. -->
+    <button id="shareRoomBtn" title="Share this room" aria-label="Share this room" class="hide" style="margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;height:38px;padding:0 12px;font-size:13px;cursor:pointer;flex:none;display:flex;align-items:center;gap:6px">⤴ Share</button>
+    <button id="feedbackBtn" title="Send feedback" aria-label="Send feedback" style="background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;height:38px;padding:0 12px;font-size:13px;cursor:pointer;flex:none;display:flex;align-items:center;gap:6px">💬 Feedback</button>
     <button id="muteBtn" title="Sound on/off" aria-label="Toggle sound" style="background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;width:38px;height:38px;font-size:18px;cursor:pointer;flex:none">🔊</button>
   </div>
 
@@ -745,14 +748,20 @@ function playLink(){
   if(myRefCode)u+='&ref='+encodeURIComponent(myRefCode);
   return u;
 }
-$('#inviteBtn')&&($('#inviteBtn').onclick=async()=>{
+async function shareRoom(btn){
   const url=playLink();
   const data={title:'The A&R Room',text:'Come play The A&R Room with me 🎧 Rate the drops, read the room, climb the board. (New A&Rs you bring earn you bonus points as they play!)',url};
   try{
     if(navigator.share){await navigator.share(data);}
-    else{await navigator.clipboard.writeText(url);$('#inviteBtn').textContent='Link copied!';setTimeout(()=>updateInviteBtn(),1400);}
+    else if(btn){const t=btn.textContent;await navigator.clipboard.writeText(url);btn.textContent='Link copied!';setTimeout(()=>{btn.textContent=t;updateInviteBtn();},1400);}
   }catch(e){/* user cancelled share — ignore */}
-});
+}
+$('#inviteBtn')&&($('#inviteBtn').onclick=e=>shareRoom(e.currentTarget));
+// Top-bar share — visible on every screen once the room is known. Players recruit
+// MID-GAME (each new A&R they bring feeds the referral milestones), so the share
+// affordance can't live only in the lobby.
+$('#shareRoomBtn')&&($('#shareRoomBtn').onclick=e=>shareRoom(e.currentTarget));
+if(SID&&$('#shareRoomBtn'))$('#shareRoomBtn').classList.remove('hide');
 // Invite button label reflects how many credited friends you've brought.
 function updateInviteBtn(){
   const b=$('#inviteBtn');if(!b)return;
