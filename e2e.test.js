@@ -1174,6 +1174,17 @@ async function call(path, body, method='POST', headers={}) {
   ok('a host cannot use the room-less banner path', hostUp.status === 401, 'status ' + hostUp.status);
   await call('/api/admin/banner/delete', { bannerId: pUp.d.bannerId }, 'POST', ADMINH); // tidy up
 
+  console.log('\n— mass notify: admin-only, consent-gated SMS queue, chunked to done —');
+  const nbNoAuth = await call('/api/admin/notify/start', { message: 'x', email: true, subject: 's' }, 'POST', { 'X-Auth-Token': HOSTTOK });
+  ok('mass notify is admin-only', nbNoAuth.status === 403 || nbNoAuth.status === 401, 'status ' + nbNoAuth.status);
+  const aud = await call('/api/admin/notify/audience', null, 'GET', ADMINH);
+  ok('audience counts: many emails, fewer consented phones', aud.status === 200 && aud.d.email > 5 && aud.d.sms >= 0 && aud.d.sms < aud.d.email, JSON.stringify(aud.d));
+  const nb = await call('/api/admin/notify/start', { subject: 'Test blast', message: 'Wednesday 8PM ET — pull up.', email: true, sms: true }, 'POST', ADMINH);
+  ok('broadcast queues email + consented SMS', nb.status === 200 && nb.d.queued === aud.d.email + aud.d.sms, JSON.stringify([nb.d.queued, aud.d.email + aud.d.sms]));
+  let nbOut = { remaining: nb.d.queued }, spins = 0;
+  while (nbOut.remaining > 0 && spins++ < 50) nbOut = (await call('/api/admin/notify/process', { broadcastId: nb.d.broadcastId, limit: 20 }, 'POST', ADMINH)).d;
+  ok('chunked processing drains the queue (console senders)', nbOut.remaining === 0 && nbOut.sent === nb.d.queued && nbOut.failed === 0, JSON.stringify(nbOut));
+
   console.log('\n— Revive ad zones: phase-aware, room banners always win —');
   await call('/api/admin/settings', { reviveDeliveryUrl: 'https://ads.cannick.com/www/delivery', reviveZoneLobby: '8', reviveZoneGame: '9' }, 'POST', ADMINH);
   const rvC = await call('/api/session', { name: 'Revive Night' }, 'POST', BOOTH);

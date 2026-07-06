@@ -2021,6 +2021,66 @@ async function handleApi(req, res, url) {
     })) });
   }
 
+  // ===== MASS NOTIFY (admin role only): email/SMS announcement to ALL users =====
+  // Chunked-queue pattern (same as recap emails): start builds the queue in two
+  // set-based INSERT..SELECTs; the panel then drives small process batches.
+  if (p === '/api/admin/notify/audience' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const em = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND email IS NOT NULL AND email != ''")).c;
+    const sm = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7")).c;
+    return send(res, 200, { email: Number(em) || 0, sms: Number(sm) || 0 });
+  }
+  if (p === '/api/admin/notify/start' && method === 'POST') {
+    const admin = await platformAdmin(req);
+    if (!admin) return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const message = (body.message || '').toString().trim().slice(0, 1000);
+    const subject = (body.subject || '').toString().trim().slice(0, 150);
+    const wantEmail = !!body.email, wantSms = !!body.sms;
+    if (!message) return bad(res, 'Write the message first');
+    if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
+    if (wantEmail && !subject) return bad(res, 'Email needs a subject');
+    const bcId = id(9);
+    await db.run('INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at) VALUES (?,?,?,?,?,?,?)',
+      [bcId, subject || null, message, [wantEmail && 'email', wantSms && 'sms'].filter(Boolean).join('+'), admin.uid, 'sending', now()]);
+    if (wantEmail) await db.run(
+      `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
+         SELECT ?, uid, 'email', email FROM users
+          WHERE COALESCE(blocked,0) = 0 AND email IS NOT NULL AND email != ''`, [bcId]);
+    if (wantSms) await db.run(
+      `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
+         SELECT ?, uid, 'sms', phone FROM users
+          WHERE COALESCE(blocked,0) = 0 AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7`, [bcId]);
+    const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
+    return send(res, 200, { broadcastId: bcId, queued: Number(q) || 0 });
+  }
+  if (p === '/api/admin/notify/process' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const { broadcastId, limit } = await readBody(req);
+    const bc = await db.get('SELECT * FROM notify_broadcasts WHERE id = ?', [broadcastId]);
+    if (!bc) return bad(res, 'Broadcast not found', 404);
+    const n = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 20);
+    const batch = await db.all("SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [broadcastId, n]);
+    let sentN = 0, failedN = 0;
+    const html = `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
+      <div style="max-width:520px;margin:0 auto;background:#171328;border:1px solid #2e2750;border-radius:16px;padding:26px">
+        <p style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;font-weight:700;margin:0 0 14px">The A&amp;R Room</p>
+        <div style="font-size:15px;line-height:1.6;color:#f3f0fb">${escapeHtml(bc.message).replace(/\n/g, '<br>')}</div>
+        <p style="font-size:12px;color:#6f688f;margin:22px 0 0">Makin' It Magazine · The A&amp;R Room · <a href="https://anr.makinitmag.com" style="color:#6d5fe0">anr.makinitmag.com</a></p>
+      </div></div>`;
+    for (const r of batch) {
+      const out = r.channel === 'email'
+        ? await sendEmail(r.dest, bc.subject || 'The A&R Room', html, bc.message)
+        : await sendSms(r.dest, bc.message);
+      if (out.ok) { sentN++; await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); }
+      else { failedN++; await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); }
+    }
+    const remaining = Number((await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [broadcastId])).c) || 0;
+    if (!remaining) await db.run("UPDATE notify_broadcasts SET status = 'done' WHERE id = ?", [broadcastId]);
+    const totals = await db.get("SELECT SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) AS sent, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed FROM notify_recipients WHERE broadcast_id = ?", [broadcastId]);
+    return send(res, 200, { sent: Number(totals.sent) || 0, failed: Number(totals.failed) || 0, remaining });
+  }
+
   // ===== PLATFORM CONTROL PANEL (admin role only) =====
   // Everything platform-scoped in one payload: the banner library + system settings.
   if (p === '/api/admin/platform' && method === 'GET') {

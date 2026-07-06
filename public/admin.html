@@ -624,6 +624,21 @@
       <div class="muted" id="plStatus" style="font-size:12px;margin-top:6px"></div>
     </div>
     <div class="card">
+      <h2>Message all A&amp;Rs</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">One announcement to the whole platform. Email goes to every active account; SMS only to A&amp;Rs who opted in (Twilio handles STOP replies).</p>
+      <label>Email subject</label>
+      <input id="nbSubject" placeholder="e.g. The A&R Room is live Wednesday at 8PM ET" maxlength="150">
+      <label style="margin-top:10px">Message</label>
+      <textarea id="nbMessage" maxlength="1000" placeholder="Keep SMS-friendly if texting — the same text goes to both channels."></textarea>
+      <div class="row" style="margin-top:10px">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer"><input type="checkbox" id="nbEmail" checked style="width:auto;margin:0"><span>Email <span class="muted" id="nbEmailCount">(…)</span></span></label>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer"><input type="checkbox" id="nbSms" style="width:auto;margin:0"><span>SMS <span class="muted" id="nbSmsCount">(…)</span></span></label>
+      </div>
+      <button class="btn ghost" id="nbSend" style="margin-top:12px;width:100%">Send announcement</button>
+      <div class="muted" id="nbStatus" style="font-size:12px;margin-top:8px"></div>
+      <div class="err" id="nbErr"></div>
+    </div>
+    <div class="card">
       <h2>SMS test</h2>
       <p class="muted" style="font-size:12px;margin:0 0 8px">Sends one text to verify the Twilio setup. Provider: <span id="plSmsProvider" class="mono">—</span></p>
       <div class="row" style="gap:6px;margin-top:2px">
@@ -1248,6 +1263,10 @@ async function openPlatform(){
     $('#plReviveGame').value=d.settings.reviveZoneGame||'';
     plReviveStatus(d.settings);
     $('#plSmsProvider').textContent=d.smsProvider||'none';
+    api('/api/admin/notify/audience',null,'GET').then(a=>{
+      $('#nbEmailCount').textContent='('+a.email+')';
+      $('#nbSmsCount').textContent='('+a.sms+' opted in)';
+    }).catch(()=>{});
     const bs=d.banners||[];
     box.innerHTML=bs.length?bs.map(b=>`
       <div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">
@@ -1298,6 +1317,32 @@ $('#plUpload')&&($('#plUpload').onclick=async()=>{
     openPlatform();
   }catch(e){$('#plErr').textContent=e.message;}
   $('#plUpload').disabled=false;$('#plUpload').textContent='Upload';
+});
+// Mass announcement: irreversible + outward-facing, so counts + a hard confirm first,
+// then the chunked process loop (12 per request) with live progress. Resume-safe: if
+// the tab dies mid-send, re-running start would dupe — so we finish the loop here.
+$('#nbSend')&&($('#nbSend').onclick=async()=>{
+  $('#nbErr').textContent='';
+  const message=$('#nbMessage').value.trim(), subject=$('#nbSubject').value.trim();
+  const wantEmail=$('#nbEmail').checked, wantSms=$('#nbSms').checked;
+  if(!message)return $('#nbErr').textContent='Write the message first.';
+  if(!wantEmail&&!wantSms)return $('#nbErr').textContent='Pick at least one channel.';
+  if(wantEmail&&!subject)return $('#nbErr').textContent='Email needs a subject.';
+  let a; try{ a=await api('/api/admin/notify/audience',null,'GET'); }catch(e){ return $('#nbErr').textContent=e.message; }
+  const parts=[]; if(wantEmail)parts.push(a.email+' emails'); if(wantSms)parts.push(a.sms+' texts');
+  if(!confirm('Send this announcement to '+parts.join(' + ')+'? This can\u2019t be unsent.'))return;
+  $('#nbSend').disabled=true;$('#nbStatus').textContent='Queuing…';
+  try{
+    const st=await api('/api/admin/notify/start',{subject,message,email:wantEmail,sms:wantSms});
+    let out={remaining:st.queued,sent:0,failed:0}, total=st.queued||1;
+    while(out.remaining>0){
+      out=await api('/api/admin/notify/process',{broadcastId:st.broadcastId,limit:12});
+      $('#nbStatus').textContent='Sending… '+(out.sent+out.failed)+' / '+total+(out.failed?(' ('+out.failed+' failed)'):'');
+    }
+    $('#nbStatus').textContent='Done — '+out.sent+' sent'+(out.failed?(', '+out.failed+' failed'):'')+'.';
+    $('#nbMessage').value='';$('#nbSubject').value='';
+  }catch(e){$('#nbErr').textContent=e.message+' — reopen Platform and it can be resumed by support.';}
+  $('#nbSend').disabled=false;
 });
 $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=true;
