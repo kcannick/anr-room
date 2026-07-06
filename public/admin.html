@@ -460,23 +460,26 @@
         <div class="muted" style="font-size:12px;margin-top:6px">Unlisted + a room code = a private, invite-only room. Anyone already in keeps playing; the code guards new joins.</div>
       </div>
       <div style="border-top:1px solid var(--line);padding-top:12px">
-        <label>Event location <span class="muted">(for on-premise check-in)</span></label>
-        <div class="row" style="gap:6px">
-          <input id="geoAddr" placeholder="Type the venue address" style="flex:1">
-          <button class="btn ghost sm" id="btnGeocode" style="flex:none">Find</button>
-        </div>
-        <div class="muted" id="geoResolved" style="font-size:12px;margin-top:6px"></div>
-        <div class="row" style="margin-top:8px">
-          <button class="btn ghost sm" id="btnUseMyLoc">📍 Use my location</button>
-          <div style="flex:1"><label style="font-size:12px">Radius (yards)</label><input id="geoRadius" type="number" min="25" max="5000" value="200"></div>
-        </div>
-        <label style="margin-top:12px">Check-in mode</label>
+        <label>Location check-in</label>
         <select id="geoMode" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
           <option value="off">Off — no location required</option>
           <option value="optional">Optional — check in as in-room or remote (dual pool)</option>
           <option value="required">Required — must be at the venue to vote</option>
         </select>
-        <div class="muted" style="font-size:12px;margin-top:6px">Set the venue any time (even before the event). Turn the mode on when you're ready to enforce — players check in at their first lock-in.</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Off = anyone can vote from anywhere. Turn it on to set the venue — players check in at their first lock-in.</div>
+        <!-- venue fields only exist for a mode that uses them -->
+        <div id="geoFields" class="hide">
+          <label style="margin-top:12px">Venue address</label>
+          <div class="row" style="gap:6px">
+            <input id="geoAddr" placeholder="Type the venue address" style="flex:1">
+            <button class="btn ghost sm" id="btnGeocode" style="flex:none">Find</button>
+          </div>
+          <div class="muted" id="geoResolved" style="font-size:12px;margin-top:6px"></div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn ghost sm" id="btnUseMyLoc">📍 Use my location</button>
+            <div style="flex:1"><label style="font-size:12px">Radius (yards)</label><input id="geoRadius" type="number" min="25" max="5000" value="200"></div>
+          </div>
+        </div>
       </div>
       <div class="row" style="margin-top:4px">
         <button class="btn ghost" id="seCancel">Cancel</button>
@@ -1508,10 +1511,14 @@ function openSessEdit(){
   $('#geoRadius').value=s.geo_radius||200;
   $('#geoResolved').textContent=s.geo_label?('📍 '+s.geo_label):'';
   geoResolvedLat=null;geoResolvedLng=null;
+  syncGeoFields();
   $('#seErr').textContent='';
   $('#sessEditModal').style.display='flex';
 }
 $('#btnEditSession')&&($('#btnEditSession').onclick=openSessEdit);
+// Venue/radius fields only show when check-in is actually on.
+function syncGeoFields(){ $('#geoFields').classList.toggle('hide', $('#geoMode').value==='off'); }
+$('#geoMode')&&$('#geoMode').addEventListener('change',syncGeoFields);
 // Wrap-up actions (completed sessions) reuse the recap/graphics plumbing from My sessions.
 $('#wuEmail')&&($('#wuEmail').onclick=()=>emailRecap(SID,$('#wuEmail')));
 $('#wuArs')&&($('#wuArs').onclick=()=>dlCard('ars',SID,$('#wuArs')));
