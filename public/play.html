@@ -1586,6 +1586,11 @@ function canvasToBlob(c){return new Promise(res=>c.toBlob(res,'image/png',0.92))
 
 // Download a session share graphic (Top 8 A&Rs / Songs). Public PNG endpoint; blob-download
 // so we can show a friendly message when there's no data yet.
+// Share-sheet only on real phones/tablets — desktop share dialogs (Windows!) have
+// no clean save-to-disk, and desktop users expect a download.
+const MOBILE_SHARE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  || (navigator.userAgentData && navigator.userAgentData.mobile)
+  || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
 async function dlSessionCard(kind, btn){
   const orig=btn.textContent; btn.disabled=true; btn.textContent='…';
   try{
@@ -1596,7 +1601,7 @@ async function dlSessionCard(kind, btn){
     // Phones: the share sheet ("Save Image" → Photos, or straight to Instagram).
     // An <a download> on iOS lands in Files, where sharing to IG is a dead end.
     const file=new File([blob],name,{type:'image/png'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){
+    if(MOBILE_SHARE&&navigator.canShare&&navigator.canShare({files:[file]})){
       try{ await navigator.share({files:[file],title:'The A&R Room'}); return; }
       catch(e){ if(e&&e.name==='AbortError')return; /* fall through to download */ }
     }

@@ -928,6 +928,12 @@ async function openPicker(){
 }
 // Download a share graphic (Top 8 A&Rs / Top 8 Songs) for a session. Public PNG endpoints;
 // fetch as a blob so we can surface a friendly message when there's no data yet.
+// Share-sheet only on actual phones/tablets: Windows/macOS desktops also claim
+// canShare({files}) but their share dialogs bury or omit "save to disk" — desktop
+// users expect a plain download. (iPadOS masquerades as Mac; touch points betray it.)
+const MOBILE_SHARE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  || (navigator.userAgentData && navigator.userAgentData.mobile)
+  || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
 window.dlCard=async(kind,sid,btn)=>{
   const label=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='…';}
   try{
@@ -938,7 +944,7 @@ window.dlCard=async(kind,sid,btn)=>{
     // Phones: share sheet → "Save Image" lands in Photos (IG-ready). A plain
     // <a download> on iOS saves to Files, a dead end for Instagram. Desktop: download.
     const file=new File([blob],name,{type:'image/png'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){
+    if(MOBILE_SHARE&&navigator.canShare&&navigator.canShare({files:[file]})){
       try{ await navigator.share({files:[file],title:'The A&R Room'}); return; }
       catch(e){ if(e&&e.name==='AbortError')return; /* fall through to download */ }
     }
@@ -1713,7 +1719,7 @@ window.dlSongReport=async(rid,btn)=>{
       }
       files.push(new File([await r.blob()],'song-report-p'+page+'.png',{type:'image/png'}));
     }
-    if(navigator.canShare&&navigator.canShare({files})){
+    if(MOBILE_SHARE&&navigator.canShare&&navigator.canShare({files})){
       try{ await navigator.share({files,title:'The A&R Room · Song Report'}); }
       catch(e){ if(!(e&&e.name==='AbortError')) throw e; }
     }else{
