@@ -1907,8 +1907,16 @@ function render(st){
     $('#feed').classList.toggle('hide',showRes);
     $('#reviewBox').classList.toggle('hide',!(showRes||(ar&&ar.status==='closed')));
   }
-  // feed — the tab badge always shows the count so the host can watch it without switching
-  $('#feedCount').textContent='('+st.liveVotes.length+')';
+  // Tab badge = the count of whatever the pane is showing: live votes while the round
+  // runs, the ratified round's vote count while its results are on display, empty only
+  // when there's truly no round. It resets when the NEXT round opens, not at ratify.
+  {
+    const ar=st.activeRound;
+    const n = ar&&(ar.status==='voting'||ar.status==='closed') ? st.liveVotes.length
+      : (ar&&ar.status==='ratified'&&st.ratifiedResults) ? st.ratifiedResults.length
+      : null;
+    $('#feedCount').textContent = n==null ? '' : '('+n+')';
+  }
   const feed=$('#feed');
   if(st.liveVotes.length){
     if(isBin){
