@@ -1,23 +1,35 @@
 'use strict';
 // Pure scoring — no DB, no IO. Verified by scoring.test.js.
 //
-// Model (locked with the product owner):
+// Model (re-locked with the product owner, 2026-07-06):
+//   The game is played at 0.1 resolution — predictions come in tenths and the room
+//   average is ROUNDED to tenths BEFORE scoring, so the number players see on screen
+//   IS the scoring target (previously the raw float mean was the target, which made
+//   a displayed "avg 5.7 · guess 5.6 · off 0.1" win a Bullseye — technically right
+//   against the unrounded mean, visibly wrong to everyone watching).
 //   base   = 100 * e^(-error * K)            exponential falloff, K = 0.5
-//   bonus  = +25 when error <= BULLSEYE       "bullseye band" (reliable, not luck-of-the-decimal)
-//   penalty= -10 when error >  FAR            being way off genuinely costs you
+//   bonus  = +25 on an EXACT hit             Bullseye = nailed the tenth = always 125
+//   penalty= -10 when error >  FAR           being way off genuinely costs you
 //   A single round CAN go negative. The *cumulative* leaderboard total is floored
 //   at 0 elsewhere (in the ratify step), so a bad round stings but never sinks a player.
 
 const K = 0.5;
-const BULLSEYE = 0.1;   // within 0.1 of room average => bonus
+const BULLSEYE = 0.05;  // "exact at 0.1 resolution" (errors are exact tenths; 0 is the only hit)
 const BONUS = 25;
 const FAR = 5.0;        // more than 5.0 off => penalty
 const PENALTY = 10;
 
-// Room average = mean of all taste ratings (0..9) in a round.
+// Room average = mean of all taste ratings (0..9), rounded to ONE DECIMAL — the
+// displayed value and the scoring target are the same number by construction.
 function roomAverage(votes) {
   if (!votes.length) return null;
-  return votes.reduce((a, v) => a + v.taste, 0) / votes.length;
+  return Math.round(votes.reduce((a, v) => a + v.taste, 0) / votes.length * 10) / 10;
+}
+
+// Exact-tenths error: both sides are 0.1-resolution values, so compute in integer
+// tenths to kill float artifacts (5.7-5.6 must be exactly 0.1, never 0.09999…).
+function errTenths(a, b) {
+  return Math.abs(Math.round(a * 10) - Math.round(b * 10)) / 10;
 }
 
 // Points for a single prediction error.
@@ -30,7 +42,7 @@ function pointsForError(error) {
 }
 
 function accuracyPoints(predict, roomAvg) {
-  return pointsForError(predict - roomAvg);
+  return pointsForError(errTenths(predict, roomAvg));
 }
 
 // Emotional tier for the results screen. Drives animation/copy, NOT the math.
@@ -49,7 +61,7 @@ function tierForError(error) {
 function rankVotes(votes, roomAvg) {
   return [...votes]
     .map(v => {
-      const err = Math.abs(v.predict - roomAvg);
+      const err = errTenths(v.predict, roomAvg);
       return { ...v, err, points: pointsForError(err), tier: tierForError(err) };
     })
     .sort((a, b) => (a.err - b.err) || (a.locked_at - b.locked_at))

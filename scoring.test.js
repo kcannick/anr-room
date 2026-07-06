@@ -11,17 +11,19 @@ function approx(label, got, want, tol = 1e-9) {
   if (ok) pass++; else { fail++; console.log(`FAIL ${label}: got ${got} want ~${want}`); }
 }
 
-// ---- room average ----
+// ---- room average (rounded to tenths: the DISPLAYED value IS the scoring target) ----
 eq('roomAverage', roomAverage([{taste:8},{taste:6},{taste:7},{taste:5}]), 6.5);
 eq('roomAverage solo', roomAverage([{taste:9}]), 9);
 eq('roomAverage empty', roomAverage([]), null);
+// 5.6538... displays as 5.7 — and now SCORES as 5.7 too (the on-screen bug: a 5.6
+// guess showed "avg 5.7 · off 0.1 · 🎯 bullseye +122" because the raw mean was the target).
+eq('roomAverage rounds to displayed tenth', roomAverage([{taste:5},{taste:6},{taste:6},{taste:5},{taste:6},{taste:6},{taste:5},{taste:6},{taste:6},{taste:6},{taste:5},{taste:6},{taste:6}]), 5.7);
 
-// ---- points model: exp k=0.5, +25 bullseye<=0.1, -10 penalty>5.0 ----
-// exact -> 100 + 25 = 125
+// ---- points model: exp k=0.5, +25 on an EXACT hit only, -10 penalty>5.0 ----
+// Bullseye = nailed the tenth = always exactly 125.
 eq('exact = 125', pointsForError(0), 125);
-// within bullseye band (0.1) still gets bonus: 100*e^(-0.05)+25
-eq('0.1 off = bonus band', pointsForError(0.1), Math.round(100*Math.exp(-0.05)+25));
-// just past bullseye -> no bonus, big drop (the intended cliff)
+// one tick (0.1) off -> NO bonus: 100*e^(-0.05) = 95
+eq('0.1 off = 95, no bonus', pointsForError(0.1), Math.round(100*Math.exp(-0.05)));
 eq('0.11 off no bonus', pointsForError(0.11), Math.round(100*Math.exp(-0.055)));
 // mid errors (no bonus, no penalty)
 eq('1.0 off', pointsForError(1.0), Math.round(100*Math.exp(-0.5)));   // 61
@@ -36,13 +38,17 @@ eq('8 off is negative', far < 0, true);
 // sign independence (error magnitude only)
 eq('negative error same as positive', pointsForError(-2), pointsForError(2));
 
-// accuracyPoints wraps pointsForError on (predict - avg)
+// accuracyPoints wraps pointsForError on the exact-tenths error
 eq('accuracyPoints exact', accuracyPoints(6.5, 6.5), 125);
 eq('accuracyPoints 1 off', accuracyPoints(7.5, 6.5), pointsForError(1));
+// float-artifact regression: 5.7-5.6 must be EXACTLY 0.1 (never 0.0999…), and an
+// exact hit expressed as 0.30000000000000004-style floats still scores 125.
+eq('tenths math is exact', accuracyPoints(5.6, 5.7), pointsForError(0.1));
+eq('float artifacts cannot fake or lose a bullseye', accuracyPoints(0.1+0.2, 0.3), 125);
 
-// ---- tiers ----
-eq('tier bullseye', tierForError(0.05), 'bullseye');
-eq('tier bullseye edge', tierForError(0.1), 'bullseye');
+// ---- tiers (bullseye = exact hit; one tick off is sharp) ----
+eq('tier bullseye', tierForError(0), 'bullseye');
+eq('tier one tick off = sharp', tierForError(0.1), 'sharp');
 eq('tier sharp', tierForError(0.4), 'sharp');
 eq('tier sharp edge', tierForError(0.5), 'sharp');
 eq('tier close', tierForError(1.2), 'close');
