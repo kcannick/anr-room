@@ -197,7 +197,8 @@ if (USE_PG) {
   })();
   const pgSsl = process.env.PGSSL === 'disable' ? false
     : process.env.PGSSL === 'no-verify' ? { rejectUnauthorized: false }
-    : { rejectUnauthorized: false }; // default flips to verified in the follow-up deploy
+    : { rejectUnauthorized: true }; // full verification (Neon = public-CA certs);
+                                    // escape hatch: PGSSL=no-verify
   const pool = new Pool({
     connectionString: pgUrl,
     ssl: pgSsl,
