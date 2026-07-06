@@ -440,11 +440,16 @@ async function playerState(participant) {
   // Liveness join feed (3.5d) — recent verified joiners. Names show only for COMPLETE
   // profiles; incomplete joiners appear as "someone". Count-only — no lean/direction.
   const joinRows = await db.all(
-    `SELECT p.created_at, u.name AS uname, u.profile_complete
+    `SELECT p.created_at, u.uid, u.name AS uname, u.profile_complete
      FROM participants p LEFT JOIN users u ON p.user_id = u.uid
      WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
      ORDER BY p.created_at DESC LIMIT 6`, [sessionId]);
-  const joins = joinRows.map(r => ({ name: r.profile_complete ? ((r.uname || '').toString().trim().slice(0, 40) || null) : null, at: Number(r.created_at) }));
+  // Named (complete-profile) joiners carry their PUBLIC profile id so the feed can link
+  // to /u/<id> — display name + public profile only, same PII surface as the boards.
+  const joins = joinRows.map(r => ({
+    name: r.profile_complete ? ((r.uname || '').toString().trim().slice(0, 40) || null) : null,
+    id: r.profile_complete ? (r.uid || null) : null,
+    at: Number(r.created_at) }));
 
   // $500 monthly-series hook (null unless this session competes for it) — drives the play
   // page giveaway banner + the third onboarding step.

@@ -300,18 +300,28 @@
   </section>
 
   <!-- WAITING -->
+  <!-- LOBBY (operator-specced structure): greeting + room title + countdown lead;
+       A&R count right under the timer; details / invite / board / who's-in follow.
+       No logo here (the top bar already carries it), no watch button pre-start. -->
   <section id="screen-wait" class="center hide">
     <div class="panel" style="text-align:center">
-      <img class="mark" src="/mark.png" alt="" onerror="this.style.display='none'">
-      <div class="eyebrow">You're in</div>
-      <h2 style="margin:10px 0 6px;font-size:24px" id="waitHi">Welcome</h2>
-      <p class="dim" style="font-size:15px;margin:0" id="waitSub">Hang tight — the next song is being cued up.</p>
-      <div id="lobbyMsg" class="note hide" style="text-align:left;margin-top:14px"></div>
-      <a id="watchBtn" class="btn hide" href="#" target="_blank" rel="noopener noreferrer" style="margin-top:14px;text-decoration:none">▶ Watch the stream</a>
-      <button id="inviteBtn" class="btn ghost" style="margin-top:10px">＋ Invite others</button>
+      <h2 style="margin:2px 0 8px;font-size:26px" id="waitHi">Welcome</h2>
+      <p class="dim" style="font-size:15px;line-height:1.5;margin:0" id="waitSub">Hang tight — the next song is being cued up.</p>
       <div id="waitCountdown" class="wait-cd hide"></div>
       <div class="pulse-wait" id="waitBounce"><i></i><i></i><i></i></div>
-      <div class="tag" style="margin-top:6px">🎧 <span id="waitCount">0</span> A&amp;Rs in the room</div>
+      <div class="tag" style="margin-top:8px">🎧 <span id="waitCount">0</span> A&amp;Rs in the room</div>
+      <a id="watchBtn" class="btn ghost hide" href="#" target="_blank" rel="noopener noreferrer" style="margin-top:14px;text-decoration:none">▶ Watch the stream</a>
+    </div>
+    <!-- host's room description -->
+    <div class="panel hide" id="lobbyDetails" style="margin-top:14px">
+      <div class="lv-h">Room details</div>
+      <div id="lobbyMsg" style="font-size:14px;color:var(--ink-dim);line-height:1.55"></div>
+    </div>
+    <!-- THE lobby action: recruiting. Green primary; bonus-points hook is real
+         (referral milestones pay at the invitee's 10th and 50th scored rounds). -->
+    <div class="panel" style="margin-top:14px;text-align:center">
+      <button id="inviteBtn" class="btn">＋ Invite others</button>
+      <p class="dim" style="font-size:13px;line-height:1.5;margin:10px 0 0">Know others with a good ear for music? Invite them to join the room and earn bonus points as they play.</p>
     </div>
     <!-- $500 GIVEAWAY HOOK — shown only when this session competes for the monthly series. -->
     <div class="panel give-hook hide" id="giveHook" style="margin-top:14px;text-align:center">
@@ -1331,9 +1341,8 @@ function render(st){
   $('#footPts').textContent=(st.me.total_points||0)+' pts';
   $('#rTotal').textContent=st.me.total_points||0;
 
-  // Watch-stream link (lobby button) — set whenever present.
-  if(st.watch_url){$('#watchBtn').href=st.watch_url;$('#watchBtn').classList.remove('hide');}
-  else $('#watchBtn').classList.add('hide');
+  // Watch-stream link href (the lobby decides visibility: live rooms only).
+  if(st.watch_url)$('#watchBtn').href=st.watch_url;
 
   // Live stream embed at the top (YouTube only; tap-to-start, never autoplay).
   updateStreamEmbed(st);
@@ -1356,25 +1365,27 @@ function render(st){
   const newPhase=st.phase;
   if(st.phase==='waiting'){
     $('#waitHi').textContent='Hey '+(st.me.name||'there');
+    const roomB='<b style="color:var(--ink)">'+esc(st.session.name||'The room')+'</b>';
     if(st.session.status==='upcoming'){
-      $('#waitSub').textContent='You\u2019re registered! Voting hasn\u2019t started yet — keep this page handy and you\u2019ll be ready the moment it goes live.';
+      $('#waitSub').innerHTML='You\u2019re in! '+roomB+' hasn\u2019t started yet — keep this page handy.';
     }else{
-      $('#waitSub').textContent='Hang tight — the next song is being cued up.';
+      $('#waitSub').innerHTML='You\u2019re in! '+roomB+' — the next song is being cued up.';
     }
-    // Host lobby message, if set.
-    if(st.lobby_message){$('#lobbyMsg').classList.remove('hide');$('#lobbyMsg').textContent=st.lobby_message;}
-    else $('#lobbyMsg').classList.add('hide');
-    // Scheduled upcoming session: count down to start (replaces the bounce); "Starting
-    // shortly" once the time passes. Overrides the generic wait copy set above.
+    // Host's room description gets its own card below.
+    if(st.lobby_message){$('#lobbyDetails').classList.remove('hide');$('#lobbyMsg').textContent=st.lobby_message;}
+    else $('#lobbyDetails').classList.add('hide');
+    // Scheduled start: the lead line flows STRAIGHT into the timer, nothing between.
     if(st.session.status==='upcoming' && st.session.scheduled_at){
       waitStartAt=Number(st.session.scheduled_at);
       const _future=waitStartAt>Date.now();
       $('#waitBounce').classList.toggle('hide', _future);
-      $('#waitSub').textContent=_future ? 'Registered! Voting starts in:' : 'Registered — starting shortly. Keep this page open.';
+      $('#waitSub').innerHTML=_future ? 'You\u2019re in! '+roomB+' starts in:' : 'You\u2019re in! '+roomB+' is starting shortly — keep this page open.';
       paintWaitCountdown();
     }else{
       waitStartAt=null; $('#waitCountdown').classList.add('hide'); $('#waitBounce').classList.remove('hide');
     }
+    // No stream to watch before the room starts — the link only makes sense live.
+    $('#watchBtn').classList.toggle('hide', !(st.watch_url && st.session.status==='live'));
     show('wait');closesAt=null;
   }
   else if(st.phase==='voting'){
@@ -1472,7 +1483,7 @@ function renderJoins(st){
   const panel=$('#livenessPanel'),feed=$('#joinFeed');if(!panel)return;
   if(!st.joins||!st.joins.length){panel.style.display='none';return;}
   panel.style.display='block';
-  feed.innerHTML=st.joins.map(j=>`<div class="feed-item"><span class="fdot${j.name?'':' anon'}"></span>${j.name?`<b>${esc(j.name)}</b> just joined`:'<span class="anon-t">someone joined</span>'}<span class="ft">${relTime(j.at)}</span></div>`).join('');
+  feed.innerHTML=st.joins.map(j=>`<div class="feed-item"><span class="fdot${j.name?'':' anon'}"></span>${j.name?`${j.id?`<a href="/u/${encodeURIComponent(j.id)}" style="color:inherit;text-decoration:none"><b>${esc(j.name)}</b></a>`:`<b>${esc(j.name)}</b>`} just joined`:'<span class="anon-t">someone joined</span>'}<span class="ft">${relTime(j.at)}</span></div>`).join('');
 }
 
 // ---------- PROFILE COMPLETION (3.5a) ----------
