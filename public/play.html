@@ -237,6 +237,10 @@
     <div class="stream-player" id="streamPlayer"></div>
   </div>
 
+  <!-- AD SLOT — one global placement between the stream embed and the game panels
+       (lobby / now playing / locked). Hidden entirely when no banner is set. -->
+  <div class="ad-slot" id="adTop" aria-hidden="true" style="margin:0 0 16px"></div>
+
   <!-- JOIN: logged-in one-tap register (uses the A&R account, no code) -->
   <section id="screen-account" class="center stack hide">
     <div class="panel stack" style="text-align:center">
@@ -312,8 +316,6 @@
       <div id="joinFeed"></div>
       <div class="lv-seal"><span style="color:var(--signal)">🔒</span><span>Count only — the room's lean stays sealed until results. It's what you're predicting.</span></div>
     </div>
-    <!-- AD SLOT: lobby. Drop a sponsor banner here (image or markup). -->
-    <div class="ad-slot" id="adLobby" aria-hidden="true"></div>
   </section>
 
   <!-- VOTING -->
@@ -391,8 +393,6 @@
       </div>
       <div class="err" id="voteErr"></div>
     </div>
-    <!-- AD SLOT: bottom of rating page. Drop a sponsor banner here. -->
-    <div class="ad-slot" id="adVote" aria-hidden="true"></div>
   </section>
 
   <!-- LOCKED -->
@@ -411,7 +411,6 @@
       </div>
       <div class="pulse-wait"><i></i><i></i><i></i></div>
     </div>
-    <div class="ad-slot" id="adLocked" aria-hidden="true"></div>
   </section>
 
   <!-- RESULTS -->
@@ -1306,6 +1305,9 @@ function render(st){
 
   // Live stream embed at the top (YouTube only; tap-to-start, never autoplay).
   updateStreamEmbed(st);
+  // Sponsor banner right under the embed — the server only sends st.banner on
+  // lobby/voting/locked, so this clears itself for results/recap automatically.
+  renderBanner('adTop',st.banner);
 
   // Referral: remember my code (for the invite link) + my credited count.
   if(st.refCode)myRefCode=st.refCode;
@@ -1341,7 +1343,7 @@ function render(st){
     }else{
       waitStartAt=null; $('#waitCountdown').classList.add('hide'); $('#waitBounce').classList.remove('hide');
     }
-    renderBanner('adLobby',st.banner);show('wait');closesAt=null;
+    show('wait');closesAt=null;
   }
   else if(st.phase==='voting'){
     // Chime when the host adds time (closes_at pushed later while already voting).
@@ -1381,7 +1383,7 @@ function render(st){
     }
     if(st.round.song_note){$('#vNote').classList.remove('hide');$('#vNote').textContent=st.round.song_note;}else $('#vNote').classList.add('hide');
     if(st.round.giveaway){$('#vGive').classList.remove('hide');$('#vGive').textContent='🎁 Win: '+st.round.giveaway;}else $('#vGive').classList.add('hide');
-    renderBanner('adVote',st.banner);tick();show('vote');
+    tick();show('vote');
   }
   else if(st.phase==='locked'){
     closesAt=null;
@@ -1398,7 +1400,7 @@ function render(st){
       }
     }
     $('#lockedSub').textContent=st.tallying?'Votes are in — the host is tallying the room…':'Waiting for the room to finish voting…';
-    renderBanner('adLocked',st.banner);show('locked');
+    show('locked');
   }
   else if(st.phase==='results'){closesAt=null;renderResults(st);show('results');}
   // Dead-time nudge: prompt profile completion once when results first reveal.
