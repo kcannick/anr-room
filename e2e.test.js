@@ -1169,6 +1169,14 @@ async function call(path, body, method='POST', headers={}) {
   ok('round history lists the ratified round with score + votes',
     hist.status === 200 && hr && hr.id === RPRID && hr.status === 'ratified' && hr.votes === 8 && hr.room_average != null,
     JSON.stringify(hr));
+  // Per-round results (Rounds tab click-to-expand).
+  const rresNoAuth = await call(`/api/admin/round/results?roundId=${RPRID}`, null, 'GET');
+  ok('per-round results are host-only (401)', rresNoAuth.status === 401, 'status ' + rresNoAuth.status);
+  const rres = await call(`/api/admin/round/results?roundId=${RPRID}`, null, 'GET', RPAH);
+  ok('per-round results return the full ranked table',
+    rres.status === 200 && rres.d.poll_type === 'rating' && (rres.d.rows || []).length === 8
+      && rres.d.rows[0].rank === 1 && rres.d.round.room_average != null,
+    JSON.stringify([rres.status, (rres.d.rows || []).length]));
 
   // Binary rounds are excluded (Versus flavor comes later).
   const rpBinC = await call('/api/session', { name: 'Report Versus', pollType: 'binary' }, 'POST', BOOTH);

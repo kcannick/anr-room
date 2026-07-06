@@ -1859,6 +1859,34 @@ async function handleApi(req, res, url) {
     })) });
   }
 
+  // Results for ONE past round — powers the Rounds tab's click-to-expand.
+  // Host-only; ratified rounds only (live vote direction stays sealed).
+  if (p === '/api/admin/round/results' && method === 'GET') {
+    const roundId = url.searchParams.get('roundId') || url.searchParams.get('r');
+    if (!roundId) return bad(res, 'roundId required');
+    const round = await db.get('SELECT * FROM rounds WHERE id = ?', [roundId]);
+    if (!round) return bad(res, 'Round not found', 404);
+    const session = await canAdminSession(req, round.session_id);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    if (round.status !== 'ratified') return bad(res, 'Round isn\u2019t ratified yet');
+    const isBinary = session.poll_type === 'binary';
+    const rows = isBinary
+      ? await db.all(
+          `SELECT v.rank, v.pick, v.predict_split, v.err, v.points, v.tier, p.name FROM votes v
+           JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC`, [round.id])
+      : await db.all(
+          `SELECT v.rank, v.taste, v.predict, v.err, v.points, v.tier, p.name FROM votes v
+           JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC`, [round.id]);
+    return send(res, 200, {
+      poll_type: isBinary ? 'binary' : 'rating',
+      round: { id: round.id, idx: round.idx, song_title: round.song_title, song_artist: round.song_artist,
+        option_b_title: round.option_b_title || null,
+        room_average: round.room_average != null ? Number(round.room_average) : null,
+        split_a: round.split_a != null ? Number(round.split_a) : null },
+      rows,
+    });
+  }
+
   if (p === '/api/admin/state' && method === 'GET') {
     const sessionId = url.searchParams.get('sessionId');
     const session = await canAdminSession(req, sessionId);

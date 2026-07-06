@@ -20,7 +20,7 @@
   @media(max-width:840px){.grid{grid-template-columns:minmax(0,1fr)}}
   body{overflow-x:clip}
   .card{min-width:0}
-  #paneVotes,#paneResults,#paneBoard,.feed{overflow-x:auto}
+  #paneRound,#paneBoard,#paneRounds,.feed{overflow-x:auto}
   .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px}
   /* overlay builder */
   .ob-cols{display:flex;gap:18px;flex-wrap:wrap}
@@ -263,16 +263,15 @@
         <div><b id="kVotes">0</b><span id="kVotesLbl">Votes in</span></div>
       </div>
       <div class="tabbar" style="margin-top:8px">
-        <button class="tab on" id="tabVotes" data-pane="paneVotes">Votes <span id="feedCount"></span></button>
-        <button class="tab" id="tabResults" data-pane="paneResults">Results</button>
+        <!-- One state-driven tab: live votes while the round is open, results once
+             it's tallied — they were never needed at the same time. -->
+        <button class="tab on" id="tabRound" data-pane="paneRound">This round <span id="feedCount"></span></button>
         <button class="tab" id="tabBoard" data-pane="paneBoard">Leaderboard</button>
         <button class="tab" id="tabRounds" data-pane="paneRounds">Rounds</button>
       </div>
-      <div id="paneVotes">
+      <div id="paneRound">
         <div class="feed" id="feed"><div class="empty">No votes yet.</div></div>
-      </div>
-      <div id="paneResults" class="hide">
-        <div id="reviewBox"><div class="empty">Open and close a round to see results here before you ratify.</div></div>
+        <div id="reviewBox" class="hide"></div>
       </div>
       <!-- Round history: every song played, with scores + per-round Song Reports -->
       <div id="paneRounds" class="hide">
@@ -729,10 +728,10 @@ let poll=null, serverSkew=0, lastState=null, sessLocked=false;
 // ---- room-activity tabs (Live votes / Results / Leaderboard) ----
 // The default tab follows the round state until the host clicks one by hand;
 // switching sessions resets to auto.
-let tabManual=false, curTab='paneVotes';
+let tabManual=false, curTab='paneRound';
 function setTab(pane,manual){
   curTab=pane; if(manual)tabManual=true;
-  ['paneVotes','paneResults','paneBoard','paneRounds'].forEach(p=>{const el=document.getElementById(p);if(el)el.classList.toggle('hide',p!==pane);});
+  ['paneRound','paneBoard','paneRounds'].forEach(p=>{const el=document.getElementById(p);if(el)el.classList.toggle('hide',p!==pane);});
   document.querySelectorAll('.tabbar .tab').forEach(t=>t.classList.toggle('on',t.dataset.pane===pane));
   if(pane==='paneRounds')loadRounds(); // lazy: fetched on open, not on the 2s poll
 }
@@ -757,8 +756,10 @@ async function loadRounds(){
         :r.status==='voting'?'<span class="pill live">● Voting</span>'
         :'<span class="pill closed">Tallying</span>';
       const report=(!isVs&&r.status==='ratified'&&r.votes>0)
-        ?`<button class="btn ghost sm" onclick="dlSongReport('${r.id}',this)">📊 Report</button>`:'';
-      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #241d3d">
+        ?`<button class="btn ghost sm" onclick="event.stopPropagation();dlSongReport('${r.id}',this)">📊 Report</button>`:'';
+      // Ratified rounds expand to their full results on click.
+      const canExpand=r.status==='ratified';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #241d3d${canExpand?';cursor:pointer':''}"${canExpand?` onclick="toggleRoundResults('${r.id}')" title="Show results"`:''}>
         <span class="mono" style="color:var(--ink-faint);width:38px;flex:none">#${r.idx}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</div>
@@ -768,16 +769,29 @@ async function loadRounds(){
         <span class="mono" style="color:var(--signal);width:56px;text-align:right;flex:none">${score}</span>
         <span class="muted" style="font-size:12px;width:58px;text-align:right;flex:none">${r.votes}&nbsp;vote${r.votes==1?'':'s'}</span>
         ${report}
-      </div>`;
+        ${canExpand?'<span class="muted" style="flex:none">▾</span>':''}
+      </div>${canExpand?`<div id="rres-${r.id}" class="hide" style="padding:4px 0 14px"></div>`:''}`;
     }).join('');
   }catch(e){ box.innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
 }
+// Click-to-expand results for any past ratified round (fetched on demand).
+window.toggleRoundResults=async(rid)=>{
+  const box=document.getElementById('rres-'+rid); if(!box)return;
+  if(!box.classList.contains('hide')){ box.classList.add('hide'); return; }
+  box.classList.remove('hide');
+  if(box.dataset.loaded){ return; }
+  box.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const d=await api('/api/admin/round/results?roundId='+encodeURIComponent(rid),null,'GET');
+    box.innerHTML=resultsTableHtml(d.rows,d.poll_type==='binary',d.round,false);
+    box.dataset.loaded='1';
+  }catch(e){ box.innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
+};
 function smartTab(st){
   if(tabManual)return;
   const r=st.activeRound;
-  const want = r&&r.status==='voting' ? 'paneVotes'
-    : r&&(r.status==='closed'||r.status==='ratified') ? 'paneResults'
-    : 'paneBoard';
+  // One round tab now covers votes AND results; idle rooms rest on the board.
+  const want = r&&(r.status==='voting'||r.status==='closed'||r.status==='ratified') ? 'paneRound' : 'paneBoard';
   if(want!==curTab)setTab(want,false);
 }
 
@@ -1742,31 +1756,40 @@ window.dlSongReport=async(rid,btn)=>{
   finally{ if(btn){btn.disabled=false;btn.textContent=label;} }
 };
 
+// One results renderer for BOTH the This-round tab and the Rounds-tab expansion.
+// round: {id, song_title, room_average, split_a, option_b_title}; rows = ranked votes.
+function resultsTableHtml(rows,isBin,round,withReport){
+  if(!rows||!rows.length)return '<div class="empty">No votes were cast in this round.</div>';
+  if(isBin){
+    const A=round.split_a;
+    const splitTxt = A!=null ? `Song A ${Math.round(A)}% · Song B ${100-Math.round(A)}%` : '—';
+    return `<p style="margin:0 0 10px"><strong>Result: <span class="mono" style="color:var(--cool)">${splitTxt}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
+      <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Pick</th><th class="num">Guess A%</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${r.pick||'—'}</td><td class="num">${r.predict_split!=null?Math.round(r.predict_split)+'%':'—'}</td><td class="num muted">${r.err!=null?Math.round(r.err):'—'}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+  return `<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(round.room_average)}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
+    <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="num">Guess</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="num">${(+r.predict).toFixed(1)}</td><td class="num muted">${(+r.err).toFixed(1)}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
+    </tbody></table>`+
+    (withReport?`<button class="btn ghost sm" style="margin-top:12px" onclick="dlSongReport('${round.id}',this)">📊 Song Report — artist analytics (3 pages)</button>`:'');
+}
+
+// The This-round pane is state-driven: live votes while open, a tally hint while
+// closed, the results table once ratified. render() swaps feed/review visibility.
 function reviewBox(st){
   const box=$('#reviewBox');
   const isBin = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary'));
-  if(st.ratifiedResults&&st.activeRound&&st.activeRound.status==='ratified'){
-    const rows=st.ratifiedResults;
-    if(isBin){
-      const A=st.activeRound.split_a;
-      const splitTxt = A!=null ? `Song A ${Math.round(A)}% · Song B ${100-Math.round(A)}%` : '—';
-      box.innerHTML=`<p style="margin:0 0 10px"><strong>Result: <span class="mono" style="color:var(--cool)">${splitTxt}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
-        <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Pick</th><th class="num">Guess A%</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
-        ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${r.pick||'—'}</td><td class="num">${r.predict_split!=null?Math.round(r.predict_split)+'%':'—'}</td><td class="num muted">${r.err!=null?Math.round(r.err):'—'}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
-        </tbody></table>`;
-      return;
-    }
-    box.innerHTML=`<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(st.activeRound.room_average)}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
-      <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="num">Guess</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="num">${(+r.predict).toFixed(1)}</td><td class="num muted">${(+r.err).toFixed(1)}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
-      </tbody></table>
-      <button class="btn ghost sm" style="margin-top:12px" onclick="dlSongReport('${st.activeRound.id}',this)">📊 Song Report — artist analytics (3 pages)</button>`;
+  const ar=st.activeRound;
+  if(st.ratifiedResults&&ar&&ar.status==='ratified'){
+    box.innerHTML=resultsTableHtml(st.ratifiedResults,isBin,ar,!isBin);
     return;
   }
-  if(st.activeRound&&(st.activeRound.status==='voting'||st.activeRound.status==='closed')){
-    box.innerHTML=`<div class="empty">${st.liveVotes.length} vote(s) in. Close & tally to review winners before results go out.</div>`;return;
+  if(ar&&ar.status==='closed'){
+    box.innerHTML=`<div class="empty">Voting closed — ${st.liveVotes.length} vote(s) locked. “Tally the room” reveals results here.</div>`;
+    return;
   }
-  box.innerHTML='<div class="empty">Open and close a round to review results here.</div>';
+  box.innerHTML='';
 }
 
 function render(st){
@@ -1875,6 +1898,13 @@ function render(st){
     if(bc)$('#bcActiveTxt').textContent=bc.text;
   }
   roundControls(st);queueBox(st);reviewBox(st);adsBox(st);smartTab(st);
+  // This-round pane: the feed carries the open round; results take over at ratify.
+  {
+    const ar=st.activeRound;
+    const showRes=!!(st.ratifiedResults&&ar&&ar.status==='ratified');
+    $('#feed').classList.toggle('hide',showRes);
+    $('#reviewBox').classList.toggle('hide',!(showRes||(ar&&ar.status==='closed')));
+  }
   // feed — the tab badge always shows the count so the host can watch it without switching
   $('#feedCount').textContent='('+st.liveVotes.length+')';
   const feed=$('#feed');
@@ -2054,7 +2084,7 @@ function tickTimers(){
 }
 function boot(){
   showScreen('console');
-  tabManual=false;setTab('paneVotes',false); // fresh session → tab follows round state again
+  tabManual=false;setTab('paneRound',false); // fresh session → tab follows round state again
   // A "Pulled: …" note from the previous session would misdescribe this one.
   $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
