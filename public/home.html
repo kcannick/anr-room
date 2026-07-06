@@ -137,7 +137,7 @@ if(localStorage.getItem('rt_auth_token'))$('#navProfile').classList.remove('hide
 // GA4 engagement events (no-op when analytics is disabled or gtag hasn't loaded).
 function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params||{}); }catch(e){} }
 const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
-const SUBMIT_URL='https://www.makinitmag.com/review'; // artist-submission page
+let SUBMIT_URL='https://www.makinitmag.com/review'; // overridden by the platform setting (houseSubmitUrl) on load
 
 function fmtPts(n){return (Number(n)||0).toLocaleString();}
 // Session times are anchored to the broadcast timezone (ET) so every visitor sees the
@@ -283,6 +283,7 @@ async function load(){
     const sig=JSON.stringify(d);
     if(sig===_homeSig){ _ensureRealtime(d.live && d.live.id); return; }
     _homeSig=sig;
+    if(d.houseSubmitUrl)SUBMIT_URL=d.houseSubmitUrl; // platform setting is the source of truth
     if(d.live)renderLive(d); else renderBetween(d);
     _homeSeriesId=(d.series && d.series.id)||null;
     _ensureRealtime(d.live && d.live.id);

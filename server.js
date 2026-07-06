@@ -2472,7 +2472,10 @@ async function handleApi(req, res, url) {
     const arRows = await db.all(
       'SELECT uid, name, primary_category, location, photo_url FROM users WHERE profile_complete = 1 AND blocked = 0 ORDER BY first_seen DESC LIMIT 12', []);
     const recentARs = arRows.map(u => ({ id: u.uid, name: u.name, category: u.primary_category || null, location: u.location || null, photoUrl: u.photo_url || null }));
-    return send(res, 200, { live, next, series, winners: [], recentARs });
+    // House submission link for the homepage's submit section when no room link applies
+    // (single source of truth: the platform setting, falling back to the built-in).
+    const houseSubmitUrl = (await db.get("SELECT v FROM settings WHERE k = 'house_submit_url'"))?.v || 'https://www.makinitmag.com/review';
+    return send(res, 200, { live, next, series, winners: [], recentARs, houseSubmitUrl });
   }
 
 
