@@ -1235,11 +1235,16 @@ let streamVid=null, streamCollapsed=false;
 // Channel "/live" links (youtube.com/@handle/live etc.) carry no video id — the server
 // resolves them to the CURRENT live video when the channel is actually live, so the
 // host can keep one permanent link. Checked at most every 3 minutes, off the poll.
-let resolvedVid=null, resolvedChannel=null, resolvedLive=false, liveCheckAt=0;
+let resolvedVid=null, resolvedChannel=null, resolvedLive=false, liveCheckAt=0, lastRoomStatus=null;
 function isChannelLive(u){ return !!u && /youtube\.com\/[^?#]+\/live\/?([?#]|$)/i.test(u) && !ytId(u); }
 function maybeResolveLive(st){
   if(!isChannelLive(st.watch_url))return;
-  if(st.session&&(st.session.status==='completed'||st.session.status==='archived'))return;
+  const status=st.session&&st.session.status;
+  if(status==='completed'||status==='archived')return;
+  // The moment the room flips live, re-resolve immediately — otherwise a stale
+  // "not live" answer fetched in the lobby pins the embed hidden for up to 3 min.
+  if(status==='live'&&lastRoomStatus!=='live')liveCheckAt=0;
+  lastRoomStatus=status;
   if(Date.now()-liveCheckAt<180000)return;
   liveCheckAt=Date.now();
   fetch('/api/watch-embed?s='+encodeURIComponent(SID)).then(r=>r.json())
@@ -1254,14 +1259,21 @@ function maybeResolveLive(st){
 function updateStreamEmbed(st){
   const box=$('#streamEmbed'); if(!box)return;
   maybeResolveLive(st);
-  // Best embed source wins: exact video id (real thumbnail), else the channel-id
-  // live_stream embed while the channel is live (YouTube routes it itself).
+  // The embed belongs to the ACTIVE game only: hidden in the pre-start lobby,
+  // shown for every phase of a live room (page order: stream → ad → game).
+  const liveRoom = st.session && st.session.status==='live';
   const vid=ytId(st.watch_url)||resolvedVid;
-  const chan=(!vid&&resolvedLive&&resolvedChannel)?resolvedChannel:null;
-  const showable=(vid||chan) && st.session && st.session.status!=='completed' && st.session.status!=='archived';
+  // Best source wins: exact video id (real thumbnail), else the channel-id
+  // live_stream embed. Once the HOST says the room is live, trust that over the
+  // isLiveNow scrape — a missed/stale scrape must never blank the show.
+  const chan=(!vid&&resolvedChannel&&(resolvedLive||liveRoom))?resolvedChannel:null;
+  const showable=(vid||chan) && liveRoom;
   if(!showable){ box.classList.add('hide'); streamVid=null; $('#streamPlayer').innerHTML=''; return; }
   box.classList.remove('hide');
   const srcKey=vid||('chan:'+chan);
+  // A late videoId upgrade (chan → vid) points at the SAME broadcast — never
+  // interrupt a stream the viewer is already playing just to swap the URL.
+  if(srcKey!==streamVid && streamVid && streamVid.startsWith('chan:') && vid && $('#streamPlayer').querySelector('iframe')) return;
   if(srcKey!==streamVid){
     // New (or first) source — render the tap-to-start poster. Guarded so the 2.5s poll
     // never rebuilds (and never interrupts) a stream the viewer already started.
@@ -1384,8 +1396,9 @@ function render(st){
     }else{
       waitStartAt=null; $('#waitCountdown').classList.add('hide'); $('#waitBounce').classList.remove('hide');
     }
-    // No stream to watch before the room starts — the link only makes sense live.
-    $('#watchBtn').classList.toggle('hide', !(st.watch_url && st.session.status==='live'));
+    // No stream to watch before the room starts — the link only makes sense live,
+    // and only when the embed above isn't already carrying the stream.
+    $('#watchBtn').classList.toggle('hide', !(st.watch_url && st.session.status==='live') || !$('#streamEmbed').classList.contains('hide'));
     show('wait');closesAt=null;
   }
   else if(st.phase==='voting'){
