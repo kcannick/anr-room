@@ -178,7 +178,14 @@ const SCHEMA = [
 let impl;
 
 if (USE_PG) {
-  const { Pool } = require('pg');
+  const { Pool, types } = require('pg');
+  // Postgres returns BIGINT (COUNT/SUM) and NUMERIC (AVG) as STRINGS by default —
+  // SQLite returns numbers, so dev/tests never see it. Untreated, `count + 1`
+  // concatenates ("10" + 1 = "101": score cards printed rank #101 of 26). Every
+  // value these types carry here (counts, point sums, ms timestamps) fits a JS
+  // number, so parse them at the driver — one fix for every call site.
+  types.setTypeParser(20, v => parseInt(v, 10));     // int8 / BIGINT
+  types.setTypeParser(1700, v => parseFloat(v));     // numeric / decimal
   // TLS: the explicit `ssl` option below is what actually applies — any sslmode in the
   // URL is overridden by it, and pg v8 additionally prints a deprecation warning about
   // sslmode aliases on every boot. Strip sslmode/channel_binding from the string (the
