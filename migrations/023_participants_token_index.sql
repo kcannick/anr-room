@@ -1,0 +1,15 @@
+-- 023_participants_token_index.sql
+-- Root-cause fix for the 2026-07-08 Neon data-transfer-quota outage.
+--
+-- participantFromReq() authenticates EVERY request with
+--   SELECT * FROM participants WHERE token = ?
+-- but participants had no index on `token` (only id PK + idx_part_session on
+-- session_id). So every 2.5s player poll, from every viewer, did a FULL SEQUENTIAL
+-- SCAN of the whole participants table — which accumulates every viewer of every
+-- show ever run. pg_stat_user_tables showed 258M tuples_read on participants (6x the
+-- next table); with a near-0% local-file-cache hit rate that became constant page
+-- refetches from storage — the traffic that blew the 5GB egress cap.
+--
+-- Non-unique (not UNIQUE) on purpose: identical lookup performance, but it can never
+-- fail the migration on a legacy duplicate token. Light op on a small table.
+CREATE INDEX IF NOT EXISTS idx_part_token ON participants (token)
