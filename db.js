@@ -108,6 +108,7 @@ const SCHEMA = [
      giveaway TEXT,                          -- optional prize description
      banner_id TEXT,                         -- optional per-song ad override
      status TEXT NOT NULL DEFAULT 'pending', -- pending | voting | closed | ratified
+     poll_type TEXT NOT NULL DEFAULT 'rating', -- 'rating' (0-9) | 'binary' (Verzuz A/B); per-round
      opens_at BIGINT,
      closes_at BIGINT,
      room_average REAL,

@@ -128,10 +128,48 @@ function rankBinaryVotes(votes, actualA) {
     .map((v, i) => ({ ...v, rank: i + 1 }));
 }
 
+// ---------------------------------------------------------------------------
+// ACCURACY % + ABSOLUTE GRADE (poll-type-agnostic recap metrics)
+// A prediction error is a distance on a known scale (0..9 rating avg, 0..100
+// binary split), so it converts to "how close did you read the room, 0..100%".
+// This unifies the two mechanics onto ONE axis so a mixed session has one recap.
+// Accuracy is a DISPLAY metric — points keep their own curves. The letter grade
+// is an ABSOLUTE band of accuracy (not a curve), so players track progress across
+// visits. Bands are re-expressed from the old rating gradeForAvgError thresholds
+// (acc = 100*(1 - avgErr/9)) so a pure-rating night grades exactly as before.
+
+// One round's accuracy: how close the prediction landed vs the full scale.
+//   scaleMax = 9 (rating room-average) | 100 (binary split). 0..100, floored at 0.
+function roundAccuracy(err, scaleMax) {
+  if (err == null || !scaleMax) return null;
+  return Math.max(0, (1 - Math.abs(Number(err)) / scaleMax) * 100);
+}
+
+// Absolute letter grade from an accuracy % (0..100). null passes through (no rounds).
+// Thresholds are the old gradeForAvgError error bands re-expressed on the accuracy
+// axis (acc = 100*(1 - avgErr/9)) and floored to 2 decimals so the inclusive boundary
+// error-value lands in the better grade — i.e. a pure-rating night grades as before.
+function gradeForAccuracy(acc) {
+  if (acc == null) return null;
+  if (acc >= 96.66) return 'A+';   // avgErr <= 0.3
+  if (acc >= 93.33) return 'A';    // <= 0.6
+  if (acc >= 88.88) return 'A-';   // <= 1.0
+  if (acc >= 84.44) return 'B+';   // <= 1.4
+  if (acc >= 78.88) return 'B';    // <= 1.9
+  if (acc >= 73.33) return 'B-';   // <= 2.4
+  if (acc >= 66.66) return 'C+';   // <= 3.0
+  if (acc >= 60.00) return 'C';    // <= 3.6
+  if (acc >= 52.22) return 'C-';   // <= 4.3
+  if (acc >= 42.22) return 'D';    // <= 5.2
+  return 'F';
+}
+
 module.exports = {
   roomAverage, accuracyPoints, pointsForError, tierForError, rankVotes,
   K, BULLSEYE, BONUS, FAR, PENALTY,
   // binary
   roomSplitA, splitPoints, splitTier, rankBinaryVotes,
   K_BIN, BULLSEYE_BIN, FAR_BIN,
+  // recap metrics (poll-type-agnostic)
+  roundAccuracy, gradeForAccuracy,
 };

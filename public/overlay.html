@@ -364,7 +364,11 @@ async function poll(){
 }
 
 function render(st){
-  const isBin=st.session.poll_type==='binary';
+  // Poll type is per-round: the current round and the last result can differ in a mixed
+  // room, so each is judged by its OWN type (session is only a fallback).
+  const sessType=st.session.poll_type;
+  const curBin=(st.current&&st.current.poll_type?st.current.poll_type:sessType)==='binary';
+  const resBin=(st.result&&st.result.poll_type?st.result.poll_type:sessType)==='binary';
   $('#sessName').textContent=st.session.name||'';
 
   // --- broadcast (host opt-in; rides the lower-third slot, never with the song) ---
@@ -392,7 +396,7 @@ function render(st){
   if(showResultView && result && !showingBroadcast){
     showingResult=true;
     $('#resWinner').textContent=result.winner||'No votes';
-    if(isBin){
+    if(resBin){
       // Binary winner: full-width split revealed here (post-ratify only). Hide the
       // rating song line + the room-average right slot; show the split bar instead.
       $('#resSong').classList.add('hide');
@@ -440,11 +444,11 @@ function render(st){
   // --- lower third (current round), hidden while a winner reveal or broadcast is up ---
   // ?current_song=false hides it entirely.
   if(showLower && SHOW_SONG && current && !showingResult && !showingBroadcast){
-    $('#nowTag').textContent=(isBin?'Now playing · Round ':'Now rating · Round ')+current.idx+(current.status==='closed'?' · voting closed':'');
+    $('#nowTag').textContent=(curBin?'Now playing · Round ':'Now rating · Round ')+current.idx+(current.status==='closed'?' · voting closed':'');
     // Vote countdown (?timer=false hides it) — only while voting is open.
     ovClosesAt=(SHOW_TIMER && current.status==='voting' && current.closes_at) ? Number(current.closes_at) : null;
     paintTimer();
-    if(isBin){
+    if(curBin){
       // Binary live: A vs B (full title + artist each). NO split — it's the prediction
       // target and stays sealed until ratify, same as the rating room average.
       $('#ratingMain').classList.add('hide');

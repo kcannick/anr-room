@@ -473,9 +473,21 @@
         <div class="eyebrow">The A&amp;R Room · Recap</div>
         <h2 id="recapName" style="font-size:22px;margin-top:6px">Your card</h2>
       </div>
+      <!-- Absolute grade — an accuracy band that works for rating, Versus, or mixed nights. -->
       <div class="grade-wrap" id="recapGradeWrap">
         <div class="grade" id="recapGrade">—</div>
         <div class="grade-label">Ear for the room</div>
+      </div>
+      <!-- Accuracy: the absolute read number behind the grade. -->
+      <div id="recapAccWrap" style="margin:2px 0 4px">
+        <div class="mono" style="font-size:26px;font-weight:700"><span id="recapAcc">—</span><span style="font-size:17px;color:var(--ink-dim)">%</span></div>
+        <div class="grade-label">Accuracy — how close you read the room</div>
+        <div style="height:10px;border-radius:6px;background:#0a0814;border:1px solid var(--line);overflow:hidden;max-width:280px;margin:10px auto 0"><i id="recapAccBar" style="display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cool),var(--signal))"></i></div>
+      </div>
+      <!-- Per-type split (only when a night mixed both mechanics). -->
+      <div id="recapByType" class="hide" style="gap:8px;margin-top:12px">
+        <div style="flex:1;background:#141024;border:1px solid var(--line);border-radius:10px;padding:8px"><div class="grade-label">0–9 rounds</div><div class="mono" id="recapAccRating" style="font-size:16px;font-weight:700;color:var(--signal)">—</div></div>
+        <div style="flex:1;background:#141024;border:1px solid var(--line);border-radius:10px;padding:8px"><div class="grade-label">Versus rounds</div><div class="mono" id="recapAccVersus" style="font-size:16px;font-weight:700;color:var(--cool)">—</div></div>
       </div>
       <div class="recap-grid">
         <div class="rcell"><div class="k">Total points</div><div class="v" id="recapPts" style="color:var(--good)">—</div></div>
@@ -484,9 +496,12 @@
         <div class="rcell"><div class="k">Top <span id="recapPctSign">%</span></div><div class="v" id="recapPct" style="color:var(--accent)">—</div></div>
       </div>
       <div class="reveal">
-        <div class="reveal-row"><span id="recapRoomLabel">The room's overall average</span><strong id="recapRoomAvg" class="mono">—</strong></div>
-        <div class="reveal-row"><span id="recapErrLabel">Your average read, off by</span><strong id="recapAvgErr" class="mono">—</strong></div>
         <div class="reveal-row" id="recapBestRow"><span>Your best round</span><strong id="recapBest" class="mono">—</strong></div>
+      </div>
+      <!-- Separate Versus card — only appears when the night had A/B rounds. -->
+      <div id="recapVersusCard" class="hide" style="margin-top:14px;text-align:left;border-top:1px solid var(--line);padding-top:12px">
+        <div class="eyebrow">Your Versus reads</div>
+        <div id="recapVersusList" style="margin-top:8px"></div>
       </div>
       <button class="btn" id="btnShare" style="margin-top:18px">Share my card</button>
       <div class="dl-row">
@@ -1119,7 +1134,7 @@ function confetti(){
 
 function renderResults(st){
   const mr=st.myResult;
-  const isBin = pollType==='binary';
+  const isBin = (st.round.poll_type||pollType)==='binary';
   $('#rRound').textContent=st.round.idx;
   $('#rTitle').textContent=isBin ? ((st.round.song_title||'A')+' vs '+(st.round.option_b_title||'B')) : st.round.song_title;
   // Winner name only — the room's number stays sealed until the end.
@@ -1152,37 +1167,48 @@ function renderResults(st){
 
 function renderRecap(st){
   const r=st.recap;if(!r)return;
-  const isBin = (r.poll_type==='binary');
-  $('#recapName').textContent=(r.name||'You')+'’s card';
+  $('#recapName').textContent=(r.name||'You')+'\u2019s card';
   $('#recapPts').textContent=r.totalPoints;
-  $('#recapRank').textContent=r.rank?('#'+r.rank+' / '+r.fieldSize):'—';
+  $('#recapRank').textContent=r.rank?('#'+r.rank+' / '+r.fieldSize):'\u2014';
   $('#recapBull').textContent=r.bullseyes;
   if(r.percentile!=null){$('#recapPct').textContent=(100-r.percentile)+'%';$('#recapPctSign').textContent='%';}
-  else $('#recapPct').textContent='—';
-  if(isBin){
-    // No 0-9 letter grade for binary; surface the room's average A-share instead.
-    $('#recapGradeWrap').style.display='none';
-    $('#recapRoomLabel').textContent='Room leaned (Song A share)';
-    $('#recapRoomAvg').textContent=r.overallSplitA!=null?(Math.round(r.overallSplitA)+'%'):'—';
-    $('#recapErrLabel').textContent='Your average read, off by';
-    $('#recapAvgErr').textContent=r.avgErr!=null?(Math.round(r.avgErr)+' pts'):'—';
-  }else{
-    $('#recapGradeWrap').style.display='';
-    $('#recapGrade').textContent=r.grade||'—';
-    $('#recapRoomLabel').textContent='The room\u2019s overall average';
-    $('#recapRoomAvg').textContent=r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—';
-    $('#recapErrLabel').textContent='Your average read, off by';
-    $('#recapAvgErr').textContent=r.avgErr!=null?r.avgErr.toFixed(1):'—';
+  else $('#recapPct').textContent='\u2014';
+  // Absolute grade + accuracy % \u2014 one metric for rating, Versus, or mixed nights.
+  const hasScore = r.accuracy!=null;
+  $('#recapGradeWrap').style.display = r.grade ? '' : 'none';
+  $('#recapGrade').textContent=r.grade||'\u2014';
+  $('#recapAcc').textContent = hasScore ? r.accuracy.toFixed(2) : '\u2014';
+  $('#recapAccBar').style.width = hasScore ? Math.max(0,Math.min(100,r.accuracy))+'%' : '0';
+  // Per-type breakdown only when the night actually mixed both mechanics.
+  const bt=r.accuracyByType||{};
+  const showBreakdown = bt.rating!=null && bt.versus!=null;
+  $('#recapByType').classList.toggle('hide', !showBreakdown);
+  $('#recapByType').style.display = showBreakdown ? 'flex' : '';
+  if(showBreakdown){
+    $('#recapAccRating').textContent=bt.rating.toFixed(2)+'%';
+    $('#recapAccVersus').textContent=bt.versus.toFixed(2)+'%';
   }
-  if(r.best){$('#recapBestRow').style.display='';$('#recapBest').textContent='R'+r.best.idx+' · +'+r.best.points;}
+  if(r.best){$('#recapBestRow').style.display='';$('#recapBest').textContent='R'+r.best.idx+' \u00b7 +'+r.best.points;}
   else $('#recapBestRow').style.display='none';
+  // Separate Versus card \u2014 the A/B rounds, walled off from the objective 0\u20139 world.
+  const vr=r.versusRounds||[];
+  $('#recapVersusCard').classList.toggle('hide', !vr.length);
+  if(vr.length){
+    $('#recapVersusList').innerHTML=vr.map(v=>{
+      const a=v.actual_split_a;
+      const err=(v.my_split!=null && a!=null)?Math.abs(Math.round(v.my_split)-Math.round(a)):null;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px">
+        <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.song_a||'A')} <span class="faint">vs</span> ${esc(v.song_b||'B')}</div>
+        <div class="mono faint" style="font-size:12px">you: ${v.my_split!=null?Math.round(v.my_split)+'% A':'\u2014'}</div>
+        <div class="mono" style="font-weight:700;color:${err!=null&&err<=8?'var(--signal)':'var(--gold)'}">${err!=null?'\u2212'+err:'\u2014'}</div>
+      </div>`;
+    }).join('');
+  }
 }
 
 function shareText(r){
-  if(r.poll_type==='binary'){
-    return `The A&R Room — my card\n${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} · ${r.bullseyes} bullseye${r.bullseyes===1?'':'s'}\nRoom leaned ${r.overallSplitA!=null?Math.round(r.overallSplitA)+'% A':'—'}`;
-  }
-  return `The A&R Room — my card\nGrade: ${r.grade||'—'} · ${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} · ${r.bullseyes} bullseye${r.bullseyes===1?'':'s'}\nRoom average revealed: ${r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—'}`;
+  const acc = r.accuracy!=null ? (' \u00b7 '+r.accuracy.toFixed(2)+'% accuracy') : '';
+  return `The A&R Room \u2014 my card\nGrade: ${r.grade||'\u2014'}${acc} \u00b7 ${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} \u00b7 ${r.bullseyes} bullseye${r.bullseyes===1?'':'s'}`;
 }
 
 // Ad slot dispatcher — first-party banner wins; else the Revive zone iframe (fresh
@@ -1372,7 +1398,10 @@ function render(st){
   // Live broadcast from the host — pop once per (at) timestamp.
   applyBroadcast(st.broadcast);
 
-  if(st.session.status==='completed'){renderRecap(st);lastRecap=st.recap;$('#btnDlSongs').classList.toggle('hide', pollType==='binary');show('ended');closesAt=null;return;}
+  if(st.session.status==='completed'){renderRecap(st);lastRecap=st.recap;
+    // Top-8-Songs is rating-only — show it whenever the night had ANY 0–9 rounds.
+    $('#btnDlSongs').classList.toggle('hide', !(st.recap&&st.recap.accuracyByType&&st.recap.accuracyByType.rating!=null));
+    show('ended');closesAt=null;return;}
 
   const newPhase=st.phase;
   if(st.phase==='waiting'){
@@ -1406,7 +1435,8 @@ function render(st){
     const newClose=st.round.closes_at||null;
     if(lastPhase==='voting' && closesAt!=null && newClose!=null && newClose>closesAt+500){ SFX.chime(); buzzed=false; }
     closesAt=newClose;
-    const isBin = pollType==='binary';
+    // Poll type is PER-ROUND: the current round decides the widget, not the session.
+    const isBin = (st.round.poll_type||pollType)==='binary';
     $('#ratingFlow').classList.toggle('hide', isBin);
     $('#binaryFlow').classList.toggle('hide', !isBin);
     if(lastPhase!=='voting'){ // reset inputs on a fresh round
@@ -1443,7 +1473,7 @@ function render(st){
   }
   else if(st.phase==='locked'){
     closesAt=null;
-    const isBin = pollType==='binary';
+    const isBin = (st.round.poll_type||pollType)==='binary';
     $('#lkRatingGrid').classList.toggle('hide', isBin);
     $('#lkBinaryGrid').classList.toggle('hide', !isBin);
     if(st.myVote){
@@ -1653,14 +1683,13 @@ function renderRecapGraphic(r){
   x.fillText('THE  A&R  ROOM',W/2,150);
   x.fillStyle='#f3f0fb';x.font='800 70px DM Sans, sans-serif';
   x.fillText((r.name||'You')+'’s card',W/2,250);
-  const isBin=r.poll_type==='binary';
   // big metric circle
   const cy=560,rad=200;
   x.lineWidth=18;x.strokeStyle='#2a2438';x.beginPath();x.arc(W/2,cy,rad,0,Math.PI*2);x.stroke();
   x.strokeStyle='#4bb749';x.beginPath();x.arc(W/2,cy,rad,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.min(1,(r.totalPoints||0)/Math.max(100,(r.totalPoints||0))) );x.stroke();
   x.fillStyle='#f3f0fb';x.font='800 120px Space Mono, monospace';x.fillText(r.totalPoints,W/2,cy+20);
   x.fillStyle='#a9a2c9';x.font='600 36px DM Sans, sans-serif';x.fillText('TOTAL POINTS',W/2,cy+90);
-  if(!isBin && r.grade){ // grade chip for rating game
+  if(r.grade){ // grade chip — absolute, banded from accuracy
     x.fillStyle='#6d5fe0';roundRect(x,W/2-110,cy+150,220,96,22);x.fill();
     x.fillStyle='#fff';x.font='800 70px Space Mono, monospace';x.fillText(r.grade,W/2,cy+220);
     x.fillStyle='#a9a2c9';x.font='600 30px DM Sans, sans-serif';x.fillText('EAR FOR THE ROOM',W/2,cy+285);
@@ -1669,7 +1698,7 @@ function renderRecapGraphic(r){
   const rows=[
     ['Room rank', r.rank?('#'+r.rank+' of '+r.fieldSize):'—'],
     ['Bullseyes', String(r.bullseyes)],
-    [isBin?'Room leaned':'Room average', isBin?(r.overallSplitA!=null?Math.round(r.overallSplitA)+'% A':'—'):(r.overallRoomAvg!=null?r.overallRoomAvg.toFixed(1):'—')],
+    ['Accuracy', r.accuracy!=null?(r.accuracy.toFixed(2)+'%'):'—'],
   ];
   let ry=1180;x.textAlign='left';
   rows.forEach(([k,v])=>{

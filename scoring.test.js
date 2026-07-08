@@ -147,5 +147,38 @@ eq('binary solo exact bullseye', bsolo[0].tier, 'bullseye');
 eq('binary solo exact 125', bsolo[0].points, 125);
 eq('binary solo rank 1', bsolo[0].rank, 1);
 
+// ===========================================================================
+// ACCURACY % + ABSOLUTE GRADE (poll-type-agnostic recap metrics)
+// ===========================================================================
+const { roundAccuracy, gradeForAccuracy } = require('./scoring');
+
+// ---- roundAccuracy: distance vs the full scale, 0..100, floored ----
+approx('accuracy exact rating (err 0, /9) = 100', roundAccuracy(0, 9), 100);
+approx('accuracy exact binary (err 0, /100) = 100', roundAccuracy(0, 100), 100);
+approx('accuracy rating err 0.9 /9 = 90', roundAccuracy(0.9, 9), 90);
+approx('accuracy binary err 13 /100 = 87', roundAccuracy(13, 100), 87);
+approx('accuracy rating worst (err 9) = 0', roundAccuracy(9, 9), 0);
+approx('accuracy floored at 0 (err beyond scale)', roundAccuracy(120, 100), 0);
+eq('accuracy null err -> null', roundAccuracy(null, 9), null);
+
+// ---- gradeForAccuracy: absolute bands ----
+eq('grade A+ at 97', gradeForAccuracy(97), 'A+');
+eq('grade A+ boundary 96.7', gradeForAccuracy(96.7), 'A+');
+eq('grade A just below A+', gradeForAccuracy(96.6), 'A');
+eq('grade B+ at 84.44', gradeForAccuracy(84.44), 'B+');
+eq('grade B just below B+', gradeForAccuracy(84.3), 'B');
+eq('grade F at bottom', gradeForAccuracy(10), 'F');
+eq('grade null -> null (no rounds)', gradeForAccuracy(null), null);
+
+// ---- equivalence: accuracy-grade reproduces the OLD rating grade bands ----
+// old gradeForAvgError bands: A+<=0.3, A<=0.6, A-<=1.0, B+<=1.4, B<=1.9 ...
+// accuracy for a pure-rating session = 100*(1 - avgErr/9).
+const accFromAvgErr = e => 100 * (1 - e / 9);
+eq('equiv: avgErr 0.3 -> A+', gradeForAccuracy(accFromAvgErr(0.3)), 'A+');
+eq('equiv: avgErr 0.6 -> A',  gradeForAccuracy(accFromAvgErr(0.6)), 'A');
+eq('equiv: avgErr 1.0 -> A-', gradeForAccuracy(accFromAvgErr(1.0)), 'A-');
+eq('equiv: avgErr 1.4 -> B+', gradeForAccuracy(accFromAvgErr(1.4)), 'B+');
+eq('equiv: avgErr 1.9 -> B',  gradeForAccuracy(accFromAvgErr(1.9)), 'B');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

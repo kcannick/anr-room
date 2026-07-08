@@ -189,6 +189,30 @@ async function freshDb() {
   const applied8b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('008 idempotent (not duplicated)', applied8b.filter(x => x === '008_feedback').length === 1, JSON.stringify(applied8b));
 
+  // 11. Migration 024 (per-round poll type): rounds.poll_type column + set-based backfill.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init();
+  const applied24 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('024_round_poll_type applied', applied24.includes('024_round_poll_type'), JSON.stringify(applied24));
+  const rc24 = (await db.all('PRAGMA table_info(rounds)', []));
+  ok('rounds.poll_type created', rc24.map(c => c.name).includes('poll_type'));
+  ok('rounds.poll_type defaults to rating', (rc24.find(c => c.name === 'poll_type') || {}).dflt_value != null, 'no default');
+  // Backfill correctness: a binary session's rounds flip to 'binary'; rating stays 'rating'.
+  // (New rows default to 'rating' regardless of session, so we simulate legacy rows then
+  //  re-run the exact backfill statement.)
+  await db.run("INSERT INTO sessions (id, name, admin_token, status, poll_type, created_at) VALUES ('sB','Verzuz','t1','completed','binary',1)");
+  await db.run("INSERT INTO sessions (id, name, admin_token, status, poll_type, created_at) VALUES ('sR','Standard','t2','completed','rating',1)");
+  await db.run("INSERT INTO rounds (id, session_id, idx, song_title, status, created_at) VALUES ('rB','sB',1,'A','ratified',1)");
+  await db.run("INSERT INTO rounds (id, session_id, idx, song_title, status, created_at) VALUES ('rR','sR',1,'S','ratified',1)");
+  await db.run("UPDATE rounds SET poll_type = 'binary' WHERE session_id IN (SELECT id FROM sessions WHERE poll_type = 'binary')");
+  ok('backfill: binary session round -> binary', (await db.get("SELECT poll_type FROM rounds WHERE id='rB'")).poll_type === 'binary');
+  ok('backfill: rating session round stays rating', (await db.get("SELECT poll_type FROM rounds WHERE id='rR'")).poll_type === 'rating');
+  await db.init();
+  const applied24b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('024 idempotent (not duplicated)', applied24b.filter(x => x === '024_round_poll_type').length === 1, JSON.stringify(applied24b));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
