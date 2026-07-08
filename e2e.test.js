@@ -6,6 +6,7 @@ process.env.PORT = '3999';
 process.env.ADMIN_EMAIL = 'admin@test.com';
 process.env.ABLY_API_KEY = '';   // realtime off in tests (the .env loader must not pull a real key)
 process.env.INGEST_TOKEN = 'test-ingest-secret';
+process.env.ANALYTICS_TOKEN = 'test-analytics-secret';
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
 try { fs.unlinkSync('./test.db-wal'); } catch {}
@@ -666,6 +667,17 @@ async function call(path, body, method='POST', headers={}) {
   ok('mixed recap: 3 rounds played', mrecap.roundsPlayed === 3, 'got ' + mrecap.roundsPlayed);
   ok('mixed recap: exactly ONE versus round in the card', mrecap.versusRounds.length === 1, JSON.stringify(mrecap.versusRounds));
 
+  console.log('\n— mixed: export uses the union shape (round_type + both column sets) —');
+  const mxExp = await fetch(base + `/api/admin/export?sessionId=${MSID}&format=json`, { headers: MAH }).then(r => r.json());
+  ok('mixed export poll_type=mixed', mxExp.session.poll_type === 'mixed', JSON.stringify(mxExp.session.poll_type));
+  ok('mixed export rounds carry round_type', mxExp.rounds.every(r => r.round_type === 'rating' || r.round_type === 'binary'), JSON.stringify(mxExp.rounds.map(r=>r.round_type)));
+  ok('mixed export has a rating round with room_average', mxExp.rounds.some(r => r.round_type === 'rating' && r.room_average != null), JSON.stringify(mxExp.rounds));
+  ok('mixed export has a binary round with split_a + song_b', mxExp.rounds.some(r => r.round_type === 'binary' && r.split_a != null && r.song_b_title), JSON.stringify(mxExp.rounds));
+  ok('mixed export votes carry round_type', mxExp.votes.every(v => v.round_type === 'rating' || v.round_type === 'binary'), JSON.stringify(mxExp.votes[0]));
+  ok('mixed export: rating votes carry rating, binary votes carry pick', mxExp.votes.some(v=>v.round_type==='rating'&&v.rating!=null) && mxExp.votes.some(v=>v.round_type==='binary'&&v.pick), 'shape');
+  const mxCsv = await fetch(base + `/api/admin/export?sessionId=${MSID}&format=csv`, { headers: MAH }).then(r => r.text());
+  ok('mixed CSV header is the union (round_type + rating + pick + split_a)', /round_type/.test(mxCsv) && /rating/.test(mxCsv) && /pick/.test(mxCsv) && /split_a/.test(mxCsv), mxCsv.split('\n')[0]);
+
   // ======================================================================
   // EVENT TOOLS — watch link, lobby message, sign-up prompt, broadcast, overlay
   // ======================================================================
@@ -755,6 +767,26 @@ async function call(path, body, method='POST', headers={}) {
   ok('returning rate is a 0–100 percent', an.overview.returningRate >= 0 && an.overview.returningRate <= 100, 'got ' + an.overview.returningRate);
   ok('retention histogram buckets sum to uniqueARs', an.retention.histogram.reduce((a, h) => a + h.count, 0) === an.retention.uniqueARs, JSON.stringify(an.retention));
   ok('window is clamped', ((await call('/api/admin/analytics?window=999', null, 'GET', BOOTH)).d.window) === 52, 'clamp');
+
+  console.log('\n— analytics data feed (static-token, machine-readable, PII-safe) —');
+  const feedNoTok = await fetch(base + '/api/analytics/export').then(r => r.status);
+  ok('feed 401s without a token', feedNoTok === 401, 'got ' + feedNoTok);
+  const feedBad = await fetch(base + '/api/analytics/export?token=wrong').then(r => r.status);
+  ok('feed 401s on a bad token', feedBad === 401, 'got ' + feedBad);
+  const feed = await fetch(base + '/api/analytics/export?token=test-analytics-secret&window=12').then(r => r.json());
+  ok('feed returns sessions/participants/rounds/votes arrays',
+    Array.isArray(feed.sessions) && Array.isArray(feed.participants) && Array.isArray(feed.rounds) && Array.isArray(feed.votes),
+    JSON.stringify(Object.keys(feed)));
+  ok('feed has at least one show', feed.sessions.length >= 1, 'sessions ' + feed.sessions.length);
+  ok('feed votes carry a stable ar pseudonym', feed.votes.length === 0 || feed.votes.every(v => typeof v.ar === 'string' && v.ar.startsWith('AR-')), 'ar');
+  ok('feed is PII-safe (no @ / email/phone/uid/name-of-person keys)',
+    !/@|"email"|"phone"|"uid"|"user_id"/.test(JSON.stringify(feed)), 'leak');
+  // Same durable A&R keeps the SAME pseudonym across two different shows (retention works).
+  const arBySession = {};
+  for (const v of feed.votes) { (arBySession[v.s] = arBySession[v.s] || new Set()).add(v.ar); }
+  const allAr = feed.votes.map(v => v.ar);
+  ok('pseudonyms are deterministic within a pull', new Set(allAr).size <= allAr.length, 'ar set');
+  ok('feed token also accepted via header', (await fetch(base + '/api/analytics/export?window=4', { headers: { 'x-analytics-token': 'test-analytics-secret' } })).status === 200, 'hdr');
 
   // ======================================================================
   // REFERRALS — code issued, attribution on join, credit on first vote

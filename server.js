@@ -1891,6 +1891,57 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, staged: { title: rec.title, artist: rec.artist } }, cors);
   }
 
+  // ===== ANALYTICS DATA FEED (static-token gated; machine-readable) =====
+  // A raw, PII-safe data pull across the most recent N shows — the per-session CSV/JSON
+  // exports bundled into ONE call, PLUS a STABLE pseudonymous A&R id (`ar`) so cross-session
+  // analysis (retention, repeat behavior) is possible — which the per-session anonymized
+  // exports can't do (their Player-N ids don't span sessions). Gated by a static
+  // ANALYTICS_TOKEN (like INGEST_TOKEN) so it can be queried programmatically without an
+  // interactive admin login; disabled (503) until the token is set. PII-safe: identity is a
+  // one-way HMAC (keyed by the token) — never a name/email/phone/uid. Bounded to the window,
+  // off every hot path (NOT boot/poll — the #1 rule); rides existing indexes.
+  if (p === '/api/analytics/export' && method === 'GET') {
+    const token = process.env.ANALYTICS_TOKEN || '';
+    if (!token) return send(res, 503, { error: 'Analytics feed not configured (set ANALYTICS_TOKEN)' });
+    const given = (req.headers['x-analytics-token'] || url.searchParams.get('token') || '').toString();
+    const eq = given.length === token.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(token));
+    if (!eq) return send(res, 401, { error: 'Bad token' });
+    const window = Math.max(1, Math.min(52, parseInt(url.searchParams.get('window') || '12', 10) || 12));
+    // Stable, one-way pseudonym for a durable user (keyed by the token; participants with no
+    // user_id fall back to a per-participant pseudonym so the row is still analyzable).
+    const arId = (uid, pid) => 'AR-' + crypto.createHmac('sha256', token).update(uid ? 'u:' + uid : 'p:' + pid).digest('hex').slice(0, 10);
+    // Most recent non-deleted shows that actually ran (>=1 vote).
+    const cand = await db.all('SELECT id, name, created_at, poll_type, series_id FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 200', []);
+    if (!cand.length) return send(res, 200, { generatedAt: Date.now(), window, sessions: [], participants: [], rounds: [], votes: [] });
+    const cph = cand.map(() => '?').join(',');
+    const vc = await db.all(`SELECT r.session_id AS sid, COUNT(v.id) AS c FROM rounds r JOIN votes v ON v.round_id = r.id WHERE r.session_id IN (${cph}) GROUP BY r.session_id`, cand.map(s => s.id));
+    const vcMap = new Map(vc.map(r => [r.sid, Number(r.c) || 0]));
+    const winSessions = cand.filter(s => (vcMap.get(s.id) || 0) > 0).slice(0, window);
+    if (!winSessions.length) return send(res, 200, { generatedAt: Date.now(), window, sessions: [], participants: [], rounds: [], votes: [] });
+    const ids = winSessions.map(s => s.id);
+    const wph = ids.map(() => '?').join(',');
+    // Short opaque per-session key for the payload (not the internal id).
+    const sidKey = {}; winSessions.forEach((s, i) => { sidKey[s.id] = 'S' + (i + 1); });
+    const parts = await db.all(`SELECT id, session_id, user_id, verified, total_points, referred_by, ref_credited, pool FROM participants WHERE session_id IN (${wph})`, ids);
+    const pMap = new Map(parts.map(p => [p.id, p]));
+    const arOf = (pid) => { const p = pMap.get(pid); return p ? arId(p.user_id, p.id) : null; };
+    const rounds = await db.all(`SELECT id, session_id, idx, status, poll_type, room_average, split_a FROM rounds WHERE session_id IN (${wph}) ORDER BY session_id, idx`, ids);
+    const rIdx = new Map(rounds.map(r => [r.id, r.idx]));
+    const votes = await db.all(
+      `SELECT v.round_id, r.session_id AS sid, v.participant_id AS pid, v.taste, v.predict, v.pick, v.predict_split,
+              v.err, v.points, v.tier, v.rank, v.locked_at
+         FROM votes v JOIN rounds r ON v.round_id = r.id WHERE r.session_id IN (${wph})`, ids);
+    return send(res, 200, {
+      generatedAt: Date.now(),
+      window,
+      note: 'PII-safe. `ar` is a stable one-way pseudonym per A&R across sessions (retention-safe). No names/emails/phones.',
+      sessions: winSessions.map(s => ({ s: sidKey[s.id], name: s.name, date: Number(s.created_at) || null, pollType: s.poll_type === 'binary' ? 'binary' : 'rating', seriesId: s.series_id || null })),
+      participants: parts.map(p => ({ s: sidKey[p.session_id], ar: arId(p.user_id, p.id), verified: (p.verified === 1 || p.verified === true) ? 1 : 0, points: Number(p.total_points) || 0, referredByAr: p.referred_by ? arOf(p.referred_by) : null, refCredited: (p.ref_credited === 1 || p.ref_credited === true) ? 1 : 0, pool: p.pool || null })),
+      rounds: rounds.map(r => ({ s: sidKey[r.session_id], round: r.idx, status: r.status, pollType: r.poll_type === 'binary' ? 'binary' : 'rating', roomAverage: r.room_average == null ? null : Number(r.room_average), splitA: r.split_a == null ? null : Number(r.split_a) })),
+      votes: votes.map(v => ({ s: sidKey[v.sid], round: rIdx.get(v.round_id) ?? null, ar: arOf(v.pid), taste: v.taste == null ? null : Number(v.taste), predict: v.predict == null ? null : Number(v.predict), pick: v.pick || null, predictSplit: v.predict_split == null ? null : Number(v.predict_split), error: v.err == null ? null : Number(v.err), points: v.points == null ? null : Number(v.points), tier: v.tier || null, rank: v.rank == null ? null : Number(v.rank), lockedAt: v.locked_at == null ? null : Number(v.locked_at) })),
+    });
+  }
+
   // Send a one-off test SMS to verify the Twilio config (no session needed). Reports the
   // active provider so the UI can flag when SMS_PROVIDER is still 'console' (logs, no send).
   if (p === '/api/admin/sms/test' && method === 'POST') {
@@ -3151,16 +3202,22 @@ async function handleApi(req, res, url) {
     const redact = !!(exporter && exporter.role === 'host'); // hosts export engagement, never contact PII
     const format = (url.searchParams.get('format') || 'json').toLowerCase();
     const anon = url.searchParams.get('anon') === '1';
-    const isBinary = session.poll_type === 'binary';
 
     const participants = await db.all(
       'SELECT id, user_id, name, email, phone, sms_marketing_consent, ref_code, referred_by, ref_credited, pool, checkin_distance, total_points, created_at FROM participants WHERE session_id = ? AND verified = 1 ORDER BY created_at ASC',
       [sessionId]
     );
     const rounds = await db.all(
-      "SELECT id, idx, song_title, song_artist, option_b_title, option_b_artist, room_average, split_a, opens_at, closes_at, status FROM rounds WHERE session_id = ? AND status = 'ratified' ORDER BY idx ASC",
+      "SELECT id, idx, poll_type, song_title, song_artist, option_b_title, option_b_artist, room_average, split_a, opens_at, closes_at, status FROM rounds WHERE session_id = ? AND status = 'ratified' ORDER BY idx ASC",
       [sessionId]
     );
+    // Poll type is per-round. A single-type session exports cleanly (one column set); a
+    // MIXED session uses a union shape with a round_type column and both sets (blank where N/A).
+    const roundTypeById = {};
+    rounds.forEach(r => { roundTypeById[r.id] = r.poll_type === 'binary' ? 'binary' : 'rating'; });
+    const typesPresent = new Set(rounds.map(r => roundTypeById[r.id]));
+    const mixed = typesPresent.size > 1;
+    const isBinary = !mixed && (typesPresent.has('binary') || (rounds.length === 0 && session.poll_type === 'binary'));
     const votes = await db.all(
       `SELECT v.round_id, v.participant_id, v.taste, v.predict, v.pick, v.predict_split, v.err, v.points, v.tier, v.rank, v.locked_at
          FROM votes v JOIN rounds r ON r.id = v.round_id
@@ -3184,11 +3241,13 @@ async function handleApi(req, res, url) {
     });
 
     const cleanVotes = votes.map(v => {
+      const rt = roundTypeById[v.round_id] || 'rating';
       const base = {
         player: labelById[v.participant_id] || 'Player ?',
         round: (rounds.find(r => r.id === v.round_id) || {}).idx,
       };
-      if (isBinary) {
+      if (mixed) base.round_type = rt;
+      if (rt === 'binary') {
         base.pick = v.pick;
         base.predict_split = v.predict_split;
         base.split_a = splitAByRound[v.round_id];
@@ -3206,17 +3265,30 @@ async function handleApi(req, res, url) {
     });
 
     const cleanRounds = rounds.map(r => {
+      const rt = roundTypeById[r.id];
+      const isBin = rt === 'binary';
       if (anon) {
-        return isBinary ? { round: r.idx, split_a: r.split_a } : { round: r.idx, room_average: r.room_average };
+        const o = { round: r.idx };
+        if (mixed) o.round_type = rt;
+        if (isBin) o.split_a = r.split_a; else o.room_average = r.room_average;
+        return o;
       }
-      return isBinary
-        ? { round: r.idx, song_a_title: r.song_title, song_a_artist: r.song_artist, song_b_title: r.option_b_title, song_b_artist: r.option_b_artist, split_a: r.split_a, opened_at: Number(r.opens_at), closed_at: Number(r.closes_at) }
-        : { round: r.idx, song_title: r.song_title, song_artist: r.song_artist, room_average: r.room_average, opened_at: Number(r.opens_at), closed_at: Number(r.closes_at) };
+      const o = { round: r.idx };
+      if (mixed) o.round_type = rt;
+      if (isBin) { o.song_a_title = r.song_title; o.song_a_artist = r.song_artist; o.song_b_title = r.option_b_title; o.song_b_artist = r.option_b_artist; o.split_a = r.split_a; }
+      else { o.song_title = r.song_title; o.song_artist = r.song_artist; o.room_average = r.room_average; }
+      o.opened_at = Number(r.opens_at); o.closed_at = Number(r.closes_at);
+      return o;
     });
 
     if (format === 'csv') {
-      // One row per vote — the richest single flat table for analysis.
-      const headers = isBinary
+      // One row per vote — the richest single flat table for analysis. A mixed session
+      // uses a union header (round_type + both column sets); pure sessions stay clean.
+      const headers = mixed
+        ? (anon
+            ? ['player', 'round', 'round_type', 'rating', 'prediction', 'room_average', 'pick', 'predict_split', 'split_a', 'error', 'points', 'tier', 'rank']
+            : ['player', 'name', 'email', 'round', 'round_type', 'song_a', 'song_b', 'rating', 'prediction', 'room_average', 'pick', 'predict_split', 'split_a', 'error', 'points', 'tier', 'rank', 'locked_at'])
+        : isBinary
         ? (anon
             ? ['player', 'round', 'pick', 'predict_split', 'split_a', 'error', 'points', 'tier', 'rank']
             : ['player', 'name', 'email', 'round', 'song_a', 'song_b', 'pick', 'predict_split', 'split_a', 'error', 'points', 'tier', 'rank', 'locked_at'])
@@ -3235,8 +3307,18 @@ async function handleApi(req, res, url) {
       for (const v of votes) {
         const pid = v.participant_id;
         const r = rounds.find(rr => rr.id === v.round_id) || {};
+        const rt = roundTypeById[v.round_id] || 'rating';
         let row;
-        if (isBinary) {
+        if (mixed) {
+          // Union row: populate the columns for this round's type, blanks for the rest.
+          const isBin = rt === 'binary';
+          const rating = isBin ? null : v.taste, prediction = isBin ? null : v.predict, roomAvg = isBin ? null : roomAvgByRound[v.round_id];
+          const pick = isBin ? v.pick : null, psplit = isBin ? v.predict_split : null, splitA = isBin ? splitAByRound[v.round_id] : null;
+          const songA = isBin ? songAByRound[v.round_id] : songByRound[v.round_id], songB = isBin ? songBByRound[v.round_id] : null;
+          row = anon
+            ? [labelById[pid], r.idx, rt, rating, prediction, roomAvg, pick, psplit, splitA, v.err, v.points, v.tier, v.rank]
+            : [labelById[pid], nameById[pid], emailById[pid], r.idx, rt, songA, songB, rating, prediction, roomAvg, pick, psplit, splitA, v.err, v.points, v.tier, v.rank, Number(v.locked_at)];
+        } else if (isBinary) {
           row = anon
             ? [labelById[pid], r.idx, v.pick, v.predict_split, splitAByRound[v.round_id], v.err, v.points, v.tier, v.rank]
             : [labelById[pid], nameById[pid], emailById[pid], r.idx, songAByRound[v.round_id], songBByRound[v.round_id], v.pick, v.predict_split, splitAByRound[v.round_id], v.err, v.points, v.tier, v.rank, Number(v.locked_at)];
@@ -3254,7 +3336,7 @@ async function handleApi(req, res, url) {
 
     // JSON (default)
     const payload = {
-      session: { id: anon ? undefined : session.id, name: session.name, poll_type: isBinary ? 'binary' : 'rating', exported_at: now(), anonymized: anon },
+      session: { id: anon ? undefined : session.id, name: session.name, poll_type: mixed ? 'mixed' : (isBinary ? 'binary' : 'rating'), exported_at: now(), anonymized: anon },
       participants: cleanParticipants,
       rounds: cleanRounds,
       votes: cleanVotes,
