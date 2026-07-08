@@ -646,6 +646,22 @@ async function call(path, body, method='POST', headers={}) {
   const ovBad = await fetch(base + `/api/overlay/state?s=nope`).then(r => r.status);
   ok('overlay 404s unknown session', ovBad === 404, 'got ' + ovBad);
 
+  console.log('\n— overlay: leaderboard scope (?leader_scope=room|round|series) —');
+  const ovRoom = await fetch(base + `/api/overlay/state?s=${SID}`).then(r => r.json());
+  ok('default scope is room', ovRoom.leaderboardScope === 'room', ovRoom.leaderboardScope);
+  const ovRound = await fetch(base + `/api/overlay/state?s=${SID}&leader_scope=round`).then(r => r.json());
+  ok('round scope flagged', ovRound.leaderboardScope === 'round', ovRound.leaderboardScope);
+  ok('round scope board has rows (latest ratified round)', ovRound.leaderboard.length > 0, JSON.stringify(ovRound.leaderboard));
+  ok('round scope points are single-round sized (≤135), not running totals',
+    ovRound.leaderboard.every(r => r.points <= 135), JSON.stringify(ovRound.leaderboard));
+  const ovSerFallback = await fetch(base + `/api/overlay/state?s=${SID}&leader_scope=series`).then(r => r.json());
+  ok('series scope falls back to room on an untagged room', ovSerFallback.leaderboardScope === 'room', ovSerFallback.leaderboardScope);
+  const scSer = await call('/api/admin/series/create', { title: 'Overlay Scope Series', status: 'active' }, 'POST', BOOTH);
+  await call('/api/admin/series/tag', { sessionId: ESID, seriesId: scSer.d.seriesId }, 'POST', BOOTH);
+  const ovSer = await fetch(base + `/api/overlay/state?s=${ESID}&leader_scope=series`).then(r => r.json());
+  ok('series scope active once tagged', ovSer.leaderboardScope === 'series', ovSer.leaderboardScope);
+  ok('series scope board is an array', Array.isArray(ovSer.leaderboard), JSON.stringify(ovSer.leaderboard));
+
   // ======================================================================
   // REFERRALS — code issued, attribution on join, credit on first vote
   // ======================================================================

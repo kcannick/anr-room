@@ -255,6 +255,41 @@
       <div id="roundBox"></div>
     </div>
 
+    <!-- Add-a-song sits directly under "This round": they're the two panels a host
+         works from all night, so nothing that grows (leaderboard, feed) may sit
+         between them. Whole card hides on completed/archived rooms — a dead form is
+         just noise; the round card + Room panel carry the "reopen" context. -->
+    <div class="card" id="addSongCard">
+      <!-- Queue lives inside the add-a-song card: visible only when something is
+           actually queued (straight-to-open makes an empty queue the normal state). -->
+      <div class="hide" id="queueSection" style="border-bottom:1px solid var(--line);margin-bottom:14px;padding-bottom:6px">
+        <h2>Up next <span id="queueCount" class="muted"></span></h2>
+        <div id="queueBox"></div>
+      </div>
+      <h2 id="queueFormTitle">Add a song</h2>
+      <div class="stack">
+        <div><label id="rTitleLabel">Song title *</label><input id="rTitle" placeholder="Song name"></div>
+        <div class="row">
+          <div><label id="rArtistLabel">Artist</label><input id="rArtist" placeholder="optional"></div>
+          <div><label>Giveaway this round</label><input id="rGive" placeholder="optional prize"></div>
+        </div>
+        <div id="songBRow" class="hide" style="border-top:1px solid var(--line);padding-top:12px;margin-top:2px">
+          <div><label>Song B title *</label><input id="rBTitle" placeholder="The other side"></div>
+          <div style="margin-top:10px"><label>Song B artist</label><input id="rBArtist" placeholder="optional"></div>
+        </div>
+        <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
+        <!-- Content pulls live right above the action button — grab, glance, play. -->
+        <div id="pullRow" style="display:contents">
+          <button class="btn ghost sm hide" id="btnNeroPull" style="margin-bottom:8px">⬇ Pull current song from Nero</button>
+          <div class="muted hide" id="neroMsg" style="font-size:12px;margin-bottom:8px"></div>
+          <button class="btn ghost sm hide" id="btnIngestPull" style="margin-bottom:8px">⬇ Pull latest submission</button>
+          <div class="muted hide" id="ingestMsg" style="font-size:12px;margin-bottom:8px"></div>
+        </div>
+        <button class="btn" id="btnAddRound">▶ Add &amp; play now</button>
+        <div class="err" id="addErr"></div>
+      </div>
+    </div>
+
     <!-- Room activity: KPI strip + three tabs. The default tab follows the round
          state (voting → Votes, tallying/ratified → Results, idle → Leaderboard)
          until the host picks one by hand. -->
@@ -296,35 +331,6 @@
       </div>
     </div>
 
-    <!-- Whole card hides on completed/archived rooms — a dead form is just noise;
-         the round card + Room panel carry the "reopen to keep playing" context. -->
-    <div class="card" id="addSongCard">
-      <!-- Queue lives inside the add-a-song card: visible only when something is
-           actually queued (straight-to-open makes an empty queue the normal state). -->
-      <div class="hide" id="queueSection" style="border-bottom:1px solid var(--line);margin-bottom:14px;padding-bottom:6px">
-        <h2>Up next <span id="queueCount" class="muted"></span></h2>
-        <div id="queueBox"></div>
-      </div>
-      <h2 id="queueFormTitle">Add a song</h2>
-      <button class="btn ghost sm hide" id="btnNeroPull" style="margin-bottom:8px">⬇ Pull current song from Nero</button>
-      <div class="muted hide" id="neroMsg" style="font-size:12px;margin-bottom:8px"></div>
-      <button class="btn ghost sm hide" id="btnIngestPull" style="margin-bottom:8px">⬇ Pull latest submission</button>
-      <div class="muted hide" id="ingestMsg" style="font-size:12px;margin-bottom:8px"></div>
-      <div class="stack">
-        <div><label id="rTitleLabel">Song title *</label><input id="rTitle" placeholder="Song name"></div>
-        <div class="row">
-          <div><label id="rArtistLabel">Artist</label><input id="rArtist" placeholder="optional"></div>
-          <div><label>Giveaway this round</label><input id="rGive" placeholder="optional prize"></div>
-        </div>
-        <div id="songBRow" class="hide" style="border-top:1px solid var(--line);padding-top:12px;margin-top:2px">
-          <div><label>Song B title *</label><input id="rBTitle" placeholder="The other side"></div>
-          <div style="margin-top:10px"><label>Song B artist</label><input id="rBArtist" placeholder="optional"></div>
-        </div>
-        <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
-        <button class="btn" id="btnAddRound">▶ Add &amp; play now</button>
-        <div class="err" id="addErr"></div>
-      </div>
-    </div>
   </div>
 
   <!-- RIGHT: setup & share -->
@@ -722,6 +728,14 @@
         <label class="ob-row"><input type="checkbox" id="obTimer" checked><span><b>Vote timer</b><small>countdown on the card</small></span></label>
         <label class="ob-row"><input type="checkbox" id="obBoard" checked><span><b>Leaderboard</b><small>pops in for a few seconds after each win</small></span>
           <span class="ob-nums"><input type="number" id="obRows" min="1" max="8" value="3"><small>rows</small><input type="number" id="obSecs" min="2" max="120" value="10"><small>sec</small></span></label>
+        <div class="ob-opt" id="obScopeOpt">
+          <div class="ob-t">Leaderboard shows <span class="muted">(round = latest ratified round)</span></div>
+          <div class="ob-seg" id="obScope">
+            <button data-v="room" class="on">This room</button>
+            <button data-v="round">This round</button>
+            <button data-v="series">Series</button>
+          </div>
+        </div>
         <label class="ob-row"><input type="checkbox" id="obQr" checked><span><b>Join QR</b><small>“Scan to Win $500” join code</small></span></label>
         <div class="ob-opt">
           <div class="ob-t">Panel opacity <span class="muted" id="obPanelVal">92%</span></div>
@@ -1693,14 +1707,14 @@ $('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
 // ---- event tools ----
 // ---- Overlay builder: form -> overlay URL (+ live preview) ----
 (function(){
-  const OB={orient:'horizontal',song:true,timer:true,board:true,rows:3,lbSecs:10,qr:true,panel:92};
+  const OB={orient:'horizontal',song:true,timer:true,board:true,rows:3,lbSecs:10,scope:'room',qr:true,panel:92};
   function buildUrl(){
     if(!SID) return location.origin+'/overlay';
     const p=[];
     if(OB.orient==='vertical') p.push('orientation=vertical');
     if(!OB.song) p.push('current_song=false');
     if(!OB.timer) p.push('timer=false');
-    if(!OB.board) p.push('leader_board=0'); else { if(OB.rows!==3) p.push('leader_board='+OB.rows); if(OB.lbSecs!==10) p.push('leader_secs='+OB.lbSecs); }
+    if(!OB.board) p.push('leader_board=0'); else { if(OB.rows!==3) p.push('leader_board='+OB.rows); if(OB.lbSecs!==10) p.push('leader_secs='+OB.lbSecs); if(OB.scope!=='room') p.push('leader_scope='+OB.scope); }
     if(!OB.qr) p.push('qr=false');
     if(OB.panel!==92) p.push('panel='+(OB.panel/100));
     return location.origin+'/overlay?s='+encodeURIComponent(SID)+(p.length?('&'+p.join('&')):'');
@@ -1711,6 +1725,7 @@ $('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
     $('#obSong').checked=OB.song;$('#obTimer').checked=OB.timer;$('#obBoard').checked=OB.board;
     $('#obRows').value=OB.rows;$('#obSecs').value=OB.lbSecs;$('#obQr').checked=OB.qr;$('#obPanel').value=OB.panel;
     $('#obPanelVal').textContent=OB.panel+'%';$('#obRows').disabled=!OB.board;$('#obSecs').disabled=!OB.board;
+    document.querySelectorAll('#obScope button').forEach(b=>{b.classList.toggle('on',b.dataset.v===OB.scope);b.disabled=!OB.board;});
     $('#obPrevWrap').className='ob-preview '+(OB.orient==='vertical'?'vertical':'horizontal');
     const url=buildUrl();$('#obUrl').textContent=url;$('#obOpen').href=url;
     clearTimeout(prevT);prevT=setTimeout(()=>{$('#obPreview').src=url;},260); // debounce iframe reload
@@ -1722,6 +1737,7 @@ $('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
     OB.panel=parseInt($('#obPanel').value,10)||92;render();
   }
   document.querySelectorAll('#obOrient button').forEach(b=>b.onclick=()=>{OB.orient=b.dataset.v;render();});
+  document.querySelectorAll('#obScope button').forEach(b=>b.onclick=()=>{OB.scope=b.dataset.v;render();});
   ['#obSong','#obTimer','#obBoard','#obQr'].forEach(s=>$(s).addEventListener('change',readControls));
   $('#obRows').addEventListener('input',readControls);
   $('#obSecs').addEventListener('input',readControls);

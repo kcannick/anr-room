@@ -5,9 +5,7 @@
       "name": "anr-dev",
       "runtimeExecutable": "node",
       "runtimeArgs": ["server.js"],
-      "port": 3000,
-      "autoPort": false,
-      "env": { "ADMIN_EMAIL": "kcannick@makinitmag.net" }
+      "port": 3000
     }
   ]
 }

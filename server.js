@@ -561,7 +561,7 @@ async function creditReferralMilestones(round, session) {
 // Public, PII-safe state for the on-stream overlay. Shows the live truth (unlike the
 // blind player view): current song/matchup, the running tally, the latest ratified
 // result with the real room number, and a first-name leaderboard.
-async function overlayState(session) {
+async function overlayState(session, lbScope) {
   const sessionId = session.id;
   const isBinary = session.poll_type === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
@@ -597,13 +597,32 @@ async function overlayState(session) {
     }
   }
 
-  const board = await db.all('SELECT name, total_points FROM participants WHERE session_id = ? AND verified = 1 ORDER BY total_points DESC, created_at ASC LIMIT 10', [sessionId]);
+  // Leaderboard scope (?leader_scope= on the overlay URL): 'room' (default) = this
+  // room's running totals; 'round' = the latest RATIFIED round only (points exist
+  // only post-ratify, so nothing sealed can leak); 'series' = the $500 competition
+  // board. An untagged room quietly falls back to room scope.
+  let scope = (lbScope === 'round' || lbScope === 'series') ? lbScope : 'room';
+  if (scope === 'series' && !session.series_id) scope = 'room';
+  let leaderboard;
+  if (scope === 'round') {
+    const lastRat = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status = 'ratified' ORDER BY idx DESC LIMIT 1", [sessionId]);
+    const rows = lastRat ? await db.all(
+      `SELECT p.name, v.points FROM votes v JOIN participants p ON p.id = v.participant_id
+        WHERE v.round_id = ? AND v.points IS NOT NULL ORDER BY v.points DESC, v.rank ASC LIMIT 10`, [lastRat.id]) : [];
+    leaderboard = rows.map((r, i) => ({ rank: i + 1, name: onlyFirst(r.name), points: r.points }));
+  } else if (scope === 'series') {
+    leaderboard = (await homeSeriesBoard(session.series_id, 10)).map(r => ({ rank: r.rank, name: r.name, points: r.points }));
+  } else {
+    const board = await db.all('SELECT name, total_points FROM participants WHERE session_id = ? AND verified = 1 ORDER BY total_points DESC, created_at ASC LIMIT 10', [sessionId]);
+    leaderboard = board.map((p, i) => ({ rank: i + 1, name: onlyFirst(p.name), points: p.total_points }));
+  }
   return {
     session: { id: sessionId, name: session.name, status: session.status, poll_type: isBinary ? 'binary' : 'rating' },
     participants: count,
     current,
     result,
-    leaderboard: board.map((p, i) => ({ rank: i + 1, name: onlyFirst(p.name), points: p.total_points })),
+    leaderboard,
+    leaderboardScope: scope,
     broadcast: (session.broadcast_text && session.broadcast_overlay) ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
   };
 }
@@ -1786,7 +1805,7 @@ async function handleApi(req, res, url) {
     const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
     const session = sessionId ? await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]) : null;
     if (!session) return bad(res, 'Room not found', 404);
-    return send(res, 200, await overlayState(session));
+    return send(res, 200, await overlayState(session, (url.searchParams.get('leader_scope') || url.searchParams.get('lb') || '').toLowerCase()));
   }
 
   // ----- check in to an event (sets the player's pool: in_person | online) -----
