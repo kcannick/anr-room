@@ -405,11 +405,15 @@ async function playerState(participant) {
     } else if (round.status === 'closed') {
       view = { phase: 'locked', round: { idx: round.idx, song_title: round.song_title, ...(isBinary ? { option_b_title: round.option_b_title } : {}) }, tallying: true, myVote: myVoteShape(myVote) };
     } else if (round.status === 'ratified') {
-      const ranked = await db.all('SELECT * FROM votes WHERE round_id = ? ORDER BY rank ASC', [round.id]);
-      const mine = ranked.find(v => v.participant_id === participant.id);
-      const winner = ranked[0]
-        ? await db.get('SELECT name FROM participants WHERE id = ?', [ranked[0].participant_id])
-        : null;
+      // Only three facts are needed here — the winner's name, THIS player's own row,
+      // and the total count. Fetch exactly those instead of pulling the whole vote
+      // set (which, on the 2.5s poll × every viewer, shipped O(votes) rows out of
+      // Neon per poll — an O(viewers×votes) egress multiplier during the results screen).
+      const winner = await db.get(
+        `SELECT p.name FROM votes v JOIN participants p ON p.id = v.participant_id
+         WHERE v.round_id = ? ORDER BY v.rank ASC LIMIT 1`, [round.id]);
+      const mine = await db.get('SELECT * FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
+      const totalPlayers = (await db.get('SELECT COUNT(*) AS c FROM votes WHERE round_id = ?', [round.id])).c;
       // FULLY BLIND during the session: players see their points, rank, and reaction
       // tier — but NOT the room average / split, NOT their exact "off by", NOT the
       // winner's guess. The answer is saved for the end-of-session recap reveal.
@@ -418,13 +422,13 @@ async function playerState(participant) {
       view = {
         phase: 'results',
         round: resultRound,
-        winner: ranked[0] ? { name: winner ? winner.name : 'Someone' } : null,
+        winner: winner ? { name: winner.name || 'Someone' } : null,
         myResult: mine
           ? (isBinary
               ? { pick: mine.pick, predict_split: mine.predict_split, points: mine.points, rank: mine.rank, tier: mine.tier }
               : { taste: mine.taste, predict: mine.predict, points: mine.points, rank: mine.rank, tier: mine.tier })
           : null,
-        totalPlayers: ranked.length,
+        totalPlayers,
       };
     } else {
       view = { phase: 'waiting' };
@@ -2973,7 +2977,11 @@ async function handleApi(req, res, url) {
     const m = /^data:(image\/[a-z+]+);base64,(.*)$/i.exec(b.image_data);
     if (!m) return bad(res, 'Bad image', 500);
     const buf = Buffer.from(m[2], 'base64');
-    res.writeHead(200, { 'Content-Type': m[1], 'Cache-Control': 'public, max-age=300' });
+    // Banner URLs are content-addressed: a new upload gets a fresh id(9), so the
+    // bytes at a given ?id= never change. Cache for a year, immutable — this is the
+    // single biggest DB-egress win (was max-age=300, which re-pulled the full ~500KB
+    // blob out of Neon every 5 min per viewer and blew the data-transfer quota).
+    res.writeHead(200, { 'Content-Type': m[1], 'Cache-Control': 'public, max-age=31536000, immutable' });
     return res.end(buf);
   }
 
