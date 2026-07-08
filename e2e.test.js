@@ -474,7 +474,9 @@ async function call(path, body, method='POST', headers={}) {
   ok('phase is recap', ms.phase === 'recap', ms.phase);
   ok('recap has total points', typeof ms.recap.totalPoints === 'number');
   ok('recap has a letter grade', /^[A-DF][+-]?$/.test(ms.recap.grade || ''), 'grade ' + ms.recap.grade);
-  ok('recap reveals overall room average', ms.recap.overallRoomAvg != null, 'avg ' + ms.recap.overallRoomAvg);
+  ok('recap has unified accuracy %', typeof ms.recap.accuracy === 'number' && ms.recap.accuracy >= 0 && ms.recap.accuracy <= 100, 'acc ' + ms.recap.accuracy);
+  ok('recap accuracyByType has rating leg', typeof ms.recap.accuracyByType.rating === 'number', JSON.stringify(ms.recap.accuracyByType));
+  ok('rating-only recap has no versus card', Array.isArray(ms.recap.versusRounds) && ms.recap.versusRounds.length === 0, JSON.stringify(ms.recap.versusRounds));
   ok('recap has rank + field size', ms.recap.rank >= 1 && ms.recap.fieldSize >= 1, JSON.stringify({r:ms.recap.rank,f:ms.recap.fieldSize}));
   ok('recap has percentile', typeof ms.recap.percentile === 'number');
   ok('recap counts bullseyes', typeof ms.recap.bullseyes === 'number');
@@ -586,14 +588,83 @@ async function call(path, body, method='POST', headers={}) {
   await call('/api/admin/session/end', { sessionId: BSID }, 'POST', BAH);
   const brecap = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': b3 })).d;
   ok('binary phase is recap', brecap.phase === 'recap', brecap.phase);
-  ok('binary recap poll_type=binary', brecap.recap.poll_type === 'binary', brecap.recap.poll_type);
   ok('binary recap has total points', typeof brecap.recap.totalPoints === 'number');
-  ok('binary recap has overallSplitA', typeof brecap.recap.overallSplitA === 'number', 'got ' + brecap.recap.overallSplitA);
-  ok('binary recap omits 0-9 letter grade', brecap.recap.grade == null, 'grade ' + brecap.recap.grade);
+  ok('binary recap has unified accuracy %', typeof brecap.recap.accuracy === 'number', 'got ' + brecap.recap.accuracy);
+  ok('binary recap accuracyByType has versus leg', typeof brecap.recap.accuracyByType.versus === 'number', JSON.stringify(brecap.recap.accuracyByType));
+  ok('binary recap now HAS an absolute grade (from accuracy)', /^[A-DF][+-]?$/.test(brecap.recap.grade || ''), 'grade ' + brecap.recap.grade);
+  ok('binary recap surfaces a Versus card', Array.isArray(brecap.recap.versusRounds) && brecap.recap.versusRounds.length >= 1, JSON.stringify(brecap.recap.versusRounds));
+  ok('versus card carries pick + actual split', brecap.recap.versusRounds[0].my_pick && brecap.recap.versusRounds[0].actual_split_a != null, JSON.stringify(brecap.recap.versusRounds[0]));
 
   console.log('\n— rating game untouched: original session still rating —');
   const ratingStillWorks = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   ok('original session is rating type', ratingStillWorks.poll_type === 'rating', ratingStillWorks.poll_type);
+
+  // ======================================================================
+  // MIXED ROUNDS — one room running BOTH 0-9 rating and binary (Versus) rounds.
+  // Poll type is per-round: defaults to the previous round, host overrides per round.
+  // ======================================================================
+  console.log('\n— mixed: create a session (default rating), join 3 —');
+  const mcs = await call('/api/session', { name: 'Mixed Night' }, 'POST', BOOTH); // no pollType -> rating default
+  const MSID = mcs.d.sessionId, MAH = { 'X-Admin-Token': mcs.d.adminToken };
+  ok('mixed session created (rating default)', mcs.status === 200 && mcs.d.pollType === 'rating', JSON.stringify(mcs.d));
+  async function mjoin(email, name) {
+    const req = await call('/api/join/request', { sessionId: MSID, email });
+    const ver = await call('/api/join/verify', { sessionId: MSID, email, code: req.d.devCode, name });
+    return ver.d.token;
+  }
+  const mxA = await mjoin('ma@test.com', 'Mia'), mxB = await mjoin('mb@test.com', 'Moe'), mxC = await mjoin('mc@test.com', 'Nix');
+
+  console.log('\n— mixed: round 1 is a RATING round (session default) —');
+  const mr1 = await call('/api/admin/round', { sessionId: MSID, song_title: 'Rating One', song_artist: 'X' }, 'POST', MAH);
+  ok('R1 added + auto-opened', mr1.status === 200 && mr1.d.opened, JSON.stringify(mr1.d));
+  let mxState = (await call(`/api/admin/state?sessionId=${MSID}`, null, 'GET', MAH)).d;
+  ok('R1 active round poll_type=rating', mxState.activeRound.poll_type === 'rating', mxState.activeRound.poll_type);
+  let mxPlay = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': mxA })).d;
+  ok('player sees R1 as rating widget', mxPlay.round.poll_type === 'rating', mxPlay.round && mxPlay.round.poll_type);
+  await call('/api/vote', { taste: 7, predict: 6 }, 'POST', { 'X-Player-Token': mxA });
+  await call('/api/vote', { taste: 6, predict: 6 }, 'POST', { 'X-Player-Token': mxB });
+  await call('/api/vote', { taste: 5, predict: 6 }, 'POST', { 'X-Player-Token': mxC });
+  const mrat1 = await call('/api/admin/round/ratify', { sessionId: MSID, roundId: mr1.d.roundId }, 'POST', MAH);
+  ok('R1 ratifies as rating (room_average set, split null)', mrat1.d.poll_type === 'rating' && mrat1.d.room_average != null && mrat1.d.split_a == null, JSON.stringify(mrat1.d));
+
+  console.log('\n— mixed: round 2 is a BINARY round in the SAME session (per-round override) —');
+  const mr2miss = await call('/api/admin/round', { sessionId: MSID, song_title: 'Only A', poll_type: 'binary' }, 'POST', MAH);
+  ok('binary round in mixed session still requires Song B', mr2miss.status === 400, 'got ' + mr2miss.status);
+  const mr2 = await call('/api/admin/round', { sessionId: MSID, song_title: 'Versus A', option_b_title: 'Versus B', poll_type: 'binary' }, 'POST', MAH);
+  ok('R2 binary added + auto-opened', mr2.status === 200 && mr2.d.opened, JSON.stringify(mr2.d));
+  mxState = (await call(`/api/admin/state?sessionId=${MSID}`, null, 'GET', MAH)).d;
+  ok('R2 active round poll_type=binary', mxState.activeRound.poll_type === 'binary', mxState.activeRound.poll_type);
+  mxPlay = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': mxA })).d;
+  ok('player widget switched to binary for R2', mxPlay.round.poll_type === 'binary', mxPlay.round && mxPlay.round.poll_type);
+  ok('SEALED: R2 split not leaked mid-vote', mxPlay.round.split_a === undefined, 'leaked ' + mxPlay.round.split_a);
+  await call('/api/vote', { pick: 'A', predict_split: 60 }, 'POST', { 'X-Player-Token': mxA });
+  await call('/api/vote', { pick: 'A', predict_split: 55 }, 'POST', { 'X-Player-Token': mxB });
+  await call('/api/vote', { pick: 'B', predict_split: 40 }, 'POST', { 'X-Player-Token': mxC });
+  // a rating-shaped vote must be rejected on this binary round
+  const mwrong = await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': mxA });
+  ok('rating-shaped vote rejected on binary round (already voted OR shape)', mwrong.status === 400, 'got ' + mwrong.status);
+  const mrat2 = await call('/api/admin/round/ratify', { sessionId: MSID, roundId: mr2.d.roundId }, 'POST', MAH);
+  ok('R2 ratifies as binary (split_a set, room_average null)', mrat2.d.poll_type === 'binary' && mrat2.d.split_a != null && mrat2.d.room_average == null, JSON.stringify(mrat2.d));
+
+  console.log('\n— mixed: round 3 with NO type inherits the previous (binary) — persistence —');
+  const mr3inherit = await call('/api/admin/round', { sessionId: MSID, song_title: 'Inherits binary' }, 'POST', MAH);
+  ok('R3 (no poll_type) inherits binary -> Song B required', mr3inherit.status === 400, 'got ' + mr3inherit.status);
+  const mr3 = await call('/api/admin/round', { sessionId: MSID, song_title: 'Rating Three', poll_type: 'rating' }, 'POST', MAH);
+  ok('R3 switched back to rating', mr3.status === 200 && mr3.d.opened, JSON.stringify(mr3.d));
+  await call('/api/vote', { taste: 8, predict: 7 }, 'POST', { 'X-Player-Token': mxA });
+  await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': mxB });
+  await call('/api/vote', { taste: 9, predict: 7 }, 'POST', { 'X-Player-Token': mxC });
+  await call('/api/admin/round/ratify', { sessionId: MSID, roundId: mr3.d.roundId }, 'POST', MAH);
+
+  console.log('\n— mixed: recap unifies both mechanics (accuracy %, absolute grade, versus card) —');
+  await call('/api/admin/session/end', { sessionId: MSID }, 'POST', MAH);
+  const mrecap = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': mxA })).d.recap;
+  ok('mixed recap: unified accuracy is a number', typeof mrecap.accuracy === 'number', 'acc ' + mrecap.accuracy);
+  ok('mixed recap: absolute grade present', /^[A-DF][+-]?$/.test(mrecap.grade || ''), 'grade ' + mrecap.grade);
+  ok('mixed recap: rating leg present', typeof mrecap.accuracyByType.rating === 'number', JSON.stringify(mrecap.accuracyByType));
+  ok('mixed recap: versus leg present', typeof mrecap.accuracyByType.versus === 'number', JSON.stringify(mrecap.accuracyByType));
+  ok('mixed recap: 3 rounds played', mrecap.roundsPlayed === 3, 'got ' + mrecap.roundsPlayed);
+  ok('mixed recap: exactly ONE versus round in the card', mrecap.versusRounds.length === 1, JSON.stringify(mrecap.versusRounds));
 
   // ======================================================================
   // EVENT TOOLS — watch link, lobby message, sign-up prompt, broadcast, overlay
@@ -661,6 +732,29 @@ async function call(path, body, method='POST', headers={}) {
   const ovSer = await fetch(base + `/api/overlay/state?s=${ESID}&leader_scope=series`).then(r => r.json());
   ok('series scope active once tagged', ovSer.leaderboardScope === 'series', ovSer.leaderboardScope);
   ok('series scope board is an array', Array.isArray(ovSer.leaderboard), JSON.stringify(ovSer.leaderboard));
+
+  // ======================================================================
+  // ANALYTICS — admin-only cross-session engagement + retention dashboard
+  // ======================================================================
+  console.log('\n— analytics: admin-only gate —');
+  const anNoAuth = await fetch(base + '/api/admin/analytics').then(r => r.status);
+  ok('analytics 403s without auth', anNoAuth === 403 || anNoAuth === 401, 'got ' + anNoAuth);
+  const anAsHost = await call('/api/admin/analytics', null, 'GET', { 'X-Auth-Token': HOSTTOK });
+  ok('analytics rejects a non-admin', anAsHost.status === 403 || anAsHost.status === 401, 'got ' + anAsHost.status);
+
+  console.log('\n— analytics: payload shape + internal consistency —');
+  const an = (await call('/api/admin/analytics?window=12', null, 'GET', BOOTH)).d;
+  ok('analytics returns overview', an.overview && typeof an.overview.shows === 'number', JSON.stringify(an.overview));
+  ok('analytics returns shows array', Array.isArray(an.shows) && an.shows.length >= 1, 'shows ' + (an.shows || []).length);
+  ok('analytics returns retention histogram', Array.isArray(an.retention.histogram), JSON.stringify(an.retention));
+  ok('analytics returns accuracy tiers', an.accuracy && typeof an.accuracy.total === 'number', JSON.stringify(an.accuracy));
+  ok('analytics is PII-safe (no @ / email/phone keys)', !/@|"email"|"phone"|"uid"/.test(JSON.stringify(an)), 'leak');
+  ok('every show: active <= registered', an.shows.every(s => s.active <= s.registered), JSON.stringify(an.shows.map(s => [s.active, s.registered])));
+  ok('every show: votes >= active (>=1 vote each)', an.shows.every(s => s.votes >= s.active), 'bad');
+  ok('accuracy tiers sum to accuracy.total', (an.accuracy.bullseye + an.accuracy.sharp + an.accuracy.close + an.accuracy.off + an.accuracy.wayoff) === an.accuracy.total, JSON.stringify(an.accuracy));
+  ok('returning rate is a 0–100 percent', an.overview.returningRate >= 0 && an.overview.returningRate <= 100, 'got ' + an.overview.returningRate);
+  ok('retention histogram buckets sum to uniqueARs', an.retention.histogram.reduce((a, h) => a + h.count, 0) === an.retention.uniqueARs, JSON.stringify(an.retention));
+  ok('window is clamped', ((await call('/api/admin/analytics?window=999', null, 'GET', BOOTH)).d.window) === 52, 'clamp');
 
   // ======================================================================
   // REFERRALS — code issued, attribution on join, credit on first vote

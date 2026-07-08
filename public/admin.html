@@ -175,6 +175,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h2 style="margin:0">Your rooms</h2>
       <div class="row" style="gap:8px;flex:0 0 auto">
+        <button class="btn ghost sm hide" id="btnAnalytics">Analytics</button>
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
         <button class="btn ghost sm" id="btnHostDefaults">Defaults</button>
@@ -194,13 +195,13 @@
     <div><label>Room name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Night"></div>
     <div><label>Default voting window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
     <div>
-      <label>Room type</label>
+      <label>Starting round type</label>
       <select id="newPollType" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
         <option value="rating">Standard — rate a song 0–9, predict the room average</option>
         <option value="binary">Versus — Song A vs B, predict the split</option>
       </select>
-      <div class="muted" id="typeHint" style="font-size:12px;margin-top:6px">Set once at creation — every round in the room uses this type.</div>
-      <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 Locked — this room has votes, so the room type can't change.</div>
+      <div class="muted" id="typeHint" style="font-size:12px;margin-top:6px">Just the first round’s default — switch any round between 0–9 and Versus from the round form.</div>
+      <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 This room already has rounds — the starting type is set. Change type per round from the round form.</div>
     </div>
     <div id="seriesField">
       <label>Series <span class="muted">(counts toward this monthly leaderboard)</span></label>
@@ -266,8 +267,17 @@
         <h2>Up next <span id="queueCount" class="muted"></span></h2>
         <div id="queueBox"></div>
       </div>
-      <h2 id="queueFormTitle">Add a song</h2>
+      <h2 id="queueFormTitle">Start Round</h2>
       <div class="stack">
+        <!-- Per-round poll type. Defaults to the previous round's type and persists
+             round-to-round until the host changes it (0-9 rating vs Versus A/B). -->
+        <div>
+          <label>Round type</label>
+          <div class="ob-seg" id="roundTypeSeg">
+            <button type="button" data-rt="rating" class="on">0–9 Rating</button>
+            <button type="button" data-rt="binary">Versus (A/B)</button>
+          </div>
+        </div>
         <div><label id="rTitleLabel">Song title *</label><input id="rTitle" placeholder="Song name"></div>
         <div class="row">
           <div><label id="rArtistLabel">Artist</label><input id="rArtist" placeholder="optional"></div>
@@ -656,6 +666,55 @@
   </div>
 </div>
 
+<!-- ANALYTICS (admin role only): cross-session engagement + retention dashboard -->
+<div id="analytics" class="grid hide">
+  <style>
+    #analytics .stack{max-width:820px;margin:0 auto;width:100%}
+    #analytics .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    #analytics .kpi{background:var(--panel-2);padding:14px 15px}
+    #analytics .kpi .n{font-family:"Space Mono",monospace;font-size:26px;font-weight:700;color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
+    #analytics .kpi .n .u{font-size:14px;color:var(--ink-dim)}
+    #analytics .kpi .l{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin-top:7px}
+    #analytics .kpi.hero .n{color:var(--signal)}
+    #analytics .an-tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin-top:4px}
+    #analytics table{border-collapse:collapse;width:100%;font-size:13px;min-width:640px}
+    #analytics th,#analytics td{padding:9px 11px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+    #analytics th:first-child,#analytics td:first-child{text-align:left}
+    #analytics thead th{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;background:#0a0814}
+    #analytics tbody tr:last-child td{border-bottom:none}
+    #analytics tbody tr.tot td{background:#0a0814;font-weight:700;color:var(--ink)}
+    #analytics .bars{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+    #analytics .bar{display:grid;grid-template-columns:80px 1fr 44px;align-items:center;gap:10px;font-size:12.5px}
+    #analytics .bar .track{height:16px;background:#0a0814;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+    #analytics .bar .fill{height:100%;background:var(--accent)}
+    #analytics .bar .fill.sig{background:var(--signal)}
+    #analytics .bar .v{font-family:"Space Mono",monospace;color:var(--ink-dim);text-align:right;font-variant-numeric:tabular-nums}
+    #analytics .acc{display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+    #analytics .acc span{display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#08240a;min-width:0;overflow:hidden}
+    #analytics .acclegend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:10px;font-size:11.5px;color:var(--ink-dim)}
+    #analytics .acclegend b{color:var(--ink)}
+    #analytics .dotc{width:10px;height:10px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:5px}
+  </style>
+  <div class="stack">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <h2 style="margin:0">Analytics <span class="muted" id="anRange" style="font-weight:400;text-transform:none;letter-spacing:0"></span></h2>
+        <div class="row" style="gap:8px;flex:0 0 auto">
+          <select id="anWindow" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:7px 10px;border-radius:9px">
+            <option value="4">Last 4 shows</option>
+            <option value="12" selected>Last 12 shows</option>
+            <option value="30">Last 30 shows</option>
+            <option value="52">Last 52 shows</option>
+          </select>
+          <button class="btn ghost sm" id="btnAnalyticsBack">← My rooms</button>
+        </div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:0 0 14px">Engagement and <b>retention</b> across recent shows — retention is computed off durable A&amp;R accounts, so it spans sessions (the per-show CSV/JSON exports can't). Aggregate counts only; no names, emails, or phones.</p>
+      <div id="anBody"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
 <!-- HOST DEFAULTS MODAL: prefill for every new room this host creates -->
 <div id="hdModal" class="modal-scrim" style="z-index:35">
   <div class="modal-card md">
@@ -834,8 +893,49 @@
 const $=s=>document.querySelector(s);
 let SID=localStorage.getItem('rt_admin_sid'), ATOK=localStorage.getItem('rt_admin_token');
 let AUTHTOK=localStorage.getItem('rt_auth_token'), ME=null;
-let adminPollType='rating'; // set from session state; drives the binary admin UI branches
+let adminPollType='rating'; // session default (fallback); real poll type is per-round now
+let roundType='rating';     // the add-round picker — persists round to round until changed
+let _rtSig=null;            // re-sync the picker only when the set of rounds changes
 let poll=null, serverSkew=0, lastState=null, sessLocked=false;
+
+// ---- per-round poll type (add-round form) ----
+function allRoundTypes(st){ return [...(st.rounds||[]), ...(st.queue||[])]; }
+function newestRoundType(st){
+  const all=allRoundTypes(st);
+  if(!all.length) return (st.session&&st.session.poll_type==='binary')?'binary':'rating';
+  const nr=all.reduce((a,b)=>Number(b.created_at||0)>=Number(a.created_at||0)?b:a);
+  return nr.poll_type==='binary'?'binary':'rating';
+}
+function setRoundType(t){
+  roundType=(t==='binary')?'binary':'rating';
+  const seg=$('#roundTypeSeg');
+  if(seg)seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.rt===roundType));
+  const isBin=roundType==='binary';
+  if($('#songBRow'))$('#songBRow').classList.toggle('hide', !isBin);
+  if($('#rTitleLabel'))$('#rTitleLabel').textContent = isBin ? 'Song A title *' : 'Song title *';
+  if($('#rArtistLabel'))$('#rArtistLabel').textContent = isBin ? 'Song A artist' : 'Artist';
+}
+function syncRoundType(st){
+  // Default the picker to the previous round's type, but only re-sync when the set of
+  // rounds actually changes — so a 2s poll refresh never overwrites a type the host
+  // just picked for the round they're about to add.
+  const sig=allRoundTypes(st).map(r=>r.id).join(',');
+  if(sig!==_rtSig){ _rtSig=sig; setRoundType(newestRoundType(st)); }
+}
+// Session badge: Mixed when rounds span both types, else Versus / (blank for rating).
+function sessionTypeSuffix(st){
+  const types=new Set(allRoundTypes(st).map(r=>r.poll_type==='binary'?'binary':'rating'));
+  if(types.size>1) return ' · 🎚 Mixed';
+  if(types.has('binary')) return ' · ⚔️ Versus';
+  if(types.size===0 && st.session && st.session.poll_type==='binary') return ' · ⚔️ Versus';
+  return '';
+}
+// Small per-round type chip for queue/history rows.
+function typeChip(pt){
+  return pt==='binary'
+    ? '<span class="pill" style="background:rgba(124,111,240,.16);border:1px solid var(--cool);color:var(--cool)">A/B</span>'
+    : '<span class="pill" style="background:rgba(75,183,73,.14);border:1px solid var(--signal);color:var(--signal)">0–9</span>';
+}
 
 // ---- room-activity tabs (Live votes / Results / Leaderboard) ----
 // The default tab follows the round state until the host clicks one by hand;
@@ -859,7 +959,7 @@ async function loadRounds(){
     const rounds=(d.rounds||[]).filter(r=>r.status!=='pending').reverse(); // queued songs live in the queue card
     if(!rounds.length){box.innerHTML='<div class="empty">No rounds played yet.</div>';return;}
     box.innerHTML=rounds.map(r=>{
-      const isVs=!!r.option_b_title;
+      const isVs=(r.poll_type==='binary')||!!r.option_b_title;
       const title=isVs?esc(r.song_title)+' vs '+esc(r.option_b_title):esc(r.song_title);
       const score=r.status==='ratified'
         ? (isVs ? (r.split_a!=null?Math.round(r.split_a)+'% A':'—') : (r.room_average!=null?(+r.room_average).toFixed(1):'—'))
@@ -874,7 +974,7 @@ async function loadRounds(){
       return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #241d3d${canExpand?';cursor:pointer':''}"${canExpand?` onclick="toggleRoundResults('${r.id}')" title="Show results"`:''}>
         <span class="mono" style="color:var(--ink-faint);width:38px;flex:none">#${r.idx}</span>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</div>
+          <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${typeChip(r.poll_type)} ${title}</div>
           ${r.song_artist?`<div class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.song_artist)}</div>`:''}
         </div>
         ${pill}
@@ -918,7 +1018,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','picker','create','console','series','users','platform'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','picker','create','console','series','users','platform','analytics'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -1046,6 +1146,7 @@ async function openPicker(){
   $('#btnManageSeries').classList.toggle('hide',!isAdmin());
   $('#btnManageUsers').classList.toggle('hide',!isAdmin());
   $('#btnPlatform').classList.toggle('hide',!isAdmin());
+  $('#btnAnalytics').classList.toggle('hide',!isAdmin());
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
@@ -1430,6 +1531,85 @@ $('#udConfirm').oninput=function(){$('#udDelete').disabled=this.value!==udState.
 $('#udCancel').onclick=()=>{$('#userDelModal').style.display='none';};
 $('#udDelete').onclick=async()=>{$('#udErr').textContent='';try{await api('/api/admin/users/delete',{uid:udState.id,confirmName:$('#udConfirm').value});$('#userDelModal').style.display='none';await loadUsers();}catch(e){$('#udErr').textContent=e.message;}};
 
+// ---- Analytics (admin): cross-session engagement + retention ----
+let anData=null;
+async function openAnalytics(){
+  showScreen('analytics');
+  $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
+  await loadAnalytics();
+}
+async function loadAnalytics(){
+  const box=$('#anBody');box.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    anData=await api('/api/admin/analytics?window='+encodeURIComponent($('#anWindow').value||'12'),null,'GET');
+    renderAnalytics(anData);
+  }catch(e){box.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+function anDate(ms){ if(!ms)return '—'; try{return new Date(Number(ms)).toLocaleDateString('en-US',{month:'numeric',day:'numeric',timeZone:'America/New_York'});}catch(e){return '—';} }
+function renderAnalytics(d){
+  const o=d.overview, box=$('#anBody');
+  $('#anRange').textContent=o.shows?('· '+o.shows+' shows'):'';
+  if(!o.shows){box.innerHTML='<div class="empty">No shows with votes yet.</div>';return;}
+  const kpi=(n,l,hero)=>`<div class="kpi${hero?' hero':''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const kpis=`<div class="kpis">
+    ${kpi(o.shows,'Shows')}
+    ${kpi(o.uniqueARs,'Unique A&amp;Rs')}
+    ${kpi(o.returningRate+'<span class="u">%</span>','Returning',true)}
+    ${kpi(o.avgActivePerShow,'Avg active / show')}
+    ${kpi(o.avgDepth+'<span class="u"> rds</span>','Depth / active')}
+    ${kpi(o.strongReadPct+'<span class="u">%</span>','Strong reads',true)}
+  </div>`;
+  // retention histogram
+  const maxc=Math.max(1,...d.retention.histogram.map(h=>h.count));
+  const bars=d.retention.histogram.map(h=>`<div class="bar"><span>${h.shows} show${h.shows>1?'s':''}</span><div class="track"><div class="fill${h.shows>=2?' sig':''}" style="width:${Math.round(h.count/maxc*100)}%"></div></div><span class="v">${h.count}</span></div>`).join('');
+  const ret=`<h3 style="margin:22px 0 8px">Retention <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— shows each A&amp;R played · ${o.returningARs}/${o.uniqueARs} came back for 2+</span></h3><div class="bars">${bars}</div>`;
+  // per-show table
+  const rows=d.shows.map(s=>`<tr title="${esc(s.name)}"><td>${anDate(s.date)}${s.pollType==='binary'?' ⚔️':''}</td><td>${s.registered}</td><td>${s.active}</td><td>${s.activationPct==null?'—':s.activationPct+'%'}</td><td>${s.votes}</td><td>${s.rounds}</td><td>${s.avgPerRound}</td><td>${s.depth}</td><td>${s.firstThird}→${s.lastThird}</td><td>${s.creditedReferrals||''}</td></tr>`).join('');
+  const tbl=`<h3 style="margin:22px 0 8px">Per-show</h3><div class="an-tblwrap"><table>
+    <thead><tr><th>Show</th><th>Reg</th><th>Active</th><th>Act%</th><th>Votes</th><th>Rds</th><th>Avg/rd</th><th>Depth</th><th>Fill 1st→last</th><th>Refs</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+  // accuracy
+  const a=d.accuracy, T=a.total||1;
+  const seg=[['bullseye','#f5c518','Bullseye'],['sharp','#4bb749','Sharp'],['close','#6d5fe0','Close'],['off','#4a4470','Off'],['wayoff','#ff5d6c','Way off']];
+  const accBar=`<div class="acc">${seg.map(([k,c])=>{const pct=a[k]/T*100;return pct>0?`<span style="width:${pct}%;background:${c}">${pct>=7?Math.round(pct)+'%':''}</span>`:'';}).join('')}</div>
+    <div class="acclegend">${seg.map(([k,c,l])=>`<span><i class="dotc" style="background:${c}"></i>${l} <b>${a[k]}</b> · ${Math.round(a[k]/T*100)}%</span>`).join('')}</div>`;
+  const acc=`<h3 style="margin:22px 0 8px">Prediction accuracy <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— ${T.toLocaleString()} votes</span></h3>${accBar}`;
+  // actions
+  const act=`<div class="row" style="gap:8px;margin-top:22px;flex-wrap:wrap">
+    <button class="btn ghost sm" id="anCopy">Copy summary</button>
+    <button class="btn ghost sm" id="anJson">Export JSON</button>
+    <button class="btn ghost sm" id="anCsv">Export CSV</button>
+    <span class="muted" style="font-size:11px;align-self:center">as of ${new Date(d.generatedAt).toLocaleString('en-US',{timeZone:'America/New_York'})} ET</span>
+  </div>`;
+  box.innerHTML=kpis+ret+tbl+acc+act;
+  $('#anCopy').onclick=anCopySummary;
+  $('#anJson').onclick=()=>anDownload('anr-analytics-'+d.shows.length+'shows.json',JSON.stringify(d,null,2),'application/json');
+  $('#anCsv').onclick=anExportCsv;
+}
+function anDownload(fname,text,mime){
+  const b=new Blob([text],{type:mime||'text/plain'});const u=URL.createObjectURL(b);
+  const a=document.createElement('a');a.href=u;a.download=fname;a.click();setTimeout(()=>URL.revokeObjectURL(u),1500);
+}
+function anExportCsv(){
+  if(!anData)return;
+  const head=['show','date','type','registered','active','activation_pct','votes','rounds','avg_per_round','depth','fill_first_third','fill_last_third','credited_referrals','bullseye','sharp','close','off','wayoff'];
+  const esc2=v=>{v=v==null?'':String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const lines=[head.join(',')].concat(anData.shows.map(s=>[s.name,anDate(s.date),s.pollType,s.registered,s.active,s.activationPct,s.votes,s.rounds,s.avgPerRound,s.depth,s.firstThird,s.lastThird,s.creditedReferrals,s.tiers.bullseye,s.tiers.sharp,s.tiers.close,s.tiers.off,s.tiers.wayoff].map(esc2).join(',')));
+  anDownload('anr-analytics-'+anData.shows.length+'shows.csv',lines.join('\n'),'text/csv');
+}
+async function anCopySummary(){
+  if(!anData)return;const o=anData.overview;
+  const txt=`The A&R Room — last ${o.shows} shows\n`
+    +`Unique A&Rs: ${o.uniqueARs} · Returning (2+ shows): ${o.returningARs} (${o.returningRate}%)\n`
+    +`Avg active/show: ${o.avgActivePerShow} · Depth: ${o.avgDepth} rounds/active · Activation: ${o.activationPct==null?'—':o.activationPct+'%'}\n`
+    +`Total votes: ${o.totalVotes.toLocaleString()} · Strong reads: ${o.strongReadPct}% · Bullseye: ${o.bullseyePct}% · Credited referrals: ${o.creditedReferrals}`;
+  try{await navigator.clipboard.writeText(txt);const b=$('#anCopy');b.textContent='Copied ✓';setTimeout(()=>b.textContent='Copy summary',1400);}
+  catch(e){alert(txt);}
+}
+$('#anWindow')&&$('#anWindow').addEventListener('change',loadAnalytics);
+$('#btnAnalytics')&&($('#btnAnalytics').onclick=openAnalytics);
+$('#btnAnalyticsBack')&&($('#btnAnalyticsBack').onclick=openPicker);
+
 async function openSeries(){
   showScreen('series');
   $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
@@ -1640,12 +1820,15 @@ $('#delPurge').onclick=async()=>{
 };
 
 // ---- add round ----
+// Round-type picker: pick persists (a poll refresh won't reset it — see syncRoundType).
+if($('#roundTypeSeg'))$('#roundTypeSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>setRoundType(b.dataset.rt));
 $('#btnAddRound').onclick=async()=>{
   $('#addErr').textContent='';
+  const isBin=roundType==='binary';
   const song_title=$('#rTitle').value.trim();
-  if(!song_title)return $('#addErr').textContent=(adminPollType==='binary'?'Song A title is required':'Song title is required');
-  const payload={sessionId:SID,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim()};
-  if(adminPollType==='binary'){
+  if(!song_title)return $('#addErr').textContent=(isBin?'Song A title is required':'Song title is required');
+  const payload={sessionId:SID,poll_type:roundType,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim()};
+  if(isBin){
     const b=$('#rBTitle').value.trim();
     if(!b)return $('#addErr').textContent='Song B title is required';
     payload.option_b_title=b;payload.option_b_artist=$('#rBArtist').value.trim();
@@ -1942,12 +2125,14 @@ function roundControls(st){
   const r=st.activeRound;
   // A song added now goes straight to open unless a round is in play (voting or tallying).
   const inPlay=!!(r&&(r.status==='voting'||r.status==='closed'));
-  const addBtn=$('#btnAddRound'); if(addBtn)addBtn.textContent=inPlay?'Add to queue':'▶ Add & play now';
-  const qft=$('#queueFormTitle'); if(qft)qft.textContent=inPlay?'Queue a song':'Add a song';
+  // Music plays outside the app, so a round is "started," not a song "played." When one
+  // is live the new round joins the queue instead.
+  const addBtn=$('#btnAddRound'); if(addBtn)addBtn.textContent=inPlay?'+ Add Round':'▶ Start Round';
+  const qft=$('#queueFormTitle'); if(qft)qft.textContent=inPlay?'Add Round':'Start Round';
   const box=$('#roundBox');
   if(!r){box.innerHTML=sessLocked
     ?'<div class="empty">Room complete — no rounds were played.</div>'
-    :'<div class="empty">No round in play. Add a song below — it starts a round right away.</div>';return;}
+    :'<div class="empty">No round in play. Start a round below — it opens right away.</div>';return;}
   const statusPill={voting:'<span class="pill live">● Voting open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
   let timer='';
   if(r.status==='voting'&&r.closes_at){
@@ -2000,7 +2185,7 @@ function queueBox(st){
     </div>`+
     q.map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;${i===0?'border-color:var(--signal)':''}">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.option_b_title?esc(r.song_title)+' vs '+esc(r.option_b_title):esc(r.song_title)}</div>
+          <div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${typeChip(r.poll_type)} ${r.option_b_title?esc(r.song_title)+' vs '+esc(r.option_b_title):esc(r.song_title)}</div>
           <div class="muted" style="font-size:12px">${esc(r.song_artist||'')}${r.giveaway?' · 🎁 '+esc(r.giveaway):''}</div>
         </div>
         <button class="btn ghost sm" title="Edit" onclick="editRound('${r.id}')">✎</button>
@@ -2067,8 +2252,9 @@ function resultsTableHtml(rows,isBin,round,withReport){
 // closed, the results table once ratified. render() swaps feed/review visibility.
 function reviewBox(st){
   const box=$('#reviewBox');
-  const isBin = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary'));
   const ar=st.activeRound;
+  // Per-round: the active round decides the results shape, not the session default.
+  const isBin = (ar&&ar.poll_type ? ar.poll_type : (st.session&&st.session.poll_type))==='binary';
   if(st.ratifiedResults&&ar&&ar.status==='ratified'){
     box.innerHTML=resultsTableHtml(st.ratifiedResults,isBin,ar,!isBin);
     return;
@@ -2082,13 +2268,9 @@ function reviewBox(st){
 
 function render(st){
   lastState=st;
-  adminPollType = (st.poll_type==='binary'||(st.session&&st.session.poll_type==='binary')) ? 'binary' : 'rating';
-  const isBin = adminPollType==='binary';
-  // Queue form adapts to the session's game type.
-  $('#songBRow').classList.toggle('hide', !isBin);
-  $('#queueFormTitle').textContent = isBin ? 'Queue a matchup' : 'Queue a song';
-  $('#rTitleLabel').textContent = isBin ? 'Song A title *' : 'Song title *';
-  $('#rArtistLabel').textContent = isBin ? 'Song A artist' : 'Artist';
+  adminPollType = (st.session&&st.session.poll_type==='binary') ? 'binary' : 'rating'; // session default (fallback)
+  // Poll type is per-round now — sync the add-round picker to the last round's type.
+  syncRoundType(st);
   // The submission link picks the source. A nero.fan/…/live link = Nero; anything else = the
   // review-site push. Only ONE pull button shows at a time so switching sources is clean.
   const su=(st.session&&st.session.submit_url)||'';
@@ -2104,7 +2286,7 @@ function render(st){
   if($('#adsCard'))$('#adsCard').classList.toggle('hide', !hasP('ads'));
   if($('#exportBlock'))$('#exportBlock').classList.toggle('hide', !hasP('export'));
   if(hasIng)$('#btnIngestPull').textContent=('⬇ Pull submission: '+(ing.title||'')+(ing.artist?' — '+ing.artist:'')).slice(0,46);
-  $('#who').textContent=st.session.name+' · '+st.session.status+(isBin?' · ⚔️ Versus':'');
+  $('#who').textContent=st.session.name+' · '+st.session.status+sessionTypeSuffix(st);
   // lifecycle controls reflect current status
   const stx=st.session.status;
   const pillCls={upcoming:'upcoming',live:'live',completed:'completed',archived:'archived'}[stx]||'';
@@ -2125,7 +2307,10 @@ function render(st){
   if(locked){$('#btnNeroPull').classList.add('hide');$('#btnIngestPull').classList.add('hide');}
   // Post-show mode: wrap-up actions surface, live-only tools go away.
   $('#wrapUpRow').classList.toggle('hide',stx!=='completed');
-  if($('#wuSongs'))$('#wuSongs').classList.toggle('hide',isBin); // Versus has no Top-8-Songs card
+  // Top-8-Songs is rating-only (objective, rankable). Show it whenever the room has ANY
+  // 0–9 round; hide only for a pure-Versus room.
+  const hasRatingRound = allRoundTypes(st).some(r=>r.poll_type!=='binary');
+  if($('#wuSongs'))$('#wuSongs').classList.toggle('hide', !hasRatingRound);
   if($('#toolsCard'))$('#toolsCard').classList.toggle('hide',locked);
   // Read-only settings summary — editing happens in the modal (openSessEdit).
   const sess=st.session;
@@ -2209,6 +2394,8 @@ function render(st){
     $('#feedCount').textContent = n==null ? '' : '('+n+')';
   }
   const feed=$('#feed');
+  // The live feed shows the ACTIVE round's votes — shape it by that round's poll type.
+  const isBin = (st.activeRound&&st.activeRound.poll_type ? st.activeRound.poll_type : (st.session&&st.session.poll_type))==='binary';
   if(st.liveVotes.length){
     if(isBin){
       const splitHdr = st.liveSplit!=null
@@ -2315,11 +2502,13 @@ function findRound(rid){
   if(lastState.activeRound&&lastState.activeRound.id===rid)return lastState.activeRound;
   return (lastState.queue||[]).find(r=>r.id===rid)||null;
 }
+let editingType='rating';
 window.editRound=(rid)=>{
   const r=findRound(rid);if(!r)return;
   editingId=rid;
-  const isBin = adminPollType==='binary';
-  $('#editTitle').textContent = isBin ? 'Edit matchup' : 'Edit song';
+  const isBin = (r.poll_type||adminPollType)==='binary'; // the edited round's own type
+  editingType = isBin ? 'binary' : 'rating';
+  $('#editTitle').textContent = isBin ? 'Edit matchup' : 'Edit round';
   $('#eTitleLabel').textContent = isBin ? 'Song A title *' : 'Song title *';
   $('#eArtistLabel').textContent = isBin ? 'Song A artist' : 'Artist';
   $('#eSongBRow').classList.toggle('hide', !isBin);
@@ -2333,9 +2522,9 @@ $('#editModal').onclick=(e)=>{if(e.target===$('#editModal')){$('#editModal').sty
 $('#eSave').onclick=async()=>{
   $('#eErr').textContent='';
   const title=$('#eTitle').value.trim();
-  if(!title)return $('#eErr').textContent=(adminPollType==='binary'?'Song A title is required':'Song title is required');
+  if(!title)return $('#eErr').textContent=(editingType==='binary'?'Song A title is required':'Song title is required');
   const payload={sessionId:SID,roundId:editingId,song_title:title,song_artist:$('#eArtist').value.trim(),song_note:$('#eNote').value.trim(),giveaway:$('#eGive').value.trim()};
-  if(adminPollType==='binary'){
+  if(editingType==='binary'){
     const b=$('#eBTitle').value.trim();
     if(!b)return $('#eErr').textContent='Song B title is required';
     payload.option_b_title=b;payload.option_b_artist=$('#eBArtist').value.trim();

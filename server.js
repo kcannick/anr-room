@@ -25,7 +25,7 @@ const db = require('./db');
 const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
 const { sendSms, PROVIDER: SMS_PROVIDER } = require('./sms');
 const realtime = require('./realtime');
-const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes } = require('./scoring');
+const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy } = require('./scoring');
 const shareCards = require('./share-cards');
 
 const PORT = process.env.PORT || 3000;
@@ -292,54 +292,43 @@ async function queuedRounds(sessionId) {
   );
 }
 
-// Letter grade from a player's average prediction error across the rounds they
-// played. Lower error = sharper read = better grade. Tuned to feel earnable.
-function gradeForAvgError(avgErr) {
-  if (avgErr == null) return null;
-  if (avgErr <= 0.3) return 'A+';
-  if (avgErr <= 0.6) return 'A';
-  if (avgErr <= 1.0) return 'A-';
-  if (avgErr <= 1.4) return 'B+';
-  if (avgErr <= 1.9) return 'B';
-  if (avgErr <= 2.4) return 'B-';
-  if (avgErr <= 3.0) return 'C+';
-  if (avgErr <= 3.6) return 'C';
-  if (avgErr <= 4.3) return 'C-';
-  if (avgErr <= 5.2) return 'D';
-  return 'F';
-}
-
 // End-of-session recap for one player: the big shareable reveal. Computed only
-// when the session has ended.
+// when the session has ended. Poll type is PER-ROUND now, so a recap can span both
+// mechanics — everything is reported on ONE unified Accuracy % axis (+ an absolute
+// grade banded off it), with the A/B rounds also broken out into a separate card.
 async function buildRecap(participant) {
   const sessionId = participant.session_id;
-  const session = await db.get('SELECT poll_type FROM sessions WHERE id = ?', [sessionId]);
-  const isBinary = session && session.poll_type === 'binary';
-  // The player's own results across all ratified rounds.
+  // Each ratified round the player voted in, WITH its poll_type + the fields the
+  // Versus card needs (their pick/split + the round's actual split).
   const mine = await db.all(
-    `SELECT v.points, v.err, v.rank, v.tier, r.idx, r.song_title, r.room_average, r.split_a
-     FROM votes v JOIN rounds r ON r.id = v.round_id
-     WHERE v.participant_id = ? AND r.status = 'ratified' ORDER BY r.idx ASC`,
+    `SELECT v.points, v.err, v.rank, v.tier, v.pick, v.predict_split,
+            r.idx, r.poll_type, r.song_title, r.song_artist, r.option_b_title, r.option_b_artist,
+            r.room_average, r.split_a
+       FROM votes v JOIN rounds r ON r.id = v.round_id
+      WHERE v.participant_id = ? AND r.status = 'ratified' ORDER BY r.idx ASC`,
     [participant.id]
   );
   const roundsPlayed = mine.length;
   const totalRounds = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [sessionId])).c;
-  // "How the room felt" number: average rating (rating game) or average A-share (binary).
-  const avgCol = isBinary ? 'split_a' : 'room_average';
-  const avgRow = await db.get(
-    `SELECT AVG(${avgCol}) AS a FROM rounds WHERE session_id = ? AND status = 'ratified' AND ${avgCol} IS NOT NULL`,
-    [sessionId]
-  );
-  const overallRoom = avgRow && avgRow.a != null ? Number(avgRow.a) : null;
 
-  let avgErr = null, bullseyes = 0, best = null;
+  // Accuracy %: each round's error becomes a distance on its OWN scale (9 rating /
+  // 100 binary), so a mixed session averages cleanly onto one 0..100 axis. 2 dp.
+  const scaleFor = pt => (pt === 'binary' ? 100 : 9);
+  const accOf = rows => rows.length
+    ? Math.round((rows.reduce((a, m) => a + roundAccuracy(m.err, scaleFor(m.poll_type)), 0) / rows.length) * 100) / 100
+    : null;
+  const ratingRows = mine.filter(m => m.poll_type !== 'binary');
+  const binaryRows = mine.filter(m => m.poll_type === 'binary');
+  const accuracy = accOf(mine);
+  const grade = gradeForAccuracy(accuracy); // absolute, always present when they played
+
+  let bullseyes = 0, best = null;
   if (roundsPlayed) {
-    avgErr = mine.reduce((a, m) => a + m.err, 0) / roundsPlayed;
     bullseyes = mine.filter(m => m.tier === 'bullseye').length;
     best = mine.reduce((b, m) => (b == null || m.points > b.points ? m : b), null);
   }
 
-  // Points-based percentile across the whole room.
+  // Points-based percentile / rank across the whole room (poll-type-agnostic).
   const all = await db.all('SELECT id, total_points FROM participants WHERE session_id = ? AND verified = 1', [sessionId]);
   const totals = all.map(p => p.total_points).sort((a, b) => a - b);
   const mineTotal = participant.total_points;
@@ -351,44 +340,45 @@ async function buildRecap(participant) {
     rank = sortedDesc.findIndex(p => p.id === participant.id) + 1;
   }
 
-  const recap = {
+  // Separate Versus card: the player's A/B rounds (self-contained, not comparable to
+  // a 0–9 score). Empty on a pure-rating night — the client hides the card then.
+  const versusRounds = binaryRows.map(m => ({
+    idx: m.idx, song_a: m.song_title, song_b: m.option_b_title,
+    my_pick: m.pick, my_split: m.predict_split,
+    actual_split_a: m.split_a != null ? Number(m.split_a) : null, err: m.err,
+  }));
+
+  return {
     name: participant.name,
-    poll_type: isBinary ? 'binary' : 'rating',
+    accuracy,                                    // unified 0..100, 2dp (null if no rounds)
+    grade,                                       // absolute letter (null if no rounds)
+    accuracyByType: { rating: accOf(ratingRows), versus: accOf(binaryRows) },
     totalPoints: mineTotal,
-    roundsPlayed,
-    totalRounds,
-    avgErr: avgErr != null ? Math.round(avgErr * 10) / 10 : null,
+    roundsPlayed, totalRounds,
+    rank, fieldSize, percentile,
     bullseyes,
-    rank, fieldSize,
-    percentile,
     best: best ? { idx: best.idx, song_title: best.song_title, points: best.points } : null,
+    versusRounds,
   };
-  if (isBinary) {
-    // Binary: errors are on a 0–100 scale, so the 0–9 letter grade doesn't apply.
-    // Surface the average A-share instead of the average rating.
-    recap.overallSplitA = overallRoom != null ? Math.round(overallRoom) : null;
-    recap.grade = null;
-  } else {
-    recap.grade = gradeForAvgError(avgErr);
-    recap.overallRoomAvg = overallRoom != null ? Math.round(overallRoom * 10) / 10 : null;
-  }
-  return recap;
 }
 
 async function playerState(participant) {
   const sessionId = participant.session_id;
   const session = await db.get('SELECT id, name, status, scheduled_at, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius, owner_uid, series_id FROM sessions WHERE id = ?', [sessionId]);
-  const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
-  const isBinary = pollType === 'binary';
+  const pollType = session.poll_type === 'binary' ? 'binary' : 'rating'; // session default/hint only
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
   const round = await activeRound(sessionId);
+  // Poll type is PER-ROUND: the active round decides which widget the player sees.
+  // Fall back to the session default when there's no round yet.
+  const roundType = round ? (round.poll_type || pollType) : pollType;
+  const isBinary = roundType === 'binary';
 
   let view = { phase: 'waiting' }; // waiting | voting | locked | results
   if (round) {
     const myVote = await db.get('SELECT * FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
-    // Shape a round object for the player, carrying the A/B labels on binary rounds.
+    // Shape a round object for the player, carrying its poll_type + A/B labels on binary rounds.
     const roundBase = {
-      idx: round.idx, song_title: round.song_title, song_artist: round.song_artist,
+      idx: round.idx, poll_type: roundType, song_title: round.song_title, song_artist: round.song_artist,
       song_note: round.song_note, giveaway: round.giveaway, closes_at: round.closes_at,
     };
     if (isBinary) { roundBase.option_b_title = round.option_b_title; roundBase.option_b_artist = round.option_b_artist; }
@@ -403,7 +393,7 @@ async function playerState(participant) {
         myVote: myVoteShape(myVote),
       };
     } else if (round.status === 'closed') {
-      view = { phase: 'locked', round: { idx: round.idx, song_title: round.song_title, ...(isBinary ? { option_b_title: round.option_b_title } : {}) }, tallying: true, myVote: myVoteShape(myVote) };
+      view = { phase: 'locked', round: { idx: round.idx, poll_type: roundType, song_title: round.song_title, ...(isBinary ? { option_b_title: round.option_b_title } : {}) }, tallying: true, myVote: myVoteShape(myVote) };
     } else if (round.status === 'ratified') {
       // Only three facts are needed here — the winner's name, THIS player's own row,
       // and the total count. Fetch exactly those instead of pulling the whole vote
@@ -417,7 +407,7 @@ async function playerState(participant) {
       // FULLY BLIND during the session: players see their points, rank, and reaction
       // tier — but NOT the room average / split, NOT their exact "off by", NOT the
       // winner's guess. The answer is saved for the end-of-session recap reveal.
-      const resultRound = { idx: round.idx, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway };
+      const resultRound = { idx: round.idx, poll_type: roundType, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway };
       if (isBinary) { resultRound.option_b_title = round.option_b_title; resultRound.option_b_artist = round.option_b_artist; }
       view = {
         phase: 'results',
@@ -567,16 +557,17 @@ async function creditReferralMilestones(round, session) {
 // result with the real room number, and a first-name leaderboard.
 async function overlayState(session, lbScope) {
   const sessionId = session.id;
-  const isBinary = session.poll_type === 'binary';
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
   const round = await activeRound(sessionId);
+  // Per-round poll type: the current/last round decides the lower-third shape.
+  const isBinary = (round ? (round.poll_type || session.poll_type) : session.poll_type) === 'binary';
   const onlyFirst = dispName; // full display name (no first-word splitting)
 
   let current = null, result = null;
   if (round) {
     const votes = await db.all('SELECT * FROM votes WHERE round_id = ?', [round.id]);
     const base = {
-      idx: round.idx, status: round.status, closes_at: round.closes_at,
+      idx: round.idx, status: round.status, closes_at: round.closes_at, poll_type: round.poll_type || session.poll_type,
       song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway,
     };
     if (isBinary) { base.option_b_title = round.option_b_title; base.option_b_artist = round.option_b_artist; }
@@ -591,7 +582,7 @@ async function overlayState(session, lbScope) {
         ? await db.all(`SELECT v.rank, v.pick, v.predict_split, v.points, p.name FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC LIMIT 3`, [round.id])
         : await db.all(`SELECT v.rank, v.predict, v.points, p.name FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? ORDER BY v.rank ASC LIMIT 3`, [round.id]);
       result = {
-        idx: round.idx, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway,
+        idx: round.idx, poll_type: round.poll_type || session.poll_type, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway,
         option_b_title: isBinary ? round.option_b_title : undefined,
         room: isBinary ? { split_a: round.split_a } : { average: round.room_average },
         top: ranked.map(r => ({ name: onlyFirst(r.name), points: r.points, rank: r.rank,
@@ -848,8 +839,7 @@ async function adminState(session, opts = {}) {
   // contact PII (email/phone). Only the platform admin (Makin' It) sees emails.
   const isAdmin = !!(opts.viewer && opts.viewer.role === 'admin');
   const sessionId = session.id;
-  const pollType = session.poll_type === 'binary' ? 'binary' : 'rating';
-  const isBinary = pollType === 'binary';
+  const pollType = session.poll_type === 'binary' ? 'binary' : 'rating'; // session default/hint
   const participants = await db.all(`
     SELECT p.id, p.name, p.email, p.verified, p.total_points, p.referred_by, p.pool, p.checkin_distance,
            u.instagram, u.tiktok,
@@ -858,6 +848,8 @@ async function adminState(session, opts = {}) {
     WHERE p.session_id = ? ORDER BY p.total_points DESC, p.created_at ASC`, [sessionId]);
   const rounds = await db.all('SELECT * FROM rounds WHERE session_id = ? ORDER BY idx ASC', [sessionId]);
   const round = await activeRound(sessionId);
+  // Live console follows the CURRENT round's poll type, not the session default.
+  const isBinary = (round ? (round.poll_type || pollType) : pollType) === 'binary';
   let liveVotes = [];
   if (round && (round.status === 'voting' || round.status === 'closed')) {
     liveVotes = isBinary
@@ -1037,8 +1029,9 @@ async function dispatchGoLiveNotifications(session, base, channels) {
 
 // ---------- ratify: compute result, points, ranks, bump totals ----------
 async function ratifyRound(round) {
-  const session = await db.get('SELECT poll_type FROM sessions WHERE id = ?', [round.session_id]);
-  const isBinary = session && session.poll_type === 'binary';
+  // Poll type is now per-round (rounds.poll_type); the session is only a fallback for
+  // any legacy round row that predates the column.
+  const isBinary = (round.poll_type || 'rating') === 'binary';
   return db.tx(async (tx) => {
     const votes = await tx.all('SELECT * FROM votes WHERE round_id = ?', [round.id]);
     if (!votes.length) {
@@ -1936,7 +1929,8 @@ async function handleApi(req, res, url) {
     const existing = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
     if (existing) return bad(res, 'You already locked in');
     const session = await db.get('SELECT poll_type, geo_mode FROM sessions WHERE id = ?', [participant.session_id]);
-    const isBinary = session && session.poll_type === 'binary';
+    // Per-round poll type (the open round decides the vote shape); session is a fallback.
+    const isBinary = (round.poll_type || (session && session.poll_type)) === 'binary';
     // Geo gate: when enforcement is on, a player must check in before their FIRST
     // lock-in. The client intercepts this code and shows the check-in prompt.
     // 'required' demands an at-venue check-in specifically — an 'online' pool from an
@@ -2104,6 +2098,122 @@ async function handleApi(req, res, url) {
     return send(res, 200, { sent: Number(totals.sent) || 0, failed: Number(totals.failed) || 0, remaining });
   }
 
+  // ===== PLATFORM ANALYTICS (admin role only) — traction/engagement dashboard =====
+  // Cross-session engagement + RETENTION over the most recent N shows. This is the one
+  // thing the per-session anonymized exports can't answer (their Player-N ids don't span
+  // sessions); here we compute retention off the durable users.uid behind each participant.
+  // PII-safe by construction: emits only counts/aggregates (+ non-PII room names), never
+  // any name/email/phone/uid. Admin-triggered, bounded to the window, off every hot path —
+  // NOT on the boot/poll path (the #1 rule). Every query rides an existing index
+  // (idx_round_session, idx_votes_round, idx_part_session).
+  if (p === '/api/admin/analytics' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const window = Math.max(1, Math.min(52, parseInt(url.searchParams.get('window') || '12', 10) || 12));
+    // Recent non-deleted sessions (small table; capped). We keep the most recent `window`
+    // that actually ran (>=1 vote), so empty upcoming rooms never pollute the traction view.
+    const cand = await db.all(
+      'SELECT id, name, created_at, poll_type FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 200', []);
+    if (!cand.length) return send(res, 200, { window, generatedAt: Date.now(), shows: [], overview: { shows: 0, uniqueARs: 0, returningARs: 0, returningRate: 0, registrations: 0, totalVotes: 0, avgActivePerShow: 0, activationPct: null, avgDepth: 0, strongReadPct: 0, bullseyePct: 0, creditedReferrals: 0 }, retention: { histogram: [], uniqueARs: 0, returningARs: 0, returningRate: 0 }, accuracy: { bullseye: 0, sharp: 0, close: 0, off: 0, wayoff: 0, total: 0 } });
+    const candIds = cand.map(s => s.id);
+    const ph = candIds.map(() => '?').join(',');
+    // Which candidates have any votes (via the indexed rounds->votes path), newest first.
+    const voteCounts = await db.all(
+      `SELECT r.session_id AS sid, COUNT(v.id) AS c
+         FROM rounds r JOIN votes v ON v.round_id = r.id
+        WHERE r.session_id IN (${ph}) GROUP BY r.session_id`, candIds);
+    const vcMap = new Map(voteCounts.map(r => [r.sid, Number(r.c) || 0]));
+    const winSessions = cand.filter(s => (vcMap.get(s.id) || 0) > 0).slice(0, window);
+    if (!winSessions.length) return send(res, 200, { window, generatedAt: Date.now(), shows: [], overview: { shows: 0, uniqueARs: 0, returningARs: 0, returningRate: 0, registrations: 0, totalVotes: 0, avgActivePerShow: 0, activationPct: null, avgDepth: 0, strongReadPct: 0, bullseyePct: 0, creditedReferrals: 0 }, retention: { histogram: [], uniqueARs: 0, returningARs: 0, returningRate: 0 }, accuracy: { bullseye: 0, sharp: 0, close: 0, off: 0, wayoff: 0, total: 0 } });
+    const ids = winSessions.map(s => s.id);
+    const wph = ids.map(() => '?').join(',');
+    // One pass over the window's votes (indexed by round->session): carries the session,
+    // the round idx (for the in-show fill curve), the participant (active + retention),
+    // and the tier (accuracy). Everything else aggregates from this in JS.
+    const voteRows = await db.all(
+      `SELECT r.session_id AS sid, r.idx AS idx, v.participant_id AS pid, v.tier AS tier
+         FROM votes v JOIN rounds r ON v.round_id = r.id
+        WHERE r.session_id IN (${wph})`, ids);
+    const partRows = await db.all(
+      `SELECT id, session_id, user_id, verified, ref_credited FROM participants WHERE session_id IN (${wph})`, ids);
+    const roundRows = await db.all(
+      `SELECT session_id AS sid, COUNT(*) AS c FROM rounds
+        WHERE session_id IN (${wph}) AND status = 'ratified' GROUP BY session_id`, ids);
+
+    const pidToUser = new Map(partRows.map(p => [p.id, p.user_id || ('anon:' + p.id)]));
+    const regBySession = new Map();
+    const credBySession = new Map();
+    for (const p of partRows) {
+      if (p.verified === 1 || p.verified === true) regBySession.set(p.session_id, (regBySession.get(p.session_id) || 0) + 1);
+      if (p.ref_credited === 1 || p.ref_credited === true) credBySession.set(p.session_id, (credBySession.get(p.session_id) || 0) + 1);
+    }
+    const ratifiedBySession = new Map(roundRows.map(r => [r.sid, Number(r.c) || 0]));
+
+    // Per-session accumulation.
+    const per = new Map(ids.map(id => [id, { votes: 0, tiers: {}, activePids: new Set(), roundCounts: new Map() }]));
+    const TIERS = ['bullseye', 'sharp', 'close', 'off', 'wayoff'];
+    const accuracy = { bullseye: 0, sharp: 0, close: 0, off: 0, wayoff: 0, total: 0 };
+    const userShows = new Map(); // durable uid -> Set(session ids active in)
+    for (const v of voteRows) {
+      const s = per.get(v.sid); if (!s) continue;
+      s.votes++;
+      s.activePids.add(v.pid);
+      s.roundCounts.set(v.idx, (s.roundCounts.get(v.idx) || 0) + 1);
+      const t = TIERS.includes(v.tier) ? v.tier : null;
+      if (t) { s.tiers[t] = (s.tiers[t] || 0) + 1; accuracy[t]++; accuracy.total++; }
+      const uid = pidToUser.get(v.pid);
+      if (uid) { let set = userShows.get(uid); if (!set) { set = new Set(); userShows.set(uid, set); } set.add(v.sid); }
+    }
+
+    const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+    // Build show rows in chronological order (oldest -> newest) so the trend reads left-to-right.
+    const shows = winSessions.slice().reverse().map(s => {
+      const acc = per.get(s.id);
+      const active = acc.activePids.size;
+      const ratified = ratifiedBySession.get(s.id) || 0;
+      const registered = regBySession.get(s.id) || 0;
+      const idxs = [...acc.roundCounts.keys()].sort((a, b) => a - b);
+      const counts = idxs.map(i => acc.roundCounts.get(i));
+      const third = Math.max(1, Math.floor(idxs.length / 3));
+      return {
+        name: s.name, date: Number(s.created_at) || null, pollType: s.poll_type === 'binary' ? 'binary' : 'rating',
+        registered, active, activationPct: registered ? Math.round(active / registered * 100) : null,
+        votes: acc.votes, rounds: ratified,
+        avgPerRound: ratified ? Math.round(acc.votes / ratified * 10) / 10 : 0,
+        depth: active ? Math.round(acc.votes / active * 10) / 10 : 0,
+        firstThird: counts.length ? Math.round(mean(counts.slice(0, third)) * 10) / 10 : 0,
+        lastThird: counts.length ? Math.round(mean(counts.slice(-third)) * 10) / 10 : 0,
+        creditedReferrals: credBySession.get(s.id) || 0,
+        tiers: TIERS.reduce((o, t) => (o[t] = acc.tiers[t] || 0, o), {}),
+      };
+    });
+
+    // Retention: how many of the window's shows each durable A&R was active in.
+    const showCounts = [...userShows.values()].map(set => set.size);
+    const uniqueARs = showCounts.length;
+    const returningARs = showCounts.filter(n => n >= 2).length;
+    const maxK = shows.length;
+    const histogram = [];
+    for (let k = 1; k <= maxK; k++) histogram.push({ shows: k, count: showCounts.filter(n => n === k).length });
+
+    const totalVotes = shows.reduce((a, s) => a + s.votes, 0);
+    const totalActive = shows.reduce((a, s) => a + s.active, 0);
+    const totalReg = shows.reduce((a, s) => a + s.registered, 0);
+    const overview = {
+      shows: shows.length,
+      uniqueARs, returningARs,
+      returningRate: uniqueARs ? Math.round(returningARs / uniqueARs * 100) : 0,
+      registrations: totalReg,
+      totalVotes,
+      avgActivePerShow: shows.length ? Math.round(totalActive / shows.length * 10) / 10 : 0,
+      activationPct: totalReg ? Math.round(totalActive / totalReg * 100) : null,
+      avgDepth: totalActive ? Math.round(totalVotes / totalActive * 10) / 10 : 0,
+      strongReadPct: accuracy.total ? Math.round((accuracy.bullseye + accuracy.sharp) / accuracy.total * 100) : 0,
+      bullseyePct: accuracy.total ? Math.round(accuracy.bullseye / accuracy.total * 100) : 0,
+      creditedReferrals: shows.reduce((a, s) => a + s.creditedReferrals, 0),
+    };
+    return send(res, 200, { window, generatedAt: Date.now(), shows, overview, retention: { histogram, uniqueARs, returningARs, returningRate: overview.returningRate }, accuracy });
+  }
+
   // ===== PLATFORM CONTROL PANEL (admin role only) =====
   // Everything platform-scoped in one payload: the banner library + system settings.
   if (p === '/api/admin/platform' && method === 'GET') {
@@ -2153,7 +2263,7 @@ async function handleApi(req, res, url) {
     const session = await canAdminSession(req, round.session_id);
     if (!session) return bad(res, 'Admin auth failed', 401);
     if (round.status !== 'ratified') return bad(res, 'Round isn\u2019t ratified yet');
-    const isBinary = session.poll_type === 'binary';
+    const isBinary = (round.poll_type || session.poll_type) === 'binary';
     const rows = isBinary
       ? await db.all(
           `SELECT v.rank, v.pick, v.predict_split, v.err, v.points, v.tier, p.name FROM votes v
@@ -2211,21 +2321,28 @@ async function handleApi(req, res, url) {
   }
 
   if (p === '/api/admin/round' && method === 'POST') {
-    const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist } = await readBody(req);
+    const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
-    if (!song_title || !song_title.trim()) return bad(res, (session.poll_type === 'binary' ? 'Song A title required' : 'Song title required'));
-    // Binary sessions need both sides; Song A reuses song_title/song_artist.
-    const isBinary = session.poll_type === 'binary';
+    // Poll type is PER-ROUND now. Resolve it: explicit body value → the session's most
+    // recent round's type (so it persists round-to-round) → the session default → rating.
+    let pt = poll_type === 'binary' ? 'binary' : (poll_type === 'rating' ? 'rating' : null);
+    if (!pt) {
+      const last = await db.get('SELECT poll_type FROM rounds WHERE session_id = ? ORDER BY created_at DESC LIMIT 1', [sessionId]);
+      pt = (last && last.poll_type) || (session.poll_type === 'binary' ? 'binary' : 'rating');
+    }
+    const isBinary = pt === 'binary';
+    if (!song_title || !song_title.trim()) return bad(res, (isBinary ? 'Song A title required' : 'Song title required'));
+    // Binary rounds need both sides; Song A reuses song_title/song_artist.
     if (isBinary && (!option_b_title || !option_b_title.trim())) return bad(res, 'Song B title required');
     // Queued songs don't get a round number (idx) until they're actually opened —
     // they're played in queue order, which may differ from the order added.
     const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
     const rid = id(9);
     await db.run(
-      `INSERT INTO rounds (id, session_id, idx, queue_pos, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, status, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
-      [rid, sessionId, 0, Number(maxPos) + 1, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+      `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, status, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
+      [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
        isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null, now()]
     );
     // Straight to open unless a round is already in play (voting or awaiting tally) — then it
@@ -2345,7 +2462,7 @@ async function handleApi(req, res, url) {
     if (!round) return bad(res, 'Round not found', 404);
     if (round.status === 'ratified') return bad(res, 'Round already tallied — can\'t edit it now');
     if (song_title !== undefined && !String(song_title).trim()) return bad(res, 'Song title can\'t be empty');
-    const isBinary = session.poll_type === 'binary';
+    const isBinary = (round.poll_type || session.poll_type) === 'binary';
     if (isBinary && option_b_title !== undefined && !String(option_b_title).trim()) return bad(res, 'Song B title can\'t be empty');
     await db.run(
       `UPDATE rounds SET song_title = COALESCE(NULLIF(?,''), song_title),
