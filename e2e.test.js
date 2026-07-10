@@ -729,6 +729,35 @@ async function call(path, body, method='POST', headers={}) {
   const ovBad = await fetch(base + `/api/overlay/state?s=nope`).then(r => r.status);
   ok('overlay 404s unknown session', ovBad === 404, 'got ' + ovBad);
 
+  console.log('\n— overlay: host-keyed (?host=) follows the host\'s current/next room —');
+  // A fresh host so no other test sessions interfere with the resolution.
+  const hkVer = await call('/api/auth/verify', { email: 'hostkey@test.com', code: (await call('/api/auth/request', { email: 'hostkey@test.com' })).d.devCode });
+  const HKH = { 'X-Auth-Token': hkVer.d.token }, HKUID = hkVer.d.uid;
+  await call('/api/admin/users/role', { uid: HKUID, role: 'host' }, 'POST', BOOTH);
+  const hkNone = await fetch(base + `/api/overlay/state?host=${HKUID}`).then(r => r.status);
+  ok('host with no room 404s', hkNone === 404, 'got ' + hkNone);
+  // Upcoming session only → host key resolves to it. (Sessions default to 'live' unless
+  // status:'upcoming' or a future scheduledAt is given — server.js create.)
+  const hkUp = await call('/api/session', { name: 'HK Upcoming', status: 'upcoming' }, 'POST', HKH);
+  const HKUP = hkUp.d.sessionId;
+  const ovUp = await fetch(base + `/api/overlay/state?host=${HKUID}`).then(r => r.json());
+  ok('host key resolves to the upcoming room', ovUp.session && ovUp.session.id === HKUP, JSON.stringify(ovUp.session));
+  ok('resolved upcoming carries status', ovUp.session.status === 'upcoming', ovUp.session.status);
+  // A live session (round opened) beats upcoming.
+  const hkLive = await call('/api/session', { name: 'HK Live' }, 'POST', HKH);
+  const HKLIVE = hkLive.d.sessionId;
+  await call('/api/admin/round', { sessionId: HKLIVE, song_title: 'Live Song' }, 'POST', HKH); // auto-opens -> live
+  const ovLive = await fetch(base + `/api/overlay/state?host=${HKUID}`).then(r => r.json());
+  ok('host key prefers the LIVE room over upcoming', ovLive.session.id === HKLIVE && ovLive.session.status === 'live', JSON.stringify(ovLive.session));
+  ok('host-keyed payload carries session.id for QR rebuild', typeof ovLive.session.id === 'string' && ovLive.session.id.length > 0, ovLive.session.id);
+  // End the live room → host key falls back to the upcoming one again.
+  await call('/api/admin/session/end', { sessionId: HKLIVE }, 'POST', HKH);
+  const ovBack = await fetch(base + `/api/overlay/state?host=${HKUID}`).then(r => r.json());
+  ok('host key falls back to upcoming after live ends', ovBack.session.id === HKUP, JSON.stringify(ovBack.session));
+  // ?h= is an accepted alias.
+  const ovAlias = await fetch(base + `/api/overlay/state?h=${HKUID}`).then(r => r.json());
+  ok('?h= alias works', ovAlias.session.id === HKUP, JSON.stringify(ovAlias.session));
+
   console.log('\n— overlay: leaderboard scope (?leader_scope=room|round|series) —');
   const ovRoom = await fetch(base + `/api/overlay/state?s=${SID}`).then(r => r.json());
   ok('default scope is room', ovRoom.leaderboardScope === 'room', ovRoom.leaderboardScope);

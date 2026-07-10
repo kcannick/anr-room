@@ -139,6 +139,8 @@
   body.vertical #lower,body.vertical #result,body.vertical #bcastLower{
     left:120px;right:120px;top:450px;bottom:auto;flex-direction:column;align-items:stretch;gap:0}
   body.vertical #lower .brandtag,body.vertical #bcastLower .brandtag{display:none}
+  /* ?header=false → drop the "The A&R Room" brand label on the card (horizontal too) */
+  body.nohdr #lower .brandtag,body.nohdr #bcastLower .brandtag{display:none}
   body.vertical #lower .main{flex:none;width:100%}
   body.vertical #lower .title{font-size:58px}
   body.vertical #lower .right{flex:none;min-width:0;text-align:left;display:flex;align-items:baseline;gap:14px;
@@ -276,6 +278,10 @@ const params=new URLSearchParams(location.search);
 const getP=(n)=>{ n=n.toLowerCase(); for(const [k,v] of params){ if(k.toLowerCase()===n) return v; } return null; };
 const boolP=(n,def)=>{ const v=getP(n); if(v==null) return def; const s=String(v).trim().toLowerCase(); return !(s==='false'||s==='0'||s==='no'||s==='off'); };
 const SID=getP('s')||getP('sessionId');
+// Host-keyed overlay: ?host=<uid> (or ?h=) follows the host's CURRENT room — their live
+// session, else their soonest upcoming one — so the OBS source is set once and reused
+// every week. The resolved session id arrives in the state payload (see poll()).
+const HOST=getP('host')||getP('h');
 // ?view= controls which panels show: 'all' (default), 'lower', 'board', 'result'.
 const VIEW=(getP('view')||'all').toLowerCase();
 const showBoard=(VIEW==='all'||VIEW==='board');
@@ -284,6 +290,8 @@ const showResultView=(VIEW==='all'||VIEW==='result');
 // Per-element toggles (layered on top of ?view=):
 //  current_song=true|false  — show the now-playing / round card (default on)
 //  timer=true|false         — show the vote countdown on that card (default on)
+//  qr=true|false            — show the Join QR (top-right card horizontal / header vertical)
+//  header=true|false        — show the "The A&R Room" brand label on the round card
 //  leader_board=N           — how many leaderboard rows: 0 hides it, default 3, max 8
 const SHOW_SONG=boolP('current_song',true);
 const SHOW_TIMER=boolP('timer',true);
@@ -310,16 +318,23 @@ document.documentElement.style.setProperty('--panel','rgba(16,12,26,'+PANEL_A+')
 const VERTICAL=/^v/.test((getP('orientation')||getP('o')||'').toLowerCase());
 const EL=(()=>{ const v=(getP('el')||'').toLowerCase(); return ['header','song','board'].includes(v)?v:null; })();
 const SHOW_QR=boolP('qr',true); // QR CTAs (header on vertical, top-right card on horizontal)
+const SHOW_HEADER=boolP('header',true); // "The A&R Room" brand label on the lower-third card
+if(!SHOW_HEADER){ document.body.classList.add('nohdr'); }
 if(VERTICAL||EL){ document.body.classList.add('vertical'); }
 if(EL){ document.body.classList.add('el','el-'+EL); }
 const wantHero=(VERTICAL&&!EL)||EL==='header';
 if(wantHero){ $('#vHero').classList.remove('hide'); if(!SHOW_QR)document.body.classList.add('noqr'); }
-if(SID){
-  $('#qrWin').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID);
+// QR links depend on the resolved session id — for ?s= we know it upfront; for ?host=
+// it arrives with the first poll and can change week to week, so this is re-callable.
+let resolvedSid = SID || null;
+function setLinks(sid){
+  if(!sid) return;
+  $('#qrWin').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+sid);
   // Stable route: the server 302s /submit?s= to the session's CURRENT submission link.
-  $('#qrSubmit').src='/api/qr?d='+encodeURIComponent(location.origin+'/submit?s='+SID);
-  if(SHOW_QR && !VERTICAL && !EL){ $('#vQrImg').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+SID); $('#vQr').classList.remove('hide'); }
+  $('#qrSubmit').src='/api/qr?d='+encodeURIComponent(location.origin+'/submit?s='+sid);
+  if(SHOW_QR && !VERTICAL && !EL){ $('#vQrImg').src='/api/qr?d='+encodeURIComponent(location.origin+'/?s='+sid); $('#vQr').classList.remove('hide'); }
 }
+if(SID) setLinks(SID);
 
 // Fit the stage into whatever the OBS source is sized to.
 function fit(){
@@ -356,10 +371,19 @@ setInterval(paintTimer,1000);
 setInterval(()=>{ if(boardHideAt && Date.now()>=boardHideAt && !$('#board').classList.contains('hide')) $('#board').classList.add('hide'); },1000);
 
 async function poll(){
-  if(!SID){$('#idleT').textContent='No room';$('#idleS').textContent='Use “Get overlay link” in the host console to build this URL';return;}
+  if(!SID && !HOST){$('#idleT').textContent='No room';$('#idleS').textContent='Use “Get overlay link” in the host console to build this URL';return;}
+  const key = SID ? ('s='+encodeURIComponent(SID)) : ('host='+encodeURIComponent(HOST));
   let st;
-  try{ st=await fetch('/api/overlay/state?s='+encodeURIComponent(SID)+'&leader_scope='+LB_SCOPE).then(r=>r.ok?r.json():Promise.reject(r.status)); }
-  catch(e){ $('#idle').classList.remove('hide');$('#idleS').textContent='Reconnecting…'; return; }
+  try{ st=await fetch('/api/overlay/state?'+key+'&leader_scope='+LB_SCOPE).then(r=>r.ok?r.json():Promise.reject(r.status)); }
+  catch(e){
+    // Host-keyed with no live/upcoming room yet (404): idle "waiting", keep polling so it
+    // picks up automatically when the host goes live. Other errors: reconnecting.
+    if(HOST && e===404){ $('#idle').classList.remove('hide');$('#idleT').textContent='The A&R Room';$('#idleS').textContent='Waiting for the next room to go live…'; return; }
+    $('#idle').classList.remove('hide');$('#idleS').textContent='Reconnecting…'; return;
+  }
+  // Host-keyed: the resolved room can change (this week → next), so (re)build QR links
+  // whenever the session id changes.
+  if(HOST && st.session && st.session.id && st.session.id!==resolvedSid){ resolvedSid=st.session.id; setLinks(resolvedSid); }
   render(st);
 }
 

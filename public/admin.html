@@ -783,6 +783,7 @@
             <button data-v="vertical">↕ Vertical <span class="muted">9:16</span></button>
           </div>
         </div>
+        <label class="ob-row"><input type="checkbox" id="obStable"><span><b>Stable link</b><small>follows my current/next room — set it in OBS once, reuse every week</small></span></label>
         <label class="ob-row"><input type="checkbox" id="obSong" checked><span><b>Now playing</b><small>current song / matchup card</small></span></label>
         <label class="ob-row"><input type="checkbox" id="obTimer" checked><span><b>Vote timer</b><small>countdown on the card</small></span></label>
         <label class="ob-row"><input type="checkbox" id="obBoard" checked><span><b>Leaderboard</b><small>pops in for a few seconds after each win</small></span>
@@ -796,6 +797,7 @@
           </div>
         </div>
         <label class="ob-row"><input type="checkbox" id="obQr" checked><span><b>Join QR</b><small>“Scan to Win $500” join code</small></span></label>
+        <label class="ob-row"><input type="checkbox" id="obHeader" checked><span><b>Header</b><small>“The A&amp;R Room” brand label on the card</small></span></label>
         <div class="ob-opt">
           <div class="ob-t">Panel opacity <span class="muted" id="obPanelVal">92%</span></div>
           <input type="range" id="obPanel" min="50" max="100" value="92" style="width:100%;margin-top:6px">
@@ -1890,23 +1892,28 @@ $('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
 // ---- event tools ----
 // ---- Overlay builder: form -> overlay URL (+ live preview) ----
 (function(){
-  const OB={orient:'horizontal',song:true,timer:true,board:true,rows:3,lbSecs:10,scope:'room',qr:true,panel:92};
+  const OB={orient:'horizontal',song:true,timer:true,board:true,rows:3,lbSecs:10,scope:'room',qr:true,header:true,stable:false,panel:92};
   function buildUrl(){
     if(!SID) return location.origin+'/overlay';
+    // "Stable link" keys the overlay by the host (my uid) so it always follows my
+    // current/next room; otherwise it's pinned to this exact session.
+    const useHost = OB.stable && ME && ME.uid;
+    const keyParam = useHost ? ('host='+encodeURIComponent(ME.uid)) : ('s='+encodeURIComponent(SID));
     const p=[];
     if(OB.orient==='vertical') p.push('orientation=vertical');
     if(!OB.song) p.push('current_song=false');
     if(!OB.timer) p.push('timer=false');
     if(!OB.board) p.push('leader_board=0'); else { if(OB.rows!==3) p.push('leader_board='+OB.rows); if(OB.lbSecs!==10) p.push('leader_secs='+OB.lbSecs); if(OB.scope!=='room') p.push('leader_scope='+OB.scope); }
     if(!OB.qr) p.push('qr=false');
+    if(!OB.header) p.push('header=false');
     if(OB.panel!==92) p.push('panel='+(OB.panel/100));
-    return location.origin+'/overlay?s='+encodeURIComponent(SID)+(p.length?('&'+p.join('&')):'');
+    return location.origin+'/overlay?'+keyParam+(p.length?('&'+p.join('&')):'');
   }
   let prevT=null;
   function render(){
     document.querySelectorAll('#obOrient button').forEach(b=>b.classList.toggle('on',b.dataset.v===OB.orient));
     $('#obSong').checked=OB.song;$('#obTimer').checked=OB.timer;$('#obBoard').checked=OB.board;
-    $('#obRows').value=OB.rows;$('#obSecs').value=OB.lbSecs;$('#obQr').checked=OB.qr;$('#obPanel').value=OB.panel;
+    $('#obRows').value=OB.rows;$('#obSecs').value=OB.lbSecs;$('#obQr').checked=OB.qr;$('#obHeader').checked=OB.header;$('#obStable').checked=OB.stable;$('#obPanel').value=OB.panel;
     $('#obPanelVal').textContent=OB.panel+'%';$('#obRows').disabled=!OB.board;$('#obSecs').disabled=!OB.board;
     document.querySelectorAll('#obScope button').forEach(b=>{b.classList.toggle('on',b.dataset.v===OB.scope);b.disabled=!OB.board;});
     $('#obPrevWrap').className='ob-preview '+(OB.orient==='vertical'?'vertical':'horizontal');
@@ -1915,13 +1922,13 @@ $('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
   }
   function readControls(){
     OB.song=$('#obSong').checked;OB.timer=$('#obTimer').checked;OB.board=$('#obBoard').checked;
-    OB.rows=Math.max(1,Math.min(8,parseInt($('#obRows').value,10)||3));OB.qr=$('#obQr').checked;
+    OB.rows=Math.max(1,Math.min(8,parseInt($('#obRows').value,10)||3));OB.qr=$('#obQr').checked;OB.header=$('#obHeader').checked;OB.stable=$('#obStable').checked;
     OB.lbSecs=Math.max(2,Math.min(120,parseInt($('#obSecs').value,10)||10));
     OB.panel=parseInt($('#obPanel').value,10)||92;render();
   }
   document.querySelectorAll('#obOrient button').forEach(b=>b.onclick=()=>{OB.orient=b.dataset.v;render();});
   document.querySelectorAll('#obScope button').forEach(b=>b.onclick=()=>{OB.scope=b.dataset.v;render();});
-  ['#obSong','#obTimer','#obBoard','#obQr'].forEach(s=>$(s).addEventListener('change',readControls));
+  ['#obSong','#obTimer','#obBoard','#obQr','#obHeader','#obStable'].forEach(s=>$(s).addEventListener('change',readControls));
   $('#obRows').addEventListener('input',readControls);
   $('#obSecs').addEventListener('input',readControls);
   $('#obPanel').addEventListener('input',readControls);

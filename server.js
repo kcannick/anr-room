@@ -1800,7 +1800,19 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/overlay/state' && method === 'GET') {
     const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
-    const session = sessionId ? await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]) : null;
+    const host = url.searchParams.get('host') || url.searchParams.get('h');
+    let session = null;
+    if (sessionId) {
+      session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+    } else if (host) {
+      // Host-keyed overlay: a STABLE URL that follows the host's current room — their live
+      // session if one is running, else their soonest upcoming one. Lets a host set the OBS
+      // browser source once and reuse it every week without editing the URL. Keyed on the
+      // owner's uid; the response carries session.id so the client rebuilds QR links when
+      // the resolved room changes (e.g. next week's session).
+      session = await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1", [host])
+        || await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'upcoming' AND deleted_at IS NULL ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", [host]);
+    }
     if (!session) return bad(res, 'Room not found', 404);
     return send(res, 200, await overlayState(session, (url.searchParams.get('leader_scope') || url.searchParams.get('lb') || '').toLowerCase()));
   }
