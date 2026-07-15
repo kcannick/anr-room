@@ -295,6 +295,15 @@
           <div><label>Song B title *</label><input id="rBTitle" placeholder="The other side"></div>
           <div style="margin-top:10px"><label>Song B artist</label><input id="rBArtist" placeholder="optional"></div>
         </div>
+        <!-- Artist contact: how the post-show report card reaches them. Filled automatically
+             by the review-site pull; can also be added retroactively from the Rounds tab. -->
+        <div id="artistContactRow">
+          <div class="row">
+            <div><label>Artist email</label><input id="rAEmail" type="email" placeholder="for their report card"></div>
+            <div><label>Artist phone</label><input id="rAPhone" placeholder="optional"></div>
+          </div>
+          <div class="muted" style="font-size:11px;margin-top:4px">Used only for the post-show report card + “you got played” text. Never shown publicly.</div>
+        </div>
         <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
         <!-- Content pulls live right above the action button — grab, glance, play. -->
         <div id="pullRow" style="display:contents">
@@ -379,6 +388,26 @@
           <button class="btn ghost sm" id="wuSongs">Top 8 Songs</button>
         </div>
         <div class="muted" style="font-size:12px;margin-top:6px">Recap emails carry each A&amp;R’s score card + the Top 8 graphics. Data exports live on the Leaderboard tab.</div>
+
+        <!-- Post-show artist workflow: report cards out, post kit into Asana. -->
+        <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+          <label style="display:block;margin-bottom:8px">📨 Artist notices <span class="muted">(send every artist their report card)</span></label>
+          <div class="mono" id="anStatus" style="font-size:11.5px;color:var(--ink-dim);background:var(--bg-deep,#0f0c1d);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;line-height:1.7">Loading…</div>
+          <div class="row" style="gap:6px;flex-wrap:wrap">
+            <button class="btn good sm" id="anSend">📨 Send artist notices</button>
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:6px">Emails the full 3-page report card + the replay link. Texts queue and only send 10 AM–8 PM ET. Missing contact? Add it on the round in the <b>Rounds</b> tab.</div>
+        </div>
+
+        <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+          <label style="display:block;margin-bottom:8px">📋 Asana post task <span class="muted">(graphics + tag caption)</span></label>
+          <textarea id="pkCaption" rows="5" readonly style="font-family:var(--mono,monospace);font-size:11.5px;line-height:1.6">Loading…</textarea>
+          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn sm" id="pkAsana">📋 Create Asana task</button>
+            <button class="btn ghost sm" id="pkCopy">Copy caption</button>
+          </div>
+          <div class="muted" id="pkNote" style="font-size:12px;margin-top:6px"></div>
+        </div>
       </div>
       <button class="btn ghost sm" id="btnEditSession" style="margin-top:12px;width:100%">✎ Edit room settings</button>
       <div class="muted" style="font-size:12px;margin-top:6px">Delete is on each room in <b>My rooms</b>.</div>
@@ -643,6 +672,12 @@
         </div>
         <div id="plReviveStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
         <p class="muted" style="font-size:11px;margin:8px 0 0">320×100 iframe zones. Rotation: ~30s in the lobby, ~60s during gameplay. Room banners always win over network ads.</p>
+      </div>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <label>Asana post task <span class="muted">(target project for the post-kit task)</span></label>
+        <input id="plAsanaProject" placeholder="project ID, e.g. 1209876543210987">
+        <div id="plAsanaStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">The project ID is the long number in your Asana project URL. The access token is an environment variable (<b>ASANA_TOKEN</b>) — it never lives in the database.</p>
       </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
       <div class="muted" id="plStatus" style="font-size:12px;margin-top:6px"></div>
@@ -961,6 +996,7 @@ document.querySelectorAll('.tabbar .tab').forEach(t=>t.addEventListener('click',
 // Round history — every song played this room, newest first, with a Song Report
 // button on each ratified rating round (the paid artist product works after the
 // show, not just on the freshest round).
+let ROUNDS_CACHE=[]; // last /api/admin/rounds payload — feeds the inline edit form
 async function loadRounds(){
   const box=$('#roundsList'); if(!box)return;
   box.innerHTML='<div class="empty">Loading…</div>';
@@ -977,25 +1013,89 @@ async function loadRounds(){
       const pill=r.status==='ratified'?'<span class="pill done">Ratified</span>'
         :r.status==='voting'?'<span class="pill live">● Voting</span>'
         :'<span class="pill closed">Tallying</span>';
+      // Row controls are icon-only: the song title is the thing worth horizontal space,
+      // and each extra labelled button squeezed it down toward an ellipsis.
       const report=(!isVs&&r.status==='ratified'&&r.votes>0)
-        ?`<button class="btn ghost sm" onclick="event.stopPropagation();dlSongReport('${r.id}',this)">📊 Report</button>`:'';
+        ?`<button class="btn ghost sm" style="padding:6px 9px" onclick="event.stopPropagation();dlSongReport('${r.id}',this)" title="Song Report (3-page artist analytics)">📊</button>`:'';
+      // Every played round is editable — descriptive fields only (the server refuses to
+      // touch scores). This is how contact gets added retroactively, after the show.
+      const edit=`<button class="btn ghost sm" style="padding:6px 9px" onclick="event.stopPropagation();toggleRoundEdit('${r.id}')" title="Edit song details + artist contact">✎</button>`;
+      // Contact state, but only where a report is actually deliverable (rated rounds).
+      const wantsContact=!isVs&&r.status==='ratified'&&r.votes>0;
+      const hasContact=!!(r.artist_email||r.artist_phone);
+      const contactChip=!wantsContact?''
+        :hasContact
+          ?`<span title="Contact on file — ${[r.artist_email?'email':null,r.artist_phone?'phone':null].filter(Boolean).join(' + ')}" style="flex:none">${r.artist_email?'✉':''}${r.artist_phone?'📱':''}</span>`
+          :`<span title="No artist contact — they won’t get their report card. Click ✎ to add it." style="flex:none;color:var(--gold)">⚠</span>`;
       // Ratified rounds expand to their full results on click.
       const canExpand=r.status==='ratified';
-      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #241d3d${canExpand?';cursor:pointer':''}"${canExpand?` onclick="toggleRoundResults('${r.id}')" title="Show results"`:''}>
-        <span class="mono" style="color:var(--ink-faint);width:38px;flex:none">#${r.idx}</span>
+      return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #241d3d${canExpand?';cursor:pointer':''}"${canExpand?` onclick="toggleRoundResults('${r.id}')" title="Show results"`:''}>
+        <span class="mono" style="color:var(--ink-faint);width:26px;flex:none">#${r.idx}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${typeChip(r.poll_type)} ${title}</div>
           ${r.song_artist?`<div class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.song_artist)}</div>`:''}
         </div>
+        ${contactChip}
         ${pill}
-        <span class="mono" style="color:var(--signal);width:56px;text-align:right;flex:none">${score}</span>
-        <span class="muted" style="font-size:12px;width:58px;text-align:right;flex:none">${r.votes}&nbsp;vote${r.votes==1?'':'s'}</span>
+        <span class="mono" style="color:var(--signal);width:34px;text-align:right;flex:none">${score}</span>
+        <span class="muted" style="font-size:12px;width:52px;text-align:right;flex:none">${r.votes}&nbsp;vote${r.votes==1?'':'s'}</span>
         ${report}
+        ${edit}
         ${canExpand?'<span class="muted" style="flex:none">▾</span>':''}
-      </div>${canExpand?`<div id="rres-${r.id}" class="hide" style="padding:4px 0 14px"></div>`:''}`;
+      </div>
+      <div id="redit-${r.id}" class="hide" style="padding:0 0 12px"></div>
+      ${canExpand?`<div id="rres-${r.id}" class="hide" style="padding:4px 0 14px"></div>`:''}`;
     }).join('');
+    ROUNDS_CACHE=rounds;
   }catch(e){ box.innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
 }
+// Inline round editor. Open on any played round — including ratified ones, which is the
+// point: it's how the artist's email/phone gets added after the show so their report card
+// can go out. Scores/votes aren't here (the server won't touch them either).
+window.toggleRoundEdit=(rid)=>{
+  const box=document.getElementById('redit-'+rid); if(!box)return;
+  if(!box.classList.contains('hide')){box.classList.add('hide');return;}
+  const r=ROUNDS_CACHE.find(x=>x.id===rid); if(!r)return;
+  const isVs=(r.poll_type==='binary')||!!r.option_b_title;
+  box.classList.remove('hide');
+  box.innerHTML=`<div style="background:var(--bg-deep,#0f0c1d);border:1px solid var(--signal);border-radius:12px;padding:14px">
+    <div class="row">
+      <div><label>${isVs?'Song A title':'Song title'} *</label><input id="ed-title-${rid}" value="${esc(r.song_title||'')}"></div>
+      <div><label>${isVs?'Song A artist':'Artist'}</label><input id="ed-artist-${rid}" value="${esc(r.song_artist||'')}"></div>
+    </div>
+    ${isVs?`<div class="row" style="margin-top:10px">
+      <div><label>Song B title *</label><input id="ed-btitle-${rid}" value="${esc(r.option_b_title||'')}"></div>
+      <div><label>Song B artist</label><input id="ed-bartist-${rid}" value="${esc(r.option_b_artist||'')}"></div>
+    </div>`:''}
+    <div class="row" style="margin-top:10px">
+      <div><label>Artist email</label><input id="ed-email-${rid}" type="email" value="${esc(r.artist_email||'')}" placeholder="add retroactively…"></div>
+      <div><label>Artist phone</label><input id="ed-phone-${rid}" value="${esc(r.artist_phone||'')}" placeholder="add retroactively…"></div>
+    </div>
+    <div style="margin-top:10px"><label>Note</label><input id="ed-note-${rid}" value="${esc(r.song_note||'')}" placeholder="optional"></div>
+    <div class="row" style="margin-top:12px;align-items:center">
+      <button class="btn good sm" onclick="saveRoundEdit('${rid}',this)">Save</button>
+      <button class="btn ghost sm" onclick="toggleRoundEdit('${rid}')">Cancel</button>
+    </div>
+    <div class="err" id="ed-err-${rid}" style="margin-top:8px"></div>
+    <div class="muted" style="font-size:11px;margin-top:8px">${r.status==='ratified'?'Ratified round: details + contact are editable — votes, score and points are locked.':'Players see the update on their next poll.'}</div>
+  </div>`;
+  document.getElementById('ed-title-'+rid).focus();
+};
+window.saveRoundEdit=async(rid,btn)=>{
+  const v=(k)=>{const el=document.getElementById('ed-'+k+'-'+rid);return el?el.value.trim():undefined;};
+  const err=document.getElementById('ed-err-'+rid); err.textContent='';
+  const payload={sessionId:SID,roundId:rid,song_title:v('title'),song_artist:v('artist'),song_note:v('note'),
+    artist_email:v('email'),artist_phone:v('phone')};
+  if(v('btitle')!==undefined){payload.option_b_title=v('btitle');payload.option_b_artist=v('bartist');}
+  btn.disabled=true;const old=btn.textContent;btn.textContent='Saving…';
+  try{
+    await api('/api/admin/round/edit',payload);
+    document.getElementById('redit-'+rid).classList.add('hide');
+    await loadRounds();
+    if(typeof refreshArtistNotices==='function')refreshArtistNotices(); // contact may have changed reachability
+  }catch(e){err.textContent=e.message;btn.disabled=false;btn.textContent=old;}
+};
+
 // Click-to-expand results for any past ratified round (fetched on demand).
 window.toggleRoundResults=async(rid)=>{
   const box=document.getElementById('rres-'+rid); if(!box)return;
@@ -1406,6 +1506,8 @@ async function openPlatform(){
     $('#plReviveLobby').value=d.settings.reviveZoneLobby||'';
     $('#plReviveGame').value=d.settings.reviveZoneGame||'';
     plReviveStatus(d.settings);
+    $('#plAsanaProject').value=d.settings.asanaProject||'';
+    plAsanaStatus(d);
     $('#plSmsProvider').textContent=d.smsProvider||'none';
     api('/api/admin/notify/audience',null,'GET').then(a=>{
       $('#nbEmailCount').textContent='('+a.email+')';
@@ -1434,6 +1536,18 @@ function plReviveStatus(st){
   el.textContent=on
     ?`Network ads: ON — lobby zone ${st.reviveZoneLobby||st.reviveZoneGame}, in-game zone ${st.reviveZoneGame||st.reviveZoneLobby}`
     :'Network ads: OFF — needs the delivery URL AND at least one zone id (typed, not the grey hint text).';
+}
+// Same unambiguous ON/OFF readout as Revive — the token lives in env, so the panel can
+// only report whether it's present, never show or set it.
+function plAsanaStatus(d){
+  const el=$('#plAsanaStatus'); if(!el)return;
+  const proj=d.settings.asanaProject, tok=d.asanaToken;
+  const on=!!(proj&&tok);
+  el.style.color=on?'var(--signal)':'var(--gold)';
+  el.textContent=on?`Asana post task: ON — project ${proj}`
+    :!tok&&!proj?'Asana post task: OFF — needs ASANA_TOKEN (env) and a project ID.'
+    :!tok?'Asana post task: OFF — project set, but ASANA_TOKEN isn’t set in the environment.'
+    :'Asana post task: OFF — token found, but no project ID saved yet.';
 }
 window.plAssign=async(bid,btn)=>{
   if(btn)btn.disabled=true;
@@ -1494,8 +1608,11 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
     await api('/api/admin/settings',{houseSubmitUrl:$('#plSubmitUrl').value.trim(),
       reviveDeliveryUrl:$('#plReviveUrl').value.trim(),
       reviveZoneLobby:$('#plReviveLobby').value.trim(),
-      reviveZoneGame:$('#plReviveGame').value.trim()});
+      reviveZoneGame:$('#plReviveGame').value.trim(),
+      asanaProject:$('#plAsanaProject').value.trim()});
     plReviveStatus({reviveDeliveryUrl:$('#plReviveUrl').value.trim(),reviveZoneLobby:$('#plReviveLobby').value.trim(),reviveZoneGame:$('#plReviveGame').value.trim()});
+    // Re-read: the server normalizes the project id, and only it knows if the token is set.
+    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';plAsanaStatus(d);}catch(e){}
     $('#plStatus').textContent='Saved ✓';setTimeout(()=>$('#plStatus').textContent='',2000);
   }catch(e){$('#plStatus').textContent=e.message;}
   $('#plSaveSettings').disabled=false;
@@ -1856,7 +1973,8 @@ $('#btnAddRound').onclick=async()=>{
   const isBin=roundType==='binary';
   const song_title=$('#rTitle').value.trim();
   if(!song_title)return $('#addErr').textContent=(isBin?'Song A title is required':'Song title is required');
-  const payload={sessionId:SID,poll_type:roundType,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim()};
+  const payload={sessionId:SID,poll_type:roundType,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim(),
+    artist_email:$('#rAEmail').value.trim(),artist_phone:$('#rAPhone').value.trim()};
   if(isBin){
     const b=$('#rBTitle').value.trim();
     if(!b)return $('#addErr').textContent='Song B title is required';
@@ -1865,6 +1983,7 @@ $('#btnAddRound').onclick=async()=>{
   try{
     await api('/api/admin/round',payload);
     $('#rTitle').value='';$('#rArtist').value='';$('#rNote').value='';$('#rGive').value='';
+    $('#rAEmail').value='';$('#rAPhone').value='';
     if($('#rBTitle')){$('#rBTitle').value='';$('#rBArtist').value='';}
     // A stale "Pulled: …" note would misdescribe the now-empty form.
     $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');
@@ -1899,7 +2018,10 @@ $('#btnIngestPull').onclick=async()=>{
     else{
       $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
       if(d.instagram)$('#rNote').value='IG: @'+String(d.instagram).replace(/^@/,'');
-      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(d.instagram?' (IG added to note)':'')+'. Review, then add it.';
+      // Contact rides along from the review site so the report card can reach them later.
+      $('#rAEmail').value=d.email||'';$('#rAPhone').value=d.phone||'';
+      const got=[d.instagram?'IG':null,d.email?'email':null,d.phone?'phone':null].filter(Boolean);
+      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(got.length?' ('+got.join(' + ')+' added)':'')+'. Review, then add it.';
       $('#rTitle').focus();
     }
   }catch(e){msg.textContent=e.message;}
@@ -2033,6 +2155,90 @@ $('#geoMode')&&$('#geoMode').addEventListener('change',syncGeoFields);
 $('#wuEmail')&&($('#wuEmail').onclick=()=>emailRecap(SID,$('#wuEmail')));
 $('#wuArs')&&($('#wuArs').onclick=()=>dlCard('ars',SID,$('#wuArs')));
 $('#wuSongs')&&($('#wuSongs').onclick=()=>dlCard('songs',SID,$('#wuSongs')));
+
+// ===== Post-show artist notices =====
+// Status is refreshed when the wrap-up row appears and after any change that could move
+// reachability (a retroactive contact edit, a send). Never on the 2s poll — it's a
+// several-query read that has no business on a hot path.
+let anBusy=false;
+window.refreshArtistNotices=async()=>{
+  const box=$('#anStatus'); if(!box||anBusy)return;
+  try{
+    const st=await api('/api/admin/session/artist-notices/status?sessionId='+encodeURIComponent(SID),null,'GET');
+    const pill=(n,label)=>`<b style="color:var(--signal)">${n}</b> ${label}`;
+    const miss=st.missing?` <span style="color:var(--warn,#e0b34b)">${st.missing} missing</span>`:'';
+    const smsLine=st.withPhone
+      ? `text &nbsp;· ${pill(st.withPhone,'reachable')} — ${st.sms.pending?st.sms.pending+' queued, '+st.smsWindow.label:(st.sms.sent?st.sms.sent+' sent':'none queued')}`
+      : 'text &nbsp;· no phone numbers on file';
+    box.innerHTML=`email · ${pill(st.withEmail,'of '+st.rounds+' artists reachable')}${miss}<br>${smsLine}<br>`
+      +`status · ${st.email.sent} sent / ${st.email.pending} pending${st.email.failed?' / <span style="color:var(--bad,#e05f5f)">'+st.email.failed+' failed</span>':''}`;
+    const btn=$('#anSend');
+    if(btn){
+      const nothing=!st.withEmail&&!st.withPhone;
+      btn.disabled=nothing||!st.configured;
+      btn.title=!st.configured?'Image hosting (BLOB_READ_WRITE_TOKEN) is required to render report cards'
+        :nothing?'No artist contact on file — add it in the Rounds tab':'';
+    }
+  }catch(e){ box.textContent=e.message; }
+};
+$('#anSend')&&($('#anSend').onclick=async()=>{
+  const btn=$('#anSend'),old=btn.textContent;
+  try{
+    const st=await api('/api/admin/session/artist-notices/status?sessionId='+encodeURIComponent(SID),null,'GET');
+    if(!st.configured){alert('Image hosting isn’t set up yet (BLOB_READ_WRITE_TOKEN). Report cards need it to render.');return;}
+    const already=(st.email.sent||st.sms.sent)?'\n\nAlready sent: '+st.email.sent+' email, '+st.sms.sent+' text — those are skipped.':'';
+    const smsNote=st.withPhone?('\n'+st.withPhone+' text'+(st.withPhone==1?'':'s')+' — '+(st.smsWindow.open?'sending now (inside the 10 AM–8 PM ET window).':'queued; they send automatically after 10 AM ET.')):'';
+    if(!confirm('Email the full report card to '+st.withEmail+' artist'+(st.withEmail==1?'':'s')+'?'
+      +(st.missing?'\n\n'+st.missing+' round'+(st.missing==1?' has':'s have')+' no contact and will be skipped — add it in the Rounds tab.':'')
+      +smsNote+already))return;
+    anBusy=true;btn.disabled=true;
+    const start=await api('/api/admin/session/artist-notices/start',{sessionId:SID});
+    let guard=0,sent=0,failed=0;
+    for(;;){
+      btn.textContent='Sending… ';
+      const r=await api('/api/admin/session/artist-notices/process',{sessionId:SID,limit:4});
+      sent+=r.sent;failed+=r.failed;
+      btn.textContent='Sending… '+sent;
+      if(!r.remaining||++guard>60)break;
+    }
+    anBusy=false;
+    await refreshArtistNotices();
+    const fin=await api('/api/admin/session/artist-notices/status?sessionId='+encodeURIComponent(SID),null,'GET');
+    alert('Artist notices — '+fin.email.sent+' email'+(fin.email.sent==1?'':'s')+' sent'
+      +(fin.email.failed?', '+fin.email.failed+' failed':'')
+      +(fin.sms.pending?'.\n'+fin.sms.pending+' text'+(fin.sms.pending==1?'':'s')+' queued — they send automatically after 10 AM ET.':(fin.sms.sent?'.\n'+fin.sms.sent+' text'+(fin.sms.sent==1?'':'s')+' sent.':'.')));
+  }catch(e){alert(e.message);}
+  finally{anBusy=false;btn.disabled=false;btn.textContent=old;}
+});
+
+// ===== Asana post kit =====
+window.refreshPostKit=async()=>{
+  const ta=$('#pkCaption'); if(!ta)return;
+  try{
+    const d=await api('/api/admin/session/post-kit?sessionId='+encodeURIComponent(SID),null,'GET');
+    ta.value=d.caption||'';
+    const btn=$('#pkAsana');
+    if(btn)btn.disabled=!d.configured;
+    const why=!d.hasToken?'Set ASANA_TOKEN in Vercel to enable the button.'
+      :!d.hasProject?'Add the Asana project ID in the Platform panel to enable the button.'
+      :!d.blob?'Image hosting (BLOB_READ_WRITE_TOKEN) is required.'
+      :'Attaches Top 8 A&Rs, Top 8 Songs and the top record’s report pages to one task.';
+    $('#pkNote').innerHTML=why+' The caption is always copyable.';
+  }catch(e){ ta.value=''; $('#pkNote').textContent=e.message; }
+};
+$('#pkCopy')&&($('#pkCopy').onclick=()=>{
+  navigator.clipboard.writeText($('#pkCaption').value);
+  const b=$('#pkCopy');b.textContent='Copied!';setTimeout(()=>b.textContent='Copy caption',1200);
+});
+$('#pkAsana')&&($('#pkAsana').onclick=async()=>{
+  const btn=$('#pkAsana'),old=btn.textContent;
+  btn.disabled=true;btn.textContent='Creating…';
+  try{
+    const d=await api('/api/admin/session/asana-task',{sessionId:SID});
+    $('#pkNote').innerHTML='✅ Task created with '+d.attached.length+' graphic'+(d.attached.length==1?'':'s')+' — <a href="'+d.url+'" target="_blank" rel="noopener" style="color:var(--signal)">open in Asana</a>';
+  }catch(e){alert(e.message);}
+  finally{btn.disabled=false;btn.textContent=old;}
+});
 $('#seCancel').onclick=()=>{$('#sessEditModal').style.display='none';};
 $('#sessEditModal').onclick=(e)=>{if(e.target===$('#sessEditModal'))$('#sessEditModal').style.display='none';};
 $('#seSave').onclick=async()=>{
@@ -2340,7 +2546,11 @@ function render(st){
   $('#btnAddRound').disabled=locked;
   if(locked){$('#btnNeroPull').classList.add('hide');$('#btnIngestPull').classList.add('hide');}
   // Post-show mode: wrap-up actions surface, live-only tools go away.
+  const wrapWasHidden=$('#wrapUpRow').classList.contains('hide');
   $('#wrapUpRow').classList.toggle('hide',stx!=='completed');
+  // Artist notices + post kit load ONCE, when the wrap-up row first appears — they're
+  // multi-query reads and the poll runs every 2s (the #1 rule: nothing heavy on a hot path).
+  if(wrapWasHidden&&stx==='completed'){ refreshArtistNotices(); refreshPostKit(); }
   // Top-8-Songs is rating-only (objective, rankable). Show it whenever the room has ANY
   // 0–9 round; hide only for a pure-Versus room.
   const hasRatingRound = allRoundTypes(st).some(r=>r.poll_type!=='binary');

@@ -216,10 +216,16 @@ async function call(path, body, method='POST', headers={}) {
   // a second voter can now join in
   const lateVote = await call('/api/vote', { taste: 8, predict: 7 }, 'POST', { 'X-Player-Token': t2 });
   ok('late voter can vote after reopen', lateVote.d.locked === true);
-  // can't edit once ratified
+  // Editing a ratified round is ALLOWED — but only its descriptive fields. This backs the
+  // post-show artist workflow (fix a typo / add contact after the show); the score, votes
+  // and points are never writable here. Full coverage in the artist-notices block below.
   await call('/api/admin/round/ratify', { sessionId: SID, roundId: qe.d.roundId }, 'POST', AH);
-  const editLate = await call('/api/admin/round/edit', { sessionId: SID, roundId: qe.d.roundId, song_title: 'Too Late' }, 'POST', AH);
-  ok('edit blocked after ratify', editLate.status === 400);
+  const ratifiedAvg = (await call(`/api/admin/rounds?sessionId=${SID}`, null, 'GET', AH)).d.rounds.find(r => r.id === qe.d.roundId).room_average;
+  const editLate = await call('/api/admin/round/edit', { sessionId: SID, roundId: qe.d.roundId, song_title: 'Renamed After Ratify' }, 'POST', AH);
+  ok('a ratified round accepts a descriptive edit', editLate.status === 200, JSON.stringify(editLate.d));
+  const editedRow = (await call(`/api/admin/rounds?sessionId=${SID}`, null, 'GET', AH)).d.rounds.find(r => r.id === qe.d.roundId);
+  ok('the ratified edit applied', editedRow.song_title === 'Renamed After Ratify', editedRow.song_title);
+  ok('the ratified edit left the score alone', editedRow.room_average === ratifiedAvg, `${ratifiedAvg} -> ${editedRow.room_average}`);
   // can't reopen a ratified round
   const reoLate = await call('/api/admin/round/reopen', { sessionId: SID, roundId: qe.d.roundId, minutes: 1 }, 'POST', AH);
   ok('reopen blocked after ratify', reoLate.status === 400);
@@ -1147,16 +1153,26 @@ async function call(path, body, method='POST', headers={}) {
   console.log('\n— review-site ingest: token-gated push, host pulls latest —');
   const ingBad = await call('/api/ingest/submission', { title: 'Hack', artist: 'X' }, 'POST', { 'X-Ingest-Token': 'wrong' });
   ok('ingest rejects a bad token', ingBad.status === 401, 'got ' + ingBad.status);
-  const ingOk = await call('/api/ingest/submission', { title: 'Neon Skyline', artist: 'The Verge', instagram: '@theverge', source: 'drupal' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  const ingOk = await call('/api/ingest/submission', { title: 'Neon Skyline', artist: 'The Verge', instagram: '@theverge', source: 'drupal',
+    email: 'Verge@Band.COM', phone: '(305) 555-0142' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
   ok('ingest accepts a good token', ingOk.status === 200 && ingOk.d.ok, JSON.stringify(ingOk.d));
   const ingEmpty = await call('/api/ingest/submission', { title: '', artist: '' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
   ok('ingest rejects an empty song', ingEmpty.status === 400, 'got ' + ingEmpty.status);
-  // Non-authed cannot pull; host can and gets the last staged song.
+  // Non-authed cannot pull; admin can and gets the last staged song.
   const pullNoAuth = await call('/api/admin/ingest/latest', null, 'GET');
-  ok('ingest pull needs auth', pullNoAuth.status === 401, 'got ' + pullNoAuth.status);
+  ok('ingest pull needs auth', pullNoAuth.status === 403, 'got ' + pullNoAuth.status);
   const pull = await call('/api/admin/ingest/latest', null, 'GET', ADMINH);
   ok('host pulls the staged submission', pull.status === 200 && pull.d.title === 'Neon Skyline' && pull.d.artist === 'The Verge', JSON.stringify(pull.d));
   ok('ingest normalizes the IG handle (strips @)', pull.d.instagram === 'theverge', JSON.stringify(pull.d));
+  // Artist contact rides along so the post-show report card can reach them.
+  ok('ingest carries + normalizes the artist email', pull.d.email === 'verge@band.com', JSON.stringify(pull.d));
+  ok('ingest carries the artist phone', pull.d.phone === '(305) 555-0142', JSON.stringify(pull.d));
+  const ingJunk = await call('/api/ingest/submission', { title: 'Junk Contact', artist: 'Nobody', email: 'not-an-email', phone: '123' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  ok('ingest accepts the song even with unusable contact', ingJunk.status === 200, 'got ' + ingJunk.status);
+  const pullJunk = (await call('/api/admin/ingest/latest', null, 'GET', ADMINH)).d;
+  ok('unusable contact stages as null, not garbage', pullJunk.email === null && pullJunk.phone === null, JSON.stringify(pullJunk));
+  // Re-stage the good record so later assertions/UI see a complete one.
+  await call('/api/ingest/submission', { title: 'Neon Skyline', artist: 'The Verge', instagram: '@theverge', source: 'drupal' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
   // adminState surfaces it so the button can show.
   const anyLive = await call('/api/session', { name: 'Ingest Btn', status: 'live' }, 'POST', ADMINH);
   const ist = (await call('/api/admin/state?sessionId=' + anyLive.d.sessionId, null, 'GET', ADMINH)).d;
@@ -1451,6 +1467,152 @@ async function call(path, body, method='POST', headers={}) {
   const rpBinR = await call('/api/admin/round', { sessionId: rpBinC.d.sessionId, song_title: 'A', option_b_title: 'B' }, 'POST', { 'X-Admin-Token': rpBinC.d.adminToken });
   const binRep = await call(`/api/card/song-report?r=${rpBinR.d.roundId}`, null, 'GET', { 'X-Admin-Token': rpBinC.d.adminToken });
   ok('Versus rounds are excluded (409)', binRep.status === 409, 'status ' + binRep.status);
+
+  // ======================================================================
+  // Post-show artist notices: report card by email + a heads-up text held to
+  // the 10AM-8PM ET window, with contact addable retroactively after the show.
+  // ======================================================================
+  console.log('\n— artist SMS quiet hours: 10AM-8PM ET, asserted on fixed timestamps —');
+  // Fixed instants, expressed in UTC, checked through the ET conversion. July = EDT (UTC-4).
+  const etCases = [
+    ['2026-07-15T13:59:00Z', 9,  false, '9:59 AM ET — before the window'],
+    ['2026-07-15T14:00:00Z', 10, true,  '10:00 AM ET — window opens'],
+    ['2026-07-15T20:00:00Z', 16, true,  '4:00 PM ET — mid-window'],
+    ['2026-07-15T23:59:00Z', 19, true,  '7:59 PM ET — last minute in'],
+    ['2026-07-16T00:00:00Z', 20, false, '8:00 PM ET — window closes'],
+    ['2026-07-16T03:00:00Z', 23, false, '11:00 PM ET — show wrap, must hold'],
+    ['2026-07-16T04:00:00Z', 0,  false, 'midnight ET — normalizes to hour 0, still held'],
+    ['2026-07-16T09:00:00Z', 5,  false, '5:00 AM ET — still held'],
+  ];
+  for (const [iso, wantHour, wantOpen, label] of etCases) {
+    const ts = Date.parse(iso);
+    ok(`ET hour ${label}`, server._etHour(ts) === wantHour, `got ${server._etHour(ts)}, want ${wantHour}`);
+    ok(`SMS ${wantOpen ? 'sends' : 'holds'} — ${label}`, server._withinSmsWindow(ts) === wantOpen, `got ${server._withinSmsWindow(ts)}`);
+  }
+  // Winter (EST, UTC-5): the same wall-clock rule must hold across the DST boundary.
+  ok('EST: 9:59 AM ET holds', server._withinSmsWindow(Date.parse('2026-01-14T14:59:00Z')) === false);
+  ok('EST: 10:00 AM ET sends', server._withinSmsWindow(Date.parse('2026-01-14T15:00:00Z')) === true);
+  ok('EST: 11 PM ET (show wrap) holds', server._withinSmsWindow(Date.parse('2026-01-15T04:00:00Z')) === false);
+
+  console.log('\n— artist email: carries the report + replay link, and NO pricing —');
+  // The operator's explicit call: the report card goes out free to drive visibility, and the
+  // email must never mention price or an upsell. That's a product decision a future copy
+  // edit could quietly undo, so it's asserted here rather than left to review.
+  const aeHtml = server._artistEmailHtml({ title: 'Midnight Run', artist: 'Jaylen Cole', mean: '7.4',
+    rank: 2, total: 11, dateLabel: 'Jul 8, 2026', sessionName: 'Test Night',
+    watchUrl: 'https://youtube.com/watch?v=abc123', pages: ['https://blob/p1.png', 'https://blob/p2.png', 'https://blob/p3.png'] });
+  ok('artist email embeds every report page', ['p1', 'p2', 'p3'].every(p => aeHtml.includes(p + '.png')));
+  ok('artist email carries the replay link', aeHtml.includes('youtube.com/watch?v=abc123'));
+  ok('artist email pitches screen-recording the feedback', /screen-record/i.test(aeHtml));
+  ok('artist email asks for the collab post', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARoom'));
+  ok('artist email shows the score + rank', aeHtml.includes('7.4') && aeHtml.includes('#2 of 11'));
+  const sellWords = /\$\d|\bprice\b|\bpricing\b|\bpurchase\b|\bpaid\b|\bupgrade\b|\bcheckout\b|\bbuy\b|\bupsell\b/i;
+  ok('artist email mentions NO price or upsell (operator decision)', !sellWords.test(aeHtml),
+    (aeHtml.match(sellWords) || [''])[0]);
+  // A room with no replay link must simply omit the button, not render a dead one.
+  const aeNoWatch = server._artistEmailHtml({ title: 'X', artist: '', mean: '5.0', rank: 1, total: 1,
+    dateLabel: 'Jul 8, 2026', sessionName: 'N', watchUrl: null, pages: ['https://blob/p1.png'] });
+  ok('no replay link -> no watch button (not a dead link)', !/Watch the room/.test(aeNoWatch));
+  ok('single-song room omits the rank line', !/of 1<\/b> records/.test(aeNoWatch));
+
+  console.log('\n— artist notices: contact capture, retroactive edit, queue —');
+  const anC = await call('/api/session', { name: 'Artist Night' }, 'POST', BOOTH);
+  const ANID = anC.d.sessionId, ANAH = { 'X-Admin-Token': anC.d.adminToken };
+  // Song 1 arrives WITH contact (the review-site/queue-form path).
+  const an1 = await call('/api/admin/round', { sessionId: ANID, song_title: 'Contact Song', song_artist: 'Reachable',
+    artist_email: 'Reach@Artist.COM', artist_phone: '(305) 555-0199' }, 'POST', ANAH);
+  const AN1 = an1.d.roundId;
+  const anVote = async (rid, n, tag) => {
+    for (let i = 0; i < n; i++) {
+      const jr = await call('/api/join/request', { sessionId: ANID, email: `${tag}${i}@fan.com` });
+      const ver = await call('/api/join/verify', { sessionId: ANID, email: `${tag}${i}@fan.com`, code: jr.d.devCode, name: `${tag} ${i}` });
+      await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': ver.d.token });
+    }
+  };
+  await anVote(AN1, 3, 'anA');
+  await call('/api/admin/round/ratify', { sessionId: ANID, roundId: AN1 }, 'POST', ANAH);
+  // Song 2 arrives with NO contact — the case the Rounds tab flags.
+  const an2 = await call('/api/admin/round', { sessionId: ANID, song_title: 'Orphan Song', song_artist: 'Unreachable' }, 'POST', ANAH);
+  const AN2 = an2.d.roundId;
+  await anVote(AN2, 3, 'anB');
+  await call('/api/admin/round/ratify', { sessionId: ANID, roundId: AN2 }, 'POST', ANAH);
+
+  const anRounds = (await call(`/api/admin/rounds?sessionId=${ANID}`, null, 'GET', ANAH)).d.rounds;
+  const anR1 = anRounds.find(r => r.id === AN1), anR2 = anRounds.find(r => r.id === AN2);
+  ok('contact stored on add + normalized (lowercased)', anR1.artist_email === 'reach@artist.com' && anR1.artist_phone === '(305) 555-0199', JSON.stringify(anR1));
+  ok('round with no contact reports empty (drives the ⚠ flag)', anR2.artist_email === '' && anR2.artist_phone === '', JSON.stringify(anR2));
+
+  const anSt1 = (await call(`/api/admin/session/artist-notices/status?sessionId=${ANID}`, null, 'GET', ANAH)).d;
+  ok('status counts both rated rounds', anSt1.rounds === 2, JSON.stringify(anSt1));
+  ok('status counts one reachable, one missing', anSt1.withEmail === 1 && anSt1.missing === 1, JSON.stringify(anSt1));
+  const anStNoAuth = await call(`/api/admin/session/artist-notices/status?sessionId=${ANID}`, null, 'GET');
+  ok('artist notices are host-only (403)', anStNoAuth.status === 403, 'got ' + anStNoAuth.status);
+
+  // THE RETROACTIVE PATH: a ratified round is editable, and adding contact makes the
+  // artist reachable — without touching the score.
+  const anBefore = anR2.room_average;
+  const anEdit = await call('/api/admin/round/edit', { sessionId: ANID, roundId: AN2,
+    song_title: 'Orphan Song (fixed)', artist_email: 'found@artist.com', artist_phone: '3055550111' }, 'POST', ANAH);
+  ok('a RATIFIED round is editable (was blocked before)', anEdit.status === 200, JSON.stringify(anEdit.d));
+  const anAfter = (await call(`/api/admin/rounds?sessionId=${ANID}`, null, 'GET', ANAH)).d.rounds.find(r => r.id === AN2);
+  ok('retroactive contact lands on the ratified round', anAfter.artist_email === 'found@artist.com', JSON.stringify(anAfter));
+  ok('editing a ratified round does NOT move its score', anAfter.room_average === anBefore, `${anBefore} -> ${anAfter.room_average}`);
+  ok('editing a ratified round does NOT drop its votes', anAfter.votes === 3, 'votes ' + anAfter.votes);
+  ok('title edit applies to a ratified round', anAfter.song_title === 'Orphan Song (fixed)', anAfter.song_title);
+  const anSt2 = (await call(`/api/admin/session/artist-notices/status?sessionId=${ANID}`, null, 'GET', ANAH)).d;
+  ok('reachability updates after the retroactive edit', anSt2.withEmail === 2 && anSt2.missing === 0, JSON.stringify(anSt2));
+  // A bad address is refused rather than silently queuing a doomed send.
+  const anBadEmail = await call('/api/admin/round/edit', { sessionId: ANID, roundId: AN2, artist_email: 'not-an-email' }, 'POST', ANAH);
+  ok('a malformed artist email is rejected', anBadEmail.status === 400, 'got ' + anBadEmail.status);
+  const anStill = (await call(`/api/admin/rounds?sessionId=${ANID}`, null, 'GET', ANAH)).d.rounds.find(r => r.id === AN2);
+  ok('the rejected edit left the good address intact', anStill.artist_email === 'found@artist.com', anStill.artist_email);
+  // Omitting the field entirely must not blank it (PATCH-style contract).
+  await call('/api/admin/round/edit', { sessionId: ANID, roundId: AN2, song_title: 'Orphan Song (fixed)' }, 'POST', ANAH);
+  const anKept = (await call(`/api/admin/rounds?sessionId=${ANID}`, null, 'GET', ANAH)).d.rounds.find(r => r.id === AN2);
+  ok('an edit that omits contact leaves it untouched', anKept.artist_email === 'found@artist.com', anKept.artist_email);
+
+  // PII rule: artist contact is host-facing pipeline data and must never reach a player
+  // surface. The public views build explicit field lists, but that's exactly the kind of
+  // thing a later `...round` spread would quietly undo — so assert it on the live payload.
+  const anPlayJr = await call('/api/join/request', { sessionId: ANID, email: 'peeker@fan.com' });
+  const anPlayVer = await call('/api/join/verify', { sessionId: ANID, email: 'peeker@fan.com', code: anPlayJr.d.devCode, name: 'Peeker' });
+  const anPlayState = await call('/api/me/state', null, 'GET', { 'X-Player-Token': anPlayVer.d.token });
+  const anPlayBlob = JSON.stringify(anPlayState.d);
+  ok('player state never carries artist email', !anPlayBlob.includes('reach@artist.com') && !anPlayBlob.includes('found@artist.com'), anPlayBlob.slice(0, 200));
+  ok('player state never carries artist phone', !anPlayBlob.includes('555-0199') && !/artist_phone/.test(anPlayBlob), anPlayBlob.slice(0, 200));
+  const anPub = await call(`/api/leaderboard?sessionId=${ANID}`, null, 'GET');
+  ok('public leaderboard never carries artist contact', !JSON.stringify(anPub.d).includes('artist@'), JSON.stringify(anPub.d).slice(0, 160));
+
+  // Sends need Blob (the report cards are rendered + hosted) — refused, not half-done.
+  const anStart = await call('/api/admin/session/artist-notices/start', { sessionId: ANID }, 'POST', ANAH);
+  ok('start refuses without image hosting (409)', anStart.status === 409, 'got ' + anStart.status);
+  // Cron is token-gated and must never run un-gated.
+  const cronNoTok = await call('/api/cron/artist-sms', null, 'GET');
+  ok('artist-sms cron refuses without CRON_SECRET configured (503)', cronNoTok.status === 503, 'got ' + cronNoTok.status);
+  // Vercel documents that cron delivery can invoke the same run twice, and the hourly cron
+  // can overlap the host's own drain. Two concurrent drains must not double-text an artist.
+  const anDb = require('./db');
+  await anDb.run("INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at) VALUES ('dup1', ?, ?, 'sms', '+13055550143', 'pending', ?)", [ANID, AN1, Date.now()]);
+  const drains = await Promise.all([server._drainArtistSms({ sessionId: ANID, limit: 5 }), server._drainArtistSms({ sessionId: ANID, limit: 5 })]);
+  const totalSent = drains.reduce((a, r) => a + r.sent, 0);
+  const dupRow = await anDb.get("SELECT status FROM artist_notices WHERE id = 'dup1'");
+  // Inside the ET window exactly one drain sends it; outside, both correctly hold.
+  if (drains.some(d => d.held)) {
+    ok('concurrent drains both hold outside the ET window', drains.every(d => d.held) && dupRow.status === 'pending', JSON.stringify({ drains, dupRow }));
+  } else {
+    ok('a double-invoked cron sends the artist exactly ONE text', totalSent === 1, 'sent ' + totalSent + ' times');
+    ok('the claimed row settles as sent', dupRow.status === 'sent', dupRow.status);
+  }
+
+  // Post kit: the caption is always available, even with Asana unconfigured.
+  const pk = await call(`/api/admin/session/post-kit?sessionId=${ANID}`, null, 'GET', ANAH);
+  ok('post kit returns a caption', pk.status === 200 && typeof pk.d.caption === 'string' && pk.d.caption.includes('#TheARoom'), JSON.stringify(pk.d).slice(0, 160));
+  ok('post kit reports Asana unconfigured (no token)', pk.d.configured === false && pk.d.hasToken === false, JSON.stringify(pk.d));
+  ok('post kit names the top record', !!pk.d.topRecord, JSON.stringify(pk.d.topRecord));
+  const pkNoAuth = await call(`/api/admin/session/post-kit?sessionId=${ANID}`, null, 'GET');
+  ok('post kit is host-only (403)', pkNoAuth.status === 403, 'got ' + pkNoAuth.status);
+  const asanaOff = await call('/api/admin/session/asana-task', { sessionId: ANID }, 'POST', ANAH);
+  ok('asana task refuses when unconfigured (409)', asanaOff.status === 409, 'got ' + asanaOff.status);
 
   // ======================================================================
   // Referral bonus milestones: an invitee's 10th cumulative scored round

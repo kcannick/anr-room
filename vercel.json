@@ -2,6 +2,10 @@
   "version": 2,
   "buildCommand": "bash scripts/vercel-build.sh",
   "functions": { "api/index.js": { "maxDuration": 30, "includeFiles": "assets/fonts/**" } },
+  "//crons": "Artist SMS queued at wrap (11PM) waits for the 10AM-8PM ET window. Hourly (UTC) — the endpoint is a no-op outside the window, so the hour offset between EST/EDT needs no schedule change. Requires Vercel Pro (Hobby caps crons at once/day); CRON_SECRET must be set or the endpoint 503s.",
+  "crons": [
+    { "path": "/api/cron/artist-sms", "schedule": "0 * * * *" }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index.js" }
   ]

@@ -72,6 +72,22 @@ function cleanUrl(u) {
   return s;
 }
 
+// Per-song artist contact (post-show report card + heads-up text). Both return null for
+// anything unusable, so a blank/garbage field reads as "no contact" rather than queuing a
+// send that can only fail. PRIVATE — never emitted by a public surface (PII rule).
+function cleanArtistEmail(e) {
+  const s = (e || '').toString().trim().toLowerCase();
+  if (!s || s.length > 200) return null;
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s) ? s : null;
+}
+function cleanArtistPhone(v) {
+  const s = (v || '').toString().trim();
+  if (!s) return null;
+  const digits = s.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return null; // E.164 bounds; sms.js normalizes
+  return s.slice(0, 40);
+}
+
 // Short, human-shareable referral code (no ambiguous chars). Used in ?ref= links.
 function refCode() {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/O/0/1/L
@@ -832,6 +848,171 @@ function recapEmailHtml({ name, sessionName, rank, total, cards }) {
       <p style="font-size:13px;color:#6f688f;margin:22px 0 0">Play again → <a href="https://anr.makinitmag.com" style="color:#4bb749;text-decoration:none">ANR.makinitmag.com</a></p>
     </div>
   </div>`;
+}
+
+// ===== POST-SHOW ARTIST NOTICES =====
+// Quiet hours (TCPA): artist SMS only sends 10AM-8PM ET. The show ends at 11PM, so a
+// text queued at wrap sits pending until the next morning — /api/cron/artist-sms drains
+// it. Email has no such window (inboxes are asynchronous by nature).
+const SMS_WINDOW_START_ET = 10, SMS_WINDOW_END_ET = 20;
+function etHour(ts = Date.now()) {
+  // hour12:false can render midnight as "24" depending on ICU — normalize to 0-23.
+  const h = parseInt(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(new Date(ts)), 10);
+  return (Number.isFinite(h) ? h : 0) % 24;
+}
+function withinSmsWindow(ts = Date.now()) {
+  const h = etHour(ts);
+  return h >= SMS_WINDOW_START_ET && h < SMS_WINDOW_END_ET;
+}
+// Human "when the queue next moves", for the panel's status line.
+function nextSmsWindowLabel(ts = Date.now()) {
+  return withinSmsWindow(ts) ? 'sending now' : `holds until ${SMS_WINDOW_START_ET} AM ET`;
+}
+
+const artistEmailText = (d) => `Your record got played live — ${d.title}\n\n`
+  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} went in front of the room on ${d.dateLabel}. `
+  + `It scored ${d.mean} (room average), ranked #${d.rank} of ${d.total} records played that night.\n\n`
+  + (d.watchUrl ? `Watch the room review your record: ${d.watchUrl}\nScrub to your song and screen-record the feedback — it's content.\n\n` : '')
+  + `Your full report card is attached as three images. Post them as one Instagram carousel and `
+  + `add @Makinit4indies as a collaborator so it shows on both feeds. Tag us + use #TheARoom.\n\n`
+  + `Submit your next record → https://makinitmag.com/review`;
+
+// The artist's post-show email: full 3-page report card + the replay link + post instructions.
+// Deliberately carries NO price or upsell — the operator's call: visibility first
+// (see the postshow-artist-workflow memory).
+function artistEmailHtml({ title, artist, mean, rank, total, dateLabel, sessionName, watchUrl, pages }) {
+  const pageBlock = pages.filter(Boolean).map((u, i) =>
+    `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
+  ).join('');
+  const watchBlock = watchUrl ? `
+      <a href="${watchUrl}" style="display:block;background:#4bb749;color:#07130a;font-weight:700;font-size:15px;border-radius:12px;padding:14px 16px;text-decoration:none;margin:4px 0 8px">▶ Watch the room review your record</a>
+      <p style="font-size:12.5px;line-height:1.55;color:#a9a2c9;margin:0 0 18px">Scrub to your song in the replay and <b style="color:#f3f0fb">screen-record the live feedback</b> — clips of a real A&amp;R room reacting to your record are content gold.</p>` : '';
+  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
+    <div style="max-width:360px;margin:0 auto;text-align:center">
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">The A&amp;R Room</div>
+      <h1 style="font-size:22px;margin:8px 0 4px">Your record got played live${artist ? ', ' + escapeHtml(String(artist).split(/\s+/)[0]) : ''}.</h1>
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 18px"><b style="color:#f3f0fb">“${escapeHtml(title)}”</b> went in front of the room on <b style="color:#f3f0fb">${escapeHtml(dateLabel)}</b> — here's your full report card.</p>
+      <div style="background:#171328;border:1px solid #2e2750;border-radius:14px;padding:18px 16px;margin-bottom:16px">
+        <div style="font-weight:700;font-size:17px">${escapeHtml(title)}</div>
+        ${artist ? `<div style="font-size:13px;color:#a9a2c9;margin-top:2px">${escapeHtml(artist)}</div>` : ''}
+        <div style="font-family:'Space Mono',monospace;font-size:44px;font-weight:700;color:#4bb749;line-height:1.1;margin-top:10px">${escapeHtml(mean)}</div>
+        <div style="font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6f688f">room average · out of 9</div>
+        ${total > 1 ? `<div style="font-size:13px;color:#a9a2c9;margin-top:8px">Ranked <b style="color:#f3f0fb">#${rank} of ${total}</b> records played that night</div>` : ''}
+      </div>
+      ${pageBlock}
+      ${watchBlock}
+      <div style="background:#171328;border:1px solid #6d5fe0;border-radius:14px;padding:16px;text-align:left">
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">📲 Post your report card</div>
+        <div style="font-size:13px;line-height:1.6;color:#a9a2c9">Share all three pages as one Instagram <b style="color:#f3f0fb">carousel</b>. Add <b style="color:#f3f0fb">@Makinit4indies</b> as a <b>collaborator</b> when you upload — it shows on both feeds. Tag us + use <b style="color:#f3f0fb">#TheARoom</b>.</div>
+      </div>
+      <p style="font-size:13px;color:#6f688f;margin:20px 0 0">Submit your next record → <a href="https://makinitmag.com/review" style="color:#4bb749;text-decoration:none">makinitmag.com/review</a></p>
+    </div>
+  </div>`;
+}
+
+// Rounds eligible for an artist notice: ratified RATING rounds with votes (a Song Report
+// needs a room average — Versus rounds have a split, not an average) and some contact.
+const ARTIST_ELIGIBLE_SQL = `
+  SELECT r.* FROM rounds r
+   WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
+     AND COALESCE(r.poll_type,'rating') <> 'binary'
+     AND EXISTS (SELECT 1 FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL)
+   ORDER BY r.idx ASC`;
+
+// Render + host this round's report pages, then mail them to the artist. Returns the
+// hosted page URLs so the queue row can record exactly what was delivered.
+// Page 3 (segments) needs 8+ votes — same floor the host-facing report enforces, so a
+// small room never decomposes into near-individual scores.
+async function sendArtistReportEmail(round, session, dest) {
+  const d = await songReportData(round, session);
+  if (!d) return { ok: false, error: 'No votes to report' };
+  const pageCount = d.votes >= 8 ? 3 : 2;
+  const pages = [];
+  for (let i = 1; i <= pageCount; i++) {
+    const buf = await shareCards.renderPng('report' + i, i === 1 ? d : { ...d, sub: d.sub23 });
+    pages.push(await uploadPng(`artist/${session.id}/${round.id}-p${i}.png`, buf));
+  }
+  const html = artistEmailHtml({
+    title: round.song_title || 'Your record', artist: round.song_artist || '',
+    mean: d.mean, rank: d.rankInRoom ? d.rankInRoom.rank : 1, total: d.rankInRoom ? d.rankInRoom.total : 1,
+    dateLabel: d.dateLabel, sessionName: session.name, watchUrl: session.watch_url || null, pages,
+  });
+  const text = artistEmailText({
+    title: round.song_title || 'Your record', artist: round.song_artist || '', mean: d.mean,
+    rank: d.rankInRoom ? d.rankInRoom.rank : 1, total: d.rankInRoom ? d.rankInRoom.total : 1,
+    dateLabel: d.dateLabel, watchUrl: session.watch_url || null,
+  });
+  const r = await sendEmail(dest, `Your record got played — “${round.song_title || 'your song'}” scored ${d.mean}`, html, text);
+  return r.ok ? { ok: true, pages } : { ok: false, error: r.error };
+}
+
+// Drain pending artist SMS — optionally scoped to one session (host-triggered) or across
+// all of them (cron). A no-op outside the ET window: the rows simply stay pending.
+async function drainArtistSms({ sessionId = null, limit = 10 } = {}) {
+  if (!withinSmsWindow()) return { sent: 0, failed: 0, held: true };
+  const rows = sessionId
+    ? await db.all("SELECT * FROM artist_notices WHERE session_id = ? AND status = 'pending' AND channel = 'sms' ORDER BY created_at ASC LIMIT ?", [sessionId, limit])
+    : await db.all("SELECT * FROM artist_notices WHERE status = 'pending' AND channel = 'sms' ORDER BY created_at ASC LIMIT ?", [limit]);
+  let sent = 0, failed = 0;
+  for (const row of rows) {
+    // CLAIM the row before sending. Vercel states cron delivery "can occasionally invoke the
+    // same scheduled run more than once", and the hourly cron overlaps the host's own
+    // wrap-up drain — without this, two runs both read the row as pending and the artist
+    // gets the same text twice. The conditional UPDATE makes exactly one run win.
+    const claim = await db.run("UPDATE artist_notices SET status = 'sending' WHERE id = ? AND status = 'pending'", [row.id]);
+    if (!claim.changes) continue; // another run already took it
+    try {
+      const round = await db.get('SELECT song_title FROM rounds WHERE id = ?', [row.round_id]);
+      const title = (round && round.song_title) || 'your record';
+      const body = `🎧 The A&R Room: "${title}" got played live — your full report card is in your email inbox. Check it out. Reply STOP to opt out.`;
+      const r = await sendSms(row.dest, body);
+      if (r.ok) { await db.run("UPDATE artist_notices SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
+      else { await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
+    } catch (e) {
+      // Unknown outcome: park it as failed (visible in the panel) rather than pending —
+      // re-queuing a row we may already have sent is the one thing worse than not sending.
+      await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(e.message || 'error').slice(0, 300), row.id]); failed++;
+    }
+  }
+  return { sent, failed, held: false };
+}
+
+// ===== ASANA POST KIT =====
+// One task per show carrying the night's graphics + a caption that tags everyone, so the
+// social post is assembled by the time the operator sits down to make it.
+// Token lives in ASANA_TOKEN (env) — same shape as INGEST_TOKEN/ANALYTICS_TOKEN/Blob, and
+// deliberately NOT the settings table: a PAT there would be echoed back by the platform
+// GET to every admin. The project gid is not a secret and does live in settings.
+const ASANA_API = 'https://app.asana.com/api/1.0';
+async function asanaFetch(path, opts = {}) {
+  const token = process.env.ASANA_TOKEN;
+  if (!token) throw new Error('Asana not configured (set ASANA_TOKEN)');
+  const r = await fetch(ASANA_API + path, {
+    ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+  });
+  const body = await r.text();
+  if (!r.ok) {
+    let msg = `Asana ${r.status}`;
+    try { const j = JSON.parse(body); if (j.errors && j.errors[0]) msg += ': ' + j.errors[0].message; } catch (e) {}
+    throw new Error(msg);
+  }
+  try { return JSON.parse(body); } catch (e) { return {}; }
+}
+
+// The caption: 8 A&R handles + 8 artist handles + the top record. Falls back to display
+// names when someone has no IG on file, so the operator always sees who's missing a tag.
+async function postKitCaption(sessionId, ars, songs) {
+  const handle = (x) => (x.ig ? '@' + x.ig : (x.name || x.artist || '').trim()).trim();
+  const arLine = ars.map(handle).filter(Boolean).join(' ');
+  const songLine = songs.map(handle).filter(Boolean).join(' ');
+  const top = songs[0];
+  const lines = [];
+  if (arLine) lines.push(`🏆 Top 8 A&Rs: ${arLine}`);
+  if (songLine) lines.push(`🎧 Top 8 Records: ${songLine}`);
+  if (top) lines.push(`Top record of the night: “${top.title}”${top.artist ? ' — ' + top.artist : ''} (${Number(top.score).toFixed(1)})`);
+  lines.push('#TheARoom @Makinit4indies');
+  return lines.join('\n');
 }
 
 async function adminState(session, opts = {}) {
@@ -1901,8 +2082,11 @@ async function handleApi(req, res, url) {
     const given = req.headers['x-ingest-token'] || body.token || '';
     if (given !== token) return send(res, 401, { error: 'Bad token' }, cors);
     const clip = (s, n) => (s == null ? '' : String(s)).trim().slice(0, n);
+    // email/phone ride along so the post-show report card can reach the artist without
+    // the host retyping contact info mid-show. Private — staged, never publicly emitted.
     const rec = { title: clip(body.title, 200), artist: clip(body.artist, 200),
       instagram: clip((body.instagram || '').toString().replace(/^@+/, ''), 60) || null,
+      email: cleanArtistEmail(body.email), phone: cleanArtistPhone(body.phone),
       source: clip(body.source, 60) || 'makinitmag', at: now() };
     if (!rec.title && !rec.artist) return send(res, 400, { error: 'Need at least a title or artist' }, cors);
     await db.run("INSERT INTO settings (k,v) VALUES ('ingest_latest', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [JSON.stringify(rec)]);
@@ -1973,8 +2157,10 @@ async function handleApi(req, res, url) {
 
   // Host pulls the latest staged submission into the queue form (mirrors nero-pull).
   if (p === '/api/admin/ingest/latest' && method === 'GET') {
-    const user = await userFromAuth(req);
-    if (!user) return bad(res, 'Not logged in', 401);
+    // Platform-admin only — matches the UI's own gating ("Drupal ingest is platform-only"),
+    // and the staged payload now carries the submitter's email/phone (PII rule): a plain
+    // logged-in host must not be able to read another artist's contact info.
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const row = await db.get("SELECT v FROM settings WHERE k = 'ingest_latest'");
     if (!row) return send(res, 200, { empty: true });
     try { return send(res, 200, JSON.parse(row.v)); }
@@ -2095,14 +2281,19 @@ async function handleApi(req, res, url) {
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const rounds = await db.all(
-      `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.option_b_title, r.room_average, r.split_a,
+      `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.song_note, r.giveaway, r.poll_type,
+              r.option_b_title, r.option_b_artist, r.room_average, r.split_a, r.artist_email, r.artist_phone,
               (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
          FROM rounds r WHERE r.session_id = ? ORDER BY r.idx ASC`, [sessionId]);
+    // Artist contact is host-facing only (it's how they reach the artist post-show) and
+    // this endpoint is already admin/owner-gated — it never reaches a public surface.
     return send(res, 200, { rounds: rounds.map(r => ({
       id: r.id, idx: r.idx, status: r.status, song_title: r.song_title, song_artist: r.song_artist,
-      option_b_title: r.option_b_title || null,
+      song_note: r.song_note || '', giveaway: r.giveaway || '', poll_type: r.poll_type || 'rating',
+      option_b_title: r.option_b_title || null, option_b_artist: r.option_b_artist || null,
       room_average: r.room_average != null ? Number(r.room_average) : null,
       split_a: r.split_a != null ? Number(r.split_a) : null,
+      artist_email: r.artist_email || '', artist_phone: r.artist_phone || '',
       votes: Number(r.votes) || 0,
     })) });
   }
@@ -2297,8 +2488,12 @@ async function handleApi(req, res, url) {
       settings: { houseSubmitUrl,
         reviveDeliveryUrl: (await db.get("SELECT v FROM settings WHERE k = 'revive_delivery_url'"))?.v || null,
         reviveZoneLobby: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_lobby'"))?.v || null,
-        reviveZoneGame: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_game'"))?.v || null },
+        reviveZoneGame: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_game'"))?.v || null,
+        asanaProject: (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null },
       smsProvider: (process.env.SMS_PROVIDER || 'none'),
+      // The PAT itself is an env var and never leaves the server — only whether it's set.
+      asanaToken: !!process.env.ASANA_TOKEN,
+      cronConfigured: !!process.env.CRON_SECRET,
     });
   }
   // System settings — allowlisted keys only; empty string clears back to the default.
@@ -2318,6 +2513,8 @@ async function handleApi(req, res, url) {
     if ('reviveDeliveryUrl' in body) await setOrClear('revive_delivery_url', cleanUrl(body.reviveDeliveryUrl));
     if ('reviveZoneLobby' in body) await setOrClear('revive_zone_lobby', String(parseInt(body.reviveZoneLobby, 10) || '') || null);
     if ('reviveZoneGame' in body) await setOrClear('revive_zone_game', String(parseInt(body.reviveZoneGame, 10) || '') || null);
+    // Asana project gid for the post kit (digits; the PAT itself is ASANA_TOKEN in env).
+    if ('asanaProject' in body) await setOrClear('asana_project', (body.asanaProject || '').toString().trim().replace(/\D/g, '').slice(0, 30) || null);
     _reviveCfg.at = 0; // bust the poll-path cache so changes apply within a poll
     return send(res, 200, { ok: true });
   }
@@ -2390,7 +2587,8 @@ async function handleApi(req, res, url) {
   }
 
   if (p === '/api/admin/round' && method === 'POST') {
-    const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type } = await readBody(req);
+    const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type,
+      artist_email, artist_phone } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     // Poll type is PER-ROUND now. Resolve it: explicit body value → the session's most
@@ -2409,10 +2607,11 @@ async function handleApi(req, res, url) {
     const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
     const rid = id(9);
     await db.run(
-      `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, status, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
+      `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, status, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
       [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
-       isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null, now()]
+       isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
+       cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), now()]
     );
     // Straight to open unless a round is already in play (voting or awaiting tally) — then it
     // waits in the queue. Removes the mandatory add-then-open two-step for the common case.
@@ -2521,27 +2720,40 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true });
   }
 
-  // Edit a song's details. Allowed while pending (queued), voting, or closed —
-  // anything not yet ratified. Players see the update on their next poll.
+  // Edit a song's details — at ANY status, including ratified. Only DESCRIPTIVE fields are
+  // writable here (title/artist/note/giveaway/B-side/contact); votes, room_average, points
+  // and tiers are never touched, so editing a tallied round can't move a score or a board.
+  // Ratified edits exist for the post-show artist workflow: fix a typo, or add the artist's
+  // email/phone retroactively so they can be sent their report card. Cards + reports render
+  // live from current data, so an edit is picked up by the next render automatically.
   if (p === '/api/admin/round/edit' && method === 'POST') {
-    const { sessionId, roundId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist } = await readBody(req);
+    const { sessionId, roundId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist,
+      artist_email, artist_phone } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
-    if (round.status === 'ratified') return bad(res, 'Round already tallied — can\'t edit it now');
     if (song_title !== undefined && !String(song_title).trim()) return bad(res, 'Song title can\'t be empty');
     const isBinary = (round.poll_type || session.poll_type) === 'binary';
     if (isBinary && option_b_title !== undefined && !String(option_b_title).trim()) return bad(res, 'Song B title can\'t be empty');
+    if (artist_email !== undefined && String(artist_email).trim() && !cleanArtistEmail(artist_email)) {
+      return bad(res, 'That artist email doesn\'t look like an address');
+    }
+    // Contact fields are PATCH-style (only written when the caller sends them), so an
+    // older client that doesn't know about them can't blank them out.
     await db.run(
       `UPDATE rounds SET song_title = COALESCE(NULLIF(?,''), song_title),
          song_artist = ?, song_note = ?, giveaway = ?,
          option_b_title = CASE WHEN ? = 1 THEN COALESCE(NULLIF(?,''), option_b_title) ELSE option_b_title END,
-         option_b_artist = CASE WHEN ? = 1 THEN ? ELSE option_b_artist END
+         option_b_artist = CASE WHEN ? = 1 THEN ? ELSE option_b_artist END,
+         artist_email = CASE WHEN ? = 1 THEN ? ELSE artist_email END,
+         artist_phone = CASE WHEN ? = 1 THEN ? ELSE artist_phone END
        WHERE id = ?`,
       [(song_title || '').trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
        isBinary ? 1 : 0, (option_b_title || '').trim(),
        isBinary ? 1 : 0, (option_b_artist || '').trim(),
+       artist_email !== undefined ? 1 : 0, cleanArtistEmail(artist_email),
+       artist_phone !== undefined ? 1 : 0, cleanArtistPhone(artist_phone),
        roundId]
     );
     await realtime.publish(sessionId, 'round');
@@ -3162,6 +3374,183 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, sent, failed, remaining });
   }
 
+  // ---- Post-show ARTIST NOTICES: every artist whose record was rated gets their full
+  // Song Report by email + a heads-up SMS (queued to the 10AM-8PM ET window). Same
+  // chunked-queue shape as the recap carousel above — admin-triggered, small batches,
+  // never on the boot/request path. ----
+  if (p === '/api/admin/session/artist-notices/status' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId');
+    if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
+    const rounds = await db.all(ARTIST_ELIGIBLE_SQL, [sessionId]);
+    const withEmail = rounds.filter(r => (r.artist_email || '').trim()).length;
+    const withPhone = rounds.filter(r => (r.artist_phone || '').trim()).length;
+    const q = await db.all(
+      'SELECT channel, status, COUNT(*) AS c FROM artist_notices WHERE session_id = ? GROUP BY channel, status', [sessionId]);
+    const tally = (ch, st) => Number((q.find(r => r.channel === ch && r.status === st) || {}).c) || 0;
+    return send(res, 200, {
+      configured: !!process.env.BLOB_READ_WRITE_TOKEN,
+      rounds: rounds.length, withEmail, withPhone, missing: rounds.length - withEmail,
+      smsWindow: { open: withinSmsWindow(), label: nextSmsWindowLabel(), from: SMS_WINDOW_START_ET, to: SMS_WINDOW_END_ET },
+      email: { sent: tally('email', 'sent'), failed: tally('email', 'failed'), pending: tally('email', 'pending') },
+      sms: { sent: tally('sms', 'sent'), failed: tally('sms', 'failed'), pending: tally('sms', 'pending') },
+    });
+  }
+
+  // Enqueue one email + one SMS per eligible round that has contact info. Idempotent:
+  // re-running after a retroactive contact edit enqueues only the newly-reachable rounds
+  // (uniq_artist_notice + DO NOTHING), so nobody is double-mailed.
+  if (p === '/api/admin/session/artist-notices/start' && method === 'POST') {
+    const { sessionId } = await readBody(req);
+    if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
+    if (!process.env.BLOB_READ_WRITE_TOKEN) return bad(res, 'Image hosting not configured (set BLOB_READ_WRITE_TOKEN)', 409);
+    const rounds = await db.all(ARTIST_ELIGIBLE_SQL, [sessionId]);
+    let queuedEmail = 0, queuedSms = 0;
+    for (const r of rounds) {
+      const em = (r.artist_email || '').trim(), ph = (r.artist_phone || '').trim();
+      if (em) {
+        const ins = await db.run("INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at) VALUES (?,?,?, 'email', ?, 'pending', ?) ON CONFLICT (round_id, channel) DO NOTHING",
+          [id(12), sessionId, r.id, em, now()]);
+        if (ins && ins.changes) queuedEmail++;
+      }
+      if (ph) {
+        const ins = await db.run("INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at) VALUES (?,?,?, 'sms', ?, 'pending', ?) ON CONFLICT (round_id, channel) DO NOTHING",
+          [id(12), sessionId, r.id, ph, now()]);
+        if (ins && ins.changes) queuedSms++;
+      }
+    }
+    return send(res, 200, { ok: true, queuedEmail, queuedSms, smsHolds: !withinSmsWindow() });
+  }
+
+  // Process a chunk. Email sends immediately (rendering + hosting the 3 report pages per
+  // round). SMS sends ONLY inside the ET window — outside it the rows stay pending and
+  // the cron picks them up in the morning.
+  if (p === '/api/admin/session/artist-notices/process' && method === 'POST') {
+    const { sessionId, limit } = await readBody(req);
+    if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
+    const session = await db.get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
+    if (!session) return bad(res, 'Room not found', 404);
+    const n = Math.min(Math.max(parseInt(limit, 10) || 4, 1), 10);
+    const batch = await db.all(
+      "SELECT * FROM artist_notices WHERE session_id = ? AND status = 'pending' AND channel = 'email' ORDER BY created_at ASC LIMIT ?",
+      [sessionId, n]);
+    let sent = 0, failed = 0;
+    for (const row of batch) {
+      try {
+        const round = await db.get('SELECT * FROM rounds WHERE id = ?', [row.round_id]);
+        const out = await sendArtistReportEmail(round, session, row.dest);
+        if (out.ok) { await db.run("UPDATE artist_notices SET status = 'sent', report_urls = ?, sent_at = ?, error = NULL WHERE id = ?", [JSON.stringify(out.pages), now(), row.id]); sent++; }
+        else { await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(out.error || 'send failed').slice(0, 300), row.id]); failed++; }
+      } catch (e) {
+        await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(e.message || 'error').slice(0, 300), row.id]); failed++;
+      }
+    }
+    // SMS: only inside the window. Drained here when the host wraps during the day;
+    // otherwise the cron gets them tomorrow morning.
+    const smsOut = await drainArtistSms({ sessionId, limit: n });
+    const rem = await db.get("SELECT COUNT(*) AS c FROM artist_notices WHERE session_id = ? AND status = 'pending' AND channel = 'email'", [sessionId]);
+    const smsRem = await db.get("SELECT COUNT(*) AS c FROM artist_notices WHERE session_id = ? AND status = 'pending' AND channel = 'sms'", [sessionId]);
+    return send(res, 200, { ok: true, sent, failed, remaining: Number(rem.c) || 0,
+      sms: { ...smsOut, remaining: Number(smsRem.c) || 0, held: !withinSmsWindow() } });
+  }
+
+  // Cron: drain artist SMS queued overnight, across ALL sessions, once the ET window
+  // opens. Vercel Cron hits this on a schedule; CRON_SECRET-gated (Vercel sends it as a
+  // Bearer token). A no-op outside the window — safe to call as often as you like.
+  // Bounded (LIMIT) and index-backed (idx_artist_notice_pending): never a table scan.
+  if (p === '/api/cron/artist-sms' && (method === 'GET' || method === 'POST')) {
+    const secret = process.env.CRON_SECRET || '';
+    if (!secret) return bad(res, 'Cron not configured (set CRON_SECRET)', 503);
+    const given = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+      || url.searchParams.get('token') || '';
+    const ok = given.length === secret.length && given.length > 0
+      && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(secret));
+    if (!ok) return bad(res, 'Bad token', 401);
+    if (!withinSmsWindow()) return send(res, 200, { ok: true, skipped: 'outside the ET send window', etHour: etHour() });
+    const out = await drainArtistSms({ limit: 25 });
+    const rem = await db.get("SELECT COUNT(*) AS c FROM artist_notices WHERE status = 'pending' AND channel = 'sms'");
+    return send(res, 200, { ok: true, ...out, remaining: Number(rem.c) || 0 });
+  }
+
+  // ---- Asana post kit: the night's graphics + a tag-everyone caption, as one task. ----
+  // Preview (also powers "Copy caption", which works with or without Asana configured).
+  if (p === '/api/admin/session/post-kit' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId');
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Not authorized', 403);
+    const ars = await cardArsData({ sessionId });
+    const songs = session.poll_type === 'binary' ? [] : await cardSongsData(sessionId);
+    const project = (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null;
+    return send(res, 200, {
+      caption: await postKitCaption(sessionId, ars, songs),
+      ars: ars.length, songs: songs.length,
+      topRecord: songs.length ? { title: songs[0].title, artist: songs[0].artist, score: songs[0].score } : null,
+      configured: !!(process.env.ASANA_TOKEN && project) && !!process.env.BLOB_READ_WRITE_TOKEN,
+      hasToken: !!process.env.ASANA_TOKEN, hasProject: !!project,
+      blob: !!process.env.BLOB_READ_WRITE_TOKEN,
+    });
+  }
+
+  // Create the task: render the graphics, then upload each as a real Asana attachment
+  // (not a link) so the operator can download and post them straight from the task.
+  if (p === '/api/admin/session/asana-task' && method === 'POST') {
+    const { sessionId } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Not authorized', 403);
+    if (!process.env.ASANA_TOKEN) return bad(res, 'Asana not configured (set ASANA_TOKEN)', 409);
+    const project = (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null;
+    if (!project) return bad(res, 'Set the Asana project ID in the Platform panel first', 409);
+    try {
+      const ars = await cardArsData({ sessionId });
+      const songs = session.poll_type === 'binary' ? [] : await cardSongsData(sessionId);
+      if (!ars.length && !songs.length) return bad(res, 'Nothing to post yet — no ranked A&Rs or rated songs', 404);
+      // Build the graphics in memory; Asana takes the bytes directly (no Blob hosting needed).
+      const files = [];
+      if (ars.length) files.push({ name: 'top8-ars.png', buf: await shareCards.renderPng('ars', { list: ars, session: session.name }) });
+      if (songs.length) files.push({ name: 'top8-songs.png', buf: await shareCards.renderPng('songs', { list: songs, session: session.name }) });
+      // The top record's 3 report cards — highest room average of the night.
+      const topRound = await db.get(
+        `SELECT * FROM rounds WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
+           AND COALESCE(poll_type,'rating') <> 'binary' ORDER BY room_average DESC, idx ASC LIMIT 1`, [sessionId]);
+      if (topRound) {
+        const d = await songReportData(topRound, session);
+        if (d) {
+          const pageCount = d.votes >= 8 ? 3 : 2; // page 3 needs 8+ votes (same floor as the report)
+          for (let i = 1; i <= pageCount; i++) {
+            files.push({ name: `top-record-p${i}.png`, buf: await shareCards.renderPng('report' + i, i === 1 ? d : { ...d, sub: d.sub23 }) });
+          }
+        }
+      }
+      const caption = await postKitCaption(sessionId, ars, songs);
+      const dateLabel = new Date(Number(session.scheduled_at || session.created_at) || Date.now())
+        .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
+      const task = await asanaFetch('/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: {
+          name: `Post kit — ${session.name} (${dateLabel})`,
+          notes: `Caption (paste as-is):\n\n${caption}\n\n—\nPost the graphics as one Instagram carousel. Add @Makinit4indies as a collaborator.\nGenerated by The A&R Room.`,
+          projects: [String(project)],
+        } }),
+      });
+      const gid = task && task.data && task.data.gid;
+      if (!gid) return bad(res, 'Asana did not return a task id', 502);
+      // Attachments are uploaded one at a time — Asana takes one file per request.
+      const attached = [];
+      for (const f of files) {
+        const form = new FormData();
+        form.set('parent', gid);
+        form.set('file', new Blob([f.buf], { type: 'image/png' }), f.name);
+        await asanaFetch('/attachments', { method: 'POST', body: form });
+        attached.push(f.name);
+      }
+      const permalink = (task.data && task.data.permalink_url) || `https://app.asana.com/0/${project}/${gid}`;
+      return send(res, 200, { ok: true, taskId: gid, url: permalink, attached });
+    } catch (e) {
+      console.error('[asana] task failed:', e.message);
+      return bad(res, 'Asana task failed: ' + e.message, 502);
+    }
+  }
+
   // Serve a banner image by id (used by <img src>). Public — banners are shown to players.
   if (p === '/api/banner/image' && method === 'GET') {
     const bid = url.searchParams.get('id');
@@ -3486,3 +3875,11 @@ if (require.main === module) {
 
 module.exports = server;
 module.exports.ensureInit = ensureInit;
+// Exported for tests: the artist-SMS quiet-hours gate is a TCPA constraint, so it's
+// asserted directly against fixed timestamps rather than inferred from a live clock.
+module.exports._withinSmsWindow = withinSmsWindow;
+module.exports._etHour = etHour;
+// Pure template (no secrets) — exported so the artist-facing email can be rendered and
+// eyeballed without a live Blob token or a real send.
+module.exports._artistEmailHtml = artistEmailHtml;
+module.exports._drainArtistSms = drainArtistSms;

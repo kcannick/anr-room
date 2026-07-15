@@ -75,7 +75,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 022; suite 373 green)
+## Current state (migrations through 026; suite 490 green)
 The **weekly show is feature-complete and prod-verified.** Everything below has SHIPPED to
 `main` and is live on anr.makinitmag.com:
 - **Reliability spine:** outage fix + self-healing ensureInit + boot-safe deploy-step
@@ -107,6 +107,29 @@ The **weekly show is feature-complete and prod-verified.** Everything below has 
 - **Scoring (re-locked 2026-07-06):** compare at one decimal, round-HALF-UP via integer math
   (`Math.round((sum*10)/n)/10`); exact-tenths error; BULLSEYE = exact hit only → always 125;
   a 5.65 room average rounds to 5.7 so a 5.7 prediction earns the 100 + 25 bonus.
+  **NOTE — rating scale moves 0-9 → 0-10 at v1 launch** (decided 2026-07-09; not built).
+  Do it FORWARD-ONLY (per-round scale marker, e.g. `rounds.rating_max` default 10; legacy
+  rounds stay 9) — points are accuracy-derived so leaderboards don't break across scales;
+  do NOT rewrite history (avoids the heavy per-row migration the #1 rule warns against).
+  Scale-relative bits: scoring.js `FAR=5.0` + the grade `acc=100*(1-avgErr/9)`; Song Report
+  `Array(10)`/"out of 9"; all "0–9" copy. See the `scoring-scale-0-10` memory for the full plan.
+
+- **Post-show artist workflow** (026): every artist whose record was rated gets their FULL
+  3-page Song Report free by email + the replay link + carousel-post instructions (no price
+  / no upsell — operator's call, visibility first; a test asserts the copy stays clean), plus
+  a heads-up SMS **queued to a 10AM–8PM ET window** (TCPA; the show ends at 11PM so texts
+  drain the next morning via the `/api/cron/artist-sms` Vercel Cron — needs `CRON_SECRET`,
+  and hourly cron needs Vercel **Pro**). Artist email/phone lands on `rounds` three ways:
+  the Drupal ingest payload, the host queue form, or **retroactively** — `round/edit` now
+  accepts RATIFIED rounds (descriptive fields + contact ONLY; votes/score/points are never
+  writable there). Rounds tab flags ⚠ on any rated round with no contact. Also: an **Asana
+  post kit** button (one task/show: Top 8 A&Rs + Top 8 Songs + the top record's report pages
+  as real attachments, plus a 16-handle caption) — `ASANA_TOKEN` in env (never the settings
+  table), project id in the Platform panel; caption is copyable even when unconfigured.
+  `/api/admin/ingest/latest` tightened to platform-admin (it now carries submitter PII).
+  Cron drains CLAIM rows (`pending`→`sending`) before sending — Vercel documents that cron
+  delivery can double-invoke, and the hourly job overlaps the host's own wrap-up drain.
+  **Operator setup: docs/post-show-setup.md** (env vars, the Hobby-cron deploy trap, Asana).
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
@@ -126,6 +149,12 @@ The **weekly show is feature-complete and prod-verified.** Everything below has 
    Versus matchup infographic + a Versus flavor of the Song Report.
 
 ## Open product decisions (operator/legal — not code)
+- **Artist SMS consent (TCPA):** the review/submission form needs an explicit "you agree to
+  a text when your song is played" line before artist texts go out at volume. The 10AM–8PM
+  ET window is built; the consent basis is not. Attorney item.
+- **VIP gating for the Song Report** (parked): later, only VIP submissions get the report;
+  first-timers get it free once with a notice upselling VIP. NOT built — today every artist
+  gets it free. See the `postshow-artist-workflow` memory.
 - Attorney re-check: referral bonus points sitting on the CASH-prize board; whether referral
   points count toward the A&R Wars cut.
 - Do private-room points count toward the $500? (Today they do.)

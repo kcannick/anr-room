@@ -1,0 +1,219 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — Post-show workflow (artist notices + Asana)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d0b16; --card:#171328; --line:#2e2750; --ink:#f3f0fb; --muted:#a9a2c9;
+    --dim:#6f688f; --green:#4bb749; --purple:#6d5fe0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:'DM Sans',system-ui,sans-serif;padding:28px 20px 60px}
+  h2.mocklabel{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--dim);margin:44px 0 14px;text-align:center}
+  h2.mocklabel:first-of-type{margin-top:0}
+  .cols{display:flex;gap:36px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+
+  /* ============ 1. ARTIST EMAIL ============ */
+  .email{width:400px;background:var(--bg);border-radius:18px;padding:26px 16px;border:1px solid #1d1833}
+  .email .inner{max-width:360px;margin:0 auto;text-align:center}
+  .kicker{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted)}
+  .email h1{font-size:22px;margin:8px 0 4px}
+  .email .sub{font-size:15px;line-height:1.5;color:var(--muted);margin:0 0 18px}
+  .scorebox{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 16px;margin-bottom:16px}
+  .scorebox .song{font-weight:700;font-size:17px}
+  .scorebox .artist{font-size:13px;color:var(--muted);margin-top:2px}
+  .scorebox .avg{font-family:'Space Mono',monospace;font-size:44px;font-weight:700;color:var(--green);line-height:1.1;margin-top:10px}
+  .scorebox .avglabel{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  .scorebox .rank{font-size:13px;color:var(--muted);margin-top:8px}
+  .scorebox .rank b{color:var(--ink)}
+  .pg{width:100%;aspect-ratio:3/4;border:1px solid var(--line);border-radius:14px;margin:0 0 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#171328 0%,#0f0c1d 100%);color:var(--dim)}
+  .pg .t{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .pg .d{font-size:12px;margin-top:6px}
+  .watch{display:block;background:var(--green);color:#07130a;font-weight:700;font-size:15px;border-radius:12px;padding:14px 16px;text-decoration:none;margin:4px 0 8px}
+  .watchnote{font-size:12.5px;line-height:1.55;color:var(--muted);margin:0 0 18px}
+  .postbox{background:var(--card);border:1px solid var(--purple);border-radius:14px;padding:16px;text-align:left}
+  .postbox .h{font-weight:700;font-size:14px;margin-bottom:6px}
+  .postbox .b{font-size:13px;line-height:1.6;color:var(--muted)}
+  .postbox b{color:var(--ink)}
+  .foot{font-size:13px;color:var(--dim);margin:20px 0 0}
+  .foot a{color:var(--green);text-decoration:none}
+
+  /* ============ 2. ADMIN PANELS ============ */
+  .admincol{width:440px;display:flex;flex-direction:column;gap:26px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+  .panel h3{margin:0 0 4px;font-size:16px}
+  .panel .hint{font-size:12px;color:var(--dim);margin:0 0 14px;line-height:1.5}
+  .statline{font-family:'Space Mono',monospace;font-size:12px;color:var(--muted);background:#0f0c1d;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px;line-height:1.7}
+  .statline b{color:var(--green)}
+  .statline .warn{color:#e0b34b}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap}
+  .btn{font-family:inherit;font-weight:700;font-size:13px;border-radius:10px;padding:10px 14px;border:1px solid var(--line);background:#221c3d;color:var(--ink);cursor:pointer}
+  .btn.good{background:var(--green);border-color:var(--green);color:#07130a}
+  .btn.purple{background:var(--purple);border-color:var(--purple);color:#fff}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .note{font-size:11.5px;color:var(--dim);margin-top:10px;line-height:1.55}
+  label{display:block;font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 5px}
+  input,textarea{width:100%;font-family:inherit;font-size:13.5px;background:#0f0c1d;border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:9px 11px;outline:none}
+  textarea{font-family:'Space Mono',monospace;font-size:11.5px;line-height:1.6;resize:vertical}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+  .fieldnote{font-size:11px;color:var(--dim);margin-top:-4px;margin-bottom:10px}
+  .pill{display:inline-block;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;border-radius:20px;padding:3px 10px;margin-left:8px;vertical-align:2px}
+  .pill.on{background:rgba(75,183,73,.15);color:var(--green);border:1px solid rgba(75,183,73,.4)}
+  .pill.off{background:rgba(224,179,75,.12);color:#e0b34b;border:1px solid rgba(224,179,75,.35)}
+
+  /* rounds-tab rows (mockup 4) */
+  .roundrow{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid #241d3d}
+  .roundrow .pill{margin-left:0}
+  .ridx{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);width:30px;flex:none}
+  .rmain{flex:1;min-width:0}
+  .rtitle{font-weight:600;font-size:14px}
+  .rsub{font-size:12px;color:var(--muted)}
+  .rscore{font-family:'Space Mono',monospace;font-size:14px;color:var(--green);width:40px;text-align:right;flex:none}
+  .btn.sm{font-size:11.5px;padding:7px 10px;font-weight:600}
+  .editform{background:#0f0c1d;border:1px solid var(--green);border-radius:12px;padding:14px 14px 12px;margin:2px 0 10px}
+  .editform input{background:#171328}
+</style>
+</head>
+<body>
+
+<h2 class="mocklabel">Mockup 1 — Artist email · “Your record’s report card”</h2>
+<div class="cols">
+  <div class="email"><div class="inner">
+    <div class="kicker">The A&amp;R Room</div>
+    <h1>Your record got played live, Jaylen.</h1>
+    <p class="sub"><b style="color:var(--ink)">“Midnight Run”</b> went in front of the room on <b style="color:var(--ink)">Wed Jul 8</b> — here’s your full report card.</p>
+
+    <div class="scorebox">
+      <div class="song">Midnight Run</div>
+      <div class="artist">Jaylen Cole</div>
+      <div class="avg">7.4</div>
+      <div class="avglabel">room average · out of 9</div>
+      <div class="rank">Ranked <b>#2 of 11</b> records played that night</div>
+    </div>
+
+    <div class="pg"><div class="t">Report · Page 1</div><div class="d">The Verdict — score, tiers, reaction</div></div>
+    <div class="pg"><div class="t">Report · Page 2</div><div class="d">The Breakdown — vote distribution</div></div>
+    <div class="pg"><div class="t">Report · Page 3</div><div class="d">The Room — who your record landed with</div></div>
+
+    <a class="watch" href="#">▶ Watch the room review your record</a>
+    <p class="watchnote">Scrub to your song in the replay and <b style="color:var(--ink)">screen-record the live feedback</b> — clips of a real A&amp;R room reacting to your record are content gold.</p>
+
+    <div class="postbox">
+      <div class="h">📲 Post your report card</div>
+      <div class="b">Share all three pages as one Instagram <b>carousel</b>. Add <b>@Makinit4indies</b> as a <b>collaborator</b> when you upload — it shows on both feeds. Tag us + use <b>#TheARoom</b>.</div>
+    </div>
+
+    <p class="foot">Submit your next record → <a href="#">makinitmag.com/review</a></p>
+  </div></div>
+
+  <div class="admincol">
+    <h2 class="mocklabel" style="margin-top:0">Mockup 2 — Wrap-up panel additions (admin)</h2>
+
+    <div class="panel">
+      <h3>📨 Artist notices <span class="pill on">9 of 11 reachable</span></h3>
+      <p class="hint">Emails every artist whose record was rated: full report card (3 pages), the replay link, and post-it instructions. Artists with a phone number also get a heads-up text.</p>
+      <div class="statline">
+        email · <b>9</b> artists have an address, 2 missing<br>
+        text &nbsp;· <b>6</b> artists have a number — queued, sends <b>10 AM–8 PM ET</b><br>
+        status · 0 sent / 9 pending
+      </div>
+      <div class="btnrow">
+        <button class="btn good">📨 Send artist notices</button>
+        <button class="btn">Preview email</button>
+      </div>
+      <div class="note">Texts never send at night: they queue and go out automatically in the morning window. Missing contacts? Add email/phone on the song in the queue form (or it arrives with the submission from the review page).</div>
+    </div>
+
+    <div class="panel">
+      <h3>📋 Asana post task <span class="pill off">token needed</span></h3>
+      <p class="hint">Creates one task in your Asana project with the night’s post kit attached: Top 8 A&amp;Rs, Top 8 Songs, the top record’s 3 report pages — plus a ready-to-paste caption tagging all 16 handles.</p>
+      <div class="statline">
+        attach · top8-ars.png, top8-songs.png, top-record-p1/2/3.png<br>
+        caption · 8 A&amp;R handles + 8 artist handles, #TheARoom
+      </div>
+      <textarea rows="5" readonly>🏆 Top 8 A&Rs: @keysh.a @itsmarcusj @deejayell @nolawavy @tiataughtyou @bricksound @a1sasha @hearitfirst
+🎧 Top 8 Records: @jaylencole @moxieblue @rare.ivy @otwkam @sonofsteel @kthearchitect @lunavega @dre4turnt
+Top record of the night: “Midnight Run” — Jaylen Cole (7.4)
+#TheARoom @Makinit4indies</textarea>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn purple" disabled>📋 Create Asana task</button>
+        <button class="btn">Copy caption</button>
+      </div>
+      <div class="note">Token + project are set once in the Platform panel (Asana section). Until then the button stays off — the caption is still copyable.</div>
+    </div>
+
+    <h2 class="mocklabel">Mockup 4 — Rounds tab: edit any round, retro-add contact</h2>
+    <div class="panel">
+      <h3>Rounds</h3>
+      <p class="hint">Every played round gets an ✎ Edit button — including ratified ones. Fix a typo or add the artist’s email/phone after the show, before notices go out. Scores are never editable.</p>
+
+      <div class="roundrow">
+        <span class="ridx">#7</span>
+        <div class="rmain">
+          <div class="rtitle">Midnight Run</div>
+          <div class="rsub">Jaylen Cole · ✉ 📱 contact on file</div>
+        </div>
+        <span class="pill on">Ratified</span>
+        <span class="rscore">7.4</span>
+        <button class="btn sm">📊 Report</button>
+        <button class="btn sm">✎ Edit</button>
+      </div>
+
+      <div class="roundrow open">
+        <span class="ridx">#8</span>
+        <div class="rmain">
+          <div class="rtitle">Glass House</div>
+          <div class="rsub" style="color:#e0b34b">Moxie Blue · ⚠ no contact — artist won’t get their report</div>
+        </div>
+        <span class="pill on">Ratified</span>
+        <span class="rscore">6.8</span>
+        <button class="btn sm">📊 Report</button>
+        <button class="btn sm" style="border-color:var(--green)">✎ Edit</button>
+      </div>
+      <div class="editform">
+        <div class="two">
+          <div><label>Song title</label><input value="Glass House"></div>
+          <div><label>Artist</label><input value="Moxie Blue"></div>
+        </div>
+        <div class="two">
+          <div><label>Artist email</label><input placeholder="add retroactively…" style="border-color:var(--green)"></div>
+          <div><label>Artist phone</label><input placeholder="add retroactively…" style="border-color:var(--green)"></div>
+        </div>
+        <div class="two">
+          <div><label>Info / note</label><input value="IG: @moxieblue"></div>
+          <div style="display:flex;align-items:flex-end;gap:10px">
+            <button class="btn good" style="flex:1">Save</button>
+            <button class="btn">Cancel</button>
+          </div>
+        </div>
+        <div class="fieldnote" style="margin:0">Ratified round: title, artist, note and contact are editable — votes, score and points are locked.</div>
+      </div>
+    </div>
+
+    <h2 class="mocklabel">Mockup 3 — Queue form: artist contact fields</h2>
+    <div class="panel">
+      <h3>Add song</h3>
+      <p class="hint">Existing form — the two new fields are Artist email / Artist phone. Pull-from-review fills them automatically.</p>
+      <div class="two">
+        <div><label>Song title</label><input value="Midnight Run"></div>
+        <div><label>Artist</label><input value="Jaylen Cole"></div>
+      </div>
+      <div class="two">
+        <div><label>Artist email · new</label><input value="jaylen@colemail.com" style="border-color:var(--green)"></div>
+        <div><label>Artist phone · new</label><input value="(404) 555-0142" style="border-color:var(--green)"></div>
+      </div>
+      <div class="fieldnote">Used only for the post-show report-card email + played-tonight text. Never shown publicly.</div>
+      <div class="two">
+        <div><label>Info / note</label><input value="IG: @jaylencole · Atlanta"></div>
+        <div><label>Giveaway</label><input placeholder="optional prize"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
