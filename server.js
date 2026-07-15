@@ -1117,8 +1117,11 @@ async function handleApi(req, res, url) {
         }
       } catch (e) { /* malformed defaults never block creation */ }
     }
+    // A room born 'live' starts NOW — stamp scheduled_at so every started room has a
+    // real start time (an unscheduled 'upcoming' room gets stamped at go-live instead).
+    const ts = now();
     await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, submit_url, lobby_message, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : null, dm, pt, wu, su, lm, bidFinal, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, now()]);
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : (st === 'live' ? ts : null), dm, pt, wu, su, lm, bidFinal, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, ts]);
     return send(res, 200, { sessionId: sid, adminToken, pollType: pt });
   }
 
@@ -2419,7 +2422,7 @@ async function handleApi(req, res, url) {
       const dur = clampMinutes(session.default_minutes != null ? session.default_minutes : DEFAULT_MINUTES) * 60 * 1000;
       await db.run("UPDATE rounds SET status = 'voting', idx = ?, opens_at = ?, closes_at = ? WHERE id = ?",
         [Number(started) + 1, now(), now() + dur, rid]);
-      if (session.status === 'upcoming') await db.run("UPDATE sessions SET status = 'live' WHERE id = ?", [sessionId]);
+      if (session.status === 'upcoming') await db.run("UPDATE sessions SET status = 'live', scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?", [now(), sessionId]);
       await realtime.publish(sessionId, 'round');
       return send(res, 200, { roundId: rid, opened: true });
     }
@@ -2472,7 +2475,7 @@ async function handleApi(req, res, url) {
       [idx, now(), now() + dur, roundId]);
     // Opening a round on an 'upcoming' (pre-registration) session takes it live.
     if (session.status === 'upcoming') {
-      await db.run("UPDATE sessions SET status = 'live' WHERE id = ?", [sessionId]);
+      await db.run("UPDATE sessions SET status = 'live', scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?", [now(), sessionId]);
     }
     await realtime.publish(sessionId, 'round');
     return send(res, 200, { ok: true });
@@ -2587,7 +2590,14 @@ async function handleApi(req, res, url) {
     const valid = ['upcoming', 'live', 'completed', 'archived'];
     if (!valid.includes(status)) return bad(res, 'Invalid status');
     const wasLive = session.status === 'live';
-    await db.run('UPDATE sessions SET status = ? WHERE id = ?', [status, sessionId]);
+    // Going live stamps the actual start time when the host never scheduled one, so
+    // every started room carries a real scheduled_at (migration 025 backfilled history;
+    // this keeps the guarantee going forward). A pre-set schedule is never overwritten.
+    if (status === 'live') {
+      await db.run('UPDATE sessions SET status = ?, scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?', [status, now(), sessionId]);
+    } else {
+      await db.run('UPDATE sessions SET status = ? WHERE id = ?', [status, sessionId]);
+    }
     // On go-live, the host chooses which channels notify registrants (notify:{email,sms,push})
     // from the confirm dialog. No notify object => notify nothing. Idempotent per
     // (session, participant, channel) so a reopen never re-notifies. Non-fatal — a send

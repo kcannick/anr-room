@@ -213,6 +213,34 @@ async function freshDb() {
   const applied24b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('024 idempotent (not duplicated)', applied24b.filter(x => x === '024_round_poll_type').length === 1, JSON.stringify(applied24b));
 
+  // 12. Migration 025 (session start backfill): started rooms with NULL scheduled_at
+  // get first-round open time, else first-round creation, else session creation.
+  clean();
+  delete require.cache[require.resolve('./db')];
+  db = await freshDb();
+  await db.init();
+  const applied25 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('025_backfill_session_start applied', applied25.includes('025_backfill_session_start'), JSON.stringify(applied25));
+  // Simulate legacy rows (migration already ran on the empty db), then re-run the
+  // exact backfill statement — same technique as the 024 test above.
+  await db.run("INSERT INTO sessions (id, name, admin_token, status, created_at) VALUES ('sOpen','Played','t1','completed',100)");
+  await db.run("INSERT INTO rounds (id, session_id, idx, song_title, status, opens_at, created_at) VALUES ('r1','sOpen',1,'A','ratified',500,400)");
+  await db.run("INSERT INTO rounds (id, session_id, idx, song_title, status, created_at) VALUES ('r2','sOpen',2,'B','pending',450)");
+  await db.run("INSERT INTO sessions (id, name, admin_token, status, created_at) VALUES ('sBare','No rounds','t2','completed',200)");
+  await db.run("INSERT INTO sessions (id, name, admin_token, status, created_at) VALUES ('sUp','Not started','t3','upcoming',300)");
+  await db.run("INSERT INTO sessions (id, name, admin_token, status, scheduled_at, created_at) VALUES ('sSet','Scheduled','t4','completed',9999,400)");
+  await db.run(`UPDATE sessions SET scheduled_at = COALESCE(
+    (SELECT MIN(COALESCE(r.opens_at, r.created_at)) FROM rounds r WHERE r.session_id = sessions.id),
+    created_at)
+  WHERE scheduled_at IS NULL AND status <> 'upcoming'`);
+  ok('backfill: earliest round time wins (opens_at/created_at mix)', (await db.get("SELECT scheduled_at FROM sessions WHERE id='sOpen'")).scheduled_at === 450);
+  ok('backfill: no rounds -> session created_at', (await db.get("SELECT scheduled_at FROM sessions WHERE id='sBare'")).scheduled_at === 200);
+  ok('backfill: upcoming stays NULL', (await db.get("SELECT scheduled_at FROM sessions WHERE id='sUp'")).scheduled_at == null);
+  ok('backfill: existing schedule untouched', (await db.get("SELECT scheduled_at FROM sessions WHERE id='sSet'")).scheduled_at === 9999);
+  await db.init();
+  const applied25b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('025 idempotent (not duplicated)', applied25b.filter(x => x === '025_backfill_session_start').length === 1, JSON.stringify(applied25b));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

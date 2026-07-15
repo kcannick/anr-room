@@ -409,7 +409,8 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— session lifecycle (stage 4) —');
   // Create an upcoming (pre-registration) session.
-  const upc = await call('/api/session', { name: 'Future Show', status: 'upcoming', scheduledAt: Date.now() + 86400000 }, 'POST', AUTHH);
+  const FUT = Date.now() + 86400000;
+  const upc = await call('/api/session', { name: 'Future Show', status: 'upcoming', scheduledAt: FUT }, 'POST', AUTHH);
   const UPID = upc.d.sessionId;
   let us = await call(`/api/admin/state?sessionId=${UPID}`, null, 'GET', AUTHH);
   ok('session created as upcoming', us.d.session.status === 'upcoming', us.d.session.status);
@@ -420,6 +421,19 @@ async function call(path, body, method='POST', headers={}) {
   await call('/api/admin/session/status', { sessionId: UPID, status: 'live' }, 'POST', AUTHH);
   us = await call(`/api/admin/state?sessionId=${UPID}`, null, 'GET', AUTHH);
   ok('host can take session live', us.d.session.status === 'live', us.d.session.status);
+  ok('go-live keeps a pre-set schedule', Number(us.d.session.scheduled_at) === FUT, String(us.d.session.scheduled_at));
+  // Start-time stamping: an UNSCHEDULED room gets its start stamped at go-live…
+  const unsched = await call('/api/session', { name: 'Pop-up Show', status: 'upcoming' }, 'POST', AUTHH);
+  let uss = await call(`/api/admin/state?sessionId=${unsched.d.sessionId}`, null, 'GET', AUTHH);
+  ok('unscheduled upcoming has no start time', uss.d.session.scheduled_at == null, String(uss.d.session.scheduled_at));
+  const beforeLive = Date.now();
+  await call('/api/admin/session/status', { sessionId: unsched.d.sessionId, status: 'live' }, 'POST', AUTHH);
+  uss = await call(`/api/admin/state?sessionId=${unsched.d.sessionId}`, null, 'GET', AUTHH);
+  ok('go-live stamps start time when unset', uss.d.session.scheduled_at >= beforeLive && uss.d.session.scheduled_at <= Date.now(), String(uss.d.session.scheduled_at));
+  // …and a room born live starts NOW (stamped at creation).
+  const bornLive = await call('/api/session', { name: 'Instant Show' }, 'POST', AUTHH);
+  const bls = await call(`/api/admin/state?sessionId=${bornLive.d.sessionId}`, null, 'GET', AUTHH);
+  ok('born-live room start time stamped at creation', bls.d.session.scheduled_at != null, String(bls.d.session.scheduled_at));
   // Complete, then reopen (the key "load a past session" capability).
   await call('/api/admin/session/status', { sessionId: UPID, status: 'completed' }, 'POST', AUTHH);
   await call('/api/admin/session/status', { sessionId: UPID, status: 'archived' }, 'POST', AUTHH);
