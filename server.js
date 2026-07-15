@@ -1218,13 +1218,16 @@ async function handleApi(req, res, url) {
     const user = await userFromAuth(req);
     if (!user) return bad(res, 'Not logged in', 401);
     // Extra columns power the session cards: series_id (series chip), poll_type
-    // (game-type attr), geo_mode (location-rule attr), and ar_count (verified
-    // participants — labelled "A&Rs" in the UI). All cheap at this scale.
+    // (game-type attr), geo_mode (location-rule attr), ar_count (verified
+    // participants — labelled "A&Rs" in the UI), and round_count (ratified, i.e.
+    // scored, rounds). All cheap at this scale. Newest first: the room you just
+    // ended should be at the top of its group, not the bottom.
     const cols = `id, name, status, scheduled_at, owner_uid, created_at, series_id, poll_type, geo_mode,
-      (SELECT COUNT(*) FROM participants pp WHERE pp.session_id = sessions.id AND pp.verified = 1) AS ar_count`;
+      (SELECT COUNT(*) FROM participants pp WHERE pp.session_id = sessions.id AND pp.verified = 1) AS ar_count,
+      (SELECT COUNT(*) FROM rounds rr WHERE rr.session_id = sessions.id AND rr.status = 'ratified') AS round_count`;
     const rows = user.role === 'admin'
-      ? await db.all(`SELECT ${cols} FROM sessions WHERE deleted_at IS NULL ORDER BY created_at ASC`, [])
-      : await db.all(`SELECT ${cols} FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at ASC`, [user.uid]);
+      ? await db.all(`SELECT ${cols} FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC`, [])
+      : await db.all(`SELECT ${cols} FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [user.uid]);
     return send(res, 200, { role: user.role, sessions: rows });
   }
 

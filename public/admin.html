@@ -183,6 +183,14 @@
         <button class="btn sm" id="btnNewFromPicker">+ New room</button>
       </div>
     </div>
+    <div class="row" style="justify-content:flex-end">
+      <select id="sessSort" style="flex:0 0 auto;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:8px 10px;border-radius:9px">
+        <option value="recent">Sort: Most recent</option>
+        <option value="name">Sort: Name</option>
+        <option value="ars">Sort: A&amp;Rs</option>
+        <option value="rounds">Sort: Rounds</option>
+      </select>
+    </div>
     <div id="pickerList"><div class="empty">Loading…</div></div>
     <button class="btn ghost sm" id="btnLogout" style="margin-top:6px">Log out</button>
   </div>
@@ -1117,6 +1125,7 @@ function sessionCardHtml(s){
     attr(esc(typeLabel(s))),
     attr(esc(locLabel(s))),
     s.ar_count?attr(s.ar_count+' A&R'+(s.ar_count==1?'':'s')):'',
+    s.round_count?attr(s.round_count+' round'+(s.round_count==1?'':'s')):'',
     st?attr('◆ '+esc(st),'series'):attr('◇ Unassigned','series none')
   ].filter(Boolean).join('');
   return `<div class="sc${s.status==='live'?' live':''}">
@@ -1152,19 +1161,37 @@ async function openPicker(){
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
-    const box=$('#pickerList');
-    if(!d.sessions.length){box.innerHTML='<div class="empty">No sessions yet. Create your first one.</div>';return;}
-    const groups={};STATUS_ORDER.forEach(s=>groups[s]=[]);
-    d.sessions.forEach(s=>{(groups[s.status]||(groups[s.status]=[])).push(s);});
-    let html='';
-    for(const st of STATUS_ORDER){
-      if(!groups[st]||!groups[st].length)continue;
-      html+=`<div class="grouplbl">${STATUS_LABEL[st]||st}</div>`;
-      for(const s of groups[st])html+=sessionCardHtml(s);
-    }
-    box.innerHTML=html;
+    pickerSessions=d.sessions;
+    renderPickerList();
   }catch(e){$('#pickerList').innerHTML='<div class="err">'+e.message+'</div>';}
 }
+// Sortable picker list. Status groups (Live/Upcoming/Completed/Archived) always
+// stay in order; the sort applies within each group. Default "recent" puts the
+// room you just ended at the top of Completed instead of the bottom.
+let pickerSessions=null;
+const SESS_SORTS={
+  recent:(a,b)=>((b.scheduled_at||b.created_at||0)-(a.scheduled_at||a.created_at||0)),
+  name:(a,b)=>(a.name||'').localeCompare(b.name||'',undefined,{sensitivity:'base'}),
+  ars:(a,b)=>((b.ar_count||0)-(a.ar_count||0))||SESS_SORTS.recent(a,b),
+  rounds:(a,b)=>((b.round_count||0)-(a.round_count||0))||SESS_SORTS.recent(a,b),
+};
+function renderPickerList(){
+  if(!pickerSessions)return;
+  const box=$('#pickerList');
+  if(!pickerSessions.length){box.innerHTML='<div class="empty">No sessions yet. Create your first one.</div>';return;}
+  const sort=SESS_SORTS[$('#sessSort').value]||SESS_SORTS.recent;
+  const groups={};STATUS_ORDER.forEach(s=>groups[s]=[]);
+  pickerSessions.forEach(s=>{(groups[s.status]||(groups[s.status]=[])).push(s);});
+  let html='';
+  for(const st of STATUS_ORDER){
+    if(!groups[st]||!groups[st].length)continue;
+    html+=`<div class="grouplbl">${STATUS_LABEL[st]||st}</div>`;
+    for(const s of groups[st].slice().sort(sort))html+=sessionCardHtml(s);
+  }
+  box.innerHTML=html;
+}
+$('#sessSort').value=localStorage.getItem('anr_sess_sort')||'recent';
+$('#sessSort').onchange=function(){localStorage.setItem('anr_sess_sort',this.value);renderPickerList();};
 // Download a share graphic (Top 8 A&Rs / Top 8 Songs) for a session. Public PNG endpoints;
 // fetch as a blob so we can surface a friendly message when there's no data yet.
 // Share-sheet only on actual phones/tablets: Windows/macOS desktops also claim
