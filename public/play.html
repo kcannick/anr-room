@@ -62,6 +62,32 @@
   .btn{display:flex;width:100%;font-size:15px;padding:14px 16px}
   .err{color:var(--hot);font-size:13px;min-height:16px;margin:4px 2px 0}
   .stack{display:flex;flex-direction:column;gap:13px}
+  /* optional round comment — a panel that rides below the locked/results card */
+  .composer{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);
+    border-radius:18px;padding:18px;margin-top:16px}
+  .composer.dirty{border-color:var(--accent);box-shadow:0 0 0 1px rgba(109,95,224,.25)}
+  .composer.done{border-color:var(--signal-deep,#379235)}
+  .c-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+  .c-title{font-size:15.5px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .c-opt{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-faint);border:1px solid var(--line);border-radius:999px;padding:3px 8px;flex:none}
+  .c-help{font-size:12.5px;line-height:1.5;color:var(--ink-dim);margin:0 0 12px}
+  #cmtText{width:100%;background:var(--inset,#0a0814);border:1px solid var(--line);color:var(--ink);
+    font-family:inherit;font-size:15.5px;line-height:1.5;padding:13px 14px;border-radius:12px;
+    outline:none;resize:none;min-height:104px}
+  #cmtText:focus{border-color:var(--accent)}
+  #cmtText::placeholder{color:#6f688f}
+  .c-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:11px}
+  /* the player surface makes every .btn full-width; the composer's are inline actions */
+  .btn.cmt-btn{display:inline-flex;width:auto;flex:none;font-size:14.5px;padding:11px 18px}
+  .count{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-faint)}
+  .count.near{color:var(--gold)}
+  .savestate{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}
+  .savestate.ok{color:var(--signal)}
+  .saved-quote{background:var(--inset,#0a0814);border:1px solid var(--line);border-radius:12px;
+    padding:13px 14px;font-size:15px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+  .c-privacy{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.5;color:var(--ink-faint);
+    margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
   /* rating dial */
   .rate-row{display:flex;gap:7px;justify-content:space-between}
   .pip{flex:1;aspect-ratio:1/1.15;border:1px solid var(--line);border-radius:10px;background:#0a0814;
@@ -511,6 +537,37 @@
       <p class="faint" style="text-align:center;font-size:13px;margin:14px 0 0">Thanks for sitting in. 🎧</p>
     </div>
   </section>
+
+  <!-- OPTIONAL ROUND COMMENT.
+       ONE element, moved by appendChild between the locked and results screens rather
+       than re-rendered per phase — that is what makes the draft survive the reveal. The
+       reveal swaps the whole screen out from under whoever is mid-sentence; because this
+       is the same live node, its value (and the caret) simply travel with it. -->
+  <div id="cmtBox" class="composer hide">
+    <div class="c-head">
+      <div class="c-title" id="cmtTitle">💬 Say something about the record</div>
+      <div class="c-opt" id="cmtPill">Optional</div>
+    </div>
+    <p class="c-help" id="cmtHelp">One or two lines. What landed, what didn't.</p>
+    <div id="cmtEdit">
+      <textarea id="cmtText" maxlength="280" rows="4" placeholder="The hook is undeniable but the mix buries the vocal…"></textarea>
+      <div class="c-foot">
+        <span class="count" id="cmtCount">0 / 280</span>
+        <button class="btn cmt-btn" id="cmtSave" disabled>Save</button>
+      </div>
+      <div class="err" id="cmtErr"></div>
+    </div>
+    <div id="cmtSaved" class="hide">
+      <div class="saved-quote" id="cmtQuote"></div>
+      <div class="c-foot">
+        <span class="savestate ok">Saved · editable</span>
+        <button class="btn ghost cmt-btn" id="cmtEditBtn">Edit</button>
+      </div>
+    </div>
+    <div class="c-privacy" id="cmtPrivacy">
+      🔒 <span>Nobody in the room sees this. The host may share selected comments with the artist — under your A&amp;R name.</span>
+    </div>
+  </div>
 
   <div class="foot">
     <span class="tag">🎧 <span id="footCount">0</span> playing</span>
@@ -1489,10 +1546,120 @@ function render(st){
     show('locked');
   }
   else if(st.phase==='results'){closesAt=null;renderResults(st);show('results');}
+  cmtSync(st);
   // Dead-time nudge: prompt profile completion once when results first reveal.
   if(st.phase==='results' && lastPhase!=='results') maybePromptProfile();
   lastPhase=newPhase;
 }
+
+// ---- optional round comment ----
+// After locking in, an A&R may leave one short note about the record. Two guarantees
+// drive the whole design, both aimed at the same failure: typing something and losing it.
+//   1. #cmtBox is ONE node, relocated by appendChild between the locked and results
+//      screens. The reveal replaces the screen mid-sentence; because the node itself
+//      moves, the text and caret ride along instead of being re-rendered from state.
+//   2. Every keystroke mirrors to localStorage, so a refresh, a backgrounded tab, or an
+//      iOS memory eviction can't eat it either.
+// The server keeps the round writable for as long as the room is open, so there is also
+// no deadline to miss. Rating rounds only — a Versus round has two songs, so "the record"
+// is ambiguous and the artist workflow skips them anyway.
+let cmtRound=null, cmtSaved='', cmtEditing=false, cmtBusy=false, cmtPhase=null;
+const cmtKey=r=>'anr_cmt_'+r;
+function cmtDraftGet(r){ try{return localStorage.getItem(cmtKey(r))||''}catch(e){return ''} }
+function cmtDraftSet(r,v){ try{ v?localStorage.setItem(cmtKey(r),v):localStorage.removeItem(cmtKey(r)); }catch(e){} }
+// Drop drafts from earlier rounds — the composer only ever binds to the current one, so
+// they're unreachable and would otherwise accumulate in localStorage forever.
+function cmtPruneDrafts(keep){
+  try{
+    for(let i=localStorage.length-1;i>=0;i--){
+      const k=localStorage.key(i);
+      if(k&&k.indexOf('anr_cmt_')===0&&k!==cmtKey(keep))localStorage.removeItem(k);
+    }
+  }catch(e){}
+}
+
+function cmtPaint(){
+  const box=$('#cmtBox'), ta=$('#cmtText');
+  const showSaved = !!cmtSaved && !cmtEditing;
+  $('#cmtEdit').classList.toggle('hide', showSaved);
+  $('#cmtSaved').classList.toggle('hide', !showSaved);
+  $('#cmtPrivacy').querySelector('span').innerHTML = cmtSaved
+    ? "Sent to the host. If it's shared with the artist it'll carry your A&R name."
+    : 'Nobody in the room sees this. The host may share selected comments with the artist — under your A&R name.';
+  if(showSaved){
+    $('#cmtTitle').textContent='✓ Your comment';
+    $('#cmtPill').textContent='Saved';
+    $('#cmtHelp').classList.add('hide');
+    $('#cmtQuote').textContent=cmtSaved;
+    box.classList.add('done'); box.classList.remove('dirty');
+    return;
+  }
+  const raw=ta.value, v=raw.trim(), dirty=(v!==cmtSaved.trim());
+  $('#cmtTitle').textContent = cmtSaved ? '💬 Edit your comment' : '💬 Say something about the record';
+  $('#cmtPill').textContent='Optional';
+  $('#cmtHelp').classList.remove('hide');
+  $('#cmtHelp').textContent = cmtSaved
+    ? 'Edits go back to the host for review.'
+    : (cmtPhase==='results' && v)
+      ? "Your draft is still here — the reveal doesn't cut you off."
+      : "One or two lines. What landed, what didn't.";
+  $('#cmtCount').textContent = (dirty&&v?'Draft saved · ':'') + raw.length + ' / 280';
+  $('#cmtCount').classList.toggle('near', raw.length>240);
+  $('#cmtSave').disabled = cmtBusy || !dirty;
+  box.classList.toggle('dirty', !!v && dirty);
+  box.classList.remove('done');
+}
+
+function cmtSync(st){
+  const box=$('#cmtBox');
+  const r=st.round||null;
+  const isBin=(r&&(r.poll_type||pollType))==='binary';
+  const voted = st.phase==='locked' ? !!st.myVote : !!st.myResult;
+  const on = r && r.id && !isBin && voted && (st.phase==='locked'||st.phase==='results');
+  if(!on){ box.classList.add('hide'); return; }
+  if(cmtRound!==r.id){
+    // New round: bind it. An unsent local draft outranks the server copy — it's the
+    // newer intent, and discarding it is the exact loss this feature guards against.
+    cmtRound=r.id; cmtSaved=st.myComment||''; cmtBusy=false; $('#cmtErr').textContent='';
+    cmtPruneDrafts(r.id);
+    const d=cmtDraftGet(r.id);
+    $('#cmtText').value = d || cmtSaved;
+    cmtEditing = !!(d && d!==cmtSaved);
+  } else if(!cmtBusy && !cmtEditing && (st.myComment||'')!==cmtSaved){
+    // Changed elsewhere (a second device) while we're idle — take the server's copy.
+    cmtSaved=st.myComment||'';
+    $('#cmtText').value=cmtSaved;
+  }
+  cmtPhase=st.phase;
+  const target=document.getElementById(st.phase==='locked'?'screen-locked':'screen-results');
+  if(box.parentNode!==target) target.appendChild(box);
+  box.classList.remove('hide');
+  cmtPaint();
+}
+
+$('#cmtText')&&$('#cmtText').addEventListener('input',()=>{
+  if(cmtRound)cmtDraftSet(cmtRound,$('#cmtText').value);
+  $('#cmtErr').textContent='';
+  cmtPaint();
+});
+$('#cmtEditBtn')&&($('#cmtEditBtn').onclick=()=>{
+  cmtEditing=true; $('#cmtText').value=cmtSaved; cmtPaint(); $('#cmtText').focus();
+});
+$('#cmtSave')&&($('#cmtSave').onclick=async()=>{
+  if(cmtBusy||!cmtRound)return;
+  const body=$('#cmtText').value.trim();
+  cmtBusy=true; $('#cmtSave').textContent='Saving…'; $('#cmtErr').textContent=''; cmtPaint();
+  try{
+    const d=await api('/api/comment',{roundId:cmtRound,body});
+    cmtSaved=d.body||''; cmtEditing=false; cmtDraftSet(cmtRound,'');
+    track('round_comment',{len:cmtSaved.length});
+  }catch(e){
+    // Leave the textarea and the local draft exactly as they are — a failed save must
+    // never be the thing that costs someone their words.
+    $('#cmtErr').textContent=(e.message||'Could not save')+' — your comment is still here.';
+  }
+  cmtBusy=false; $('#cmtSave').textContent='Save'; cmtPaint();
+});
 
 async function refresh(){
   try{const st=await api('/api/me/state',null,'GET');render(st);}

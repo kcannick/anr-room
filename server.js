@@ -107,6 +107,11 @@ function distanceYards(lat1, lng1, lat2, lng2) {
 }
 const DEFAULT_GEO_RADIUS = 200; // generous default (yards) — venue GPS is imprecise indoors
 
+// Optional round comments cap out at a tweet's length — short enough to stay quotable in
+// the artist's email and on a report page, and short enough that the host's approval
+// queue stays skimmable after a 12-round show.
+const COMMENT_MAX = 280;
+
 // ---------- tiny helpers ----------
 function send(res, status, data, headers = {}) {
   const body = typeof data === 'string' ? data : JSON.stringify(data);
@@ -394,8 +399,16 @@ async function playerState(participant) {
     const myVote = await db.get('SELECT * FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
     // Shape a round object for the player, carrying its poll_type + A/B labels on binary rounds.
     const roundBase = {
-      idx: round.idx, poll_type: roundType, song_title: round.song_title, song_artist: round.song_artist,
+      id: round.id, idx: round.idx, poll_type: roundType, song_title: round.song_title, song_artist: round.song_artist,
       song_note: round.song_note, giveaway: round.giveaway, closes_at: round.closes_at,
+    };
+    // The player's own optional comment on this round, if they left one. Gated on
+    // having voted — commenting requires a lock-in, so a non-voter can never have
+    // one and the poll skips the lookup entirely. Point read on uniq_round_comment.
+    const myCommentFor = async (rid) => {
+      if (!myVote) return null;
+      const c = await db.get('SELECT body FROM round_comments WHERE round_id = ? AND participant_id = ?', [rid, participant.id]);
+      return c ? c.body : null;
     };
     if (isBinary) { roundBase.option_b_title = round.option_b_title; roundBase.option_b_artist = round.option_b_artist; }
     const myVoteShape = (v) => v
@@ -407,9 +420,10 @@ async function playerState(participant) {
         phase: myVote ? 'locked' : 'voting',
         round: roundBase,
         myVote: myVoteShape(myVote),
+        myComment: await myCommentFor(round.id),
       };
     } else if (round.status === 'closed') {
-      view = { phase: 'locked', round: { idx: round.idx, poll_type: roundType, song_title: round.song_title, ...(isBinary ? { option_b_title: round.option_b_title } : {}) }, tallying: true, myVote: myVoteShape(myVote) };
+      view = { phase: 'locked', round: { id: round.id, idx: round.idx, poll_type: roundType, song_title: round.song_title, ...(isBinary ? { option_b_title: round.option_b_title } : {}) }, tallying: true, myVote: myVoteShape(myVote), myComment: await myCommentFor(round.id) };
     } else if (round.status === 'ratified') {
       // Only three facts are needed here — the winner's name, THIS player's own row,
       // and the total count. Fetch exactly those instead of pulling the whole vote
@@ -423,7 +437,7 @@ async function playerState(participant) {
       // FULLY BLIND during the session: players see their points, rank, and reaction
       // tier — but NOT the room average / split, NOT their exact "off by", NOT the
       // winner's guess. The answer is saved for the end-of-session recap reveal.
-      const resultRound = { idx: round.idx, poll_type: roundType, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway };
+      const resultRound = { id: round.id, idx: round.idx, poll_type: roundType, song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway };
       if (isBinary) { resultRound.option_b_title = round.option_b_title; resultRound.option_b_artist = round.option_b_artist; }
       view = {
         phase: 'results',
@@ -435,6 +449,9 @@ async function playerState(participant) {
               : { taste: mine.taste, predict: mine.predict, points: mine.points, rank: mine.rank, tier: mine.tier })
           : null,
         totalPlayers,
+        // The composer follows the player onto the results screen — the reveal
+        // must never swap the screen out from under half-typed work.
+        myComment: await myCommentFor(round.id),
       };
     } else {
       view = { phase: 'waiting' };
@@ -874,6 +891,7 @@ const artistEmailText = (d) => `Your record got played live — ${d.title}\n\n`
   + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} went in front of the room on ${d.dateLabel}. `
   + `It scored ${d.mean} (room average), ranked #${d.rank} of ${d.total} records played that night.\n\n`
   + (d.watchUrl ? `Watch the room review your record: ${d.watchUrl}\nScrub to your song and screen-record the feedback — it's content.\n\n` : '')
+  + artistCommentsText(d.comments)
   + `Your full report card is attached as three images. Post them as one Instagram carousel and `
   + `add @Makinit4indies as a collaborator so it shows on both feeds. Tag us + use #TheARoom.\n\n`
   + `Submit your next record → https://makinitmag.com/review`;
@@ -881,7 +899,34 @@ const artistEmailText = (d) => `Your record got played live — ${d.title}\n\n`
 // The artist's post-show email: full 3-page report card + the replay link + post instructions.
 // Deliberately carries NO price or upsell — the operator's call: visibility first
 // (see the postshow-artist-workflow memory).
-function artistEmailHtml({ title, artist, mean, rank, total, dateLabel, sessionName, watchUrl, pages }) {
+// Approved A&R comments, rendered for the artist. Attribution is the whole point — these
+// are named people who scored the record, not anonymous internet opinion — so each quote
+// carries display name + role + city, the same PII surface as the public boards.
+// Only 'shared' rows ever reach here; the host approves every one by hand.
+function artistCommentsHtml(comments) {
+  if (!comments || !comments.length) return '';
+  const quotes = comments.map(c => {
+    const meta = [c.role, c.location].filter(Boolean).map(escapeHtml).join(' · ');
+    return `<div style="background:#171328;border:1px solid #2e2750;border-left:3px solid #4bb749;border-radius:0 12px 12px 0;padding:14px 15px;margin-bottom:11px;text-align:left">
+        <div style="font-size:14.5px;line-height:1.55;color:#f3f0fb">“${escapeHtml(c.body)}”</div>
+        <div style="font-size:12.5px;font-weight:700;color:#f3f0fb;margin-top:10px">${escapeHtml(c.name)}</div>
+        ${meta ? `<div style="font-size:12px;color:#8c84ad;margin-top:1px">${meta}</div>` : ''}
+      </div>`;
+  }).join('');
+  return `<div style="margin:22px 0 4px">
+      <div style="font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#8c84ad">From the room</div>
+      <div style="font-size:19px;font-weight:700;margin:8px 0 4px">What the A&amp;Rs said</div>
+      <p style="font-size:13.5px;line-height:1.5;color:#a9a2c9;margin:0 0 16px">Selected comments from the A&amp;Rs who rated your record live.</p>
+      ${quotes}
+      <p style="font-size:12px;line-height:1.5;color:#8c84ad;margin:14px 0 0">Comments are the personal opinions of individual A&amp;Rs, selected by the host. Not every A&amp;R left one.</p>
+    </div>`;
+}
+const artistCommentsText = (comments) => (!comments || !comments.length) ? ''
+  : `What the A&Rs said\n\n`
+    + comments.map(c => `"${c.body}"\n— ${c.name}${[c.role, c.location].filter(Boolean).length ? ' (' + [c.role, c.location].filter(Boolean).join(', ') + ')' : ''}`).join('\n\n')
+    + `\n\nComments are the personal opinions of individual A&Rs, selected by the host.\n\n`;
+
+function artistEmailHtml({ title, artist, mean, rank, total, dateLabel, sessionName, watchUrl, pages, comments }) {
   const pageBlock = pages.filter(Boolean).map((u, i) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
   ).join('');
@@ -902,6 +947,7 @@ function artistEmailHtml({ title, artist, mean, rank, total, dateLabel, sessionN
       </div>
       ${pageBlock}
       ${watchBlock}
+      ${artistCommentsHtml(comments)}
       <div style="background:#171328;border:1px solid #6d5fe0;border-radius:14px;padding:16px;text-align:left">
         <div style="font-weight:700;font-size:14px;margin-bottom:6px">📲 Post your report card</div>
         <div style="font-size:13px;line-height:1.6;color:#a9a2c9">Share all three pages as one Instagram <b style="color:#f3f0fb">carousel</b>. Add <b style="color:#f3f0fb">@Makinit4indies</b> as a <b>collaborator</b> when you upload — it shows on both feeds. Tag us + use <b style="color:#f3f0fb">#TheARoom</b>.</div>
@@ -933,15 +979,30 @@ async function sendArtistReportEmail(round, session, dest) {
     const buf = await shareCards.renderPng('report' + i, i === 1 ? d : { ...d, sub: d.sub23 });
     pages.push(await uploadPng(`artist/${session.id}/${round.id}-p${i}.png`, buf));
   }
+  // Host-approved comments only. A blocked account's comment is dropped here for the same
+  // reason its votes are excluded from every board.
+  const commentRows = await db.all(
+    `SELECT c.body, p.name AS pname, u.name AS uname, u.primary_category, u.location
+       FROM round_comments c
+       JOIN participants p ON p.id = c.participant_id
+       LEFT JOIN users u ON u.uid = p.user_id
+      WHERE c.round_id = ? AND c.status = 'shared' AND COALESCE(u.blocked, 0) = 0
+      ORDER BY c.created_at ASC`, [round.id]);
+  const comments = commentRows.map(r => ({
+    body: r.body,
+    name: (r.uname || r.pname || 'A&R').toString().trim().slice(0, 40),
+    role: r.primary_category || null,
+    location: r.location || null,
+  }));
   const html = artistEmailHtml({
     title: round.song_title || 'Your record', artist: round.song_artist || '',
     mean: d.mean, rank: d.rankInRoom ? d.rankInRoom.rank : 1, total: d.rankInRoom ? d.rankInRoom.total : 1,
-    dateLabel: d.dateLabel, sessionName: session.name, watchUrl: session.watch_url || null, pages,
+    dateLabel: d.dateLabel, sessionName: session.name, watchUrl: session.watch_url || null, pages, comments,
   });
   const text = artistEmailText({
     title: round.song_title || 'Your record', artist: round.song_artist || '', mean: d.mean,
     rank: d.rankInRoom ? d.rankInRoom.rank : 1, total: d.rankInRoom ? d.rankInRoom.total : 1,
-    dateLabel: d.dateLabel, watchUrl: session.watch_url || null,
+    dateLabel: d.dateLabel, watchUrl: session.watch_url || null, comments,
   });
   const r = await sendEmail(dest, `Your record got played — “${round.song_title || 'your song'}” scored ${d.mean}`, html, text);
   return r.ok ? { ok: true, pages } : { ok: false, error: r.error };
@@ -2224,6 +2285,62 @@ async function handleApi(req, res, url) {
     return send(res, 200, { locked: true });
   }
 
+  // ----- optional round comment (player) -----
+  // After locking in, an A&R may leave ONE short note about the record. SEALED, exactly
+  // like the vote split: no other player, no overlay, no public surface ever reads it.
+  // "This one's a 9 for me" leaks vote direction as surely as the room average would, so
+  // the only readers are the author and the host. There is no public read path.
+  //
+  // The write window deliberately does NOT slam shut at the reveal. Ratify swaps the
+  // player's screen out from under the composer, and losing half-typed work there is the
+  // fastest way to teach people not to bother — so a comment stays writable for as long
+  // as the room is open. Requires a vote on that round (no lock-in, no comment).
+  //
+  // No points are awarded. Points on this board are accuracy-derived; paying for free
+  // text would put non-accuracy points on a cash-prize board and reward volume over
+  // quality — and every extra comment lands in the host's approval queue.
+  if (p === '/api/comment' && method === 'POST') {
+    const participant = await participantFromReq(req);
+    if (!participant) return bad(res, 'Not authenticated', 401);
+    if (participant.user_id) {
+      const pu = await db.get('SELECT blocked FROM users WHERE uid = ?', [participant.user_id]);
+      if (pu && pu.blocked) return bad(res, 'This account has been suspended.', 403);
+    }
+    const { roundId, body: rawBody } = await readBody(req);
+    if (!roundId) return bad(res, 'Round required');
+    // Scope to THIS participant's session — a round id from another room is not theirs
+    // to comment on. Also why the client sends an explicit round id rather than letting
+    // the server infer the active round: once the host opens the next round, a Save from
+    // a lingering results screen would otherwise land on the wrong record.
+    const round = await db.get('SELECT id, session_id, poll_type FROM rounds WHERE id = ? AND session_id = ?', [roundId, participant.session_id]);
+    if (!round) return bad(res, 'Round not found', 404);
+    // Rating rounds only. A Versus round puts two songs head to head, so "the record" is
+    // ambiguous — and the artist workflow already skips binary rounds entirely.
+    if ((round.poll_type || 'rating') === 'binary') return bad(res, 'Versus rounds do not take comments');
+    const sess = await db.get('SELECT status, deleted_at FROM sessions WHERE id = ?', [participant.session_id]);
+    if (!sess || sess.deleted_at || sess.status === 'archived') return bad(res, 'This room is closed');
+    const voted = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
+    if (!voted) return bad(res, 'Lock in your vote first');
+
+    const text = String(rawBody == null ? '' : rawBody).trim().slice(0, COMMENT_MAX);
+    const ts = now();
+    // Clearing the box deletes the comment outright — an empty row would otherwise sit
+    // in the host's queue as a blank card forever.
+    if (!text) {
+      await db.run('DELETE FROM round_comments WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
+      return send(res, 200, { saved: true, body: '' });
+    }
+    // An edit resets status to 'pending'. Fails CLOSED on purpose: without it an A&R
+    // could get benign text approved and then swap in something the host never read.
+    await db.run(
+      `INSERT INTO round_comments (id, round_id, session_id, participant_id, body, status, created_at, updated_at)
+       VALUES (?,?,?,?,?, 'pending', ?, ?)
+       ON CONFLICT (round_id, participant_id)
+       DO UPDATE SET body = excluded.body, status = 'pending', updated_at = excluded.updated_at`,
+      [id(9), round.id, round.session_id, participant.id, text, ts, ts]);
+    return send(res, 200, { saved: true, body: text });
+  }
+
   // Resolve a channel "/live" watch link to the CURRENT live video id, so the host
   // can keep a permanent link (youtube.com/@handle/live) and the play page still
   // gets a real embed whenever the channel is live. Direct video URLs short-circuit
@@ -2283,7 +2400,10 @@ async function handleApi(req, res, url) {
     const rounds = await db.all(
       `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.song_note, r.giveaway, r.poll_type,
               r.option_b_title, r.option_b_artist, r.room_average, r.split_a, r.artist_email, r.artist_phone,
-              (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
+              (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
+              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id) AS comments,
+              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared,
+              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'pending') AS comments_pending
          FROM rounds r WHERE r.session_id = ? ORDER BY r.idx ASC`, [sessionId]);
     // Artist contact is host-facing only (it's how they reach the artist post-show) and
     // this endpoint is already admin/owner-gated — it never reaches a public surface.
@@ -2295,7 +2415,58 @@ async function handleApi(req, res, url) {
       split_a: r.split_a != null ? Number(r.split_a) : null,
       artist_email: r.artist_email || '', artist_phone: r.artist_phone || '',
       votes: Number(r.votes) || 0,
+      comments: Number(r.comments) || 0,
+      comments_shared: Number(r.comments_shared) || 0,
+      comments_pending: Number(r.comments_pending) || 0,
     })) });
+  }
+
+  // ----- round comments: the host's moderation queue (admin/owner only) -----
+  // The ONLY read path for comment bodies besides the author's own. Comments default to
+  // 'pending' and reach the artist only once the host flips them to 'shared'.
+  // PII surface matches the public boards exactly — display name, role, city. Never the
+  // commenter's email or phone.
+  if (p === '/api/admin/comments' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId');
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const rows = await db.all(
+      `SELECT c.id, c.round_id, c.body, c.status, c.updated_at,
+              p.name AS pname, u.name AS uname, u.primary_category, u.location,
+              u.photo_url, COALESCE(u.blocked, 0) AS blocked, v.taste
+         FROM round_comments c
+         JOIN participants p ON p.id = c.participant_id
+         LEFT JOIN users u ON u.uid = p.user_id
+         LEFT JOIN votes v ON v.round_id = c.round_id AND v.participant_id = c.participant_id
+        WHERE c.session_id = ?
+        ORDER BY c.created_at ASC`, [sessionId]);
+    return send(res, 200, { comments: rows.map(r => ({
+      id: r.id, round_id: r.round_id, body: r.body, status: r.status,
+      name: (r.uname || r.pname || 'A&R').toString().trim().slice(0, 40),
+      role: r.primary_category || null,
+      location: r.location || null,
+      photo: r.photo_url || null,
+      taste: r.taste != null ? Number(r.taste) : null,
+      blocked: !!Number(r.blocked),
+      updated_at: Number(r.updated_at),
+    })) });
+  }
+
+  // Flip one comment, or every comment on a round (the "Share all" / "Hide all" buttons).
+  // 'hidden' is an explicit reject kept distinct from 'pending' so the host's queue count
+  // actually drains each week instead of carrying the same junk forward.
+  if (p === '/api/admin/comment' && method === 'POST') {
+    const { sessionId, commentId, roundId, status } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    if (!['pending', 'shared', 'hidden'].includes(status)) return bad(res, 'Bad status');
+    let r;
+    if (commentId) {
+      r = await db.run('UPDATE round_comments SET status = ? WHERE id = ? AND session_id = ?', [status, commentId, sessionId]);
+    } else if (roundId) {
+      r = await db.run('UPDATE round_comments SET status = ? WHERE round_id = ? AND session_id = ?', [status, roundId, sessionId]);
+    } else return bad(res, 'commentId or roundId required');
+    return send(res, 200, { ok: true, changed: r.changes || 0 });
   }
 
   // ===== MASS NOTIFY (admin role only): email/SMS announcement to ALL users =====
@@ -2887,11 +3058,15 @@ async function handleApi(req, res, url) {
     const s = await db.get('SELECT id, name FROM sessions WHERE id = ?', [sessionId]);
     if (!s) return bad(res, 'Room not found', 404);
     if ((confirmName || '') !== s.name) return bad(res, 'Name does not match — type the exact room name to confirm');
-    // Delete in FK order: votes -> rounds -> participants -> session banners -> otps -> session.
+    // Delete in FK order: votes/comments/notices -> rounds -> participants -> banners -> otps -> session.
     // Feedback merely references the session (it's general product feedback that happened to
     // be tagged); keep the content but NULL the reference so purge leaves no dangling pointer.
     await db.tx(async (tx) => {
       await tx.run('DELETE FROM votes WHERE round_id IN (SELECT id FROM rounds WHERE session_id = ?)', [sessionId]);
+      await tx.run('DELETE FROM round_comments WHERE session_id = ?', [sessionId]);
+      // artist_notices hangs off both session and round; it was missed when 026 added it,
+      // which left the send queue orphaned after a purge.
+      await tx.run('DELETE FROM artist_notices WHERE session_id = ?', [sessionId]);
       await tx.run('DELETE FROM rounds WHERE session_id = ?', [sessionId]);
       await tx.run('DELETE FROM participants WHERE session_id = ?', [sessionId]);
       await tx.run('DELETE FROM banners WHERE session_id = ?', [sessionId]);

@@ -128,6 +128,75 @@ async function call(path, body, method='POST', headers={}) {
   ok('BLIND: exact err not leaked to players mid-session', m3.myResult.err === undefined, 'leaked ' + m3.myResult.err);
   ok('BLIND: winner guess not leaked mid-session', m3.winner && m3.winner.predict === undefined, JSON.stringify(m3.winner));
 
+  console.log('\n— optional round comments: write window, sealing, moderation —');
+  // RID is already RATIFIED here, which is the point: the write window deliberately
+  // survives the reveal. Ratify swaps the player's screen out from under the composer,
+  // and a comment that can't be saved after that is a comment someone typed and lost.
+  const CMT_A = 'Voice is a star, but the beat is fighting her the whole way.';
+  const c1 = await call('/api/comment', { roundId: RID, body: CMT_A }, 'POST', { 'X-Player-Token': t1 });
+  ok('comment saves AFTER ratify (window does not slam at the reveal)', c1.status === 200 && c1.d.body === CMT_A, JSON.stringify(c1.d));
+  const c2 = await call('/api/comment', { roundId: RID, body: 'Intro is eight bars too long.' }, 'POST', { 'X-Player-Token': t2 });
+  ok('a second A&R can comment on the same round', c2.status === 200, JSON.stringify(c2.d));
+
+  // Authorship + sealing.
+  const cs1 = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': t1 })).d;
+  ok('author sees their own comment in state', cs1.myComment === CMT_A, JSON.stringify(cs1.myComment));
+  const csIris = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': t3 })).d;
+  ok('a non-commenter sees no comment of their own', !csIris.myComment, JSON.stringify(csIris.myComment));
+  ok('SEALED: another player never receives someone else\'s comment text',
+    !JSON.stringify(csIris).includes('Voice is a star'), 'leaked into player state');
+  const cOverlay = await call(`/api/overlay/state?sessionId=${SID}`, null, 'GET');
+  ok('SEALED: no comment text on the broadcast overlay', !JSON.stringify(cOverlay.d).includes('Voice is a star'));
+
+  // Guards. Commenting requires a lock-in on that round — Nyla joins but never votes.
+  const cnReq = await call('/api/join/request', { sessionId: SID, email: 'nyla@test.com' });
+  const cnVer = await call('/api/join/verify', { sessionId: SID, email: 'nyla@test.com', code: cnReq.d.devCode, name: 'Nyla' });
+  const cNoVote = await call('/api/comment', { roundId: RID, body: 'never voted' }, 'POST', { 'X-Player-Token': cnVer.d.token });
+  ok('comment without a lock-in on that round rejected', cNoVote.status === 400, 'got ' + cNoVote.status);
+  const cNoRound = await call('/api/comment', { body: 'orphan' }, 'POST', { 'X-Player-Token': t1 });
+  ok('comment without a round rejected', cNoRound.status === 400, 'got ' + cNoRound.status);
+  const cBadRound = await call('/api/comment', { roundId: 'not-a-round', body: 'x' }, 'POST', { 'X-Player-Token': t1 });
+  ok('comment on an unknown round rejected', cBadRound.status === 404, 'got ' + cBadRound.status);
+  const cNoAuth = await call('/api/comment', { roundId: RID, body: 'x' }, 'POST');
+  ok('comment without auth rejected', cNoAuth.status === 401, 'got ' + cNoAuth.status);
+  const cLong = await call('/api/comment', { roundId: RID, body: 'z'.repeat(400) }, 'POST', { 'X-Player-Token': t3 });
+  ok('over-length comment truncated to 280, not rejected', cLong.status === 200 && cLong.d.body.length === 280, 'len ' + (cLong.d.body || '').length);
+
+  // Host moderation. Default is NOT shared — nothing reaches an artist by accident.
+  let cAdm = (await call(`/api/admin/comments?sessionId=${SID}`, null, 'GET', AH)).d;
+  ok('host sees all three comments', (cAdm.comments || []).length === 3, 'got ' + (cAdm.comments || []).length);
+  ok('comments default to pending (never auto-shared)', cAdm.comments.every(c => c.status === 'pending'), JSON.stringify(cAdm.comments.map(c => c.status)));
+  ok('host queue carries the A&R name + their rating', cAdm.comments.every(c => c.name && c.taste != null), JSON.stringify(cAdm.comments[0]));
+  ok('host queue carries no commenter PII', !JSON.stringify(cAdm.comments).includes('@test.com'));
+  const cmtId1 = cAdm.comments.find(c => c.body === CMT_A).id;
+  const cNoAdmin = await call('/api/admin/comments?sessionId=' + SID, null, 'GET');
+  ok('comment queue is admin-gated', cNoAdmin.status === 401, 'got ' + cNoAdmin.status);
+
+  const cShare = await call('/api/admin/comment', { sessionId: SID, commentId: cmtId1, status: 'shared' }, 'POST', AH);
+  ok('host can share one comment', cShare.status === 200 && cShare.d.changed === 1, JSON.stringify(cShare.d));
+  const cBadStatus = await call('/api/admin/comment', { sessionId: SID, commentId: cmtId1, status: 'published' }, 'POST', AH);
+  ok('unknown moderation status rejected', cBadStatus.status === 400, 'got ' + cBadStatus.status);
+
+  // An edit after approval must NOT ride the host's earlier sign-off.
+  const cEdit = await call('/api/comment', { roundId: RID, body: 'Actually, on a relisten — the mix is fine.' }, 'POST', { 'X-Player-Token': t1 });
+  ok('author can edit their comment', cEdit.status === 200, JSON.stringify(cEdit.d));
+  cAdm = (await call(`/api/admin/comments?sessionId=${SID}`, null, 'GET', AH)).d;
+  ok('editing a SHARED comment resets it to pending (fails closed)',
+    cAdm.comments.find(c => c.id === cmtId1).status === 'pending', JSON.stringify(cAdm.comments.find(c => c.id === cmtId1)));
+
+  // Bulk actions + counts on the rounds list.
+  const cBulk = await call('/api/admin/comment', { sessionId: SID, roundId: RID, status: 'shared' }, 'POST', AH);
+  ok('host can share a whole round at once', cBulk.status === 200 && cBulk.d.changed === 3, JSON.stringify(cBulk.d));
+  const cRounds = (await call(`/api/admin/rounds?sessionId=${SID}`, null, 'GET', AH)).d;
+  const cRow = cRounds.rounds.find(r => r.id === RID);
+  ok('rounds list reports comment counts', cRow.comments === 3 && cRow.comments_shared === 3 && cRow.comments_pending === 0, JSON.stringify(cRow));
+
+  // Clearing the box deletes the row outright — a blank card would sit in the queue forever.
+  const cClear = await call('/api/comment', { roundId: RID, body: '   ' }, 'POST', { 'X-Player-Token': t3 });
+  ok('clearing a comment deletes it', cClear.status === 200 && cClear.d.body === '', JSON.stringify(cClear.d));
+  cAdm = (await call(`/api/admin/comments?sessionId=${SID}`, null, 'GET', AH)).d;
+  ok('deleted comment leaves the host queue', cAdm.comments.length === 2, 'got ' + cAdm.comments.length);
+
   console.log('\n— add-song: straight to open; extras queue; none lost —');
   // Prior round is ratified, so nothing is in play — the first add opens immediately.
   const qa = await call('/api/admin/round', { sessionId: SID, song_title: 'Auto Open A' }, 'POST', AH);
@@ -578,6 +647,11 @@ async function call(path, body, method='POST', headers={}) {
   ok('binary ratify reports poll_type', brat.d.poll_type === 'binary', brat.d.poll_type);
   ok('binary actual split A = 50', brat.d.split_a === 50, 'got ' + brat.d.split_a);
   ok('binary ratify room_average null', brat.d.room_average === null, 'got ' + brat.d.room_average);
+
+  // A Versus round has two songs, so "the record" is ambiguous — and the artist workflow
+  // skips binary rounds anyway. The composer hides; the server refuses regardless.
+  const bCmt = await call('/api/comment', { roundId: VBRID, body: 'both were great' }, 'POST', { 'X-Player-Token': b1 });
+  ok('comments refused on a Versus round', bCmt.status === 400, 'got ' + bCmt.status);
 
   console.log('\n— binary: results (Cleo exact split wins) —');
   const bm3 = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': b3 })).d;
@@ -1514,6 +1588,24 @@ async function call(path, body, method='POST', headers={}) {
     dateLabel: 'Jul 8, 2026', sessionName: 'N', watchUrl: null, pages: ['https://blob/p1.png'] });
   ok('no replay link -> no watch button (not a dead link)', !/Watch the room/.test(aeNoWatch));
   ok('single-song room omits the rank line', !/of 1<\/b> records/.test(aeNoWatch));
+  // Approved A&R comments ride along, attributed. Attribution is the whole value —
+  // named people who scored the record, not anonymous opinion.
+  const aeCmts = server._artistEmailHtml({ title: 'Midnight Run', artist: 'Jaylen Cole', mean: '7.4',
+    rank: 2, total: 11, dateLabel: 'Jul 8, 2026', sessionName: 'Test Night', watchUrl: null,
+    pages: ['https://blob/p1.png'],
+    comments: [{ body: 'The rasp on verse two is the whole record.', name: 'Devin R.', role: 'A&R', location: 'Atlanta' }] });
+  ok('artist email carries approved comments', aeCmts.includes('The rasp on verse two is the whole record.'));
+  ok('artist email attributes each comment', aeCmts.includes('Devin R.') && aeCmts.includes('A&amp;R') && aeCmts.includes('Atlanta'));
+  ok('artist email frames comments as individual opinions', /personal opinions of individual/i.test(aeCmts));
+  ok('comment block still carries no price or upsell', !sellWords.test(aeCmts), (aeCmts.match(sellWords) || [''])[0]);
+  // Escaping: a comment is untrusted free text going into an HTML email.
+  const aeXss = server._artistEmailHtml({ title: 'T', artist: '', mean: '5.0', rank: 1, total: 1,
+    dateLabel: 'd', sessionName: 'N', watchUrl: null, pages: [],
+    comments: [{ body: '<script>alert(1)</script>', name: '<b>x</b>', role: null, location: null }] });
+  ok('comment bodies are HTML-escaped', !aeXss.includes('<script>') && aeXss.includes('&lt;script&gt;'));
+  ok('commenter names are HTML-escaped', !aeXss.includes('<b>x</b>'));
+  // No approved comments -> the block vanishes entirely, no empty header.
+  ok('no shared comments -> no comment block at all', !/What the A&amp;Rs said/.test(aeNoWatch));
 
   console.log('\n— artist notices: contact capture, retroactive edit, queue —');
   const anC = await call('/api/session', { name: 'Artist Night' }, 'POST', BOOTH);

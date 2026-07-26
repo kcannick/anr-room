@@ -40,7 +40,9 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   Approved mockups exist (see Design assets below) — build to match them.
 - **Live vote split/lean is SEALED until results.** Never expose the room's average or A/B
   split on the overlay or in any liveness feature during an active round — it's what players
-  are predicting. Vote COUNT is OK; vote DIRECTION is not. Server-enforced.
+  are predicting. Vote COUNT is OK; vote DIRECTION is not. Server-enforced. **Round comments
+  fall under this rule too** — "this one's a 9 for me" leaks direction just as surely, so a
+  comment body is readable ONLY by its author and the host. There is no public read path.
 - **Static files cache aggressively** — test in incognito after deploy.
 - **PII discipline:** public/leaderboard/overlay endpoints emit display name + points only.
   Email/phone never leave via a public surface.
@@ -68,6 +70,13 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 - **Closing a series is a status flip** (`series.status = 'closed'`); qualifiers are read live
   off the final board. No snapshot/lock needed (the board only moves when tagged sessions get
   new votes).
+- **No points for round comments** (decided 2026-07-26). Points on this board are
+  accuracy-derived; paying for free text puts non-accuracy points on a CASH-prize board
+  (compounding the open attorney item on referral points), rewards volume over quality, and
+  scales the host's approval queue with room size. The reward is recognition instead — the
+  A&R's name goes to the artist. If it's ever revisited, the only defensible version is
+  points when the HOST SHARES a comment (merit-gated, unfarmable), and it belongs in the
+  same attorney question as referral points.
 - **Legal:** free-entry, skill-only audience competition; artist placement $ and viewer points
   stay walled. SMS marketing consent separate from 2FA (TCPA). Attorney has cleared the prize
   structure; A2P 10DLC registered.
@@ -75,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 026; suite 490 green)
+## Current state (migrations through 027; suite 687 green)
 The **weekly show is feature-complete and prod-verified.** Everything below has SHIPPED to
 `main` and is live on anr.makinitmag.com:
 - **Reliability spine:** outage fix + self-healing ensureInit + boot-safe deploy-step
@@ -130,6 +139,16 @@ The **weekly show is feature-complete and prod-verified.** Everything below has 
   Cron drains CLAIM rows (`pending`→`sending`) before sending — Vercel documents that cron
   delivery can double-invoke, and the hourly job overlaps the host's own wrap-up drain.
   **Operator setup: docs/post-show-setup.md** (env vars, the Hobby-cron deploy trap, Asana).
+- **Optional round comments** (027): after locking in, an A&R may leave ONE short note
+  (≤280 chars) on a rating round. Own table `round_comments`, never a column on `votes`
+  (that table is read by every board sum and ratify recompute). SEALED like the split.
+  Default `status='pending'` — nothing reaches an artist until the host flips it to
+  `shared` in the Rounds tab (`hidden` is an explicit reject, kept distinct so the queue
+  drains); shared comments ride the artist's report email, attributed by A&R name + role +
+  city. An A&R editing an approved comment resets it to pending (fails closed). The write
+  window deliberately stays open past ratify and the composer is ONE DOM node moved between
+  the locked and results screens (plus a localStorage mirror) — the reveal must never eat
+  half-typed work. Versus rounds take no comments. **No points are awarded** (see below).
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
