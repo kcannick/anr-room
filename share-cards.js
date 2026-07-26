@@ -254,9 +254,9 @@ function bodyReport2(d) {
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 52, color: d.gapUp ? C.signal : C.inkDim, marginLeft: 24, flexShrink: 0 }, d.gapLabel),
   ]);
   return col({}, [
-    row({ gap: 18 }, [tile(d.votes, 'Votes', false), tile(d.mean, 'Mean', false), tile(d.median, 'Median', true), tile(d.mode, 'Mode', true)]),
+    row({ gap: 18 }, [tile(d.votes, 'Votes', false), tile(d.mean, 'Average', false), tile(d.median, 'Median', true), tile(d.mode, 'Mode', true)]),
     col({ marginTop: 30, gap: 16 }, [
-      expl(C.signal, `Mean ${d.mean}`, 'The overall room score — every vote weighs the same.'),
+      expl(C.signal, `Average ${d.mean}`, 'The overall room score — every vote weighs the same.'),
       expl(C.gold, `Median ${d.median}`, d.medianNote),
       expl(C.gold, `Mode ${d.mode}`, 'The single most common score in the room.'),
     ]),

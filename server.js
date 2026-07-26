@@ -781,7 +781,7 @@ async function songReportData(round, session) {
     gapWord: gap == null ? '' : (gap >= 0.05 ? 'It over-delivered on first impressions'
       : gap <= -0.05 ? 'Expectations ran ahead of the room' : 'It landed right on expectations'),
     medianNote: 'Half the room scored it ' + fmt(median) + ' or higher.'
-      + (median > mean + 0.2 ? ' The typical listener heard more than the mean shows — a few tough critics pulled it down.' : ''),
+      + (median > mean + 0.2 ? ' The typical listener heard more than the average shows — a few tough critics pulled it down.' : ''),
     roles: segment('cat'),
     cities: segment('loc'),
     pools: (inP && rem) ? { in: inP, remote: rem } : null,
