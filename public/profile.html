@@ -5,7 +5,7 @@
 <script async src="/analytics.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/mark-color.png">
-<title>The A&R Room · Profile</title>
+<title>The A&R Room · Official A&R Profile</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -34,7 +34,7 @@
   .stat .v{font-family:"Space Mono",monospace;font-size:21px;font-weight:700;line-height:1}
   .stat .v.green{color:var(--signal)}
   .stat .v.amber{color:var(--amber)}
-  .stat .l{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-top:6px}
+  .stat .l{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-top:6px;line-height:1.35}
   .pf-back{font-size:12px;color:var(--cool);margin-top:18px;display:inline-block}
   .empty{text-align:center;color:var(--ink-faint);font-size:14px;padding:70px 0;line-height:1.6}
   .empty .ico{font-size:30px;margin-bottom:10px;opacity:.6}
@@ -43,7 +43,7 @@
 <body>
 <div class="wrap">
   <a class="nav" href="/"><span class="dot"></span><span class="nm">The A&amp;R Room</span></a>
-  <div id="content"><div class="empty"><div class="ico">🎧</div>Loading…</div></div>
+  <div id="content"><div class="empty"><div class="ico">🎧</div>Loading The A&amp;R Room…</div></div>
 </div>
 <script>
 const $=s=>document.querySelector(s);
@@ -63,7 +63,7 @@ function render(p){
     p.tiktok?`<a class="soc" href="${esc(ttUrl(p.tiktok))}" target="_blank" rel="noopener">TikTok ↗</a>`:''
   ].filter(Boolean).join('');
   const st=p.stats||{};
-  const rank=st.seriesRank?`<div class="stat"><div class="v amber">#${st.seriesRank}</div><div class="l">${esc((st.seriesTitle||'Series'))} rank</div></div>`:'';
+  const rank=st.seriesRank?`<div class="stat"><div class="v amber">#${st.seriesRank}</div><div class="l">${esc((st.seriesTitle||'Current series'))} rank</div></div>`:'';
   $('#content').innerHTML=`
     <div class="pf">
       ${photo}
@@ -72,12 +72,12 @@ function render(p){
       ${roles?`<div class="pf-roles">${roles}</div>`:''}
       ${socials?`<div class="pf-socials">${socials}</div>`:''}
       <div class="pf-stats">
-        <div class="stat"><div class="v">${fmt(st.points)}</div><div class="l">Points</div></div>
-        <div class="stat"><div class="v green">${fmt(st.sessions)}</div><div class="l">Sessions</div></div>
+        <div class="stat"><div class="v">${fmt(st.points)}</div><div class="l">Career points</div></div>
+        <div class="stat"><div class="v green">${fmt(st.sessions)}</div><div class="l">Evaluation sessions</div></div>
         ${rank}
       </div>
-      <a class="pf-back" id="editLink" href="/profile" style="display:none;margin-right:14px">✎ Edit profile</a>
-      <a class="pf-back" href="/">← Back to The A&amp;R Room</a>
+      <a class="pf-back" id="editLink" href="/profile" style="display:none;margin-right:14px">✎ Edit my A&amp;R record</a>
+      <a class="pf-back" href="/">← Back to A&amp;R rankings</a>
     </div>`;
 }
 async function showEditIfOwner(profileId){
@@ -88,16 +88,18 @@ async function showEditIfOwner(profileId){
   }catch(e){}
 }
 async function load(){
-  if(!UID){$('#content').innerHTML='<div class="empty"><div class="ico">🤔</div>No profile specified.</div>';return;}
+  if(!UID){$('#content').innerHTML='<div class="empty"><div class="ico">🤔</div>No A&R profile selected.</div>';return;}
   try{
     const r=await fetch('/api/profile?u='+encodeURIComponent(UID));
     if(!r.ok)throw 0;
     const d=await r.json();
     render(d.profile);
     showEditIfOwner(d.profile.id);
-    document.title='The A&R Room · '+(d.profile.name||'Profile');
+    document.title=d.profile.name
+      ? (d.profile.name+' · Official A&R Profile | The A&R Room')
+      : 'The A&R Room · Official A&R Profile';
   }catch(e){
-    $('#content').innerHTML='<div class="empty"><div class="ico">🤔</div>This profile isn\'t available.<br><a class="pf-back" href="/" style="margin-top:12px">← Back to The A&R Room</a></div>';
+    $('#content').innerHTML='<div class="empty"><div class="ico">🤔</div>This A&R profile isn\'t available.<br><a class="pf-back" href="/" style="margin-top:12px">← Back to A&R rankings</a></div>';
   }
 }
 load();

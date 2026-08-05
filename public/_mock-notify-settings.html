@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · Notification settings (028)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=3">
+<link rel="stylesheet" href="/ui.css?v=2">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 16px 70px;background:radial-gradient(130% 70% at 50% -6%, #241a4d 0%, var(--bg) 52%);
+       color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:var(--w-form);margin:0 auto}
+  .mocknote{max-width:var(--w-form);margin:0 auto 26px;border:1px dashed var(--accent);border-radius:var(--r-md);
+       padding:12px 14px;font-size:12.5px;line-height:1.6;color:var(--ink-dim);background:rgba(109,95,224,.07)}
+  .mocknote b{color:var(--ink)}
+  .variant{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+       color:var(--accent);margin:34px 0 10px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-xl);padding:var(--pad-panel)}
+  .eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--signal);font-weight:700}
+  h2{margin:6px 0 0;font-size:20px;letter-spacing:-.01em}
+  .dim{color:var(--ink-dim);font-size:13.5px;line-height:1.55;margin:8px 0 0}
+  label{display:block;font-size:12.5px;font-weight:600;margin:0 0 6px;color:var(--ink-dim)}
+  input[type=tel],input[type=text]{width:100%;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);
+       color:var(--ink);font-family:inherit;font-size:15px;padding:12px 13px}
+  input[type=tel]:focus,input[type=text]:focus{outline:none;border-color:var(--signal)}
+  .hint{font-size:11.5px;line-height:1.55;color:var(--ink-faint);margin:7px 2px 0}
+  .sec{border-top:1px solid var(--line);margin-top:20px;padding-top:18px}
+  .sec-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+  .sec-t{font-size:14.5px;font-weight:700}
+  .sec-s{font-size:12px;color:var(--ink-faint);margin:2px 0 12px;line-height:1.5}
+  .rows{display:flex;flex-direction:column;gap:8px}
+  .nest{margin-left:14px;padding-left:12px;border-left:1px solid var(--line)}
+  .saverow{display:flex;align-items:center;gap:12px;margin-top:20px}
+  .status{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--signal)}
+  .foot{font-size:12px;color:var(--ink-faint);margin-top:16px;line-height:1.6}
+  .foot a{color:var(--accent);text-decoration:none}
+  .masked{font-family:"Space Mono",monospace;font-size:13px;color:var(--ink-dim);
+       background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px}
+</style>
+</head>
+<body>
+
+<div class="mocknote">
+  <b>MOCKUP — migration 028, notification contact center.</b> Three surfaces, in the order an A&amp;R meets them:
+  the register checkbox (what almost everyone sees), the full settings section inside the profile editor,
+  and the stripped token-only view someone lands on from an email footer.
+  Uses the real <code>tokens.css</code> + <code>ui.css</code>. The <code>.pref-row</code> below is the one
+  new shared component — promoted from <code>admin.html</code>'s <code>.ob-row</code>, since <code>ui.css</code>
+  has no toggle, checkbox, or radio today.
+</div>
+
+<!-- ═══════════ 1. REGISTER STEP ═══════════ -->
+<div class="variant">1 · Register step — play.html #screen-code</div>
+<div class="wrap">
+  <div class="panel">
+    <div class="eyebrow">Step 2</div>
+    <h2>Enter your access code</h2>
+    <p class="dim">Code sent to <span style="color:var(--ink)">maya@email.com</span>. If it isn't in your inbox, check <b style="color:var(--ink)">Spam</b> or <b style="color:var(--ink)">Promotions</b>.</p>
+
+    <div style="margin-top:16px">
+      <label>Display name <span style="font-weight:400;color:var(--ink-faint)">(shown in the A&amp;R rankings)</span></label>
+      <input type="text" value="Maya">
+    </div>
+
+    <div style="margin-top:14px">
+      <label>Mobile number <span style="font-weight:400;color:var(--ink-faint)">(optional)</span></label>
+      <input type="tel" placeholder="(555) 123-4567">
+      <p class="hint">By entering your number you agree to receive texts when this room goes live and about future A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Optional—not required to participate.</p>
+    </div>
+
+    <!-- THE CHECKBOX. Default checked: it matches today's behaviour and the promise the
+         register screen already makes ("You'll get a notification when it opens"). -->
+    <div style="margin-top:14px">
+      <label class="pref-row">
+        <input type="checkbox" checked>
+        <span><b>Notify me when this and future rooms go live</b>
+          <small>Email, plus a text if you added a number. Change this any time in your A&amp;R record.</small></span>
+      </label>
+    </div>
+
+    <button class="btn block" style="margin-top:18px">Enter the evaluation</button>
+    <button class="btn ghost block" style="margin-top:9px">Use a different email</button>
+  </div>
+</div>
+
+<!-- ═══════════ 2. FULL SETTINGS ═══════════ -->
+<div class="variant">2 · Settings section — join.html profile step (/profile)</div>
+<div class="wrap">
+  <div class="panel">
+    <div class="eyebrow">Your A&amp;R record</div>
+    <h2>Notifications</h2>
+    <p class="dim">Choose how The A&amp;R Room reaches you. Texts are reserved for one thing — a room going live — because that's the only message that can't wait.</p>
+
+    <!-- ── TEXT ── -->
+    <div class="sec">
+      <div class="sec-h"><div class="sec-t">Text messages</div><span class="pill live">On</span></div>
+      <div class="sec-s">Standard rates apply. Reply <b style="color:var(--ink-dim)">STOP</b> to any text to opt out instantly.</div>
+
+      <div style="margin-bottom:12px">
+        <label>Mobile number</label>
+        <input type="tel" value="(305) 555-0143">
+        <p class="hint">Removing your number turns texts off. Your number is never shown publicly or shared.</p>
+      </div>
+
+      <label class="pref-row">
+        <input type="checkbox" checked>
+        <span><b>Text me</b><small>Master switch — off means no texts of any kind</small></span>
+      </label>
+
+      <div class="rows nest" style="margin-top:8px">
+        <label class="pref-row">
+          <input type="checkbox" checked>
+          <span><b>A room goes live</b><small>The show is starting now — public and invite-only rooms</small></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- ── EMAIL ── -->
+    <div class="sec">
+      <div class="sec-h"><div class="sec-t">Email</div></div>
+      <div class="sec-s">Sent to <span style="color:var(--ink-dim)">maya@email.com</span>.</div>
+
+      <div class="rows">
+        <label class="pref-row">
+          <input type="checkbox" checked>
+          <span><b>A room goes live</b><small>The show is starting now — public and invite-only rooms</small></span>
+        </label>
+        <label class="pref-row">
+          <input type="checkbox">
+          <span><b>Daily update</b><small>Top records, top A&amp;Rs, and what's next</small></span>
+        </label>
+        <label class="pref-row">
+          <input type="checkbox">
+          <span><b>Weekly update</b><small>The week's top records and the A&amp;R board</small></span>
+        </label>
+      </div>
+
+      <label class="pref-row danger" style="margin-top:14px">
+        <input type="checkbox">
+        <span><b>Unsubscribe from all email</b><small>Turns off everything above, including room alerts</small></span>
+      </label>
+    </div>
+
+    <div class="saverow">
+      <button class="btn">Save notifications</button>
+      <span class="status">Saved ✓</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 3. TOKEN-ONLY ═══════════ -->
+<div class="variant">3 · From an email footer — /profile#nt=… (no login)</div>
+<div class="wrap">
+  <div class="panel">
+    <div class="eyebrow">The A&amp;R Room</div>
+    <h2>Your notifications</h2>
+    <p class="dim">You're managing settings for the account below. No sign-in needed — this link came from one of our emails.</p>
+
+    <div style="margin-top:16px;display:flex;flex-direction:column;gap:8px">
+      <div class="masked">m•••@email.com</div>
+      <div class="masked">••• 0143</div>
+    </div>
+    <p class="hint">Contact details are hidden on this page. To change your number,
+      <a href="#" style="color:var(--accent);text-decoration:none">sign in to your A&amp;R record</a>.</p>
+
+    <div class="sec">
+      <div class="sec-t" style="margin-bottom:12px">Text messages</div>
+      <div class="rows">
+        <label class="pref-row"><input type="checkbox" checked>
+          <span><b>Text me</b><small>Master switch</small></span></label>
+        <div class="rows nest">
+          <label class="pref-row"><input type="checkbox" checked>
+            <span><b>A room goes live</b><small>The show is starting now</small></span></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-t" style="margin-bottom:12px">Email</div>
+      <div class="rows">
+        <label class="pref-row"><input type="checkbox" checked>
+          <span><b>A room goes live</b><small>The show is starting now</small></span></label>
+        <label class="pref-row"><input type="checkbox">
+          <span><b>Daily update</b><small>Top records, top A&amp;Rs, and what's next</small></span></label>
+        <label class="pref-row"><input type="checkbox">
+          <span><b>Weekly update</b><small>The week's top records and the A&amp;R board</small></span></label>
+      </div>
+    </div>
+
+    <div class="saverow"><button class="btn">Save</button></div>
+    <button class="btn danger block" style="margin-top:10px">Unsubscribe from everything</button>
+
+    <p class="foot">Changed your mind? <a href="#">Sign in to your full A&amp;R record →</a></p>
+  </div>
+</div>
+
+<!-- ═══════════ 4. DISABLED STATE ═══════════ -->
+<div class="variant">4 · Master off — nested rows go inert (.pref-row.dis)</div>
+<div class="wrap">
+  <div class="panel">
+    <div class="sec-h"><div class="sec-t">Text messages</div><span class="pill closed">Off</span></div>
+    <div class="sec-s">You'll still get email alerts. Turn texts back on any time.</div>
+    <label class="pref-row"><input type="checkbox">
+      <span><b>Text me</b><small>Master switch — off means no texts of any kind</small></span></label>
+    <div class="rows nest" style="margin-top:8px">
+      <label class="pref-row dis"><input type="checkbox" checked disabled>
+        <span><b>A room goes live</b><small>The show is starting now</small></span></label>
+    </div>
+    <p class="hint">Your number stays on file — turning texts off doesn't delete it.</p>
+  </div>
+</div>
+
+<div class="mocknote" style="margin-top:36px">
+  <b>Proposed addition to ui.css</b> — <code>.pref-row</code> / <code>.pref-row.dis</code> /
+  <code>.pref-row.danger</code>, promoted from the <code>.ob-row</code> pattern already in
+  <code>admin.html</code> (overlay element picker) so the two surfaces stop duplicating it.
+  Note the <code>width:auto</code> on the checkbox — page-level <code>input{width:100%}</code>
+  stretches it otherwise.
+</div>
+
+<style>
+/* ── PROPOSED for public/ui.css ──────────────────────────────────────────
+   Preference row: a full-width tappable label wrapping a checkbox, a bold
+   title and a muted explainer. The whole row is the hit target (mobile). */
+.pref-row{display:flex;align-items:flex-start;gap:11px;cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:11px 14px;font-size:14px;line-height:1.35}
+.pref-row:hover{border-color:var(--accent)}
+.pref-row>input[type=checkbox]{width:17px;height:17px;flex:0 0 auto;margin:1px 0 0;padding:0;
+  accent-color:var(--signal);cursor:pointer}
+.pref-row>span{display:block;min-width:0}
+.pref-row b{display:block;font-weight:600;color:var(--ink)}
+.pref-row small{display:block;font-size:11.5px;color:var(--ink-faint);margin-top:2px;line-height:1.45}
+.pref-row.dis{opacity:.45;cursor:default}
+.pref-row.dis:hover{border-color:var(--line)}
+.pref-row.danger{border-color:rgba(255,93,108,.4)}
+.pref-row.danger b{color:var(--hot)}
+</style>
+
+</body>
+</html>

@@ -241,6 +241,31 @@ async function freshDb() {
   const applied25b = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('025 idempotent (not duplicated)', applied25b.filter(x => x === '025_backfill_session_start').length === 1, JSON.stringify(applied25b));
 
+  // ── 028: notification contact center ──────────────────────────────────────
+  // Additive only: one table, one index, four columns on users. The point of the
+  // sparse design is that it needs NO backfill, so a fresh DB must come up with the
+  // table empty and every user resolving to the code-level defaults.
+  clean();
+  db = await freshDb();
+  await db.init();
+  const n28 = (await db.all("SELECT name FROM sqlite_master WHERE type='table' AND name='notify_prefs'", [])).length;
+  ok('028 creates notify_prefs', n28 === 1);
+  const npCols = (await db.all('PRAGMA table_info(notify_prefs)', [])).map(c => c.name);
+  ok('notify_prefs has the full shape',
+    ['uid', 'topic', 'channel', 'enabled', 'source', 'updated_at'].every(c => npCols.includes(c)), JSON.stringify(npCols));
+  const npIdx = (await db.all('PRAGMA index_list(notify_prefs)', [])).map(i => i.name);
+  ok('028 creates the topic index', npIdx.includes('idx_notify_prefs_topic'), JSON.stringify(npIdx));
+  const ucols28 = (await db.all('PRAGMA table_info(users)', [])).map(c => c.name);
+  ok('users.email_opt_out created', ucols28.includes('email_opt_out'));
+  ok('users.email_opt_out_at created', ucols28.includes('email_opt_out_at'));
+  ok('users.sms_pref_set_at created', ucols28.includes('sms_pref_set_at'));
+  ok('users.sms_optout_at created', ucols28.includes('sms_optout_at'));
+  ok('028 ships NO preference rows (defaults resolve in code, not data)',
+    (await db.all('SELECT uid FROM notify_prefs', [])).length === 0);
+  await db.init();
+  const applied28 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('028 idempotent (not duplicated)', applied28.filter(x => x === '028_notify_prefs').length === 1, JSON.stringify(applied28));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

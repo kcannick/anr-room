@@ -84,9 +84,13 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 027; suite 687 green)
-The **weekly show is feature-complete and prod-verified.** Everything below has SHIPPED to
-`main` and is live on anr.makinitmag.com:
+## Current state (migrations through 028; suite 811 green)
+The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
+live on anr.makinitmag.com.
+> **Keep this section honest against git, not against intent.** On 2026-08-05 this file
+> claimed 028 had shipped while the migration was still untracked locally and `main` was
+> level with `origin/main` — a whole feature, and a migration prod had never run, sitting
+> unpushed. "SHIPPED" here must mean pushed to origin, not merely built and green.
 - **Reliability spine:** outage fix + self-healing ensureInit + boot-safe deploy-step
   migrations; soft-delete clears live; unique email index. Neon TLS now fully verified
   (`rejectUnauthorized: true`; `PGSSL=no-verify` is the escape hatch). pg BIGINT/NUMERIC
@@ -126,7 +130,7 @@ The **weekly show is feature-complete and prod-verified.** Everything below has 
 - **Post-show artist workflow** (026): every artist whose record was rated gets their FULL
   3-page Song Report free by email + the replay link + carousel-post instructions (no price
   / no upsell — operator's call, visibility first; a test asserts the copy stays clean), plus
-  a heads-up SMS **queued to a 10AM–8PM ET window** (TCPA; the show ends at 11PM so texts
+  a heads-up SMS **queued to a 10AM–10:30PM ET window** (TCPA; the show ends at 11PM so texts
   drain the next morning via the `/api/cron/artist-sms` Vercel Cron — needs `CRON_SECRET`,
   and hourly cron needs Vercel **Pro**). Artist email/phone lands on `rounds` three ways:
   the Drupal ingest payload, the host queue form, or **retroactively** — `round/edit` now
@@ -138,6 +142,16 @@ The **weekly show is feature-complete and prod-verified.** Everything below has 
   `/api/admin/ingest/latest` tightened to platform-admin (it now carries submitter PII).
   Cron drains CLAIM rows (`pending`→`sending`) before sending — Vercel documents that cron
   delivery can double-invoke, and the hourly job overlaps the host's own wrap-up drain.
+  **Per-round resend** (`artist-notices/resend`, Rounds-tab 📨): the room-wide queue is
+  idempotent by design, so it can NEVER re-send a round that already went out — which is
+  right for "run the batch twice" and useless when one address had a typo or bounced. This
+  is the only intentional re-send path. It re-reads the destination off the round every
+  time (reusing the queued row's stale dest would defeat the point), re-renders the report
+  (so comments shared since are included), and UPSERTs the one `uniq_artist_notice` row
+  back to pending rather than creating a second. Eligibility is re-checked server-side.
+  SMS still obeys the ET window — a resend is not a reason to text at 2AM. `/api/admin/rounds`
+  carries per-round `notice.{email,sms}` state (colours the button, labels it send vs
+  resend) plus `smsWindow` so the dialog never hardcodes the hours.
   **Operator setup: docs/post-show-setup.md** (env vars, the Hobby-cron deploy trap, Asana).
 - **Optional round comments** (027): after locking in, an A&R may leave ONE short note
   (≤280 chars) on a rating round. Own table `round_comments`, never a column on `votes`
@@ -150,6 +164,35 @@ The **weekly show is feature-complete and prod-verified.** Everything below has 
   the locked and results screens (plus a localStorage mirror) — the reveal must never eat
   half-typed work. Versus rounds take no comments. **No points are awarded** (see below).
 
+- **Notification contact center** (028): A&Rs choose how they're contacted. Own table
+  `notify_prefs (uid, topic, channel, enabled)` — never columns on `users`, because topics
+  and channels grow and the audience query must be one set-based `INSERT…SELECT` on BOTH
+  dialects (JSON-on-users is where SQLite and PG diverge). **Sparse by design:** a row
+  exists only where someone chose, absent rows resolve to the `NOTIFY_TOPICS` catalog
+  default via `LEFT JOIN … COALESCE(p.enabled, <literal>)` — so it shipped with **zero
+  backfill**, and adding a topic is a constant edit. (Inline the default as a literal;
+  `COALESCE(int_col, $n)` can make PG fail to infer a param type.) Topics: `room_live`
+  (email+sms, default ON), `digest_daily` / `digest_weekly` (email, default OFF, **no
+  sender built** — prefs only). Invite-only rooms deliberately use `room_live` too: an
+  unexposed topic that still gates sends is a trap.
+  **The bug it fixes:** phone presence *was* consent, re-derived at THREE sites
+  (`/api/auth/verify`, `/api/join/verify`, `/api/join/account`), so you could not have a
+  number on file and be opted out, and any opt-out was silently reversed by the next join.
+  `users.sms_pref_set_at` (non-null = explicit decision) freezes the derivation for that
+  user in BOTH directions; `sms_marketing_consent` + `sms_consent_at` stay the TCPA record
+  (`sms_consent_at` is never cleared — `sms_optout_at` records the withdrawal). The go-live
+  fan-out now reads live consent off `users`, not the per-session participant snapshot,
+  which could claim a consent since revoked. **The subscribe moment is a checkbox at
+  registration** (all three paths, checked by default); an absent `notifyRooms` writes
+  nothing, so older clients never unsubscribe anyone. Manage/unsubscribe links ride the
+  go-live, recap and announcement messages, signed with `NOTIFY_LINK_SECRET`
+  (`np1.<uid>.<exp>` HMAC, 30d, fragment `#nt=`): **prefs-scope only** — never wired into
+  `resolveUserId`/`userFromAuth`, masked contact on read, and it cannot change the phone
+  number (a leaked link must not redirect someone's texts). Fails closed when unset;
+  minting returns null and footers fall back to a login link. `email_opt_out` is the
+  global kill switch and now gates the mass announcement, which previously honored nothing.
+  Platform panel has a per-topic audience readout.
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count
@@ -160,8 +203,13 @@ The **weekly show is feature-complete and prod-verified.** Everything below has 
    This is the largest remaining build; not started.
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
-3. **Notification expansion beyond announcements:** "room going live" and event pushes to
-   opted-in A&Rs across SMS/email/web push, phased.
+3. **Digest senders** — the daily/weekly update emails. The subscription layer, the
+   audience helper (`notifyAudience(topic, channel)`) and the prefs UI all shipped with
+   028; **nothing sends**. Needs the content (reuse `cardArsData` / `cardSongsData` /
+   `homeSeriesBoard`), a chunked-queue drain like `recap_emails`, and a cron entry —
+   note a second cron alongside the hourly artist job still requires Vercel **Pro**.
+   Operator's note: recaps draw from the previous day's show. Web push is a third channel
+   on the same table, still gated behind the PWA shell.
 4. **PWA install + iOS web push** — DEFERRED behind a branding / site facelift pass (which
    gates the install prompt work).
 5. **Parked ideas:** host→series default (new rooms auto-tag into the host's active series);
@@ -169,8 +217,10 @@ The **weekly show is feature-complete and prod-verified.** Everything below has 
 
 ## Open product decisions (operator/legal — not code)
 - **Artist SMS consent (TCPA):** the review/submission form needs an explicit "you agree to
-  a text when your song is played" line before artist texts go out at volume. The 10AM–8PM
-  ET window is built; the consent basis is not. Attorney item.
+  a text when your song is played" line before artist texts go out at volume. The 10AM–10:30PM
+  ET window is built; the consent basis is not. Attorney item. **Ask the attorney about the
+  window itself too** — the TCPA safe harbor is 8AM–9PM in the *recipient's* local time, and a
+  10:30PM ET close sends past 9PM to anyone in ET/CT (set 2026-08-01 at the operator's request).
 - **VIP gating for the Song Report** (parked): later, only VIP submissions get the report;
   first-timers get it free once with a notice upselling VIP. NOT built — today every artist
   gets it free. See the `postshow-artist-workflow` memory.

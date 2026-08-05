@@ -5,7 +5,7 @@
 <script async src="/analytics.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/mark-color.png">
-<title>The A&R Room · Join the A&R Team</title>
+<title>Join The A&R Room | Claim Your A&R Profile</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -63,12 +63,12 @@
   <section id="s-email">
     <p class="eyebrow">Join the A&amp;R Team</p>
     <div class="panel">
-      <h2>Take your seat</h2>
-      <p class="dim">No live room needed — join the team, build your profile, and you're ready the moment the next room opens.</p>
-      <label>Email</label>
+      <h2>Put your ear on the record.</h2>
+      <p class="dim">Join a competitive network of A&amp;Rs evaluating independent music live. Build a public record of your judgment, rise through the monthly rankings, and help influence what happens next for independent artists.</p>
+      <label>Email address</label>
       <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com">
       <div id="devBox" class="dev hide"></div>
-      <button class="btn" id="btnSend">Send my code</button>
+      <button class="btn" id="btnSend">Send my access code</button>
       <div class="err" id="emailErr"></div>
     </div>
   </section>
@@ -77,20 +77,26 @@
   <section id="s-code" class="hide">
     <p class="eyebrow">Join the A&amp;R Team</p>
     <div class="panel">
-      <h2 style="font-size:18px" id="codeTitle">Confirm it's you</h2>
-      <p class="dim" style="font-size:12.5px">Code sent to <span id="emailEcho" style="color:var(--ink)"></span>.</p>
+      <h2 style="font-size:18px" id="codeTitle">Verify your email</h2>
+      <p class="dim" style="font-size:12.5px">Access code sent to <span id="emailEcho" style="color:var(--ink)"></span>.</p>
       <label>6-digit code</label>
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
       <div id="nameRow">
-        <label>Display name <span style="color:var(--signal);font-weight:700">required</span></label>
+        <label>Display name for your A&amp;R record <span style="color:var(--signal);font-weight:700">required</span></label>
         <input id="name" placeholder="e.g. DJ Chain">
       </div>
       <div id="phoneRow">
         <label>Mobile <span class="dim" style="font-size:11px">(optional)</span></label>
         <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
-        <p class="hint">We'll text you when a room goes live + about A&amp;R Room events. Msg &amp; data rates may apply; reply STOP to opt out. Optional.</p>
+        <p class="hint">We'll text you when an evaluation session goes live and about A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Optional—not required to participate.</p>
       </div>
-      <button class="btn" id="btnJoin">Join the team →</button>
+      <!-- The subscribe moment (028) — same checkbox as the room register step. -->
+      <label class="pref-row" for="jNotifyRooms" style="margin-top:14px">
+        <input type="checkbox" id="jNotifyRooms" checked>
+        <span><b>Notify me when this and future rooms go live</b>
+          <small>Email, plus a text if you added a number. Change this any time below.</small></span>
+      </label>
+      <button class="btn" id="btnJoin">Claim my A&amp;R profile →</button>
       <button class="btn ghost" id="btnBackEmail">Use a different email</button>
       <div class="err" id="codeErr"></div>
     </div>
@@ -98,20 +104,20 @@
 
   <!-- STEP 3: PROFILE -->
   <section id="s-profile" class="hide">
-    <p class="eyebrow g" id="profileEyebrow">Step 2 of 2 · finish to get listed</p>
+    <p class="eyebrow g" id="profileEyebrow">Step 2 of 2 · complete your public record</p>
     <div class="panel">
-      <h2 style="font-size:18px" id="profileH2">Complete your profile</h2>
-      <p class="dim" id="profileSub" style="font-size:12.5px;margin-bottom:4px">This is what puts you on the leaderboard and the New A&Rs ticker.</p>
+      <h2 style="font-size:18px" id="profileH2">Complete your A&amp;R profile</h2>
+      <p class="dim" id="profileSub" style="font-size:12.5px;margin-bottom:4px">A completed profile activates your public ranking, award eligibility, and placement among new A&amp;Rs.</p>
       <!-- Display name: edit mode only (signup captures it on the code step) -->
       <div id="jNameRow" class="hide">
         <label>Display name</label>
         <input id="jName" maxlength="32" placeholder="e.g. DJ Chain">
       </div>
-      <div class="steplabel"><span class="stepnum">①</span> What do you do? <span class="stepsub">select all that apply</span></div>
+      <div class="steplabel"><span class="stepnum">①</span> Select your professional roles</div>
       <div class="chips" id="jCats"></div>
-      <div class="steplabel" style="margin-top:10px"><span class="stepnum">②</span> Most focused on? <span class="stepsub">your primary</span></div>
+      <div class="steplabel" style="margin-top:10px"><span class="stepnum">②</span> Choose your primary A&amp;R focus</div>
       <div class="chips" id="jPrimary"></div>
-      <label>Location <span class="stepsub">required to qualify</span></label>
+      <label>Location <span class="stepsub">· required for ranking eligibility</span></label>
       <div style="position:relative">
         <input id="jLocation" placeholder="Start typing your city…" autocomplete="off">
         <div id="jLocDrop" class="loc-drop hide"></div>
@@ -122,12 +128,73 @@
       </div>
       <div class="photorow" id="jPhotoRow">
         <div class="avph" id="jAvatar">+</div>
-        <div style="font-size:12.5px;line-height:1.4"><span id="jPhotoLabel">Add a photo</span><br><span class="dim" style="font-size:11px">tap to upload &amp; crop</span></div>
+        <div style="font-size:12.5px;line-height:1.4"><span id="jPhotoLabel">Add profile photo</span><br><span class="dim" style="font-size:11px">Upload and crop</span></div>
       </div>
       <input type="file" id="jPhotoInput" accept="image/*" style="display:none">
       <div class="err" id="profErr"></div>
-      <button class="btn" id="btnFinish">Finish &amp; get listed</button>
-      <button class="btn ghost" id="btnSkip">I'll finish later</button>
+      <button class="btn" id="btnFinish">Complete my A&amp;R profile</button>
+      <button class="btn ghost" id="btnSkip">Finish later</button>
+    </div>
+
+    <!-- ── NOTIFICATIONS (028) — edit mode only. During first-time signup the register
+         checkbox above has already captured the only choice that matters; showing the
+         full contact center mid-signup would be one screen too many. ── -->
+    <div class="panel hide" id="notifyPanel" style="margin-top:16px">
+      <p class="eyebrow g" style="margin-bottom:4px">Contact preferences</p>
+      <h2 style="font-size:18px">Notifications</h2>
+      <p class="dim" style="font-size:12.5px">Choose how The A&amp;R Room reaches you. Texts are reserved for one thing — a room going live — because that's the only message that can't wait.</p>
+
+      <!-- TEXT -->
+      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div style="font-size:14.5px;font-weight:700">Text messages</div>
+          <span class="pill" id="nSmsPill">Off</span>
+        </div>
+        <div id="nPhoneRow">
+          <label>Mobile number</label>
+          <input id="nPhone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
+          <p class="hint">Removing your number turns texts off. Your number is never shown publicly or shared. Reply <b style="color:var(--ink-dim)">STOP</b> to any text to opt out instantly.</p>
+        </div>
+        <label class="pref-row" for="nSmsMaster" style="margin-top:12px">
+          <input type="checkbox" id="nSmsMaster">
+          <span><b>Text me</b><small>Master switch — off means no texts of any kind</small></span>
+        </label>
+        <div style="margin-left:14px;padding-left:12px;border-left:1px solid var(--line);margin-top:8px">
+          <label class="pref-row" for="nRoomSms">
+            <input type="checkbox" id="nRoomSms">
+            <span><b>A room goes live</b><small>The show is starting now — public and invite-only rooms</small></span>
+          </label>
+        </div>
+        <p class="hint hide" id="nSmsNoTopics">Texts are on, but you haven't picked anything to be texted about.</p>
+      </div>
+
+      <!-- EMAIL -->
+      <div style="border-top:1px solid var(--line);margin-top:18px;padding-top:14px">
+        <div style="font-size:14.5px;font-weight:700">Email</div>
+        <p class="hint" style="margin:2px 2px 12px">Sent to <span id="nEmail" style="color:var(--ink-dim)"></span>.</p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label class="pref-row" for="nRoomEmail">
+            <input type="checkbox" id="nRoomEmail">
+            <span><b>A room goes live</b><small>The show is starting now — public and invite-only rooms</small></span>
+          </label>
+          <label class="pref-row" for="nDaily">
+            <input type="checkbox" id="nDaily">
+            <span><b>Daily update</b><small>Top records, top A&amp;Rs, and what's next</small></span>
+          </label>
+          <label class="pref-row" for="nWeekly">
+            <input type="checkbox" id="nWeekly">
+            <span><b>Weekly update</b><small>The week's top records and the A&amp;R board</small></span>
+          </label>
+        </div>
+        <label class="pref-row danger" for="nEmailOff" style="margin-top:14px">
+          <input type="checkbox" id="nEmailOff">
+          <span><b>Unsubscribe from all email</b><small>Turns off everything above, including room alerts</small></span>
+        </label>
+      </div>
+
+      <div class="err" id="notifyErr"></div>
+      <button class="btn" id="btnSaveNotify">Save notifications</button>
+      <p class="hint" id="notifyStatus" style="text-align:center;min-height:14px"></p>
     </div>
   </section>
 
@@ -135,9 +202,9 @@
   <section id="s-done" class="hide">
     <div class="panel" style="text-align:center">
       <div class="big-check">✓</div>
-      <h2 id="doneTitle">You're on the team!</h2>
-      <p class="dim" id="doneSub" style="margin:6px 0 0">You'll appear in <b style="color:var(--ink)">New A&Rs</b> and we'll let you know the moment the next room goes live.</p>
-      <a class="btn" id="doneCta" href="/" style="display:block;text-decoration:none;text-align:center">Back to The A&amp;R Room</a>
+      <h2 id="doneTitle">Your A&amp;R profile is live.</h2>
+      <p class="dim" id="doneSub" style="margin:6px 0 0">You're now eligible to appear in <b style="color:var(--ink)">New A&Rs</b> and the rankings. We'll notify you when the next evaluation session opens.</p>
+      <a class="btn" id="doneCta" href="/" style="display:block;text-decoration:none;text-align:center">View The A&amp;R Room</a>
     </div>
   </section>
 </div>
@@ -184,8 +251,8 @@ $('#btnSend').onclick=async()=>{
     // Returning members skip what's already on file: hide name/phone fields they have.
     $('#nameRow').classList.toggle('hide',known.hasName);
     $('#phoneRow').classList.toggle('hide',known.hasPhone);
-    $('#codeTitle').textContent=known.exists?'Welcome back':"Confirm it's you";
-    $('#btnJoin').textContent=known.exists?'Continue →':'Join the team →';
+    $('#codeTitle').textContent=known.exists?'Welcome back':'Verify your email';
+    $('#btnJoin').textContent=known.exists?'Continue →':'Claim my A&R profile →';
     if(d.devCode){$('#devBox').classList.remove('hide');$('#devBox').textContent='Dev mode — your code is '+d.devCode;}
     show('code');$('#code').focus();
   }catch(e){$('#emailErr').textContent=e.message;}
@@ -201,7 +268,7 @@ $('#btnJoin').onclick=async()=>{
   if(!known.hasName && !name)return $('#codeErr').textContent='Add a display name';
   $('#btnJoin').disabled=true;
   try{
-    const d=await api('/api/auth/verify',{email:$('#emailEcho').textContent,code,name,phone});
+    const d=await api('/api/auth/verify',{email:$('#emailEcho').textContent,code,name,phone,notifyRooms:$('#jNotifyRooms').checked});
     AUTHTOK=d.token; localStorage.setItem('rt_auth_token',AUTHTOK);
     if(!known.exists)track('account_signup',{where:'join'});
     await loadProfile();
@@ -221,7 +288,7 @@ function renderPrimary(){
   const cats=jSelected();
   if(jPrimary && !cats.includes(jPrimary)) jPrimary=null;
   if(!jPrimary && cats.length) jPrimary=cats[0];
-  $('#jPrimary').innerHTML=cats.length?cats.map(c=>`<span class="chip${c===jPrimary?' primary':''}" data-p="${c}">${c}</span>`).join(''):'<span class="dim" style="font-size:11px">Pick categories above first</span>';
+  $('#jPrimary').innerHTML=cats.length?cats.map(c=>`<span class="chip${c===jPrimary?' primary':''}" data-p="${c}">${c}</span>`).join(''):'<span class="dim" style="font-size:11px">Select at least one role first</span>';
   $('#jPrimary').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{jPrimary=el.dataset.p;renderPrimary();});
 }
 function renderCats(){
@@ -234,7 +301,7 @@ function renderCats(){
 function renderAvatar(){
   const av=$('#jAvatar');
   if(profile.photoUrl){av.textContent='';av.style.backgroundImage=`url(${profile.photoUrl})`;$('#jPhotoLabel').textContent='Photo added ✓';}
-  else{av.style.backgroundImage='';av.textContent='+';$('#jPhotoLabel').textContent='Add a photo';}
+  else{av.style.backgroundImage='';av.textContent='+';$('#jPhotoLabel').textContent='Add profile photo';}
 }
 // Leave the profile editor: back to where they came from, else their profile view.
 function dismissProfile(){
@@ -244,9 +311,9 @@ function dismissProfile(){
 $('#btnFinish').onclick=async()=>{
   $('#profErr').textContent='';
   const cats=jSelected();
-  if(!cats.length)return $('#profErr').textContent='Pick at least one category.';
+  if(!cats.length)return $('#profErr').textContent='Select at least one professional role.';
   const loc=$('#jLocation').value.trim();
-  if(!loc)return $('#profErr').textContent='Add your location to get listed.';
+  if(!loc)return $('#profErr').textContent='Add your location to activate ranking eligibility.';
   $('#btnFinish').disabled=true;
   const wasComplete=profile&&profile.complete;
   try{
@@ -264,6 +331,84 @@ $('#btnFinish').onclick=async()=>{
   $('#btnFinish').disabled=false;
 };
 $('#btnSkip').onclick=()=>{ if(editMode){ dismissProfile(); } else finishDone(false); };
+// ── NOTIFICATION CONTACT CENTER (028) ────────────────────────────────────────
+// Two ways in: signed in (X-Auth-Token) or holding a signed manage link from an email
+// footer. The token rides the URL FRAGMENT (#nt=…) so it never reaches an access log or
+// a Referer header; we lift it out and send it as a header, then scrub it from the URL.
+let NLINK=(location.hash.match(/(?:^|[#&])nt=([^&]+)/)||[])[1]||'';
+let NOTIFY=null;
+async function notifyApi(body,method='GET'){
+  const h={'Content-Type':'application/json'};
+  if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;
+  if(NLINK)h['X-Notify-Link']=NLINK;
+  const r=await fetch('/api/me/notify-prefs',{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.error||'Something went wrong');
+  return d;
+}
+// Nested SMS topics are inert while the master is off — the row still shows its stored
+// value (so turning the master back on doesn't look like it wiped their picks).
+function syncSmsUi(){
+  const on=$('#nSmsMaster').checked;
+  document.querySelectorAll('#notifyPanel .pref-row').forEach(el=>{
+    const inp=el.querySelector('input');
+    if(inp && inp.id==='nRoomSms'){ inp.disabled=!on; el.classList.toggle('dis',!on); }
+  });
+  const pill=$('#nSmsPill');
+  pill.textContent=on?'On':'Off';
+  pill.className='pill '+(on?'live':'closed');
+  $('#nSmsNoTopics').classList.toggle('hide', !(on && !$('#nRoomSms').checked));
+}
+function renderNotify(d){
+  NOTIFY=d;
+  const t=d.topics||{};
+  const get=(k,ch)=>!!(t[k]&&t[k].channels&&t[k].channels[ch]);
+  $('#nRoomSms').checked=get('room_live','sms');
+  $('#nRoomEmail').checked=get('room_live','email');
+  $('#nDaily').checked=get('digest_daily','email');
+  $('#nWeekly').checked=get('digest_weekly','email');
+  $('#nSmsMaster').checked=!!d.smsConsent;
+  $('#nEmailOff').checked=!!d.emailOptOut;
+  $('#nEmail').textContent=d.email||'';
+  // A link holder may read a masked number but never change it — changing the number is
+  // an account change, and a leaked link must not be able to REDIRECT someone's texts.
+  if(d.canEditPhone===false){
+    $('#nPhone').value=d.phone||''; $('#nPhone').disabled=true;
+    $('#nPhone').style.opacity='.6';
+  }else{
+    $('#nPhone').value=d.phone||'';
+  }
+  $('#notifyPanel').classList.remove('hide');
+  syncSmsUi();
+}
+['nSmsMaster','nRoomSms'].forEach(id=>{ const el=$('#'+id); if(el)el.addEventListener('change',syncSmsUi); });
+$('#btnSaveNotify').onclick=async()=>{
+  $('#notifyErr').textContent=''; $('#notifyStatus').textContent='';
+  const btn=$('#btnSaveNotify'); btn.disabled=true;
+  try{
+    const payload={
+      smsConsent:$('#nSmsMaster').checked,
+      emailOptOut:$('#nEmailOff').checked,
+      topics:{
+        room_live:{email:$('#nRoomEmail').checked,sms:$('#nRoomSms').checked},
+        digest_daily:{email:$('#nDaily').checked},
+        digest_weekly:{email:$('#nWeekly').checked},
+      },
+    };
+    // Only send the phone when it actually changed — otherwise every save would restamp
+    // the consent timestamps. A link holder can't send it at all (the field is disabled).
+    if(NOTIFY && NOTIFY.canEditPhone!==false){
+      const ph=$('#nPhone').value.trim();
+      if(ph!==(NOTIFY.phone||'')) payload.phone=ph;
+    }
+    const d=await notifyApi(payload,'POST');
+    renderNotify(d);
+    $('#notifyStatus').textContent='Saved ✓';
+    setTimeout(()=>{$('#notifyStatus').textContent='';},2200);
+  }catch(e){ $('#notifyErr').textContent=e.message; }
+  btn.disabled=false;
+};
+
 // Edit mode: a logged-in A&R lands straight on their (pre-filled) profile to view/edit.
 async function initJoin(){
   const tok=localStorage.getItem('rt_auth_token');
@@ -273,25 +418,47 @@ async function initJoin(){
       const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
       if(me&&me.uid){ AUTHTOK=tok; MEUID=me.uid; editMode=true; await loadProfile();
         $('#jNameRow').classList.remove('hide'); $('#jName').value=profile.name||'';
-        $('#profileEyebrow').textContent='Your A&R profile';
-        $('#profileH2').textContent='Edit your profile';
-        $('#profileSub').innerHTML='Update your skills, location, socials, or photo. <a href="/u/'+encodeURIComponent(me.uid)+'" style="color:var(--cool)">View public profile ↗</a>';
+        $('#profileEyebrow').textContent='Your A&R record';
+        $('#profileH2').textContent='Edit your A&R record';
+        $('#profileSub').innerHTML='Update your roles, location, social links, or photo. <a href="/u/'+encodeURIComponent(me.uid)+'" style="color:var(--cool)">View public A&R record ↗</a>';
         $('#btnFinish').textContent='Save changes';
         $('#btnSkip').textContent='Cancel';
+        try{ renderNotify(await notifyApi()); }catch(e){}
         show('profile'); return;
       }
     }catch(e){}
   }
+  // Arriving from an email footer with no session: show ONLY the notification panel.
+  // Nothing else on this page is readable or writable with a link token.
+  if(NLINK){
+    try{
+      const d=await notifyApi();
+      $('#s-email').classList.add('hide');
+      $('#s-profile').querySelector('.panel').classList.add('hide');   // profile form
+      $('#profileEyebrow').textContent='The A&R Room';
+      renderNotify(d);
+      show('profile');
+      return;
+    }catch(e){
+      $('#s-email').classList.remove('hide');
+      $('#emailErr').textContent = e.message==='link_expired'
+        ? 'That link has expired — sign in with your email to update your notifications.'
+        : 'That link isn’t valid — sign in with your email to update your notifications.';
+    }
+  }
   show('email');
 }
+// Scrub the token out of the address bar once read, so it isn't left in history or
+// copy-pasted along with the URL. NLINK still holds it for this page's requests.
+if(NLINK){ try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){} }
 initJoin();
 function finishDone(listed){
-  if(!listed){ $('#doneTitle').textContent='Welcome to the team!'; $('#doneSub').innerHTML='Your account is set. <b style="color:var(--ink)">Complete your profile</b> any time to get listed and qualify — we\'ll notify you when the next room is live.'; }
+  if(!listed){ $('#doneTitle').textContent='Welcome to The A&R Room.'; $('#doneSub').innerHTML='Your account is active. <b style="color:var(--ink)">Complete your profile</b> when you\'re ready to publish your A&R record and activate ranking eligibility.'; }
   show('done');
 }
 function doneReturning(){
-  $('#doneTitle').textContent='Welcome back!';
-  $('#doneSub').innerHTML='Your profile is all set — you\'re on the board, and we\'ll notify you the moment the next room goes live.';
+  $('#doneTitle').textContent='Welcome back, A&R.';
+  $('#doneSub').innerHTML='Your public record is active. We\'ll notify you when the next evaluation session opens.';
   show('done');
 }
 

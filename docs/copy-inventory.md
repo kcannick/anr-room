@@ -93,6 +93,7 @@ Surfaces: [Homepage](#1-homepage) · [Play / Voting page](#2-play--voting-page) 
 - Name label — "Your name (shown on the leaderboard)" · placeholder "e.g. Maya"
 - Phone label — "Mobile number (optional)" · placeholder "(555) 123-4567" / _(on file)_ "[hint] (on file — tap to change)"
 - Phone consent — "By entering your number you agree to get texts when this room goes live and about future A&R Room events. Message & data rates may apply; reply STOP to opt out. Optional — not required to play."
+- **Notify checkbox** _(028; checked by default, also on the one-tap register panel and the A&R Team signup)_ — "Notify me when this and future rooms go live" · sub "Email, plus a text if you added a number. Change this any time in your A&R record."
 - Button — "Enter the room" · back "Use a different email"
 - Errors — "Enter the code" · "Enter your name"
 
@@ -190,7 +191,7 @@ Surfaces: [Homepage](#1-homepage) · [Play / Voting page](#2-play--voting-page) 
 - Buttons — "Save & qualify" · "Later"
 - (Field labels/errors mirror the Join page below.)
 
-**Share graphic (client-rendered card)** — "THE A&R ROOM" · "TOTAL POINTS" · "EAR FOR THE ROOM" · footer "Read the room. anr.makinitmag.com"
+**Share graphic (client-rendered card)** — "THE A&R ROOM" · "TOTAL POINTS" · "EAR FOR THE ROOM" · footer "Read the room. makinitmag.com/ANR"
 
 **Share / invite text (native share sheet)**
 - Invite — "Come play The A&R Room with me 🎧 Rate the drops, read the room, climb the board."
@@ -233,9 +234,33 @@ Surfaces: [Homepage](#1-homepage) · [Play / Voting page](#2-play--voting-page) 
 
 **Photo crop modal** — "Crop your photo" · "Drag to position · slider to zoom" · "Use photo" · "Cancel"
 
+**Notifications section** _(028; profile editor, and the whole page when reached from a message footer)_
+- Eyebrow — "Contact preferences" · Heading — "Notifications"
+- Sub — "Choose how The A&R Room reaches you. Texts are reserved for one thing — a room going live — because that's the only message that can't wait."
+- **Text messages** — pill "On" / "Off"
+  - Phone label — "Mobile number" · hint "Removing your number turns texts off. Your number is never shown publicly or shared. Reply STOP to any text to opt out instantly."
+  - "Text me" · sub "Master switch — off means no texts of any kind"
+  - "A room goes live" · sub "The show is starting now — public and invite-only rooms"
+  - _(consent on, nothing selected)_ "Texts are on, but you haven't picked anything to be texted about."
+  - _(no number)_ error "Add a mobile number first" · _(bad number)_ "That mobile number looks incomplete"
+- **Email** — "Sent to [email]."
+  - "A room goes live" · sub "The show is starting now — public and invite-only rooms"
+  - "Daily update" · sub "Top records, top A&Rs, and what's next"
+  - "Weekly update" · sub "The week's top records and the A&R board"
+  - "Unsubscribe from all email" · sub "Turns off everything above, including room alerts"
+- Button — "Save notifications" · status "Saved ✓"
+- _(from a message footer)_ Eyebrow — "The A&R Room" · contact shown masked ("m•••@email.com", "••• 0143"); phone not editable
+- _(bad link)_ "That link isn't valid — sign in with your email to update your notifications."
+- _(expired link)_ "That link has expired — sign in with your email to update your notifications."
+
 ---
 
 ## 4. Emails & Notifications
+
+**Message footer** _(028; on the go-live email, the recap email, and platform announcements — NOT artist emails)_
+- Email — "You're getting this as a registered A&R of The A&R Room. [Manage your notifications]."
+- Plain text — "Manage your notifications: [url]"
+- SMS — "Reply STOP to opt out. Manage: [url]"
 
 **OTP / login code**
 - Subject — "[code] is your code for [session]"
@@ -252,7 +277,7 @@ Surfaces: [Homepage](#1-homepage) · [Play / Voting page](#2-play--voting-page) 
 - Subhead — "You ranked #[rank] of [total] in [session]. Here's your recap to share."
 - Card captions — "Your Score Card" · "Top 8 Songs" · "Top 8 A&Rs" · "Win $500"
 - Callout — "📲 Post it — and double your reach" · "Post all four as one Instagram carousel. When you upload, add @Makinit4indies as a collaborator — it shows on both feeds. Tag us + use #TheARoom."
-- Footer — "Play again → ANR.makinitmag.com"
+- Footer — "Play again → makinitmag.com/ANR"
 
 **Feedback email (to the operator)** — Subject "A&R Room feedback — [session]"
 

@@ -200,8 +200,8 @@
 <div id="create" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:460px;margin:40px auto 0">
     <h2 id="createTitle">Start a room</h2>
-    <div><label>Room name (shown to players)</label><input id="newName" placeholder="e.g. A&R Room · Friday Night"></div>
-    <div><label>Default voting window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
+    <div><label>Room name (shown to A&amp;Rs)</label><input id="newName" placeholder="e.g. A&R Room · Friday Night"></div>
+    <div><label>Default evaluation window <span class="muted">(minutes, 2–60)</span></label><input id="newMins" type="number" value="5" min="2" max="60" step="1"></div>
     <div>
       <label>Starting round type</label>
       <select id="newPollType" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
@@ -212,7 +212,7 @@
       <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 This room already has rounds — the starting type is set. Change type per round from the round form.</div>
     </div>
     <div id="seriesField">
-      <label>Series <span class="muted">(counts toward this monthly leaderboard)</span></label>
+      <label>Series <span class="muted">(counts toward the monthly rankings)</span></label>
       <select id="newSeries" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
         <option value="">— Unassigned —</option>
       </select>
@@ -230,7 +230,7 @@
       <div style="margin-top:10px">
         <label>Watch link</label><input id="newWatch" placeholder="https://twitch.tv/…">
         <label style="margin-top:10px">Submission link <span class="muted">(where artists submit for this room)</span></label><input id="newSubmit" placeholder="https://…">
-        <label style="margin-top:10px">Lobby message</label><textarea id="newLobby" placeholder="Shown while players wait"></textarea>
+        <label style="margin-top:10px">Lobby message</label><textarea id="newLobby" placeholder="Shown while A&amp;Rs wait"></textarea>
         <label style="margin-top:10px">Venue address <span class="muted">(for check-in; enable enforcement later)</span></label>
         <div class="row" style="gap:6px">
           <input id="newGeoAddr" placeholder="Type the venue address" style="flex:1">
@@ -302,9 +302,9 @@
             <div><label>Artist email</label><input id="rAEmail" type="email" placeholder="for their report card"></div>
             <div><label>Artist phone</label><input id="rAPhone" placeholder="optional"></div>
           </div>
-          <div class="muted" style="font-size:11px;margin-top:4px">Used only for the post-show report card + “you got played” text. Never shown publicly.</div>
+          <div class="muted" style="font-size:11px;margin-top:4px">Used only for the post-session Official Room Report and “your record was evaluated” text. Never shown publicly.</div>
         </div>
-        <div><label>Note for players</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
+        <div><label>Note for A&amp;Rs</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
         <!-- Content pulls live right above the action button — grab, glance, play. -->
         <div id="pullRow" style="display:contents">
           <button class="btn ghost sm hide" id="btnNeroPull" style="margin-bottom:8px">⬇ Pull current song from Nero</button>
@@ -312,7 +312,7 @@
           <button class="btn ghost sm hide" id="btnIngestPull" style="margin-bottom:8px">⬇ Pull latest submission</button>
           <div class="muted hide" id="ingestMsg" style="font-size:12px;margin-bottom:8px"></div>
         </div>
-        <button class="btn" id="btnAddRound">▶ Add &amp; play now</button>
+        <button class="btn" id="btnAddRound">▶ Add &amp; open evaluation</button>
         <div class="err" id="addErr"></div>
       </div>
     </div>
@@ -324,17 +324,17 @@
       <div class="kpi">
         <div><b id="kJoined">0</b><span id="kJoinedLbl">A&amp;Rs</span></div>
         <div><b id="kRound" class="mono">—</b><span id="kRoundLbl">Round</span></div>
-        <div><b id="kVotes">0</b><span id="kVotesLbl">Votes in</span></div>
+        <div><b id="kVotes">0</b><span id="kVotesLbl">Evaluations in</span></div>
       </div>
       <div class="tabbar" style="margin-top:8px">
         <!-- One state-driven tab: live votes while the round is open, results once
              it's tallied — they were never needed at the same time. -->
         <button class="tab on" id="tabRound" data-pane="paneRound">This round <span id="feedCount"></span></button>
-        <button class="tab" id="tabBoard" data-pane="paneBoard">Leaderboard</button>
+        <button class="tab" id="tabBoard" data-pane="paneBoard">Rankings</button>
         <button class="tab" id="tabRounds" data-pane="paneRounds">Rounds</button>
       </div>
       <div id="paneRound">
-        <div class="feed" id="feed"><div class="empty">No votes yet.</div></div>
+        <div class="feed" id="feed"><div class="empty">No evaluations yet.</div></div>
         <div id="reviewBox" class="hide"></div>
       </div>
       <!-- Round history: every song played, with scores + per-round Song Reports -->
@@ -353,7 +353,7 @@
             <button class="btn ghost sm" id="btnExpCsvAnon">CSV (anon)</button>
             <button class="btn ghost sm" id="btnExpJsonAnon">JSON (anon)</button>
           </div>
-          <p class="muted" style="font-size:12px;margin:8px 0 0">Full versions include emails (for your list). Anon versions use “Player 1, 2…” — safe to share for analysis.</p>
+          <p class="muted" style="font-size:12px;margin:8px 0 0">Full versions include email addresses for your list. Anonymous versions use “A&amp;R 1, A&amp;R 2…” and are safe to share for analysis.</p>
         </div>
       </div>
     </div>
@@ -387,7 +387,7 @@
           <button class="btn ghost sm" id="wuArs">Top 8 A&amp;Rs</button>
           <button class="btn ghost sm" id="wuSongs">Top 8 Songs</button>
         </div>
-        <div class="muted" style="font-size:12px;margin-top:6px">Recap emails carry each A&amp;R’s score card + the Top 8 graphics. Data exports live on the Leaderboard tab.</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Recap emails include each A&amp;R’s session record plus the Top 8 graphics. Data exports are available on the Rankings tab.</div>
 
         <!-- Post-show artist workflow: report cards out, post kit into Asana. -->
         <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
@@ -396,7 +396,7 @@
           <div class="row" style="gap:6px;flex-wrap:wrap">
             <button class="btn good sm" id="anSend">📨 Send artist notices</button>
           </div>
-          <div class="muted" style="font-size:12px;margin-top:6px">Emails the full 3-page report card + the replay link. Texts queue and only send 10 AM–8 PM ET. Missing contact? Add it on the round in the <b>Rounds</b> tab.</div>
+          <div class="muted" style="font-size:12px;margin-top:6px">Emails the full 3-page report card + the replay link. Texts queue and only send 10 AM–10:30 PM ET. Missing contact? Add it on the round in the <b>Rounds</b> tab.</div>
         </div>
 
         <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
@@ -431,7 +431,7 @@
       <h2>Event tools</h2>
       <!-- Broadcast (host-gated by the 'broadcast' perm) -->
       <div id="bcBlock">
-      <label>Broadcast a message to everyone <span class="muted">(pops on all player screens)</span></label>
+      <label>Broadcast a message to everyone <span class="muted">(appears on every A&amp;R screen)</span></label>
       <textarea id="bcInput" placeholder="e.g. The Versus round is running 10 min late — we'll spin some indie until it kicks off"></textarea>
       <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:500;cursor:pointer">
         <input type="checkbox" id="bcOverlay" style="width:auto;margin:0">
@@ -459,7 +459,7 @@
     </div>
 
     <div class="card" id="adsCard">
-      <h2>Ads <span class="muted" style="font-size:12px;text-transform:none;letter-spacing:0">· shown in the lobby, during voting, and on the locked screen</span></h2>
+      <h2>Ads <span class="muted" style="font-size:12px;text-transform:none;letter-spacing:0">· shown in the lobby, during evaluation, and on the submitted screen</span></h2>
       <div id="adsBox"></div>
       <button class="btn ghost sm" id="btnAdUploadToggle" style="margin-top:10px;width:100%">＋ Upload a banner</button>
       <div class="hide" id="adUploadWrap" style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
@@ -486,7 +486,7 @@
 <!-- Sticky round mini-bar: keeps the live round controllable once the round card is
      scrolled away (especially mid-page on a phone). Click = jump back to the round. -->
 <div id="miniBar" class="hide" title="Jump to the round">
-  <span class="pill live" id="mbStatus" style="font-size:12px">● Voting</span>
+  <span class="pill live" id="mbStatus" style="font-size:12px">● Evaluation open</span>
   <span id="mbTitle" style="font-weight:600;font-size:13px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
   <span class="mono" id="mbTimer" style="font-weight:700;color:var(--signal);font-size:13px"></span>
   <span class="muted mono" id="mbVotes" style="font-size:12px"></span>
@@ -498,18 +498,18 @@
     <h2>Edit room</h2>
     <div class="stack" style="margin-top:10px">
       <div><label>Room name</label><input id="editName" placeholder="Room name"></div>
-      <div><label>Scheduled start <span class="muted">(Eastern Time — players see a countdown while the room is Upcoming; leave empty for none)</span></label>
+      <div><label>Scheduled start <span class="muted">(Eastern Time—A&amp;Rs see a countdown while the room is Upcoming; leave empty for none)</span></label>
         <input id="seSched" type="datetime-local"></div>
       <div class="row">
-        <div><label>Voting window <span class="muted">(min, 2–60)</span></label><input id="seMins" type="number" min="2" max="60" step="1"></div>
-        <div><label>Game type <span class="muted">(set at creation)</span></label>
+        <div><label>Evaluation window <span class="muted">(min, 2–60)</span></label><input id="seMins" type="number" min="2" max="60" step="1"></div>
+        <div><label>Evaluation format <span class="muted">(set at creation)</span></label>
           <div id="seType" class="mono" style="font-size:13px;color:var(--ink-dim);border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:var(--inset)">—</div></div>
       </div>
       <div id="seSeriesRow" class="hide"><label>Series <span class="muted">(the monthly board this room counts toward)</span></label>
         <select id="seSeries" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px"></select></div>
-      <div><label>Description <span class="muted">(players see this while they wait)</span></label>
+      <div><label>Description <span class="muted">(A&amp;Rs see this while they wait)</span></label>
         <textarea id="cfgLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea></div>
-      <div><label>Watch link <span class="muted">(stream URL shown to players)</span></label>
+      <div><label>Watch link <span class="muted">(stream URL shown to A&amp;Rs)</span></label>
         <input id="cfgWatch" placeholder="https://…"></div>
       <div><label>Submission link <span class="muted">(where artists submit; a nero.fan/…/live link enables “Pull from Nero”)</span></label>
         <input id="cfgSubmit" placeholder="https://…"></div>
@@ -519,18 +519,18 @@
           <option value="public">Public — featured on the homepage when live</option>
           <option value="unlisted">Unlisted — only people with the link or QR</option>
         </select>
-        <label style="margin-top:10px">Room code <span class="muted">(optional — players must enter it to join)</span></label>
+        <label style="margin-top:10px">Room code <span class="muted">(optional—A&amp;Rs must enter it to join)</span></label>
         <input id="cfgAccessCode" placeholder="e.g. VIP2026 — leave empty for open join" maxlength="24" autocomplete="off" style="text-transform:uppercase">
-        <div class="muted" style="font-size:12px;margin-top:6px">Unlisted + a room code = a private, invite-only room. Anyone already in keeps playing; the code guards new joins.</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Unlisted + a room code = a private, invite-only room. Current A&amp;Rs remain active; the code controls new access.</div>
       </div>
       <div style="border-top:1px solid var(--line);padding-top:12px">
         <label>Location check-in</label>
         <select id="geoMode" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
           <option value="off">Off — no location required</option>
           <option value="optional">Optional — check in as in-room or remote (dual pool)</option>
-          <option value="required">Required — must be at the venue to vote</option>
+          <option value="required">Required — A&amp;Rs must be at the venue to participate</option>
         </select>
-        <div class="muted" style="font-size:12px;margin-top:6px">Off = anyone can vote from anywhere. Turn it on to set the venue — players check in at their first lock-in.</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">Off = A&amp;Rs can participate from anywhere. Turn it on to set the venue; A&amp;Rs check in before their first submitted evaluation.</div>
         <!-- venue fields only exist for a mode that uses them -->
         <div id="geoFields" class="hide">
           <label style="margin-top:12px">Venue address</label>
@@ -587,7 +587,7 @@
         <button class="btn" id="btnSeriesSave">Create series</button>
         <button class="btn ghost sm hide" id="btnSeriesNew">+ New series instead</button>
         <div class="err" id="seriesErr"></div>
-        <p class="hint"><b>Qualify count is per-series</b> — a small month can cut at 4, a big one at 8. It drives the leaderboard cut line. Dates &amp; target are labels only; membership is the tag (set it on each room in your room list).</p>
+        <p class="hint"><b>Qualification count is set per series</b>—a smaller month may cut at 4; a larger one at 8. It establishes the rankings qualification line. Dates and targets are labels; series membership comes from the tag assigned to each room.</p>
       </div>
     </div>
   </div>
@@ -604,7 +604,7 @@
         <button class="btn good" id="btnCloseSeries">Close series</button>
         <button class="btn ghost" id="btnExportSeries" style="flex:0 0 auto">Export</button>
       </div>
-      <p class="note"><b>No "locking" needed.</b> The board only moves when a tagged room gets new votes — once the month's rooms are done, the top N are already final. <b>Close series</b> is just a status flip; the qualifiers are read live off the standings.</p>
+      <p class="note"><b>No locking is required.</b> The rankings move only when a tagged room receives eligible evaluations. When the month's sessions end, the top N are final. <b>Closing a series</b> changes its status; qualifiers remain calculated from the rankings.</p>
     </div>
   </div>
 </div>
@@ -664,14 +664,14 @@
       <label>House submission link <span class="muted">(fallback for the Submit QR + homepage when a room has none)</span></label>
       <input id="plSubmitUrl" placeholder="https://www.makinitmag.com/review">
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
-        <label>Revive ad server <span class="muted">(shows in the play-page ad slot when a room has no banner of its own; clear the URL to turn off)</span></label>
+        <label>Revive ad server <span class="muted">(appears in the live-evaluation ad slot when a room has no banner of its own; clear the URL to turn it off)</span></label>
         <input id="plReviveUrl" placeholder="https://…/www/delivery">
         <div class="row" style="margin-top:8px">
           <div><label>Lobby zone ID</label><input id="plReviveLobby" type="number" min="1" placeholder="zone id"></div>
-          <div><label>In-game zone ID</label><input id="plReviveGame" type="number" min="1" placeholder="zone id"></div>
+          <div><label>Evaluation zone ID</label><input id="plReviveGame" type="number" min="1" placeholder="zone id"></div>
         </div>
         <div id="plReviveStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
-        <p class="muted" style="font-size:11px;margin:8px 0 0">320×100 iframe zones. Rotation: ~30s in the lobby, ~60s during gameplay. Room banners always win over network ads.</p>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">320×100 iframe zones. Rotation: about 30 seconds in the lobby and 60 seconds during evaluations. Room banners take priority over network ads.</p>
       </div>
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
         <label>Asana post task <span class="muted">(target project for the post-kit task)</span></label>
@@ -696,6 +696,15 @@
       <button class="btn ghost" id="nbSend" style="margin-top:12px;width:100%">Send announcement</button>
       <div class="muted" id="nbStatus" style="font-size:12px;margin-top:8px"></div>
       <div class="err" id="nbErr"></div>
+    </div>
+    <div class="card">
+      <h2>Notification audience</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">Who would actually receive each alert right now, after opt-outs. A&amp;Rs choose these when they register and in their A&amp;R record.</p>
+      <table class="data-table" id="ntTable"><tbody><tr><td class="muted">Loading…</td></tr></tbody></table>
+      <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px;font-size:12px" class="muted">
+        Manage links: <span id="ntLinks" class="mono">—</span><br>
+        <span id="ntExplicit">—</span> A&amp;Rs have set their own preferences · <span id="ntOptOut">—</span> unsubscribed from all email
+      </div>
     </div>
     <div class="card">
       <h2>SMS test</h2>
@@ -766,7 +775,7 @@
     <div class="stack" style="margin-top:8px">
       <div><label>Default watch link</label><input id="hdWatch" placeholder="https://www.youtube.com/@you/live"></div>
       <div><label>Default submission link</label><input id="hdSubmit" placeholder="https://…"></div>
-      <div><label>Default description <span class="muted">(players see this while they wait)</span></label>
+      <div><label>Default description <span class="muted">(A&amp;Rs see this while they wait)</span></label>
         <textarea id="hdLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea></div>
       <div style="border-top:1px solid var(--line);padding-top:12px">
         <label>Default banner <span class="muted">(auto-assigned to rooms you create)</span></label>
@@ -804,8 +813,8 @@
     <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim);margin:0 0 14px">The A&amp;R Room is your free engagement tool. Three steps:</p>
     <ol class="host-intro">
       <li><b>Create a room.</b> Use <b>New room</b> to spin up a room for your stream — pick 0–9 rating or Versus (A/B).</li>
-      <li><b>Share your links.</b> Give viewers the <b>Play</b> link to vote, and drop the <b>Overlay</b> onto your broadcast for the live results.</li>
-      <li><b>Promote the $500.</b> Tell your audience the top A&amp;Rs each month win <b>$500 cash</b> — that's the hook that keeps them voting.</li>
+      <li><b>Share your links.</b> Give viewers the <b>Entry</b> link to participate and add the <b>Overlay</b> to your broadcast for live results.</li>
+      <li><b>Present the $500 as the monthly A&amp;R Award.</b> Top A&amp;Rs in the monthly rankings qualify for <b>A&amp;R Wars</b>, where the champion earns it.</li>
     </ol>
     <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:12px 0 14px">You manage only your own rooms. Viewer contact info stays with Makin' It.</p>
     <button class="btn" id="hostIntroGo" style="width:100%">Got it — let's go</button>
@@ -827,19 +836,19 @@
           </div>
         </div>
         <label class="ob-row"><input type="checkbox" id="obStable"><span><b>Stable link</b><small>follows my current/next room — set it in OBS once, reuse every week</small></span></label>
-        <label class="ob-row"><input type="checkbox" id="obSong" checked><span><b>Now playing</b><small>current song / matchup card</small></span></label>
-        <label class="ob-row"><input type="checkbox" id="obTimer" checked><span><b>Vote timer</b><small>countdown on the card</small></span></label>
-        <label class="ob-row"><input type="checkbox" id="obBoard" checked><span><b>Leaderboard</b><small>pops in for a few seconds after each win</small></span>
+        <label class="ob-row"><input type="checkbox" id="obSong" checked><span><b>Now evaluating</b><small>current record / matchup card</small></span></label>
+        <label class="ob-row"><input type="checkbox" id="obTimer" checked><span><b>Evaluation timer</b><small>countdown on the card</small></span></label>
+        <label class="ob-row"><input type="checkbox" id="obBoard" checked><span><b>Rankings</b><small>appear briefly after each round</small></span>
           <span class="ob-nums"><input type="number" id="obRows" min="1" max="8" value="3"><small>rows</small><input type="number" id="obSecs" min="2" max="120" value="10"><small>sec</small></span></label>
         <div class="ob-opt" id="obScopeOpt">
-          <div class="ob-t">Leaderboard shows <span class="muted">(round = latest ratified round)</span></div>
+          <div class="ob-t">Rankings show <span class="muted">(round = latest ratified round)</span></div>
           <div class="ob-seg" id="obScope">
             <button data-v="room" class="on">This room</button>
             <button data-v="round">This round</button>
             <button data-v="series">Series</button>
           </div>
         </div>
-        <label class="ob-row"><input type="checkbox" id="obQr" checked><span><b>Join QR</b><small>“Scan to Win $500” join code</small></span></label>
+        <label class="ob-row"><input type="checkbox" id="obQr" checked><span><b>Join QR</b><small>“Join the A&amp;R Team” code</small></span></label>
         <label class="ob-row"><input type="checkbox" id="obHeader" checked><span><b>Header</b><small>“The A&amp;R Room” brand label on the card</small></span></label>
         <div class="ob-opt">
           <div class="ob-t">Panel opacity <span class="muted" id="obPanelVal">92%</span></div>
@@ -863,10 +872,10 @@
           <label>Individual elements <span class="muted">(one OBS source each — place them around the platform's chat/buttons)</span></label>
           <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
             <button class="btn ghost sm" data-el="header" style="flex:1">Copy: Header + QRs</button>
-            <button class="btn ghost sm" data-el="song" style="flex:1">Copy: Now playing</button>
-            <button class="btn ghost sm" data-el="board" style="flex:1">Copy: Leaderboard</button>
+            <button class="btn ghost sm" data-el="song" style="flex:1">Copy: Now evaluating</button>
+            <button class="btn ghost sm" data-el="board" style="flex:1">Copy: Rankings</button>
           </div>
-          <p class="muted" style="font-size:11px;margin:8px 0 0">“Now playing” includes the winner reveal and host announcements — they share that slot.</p>
+          <p class="muted" style="font-size:11px;margin:8px 0 0">“Now evaluating” includes the round-leader reveal and host announcements because they share that slot.</p>
         </div>
       </div>
     </div>
@@ -887,7 +896,7 @@
         <div><label>Song B title *</label><input id="eBTitle"></div>
         <div style="margin-top:10px"><label>Song B artist</label><input id="eBArtist"></div>
       </div>
-      <div><label>Note for players</label><textarea id="eNote"></textarea></div>
+      <div><label>Note for A&amp;Rs</label><textarea id="eNote"></textarea></div>
       <div class="row">
         <button class="btn ghost" id="eCancel">Cancel</button>
         <button class="btn good" id="eSave">Save changes</button>
@@ -919,7 +928,7 @@
 <div id="goliveModal" class="modal-scrim" style="z-index:30">
   <div class="card" style="max-width:440px;width:100%">
     <h2>Go live?</h2>
-    <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)">Opens <b id="glName" style="color:var(--ink)"></b> for voting and notifies your registered A&amp;Rs on the channels you pick.</p>
+    <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim)">Opens <b id="glName" style="color:var(--ink)"></b> for evaluation and notifies registered A&amp;Rs through the channels you select.</p>
     <div style="margin:12px 0 2px">
       <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;cursor:pointer"><input type="checkbox" id="glEmail" checked style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>Email</span></label>
       <label style="display:flex;align-items:center;gap:9px;padding:9px 0;font-size:15px;cursor:pointer"><input type="checkbox" id="glSms" checked style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:0"> <span>SMS <span class="muted" style="font-size:12px">(only A&amp;Rs who opted in)</span></span></label>
@@ -931,6 +940,21 @@
       <button class="btn ghost" id="glCancel" style="flex:0 0 auto">Cancel</button>
     </div>
     <div class="err" id="glErr"></div>
+  </div>
+</div>
+
+<!-- RESEND ARTIST NOTICE (one round) — confirm + choose channels -->
+<div id="resendModal" class="modal-scrim" style="z-index:30">
+  <div class="card" style="max-width:440px;width:100%">
+    <h2 id="rsTitle" style="font-size:18px;letter-spacing:-.01em;text-transform:none;color:var(--ink)">Resend this report?</h2>
+    <p class="muted" id="rsIntro" style="font-size:13px;line-height:1.6;color:var(--ink-dim)"></p>
+    <div style="margin:12px 0 2px" id="rsChannels"></div>
+    <div id="rsWindow" class="hide" style="font-size:12px;line-height:1.55;color:var(--gold);background:rgba(245,197,24,.08);border:1px solid rgba(245,197,24,.35);border-radius:10px;padding:9px 11px;margin-top:10px"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn good" id="rsConfirm">Resend</button>
+      <button class="btn ghost" id="rsCancel" style="flex:0 0 auto">Cancel</button>
+    </div>
+    <div class="err" id="rsErr"></div>
   </div>
 </div>
 
@@ -997,6 +1021,7 @@ document.querySelectorAll('.tabbar .tab').forEach(t=>t.addEventListener('click',
 // button on each ratified rating round (the paid artist product works after the
 // show, not just on the freshest round).
 let ROUNDS_CACHE=[]; // last /api/admin/rounds payload — feeds the inline edit form
+let SMS_WINDOW=null; // artist-text quiet hours, straight from the server (never hardcoded here)
 let COMMENTS_CACHE=[]; // last /api/admin/comments payload — every A&R comment in this room
 async function loadRounds(){
   const box=$('#roundsList'); if(!box)return;
@@ -1009,8 +1034,9 @@ async function loadRounds(){
       api('/api/admin/comments?sessionId='+encodeURIComponent(SID),null,'GET').catch(()=>({comments:[]})),
     ]);
     COMMENTS_CACHE=cd.comments||[];
+    SMS_WINDOW=d.smsWindow||null;
     const rounds=(d.rounds||[]).filter(r=>r.status!=='pending').reverse(); // queued songs live in the queue card
-    if(!rounds.length){box.innerHTML='<div class="empty">No rounds played yet.</div>';return;}
+    if(!rounds.length){box.innerHTML='<div class="empty">No evaluation rounds completed yet.</div>';return;}
     box.innerHTML=rounds.map(r=>{
       const isVs=(r.poll_type==='binary')||!!r.option_b_title;
       const title=isVs?esc(r.song_title)+' vs '+esc(r.option_b_title):esc(r.song_title);
@@ -1018,7 +1044,7 @@ async function loadRounds(){
         ? (isVs ? (r.split_a!=null?Math.round(r.split_a)+'% A':'—') : (r.room_average!=null?(+r.room_average).toFixed(1):'—'))
         : '—';
       const pill=r.status==='ratified'?'<span class="pill done">Ratified</span>'
-        :r.status==='voting'?'<span class="pill live">● Voting</span>'
+        :r.status==='voting'?'<span class="pill live">● Evaluation open</span>'
         :'<span class="pill closed">Tallying</span>';
       // Row controls are icon-only: the song title is the thing worth horizontal space,
       // and each extra labelled button squeezed it down toward an ellipsis.
@@ -1038,6 +1064,20 @@ async function loadRounds(){
         :hasContact
           ?`<span title="Contact on file — ${[r.artist_email?'email':null,r.artist_phone?'phone':null].filter(Boolean).join(' + ')}" style="flex:none">${r.artist_email?'✉':''}${r.artist_phone?'📱':''}</span>`
           :`<span title="No artist contact — they won’t get their report card. Click ✎ to add it." style="flex:none;color:var(--gold)">⚠</span>`;
+      // Per-round send/resend. The room-wide queue can't re-send a round it already sent,
+      // so this is the only way to fix a typo'd address or retry a bounce. Only shown
+      // where a report is actually deliverable AND there's somewhere to send it.
+      const nse=(r.notice&&r.notice.email)||null, nss=(r.notice&&r.notice.sms)||null;
+      const anySent=(nse&&nse.status==='sent')||(nss&&nss.status==='sent');
+      const anyFailed=(nse&&nse.status==='failed')||(nss&&nss.status==='failed');
+      const noticeTitle=anyFailed
+        ? 'Last send FAILED: '+((nse&&nse.error)||(nss&&nss.error)||'unknown')+' — click to retry'
+        : anySent ? 'Report sent '+fmtSentAt(nse&&nse.at||nss&&nss.at)+' — click to resend'
+        : 'Not sent yet — click to send this artist their report';
+      const noticeStyle=anyFailed?';border-color:var(--hot);color:var(--hot)'
+        :anySent?';border-color:var(--signal);color:var(--signal)':'';
+      const notice=(wantsContact&&hasContact)
+        ?`<button class="btn ghost sm" style="padding:6px 9px${noticeStyle}" onclick="event.stopPropagation();openResend('${r.id}')" title="${esc(noticeTitle)}">📨</button>`:'';
       // Ratified rounds expand to their full results on click.
       const canExpand=r.status==='ratified';
       return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #241d3d${canExpand?';cursor:pointer':''}"${canExpand?` onclick="toggleRoundResults('${r.id}')" title="Show results"`:''}>
@@ -1049,12 +1089,15 @@ async function loadRounds(){
         ${contactChip}
         ${pill}
         <span class="mono" style="color:var(--signal);width:34px;text-align:right;flex:none">${score}</span>
-        <span class="muted" style="font-size:12px;width:52px;text-align:right;flex:none">${r.votes}&nbsp;vote${r.votes==1?'':'s'}</span>
+        <!-- 92px, not 52px: "evaluations" is far longer than the "votes" this replaced. -->
+        <span class="muted" style="font-size:12px;width:92px;text-align:right;flex:none">${r.votes}&nbsp;evaluation${r.votes==1?'':'s'}</span>
         ${cmt}
         ${report}
+        ${notice}
         ${edit}
         ${canExpand?'<span class="muted" style="flex:none">▾</span>':''}
       </div>
+      <div id="rsend-${r.id}" class="hide" style="font-size:12.5px;padding:2px 0 10px 34px"></div>
       <div id="redit-${r.id}" class="hide" style="padding:0 0 12px"></div>
       <div id="rcmt-${r.id}" class="hide" style="padding:0 0 12px"></div>
       ${canExpand?`<div id="rres-${r.id}" class="hide" style="padding:4px 0 14px"></div>`:''}`;
@@ -1175,7 +1218,7 @@ window.toggleRoundEdit=(rid)=>{
       <button class="btn ghost sm" onclick="toggleRoundEdit('${rid}')">Cancel</button>
     </div>
     <div class="err" id="ed-err-${rid}" style="margin-top:8px"></div>
-    <div class="muted" style="font-size:11px;margin-top:8px">${r.status==='ratified'?'Ratified round: details + contact are editable — votes, score and points are locked.':'Players see the update on their next poll.'}</div>
+    <div class="muted" style="font-size:11px;margin-top:8px">${r.status==='ratified'?'Ratified round: details and contact are editable—evaluations, score, and points are locked.':'A&Rs see the update on their next refresh.'}</div>
   </div>`;
   document.getElementById('ed-title-'+rid).focus();
 };
@@ -1192,6 +1235,73 @@ window.saveRoundEdit=async(rid,btn)=>{
     await loadRounds();
     if(typeof refreshArtistNotices==='function')refreshArtistNotices(); // contact may have changed reachability
   }catch(e){err.textContent=e.message;btn.disabled=false;btn.textContent=old;}
+};
+
+// ---- Per-round artist notice: send, or RE-send after a bounce / a corrected address ----
+// The room-wide "Send artist notices" queue is idempotent by design, so it can never
+// re-send a round that already went out. This is the escape hatch for one artist.
+function fmtSentAt(ms){ return ms?fmtET(ms,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):''; }
+function maskNum(p){ const d=String(p||'').replace(/\D/g,''); return d.length>=4?'••• '+d.slice(-4):'the number on file'; }
+let RESEND_RID=null;
+window.openResend=(rid)=>{
+  const r=ROUNDS_CACHE.find(x=>x.id===rid); if(!r)return;
+  RESEND_RID=rid;
+  const nse=(r.notice&&r.notice.email)||null, nss=(r.notice&&r.notice.sms)||null;
+  const everSent=(nse&&nse.status==='sent')||(nss&&nss.status==='sent');
+  $('#rsTitle').textContent=everSent?'Resend this report?':'Send this report?';
+  $('#rsConfirm').textContent=everSent?'Resend':'Send';
+  $('#rsErr').textContent='';
+  const who=r.song_artist?`<b style="color:var(--ink)">${esc(r.song_artist)}</b>`:'this artist';
+  $('#rsIntro').innerHTML=everSent
+    ? `Sends ${who} the full Room Report for <b style="color:var(--ink)">“${esc(r.song_title||'this record')}”</b> again. The report is rebuilt from the current results, so any comments you've shared since will be included.`
+    : `Sends ${who} the full Room Report for <b style="color:var(--ink)">“${esc(r.song_title||'this record')}”</b> — the results pages, the replay link, and posting instructions.`;
+  // Both channels that have contact are ticked: a resend repeats what the artist was
+  // originally sent. Untick either to send just the other.
+  const line=(id,label,dest,st,extra)=>{
+    const has=!!dest;
+    const sub=!has?'<span class="muted" style="font-size:12px">— no '+extra+' on file</span>'
+      :st&&st.status==='sent'?`<br><span class="muted" style="font-size:12px">Sent ${fmtSentAt(st.at)}</span>`
+      :st&&st.status==='failed'?`<br><span style="font-size:12px;color:var(--hot)">Last attempt failed: ${esc(st.error||'unknown')}</span>`
+      :'<br><span class="muted" style="font-size:12px">Not sent yet</span>';
+    return `<label style="display:flex;align-items:flex-start;gap:9px;padding:9px 0;font-size:15px;cursor:${has?'pointer':'default'}${has?'':';opacity:.45'}">
+      <input type="checkbox" id="${id}" ${has?'checked':'disabled'} style="width:17px;height:17px;flex:0 0 auto;padding:0;margin:2px 0 0">
+      <span>${label} ${has?`<span class="mono" style="font-size:12px;color:var(--ink-dim)">${esc(dest)}</span>`:''}${sub}</span></label>`;
+  };
+  $('#rsChannels').innerHTML=
+    line('rsEmail','Email',r.artist_email||'',nse,'email')+
+    line('rsSms','Text',r.artist_phone?maskNum(r.artist_phone):'',nss,'number');
+  // Quiet hours are a TCPA constraint, not a preference — say so before they click, so a
+  // held text doesn't read as a failure. The window comes from the server (see
+  // /api/admin/rounds) so the client never carries its own copy of the hours.
+  const w=$('#rsWindow'), win=SMS_WINDOW||{open:true};
+  const showWarn=!!r.artist_phone&&!win.open;
+  w.classList.toggle('hide',!showWarn);
+  if(showWarn)w.textContent=`Texts only send ${win.from||'10 AM ET'}–${win.to||'10:30 PM ET'}, so the text queues and goes out on its own once the window opens. Email sends right now.`;
+  $('#resendModal').style.display='flex';
+};
+$('#rsCancel').onclick=()=>{$('#resendModal').style.display='none';};
+$('#rsConfirm').onclick=async()=>{
+  const rid=RESEND_RID; if(!rid)return;
+  const wantEmail=!!($('#rsEmail')&&$('#rsEmail').checked), wantSms=!!($('#rsSms')&&$('#rsSms').checked);
+  $('#rsErr').textContent='';
+  if(!wantEmail&&!wantSms){$('#rsErr').textContent='Pick at least one channel.';return;}
+  const btn=$('#rsConfirm'),old=btn.textContent; btn.disabled=true; btn.textContent='Sending…';
+  try{
+    const d=await api('/api/admin/session/artist-notices/resend',{sessionId:SID,roundId:rid,email:wantEmail,sms:wantSms});
+    $('#resendModal').style.display='none';
+    const bits=[];
+    if(d.email)bits.push(d.email.ok?{ok:1,t:'Report sent to '+d.email.dest}:{ok:0,t:d.email.error});
+    if(d.sms)bits.push(d.sms.held?{ok:1,t:'Text queued — '+(d.sms.label||'sends in the morning')}
+      :d.sms.ok?{ok:1,t:'Text sent'}:{ok:0,t:'Text failed: '+(d.sms.error||'unknown')});
+    await loadRounds();               // repaint the button in its new state
+    const box=document.getElementById('rsend-'+rid);
+    if(box){
+      box.classList.remove('hide');
+      box.innerHTML=bits.map(b=>`<div style="color:${b.ok?'var(--signal)':'var(--hot)'}">${b.ok?'✓':'✗'} ${esc(b.t)}${b.ok?'':' — check the address with ✎ and try again'}</div>`).join('');
+    }
+    if(typeof refreshArtistNotices==='function')refreshArtistNotices();
+  }catch(e){ $('#rsErr').textContent=e.message; }
+  btn.disabled=false; btn.textContent=old;
 };
 
 // Click-to-expand results for any past ratified round (fetched on demand).
@@ -1611,6 +1721,7 @@ async function openPlatform(){
       $('#nbEmailCount').textContent='('+a.email+')';
       $('#nbSmsCount').textContent='('+a.sms+' opted in)';
     }).catch(()=>{});
+    plNotifyTopics();
     const bs=d.banners||[];
     box.innerHTML=bs.length?bs.map(b=>`
       <div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">
@@ -1626,13 +1737,34 @@ async function openPlatform(){
       </div>`).join(''):'<div class="empty">No banners yet — upload one below.</div>';
   }catch(e){ box.innerHTML='<div class="err">'+esc(e.message)+'</div>'; }
 }
+// Subscription readout (028). This is the acceptance evidence for a feature whose whole
+// point is plumbing: before any digest sender exists, this is how the operator sees that
+// A&Rs are actually subscribing (and unsubscribing).
+async function plNotifyTopics(){
+  const tb=$('#ntTable').querySelector('tbody');
+  try{
+    const d=await api('/api/admin/notify/topics',null,'GET');
+    tb.innerHTML='<tr><th>Alert</th><th class="num">Email</th><th class="num">SMS</th></tr>'+
+      (d.topics||[]).map(t=>{
+        const cell=ch=>t.channels[ch]?`<td class="num">${t.channels[ch].count}</td>`:'<td class="num muted">—</td>';
+        return `<tr><td>${esc(t.label)}</td>${cell('email')}${cell('sms')}</tr>`;
+      }).join('');
+    const lk=$('#ntLinks');
+    lk.style.color=d.manageLinksConfigured?'var(--signal)':'var(--gold)';
+    lk.textContent=d.manageLinksConfigured
+      ? 'ON — emails carry a one-click manage/unsubscribe link'
+      : 'OFF — set NOTIFY_LINK_SECRET; until then footers link to the sign-in page';
+    $('#ntExplicit').textContent=d.withExplicitPrefs;
+    $('#ntOptOut').textContent=d.emailOptedOut;
+  }catch(e){ tb.innerHTML='<tr><td class="err">'+esc(e.message)+'</td></tr>'; }
+}
 // Unambiguous ON/OFF readout — placeholder ghost-text once masqueraded as saved zones.
 function plReviveStatus(st){
   const el=$('#plReviveStatus'); if(!el)return;
   const on=!!(st.reviveDeliveryUrl&&(st.reviveZoneLobby||st.reviveZoneGame));
   el.style.color=on?'var(--signal)':'var(--gold)';
   el.textContent=on
-    ?`Network ads: ON — lobby zone ${st.reviveZoneLobby||st.reviveZoneGame}, in-game zone ${st.reviveZoneGame||st.reviveZoneLobby}`
+    ?`Network ads: ON—lobby zone ${st.reviveZoneLobby||st.reviveZoneGame}, evaluation zone ${st.reviveZoneGame||st.reviveZoneLobby}`
     :'Network ads: OFF — needs the delivery URL AND at least one zone id (typed, not the grey hint text).';
 }
 // Same unambiguous ON/OFF readout as Revive — the token lives in env, so the panel can
@@ -1770,7 +1902,7 @@ window.toggleGiveaway=async(uid,on)=>{try{await api('/api/admin/users/giveaway',
 ['uStatus','uSkill','uSkillMode','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
 // delete-user modal (type-name confirm)
 let udState={id:null,name:''};
-window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='Permanently delete <b style="color:var(--ink)">'+esc(name)+'</b> — their account, participations, and votes. This changes any leaderboard that counted them and can’t be undone.';$('#udName').textContent=name;$('#udConfirm').value='';$('#udDelete').disabled=true;$('#udErr').textContent='';$('#userDelModal').style.display='flex';};
+window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='Permanently delete <b style="color:var(--ink)">'+esc(name)+'</b>, including their account, participation history, and evaluations. This changes any rankings that included them and cannot be undone.';$('#udName').textContent=name;$('#udConfirm').value='';$('#udDelete').disabled=true;$('#udErr').textContent='';$('#userDelModal').style.display='flex';};
 $('#udConfirm').oninput=function(){$('#udDelete').disabled=this.value!==udState.name;};
 $('#udCancel').onclick=()=>{$('#userDelModal').style.display='none';};
 $('#udDelete').onclick=async()=>{$('#udErr').textContent='';try{await api('/api/admin/users/delete',{uid:udState.id,confirmName:$('#udConfirm').value});$('#userDelModal').style.display='none';await loadUsers();}catch(e){$('#udErr').textContent=e.message;}};
@@ -1793,7 +1925,7 @@ function anDate(ms){ if(!ms)return '—'; try{return new Date(Number(ms)).toLoca
 function renderAnalytics(d){
   const o=d.overview, box=$('#anBody');
   $('#anRange').textContent=o.shows?('· '+o.shows+' shows'):'';
-  if(!o.shows){box.innerHTML='<div class="empty">No shows with votes yet.</div>';return;}
+  if(!o.shows){box.innerHTML='<div class="empty">No sessions with eligible evaluations yet.</div>';return;}
   const kpi=(n,l,hero)=>`<div class="kpi${hero?' hero':''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   const kpis=`<div class="kpis">
     ${kpi(o.shows,'Shows')}
@@ -1806,18 +1938,18 @@ function renderAnalytics(d){
   // retention histogram
   const maxc=Math.max(1,...d.retention.histogram.map(h=>h.count));
   const bars=d.retention.histogram.map(h=>`<div class="bar"><span>${h.shows} show${h.shows>1?'s':''}</span><div class="track"><div class="fill${h.shows>=2?' sig':''}" style="width:${Math.round(h.count/maxc*100)}%"></div></div><span class="v">${h.count}</span></div>`).join('');
-  const ret=`<h3 style="margin:22px 0 8px">Retention <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— shows each A&amp;R played · ${o.returningARs}/${o.uniqueARs} came back for 2+</span></h3><div class="bars">${bars}</div>`;
+  const ret=`<h3 style="margin:22px 0 8px">Retention <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— sessions completed by each A&amp;R · ${o.returningARs}/${o.uniqueARs} returned for 2+</span></h3><div class="bars">${bars}</div>`;
   // per-show table
   const rows=d.shows.map(s=>`<tr title="${esc(s.name)}"><td>${anDate(s.date)}${s.pollType==='binary'?' ⚔️':''}</td><td>${s.registered}</td><td>${s.active}</td><td>${s.activationPct==null?'—':s.activationPct+'%'}</td><td>${s.votes}</td><td>${s.rounds}</td><td>${s.avgPerRound}</td><td>${s.depth}</td><td>${s.firstThird}→${s.lastThird}</td><td>${s.creditedReferrals||''}</td></tr>`).join('');
   const tbl=`<h3 style="margin:22px 0 8px">Per-show</h3><div class="an-tblwrap"><table>
-    <thead><tr><th>Show</th><th>Reg</th><th>Active</th><th>Act%</th><th>Votes</th><th>Rds</th><th>Avg/rd</th><th>Depth</th><th>Fill 1st→last</th><th>Refs</th></tr></thead>
+    <thead><tr><th>Session</th><th>Reg</th><th>Active</th><th>Act%</th><th>Evaluations</th><th>Rounds</th><th>Avg/round</th><th>Depth</th><th>First→last</th><th>Refs</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
   // accuracy
   const a=d.accuracy, T=a.total||1;
   const seg=[['bullseye','#f5c518','Bullseye'],['sharp','#4bb749','Sharp'],['close','#6d5fe0','Close'],['off','#4a4470','Off'],['wayoff','#ff5d6c','Way off']];
   const accBar=`<div class="acc">${seg.map(([k,c])=>{const pct=a[k]/T*100;return pct>0?`<span style="width:${pct}%;background:${c}">${pct>=7?Math.round(pct)+'%':''}</span>`:'';}).join('')}</div>
     <div class="acclegend">${seg.map(([k,c,l])=>`<span><i class="dotc" style="background:${c}"></i>${l} <b>${a[k]}</b> · ${Math.round(a[k]/T*100)}%</span>`).join('')}</div>`;
-  const acc=`<h3 style="margin:22px 0 8px">Prediction accuracy <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— ${T.toLocaleString()} votes</span></h3>${accBar}`;
+  const acc=`<h3 style="margin:22px 0 8px">Prediction accuracy <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— ${T.toLocaleString()} evaluations</span></h3>${accBar}`;
   // actions
   const act=`<div class="row" style="gap:8px;margin-top:22px;flex-wrap:wrap">
     <button class="btn ghost sm" id="anCopy">Copy summary</button>
@@ -1843,10 +1975,10 @@ function anExportCsv(){
 }
 async function anCopySummary(){
   if(!anData)return;const o=anData.overview;
-  const txt=`The A&R Room — last ${o.shows} shows\n`
-    +`Unique A&Rs: ${o.uniqueARs} · Returning (2+ shows): ${o.returningARs} (${o.returningRate}%)\n`
-    +`Avg active/show: ${o.avgActivePerShow} · Depth: ${o.avgDepth} rounds/active · Activation: ${o.activationPct==null?'—':o.activationPct+'%'}\n`
-    +`Total votes: ${o.totalVotes.toLocaleString()} · Strong reads: ${o.strongReadPct}% · Bullseye: ${o.bullseyePct}% · Credited referrals: ${o.creditedReferrals}`;
+  const txt=`The A&R Room—last ${o.shows} sessions\n`
+    +`Unique A&Rs: ${o.uniqueARs} · Returning (2+ sessions): ${o.returningARs} (${o.returningRate}%)\n`
+    +`Avg active/session: ${o.avgActivePerShow} · Depth: ${o.avgDepth} rounds/active · Activation: ${o.activationPct==null?'—':o.activationPct+'%'}\n`
+    +`Total evaluations: ${o.totalVotes.toLocaleString()} · Strong reads: ${o.strongReadPct}% · Exact reads: ${o.bullseyePct}% · Credited referrals: ${o.creditedReferrals}`;
   try{await navigator.clipboard.writeText(txt);const b=$('#anCopy');b.textContent='Copied ✓';setTimeout(()=>b.textContent='Copy summary',1400);}
   catch(e){alert(txt);}
 }
@@ -1940,7 +2072,7 @@ async function loadSeriesBoard(sid){
     $('#lbCut').textContent='Top '+d.qualifyCount+' qualify';
     $('#seriesActions').classList.remove('hide');
     $('#btnCloseSeries').classList.toggle('hide',s&&s.status==='closed');
-    if(!d.leaderboard.length){$('#seriesBoard').innerHTML='<div class="empty">No votes in tagged rooms yet. Tag rooms from your room list to populate the board.</div>';return;}
+    if(!d.leaderboard.length){$('#seriesBoard').innerHTML='<div class="empty">No eligible evaluations in tagged rooms yet. Tag rooms from your room list to populate the rankings.</div>';return;}
     let html='',qSeen=0,cutDrawn=false;
     for(const r of d.leaderboard){
       const incomplete=r.profileComplete===false;
@@ -2033,7 +2165,7 @@ window.deleteSession=async(sid,name)=>{
     const dep=d.dependents;
     if(!dep.hasDependents){
       // No participant data -> disposable. Delete permanently, no ceremony.
-      if(!confirm('Delete "'+d.session.name+'"? It has no A&Rs or votes, so it will be removed permanently.'))return;
+      if(!confirm('Delete “'+d.session.name+'”? It has no A&Rs or evaluations, so it will be removed permanently.'))return;
       await api('/api/admin/session/purge',{sessionId:sid,confirmName:d.session.name});
       await openPicker();
       return;
@@ -2042,9 +2174,9 @@ window.deleteSession=async(sid,name)=>{
     delState={id:sid,name:d.session.name};
     const bits=[];
     if(dep.participants)bits.push('<b style="color:var(--ink)">'+dep.participants+'</b> A&R'+(dep.participants==1?'':'s'));
-    if(dep.votes)bits.push('<b style="color:var(--ink)">'+dep.votes+'</b> vote'+(dep.votes==1?'':'s'));
+    if(dep.votes)bits.push('<b style="color:var(--ink)">'+dep.votes+'</b> evaluation'+(dep.votes==1?'':'s'));
     if(dep.ratifiedRounds)bits.push('<b style="color:var(--ink)">'+dep.ratifiedRounds+'</b> ratified round'+(dep.ratifiedRounds==1?'':'s'));
-    $('#delBody').innerHTML=esc(d.session.name)+' has '+bits.join(', ')+'. <b style="color:var(--ink)">Archive</b> keeps everything and just hides it (reversible). <b style="color:var(--ink)">Cascade delete</b> removes the session and all its data permanently — and changes any series leaderboard that counted it.';
+    $('#delBody').innerHTML=esc(d.session.name)+' has '+bits.join(', ')+'. <b style="color:var(--ink)">Archive</b> keeps everything and hides it reversibly. <b style="color:var(--ink)">Cascade delete</b> permanently removes the session and all its data—and changes any series rankings that included it.';
     $('#delName').textContent=d.session.name;
     $('#delConfirm').value='';$('#delPurge').disabled=true;$('#delErr').textContent='';
     $('#deleteModal').style.display='flex';
@@ -2197,7 +2329,7 @@ $('#btnBroadcast')&&($('#btnBroadcast').onclick=async()=>{
   try{
     await api('/api/admin/session/broadcast',{sessionId:SID,text,overlay:$('#bcOverlay').checked});
     $('#bcInput').value=''; // sent message lives in the active chip now, not the input
-    $('#bcStatus').textContent=$('#bcOverlay').checked?'Sent to players + overlay ✓':'Sent to all players ✓';setTimeout(()=>$('#bcStatus').textContent='',2500);
+    $('#bcStatus').textContent=$('#bcOverlay').checked?'Sent to A&Rs + overlay ✓':'Sent to all A&Rs ✓';setTimeout(()=>$('#bcStatus').textContent='',2500);
     refresh();
   }
   catch(e){$('#bcStatus').textContent=e.message;}
@@ -2285,7 +2417,7 @@ $('#anSend')&&($('#anSend').onclick=async()=>{
     const st=await api('/api/admin/session/artist-notices/status?sessionId='+encodeURIComponent(SID),null,'GET');
     if(!st.configured){alert('Image hosting isn’t set up yet (BLOB_READ_WRITE_TOKEN). Report cards need it to render.');return;}
     const already=(st.email.sent||st.sms.sent)?'\n\nAlready sent: '+st.email.sent+' email, '+st.sms.sent+' text — those are skipped.':'';
-    const smsNote=st.withPhone?('\n'+st.withPhone+' text'+(st.withPhone==1?'':'s')+' — '+(st.smsWindow.open?'sending now (inside the 10 AM–8 PM ET window).':'queued; they send automatically after 10 AM ET.')):'';
+    const smsNote=st.withPhone?('\n'+st.withPhone+' text'+(st.withPhone==1?'':'s')+' — '+(st.smsWindow.open?'sending now (inside the 10 AM–10:30 PM ET window).':'queued; they send automatically after 10 AM ET.')):'';
     if(!confirm('Email the full report card to '+st.withEmail+' artist'+(st.withEmail==1?'':'s')+'?'
       +(st.missing?'\n\n'+st.missing+' round'+(st.missing==1?' has':'s have')+' no contact and will be skipped — add it in the Rounds tab.':'')
       +smsNote+already))return;
@@ -2426,7 +2558,7 @@ $('#glConfirm').onclick=async()=>{
   }catch(e){$('#glErr').textContent=e.message;}
   $('#glConfirm').disabled=false;
 };
-$('#btnUnlive').onclick=async()=>{if(!confirm('Move this room back to Upcoming? It leaves the live state — players can pre-register again.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'upcoming'});refresh();};
+$('#btnUnlive').onclick=async()=>{if(!confirm('Move this room back to Upcoming? It leaves the live state so A&Rs can reserve their seats again.'))return;await api('/api/admin/session/status',{sessionId:SID,status:'upcoming'});refresh();};
 $('#btnArchive').onclick=async()=>{if(!confirm('Archive this room? It will be hidden from the active list (you can still reopen it).'))return;await api('/api/admin/session/status',{sessionId:SID,status:'archived'});refresh();};
 $('#btnReopen').onclick=async()=>{await api('/api/admin/session/status',{sessionId:SID,status:'live'});refresh();};
 // Name editing lives in the edit-session modal (openSessEdit / seSave).
@@ -2469,9 +2601,9 @@ function roundControls(st){
   const qft=$('#queueFormTitle'); if(qft)qft.textContent=inPlay?'Add Round':'Start Round';
   const box=$('#roundBox');
   if(!r){box.innerHTML=sessLocked
-    ?'<div class="empty">Room complete — no rounds were played.</div>'
-    :'<div class="empty">No round in play. Start a round below — it opens right away.</div>';return;}
-  const statusPill={voting:'<span class="pill live">● Voting open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
+    ?'<div class="empty">Room complete—no evaluation rounds were completed.</div>'
+    :'<div class="empty">No active round. Add a record below to open an evaluation immediately.</div>';return;}
+  const statusPill={voting:'<span class="pill live">● Evaluation open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
   let timer='';
   if(r.status==='voting'&&r.closes_at){
     const left=secsLeft(r.closes_at); // same math as the 250ms ticker — no flicker on re-render
@@ -2489,15 +2621,15 @@ function roundControls(st){
       <button class="btn good" style="margin-top:8px;width:100%" onclick="ratifyRound('${r.id}')">Close & tally → review</button>`;
   }else if(r.status==='closed'){
     actions=`<div class="row">
-        <button class="btn ghost sm" onclick="reopenRound('${r.id}')">↺ Reopen voting</button>
+        <button class="btn ghost sm" onclick="reopenRound('${r.id}')">↺ Reopen evaluation</button>
         <button class="btn ghost sm" onclick="editRound('${r.id}')">✎ Edit song</button>
       </div>
       <button class="btn good" style="margin-top:8px;width:100%" onclick="ratifyRound('${r.id}')">Tally the room → review winners</button>`;
   }else if(r.status==='ratified'){
     const qn=(st.queue||[]).length;
     actions=sessLocked
-      ?`<p class="muted" style="font-size:13px;margin:8px 0 0">Final round ratified — the room is complete. Players see their recap; wrap-up actions are in the Room panel.</p>`
-      :`<p class="muted" style="font-size:13px;margin:8px 0 0">Results are live on players' screens. ${qn?'Open the next song from the queue when ready.':'Add the next song below when ready.'}</p>`;
+      ?`<p class="muted" style="font-size:13px;margin:8px 0 0">Final round ratified—the room is complete. A&Rs can view their session records; wrap-up actions are in the Room panel.</p>`
+      :`<p class="muted" style="font-size:13px;margin:8px 0 0">Results are live on A&R screens. ${qn?'Open the next record from the queue when ready.':'Add the next record below when ready.'}</p>`;
   }
   box.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center">
       <div><div class="muted" style="font-size:12px">Round ${r.idx}</div>
@@ -2570,16 +2702,16 @@ window.dlSongReport=async(rid,btn)=>{
 // One results renderer for BOTH the This-round tab and the Rounds-tab expansion.
 // round: {id, song_title, room_average, split_a, option_b_title}; rows = ranked votes.
 function resultsTableHtml(rows,isBin,round,withReport){
-  if(!rows||!rows.length)return '<div class="empty">No votes were cast in this round.</div>';
+  if(!rows||!rows.length)return '<div class="empty">No eligible evaluations were submitted in this round.</div>';
   if(isBin){
     const A=round.split_a;
     const splitTxt = A!=null ? `Song A ${Math.round(A)}% · Song B ${100-Math.round(A)}%` : '—';
-    return `<p style="margin:0 0 10px"><strong>Result: <span class="mono" style="color:var(--cool)">${splitTxt}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
+    return `<p style="margin:0 0 10px"><strong>Result: <span class="mono" style="color:var(--cool)">${splitTxt}</span></strong>${rows[0]?` · Round leader: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
       <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="mono">Pick</th><th class="num">Guess A%</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
       ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="mono">${r.pick||'—'}</td><td class="num">${r.predict_split!=null?Math.round(r.predict_split)+'%':'—'}</td><td class="num muted">${r.err!=null?Math.round(r.err):'—'}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
       </tbody></table>`;
   }
-  return `<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(round.room_average)}</span></strong>${rows[0]?` · 👑 Winner: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
+  return `<p style="margin:0 0 10px"><strong>Room average: <span class="mono" style="color:var(--cool)">${fmtAvg(round.room_average)}</span></strong>${rows[0]?` · Round leader: <strong style="color:var(--signal)">${esc(rows[0].name)}</strong>`:''}</p>
     <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="num">Guess</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="num">${(+r.predict).toFixed(1)}</td><td class="num muted">${(+r.err).toFixed(1)}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
     </tbody></table>`+
@@ -2598,7 +2730,7 @@ function reviewBox(st){
     return;
   }
   if(ar&&ar.status==='closed'){
-    box.innerHTML=`<div class="empty">Voting closed — ${st.liveVotes.length} vote(s) locked. “Tally the room” reveals results here.</div>`;
+    box.innerHTML=`<div class="empty">Evaluation closed—${st.liveVotes.length} evaluation(s) locked. “Tally the room” reveals results here.</div>`;
     return;
   }
   box.innerHTML='';
@@ -2665,7 +2797,7 @@ function render(st){
     return `<a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">${esc(short)} ↗</a>`;
   };
   const geoTxt = (!sess.geo_mode||sess.geo_mode==='off') ? null
-    : `${sess.geo_mode==='required'?'Required — must be at the venue to vote':'Optional — in-room / remote pools'}${sess.geo_label?' · 📍 '+esc(sess.geo_label):''}${sess.geo_radius?' · '+sess.geo_radius+' yd':''}`;
+    : `${sess.geo_mode==='required'?'Required—A&Rs must be at the venue to participate':'Optional — in-room / remote pools'}${sess.geo_label?' · 📍 '+esc(sess.geo_label):''}${sess.geo_radius?' · '+sess.geo_radius+' yd':''}`;
   const accessTxt = (sess.visibility==='unlisted'?'Unlisted — link/QR only':'Public — featured when live')
     +(sess.access_code?' · 🔑 code '+esc(sess.access_code):'');
   const startsTxt = sess.scheduled_at
@@ -2674,7 +2806,7 @@ function render(st){
   $('#sessSummary').innerHTML=
     sumRow('Name',esc(sess.name||'—'))+
     sumRow('Starts',startsTxt||'No scheduled time',!startsTxt)+
-    sumRow('Description',sess.lobby_message?esc(sess.lobby_message):'None — players see the default lobby',!sess.lobby_message)+
+    sumRow('Description',sess.lobby_message?esc(sess.lobby_message):'None—A&Rs see the default lobby',!sess.lobby_message)+
     sumRow('Watch link',linkVal(sess.watch_url)||'Not set',!sess.watch_url)+
     sumRow('Submit link',linkVal(sess.submit_url)||'Not set',!sess.submit_url)+
     sumRow('Access',accessTxt,sess.visibility!=='unlisted'&&!sess.access_code)+
@@ -2755,7 +2887,7 @@ function render(st){
   if(st.participants.length){
     const anyBrought=st.participants.some(p=>p.brought>0);
     b.innerHTML='<table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="num">Total</th></tr></thead><tbody>'+
-      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.pool==='in_person'?' <span style="color:var(--signal);font-size:12px">·in-room</span>':p.pool==='online'?' <span style="color:var(--cool);font-size:12px">·remote</span>':''}${p.brought>0?` <span class="muted" style="font-size:12px">· brought ${p.brought}</span>`:''}</td><td class="num" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+(anyBrought?'<p class="muted" style="font-size:12px;margin:8px 0 0">“Brought N” = friends they referred who actually played.</p>':'');
+      st.participants.map((p,i)=>`<tr><td class="${i===0?'rank1':''}">${i+1}</td><td>${esc(p.name||'(no name)')} ${p.verified?'':'<span class="muted">·unverified</span>'}${p.pool==='in_person'?' <span style="color:var(--signal);font-size:12px">·in-room</span>':p.pool==='online'?' <span style="color:var(--cool);font-size:12px">·remote</span>':''}${p.brought>0?` <span class="muted" style="font-size:12px">· brought ${p.brought}</span>`:''}</td><td class="num" style="color:var(--good)">${p.total_points}</td></tr>`).join('')+'</tbody></table>'+(anyBrought?'<p class="muted" style="font-size:12px;margin:8px 0 0">“Brought N” = referred A&amp;Rs who completed an eligible session.</p>':'');
   }else b.innerHTML='<div class="empty">Nobody\'s joined yet — share the QR code.</div>';
 }
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -2768,7 +2900,7 @@ function adsBox(st){
   const banners=st.banners||[];
   const sessionBannerId=st.session.banner_id;
   if(!banners.length){
-    box.innerHTML='<div class="empty" style="padding:8px 0">No banners yet. Upload one below — it shows in the lobby, during voting, and on the locked screen.</div>';
+    box.innerHTML='<div class="empty" style="padding:8px 0">No banners yet. Upload one below—it appears in the lobby, during evaluation, and on the submitted screen.</div>';
     return;
   }
   box.innerHTML=banners.map(b=>{
@@ -2835,7 +2967,7 @@ window.deleteRound=async(rid)=>{if(!confirm('Remove this song from the queue?'))
 window.extendRound=async(rid,mins)=>{await api('/api/admin/round/extend',{sessionId:SID,roundId:rid,minutes:mins});refresh();};
 window.closeRound=async(rid)=>{await api('/api/admin/round/close',{sessionId:SID,roundId:rid});refresh();};
 window.reopenRound=async(rid)=>{let mins=Math.round(+($('#openMins')?.value||5));mins=Math.min(60,Math.max(2,Number.isFinite(mins)?mins:5));try{await api('/api/admin/round/reopen',{sessionId:SID,roundId:rid,minutes:mins});}catch(e){alert(e.message);}refresh();};
-window.ratifyRound=async(rid)=>{if(!confirm('Tally this round and push results to players?'))return;await api('/api/admin/round/ratify',{sessionId:SID,roundId:rid});refresh();};
+window.ratifyRound=async(rid)=>{if(!confirm('Finalize this round and publish results to the A&Rs?'))return;await api('/api/admin/round/ratify',{sessionId:SID,roundId:rid});refresh();};
 
 // edit modal
 let editingId=null;

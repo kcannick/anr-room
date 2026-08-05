@@ -5,7 +5,7 @@
 <script async src="/analytics.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/mark-color.png">
-<title>The A&R Room · Got an ear for music?</title>
+<title>The A&R Room | Prove Your Ear. Build Your Ranking.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -56,8 +56,8 @@
   .sec{margin-bottom:20px}
   .sec-h{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin:0 0 11px 2px}
   .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:15px;padding:15px}
-  .howrow{display:flex;gap:9px;margin-bottom:20px}
-  .how{flex:1;background:#0f0c1c;border:1px solid var(--line);border-radius:12px;padding:13px 9px;text-align:center}
+  .howrow{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:20px}
+  .how{flex:1 1 120px;background:#0f0c1c;border:1px solid var(--line);border-radius:12px;padding:13px 9px;text-align:center}
   .how .hn{font-family:"Space Mono",monospace;font-size:12px;color:var(--signal);font-weight:700}
   .how .ht{font-size:12px;color:var(--ink-dim);margin-top:6px;line-height:1.35}
   /* upcoming */
@@ -106,6 +106,17 @@
   .submit .btn{padding:10px 20px}
   .foot{text-align:center;font-size:11px;color:var(--ink-faint);margin-top:8px}
   .hide{display:none!important}
+  /* The repositioned nav labels are longer ("Join the A&R Team", "My A&R Record") —
+     tighten type and gaps on narrow phones so the row never wraps or clips. */
+  @media (max-width:430px){
+    .brand .nm{font-size:14px}
+    .nav-links{gap:10px;font-size:11px}
+    .nav-join{padding:6px 9px}
+    /* "Reserve your seat" is much wider than the "Register" it replaced — let the card
+       wrap instead of crushing the room name and time into three lines each. */
+    .upcoming{flex-wrap:wrap}
+    .up-remind{width:100%;text-align:center;padding:11px 15px}
+  }
 </style>
 </head>
 <body>
@@ -113,19 +124,19 @@
   <div class="nav">
     <div class="brand"><span class="dot"></span><span class="nm">The A&amp;R Room</span></div>
     <div class="nav-links">
-      <a id="navBoard" onclick="document.getElementById('secBoard')?.scrollIntoView({behavior:'smooth'})">Leaderboard</a>
-      <a id="navWinners" onclick="document.getElementById('secWinners')?.scrollIntoView({behavior:'smooth'})">Winners</a>
+      <a id="navBoard" onclick="document.getElementById('secBoard')?.scrollIntoView({behavior:'smooth'})">Rankings</a>
+      <a id="navWinners" onclick="document.getElementById('secWinners')?.scrollIntoView({behavior:'smooth'})">Champions</a>
       <!-- signed-in members get their profile instead of the Join CTA -->
-      <a id="navProfile" class="hide" href="/profile">My profile</a>
-      <a class="nav-join" id="navJoin" href="/join">Join</a>
+      <a id="navProfile" class="hide" href="/profile">My A&amp;R Record</a>
+      <a class="nav-join" id="navJoin" href="/join">Join the A&amp;R Team</a>
     </div>
   </div>
 
   <div id="content">
-    <div class="empty" style="padding:80px 0"><div class="ico">🎧</div>Loading…</div>
+    <div class="empty" style="padding:80px 0"><div class="ico">🎧</div>Loading The A&amp;R Room…</div>
   </div>
 
-  <p class="foot">Makin' It Magazine · The A&amp;R Room</p>
+  <p class="foot">Makin' It Magazine · The A&amp;R Room — Competitive A&amp;R Evaluation</p>
 </div>
 
 <script>
@@ -149,12 +160,12 @@ function dateBlock(ms){
   return {d:fmtET(ms,{day:'numeric'}), m:fmtET(ms,{month:'short'})};
 }
 function whenLine(ms){
-  if(!ms)return 'Date to be announced · 6 platforms';
-  return fmtET(ms,{weekday:'short'})+' · '+fmtET(ms,{hour:'numeric',minute:'2-digit'})+' ET · 6 platforms';
+  if(!ms)return 'Date to be announced · Live across 6 platforms';
+  return fmtET(ms,{weekday:'short'})+' · '+fmtET(ms,{hour:'numeric',minute:'2-digit'})+' ET · Live across 6 platforms';
 }
 
 function lbCard(rows){
-  if(!rows||!rows.length)return `<div class="card"><div class="empty"><div class="ico">📊</div>No standings yet — they fill in as A&Rs rate songs in tagged rooms.</div></div>`;
+  if(!rows||!rows.length)return `<div class="card"><div class="empty"><div class="ico">📊</div>No rankings yet—they begin when A&Rs complete eligible evaluations.</div></div>`;
   return '<div class="card">'+rows.map(r=>{
     const sub=[r.category?`<span class="tag">${esc(r.category)}</span>`:'', r.location?esc(r.location):''].filter(Boolean).join('');
     const av=r.photoUrl?`<img class="lbav" src="${esc(r.photoUrl)}" alt="">`:`<div class="lbav">${esc(initials(r.name))}</div>`;
@@ -164,33 +175,34 @@ function lbCard(rows){
 }
 function howRow(){
   return `<div class="howrow" id="secHow">
-    <div class="how"><div class="hn">01</div><div class="ht">Rate the song</div></div>
-    <div class="how"><div class="hn">02</div><div class="ht">Predict the room</div></div>
-    <div class="how"><div class="hn">03</div><div class="ht">Climb &amp; qualify</div></div>
+    <div class="how"><div class="hn">01</div><div class="ht">Evaluate the record</div></div>
+    <div class="how"><div class="hn">02</div><div class="ht">Predict the consensus</div></div>
+    <div class="how"><div class="hn">03</div><div class="ht">Build your ranking</div></div>
+    <div class="how"><div class="hn">04</div><div class="ht">Influence what happens next</div></div>
   </div>`;
 }
 function nextCard(next){
-  if(!next)return `<div class="sec"><p class="sec-h">Next room</p><div class="card"><div class="empty">No room scheduled yet — check back soon.</div></div></div>`;
+  if(!next)return `<div class="sec"><p class="sec-h">Next evaluation session</p><div class="card"><div class="empty">The next evaluation session will be announced soon. Join the A&R Team to get notified.</div></div></div>`;
   const db=dateBlock(next.scheduledAt);
-  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener" onclick="track('music_submit_click',{action:'link'})">🎤 Know an artist? Submit music for this room ↗</a>`:'';
-  return `<div class="sec" id="secNext"><p class="sec-h">Next room</p>
+  const submit=next.submitUrl?`<a class="sub-link" href="${esc(next.submitUrl)}" target="_blank" rel="noopener" onclick="track('music_submit_click',{action:'link'})">Know a record the room should hear? Refer an artist ↗</a>`:'';
+  return `<div class="sec" id="secNext"><p class="sec-h">Next evaluation session</p>
     <div class="card upcoming">
       <div class="up-date"><div class="d">${esc(db.d)}</div><div class="m">${esc(db.m)}</div></div>
       <div class="up-meta"><div class="up-name">${esc(next.name)}</div><div class="up-time">${esc(whenLine(next.scheduledAt))}</div></div>
-      <a class="up-remind" href="/?s=${encodeURIComponent(next.id)}">Register</a>
+      <a class="up-remind" href="/?s=${encodeURIComponent(next.id)}">Reserve your seat</a>
     </div>${submit}</div>`;
 }
 function boardSection(series,label){
   // Hidden entirely until there are standings — no empty placeholder on the front door.
   if(!series || !series.leaderboard || !series.leaderboard.length) return '';
-  const title=label||('Series leaderboard · '+esc(series.title));
+  const title=label||('Current A&R rankings · '+esc(series.title));
   return `<div class="sec" id="secBoard"><p class="sec-h">${title}</p>${lbCard(series.leaderboard)}</div>`;
 }
 function winnersSection(winners){
   // Hidden until a champion exists — no "winners appear here" placeholder.
   if(!winners || !winners.length) return '';
   const body='<div class="card">'+winners.map(w=>`<div class="lbrow"><span class="lbrank t">🏆</span><div class="lbnm">${esc(w.name)}<small>${esc(w.series||'')}</small></div><span class="lbpts">${fmtPts(w.points)}</span></div>`).join('')+'</div>';
-  return `<div class="sec" id="secWinners"><p class="sec-h">Past winners</p>${body}</div>`;
+  return `<div class="sec" id="secWinners"><p class="sec-h">Past champions</p>${body}</div>`;
 }
 function tickerSection(ars){
   if(!ars || !ars.length) return '';
@@ -209,21 +221,26 @@ function submitSection(sUrl){
   // Uses the featured session's own submission link when it has one, else the house default.
   const href=sUrl||SUBMIT_URL;
   return `<div class="submit" id="secSubmit">
-    <div class="s-t">Know an artist we need to hear?</div>
-    <div class="s-s">Send them here to submit — the room reviews new music live, so a real audience gives it real ears.</div>
+    <div class="s-t">Know a record the room should hear?</div>
+    <div class="s-s">Refer an independent artist for consideration. Selected records are evaluated live by a real room of A&Rs.</div>
     <div class="s-actions">
-      <a class="btn accent sm" href="${esc(href)}" target="_blank" rel="noopener">Have them submit</a>
+      <a class="btn accent sm" href="${esc(href)}" target="_blank" rel="noopener">Refer an artist</a>
       <button class="btn accent sm" onclick="shareSubmit(this,'${esc(href)}')">Share link</button>
     </div>
   </div>`;
 }
 async function shareSubmit(btn,url){
   track('music_submit_click',{action:'share'});
-  if(navigator.share){ try{ await navigator.share({title:'Submit your music — The A&R Room', url}); return; }catch(e){ if(e&&e.name==='AbortError')return; } }
+  if(navigator.share){ try{ await navigator.share({title:'Submit your music for evaluation — The A&R Room', url}); return; }catch(e){ if(e&&e.name==='AbortError')return; } }
   try{ await navigator.clipboard.writeText(url); const t=btn.textContent; btn.textContent='Link copied ✓'; setTimeout(()=>btn.textContent=t,1600); }
   catch(e){ prompt('Copy this submit link:', url); }
 }
 
+function goRankings(){
+  const b=document.getElementById('secBoard');
+  if(b){ b.scrollIntoView({behavior:'smooth'}); return; }
+  location.href='/join';
+}
 function renderLive(d){
   const live=d.live;
   const voteHref='/?s='+encodeURIComponent(live.id);
@@ -233,8 +250,8 @@ function renderLive(d){
   $('#content').innerHTML=`
     <div class="live-banner">
       <span class="pulse"></span>
-      <div class="lb-txt"><div class="lb-t">Live right now!</div><div class="lb-s">${esc(live.nowPlaying||live.name)} · ${live.arCount} A&Rs in the room</div></div>
-      <a class="btn hot sm" href="${voteHref}">Get in to vote</a>
+      <div class="lb-txt"><div class="lb-t">The room is live.</div><div class="lb-s">${esc(live.nowPlaying||live.name)} · ${live.arCount} A&Rs in the room</div></div>
+      <a class="btn hot sm" href="${voteHref}">Enter the live evaluation</a>
     </div>
     <div class="stream">
       <span class="lvtag">● LIVE</span>
@@ -244,25 +261,27 @@ function renderLive(d){
       ${watchBtn}
     </div>
     <div class="hero" style="padding:6px 6px 18px">
-      <p style="margin-bottom:14px;max-width:380px">Watching on another screen? Jump in here and vote — rate the current song and read the room.</p>
-      <a class="btn hot lg" href="${voteHref}">Get in to vote</a>
+      <p style="margin-bottom:14px;max-width:380px">Watching on another screen? Enter the live evaluation here, score the current record, and predict the room's consensus.</p>
+      <a class="btn hot lg" href="${voteHref}">Enter the live evaluation</a>
     </div>
     ${tickerSection(d.recentARs)}
-    ${boardSection(d.series,'Live standings · updating')}
+    ${boardSection(d.series,'Live A&R rankings · updating')}
     ${winnersSection(d.winners)}
     ${submitSection(d.live&&d.live.submitUrl)}`;
 }
 function renderBetween(d){
-  // With an upcoming session, "Register to play" leads and Join is secondary. With no
-  // session, "Join the A&R Team" becomes the primary action (the registration that was missing).
+  // With an upcoming session, "Reserve your seat" leads and the rankings are secondary. With
+  // no session, claiming a profile becomes the primary action.
+  // The rankings link scrolls to the board, but boardSection() renders nothing until a
+  // series has points — so fall back to /join rather than leaving a dead link.
   const heroCta=d.next
-    ? `<a class="btn lg" href="/?s=${encodeURIComponent(d.next.id)}" onclick="track('register_click',{from:'home'})">Register to play</a><a class="btn ghost lg" href="/join">Join the A&R Team</a>`
-    : `<a class="btn lg" href="/join">Join the A&R Team</a><a class="btn ghost lg" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">See how it works</a>`;
+    ? `<a class="btn lg" href="/?s=${encodeURIComponent(d.next.id)}" onclick="track('register_click',{from:'home'})">Reserve your seat</a><a class="btn ghost lg" onclick="goRankings()">View current rankings</a>`
+    : `<a class="btn lg" href="/join">Claim your A&R profile</a><a class="btn ghost lg" onclick="document.getElementById('secHow')?.scrollIntoView({behavior:'smooth'})">How it works</a>`;
   $('#content').innerHTML=`
     <div class="hero">
-      <div class="prize">💰 $500 monthly cash prize</div>
-      <h1>Got an ear<br><span class="grad">for music?</span></h1>
-      <p>Rate songs, read the room, climb the leaderboard. Top A&Rs compete in A&amp;R Wars for the cash.</p>
+      <div class="prize">$500 Monthly A&amp;R Award</div>
+      <h1>Your ear shapes<br><span class="grad">what happens next.</span></h1>
+      <p>Evaluate independent music live. Predict the room's consensus. Build a verified ranking—and help inform which artists Makin' It Magazine considers for coverage, promotion, bookings, and other opportunities.</p>
       ${heroCta}
     </div>
     ${howRow()}
@@ -292,7 +311,7 @@ async function load(){
     navToggle('navBoard', !!document.getElementById('secBoard'));
     navToggle('navWinners', !!document.getElementById('secWinners'));
   }catch(e){
-    $('#content').innerHTML='<div class="empty" style="padding:60px 0"><div class="ico">⚠️</div>Couldn\'t load right now. Refresh to try again.</div>';
+    $('#content').innerHTML='<div class="empty" style="padding:60px 0"><div class="ico">⚠️</div>The room couldn\'t load. Refresh to try again.</div>';
   }
 }
 load();
@@ -333,12 +352,15 @@ async function _ensureRealtime(liveId){
   }catch(e){ /* stay on 30s poll */ }
 }
 
-// Logged-in A&Rs see "My Profile" (-> their editable profile) instead of "Join".
+// Logged-in A&Rs see "My A&R Record" (-> their editable profile) instead of the Join CTA.
 (async function initNav(){
   const tok=localStorage.getItem('rt_auth_token'); if(!tok)return;
   try{
     const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
-    if(me&&me.uid){ const j=document.getElementById('navJoin'); j.textContent='My Profile'; j.href='/profile'; }
+    // The join CTA becomes the profile link — so drop the plain #navProfile link that the
+    // token check already un-hid, or the nav reads "My A&R Record" twice.
+    if(me&&me.uid){ const j=document.getElementById('navJoin'); j.textContent='My A&R Record'; j.href='/profile';
+      document.getElementById('navProfile').classList.add('hide'); }
   }catch(e){}
 })();
 </script>

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · Resend artist notice (per round)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=3">
+<link rel="stylesheet" href="/ui.css?v=2">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 16px 70px;background:var(--bg);color:var(--ink);
+       font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:720px;margin:0 auto}
+  .mocknote{max-width:720px;margin:0 auto 26px;border:1px dashed var(--accent);border-radius:var(--r-md);
+       padding:12px 14px;font-size:12.5px;line-height:1.6;color:var(--ink-dim);background:rgba(109,95,224,.07)}
+  .mocknote b{color:var(--ink)}
+  .variant{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+       color:var(--accent);margin:32px 0 10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pad-card)}
+  .card h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 12px;font-weight:700}
+  .muted{color:var(--ink-dim)}
+  .rrow{display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #241d3d}
+  .rrow .ix{font-family:"Space Mono",monospace;color:var(--ink-faint);width:26px;flex:none}
+  .rrow .ttl{flex:1;min-width:0}
+  .rrow .ttl b{display:block;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rrow .ttl small{display:block;color:var(--ink-dim);font-size:12px}
+  .sc{font-family:"Space Mono",monospace;color:var(--signal);width:34px;text-align:right;flex:none}
+  .ev{color:var(--ink-dim);font-size:12px;width:92px;text-align:right;flex:none}
+  .ib{padding:6px 9px}
+  .note{font-size:12px;color:var(--ink-faint);margin:10px 2px 0;line-height:1.6}
+  .modal-scrim{display:flex;position:static;background:none;padding:0;margin-top:10px}
+  label.ck{display:flex;align-items:flex-start;gap:9px;padding:9px 0;font-size:15px;cursor:pointer}
+  label.ck input{width:17px;height:17px;flex:0 0 auto;padding:0;margin:2px 0 0}
+  label.ck.dis{opacity:.45;cursor:default}
+  .row{display:flex;gap:9px;margin-top:14px}
+  .row .btn{flex:1}
+  .dest{font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-dim)}
+  .warnbox{font-size:12px;line-height:1.55;color:var(--gold);background:rgba(245,197,24,.08);
+       border:1px solid rgba(245,197,24,.35);border-radius:var(--r-sm);padding:9px 11px;margin-top:10px}
+</style>
+</head>
+<body>
+
+<div class="mocknote">
+  <b>MOCKUP — resend an artist notice for ONE round.</b> Today artist notices are all-or-nothing per
+  room: the queue is idempotent, so once a round is <code>sent</code> it can never be sent again — if an
+  address had a typo, or the email bounced, there's no way to retry that one artist. This adds a
+  <b>📨</b> button to each eligible round in the <b>Rounds</b> tab. It is also the "send just this one"
+  button for a round whose contact you added after the main send.
+</div>
+
+<!-- ═══════════ 1. ROW STATES ═══════════ -->
+<div class="variant">1 · Rounds tab — the 📨 button in each state</div>
+<div class="wrap">
+  <div class="card">
+    <h2>Rounds</h2>
+
+    <!-- already sent -->
+    <div class="rrow">
+      <span class="ix">#1</span>
+      <div class="ttl"><b>Nightcrawler</b><small>Sasha Mane</small></div>
+      <span title="Contact on file — email + phone" style="flex:none">✉📱</span>
+      <span class="pill done">Ratified</span>
+      <span class="sc">7.4</span><span class="ev">31&nbsp;evaluations</span>
+      <button class="btn ghost sm ib" title="1 A&R comment">💬&nbsp;1</button>
+      <button class="btn ghost sm ib" title="Song Report">📊</button>
+      <button class="btn ghost sm ib" style="border-color:var(--signal);color:var(--signal)"
+              title="Report sent Jul 30 · click to resend">📨</button>
+      <button class="btn ghost sm ib" title="Edit song details + artist contact">✎</button>
+      <span class="muted" style="flex:none">▾</span>
+    </div>
+
+    <!-- send failed -->
+    <div class="rrow">
+      <span class="ix">#2</span>
+      <div class="ttl"><b>Rearview</b><small>Deltra</small></div>
+      <span title="Contact on file — email" style="flex:none">✉</span>
+      <span class="pill done">Ratified</span>
+      <span class="sc">6.8</span><span class="ev">29&nbsp;evaluations</span>
+      <button class="btn ghost sm ib" title="Song Report">📊</button>
+      <button class="btn ghost sm ib" style="border-color:var(--hot);color:var(--hot)"
+              title="Last send FAILED: 550 mailbox unavailable · click to retry">📨</button>
+      <button class="btn ghost sm ib" title="Edit song details + artist contact">✎</button>
+      <span class="muted" style="flex:none">▾</span>
+    </div>
+
+    <!-- never sent, contact on file -->
+    <div class="rrow">
+      <span class="ix">#3</span>
+      <div class="ttl"><b>Cold Open</b><small>Yaro</small></div>
+      <span title="Contact on file — email" style="flex:none">✉</span>
+      <span class="pill done">Ratified</span>
+      <span class="sc">8.1</span><span class="ev">30&nbsp;evaluations</span>
+      <button class="btn ghost sm ib" title="Song Report">📊</button>
+      <button class="btn ghost sm ib" title="Not sent yet · click to send this artist's report">📨</button>
+      <button class="btn ghost sm ib" title="Edit song details + artist contact">✎</button>
+      <span class="muted" style="flex:none">▾</span>
+    </div>
+
+    <!-- no contact: no button at all -->
+    <div class="rrow">
+      <span class="ix">#4</span>
+      <div class="ttl"><b>Static Bloom</b><small>Kese</small></div>
+      <span title="No artist contact — they won’t get their report card. Click ✎ to add it."
+            style="flex:none;color:var(--gold)">⚠</span>
+      <span class="pill done">Ratified</span>
+      <span class="sc">5.9</span><span class="ev">27&nbsp;evaluations</span>
+      <button class="btn ghost sm ib" title="Song Report">📊</button>
+      <button class="btn ghost sm ib" title="Edit song details + artist contact">✎</button>
+      <span class="muted" style="flex:none">▾</span>
+    </div>
+
+    <!-- versus: never eligible -->
+    <div class="rrow">
+      <span class="ix">#5</span>
+      <div class="ttl"><b>Fever vs Long Way</b><small>Two records</small></div>
+      <span class="pill done">Ratified</span>
+      <span class="sc">62% A</span><span class="ev">28&nbsp;evaluations</span>
+      <button class="btn ghost sm ib" title="Edit song details">✎</button>
+      <span class="muted" style="flex:none">▾</span>
+    </div>
+
+    <p class="note">
+      The 📨 appears only where a report is actually deliverable — a ratified rating round with
+      evaluations <i>and</i> contact on file. Versus rounds have no room average, so they never get one.
+      Colour is the state: <span style="color:var(--signal)">green = sent</span>,
+      <span style="color:var(--hot)">red = last attempt failed</span>, plain = never sent.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════ 2. CONFIRM — ALREADY SENT ═══════════ -->
+<div class="variant">2 · Confirm modal — resending a report that already went out</div>
+<div class="wrap">
+  <div class="modal-scrim">
+    <div class="card" style="max-width:440px;width:100%">
+      <h2 style="font-size:18px;letter-spacing:-.01em;text-transform:none;color:var(--ink)">Resend this report?</h2>
+      <p class="muted" style="font-size:13px;line-height:1.6">
+        Sends <b style="color:var(--ink)">Sasha Mane</b> the full Room Report for
+        <b style="color:var(--ink)">“Nightcrawler”</b> again. The report is rebuilt from the current
+        results, so any comments you've shared since will be included.
+      </p>
+      <div style="margin:12px 0 2px">
+        <label class="ck"><input type="checkbox" checked>
+          <span>Email <span class="dest">sasha@label.com</span><br>
+            <span class="muted" style="font-size:12px">Sent Jul 30, 9:14 AM</span></span></label>
+        <label class="ck"><input type="checkbox" checked>
+          <span>Text <span class="dest">••• 4471</span><br>
+            <span class="muted" style="font-size:12px">Sent Jul 30, 10:02 AM — a heads-up only; the report itself is in the email</span></span></label>
+      </div>
+      <div class="row">
+        <button class="btn good">Resend</button>
+        <button class="btn ghost" style="flex:0 0 auto">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <p class="note">
+    Both channels that have contact are ticked by default — a resend repeats whatever the
+    artist was originally sent. Untick either one if you only need the other.
+  </p>
+</div>
+
+<!-- ═══════════ 3. CONFIRM — OUTSIDE THE SMS WINDOW ═══════════ -->
+<div class="variant">3 · Confirm modal — first send, and it's outside the text window</div>
+<div class="wrap">
+  <div class="modal-scrim">
+    <div class="card" style="max-width:440px;width:100%">
+      <h2 style="font-size:18px;letter-spacing:-.01em;text-transform:none;color:var(--ink)">Send this report?</h2>
+      <p class="muted" style="font-size:13px;line-height:1.6">
+        Sends <b style="color:var(--ink)">Yaro</b> the full Room Report for
+        <b style="color:var(--ink)">“Cold Open”</b> — three pages of results, the replay link, and
+        posting instructions.
+      </p>
+      <div style="margin:12px 0 2px">
+        <label class="ck"><input type="checkbox" checked>
+          <span>Email <span class="dest">yaro@mgmt.co</span><br>
+            <span class="muted" style="font-size:12px">Not sent yet</span></span></label>
+        <label class="ck dis"><input type="checkbox" disabled>
+          <span>Text <span class="muted" style="font-size:12px">— no number on file</span></span></label>
+      </div>
+      <div class="warnbox">
+        Texts only send 10 AM–10:30 PM ET, so the text queues and goes out on its own once the
+        window opens. Email sends right now.
+      </div>
+      <div class="row">
+        <button class="btn good">Send</button>
+        <button class="btn ghost" style="flex:0 0 auto">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 4. RESULT ═══════════ -->
+<div class="variant">4 · After sending — inline result, no modal</div>
+<div class="wrap">
+  <div class="card">
+    <div class="rrow" style="border-top:none">
+      <span class="ix">#1</span>
+      <div class="ttl"><b>Nightcrawler</b><small>Sasha Mane</small></div>
+      <span style="flex:none">✉📱</span>
+      <span class="pill done">Ratified</span>
+      <span class="sc">7.4</span><span class="ev">31&nbsp;evaluations</span>
+      <button class="btn ghost sm ib" style="border-color:var(--signal);color:var(--signal)">📨</button>
+      <button class="btn ghost sm ib">✎</button>
+      <span class="muted" style="flex:none">▾</span>
+    </div>
+    <div style="font-size:12.5px;color:var(--signal);padding:2px 0 10px 34px">
+      ✓ Report re-sent to sasha@label.com
+    </div>
+
+    <div class="rrow">
+      <span class="ix">#2</span>
+      <div class="ttl"><b>Rearview</b><small>Deltra</small></div>
+      <span style="flex:none">✉</span>
+      <span class="pill done">Ratified</span>
+      <span class="sc">6.8</span><span class="ev">29&nbsp;evaluations</span>
+      <button class="btn ghost sm ib" style="border-color:var(--hot);color:var(--hot)">📨</button>
+      <button class="btn ghost sm ib">✎</button>
+      <span class="muted" style="flex:none">▾</span>
+    </div>
+    <div style="font-size:12.5px;color:var(--hot);padding:2px 0 10px 34px">
+      ✗ 550 mailbox unavailable — check the address with ✎ and try again
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

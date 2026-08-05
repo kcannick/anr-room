@@ -35,6 +35,25 @@
 .chip.on{background:rgba(109,95,224,.18);border-color:var(--accent);color:var(--ink)}
 .chip.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 
+/* Preference rows — a full-width tappable label wrapping a checkbox, a bold title and a
+   muted explainer. The whole row is the hit target (mobile). Promoted from admin.html's
+   .ob-row so the overlay picker and the notification settings share one component.
+   NOTE: the explicit width/margin on the checkbox is required — every surface sets
+   input{width:100%}, which stretches a bare checkbox across the row. */
+.pref-row{display:flex;align-items:flex-start;gap:11px;cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:11px 14px;font-size:14px;line-height:1.35}
+.pref-row:hover{border-color:var(--accent)}
+.pref-row>input[type=checkbox]{width:17px;height:17px;flex:0 0 auto;margin:1px 0 0;padding:0;
+  accent-color:var(--signal);cursor:pointer}
+.pref-row>span{display:block;min-width:0}
+.pref-row b{display:block;font-weight:600;color:var(--ink)}
+.pref-row small{display:block;font-size:11.5px;color:var(--ink-faint);margin-top:2px;line-height:1.45}
+.pref-row.dis{opacity:.45;cursor:default}
+.pref-row.dis:hover{border-color:var(--line)}
+.pref-row.danger{border-color:rgba(255,93,108,.4)}
+.pref-row.danger b{color:var(--hot)}
+
 /* Status pills — non-interactive state markers. Terminal states are muted. */
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;
   border-radius:var(--r-pill);border:1px solid var(--line);background:var(--inset);color:var(--ink-dim)}

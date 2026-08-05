@@ -405,7 +405,7 @@ async function call(path, body, method='POST', headers={}) {
   ok('anon JSON marked anonymized', anonJson.session.anonymized === true);
   ok('anon JSON has NO emails', !anonJson.participants.some(p => 'email' in p), JSON.stringify(anonJson.participants[0] || {}));
   ok('anon JSON has NO names', !anonJson.participants.some(p => 'name' in p));
-  ok('anon JSON uses Player N labels', anonJson.participants.every(p => /^Player \d+$/.test(p.player)), JSON.stringify(anonJson.participants[0] || {}));
+  ok('anon JSON uses A&R N labels', anonJson.participants.every(p => /^A&R \d+$/.test(p.player)), JSON.stringify(anonJson.participants[0] || {}));
   ok('anon votes still have behavioral data', anonJson.votes.every(v => 'rating' in v && 'prediction' in v && 'points' in v));
 
   const csvRes = await fetch(base + `/api/admin/export?sessionId=${SID}&format=csv`, { headers: AH });
@@ -527,7 +527,11 @@ async function call(path, body, method='POST', headers={}) {
   const legacyState = await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH);
   ok('legacy admin token still admins its session', legacyState.status === 200, 'got ' + legacyState.status);
 
-  console.log('\n— SMS consent via phone presence (phone = opt-in, no checkbox) —');
+  // 028 narrowed this contract but did not weaken it: phone presence is still the consent
+  // basis for anyone who has never set an explicit preference, which is every player here
+  // (users.sms_pref_set_at IS NULL). The contact-center override is exercised separately,
+  // in the "notification contact center" section at the end of this file.
+  console.log('\n— SMS consent via phone presence (phone = opt-in BY DEFAULT, until the A&R sets a preference) —');
   const smsYesReq = await call('/api/join/request', { sessionId: SID, email: 'sms-yes@test.com' });
   await call('/api/join/verify', { sessionId: SID, email: 'sms-yes@test.com', code: smsYesReq.d.devCode, name: 'Yes Person', phone: '555-111-2222' });
   const expY = await fetch(base + `/api/admin/export?sessionId=${SID}&format=json`, { headers: AH }).then(r => r.json());
@@ -961,10 +965,10 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— referrals: export attribution (anon-safe) —');
   const refRow = rexp2.participants.find(p => p.email === 'referred@test.com');
-  ok('referred_by maps to inviter label', refRow && /^Player \d+$/.test(refRow.referred_by || ''), JSON.stringify(refRow && refRow.referred_by));
+  ok('referred_by maps to inviter label', refRow && /^A&R \d+$/.test(refRow.referred_by || ''), JSON.stringify(refRow && refRow.referred_by));
   ok('referral_credited reflected in export', refRow && refRow.referral_credited === 1, JSON.stringify(refRow && refRow.referral_credited));
   const rexpAnon = await fetch(base + `/api/admin/export?sessionId=${RSID}&format=json&anon=1`, { headers: RAH }).then(r => r.json());
-  ok('anon export still has referral attribution (no PII)', rexpAnon.participants.some(p => p.referred_by && /^Player \d+$/.test(p.referred_by)), JSON.stringify(rexpAnon.participants.map(p=>p.referred_by)));
+  ok('anon export still has referral attribution (no PII)', rexpAnon.participants.some(p => p.referred_by && /^A&R \d+$/.test(p.referred_by)), JSON.stringify(rexpAnon.participants.map(p=>p.referred_by)));
   ok('anon export leaks no referral emails', !/@test\.com/.test(JSON.stringify(rexpAnon.participants)));
 
   // ======================================================================
@@ -1544,16 +1548,20 @@ async function call(path, body, method='POST', headers={}) {
 
   // ======================================================================
   // Post-show artist notices: report card by email + a heads-up text held to
-  // the 10AM-8PM ET window, with contact addable retroactively after the show.
+  // the 10AM-10:30PM ET window, with contact addable retroactively after the show.
   // ======================================================================
-  console.log('\n— artist SMS quiet hours: 10AM-8PM ET, asserted on fixed timestamps —');
+  console.log('\n— artist SMS quiet hours: 10AM-10:30PM ET, asserted on fixed timestamps —');
   // Fixed instants, expressed in UTC, checked through the ET conversion. July = EDT (UTC-4).
+  // The close is on a half hour, so 10:00 PM sends and 10:30 PM holds — the whole point of
+  // the minute-of-day gate, and the case an hour-granular rewrite would silently break.
   const etCases = [
     ['2026-07-15T13:59:00Z', 9,  false, '9:59 AM ET — before the window'],
     ['2026-07-15T14:00:00Z', 10, true,  '10:00 AM ET — window opens'],
     ['2026-07-15T20:00:00Z', 16, true,  '4:00 PM ET — mid-window'],
-    ['2026-07-15T23:59:00Z', 19, true,  '7:59 PM ET — last minute in'],
-    ['2026-07-16T00:00:00Z', 20, false, '8:00 PM ET — window closes'],
+    ['2026-07-16T00:00:00Z', 20, true,  '8:00 PM ET — still inside the window'],
+    ['2026-07-16T02:00:00Z', 22, true,  '10:00 PM ET — top of the closing hour, still sends'],
+    ['2026-07-16T02:29:00Z', 22, true,  '10:29 PM ET — last minute in'],
+    ['2026-07-16T02:30:00Z', 22, false, '10:30 PM ET — window closes mid-hour'],
     ['2026-07-16T03:00:00Z', 23, false, '11:00 PM ET — show wrap, must hold'],
     ['2026-07-16T04:00:00Z', 0,  false, 'midnight ET — normalizes to hour 0, still held'],
     ['2026-07-16T09:00:00Z', 5,  false, '5:00 AM ET — still held'],
@@ -1566,6 +1574,8 @@ async function call(path, body, method='POST', headers={}) {
   // Winter (EST, UTC-5): the same wall-clock rule must hold across the DST boundary.
   ok('EST: 9:59 AM ET holds', server._withinSmsWindow(Date.parse('2026-01-14T14:59:00Z')) === false);
   ok('EST: 10:00 AM ET sends', server._withinSmsWindow(Date.parse('2026-01-14T15:00:00Z')) === true);
+  ok('EST: 10:29 PM ET sends', server._withinSmsWindow(Date.parse('2026-01-15T03:29:00Z')) === true);
+  ok('EST: 10:30 PM ET holds', server._withinSmsWindow(Date.parse('2026-01-15T03:30:00Z')) === false);
   ok('EST: 11 PM ET (show wrap) holds', server._withinSmsWindow(Date.parse('2026-01-15T04:00:00Z')) === false);
 
   console.log('\n— artist email: carries the report + replay link, and NO pricing —');
@@ -1577,8 +1587,8 @@ async function call(path, body, method='POST', headers={}) {
     watchUrl: 'https://youtube.com/watch?v=abc123', pages: ['https://blob/p1.png', 'https://blob/p2.png', 'https://blob/p3.png'] });
   ok('artist email embeds every report page', ['p1', 'p2', 'p3'].every(p => aeHtml.includes(p + '.png')));
   ok('artist email carries the replay link', aeHtml.includes('youtube.com/watch?v=abc123'));
-  ok('artist email pitches screen-recording the feedback', /screen-record/i.test(aeHtml));
-  ok('artist email asks for the collab post', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARoom'));
+  ok('artist email points the artist at the replay for clips', /short clips/i.test(aeHtml));
+  ok('artist email asks for the collab post', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARRoom'));
   ok('artist email shows the score + rank', aeHtml.includes('7.4') && aeHtml.includes('#2 of 11'));
   const sellWords = /\$\d|\bprice\b|\bpricing\b|\bpurchase\b|\bpaid\b|\bupgrade\b|\bcheckout\b|\bbuy\b|\bupsell\b/i;
   ok('artist email mentions NO price or upsell (operator decision)', !sellWords.test(aeHtml),
@@ -1696,9 +1706,61 @@ async function call(path, body, method='POST', headers={}) {
     ok('the claimed row settles as sent', dupRow.status === 'sent', dupRow.status);
   }
 
+  // ---- per-round resend: the escape hatch the idempotent room-wide queue can't give ----
+  console.log('\n— artist notices: resend ONE round —');
+  const rsPath = '/api/admin/session/artist-notices/resend';
+  ok('resend is host-only (403)', (await call(rsPath, { sessionId: ANID, roundId: AN1, email: true })).status === 403,
+    'got ' + (await call(rsPath, { sessionId: ANID, roundId: AN1, email: true })).status);
+  ok('resend needs a roundId', (await call(rsPath, { sessionId: ANID, email: true }, 'POST', ANAH)).status === 400);
+  ok('resend needs a channel', (await call(rsPath, { sessionId: ANID, roundId: AN1 }, 'POST', ANAH)).status === 400);
+  // Eligibility is re-checked server-side, so a hand-made request can't mail a report for
+  // a round that has none. AN3 is a fresh unratified round.
+  const an3 = await call('/api/admin/round', { sessionId: ANID, song_title: 'Not Yet', artist_email: 'x@y.com' }, 'POST', ANAH);
+  const rsIneligible = await call(rsPath, { sessionId: ANID, roundId: an3.d.roundId, email: true }, 'POST', ANAH);
+  ok('resend refuses a round with no report to send (409)', rsIneligible.status === 409, JSON.stringify(rsIneligible.d));
+  // Email needs Blob (the report pages are rendered + hosted) — refused, not half-sent.
+  const rsNoBlob = await call(rsPath, { sessionId: ANID, roundId: AN1, email: true }, 'POST', ANAH);
+  ok('resend email refuses without image hosting (409)', rsNoBlob.status === 409, JSON.stringify(rsNoBlob.d));
+  // Asking for SMS on a round with no phone is refused rather than silently doing nothing.
+  await call('/api/admin/round/edit', { sessionId: ANID, roundId: AN2, artist_phone: '' }, 'POST', ANAH);
+  const rsNoPhone = await call(rsPath, { sessionId: ANID, roundId: AN2, sms: true }, 'POST', ANAH);
+  ok('resend refuses SMS with no number on the round (409)', rsNoPhone.status === 409, JSON.stringify(rsNoPhone.d));
+
+  // THE POINT OF THE FEATURE: a round that already sent can be sent again. The SMS path
+  // needs no Blob, so it's what exercises the requeue semantics end to end.
+  await anDb.run("UPDATE artist_notices SET status = 'sent', dest = '+13055550143', sent_at = ?, error = NULL WHERE round_id = ? AND channel = 'sms'", [Date.now(), AN1]);
+  const rsSentBefore = await anDb.get("SELECT status, dest FROM artist_notices WHERE round_id = ? AND channel = 'sms'", [AN1]);
+  ok('the round starts out already sent', rsSentBefore.status === 'sent', JSON.stringify(rsSentBefore));
+  // ...and the host has since CORRECTED the number. The resend must use the new one —
+  // reusing the queued row's stale dest would defeat the whole feature.
+  await call('/api/admin/round/edit', { sessionId: ANID, roundId: AN1, artist_phone: '3055559999' }, 'POST', ANAH);
+  const rsAgain = await call(rsPath, { sessionId: ANID, roundId: AN1, sms: true }, 'POST', ANAH);
+  ok('resend succeeds on an already-sent round', rsAgain.status === 200 && rsAgain.d.sms, JSON.stringify(rsAgain.d));
+  const rsRow = await anDb.get("SELECT status, dest, error FROM artist_notices WHERE round_id = ? AND channel = 'sms'", [AN1]);
+  ok('resend re-reads the CORRECTED number off the round', rsRow.dest === '3055559999', JSON.stringify(rsRow));
+  ok('resend never duplicates the queue row',
+    Number((await anDb.get("SELECT COUNT(*) AS c FROM artist_notices WHERE round_id = ? AND channel = 'sms'", [AN1])).c) === 1);
+  // TCPA quiet hours still bind — a per-round resend is not a reason to text at 2AM.
+  if (rsAgain.d.sms.held) {
+    ok('outside the ET window the text is HELD, not sent', rsRow.status === 'pending' && !!rsAgain.d.sms.label, JSON.stringify([rsRow, rsAgain.d.sms]));
+  } else {
+    ok('inside the ET window the text goes right out', rsRow.status === 'sent', JSON.stringify(rsRow));
+  }
+  // A failed row is retryable too — that's the bounce case.
+  await anDb.run("UPDATE artist_notices SET status = 'failed', error = 'bounced' WHERE round_id = ? AND channel = 'sms'", [AN1]);
+  await call(rsPath, { sessionId: ANID, roundId: AN1, sms: true }, 'POST', ANAH);
+  const rsRetried = await anDb.get("SELECT status, error FROM artist_notices WHERE round_id = ? AND channel = 'sms'", [AN1]);
+  ok('retrying a failed send clears the old error', rsRetried.error === null || rsRetried.error === undefined, JSON.stringify(rsRetried));
+  // The Rounds tab reads this to colour the button and label it send vs resend.
+  const rsRounds = (await call(`/api/admin/rounds?sessionId=${ANID}`, null, 'GET', ANAH)).d;
+  const rsR1 = rsRounds.rounds.find(r => r.id === AN1);
+  ok('rounds payload carries per-round notice state', !!(rsR1.notice && rsR1.notice.sms && rsR1.notice.sms.status), JSON.stringify(rsR1.notice));
+  ok('rounds payload carries the SMS window for the dialog',
+    rsRounds.smsWindow && typeof rsRounds.smsWindow.open === 'boolean' && !!rsRounds.smsWindow.from, JSON.stringify(rsRounds.smsWindow));
+
   // Post kit: the caption is always available, even with Asana unconfigured.
   const pk = await call(`/api/admin/session/post-kit?sessionId=${ANID}`, null, 'GET', ANAH);
-  ok('post kit returns a caption', pk.status === 200 && typeof pk.d.caption === 'string' && pk.d.caption.includes('#TheARoom'), JSON.stringify(pk.d).slice(0, 160));
+  ok('post kit returns a caption', pk.status === 200 && typeof pk.d.caption === 'string' && pk.d.caption.includes('#TheARRoom'), JSON.stringify(pk.d).slice(0, 160));
   ok('post kit reports Asana unconfigured (no token)', pk.d.configured === false && pk.d.hasToken === false, JSON.stringify(pk.d));
   ok('post kit names the top record', !!pk.d.topRecord, JSON.stringify(pk.d.topRecord));
   const pkNoAuth = await call(`/api/admin/session/post-kit?sessionId=${ANID}`, null, 'GET');
@@ -1765,6 +1827,198 @@ async function call(path, body, method='POST', headers={}) {
   // Nia's own score is untouched by the bonus machinery (50 rounds of her votes).
   const niaState = (await call('/api/me/state', null, 'GET', NIA)).d;
   ok('invitee keeps only her own vote points', niaState.totalPoints == null || typeof niaState.totalPoints === 'number', 'state ok');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NOTIFICATION CONTACT CENTER (028)
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.log('\n— notification contact center: defaults resolve with NO rows written —');
+  const npDb = require('./db');
+  process.env.NOTIFY_LINK_SECRET = 'test-notify-link-secret';
+  // A fresh account that has never touched the settings page.
+  const freshReq = await call('/api/auth/request', { email: 'prefs-fresh@test.com' });
+  const freshVer = await call('/api/auth/verify', { email: 'prefs-fresh@test.com', code: freshReq.d.devCode, name: 'Fresh Ears' });
+  const FRESH = { 'X-Auth-Token': freshVer.d.token };
+  const freshUid = freshVer.d.uid;
+  const fp = await call('/api/me/notify-prefs', null, 'GET', FRESH);
+  ok('room_live email defaults ON', fp.status === 200 && fp.d.topics.room_live.channels.email === true, JSON.stringify(fp.d.topics));
+  ok('room_live sms defaults ON', fp.d.topics.room_live.channels.sms === true, JSON.stringify(fp.d.topics.room_live));
+  ok('daily digest defaults OFF', fp.d.topics.digest_daily.channels.email === false, JSON.stringify(fp.d.topics.digest_daily));
+  ok('weekly digest defaults OFF', fp.d.topics.digest_weekly.channels.email === false, JSON.stringify(fp.d.topics.digest_weekly));
+  ok('SMS not offered for a digest', fp.d.topics.digest_daily.channels.sms === undefined, JSON.stringify(fp.d.topics.digest_daily.channels));
+  // THE no-backfill assertion: those defaults came from the catalog, not from rows.
+  const freshRows = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [freshUid])).c);
+  ok('defaults are resolved with ZERO stored rows (no backfill)', freshRows === 0, 'rows ' + freshRows);
+
+  console.log('\n— saving prefs writes rows and marks an explicit SMS decision —');
+  const savedPrefs = await call('/api/me/notify-prefs',
+    { topics: { digest_weekly: { email: true }, room_live: { sms: false } } }, 'POST', FRESH);
+  ok('save returns the resolved set', savedPrefs.status === 200 && savedPrefs.d.topics.digest_weekly.channels.email === true, JSON.stringify(savedPrefs.d.topics));
+  ok('room_live sms now off', savedPrefs.d.topics.room_live.channels.sms === false, JSON.stringify(savedPrefs.d.topics.room_live));
+  ok('untouched topic still resolves to its default', savedPrefs.d.topics.room_live.channels.email === true, JSON.stringify(savedPrefs.d.topics.room_live));
+  const freshUser = await npDb.get('SELECT sms_pref_set_at FROM users WHERE uid = ?', [freshUid]);
+  ok('touching an SMS topic marks the explicit decision', freshUser.sms_pref_set_at != null, JSON.stringify(freshUser));
+  // Unknown topics and unoffered channels are dropped, never stored.
+  await call('/api/me/notify-prefs', { topics: { not_a_topic: { email: true }, digest_daily: { sms: true } } }, 'POST', FRESH);
+  const junk = Number((await npDb.get("SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ? AND (topic = 'not_a_topic' OR channel = 'sms' AND topic = 'digest_daily')", [freshUid])).c);
+  ok('unknown topic / unoffered channel are never written', junk === 0, 'rows ' + junk);
+
+  console.log('\n— phone on file + SMS master OFF (the bug 028 exists to fix) —');
+  const optReq = await call('/api/auth/request', { email: 'prefs-optout@test.com' });
+  const optVer = await call('/api/auth/verify', { email: 'prefs-optout@test.com', code: optReq.d.devCode, name: 'Opt Out', phone: '4045559911' });
+  const OPT = { 'X-Auth-Token': optVer.d.token };
+  const optUid = optVer.d.uid;
+  const beforeOpt = await npDb.get('SELECT phone, sms_marketing_consent FROM users WHERE uid = ?', [optUid]);
+  ok('phone presence consented them at signup (unchanged behaviour)', Number(beforeOpt.sms_marketing_consent) === 1, JSON.stringify(beforeOpt));
+  const offRes = await call('/api/me/notify-prefs', { smsConsent: false }, 'POST', OPT);
+  ok('master off reports smsConsent false', offRes.status === 200 && offRes.d.smsConsent === false, JSON.stringify(offRes.d.smsConsent));
+  const afterOpt = await npDb.get('SELECT phone, sms_marketing_consent, sms_consent_at, sms_optout_at FROM users WHERE uid = ?', [optUid]);
+  ok('THE FIX: phone still on file while opted out', !!afterOpt.phone && Number(afterOpt.sms_marketing_consent) === 0, JSON.stringify(afterOpt));
+  ok('the grant timestamp is never cleared (consent history)', afterOpt.sms_consent_at != null, JSON.stringify(afterOpt.sms_consent_at));
+  ok('the withdrawal is timestamped too', afterOpt.sms_optout_at != null, JSON.stringify(afterOpt.sms_optout_at));
+  // ...and they're out of the SMS audience but still in the email one.
+  const audOff = await call('/api/admin/notify/topics', null, 'GET', BOOTH);
+  const rl = audOff.d.topics.find(t => t.key === 'room_live');
+  ok('audience readout is admin-visible', audOff.status === 200 && rl && typeof rl.channels.sms.count === 'number', JSON.stringify(rl));
+
+  console.log('\n— an explicit opt-out survives re-joining a room —');
+  const rejoinSess = await call('/api/session', { name: 'Rejoin Room' }, 'POST', BOOTH);
+  const rejoinSid = rejoinSess.d.sessionId;
+  const rjReq = await call('/api/join/request', { sessionId: rejoinSid, email: 'prefs-optout@test.com' });
+  await call('/api/join/verify', { sessionId: rejoinSid, email: 'prefs-optout@test.com', code: rjReq.d.devCode, name: 'Opt Out', phone: '4045559911' });
+  const afterRejoin = await npDb.get('SELECT phone, sms_marketing_consent FROM users WHERE uid = ?', [optUid]);
+  ok('re-typing the phone does NOT resurrect consent', Number(afterRejoin.sms_marketing_consent) === 0, JSON.stringify(afterRejoin));
+  ok('the number is still saved (a number is data)', !!afterRejoin.phone, JSON.stringify(afterRejoin.phone));
+  const rjPart = await npDb.get('SELECT sms_marketing_consent FROM participants WHERE session_id = ? AND user_id = ?', [rejoinSid, optUid]);
+  ok('the per-session snapshot mirrors the opt-out', Number(rjPart.sms_marketing_consent) === 0, JSON.stringify(rjPart));
+  // The one-tap account path is the third derivation site and the easiest to miss.
+  const tapSess = await call('/api/session', { name: 'One Tap Room' }, 'POST', BOOTH);
+  await call('/api/join/account', { sessionId: tapSess.d.sessionId }, 'POST', OPT);
+  const tapUser = await npDb.get('SELECT sms_marketing_consent FROM users WHERE uid = ?', [optUid]);
+  const tapPart = await npDb.get('SELECT sms_marketing_consent FROM participants WHERE session_id = ? AND user_id = ?', [tapSess.d.sessionId, optUid]);
+  ok('one-tap join does not resurrect consent either', Number(tapUser.sms_marketing_consent) === 0, JSON.stringify(tapUser));
+  ok('one-tap snapshot mirrors the opt-out', Number(tapPart.sms_marketing_consent) === 0, JSON.stringify(tapPart));
+
+  console.log('\n— an explicit opt-IN is equally sticky (the other direction) —');
+  const inReq = await call('/api/auth/request', { email: 'prefs-optin@test.com' });
+  const inVer = await call('/api/auth/verify', { email: 'prefs-optin@test.com', code: inReq.d.devCode, name: 'Opt In', phone: '4045558822' });
+  const INH = { 'X-Auth-Token': inVer.d.token }, inUid = inVer.d.uid;
+  await call('/api/me/notify-prefs', { smsConsent: true }, 'POST', INH);
+  const inSess = await call('/api/session', { name: 'Sticky In Room' }, 'POST', BOOTH);
+  const inJoin = await call('/api/join/request', { sessionId: inSess.d.sessionId, email: 'prefs-optin@test.com' });
+  // Joining with NO phone and no keepPhone would previously withdraw consent.
+  await call('/api/join/verify', { sessionId: inSess.d.sessionId, email: 'prefs-optin@test.com', code: inJoin.d.devCode, name: 'Opt In', phone: '' });
+  const inAfter = await npDb.get('SELECT sms_marketing_consent FROM users WHERE uid = ?', [inUid]);
+  ok('joining without a phone does NOT revoke an explicit opt-in', Number(inAfter.sms_marketing_consent) === 1, JSON.stringify(inAfter));
+
+  console.log('\n— the register checkbox, on all three registration paths —');
+  // Path 1: /api/auth/verify (team signup)
+  const cbAReq = await call('/api/auth/request', { email: 'cb-auth@test.com' });
+  const cbAVer = await call('/api/auth/verify', { email: 'cb-auth@test.com', code: cbAReq.d.devCode, name: 'CB Auth', notifyRooms: false });
+  const cbAUid = cbAVer.d.uid;
+  const cbARows = await npDb.all("SELECT channel, enabled FROM notify_prefs WHERE uid = ? AND topic = 'room_live'", [cbAUid]);
+  ok('auth/verify: unchecked writes room_live off on both channels',
+    cbARows.length === 2 && cbARows.every(r => Number(r.enabled) === 0), JSON.stringify(cbARows));
+  // Path 2: /api/join/verify (the main room register step)
+  const cbSess = await call('/api/session', { name: 'Checkbox Room' }, 'POST', BOOTH);
+  const cbJReq = await call('/api/join/request', { sessionId: cbSess.d.sessionId, email: 'cb-join@test.com' });
+  await call('/api/join/verify', { sessionId: cbSess.d.sessionId, email: 'cb-join@test.com', code: cbJReq.d.devCode, name: 'CB Join', notifyRooms: false });
+  const cbJUid = (await npDb.get('SELECT uid FROM users WHERE email = ?', ['cb-join@test.com'])).uid;
+  const cbJRows = await npDb.all("SELECT channel, enabled FROM notify_prefs WHERE uid = ? AND topic = 'room_live'", [cbJUid]);
+  ok('join/verify: unchecked writes room_live off on both channels',
+    cbJRows.length === 2 && cbJRows.every(r => Number(r.enabled) === 0), JSON.stringify(cbJRows));
+  // Path 3: /api/join/account (one-tap) — and checking it turns them back ON.
+  const cbTapSess = await call('/api/session', { name: 'Checkbox Tap Room' }, 'POST', BOOTH);
+  const CBJ = { 'X-Auth-Token': (await call('/api/auth/verify', { email: 'cb-join@test.com', code: (await call('/api/auth/request', { email: 'cb-join@test.com' })).d.devCode })).d.token };
+  await call('/api/join/account', { sessionId: cbTapSess.d.sessionId, notifyRooms: true }, 'POST', CBJ);
+  const cbTapRows = await npDb.all("SELECT channel, enabled FROM notify_prefs WHERE uid = ? AND topic = 'room_live'", [cbJUid]);
+  ok('join/account: checked turns room_live back on', cbTapRows.length === 2 && cbTapRows.every(r => Number(r.enabled) === 1), JSON.stringify(cbTapRows));
+  // Omitting the field entirely must write nothing — this is what keeps every older
+  // client (and every other test in this file) behaving exactly as before.
+  const cbNoneReq = await call('/api/auth/request', { email: 'cb-absent@test.com' });
+  const cbNoneVer = await call('/api/auth/verify', { email: 'cb-absent@test.com', code: cbNoneReq.d.devCode, name: 'CB Absent' });
+  const cbNoneRows = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [cbNoneVer.d.uid])).c);
+  ok('omitting notifyRooms writes NOTHING (old clients never unsubscribe anyone)', cbNoneRows === 0, 'rows ' + cbNoneRows);
+
+  console.log('\n— go-live honours the checkbox —');
+  // Sessions are created 'live' by default, so the room has to start 'upcoming' for the
+  // go-live transition (and therefore the notify fan-out) to actually happen.
+  const glSess = await call('/api/session', { name: 'Gate Room', status: 'upcoming' }, 'POST', BOOTH);
+  const glSid = glSess.d.sessionId;
+  async function gateJoin(email, name, phone, notifyRooms) {
+    const rq = await call('/api/join/request', { sessionId: glSid, email });
+    const body = { sessionId: glSid, email, code: rq.d.devCode, name, phone };
+    if (notifyRooms !== undefined) body.notifyRooms = notifyRooms;
+    await call('/api/join/verify', body);
+  }
+  await gateJoin('gate-yes@test.com', 'Gate Yes', '3055550001', true);
+  await gateJoin('gate-no@test.com', 'Gate No', '3055550002', false);
+  await call('/api/admin/session/status', { sessionId: glSid, status: 'live', notify: { email: true, sms: true } }, 'POST', BOOTH);
+  const glLog = await npDb.all(
+    `SELECT p.email, n.channel FROM notification_log n JOIN participants p ON p.id = n.participant_id WHERE n.session_id = ?`, [glSid]);
+  const yesCh = glLog.filter(r => r.email === 'gate-yes@test.com').map(r => r.channel).sort();
+  const noCh = glLog.filter(r => r.email === 'gate-no@test.com').map(r => r.channel);
+  ok('subscribed A&R gets both channels', yesCh.join(',') === 'email,sms', JSON.stringify(yesCh));
+  ok('unsubscribed A&R gets NOTHING on go-live', noCh.length === 0, JSON.stringify(noCh));
+
+  console.log('\n— unsubscribe-all + the email kill switch —');
+  const audBefore = (await call('/api/admin/notify/audience', null, 'GET', BOOTH)).d;
+  const unsub = await call('/api/me/notify-prefs/unsubscribe-all', {}, 'POST', FRESH);
+  ok('unsubscribe-all succeeds', unsub.status === 200 && unsub.d.ok === true, JSON.stringify(unsub.d));
+  const afterUnsub = (await call('/api/me/notify-prefs', null, 'GET', FRESH)).d;
+  ok('everything is off afterwards', afterUnsub.emailOptOut === true
+    && afterUnsub.topics.room_live.channels.email === false
+    && afterUnsub.topics.digest_weekly.channels.email === false, JSON.stringify(afterUnsub.topics));
+  const audAfter = (await call('/api/admin/notify/audience', null, 'GET', BOOTH)).d;
+  ok('the mass-announcement audience shrinks by exactly one', audAfter.email === audBefore.email - 1,
+    JSON.stringify([audBefore.email, audAfter.email]));
+  const bcast = await call('/api/admin/notify/start', { subject: 'Hi', message: 'Hello A&Rs', email: true }, 'POST', BOOTH);
+  const queued = await npDb.get('SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND uid = ?', [bcast.d.broadcastId, freshUid]);
+  ok('an unsubscribed A&R is never queued for a broadcast', Number(queued.c) === 0, JSON.stringify(queued));
+
+  console.log('\n— manage-link token: scope, tamper, expiry, masking —');
+  const linkTok = require('./server')._mintNotifyLink(optUid);
+  ok('a link token is minted when the secret is set', typeof linkTok === 'string' && linkTok.startsWith('np1.'), String(linkTok));
+  const LINKH = { 'X-Notify-Link': linkTok };
+  const linkGet = await call('/api/me/notify-prefs', null, 'GET', LINKH);
+  ok('the token reads the prefs it is scoped to', linkGet.status === 200 && !!linkGet.d.topics, JSON.stringify(linkGet.status));
+  ok('contact details come back MASKED', linkGet.d.email === 'p•••@test.com' && linkGet.d.phone === '••• 9911', JSON.stringify([linkGet.d.email, linkGet.d.phone]));
+  ok('the full email/phone never appear in the body', !JSON.stringify(linkGet.d).includes('prefs-optout@test.com') && !JSON.stringify(linkGet.d).includes('4045559911'));
+  ok('the token advertises that it cannot edit the phone', linkGet.d.canEditPhone === false, JSON.stringify(linkGet.d.canEditPhone));
+  const linkPhone = await call('/api/me/notify-prefs', { phone: '9995551234' }, 'POST', LINKH);
+  ok('a link holder CANNOT redirect the phone number', linkPhone.status === 403, 'status ' + linkPhone.status);
+  const stillPhone = await npDb.get('SELECT phone FROM users WHERE uid = ?', [optUid]);
+  ok('...and the number really is unchanged', stillPhone.phone === '4045559911', JSON.stringify(stillPhone));
+  // SCOPE: the token must not authenticate anything else. This is the assertion that
+  // keeps the guarantee true as the codebase grows.
+  for (const [path, label] of [['/api/me/profile', 'profile'], ['/api/auth/me', 'auth/me'], ['/api/admin/notify/audience', 'admin audience']]) {
+    const r = await call(path, null, 'GET', LINKH);
+    ok(`link token is rejected by ${label}`, r.status === 401 || r.status === 403, 'status ' + r.status);
+  }
+  const tampered = linkTok.slice(0, -1) + (linkTok.slice(-1) === 'A' ? 'B' : 'A');
+  const tamperRes = await call('/api/me/notify-prefs', null, 'GET', { 'X-Notify-Link': tampered });
+  ok('a tampered signature is rejected', tamperRes.status === 401 && tamperRes.d.error === 'bad_link', JSON.stringify(tamperRes.d));
+  ok('malformed and tampered are indistinguishable',
+    (await call('/api/me/notify-prefs', null, 'GET', { 'X-Notify-Link': 'garbage' })).d.error === 'bad_link');
+  const expiredMsg = `np1.${optUid}.1000000000`;
+  const expiredSig = require('crypto').createHmac('sha256', 'test-notify-link-secret').update(expiredMsg).digest('base64url');
+  const expRes = await call('/api/me/notify-prefs', null, 'GET', { 'X-Notify-Link': `${expiredMsg}.${expiredSig}` });
+  ok('an expired token is rejected, and says so', expRes.status === 401 && expRes.d.error === 'link_expired', JSON.stringify(expRes.d));
+  // Fails CLOSED with no secret — but header auth keeps working.
+  delete process.env.NOTIFY_LINK_SECRET;
+  const noSecret = await call('/api/me/notify-prefs', null, 'GET', LINKH);
+  ok('no secret => link auth fails closed (503)', noSecret.status === 503, 'status ' + noSecret.status);
+  ok('no secret => minting returns null', require('./server')._mintNotifyLink(optUid) === null);
+  const headerStillWorks = await call('/api/me/notify-prefs', null, 'GET', OPT);
+  ok('no secret => header auth is unaffected', headerStillWorks.status === 200, 'status ' + headerStillWorks.status);
+  process.env.NOTIFY_LINK_SECRET = 'test-notify-link-secret';
+
+  console.log('\n— prefs are deleted with the account —');
+  const delRows = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [cbAUid])).c);
+  ok('the doomed account has prefs to delete', delRows > 0, 'rows ' + delRows);
+  const delRes = await call('/api/admin/users/delete', { uid: cbAUid, confirmName: 'CB Auth' }, 'POST', BOOTH);
+  ok('account hard-deleted', delRes.status === 200, JSON.stringify(delRes.d));
+  const delAfter = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [cbAUid])).c);
+  ok('prefs die with the account', delAfter === 0, 'rows ' + delAfter);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();

@@ -9,6 +9,7 @@ Do them in order — **step 1 can block your deploy**, so check it first.
 |---|------|-------|-------------|
 | 1 | Confirm Vercel plan is **Pro** | Vercel | The whole deploy |
 | 2 | Add `CRON_SECRET` | Vercel | Artist texts |
+| 2b | Add `NOTIFY_LINK_SECRET` | Vercel | One-click unsubscribe links |
 | 3 | Add `ASANA_TOKEN` | Vercel | Asana button |
 | 4 | Confirm `BLOB_READ_WRITE_TOKEN` exists | Vercel | Report cards |
 | 5 | Deploy | GitHub / Vercel | Everything |
@@ -63,6 +64,32 @@ when it triggers the job, and the endpoint checks it — that's the whole handsh
 nobody on the internet can hit the URL and flush your text queue.
 
 Reference: [Securing cron jobs](https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs)
+
+---
+
+## 2b. Add `NOTIFY_LINK_SECRET` — this makes "manage your notifications" one click
+
+Every email and text we send now carries a **Manage your notifications** link. That link is
+signed with this secret, which is what lets it open an A&R's settings **without making them log
+in** — the whole point of an unsubscribe link. Same routine as `CRON_SECRET`:
+
+1. Generate a random string (any password generator, 32+ characters).
+2. Vercel → your project → **Settings** → **Environment Variables** → add:
+   - **Key:** `NOTIFY_LINK_SECRET`
+   - **Value:** the random string
+   - **Environments:** tick **Production**
+3. Save.
+
+**If you skip this, nothing breaks** — the footers just point at the sign-in page instead, so
+people have to log in before they can unsubscribe. That's a worse experience and it's the kind
+of friction that gets messages marked as spam, which eventually hurts *all* our email
+(including the login codes the whole site depends on). Worth the two minutes.
+
+You can confirm it's working: **Platform panel → Notification audience → Manage links**. It
+reads green **ON** when the secret is set, amber **OFF** when it isn't.
+
+One caveat: changing this secret later invalidates every link already sitting in someone's
+inbox. That's the intended emergency lever, not something to do casually.
 
 ---
 
@@ -153,14 +180,43 @@ artists are skipped automatically, so re-sending is safe.
 Editing a ratified round only touches the description and contact — **votes, scores and points
 are locked and cannot be changed there.**
 
+### Need to send one artist again? Use 📨 on their round
+
+**Send artist notices** is deliberately all-or-nothing and skips anyone already sent — which is
+what you want when you run the batch twice, but it means a single artist can never be re-sent
+that way. So each eligible round has its own **📨** button next to the **✎**.
+
+Use it when:
+
+- the address had a typo — fix it with **✎**, then hit **📨** on that round
+- their email bounced, or they say it never arrived
+- you added contact after the main batch already ran and only want that one to go
+
+The button tells you where things stand at a glance: **green** = already sent (hover for when),
+**red** = the last attempt failed (hover for the reason), **plain** = never sent. It only appears
+on rounds that can actually receive a report — a rated song round with evaluations *and* contact
+on file. Versus rounds never get one; they have no room average to report.
+
+Clicking it opens a confirm showing exactly who gets what, with email and text both ticked.
+Untick either one. Two things worth knowing:
+
+- **The report is rebuilt when you resend**, so any A&R comments you've shared since the first
+  send are included in the new one.
+- **Texts still respect the 10 AM–10:30 PM ET window.** Outside it, the email goes right away and
+  the text queues for the morning — the dialog says so before you click.
+
 ---
 
 ## 8. Two things still open
 
-**a) Text consent (attorney).** The 10 AM–8 PM ET window is built and enforced. What's *not*
+**a) Text consent (attorney).** The 10 AM–10:30 PM ET window is built and enforced. What's *not*
 built is the legal basis for texting artists at all. The submission form needs an explicit line
 like *"you agree to receive a text and email when your song is played."* Worth bundling with the
 other open attorney items. Emails are unaffected — send those today.
+
+Ask about the window itself while you're there: the TCPA safe harbor is 8 AM–9 PM in the
+*recipient's* local time, and a 10:30 PM ET close texts past 9 PM anyone in the Eastern or
+Central zones. The gate is a one-line change if the attorney wants it pulled back.
 
 **b) Drupal contact hand-off (mim repo).** The review site's "Send to A&R Room" button can pass
 the submitter's email and phone along with the song, so contact is already filled in before the

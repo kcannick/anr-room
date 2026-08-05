@@ -262,7 +262,7 @@
          never disappears the way the lobby's Invite button does when rounds start. -->
     <button id="shareRoomBtn" title="Share this room" aria-label="Share this room" class="hide" style="margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;height:38px;padding:0 12px;font-size:13px;cursor:pointer;flex:none;display:flex;align-items:center;gap:6px">⤴<span class="tb-lbl"> Share</span></button>
     <button id="feedbackBtn" title="Send feedback" aria-label="Send feedback" style="background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;height:38px;padding:0 12px;font-size:13px;cursor:pointer;flex:none;display:flex;align-items:center;gap:6px">💬<span class="tb-lbl"> Feedback</span></button>
-    <a id="profileLink" href="/profile" title="Edit your profile (name, photo, skills)" aria-label="Edit your profile" style="background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;width:38px;height:38px;font-size:17px;flex:none;display:flex;align-items:center;justify-content:center;text-decoration:none">👤</a>
+    <a id="profileLink" href="/profile" title="Edit your A&amp;R record (name, photo, roles)" aria-label="Edit your A&amp;R record" style="background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;width:38px;height:38px;font-size:17px;flex:none;display:flex;align-items:center;justify-content:center;text-decoration:none">👤</a>
     <button id="muteBtn" title="Sound on/off" aria-label="Toggle sound" style="background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:10px;width:38px;height:38px;font-size:18px;cursor:pointer;flex:none">🔊</button>
   </div>
 
@@ -281,12 +281,19 @@
   <section id="screen-account" class="center stack hide">
     <div class="panel stack" style="text-align:center">
       <div class="eyebrow" id="acctEyebrow">Register as an A&amp;R</div>
-      <h2 style="margin:6px 0;font-size:24px" id="acctHi">This room</h2>
-      <p class="dim" id="acctSub" style="font-size:14px;margin:0">Tap Complete to register as an A&amp;R for this room.</p>
+      <h2 style="margin:6px 0;font-size:24px" id="acctHi">Evaluation session</h2>
+      <p class="dim" id="acctSub" style="font-size:14px;margin:0">Continue to claim your A&amp;R profile for this session.</p>
       <!-- Invite-only rooms: revealed when the server asks for a room code -->
       <div class="hide" id="acctCodeRow" style="width:100%"><label>Room code <span class="dim" style="font-weight:400">(from your invite)</span></label>
         <input id="acctCode" autocomplete="off" placeholder="e.g. VIP2026" maxlength="24" style="text-transform:uppercase"></div>
-      <button class="btn" id="btnAcctJoin">Complete registration</button>
+      <!-- Same subscribe moment on the one-tap path (028) — otherwise a whole registration
+           route would silently subscribe people with no checkbox in sight. -->
+      <label class="pref-row" for="acctNotifyRooms" style="text-align:left">
+        <input type="checkbox" id="acctNotifyRooms" checked>
+        <span><b>Notify me when this and future rooms go live</b>
+          <small>Email, plus a text if you have a number on file.</small></span>
+      </label>
+      <button class="btn" id="btnAcctJoin">Claim my A&amp;R profile</button>
       <button class="btn ghost" id="btnAcctOther">Cancel</button>
       <div class="err" id="acctErr"></div>
     </div>
@@ -295,13 +302,13 @@
   <!-- JOIN: email -->
   <section id="screen-email" class="center stack hide">
     <div class="panel stack">
-      <div><div class="eyebrow">Step 1</div><h2 style="margin-top:6px">Take your seat</h2>
-        <p class="dim" style="margin:8px 0 0;font-size:14px">Enter your email and we'll send a six-digit code to confirm it's you.</p></div>
+      <div><div class="eyebrow">Step 1</div><h2 style="margin-top:6px">Claim your seat</h2>
+        <p class="dim" style="margin:8px 0 0;font-size:14px">Enter your email and we'll send a six-digit access code.</p></div>
       <div><label>Email</label><input id="email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com"></div>
       <!-- Invite-only rooms: revealed when the server asks for a room code -->
       <div class="hide" id="roomCodeRow"><label>Room code <span class="dim" style="font-weight:400">(from your invite)</span></label>
         <input id="roomCode" autocomplete="off" placeholder="e.g. VIP2026" maxlength="24" style="text-transform:uppercase"></div>
-      <button class="btn" id="btnRequest">Send my code</button>
+      <button class="btn" id="btnRequest">Send my access code</button>
       <div class="err" id="emailErr"></div>
     </div>
   </section>
@@ -309,17 +316,25 @@
   <!-- JOIN: code -->
   <section id="screen-code" class="center stack hide">
     <div class="panel stack">
-      <div><div class="eyebrow">Step 2</div><h2 style="margin-top:6px">Enter the code</h2>
-        <p class="dim" style="margin:8px 0 0;font-size:14px">Code sent to <span id="emailEcho" style="color:var(--ink)"></span>. Check your email — if you don't see it, look in your <strong style="color:var(--ink)">Spam</strong> or <strong style="color:var(--ink)">Promotions</strong> tab.</p></div>
+      <div><div class="eyebrow">Step 2</div><h2 style="margin-top:6px">Enter your access code</h2>
+        <p class="dim" style="margin:8px 0 0;font-size:14px">Code sent to <span id="emailEcho" style="color:var(--ink)"></span>. If it isn't in your inbox, check <strong style="color:var(--ink)">Spam</strong> or <strong style="color:var(--ink)">Promotions</strong>.</p></div>
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
       <div id="devCodeBox" class="note hide"></div>
-      <div><label>Your name (shown on the leaderboard)</label><input id="name" placeholder="e.g. Maya"></div>
+      <div><label>Display name (shown in the A&amp;R rankings)</label><input id="name" placeholder="e.g. Maya"></div>
       <div>
         <label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label>
         <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
-        <p class="dim" style="font-size:12px;line-height:1.5;margin:7px 2px 0">By entering your number you agree to get texts when this room goes live and about future A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Optional — not required to play.</p>
+        <p class="dim" style="font-size:12px;line-height:1.5;margin:7px 2px 0">By entering your number you agree to receive texts when this room goes live and about future A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Optional—not required to participate.</p>
       </div>
-      <button class="btn" id="btnVerify">Enter the room</button>
+      <!-- The subscribe moment (028). Checked by default: it matches what the register
+           screen already promises ("You'll get a notification when it opens"). Unchecking
+           it writes room_live=off on BOTH channels, so it really does mean "don't ping me". -->
+      <label class="pref-row" for="notifyRooms">
+        <input type="checkbox" id="notifyRooms" checked>
+        <span><b>Notify me when this and future rooms go live</b>
+          <small>Email, plus a text if you added a number. Change this any time in your A&amp;R record.</small></span>
+      </label>
+      <button class="btn" id="btnVerify">Enter the evaluation</button>
       <button class="btn ghost" id="btnBack">Use a different email</button>
       <div class="err" id="codeErr"></div>
     </div>
@@ -332,35 +347,35 @@
   <section id="screen-wait" class="center hide">
     <div class="panel" style="text-align:center">
       <h2 style="margin:2px 0 8px;font-size:26px" id="waitHi">Welcome</h2>
-      <p class="dim" style="font-size:15px;line-height:1.5;margin:0" id="waitSub">Hang tight — the next song is being cued up.</p>
+      <p class="dim" style="font-size:15px;line-height:1.5;margin:0" id="waitSub">The next record is being prepared.</p>
       <div id="waitCountdown" class="wait-cd hide"></div>
       <div class="pulse-wait" id="waitBounce"><i></i><i></i><i></i></div>
-      <div class="tag" style="margin-top:8px">🎧 <span id="waitCount">0</span> A&amp;Rs in the room</div>
+      <div class="tag" style="margin-top:8px">🎧 <span id="waitCount">0</span> A&amp;Rs active</div>
       <a id="watchBtn" class="btn ghost hide" href="#" target="_blank" rel="noopener noreferrer" style="margin-top:14px;text-decoration:none">▶ Watch the stream</a>
     </div>
     <!-- host's room description -->
     <div class="panel hide" id="lobbyDetails" style="margin-top:14px">
-      <div class="lv-h">Room details</div>
+      <div class="lv-h">Session details</div>
       <div id="lobbyMsg" style="font-size:14px;color:var(--ink-dim);line-height:1.55"></div>
     </div>
     <!-- THE lobby action: recruiting. Green primary; bonus-points hook is real
          (referral milestones pay at the invitee's 10th and 50th scored rounds). -->
     <div class="panel" style="margin-top:14px;text-align:center">
-      <button id="inviteBtn" class="btn">＋ Invite others</button>
-      <p class="dim" style="font-size:13px;line-height:1.5;margin:10px 0 0">Know others with a good ear for music? Invite them to join the room and earn bonus points as they play.</p>
+      <button id="inviteBtn" class="btn">＋ Invite an A&amp;R</button>
+      <p class="dim" style="font-size:13px;line-height:1.5;margin:10px 0 0">Invite people whose musical judgment you respect. When they join and complete eligible sessions, your referral can earn bonus points.</p>
     </div>
     <!-- $500 GIVEAWAY HOOK — shown only when this session competes for the monthly series. -->
     <div class="panel give-hook hide" id="giveHook" style="margin-top:14px;text-align:center">
-      <div class="gh-prize">🏆 Playing for <b id="ghPrize">$500</b> this month</div>
+      <div class="gh-prize">🏆 Monthly A&amp;R Award · <b id="ghPrize">$500</b></div>
       <div class="gh-series" id="ghSeries"></div>
       <div class="gh-board" id="ghBoard"></div>
-      <div class="gh-foot">Top A&amp;Rs on the monthly board win. Rate songs, read the room, climb.</div>
+      <div class="gh-foot">Top A&amp;Rs in the monthly rankings qualify for A&amp;R Wars, where the champion earns the award. Evaluate records. Predict the consensus. Build your ranking.</div>
     </div>
     <!-- LIVENESS FEED (3.5d) — recent joins, count-only -->
     <div class="panel" id="livenessPanel" style="margin-top:14px;display:none">
-      <div class="lv-h">In the room</div>
+      <div class="lv-h">A&amp;Rs in the room</div>
       <div id="joinFeed"></div>
-      <div class="lv-seal"><span style="color:var(--signal)">🔒</span><span>Count only — the room's lean stays sealed until results. It's what you're predicting.</span></div>
+      <div class="lv-seal"><span style="color:var(--signal)">🔒</span><span>Only the A&amp;R count is visible. The room's lean stays sealed until results because that consensus is what you're predicting.</span></div>
     </div>
   </section>
 
@@ -368,10 +383,10 @@
   <section id="screen-vote" class="center hide">
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div class="eyebrow">Now playing · Round <span id="vRound">1</span></div>
+        <div><div class="eyebrow">Now evaluating · Round <span id="vRound">1</span></div>
           <h2 id="vTitle" style="font-size:22px;margin-top:7px">—</h2>
           <div class="dim" id="vArtist" style="font-size:14px;margin-top:2px"></div></div>
-        <div class="timer" id="vTimer"><div class="t mono">--</div><div class="faint" style="font-size:10px;letter-spacing:.15em">LEFT</div></div>
+        <div class="timer" id="vTimer"><div class="t mono">--</div><div class="faint" style="font-size:10px;letter-spacing:.15em">TIME LEFT</div></div>
       </div>
       <div class="note hide" id="vNote"></div>
       <div class="give hide" id="vGive"></div>
@@ -380,8 +395,8 @@
       <div id="ratingFlow">
       <!-- STEP 1: RATE -->
       <div id="stepRate" style="margin-top:22px">
-        <div class="step-head"><span class="step-num">①</span> Rate</div>
-        <div class="step-help">Your rating — how good is it? <span class="faint">(0 = worst · 9 = best)</span></div>
+        <div class="step-head"><span class="step-num">①</span> Evaluate</div>
+        <div class="step-help">Score the record from 0–9 based on its overall strength.</div>
         <div class="rate-row" id="rateTop"></div>
         <div class="rate-row two" id="rateBot"></div>
         <button class="btn" id="btnNext" style="margin-top:22px" disabled>Next →</button>
@@ -389,13 +404,13 @@
 
       <!-- STEP 2: READ THE ROOM -->
       <div id="stepPredict" class="hide" style="margin-top:22px">
-        <div class="step-head"><span class="step-num">②</span> Read the Room!</div>
-        <div class="step-help">Predict what you think the room's average rating will be.</div>
+        <div class="step-head"><span class="step-num">②</span> Predict the Room</div>
+        <div class="step-help">Predict the room's final average score.</div>
         <div class="slider-val mono" id="predVal" style="margin-top:14px">–.–</div>
         <input id="pred" type="range" min="0" max="9" step="0.1" value="4.5">
-        <div class="scale-ends"><span>0.0 nobody likes it</span><span>everybody loves it 9.0</span></div>
+        <div class="scale-ends"><span>0.0 Low</span><span>9.0 Exceptional</span></div>
         <div style="margin-top:22px">
-          <button class="btn" id="btnLock" style="width:100%" disabled>Lock it in</button>
+          <button class="btn" id="btnLock" style="width:100%" disabled>Submit evaluation</button>
           <button class="btn ghost" id="btnPredBack" style="width:100%;margin-top:10px">← Back</button>
         </div>
       </div>
@@ -405,8 +420,8 @@
       <div id="binaryFlow" class="hide">
       <!-- STEP 1: PICK A SIDE -->
       <div id="stepPick" style="margin-top:22px">
-        <div class="step-head"><span class="step-num">①</span> Pick a side</div>
-        <div class="step-help">Which one are you riding with?</div>
+        <div class="step-head"><span class="step-num">①</span> Choose the stronger record</div>
+        <div class="step-help">Which record makes the stronger case?</div>
         <div class="opt-list">
           <button class="opt" id="optA" data-pick="A">
             <span class="letter">A</span>
@@ -422,8 +437,8 @@
 
       <!-- STEP 2: READ THE ROOM (the split) -->
       <div id="stepSplit" class="hide" style="margin-top:22px">
-        <div class="step-head"><span class="step-num">②</span> Read the Room!</div>
-        <div class="step-help">Predict how the room will split between the two.</div>
+        <div class="step-head"><span class="step-num">②</span> Predict the Room</div>
+        <div class="step-help">Predict how the room's evaluations will split between the two records.</div>
         <div class="split-readout">
           <div><div class="side" id="splitLabelA">A</div></div>
           <div style="text-align:right"><span class="pct" id="splitPctA">–</span><span class="side"> / </span><span class="pct" id="splitPctB" style="color:var(--cool)">–</span></div>
@@ -432,7 +447,7 @@
         <input id="split" type="range" min="0" max="100" step="1" value="50" style="margin-top:8px">
         <div class="scale-ends"><span id="splitEndA">all A</span><span id="splitEndB">all B</span></div>
         <div style="margin-top:22px">
-          <button class="btn" id="btnLockBin" style="width:100%" disabled>Lock it in</button>
+          <button class="btn" id="btnLockBin" style="width:100%" disabled>Submit evaluation</button>
           <button class="btn ghost" id="btnSplitBack" style="width:100%;margin-top:10px">← Back</button>
         </div>
       </div>
@@ -445,11 +460,11 @@
   <section id="screen-locked" class="center hide">
     <div class="panel" style="text-align:center">
       <div style="font-size:34px">🔒</div>
-      <h2 style="margin:10px 0 6px;font-size:22px">Locked in</h2>
-      <p class="dim" style="margin:0;font-size:15px" id="lockedSub">Waiting for the room to finish voting…</p>
+      <h2 style="margin:10px 0 6px;font-size:22px">Evaluation submitted</h2>
+      <p class="dim" style="margin:0;font-size:15px" id="lockedSub">Waiting for the room to complete its evaluations…</p>
       <div class="result-grid" style="max-width:300px;margin:18px auto 0" id="lkRatingGrid">
-        <div class="cell"><div class="k">Your rating</div><div class="v" id="lkTaste" style="color:var(--ink)">—</div></div>
-        <div class="cell"><div class="k">Your guess</div><div class="v" id="lkPred" style="color:var(--signal)">—</div></div>
+        <div class="cell"><div class="k">Your score</div><div class="v" id="lkTaste" style="color:var(--ink)">—</div></div>
+        <div class="cell"><div class="k">Your prediction</div><div class="v" id="lkPred" style="color:var(--signal)">—</div></div>
       </div>
       <div class="result-grid hide" style="max-width:300px;margin:18px auto 0" id="lkBinaryGrid">
         <div class="cell"><div class="k">Your pick</div><div class="v" id="lkPick" style="color:var(--ink)">—</div></div>
@@ -464,7 +479,7 @@
     <div class="panel" id="resultsPanel">
       <div class="reaction" id="reaction">
         <div class="reaction-emoji" id="rxEmoji">🎯</div>
-        <div class="reaction-text" id="rxText">Bullseye</div>
+        <div class="reaction-text" id="rxText">Exact read</div>
         <div class="reaction-sub" id="rxSub"></div>
       </div>
       <div class="eyebrow">Round <span id="rRound">1</span> · Results</div>
@@ -472,21 +487,21 @@
 
       <div class="winner">
         <span class="crown">👑</span>
-        <div><div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--signal)">Round winner</div>
+        <div><div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--signal)">Round leader</div>
           <div style="font-size:18px;font-weight:700" id="rWinner">—</div></div>
       </div>
 
       <div class="result-grid">
-        <div class="cell"><div class="k" id="rGuessK">Your guess</div><div class="v" id="rGuess" style="color:var(--accent)">—</div></div>
-        <div class="cell"><div class="k">Points this round</div><div class="v" id="rPts" style="color:var(--good)">—</div></div>
+        <div class="cell"><div class="k" id="rGuessK">Your prediction</div><div class="v" id="rGuess" style="color:var(--accent)">—</div></div>
+        <div class="cell"><div class="k">Points earned</div><div class="v" id="rPts" style="color:var(--good)">—</div></div>
       </div>
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-        <span class="rankpill">Your rank <strong id="rRank" style="color:var(--signal)">—</strong><span class="faint" id="rOf"></span></span>
-        <span class="rankpill">Total <strong id="rTotal" style="color:var(--good)">—</strong></span>
+        <span class="rankpill">Current rank <strong id="rRank" style="color:var(--signal)">—</strong><span class="faint" id="rOf"></span></span>
+        <span class="rankpill">Session total <strong id="rTotal" style="color:var(--good)">—</strong></span>
       </div>
       <div class="give hide" id="rGive"></div>
-      <p class="faint" style="text-align:center;font-size:13px;margin:18px 0 0">🔒 The room's score stays sealed until the end. Stay in for the full reveal.</p>
+      <p class="faint" style="text-align:center;font-size:13px;margin:18px 0 0">🔒 The room's score remains sealed until the final reveal.</p>
     </div>
     <canvas id="confetti" style="position:fixed;inset:0;pointer-events:none;z-index:50;display:none"></canvas>
   </section>
@@ -496,45 +511,45 @@
     <div class="panel recap" id="recapCard">
       <div class="recap-head">
         <img class="mark" src="/mark.png" alt="" style="height:40px;margin-bottom:10px" onerror="this.style.display='none'">
-        <div class="eyebrow">The A&amp;R Room · Recap</div>
-        <h2 id="recapName" style="font-size:22px;margin-top:6px">Your card</h2>
+        <div class="eyebrow">The A&amp;R Room · Session Record</div>
+        <h2 id="recapName" style="font-size:22px;margin-top:6px">Your A&amp;R record</h2>
       </div>
       <!-- Absolute grade — an accuracy band that works for rating, Versus, or mixed nights. -->
       <div class="grade-wrap" id="recapGradeWrap">
         <div class="grade" id="recapGrade">—</div>
-        <div class="grade-label">Ear for the room</div>
+        <div class="grade-label">Room-reading accuracy</div>
       </div>
       <!-- Accuracy: the absolute read number behind the grade. -->
       <div id="recapAccWrap" style="margin:2px 0 4px">
         <div class="mono" style="font-size:26px;font-weight:700"><span id="recapAcc">—</span><span style="font-size:17px;color:var(--ink-dim)">%</span></div>
-        <div class="grade-label">Accuracy — how close you read the room</div>
+        <div class="grade-label">Prediction accuracy · how closely you read the room</div>
         <div style="height:10px;border-radius:6px;background:#0a0814;border:1px solid var(--line);overflow:hidden;max-width:280px;margin:10px auto 0"><i id="recapAccBar" style="display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cool),var(--signal))"></i></div>
       </div>
       <!-- Per-type split (only when a night mixed both mechanics). -->
       <div id="recapByType" class="hide" style="gap:8px;margin-top:12px">
-        <div style="flex:1;background:#141024;border:1px solid var(--line);border-radius:10px;padding:8px"><div class="grade-label">0–9 rounds</div><div class="mono" id="recapAccRating" style="font-size:16px;font-weight:700;color:var(--signal)">—</div></div>
-        <div style="flex:1;background:#141024;border:1px solid var(--line);border-radius:10px;padding:8px"><div class="grade-label">Versus rounds</div><div class="mono" id="recapAccVersus" style="font-size:16px;font-weight:700;color:var(--cool)">—</div></div>
+        <div style="flex:1;background:#141024;border:1px solid var(--line);border-radius:10px;padding:8px"><div class="grade-label">Rating evaluations</div><div class="mono" id="recapAccRating" style="font-size:16px;font-weight:700;color:var(--signal)">—</div></div>
+        <div style="flex:1;background:#141024;border:1px solid var(--line);border-radius:10px;padding:8px"><div class="grade-label">Versus evaluations</div><div class="mono" id="recapAccVersus" style="font-size:16px;font-weight:700;color:var(--cool)">—</div></div>
       </div>
       <div class="recap-grid">
         <div class="rcell"><div class="k">Total points</div><div class="v" id="recapPts" style="color:var(--good)">—</div></div>
-        <div class="rcell"><div class="k">Room rank</div><div class="v" id="recapRank" style="color:var(--signal)">—</div></div>
-        <div class="rcell"><div class="k">Bullseyes</div><div class="v" id="recapBull">—</div></div>
-        <div class="rcell"><div class="k">Top <span id="recapPctSign">%</span></div><div class="v" id="recapPct" style="color:var(--accent)">—</div></div>
+        <div class="rcell"><div class="k">Session rank</div><div class="v" id="recapRank" style="color:var(--signal)">—</div></div>
+        <div class="rcell"><div class="k">Exact reads</div><div class="v" id="recapBull">—</div></div>
+        <div class="rcell"><div class="k">Top percentile</div><div class="v" id="recapPct" style="color:var(--accent)">—</div></div>
       </div>
       <div class="reveal">
         <div class="reveal-row" id="recapBestRow"><span>Your best round</span><strong id="recapBest" class="mono">—</strong></div>
       </div>
       <!-- Separate Versus card — only appears when the night had A/B rounds. -->
       <div id="recapVersusCard" class="hide" style="margin-top:14px;text-align:left;border-top:1px solid var(--line);padding-top:12px">
-        <div class="eyebrow">Your Versus reads</div>
+        <div class="eyebrow">Your Versus predictions</div>
         <div id="recapVersusList" style="margin-top:8px"></div>
       </div>
-      <button class="btn" id="btnShare" style="margin-top:18px">Share my card</button>
+      <button class="btn" id="btnShare" style="margin-top:18px">Share my A&amp;R record</button>
       <div class="dl-row">
         <button class="btn ghost" id="btnDlArs" style="flex:1">Top 8 A&amp;Rs</button>
         <button class="btn ghost" id="btnDlSongs" style="flex:1">Top 8 Songs</button>
       </div>
-      <p class="faint" style="text-align:center;font-size:13px;margin:14px 0 0">Thanks for sitting in. 🎧</p>
+      <p class="faint" style="text-align:center;font-size:13px;margin:14px 0 0">Your work is on the record. 🎧</p>
     </div>
   </section>
 
@@ -570,7 +585,7 @@
   </div>
 
   <div class="foot">
-    <span class="tag">🎧 <span id="footCount">0</span> playing</span>
+    <span class="tag">🎧 <span id="footCount">0</span> A&amp;Rs active</span>
     <span class="mono" id="footPts">0 pts</span>
   </div>
 </div>
@@ -579,14 +594,14 @@
      rating vs Versus (binary) rounds, and to whether this session plays for the $500. -->
 <div id="howToModal" class="modal-scrim" style="z-index:85">
   <div class="panel" style="max-width:390px;width:100%">
-    <div class="eyebrow" style="text-align:center">New here? How to play</div>
-    <h2 id="htTitle" style="text-align:center;font-size:22px;margin:8px 0 16px">Read the room, win the month</h2>
+    <div class="eyebrow" style="text-align:center">New here? How evaluations work</div>
+    <h2 id="htTitle" style="text-align:center;font-size:22px;margin:8px 0 16px">Prove your ear. Build your ranking.</h2>
     <div class="ht-steps">
-      <div class="ht-step"><span class="ht-n">①</span><div><b id="htS1t">Rate the song 0–9</b><div class="ht-d" id="htS1d"></div></div></div>
-      <div class="ht-step"><span class="ht-n">②</span><div><b id="htS2t">Read the Room</b><div class="ht-d" id="htS2d"></div></div></div>
-      <div class="ht-step"><span class="ht-n">③</span><div><b id="htS3t">Climb the leaderboard</b><div class="ht-d" id="htS3d"></div></div></div>
+      <div class="ht-step"><span class="ht-n">①</span><div><b id="htS1t">Evaluate the record 0–9</b><div class="ht-d" id="htS1d"></div></div></div>
+      <div class="ht-step"><span class="ht-n">②</span><div><b id="htS2t">Predict the consensus</b><div class="ht-d" id="htS2d"></div></div></div>
+      <div class="ht-step"><span class="ht-n">③</span><div><b id="htS3t">Build your monthly ranking</b><div class="ht-d" id="htS3d"></div></div></div>
     </div>
-    <button class="btn" id="htGo" style="width:100%;margin-top:18px">Got it — let's play</button>
+    <button class="btn" id="htGo" style="width:100%;margin-top:18px">I'm ready to evaluate</button>
   </div>
 </div>
 
@@ -606,8 +621,8 @@
 <div id="fbModal" class="modal-scrim" style="z-index:80">
   <div class="panel" style="max-width:440px;width:100%">
     <div style="display:flex;align-items:center;gap:8px"><span style="font-size:24px">💬</span><span class="beta-pill">BETA</span></div>
-    <h2 style="margin:10px 0 6px;font-size:21px">Tell us how it's going</h2>
-    <p class="dim" style="font-size:14px;line-height:1.55;margin:0 0 14px">This is a beta version of the app. If you run into any bugs or difficulty using it, let us know so we can make it better for you. Attaching a screenshot is optional.</p>
+    <h2 style="margin:10px 0 6px;font-size:21px">Help us strengthen the room</h2>
+    <p class="dim" style="font-size:14px;line-height:1.55;margin:0 0 14px">The A&amp;R Room is in beta. Tell us about any issue that affected your evaluation experience. A screenshot is optional.</p>
     <label style="display:block;font-size:12px;color:var(--ink-dim);margin:0 0 6px 2px">Your feedback</label>
     <textarea id="fbMessage" placeholder="What happened? What were you trying to do?" style="width:100%;min-height:110px;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:15px;padding:11px 13px;border-radius:10px;resize:vertical"></textarea>
     <label style="display:block;font-size:12px;color:var(--ink-dim);margin:12px 0 6px 2px">Email <span style="font-weight:400">(optional — if you'd like a reply)</span></label>
@@ -629,8 +644,8 @@
 <div id="ciModal" class="modal-scrim" style="z-index:70">
   <div class="panel" style="max-width:430px;width:100%;text-align:center">
     <div style="font-size:34px">📍</div>
-    <div class="eyebrow" style="margin-top:6px">Check in to vote</div>
-    <h2 style="margin:8px 0 6px;font-size:21px" id="ciTitle">Are you in the room?</h2>
+    <div class="eyebrow" style="margin-top:6px">Check in to participate</div>
+    <h2 style="margin:8px 0 6px;font-size:21px" id="ciTitle">Are you evaluating in the room?</h2>
     <p class="dim" style="font-size:15px;line-height:1.5;margin:0 0 8px" id="ciBody">Share your location so we know if you're at the event or watching remotely. We use it once to check you in — we don't track or store where you are.</p>
     <div id="ciVenue" class="tag hide" style="margin:4px auto 0"></div>
     <div class="err" id="ciErr" style="margin-top:10px"></div>
@@ -645,14 +660,14 @@
 <!-- PROFILE COMPLETION MODAL (3.5a) — dead-time, dismissible -->
 <div id="profileModal" class="modal-scrim" style="z-index:90">
   <div class="panel" style="max-width:440px;width:100%;border-color:var(--accent)">
-    <div class="eyebrow" style="color:var(--signal)">Round closed · results soon</div>
-    <div style="font-size:17px;font-weight:700;margin:2px 0 3px">Complete your profile to qualify</div>
-    <p class="dim" style="font-size:12.5px;line-height:1.5;margin:0 0 14px">You're scoring — but you won't appear on the leaderboard or qualify for prizes until your profile's done.</p>
-    <div class="pf-steplabel"><span class="pf-num">①</span> What do you do? <span class="pf-sub">select all that apply</span></div>
+    <div class="eyebrow" style="color:var(--signal)">Round closed · results pending</div>
+    <div style="font-size:17px;font-weight:700;margin:2px 0 3px">Complete your A&amp;R profile to qualify</div>
+    <p class="dim" style="font-size:12.5px;line-height:1.5;margin:0 0 14px">You can submit evaluations now, but your rank and award eligibility remain inactive until your profile is complete.</p>
+    <div class="pf-steplabel"><span class="pf-num">①</span> Select your professional roles</div>
     <div class="chips" id="pfCats"></div>
-    <div class="pf-steplabel" style="margin-top:14px"><span class="pf-num">②</span> Most focused on? <span class="pf-sub">your primary — shows on the board</span></div>
+    <div class="pf-steplabel" style="margin-top:14px"><span class="pf-num">②</span> Choose your primary A&amp;R focus</div>
     <div class="chips" id="pfPrimary"></div>
-    <label style="margin-top:14px">Location <span class="pf-sub">required to qualify</span></label>
+    <label style="margin-top:14px">Location <span class="pf-sub">· required for ranking eligibility</span></label>
     <div style="position:relative;margin-bottom:18px">
       <input id="pfLocation" placeholder="Start typing your city…" autocomplete="off">
       <div id="pfLocDrop" class="loc-drop hide"></div>
@@ -663,11 +678,11 @@
     </div>
     <div id="pfPhotoRow" style="display:flex;align-items:center;gap:11px;margin:12px 0 4px;cursor:pointer">
       <div class="pf-avph" id="pfAvatar">+</div>
-      <div style="font-size:12px;line-height:1.4"><span id="pfPhotoLabel">Add a photo</span><br><span class="dim" style="font-size:11px">tap to upload &amp; crop</span></div>
+      <div style="font-size:12px;line-height:1.4"><span id="pfPhotoLabel">Add profile photo</span><br><span class="dim" style="font-size:11px">Upload and crop</span></div>
     </div>
     <input type="file" id="pfPhotoInput" accept="image/*" style="display:none">
     <div class="err" id="pfErr"></div>
-    <button class="btn" id="pfSave" style="width:100%;margin-top:8px">Save &amp; qualify</button>
+    <button class="btn" id="pfSave" style="width:100%;margin-top:8px">Complete profile &amp; qualify</button>
     <button class="btn ghost" id="pfLater" style="width:100%;margin-top:9px">Later</button>
   </div>
 </div>
@@ -831,7 +846,7 @@ $('#fbSend')&&($('#fbSend').onclick=async()=>{
 });
 function showFbThanks(){
   const t=document.createElement('div');
-  t.textContent='Thanks for the feedback 🙌';
+  t.textContent='Feedback received. Thank you.';
   t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--signal,#4bb749);color:#06140a;font-weight:700;padding:12px 18px;border-radius:12px;z-index:90;box-shadow:0 10px 30px rgba(0,0,0,.4)';
   document.body.appendChild(t);
   setTimeout(()=>{t.style.transition='opacity .4s';t.style.opacity='0';setTimeout(()=>t.remove(),420);},2200);
@@ -846,7 +861,7 @@ function playLink(){
 }
 async function shareRoom(btn){
   const url=playLink();
-  const data={title:'The A&R Room',text:'Come play The A&R Room with me 🎧 Rate the drops, read the room, climb the board. (New A&Rs you bring earn you bonus points as they play!)',url};
+  const data={title:'The A&R Room',text:'Join me in The A&R Room 🎧 Evaluate independent records, predict the room’s consensus, and build your A&R ranking. Claim your profile:',url};
   try{
     if(navigator.share){await navigator.share(data);}
     else if(btn){const t=btn.textContent;await navigator.clipboard.writeText(url);btn.textContent='Link copied!';setTimeout(()=>{btn.textContent=t;updateInviteBtn();},1400);}
@@ -858,10 +873,10 @@ $('#inviteBtn')&&($('#inviteBtn').onclick=e=>shareRoom(e.currentTarget));
 // affordance can't live only in the lobby.
 $('#shareRoomBtn')&&($('#shareRoomBtn').onclick=e=>shareRoom(e.currentTarget));
 if(SID&&$('#shareRoomBtn'))$('#shareRoomBtn').classList.remove('hide');
-// Invite button label reflects how many credited friends you've brought.
+// Invite button label reflects how many credited referrals the A&R has.
 function updateInviteBtn(){
   const b=$('#inviteBtn');if(!b)return;
-  b.textContent = referredCount>0 ? ('＋ Invite — you\u2019ve brought '+referredCount) : '＋ Invite others';
+  b.textContent = referredCount>0 ? ('＋ Invite an A&R · '+referredCount+' credited') : '＋ Invite an A&R';
 }
 
 
@@ -896,18 +911,18 @@ async function tryAccountRegister(info){
   let me=null; try{ me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':at}}).then(r=>r.ok?r.json():null); }catch(e){}
   if(!me||!me.uid){ show('email'); return; }
   const live=info&&info.status==='live';
-  $('#acctEyebrow').textContent=live?'Join this room':'Register as an A&R';
-  $('#acctHi').textContent=(info&&info.name)||'This room';
+  $('#acctEyebrow').textContent=live?'Enter this evaluation session':'Claim your A&R profile';
+  $('#acctHi').textContent=(info&&info.name)||'Evaluation session';
   $('#acctSub').textContent=live
-    ? 'Tap Enter to join as an A&R and jump into the room.'
-    : 'Tap Complete to register as an A&R for this room. You’ll get a notification when it opens.';
-  $('#btnAcctJoin').textContent=live?'Enter the room':'Complete registration';
+    ? 'Enter as an A&R and join the live evaluation.'
+    : 'Continue to claim your A&R profile. We’ll notify you when this evaluation session opens.';
+  $('#btnAcctJoin').textContent=live?'Enter the evaluation':'Claim my A&R profile';
   show('account');
 }
 $('#btnAcctJoin').onclick=async()=>{
   $('#acctErr').textContent=''; $('#btnAcctJoin').disabled=true;
   try{
-    const r=await fetch('/api/join/account',{method:'POST',headers:{'Content-Type':'application/json','X-Auth-Token':localStorage.getItem('rt_auth_token')},body:JSON.stringify({sessionId:SID,accessCode:$('#acctCode').value.trim()})});
+    const r=await fetch('/api/join/account',{method:'POST',headers:{'Content-Type':'application/json','X-Auth-Token':localStorage.getItem('rt_auth_token')},body:JSON.stringify({sessionId:SID,accessCode:$('#acctCode').value.trim(),notifyRooms:$('#acctNotifyRooms').checked})});
     const d=await r.json();
     if(r.status===403&&d.error==='access_code_required'){
       $('#acctCodeRow').classList.remove('hide');
@@ -915,7 +930,7 @@ $('#btnAcctJoin').onclick=async()=>{
       $('#acctCode').focus(); $('#btnAcctJoin').disabled=false;
       return;
     }
-    if(!r.ok)throw new Error(d.error||'Could not register');
+    if(!r.ok)throw new Error(d.error||"We couldn't complete your registration.");
     track('session_register',{method:'account'});
     setToken(d.token); startPolling();
   }catch(e){ $('#acctErr').textContent=e.message; $('#btnAcctJoin').disabled=false; }
@@ -1003,7 +1018,7 @@ $('#btnBack').onclick=()=>{show('email');};
 $('#btnVerify').onclick=async()=>{
   $('#codeErr').textContent='';
   const code=$('#code').value.trim(),name=$('#name').value.trim();
-  if(!code)return $('#codeErr').textContent='Enter the code';
+  if(!code)return $('#codeErr').textContent='Enter your access code';
   if(!name)return $('#codeErr').textContent='Enter your name';
   const phone=$('#phone')?$('#phone').value.trim():'';
   // If a returning user has a number on file and left the field untouched (still the
@@ -1013,7 +1028,7 @@ $('#btnVerify').onclick=async()=>{
   const ref=localStorage.getItem('rt_ref_'+SID)||'';
   $('#btnVerify').disabled=true;
   try{
-    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,keepPhone,ref});
+    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,keepPhone,ref,notifyRooms:$('#notifyRooms').checked});
     track('session_register',{method:'otp'});
     setToken(d.token);
     localStorage.removeItem('rt_ref_'+SID);
@@ -1045,14 +1060,14 @@ async function lockVote(payload, btnId){
 }
 $('#btnLock').onclick=async()=>{
   $('#voteErr').textContent='';
-  if(chosenTaste===null)return $('#voteErr').textContent='Pick a rating first';
+  if(chosenTaste===null)return $('#voteErr').textContent='Select a score first';
   if(!predictTouched||predict===null)return $('#voteErr').textContent='Set your prediction';
   $('#btnLock').disabled=true;
   await lockVote({taste:chosenTaste,predict},'#btnLock');
 };
 $('#btnLockBin').onclick=async()=>{
   $('#voteErr').textContent='';
-  if(chosenPick===null)return $('#voteErr').textContent='Pick a side first';
+  if(chosenPick===null)return $('#voteErr').textContent='Choose a record first';
   if(!splitTouched||splitVal===null)return $('#voteErr').textContent='Set your split prediction';
   $('#btnLockBin').disabled=true;
   await lockVote({pick:chosenPick,predict_split:splitVal},'#btnLockBin');
@@ -1062,7 +1077,7 @@ $('#btnLockBin').onclick=async()=>{
 let geoMode='off', geoLabel=null;
 function openCheckin(){
   $('#ciErr').textContent='';
-  $('#ciTitle').textContent = geoMode==='required' ? 'Check in at the event' : 'Are you in the room?';
+  $('#ciTitle').textContent = geoMode==='required' ? 'Verify your event check-in' : 'Are you evaluating in the room?';
   if(geoMode==='required'){
     $('#ciBody').textContent='This is an in-room event — share your location to confirm you\u2019re here. We use it once to check you in and don\u2019t store where you are.';
     $('#ciRemote').classList.add('hide');
@@ -1149,19 +1164,21 @@ function tick(){
 setInterval(tick,250);
 
 // ---- state render ----
+// The weaker tiers carry no emoji by design — the repositioned copy keeps a
+// professional register once a read misses. #rxEmoji hides itself when blank.
 const REACTIONS={
-  bullseye:{emoji:'🎯',text:'Bullseye!',sub:'You nailed the room. +25 bonus.'},
-  sharp:{emoji:'🔥',text:'Sharp read',sub:'You really know this room.'},
-  close:{emoji:'👌',text:'Nice — close',sub:'You read the room well.'},
-  off:{emoji:'😬',text:'Off the mark',sub:'The room saw it differently.'},
-  wayoff:{emoji:'💀',text:'Way off',sub:'Ouch — that one cost you.'},
+  bullseye:{emoji:'🎯',text:'Exact read',sub:'You matched the room. +25 accuracy bonus.'},
+  sharp:{emoji:'🔥',text:'Sharp read',sub:'Your prediction was highly accurate.'},
+  close:{emoji:'',text:'Close read',sub:'Your prediction tracked the room well.'},
+  off:{emoji:'',text:'Different read',sub:'The room reached another conclusion.'},
+  wayoff:{emoji:'',text:'Wide miss',sub:'Review the gap and reset for the next round.'},
 };
 let lastReactedRound=null;
 function fireReaction(tier,roundIdx){
   const panel=$('#resultsPanel');
   panel.classList.remove('rx-bullseye','rx-sharp','rx-close','rx-off','rx-wayoff');
   const rx=REACTIONS[tier]||REACTIONS.off;
-  $('#rxEmoji').textContent=rx.emoji;$('#rxText').textContent=rx.text;$('#rxSub').textContent=rx.sub;
+  $('#rxEmoji').textContent=rx.emoji;$('#rxEmoji').style.display=rx.emoji?'':'none';$('#rxText').textContent=rx.text;$('#rxSub').textContent=rx.sub;
   panel.classList.add('rx-'+tier);
   // only fire the splashy stuff once per round (not on every poll)
   if(lastReactedRound===roundIdx)return;
@@ -1195,7 +1212,7 @@ function renderResults(st){
   $('#rRound').textContent=st.round.idx;
   $('#rTitle').textContent=isBin ? ((st.round.song_title||'A')+' vs '+(st.round.option_b_title||'B')) : st.round.song_title;
   // Winner name only — the room's number stays sealed until the end.
-  $('#rWinner').textContent=st.winner?st.winner.name:'No votes this round';
+  $('#rWinner').textContent=st.winner?st.winner.name:'No eligible evaluations this round';
   if(mr){
     if(isBin){
       $('#rGuessK').textContent='Your call';
@@ -1204,7 +1221,7 @@ function renderResults(st){
       $('#rGuess').textContent=side+' · '+sp;
       $('#rGuess').style.fontSize='20px';
     }else{
-      $('#rGuessK').textContent='Your guess';
+      $('#rGuessK').textContent='Your prediction';
       $('#rGuess').textContent=(mr.predict!=null?mr.predict.toFixed(1):'—');
       $('#rGuess').style.fontSize='';
     }
@@ -1215,7 +1232,7 @@ function renderResults(st){
     $('#reaction').style.display='';
     fireReaction(mr.tier, st.round.idx);
   }else{
-    $('#rGuess').textContent='—';$('#rPts').textContent='—';$('#rRank').textContent='—';$('#rOf').textContent=' (you sat this one out)';
+    $('#rGuess').textContent='—';$('#rPts').textContent='—';$('#rRank').textContent='—';$('#rOf').textContent=' (no evaluation submitted)';
     $('#reaction').style.display='none';
   }
   $('#rTotal').textContent=st.myTotalPoints ?? 0;
@@ -1224,11 +1241,11 @@ function renderResults(st){
 
 function renderRecap(st){
   const r=st.recap;if(!r)return;
-  $('#recapName').textContent=(r.name||'You')+'\u2019s card';
+  $('#recapName').textContent=(r.name||'You')+'\u2019s A&R record';
   $('#recapPts').textContent=r.totalPoints;
   $('#recapRank').textContent=r.rank?('#'+r.rank+' / '+r.fieldSize):'\u2014';
   $('#recapBull').textContent=r.bullseyes;
-  if(r.percentile!=null){$('#recapPct').textContent=(100-r.percentile)+'%';$('#recapPctSign').textContent='%';}
+  if(r.percentile!=null){$('#recapPct').textContent=(100-r.percentile)+'%';}
   else $('#recapPct').textContent='\u2014';
   // Absolute grade + accuracy % \u2014 one metric for rating, Versus, or mixed nights.
   const hasScore = r.accuracy!=null;
@@ -1265,7 +1282,7 @@ function renderRecap(st){
 
 function shareText(r){
   const acc = r.accuracy!=null ? (' \u00b7 '+r.accuracy.toFixed(2)+'% accuracy') : '';
-  return `The A&R Room \u2014 my card\nGrade: ${r.grade||'\u2014'}${acc} \u00b7 ${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} \u00b7 ${r.bullseyes} bullseye${r.bullseyes===1?'':'s'}`;
+  return `The A&R Room \u2014 my A&R record\nAccuracy: ${r.grade||'\u2014'}${acc} \u00b7 ${r.totalPoints} pts\nRank #${r.rank||'?'} of ${r.fieldSize||'?'} \u00b7 ${r.bullseyes} exact read${r.bullseyes===1?'':'s'}`;
 }
 
 // Ad slot dispatcher — first-party banner wins; else the Revive zone iframe (fresh
@@ -1390,7 +1407,7 @@ function renderGiveHook(st){
   const top=(g.board||[]).slice(0,3);
   $('#ghBoard').innerHTML = top.length
     ? top.map(p=>`<div class="gh-row"><span class="gh-rank">${p.rank}</span><span class="gh-name">${esc(p.name)}</span><span class="gh-pts">${Number(p.points)||0} pts</span></div>`).join('')
-    : '<div class="gh-foot" style="margin:0">Be the first to put points on the board.</div>';
+    : '<div class="gh-foot" style="margin:0">Set the first mark in the monthly rankings.</div>';
   el.classList.remove('hide');
 }
 
@@ -1401,24 +1418,24 @@ function maybeShowHowTo(st){
   if(howToShown || localStorage.getItem('rt_howto_seen')==='1' || !st) return;
   howToShown=true;
   const isBin=(st.poll_type==='binary'), g=st.giveaway;
-  $('#htTitle').textContent = isBin ? 'Pick a side, read the room' : 'Read the room, win the month';
+  $('#htTitle').textContent = isBin ? 'Compare the records. Predict the room.' : 'Prove your ear. Build your ranking.';
   if(isBin){
-    $('#htS1t').textContent='Pick your side';
-    $('#htS1d').textContent='Two songs go head-to-head — choose the one you’re riding with.';
-    $('#htS2t').textContent='Read the Room';
-    $('#htS2d').textContent='Predict how the whole room will split between them. Points come from how well you read it — not just who you picked.';
+    $('#htS1t').textContent='Select the stronger record';
+    $('#htS1d').textContent='Compare two records and choose the one that makes the stronger case.';
+    $('#htS2t').textContent='Predict the consensus';
+    $('#htS2d').textContent='Predict how the room will split between the records. Points reward how accurately you read the consensus.';
   }else{
-    $('#htS1t').textContent='Rate the song 0–9';
-    $('#htS1d').textContent='How good is it? 0 = worst, 9 = best.';
-    $('#htS2t').textContent='Read the Room';
-    $('#htS2d').textContent='Predict the room’s average rating. Points come from how close you are — not just what you like.';
+    $('#htS1t').textContent='Evaluate the record 0–9';
+    $('#htS1d').textContent='Score its overall strength. 0 is lowest; 9 is exceptional.';
+    $('#htS2t').textContent='Predict the consensus';
+    $('#htS2d').textContent='Predict the room’s final average. Points reward precision—not whether your personal score matches the crowd.';
   }
   if(g){
-    $('#htS3t').textContent='Climb for the '+(g.prize||'$500');
-    $('#htS3d').textContent='Top A&Rs on this month’s leaderboard win '+(g.prize||'$500')+' cash. Every round you play adds up.';
+    $('#htS3t').textContent='Compete for the '+(g.prize||'$500')+' A&R Award';
+    $('#htS3d').textContent='Top A&Rs in this month’s rankings qualify for A&R Wars — the champion earns the '+(g.prize||'$500')+' award. Every completed round contributes to your record.';
   }else{
-    $('#htS3t').textContent='Climb the leaderboard';
-    $('#htS3d').textContent='Rack up points across the month’s rooms and rise up the board.';
+    $('#htS3t').textContent='Build your monthly ranking';
+    $('#htS3d').textContent='Accurate predictions and completed sessions move you up the monthly rankings.';
   }
   $('#howToModal').style.display='flex';
 }
@@ -1465,9 +1482,9 @@ function render(st){
     $('#waitHi').textContent='Hey '+(st.me.name||'there');
     const roomB='<b style="color:var(--ink)">'+esc(st.session.name||'The room')+'</b>';
     if(st.session.status==='upcoming'){
-      $('#waitSub').innerHTML='You\u2019re in! '+roomB+' hasn\u2019t started yet — keep this page handy.';
+      $('#waitSub').innerHTML='You\u2019re registered. '+roomB+' hasn\u2019t started yet—keep this page available.';
     }else{
-      $('#waitSub').innerHTML='You\u2019re in! '+roomB+' — the next song is being cued up.';
+      $('#waitSub').innerHTML='You\u2019re in '+roomB+'. The next record is being prepared.';
     }
     // Host's room description gets its own card below.
     if(st.lobby_message){$('#lobbyDetails').classList.remove('hide');$('#lobbyMsg').textContent=st.lobby_message;}
@@ -1477,7 +1494,7 @@ function render(st){
       waitStartAt=Number(st.session.scheduled_at);
       const _future=waitStartAt>Date.now();
       $('#waitBounce').classList.toggle('hide', _future);
-      $('#waitSub').innerHTML=_future ? 'You\u2019re in! '+roomB+' starts in:' : 'You\u2019re in! '+roomB+' is starting shortly — keep this page open.';
+      $('#waitSub').innerHTML=_future ? 'You\u2019re registered. '+roomB+' begins in:' : 'You\u2019re registered. '+roomB+' begins shortly—keep this page open.';
       paintWaitCountdown();
     }else{
       waitStartAt=null; $('#waitCountdown').classList.add('hide'); $('#waitBounce').classList.remove('hide');
@@ -1525,7 +1542,7 @@ function render(st){
       $('#splitEndB').textContent='all '+(st.round.option_b_title||'B');
     }
     if(st.round.song_note){$('#vNote').classList.remove('hide');$('#vNote').textContent=st.round.song_note;}else $('#vNote').classList.add('hide');
-    if(st.round.giveaway){$('#vGive').classList.remove('hide');$('#vGive').textContent='🎁 Win: '+st.round.giveaway;}else $('#vGive').classList.add('hide');
+    if(st.round.giveaway){$('#vGive').classList.remove('hide');$('#vGive').textContent='Round award: '+st.round.giveaway;}else $('#vGive').classList.add('hide');
     tick();show('vote');
   }
   else if(st.phase==='locked'){
@@ -1542,7 +1559,7 @@ function render(st){
         $('#lkPred').textContent=(st.myVote.predict!=null?st.myVote.predict.toFixed(1):'—');
       }
     }
-    $('#lockedSub').textContent=st.tallying?'Votes are in — the host is tallying the room…':'Waiting for the room to finish voting…';
+    $('#lockedSub').textContent=st.tallying?'Evaluations are closed—the host is finalizing the room’s results…':'Waiting for the room to complete its evaluations…';
     show('locked');
   }
   else if(st.phase==='results'){closesAt=null;renderResults(st);show('results');}
@@ -1693,7 +1710,7 @@ function renderJoins(st){
   const panel=$('#livenessPanel'),feed=$('#joinFeed');if(!panel)return;
   if(!st.joins||!st.joins.length){panel.style.display='none';return;}
   panel.style.display='block';
-  feed.innerHTML=st.joins.map(j=>`<div class="feed-item"><span class="fdot${j.name?'':' anon'}"></span>${j.name?`${j.id?`<a href="/u/${encodeURIComponent(j.id)}" style="color:inherit;text-decoration:none"><b>${esc(j.name)}</b></a>`:`<b>${esc(j.name)}</b>`} just joined`:'<span class="anon-t">someone joined</span>'}<span class="ft">${relTime(j.at)}</span></div>`).join('');
+  feed.innerHTML=st.joins.map(j=>`<div class="feed-item"><span class="fdot${j.name?'':' anon'}"></span>${j.name?`${j.id?`<a href="/u/${encodeURIComponent(j.id)}" style="color:inherit;text-decoration:none"><b>${esc(j.name)}</b></a>`:`<b>${esc(j.name)}</b>`} just joined`:'<span class="anon-t">An A&R just joined</span>'}<span class="ft">${relTime(j.at)}</span></div>`).join('');
 }
 
 // ---------- PROFILE COMPLETION (3.5a) ----------
@@ -1706,7 +1723,7 @@ function renderPfPrimary(){
   if(!pfPrimary && cats.length) pfPrimary=cats[0];
   $('#pfPrimary').innerHTML = cats.length
     ? cats.map(c=>`<span class="chip${c===pfPrimary?' primary':''}" data-p="${c}">${c}</span>`).join('')
-    : '<span class="dim" style="font-size:11px">Pick categories above first</span>';
+    : '<span class="dim" style="font-size:11px">Select at least one role first</span>';
   $('#pfPrimary').querySelectorAll('.chip').forEach(el=>el.onclick=()=>{pfPrimary=el.dataset.p;renderPfPrimary();});
 }
 function openProfileModal(){
@@ -1726,7 +1743,7 @@ function renderPfAvatar(){
     av.textContent=''; av.style.backgroundImage=`url(${myProfile.photoUrl})`; av.style.backgroundSize='cover'; av.style.backgroundPosition='center';
     $('#pfPhotoLabel').textContent='Photo added ✓';
   }else{
-    av.style.backgroundImage=''; av.textContent='+'; $('#pfPhotoLabel').textContent='Add a photo';
+    av.style.backgroundImage=''; av.textContent='+'; $('#pfPhotoLabel').textContent='Add profile photo';
   }
 }
 window.openProfileModal=openProfileModal; // also opened from the gate CTA
@@ -1849,7 +1866,7 @@ function renderRecapGraphic(r){
   x.fillStyle='#a9a2c9';x.font='600 34px DM Sans, sans-serif';
   x.fillText('THE  A&R  ROOM',W/2,150);
   x.fillStyle='#f3f0fb';x.font='800 70px DM Sans, sans-serif';
-  x.fillText((r.name||'You')+'’s card',W/2,250);
+  x.fillText((r.name||'You')+'’s A&R record',W/2,250);
   // big metric circle
   const cy=560,rad=200;
   x.lineWidth=18;x.strokeStyle='#2a2438';x.beginPath();x.arc(W/2,cy,rad,0,Math.PI*2);x.stroke();
@@ -1859,12 +1876,12 @@ function renderRecapGraphic(r){
   if(r.grade){ // grade chip — absolute, banded from accuracy
     x.fillStyle='#6d5fe0';roundRect(x,W/2-110,cy+150,220,96,22);x.fill();
     x.fillStyle='#fff';x.font='800 70px Space Mono, monospace';x.fillText(r.grade,W/2,cy+220);
-    x.fillStyle='#a9a2c9';x.font='600 30px DM Sans, sans-serif';x.fillText('EAR FOR THE ROOM',W/2,cy+285);
+    x.fillStyle='#a9a2c9';x.font='600 30px DM Sans, sans-serif';x.fillText('ROOM-READING ACCURACY',W/2,cy+285);
   }
   // stat rows
   const rows=[
-    ['Room rank', r.rank?('#'+r.rank+' of '+r.fieldSize):'—'],
-    ['Bullseyes', String(r.bullseyes)],
+    ['Session rank', r.rank?('#'+r.rank+' of '+r.fieldSize):'—'],
+    ['Exact reads', String(r.bullseyes)],
     ['Accuracy', r.accuracy!=null?(r.accuracy.toFixed(2)+'%'):'—'],
   ];
   let ry=1180;x.textAlign='left';
@@ -1876,7 +1893,7 @@ function renderRecapGraphic(r){
   });
   // footer
   x.textAlign='center';x.fillStyle='#6f688f';x.font='600 34px DM Sans, sans-serif';
-  x.fillText('Read the room. anr.makinitmag.com',W/2,1820);
+  x.fillText('Read the room. makinitmag.com/ANR',W/2,1820);
   return c;
 }
 function canvasToBlob(c){return new Promise(res=>c.toBlob(res,'image/png',0.92));}
@@ -1913,7 +1930,7 @@ $('#btnDlSongs')&&($('#btnDlSongs').onclick=e=>dlSessionCard('songs',e.currentTa
 
 $('#btnShare')&&($('#btnShare').onclick=async()=>{
   if(!lastRecap)return;
-  const btn=$('#btnShare');const orig=btn.textContent;btn.disabled=true;btn.textContent='Building your card…';
+  const btn=$('#btnShare');const orig=btn.textContent;btn.disabled=true;btn.textContent='Building your A&R record…';
   try{
     const canvas=renderRecapGraphic(lastRecap);
     const blob=await canvasToBlob(canvas);
@@ -1925,13 +1942,13 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
       // Fallback: download the image + copy the text.
       const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='anr-card.png';a.click();
       try{await navigator.clipboard.writeText(text);}catch(e){}
-      btn.textContent='Saved image ✓';setTimeout(()=>{btn.textContent=orig;},1600);
+      btn.textContent='A&R record saved ✓';setTimeout(()=>{btn.textContent=orig;},1600);
     }
   }catch(e){
     // Last-ditch text share.
     try{ if(navigator.share)await navigator.share({title:'The A&R Room',text:shareText(lastRecap)}); else {await navigator.clipboard.writeText(shareText(lastRecap));} }catch(_){}
   }
-  if(btn.textContent==='Building your card…')btn.textContent=orig;
+  if(btn.textContent==='Building your A&R record…')btn.textContent=orig;
   btn.disabled=false;
 });
 

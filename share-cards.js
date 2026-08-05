@@ -2,9 +2,9 @@
 // to PNG, using Satori (HTML/flex -> SVG) + resvg (SVG -> PNG). No headless browser, so it
 // stays serverless-friendly (the whole point — see docs/multi-tenant-roadmap + the outage rule).
 //
-// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Songs), 'promo'.
+// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo'.
 // Rank-only by default; raw numbers optional. Every card carries the eyebrow "The A&R Room",
-// the big card title, the session/scope subhead, WIN $500, ANR.makinitmag.com, @Makinit4indies.
+// the big card title, the session/scope subhead, the $500 award pill, makinitmag.com/ANR, @Makinit4indies.
 //
 // Design tokens mirror the app + docs/mockups/anr-share-graphics-mockups.html.
 
@@ -63,7 +63,7 @@ function avatar(name, size) {
   }, initials);
 }
 
-// ---- shared frame: header (eyebrow / title / sub + WIN pill), body, footer ----
+// ---- shared frame: header (eyebrow / title / sub + award pill), body, footer ----
 function frame(opts) {
   const { title, sub, body } = opts;
   const eyeStyle = { fontFamily: MONO, fontWeight: 700, fontSize: 21, letterSpacing: 5, textTransform: 'uppercase' };
@@ -71,13 +71,13 @@ function frame(opts) {
     text({ ...eyeStyle, color: C.inkDim }, 'The A&R'),
     text({ ...eyeStyle, color: C.signal, marginLeft: 12 }, 'Room'),
   ]);
-  // Top-right pill: the WIN hook by default; Song Reports carry their own badge
+  // Top-right pill: the award hook by default; Official Room Reports carry their own badge
   // (they're a paid artist product — the $500 pitch stays in the footer instead).
   const pill = opts.pill === 'report'
     ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.gold,
-        border: `2px solid ${C.gold}`, padding: '9px 18px', borderRadius: 999, flexShrink: 0 }, 'SONG REPORT')
+        border: `2px solid ${C.gold}`, padding: '9px 18px', borderRadius: 999, flexShrink: 0 }, 'OFFICIAL ROOM REPORT')
     : text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.bg,
-        background: C.gold, padding: '11px 20px', borderRadius: 999, flexShrink: 0 }, `WIN ${PRIZE}`);
+        background: C.gold, padding: '11px 20px', borderRadius: 999, flexShrink: 0 }, `${PRIZE} A&R AWARD`);
   const header = row({ justifyContent: 'space-between', alignItems: 'flex-start' }, [
     col({}, [
       eyebrow,
@@ -92,8 +92,8 @@ function frame(opts) {
   const footer = row({ justifyContent: 'space-between', alignItems: 'center',
     borderTop: `1px solid ${C.line}`, paddingTop: 30 }, [
     row({}, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: C.ink }, 'ANR.makinitmag'),
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: C.signal }, '.com'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: C.ink }, 'makinitmag.com'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: C.signal }, '/ANR'),
     ]),
     col({ alignItems: 'flex-end' }, [
       text({ fontFamily: SANS, fontWeight: 400, fontSize: 16, color: C.inkFaint }, 'Follow'),
@@ -131,7 +131,7 @@ function bodyArs(list, showNumbers) {
   }));
 }
 
-// ---- Top 8 Songs (rank-only default; showNumbers adds the room score) ----
+// ---- Top 8 Records (rank-only default; showNumbers adds the room score) ----
 function bodySongs(list, showNumbers) {
   return col({ gap: 11 }, list.slice(0, 8).map((s, i) => {
     const rc = RANK_COLOR[i] || C.inkFaint;
@@ -150,7 +150,7 @@ function bodySongs(list, showNumbers) {
   }));
 }
 
-// ---- Player Score Card (rank-forward; points optional) ----
+// ---- A&R Record card (rank-forward; points optional) ----
 function bodyScore(d) {
   const stat = (v, k, dashed) => col({
     flexGrow: 1, flexBasis: 0, alignItems: 'center', background: 'rgba(23,19,40,0.7)',
@@ -160,7 +160,7 @@ function bodyScore(d) {
     text({ fontFamily: SANS, fontWeight: 400, fontSize: 19, color: C.inkFaint, marginTop: 6 }, k),
   ]);
   const stats = [];
-  if (d.bullseyes != null) stats.push(stat(d.bullseyes, 'Bullseyes', false));
+  if (d.bullseyes != null) stats.push(stat(d.bullseyes, 'Exact Reads', false));
   if (d.rounds != null) stats.push(stat(d.rounds, 'Rounds', false));
   if (d.points != null) stats.push(stat((d.points || 0).toLocaleString(), 'Points', true));
   return col({ alignItems: 'center' }, [
@@ -168,7 +168,7 @@ function bodyScore(d) {
     text({ fontFamily: SANS, fontWeight: 900, fontSize: 56, color: C.ink, marginTop: 26, ...NOWRAP }, clip(d.name, 20)),
     text({ fontFamily: SANS, fontWeight: 700, fontSize: 26, color: C.accent, marginTop: 8 }, d.ig ? '@' + d.ig.replace(/^@/, '') : ''),
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 168, color: C.signal, marginTop: 30, lineHeight: 1 }, '#' + d.rank),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, 'of ' + d.total + ' A&Rs'),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, 'in a field of ' + d.total + ' A&Rs'),
     stats.length ? row({ marginTop: 44, gap: 20, width: '100%' }, stats) : text({}, ''),
   ]);
 }
@@ -184,13 +184,13 @@ function bodyPromo() {
   ]);
   return col({ alignItems: 'center' }, [
     col({ alignItems: 'center' }, [
-      text({ fontFamily: SANS, fontWeight: 800, fontSize: 52, color: C.ink, textAlign: 'center', lineHeight: 1.15 }, 'Rate the music.'),
-      text({ fontFamily: SANS, fontWeight: 800, fontSize: 52, color: C.ink, textAlign: 'center', lineHeight: 1.15 }, 'Read the room.'),
+      text({ fontFamily: SANS, fontWeight: 800, fontSize: 52, color: C.ink, textAlign: 'center', lineHeight: 1.15 }, 'Evaluate the music.'),
+      text({ fontFamily: SANS, fontWeight: 800, fontSize: 52, color: C.ink, textAlign: 'center', lineHeight: 1.15 }, 'Predict the room.'),
     ]),
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 150, color: C.gold, marginTop: 26, lineHeight: 1 }, PRIZE),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, 'Top A&Rs every month'),
-    row({ marginTop: 44, gap: 14, width: '100%' }, [step('1', 'Rate 0–9'), step('2', 'Read the room'), step('3', 'Climb & win')]),
-    text({ fontFamily: SANS, fontWeight: 800, fontSize: 30, color: '#08240a', background: C.signal, padding: '22px 44px', borderRadius: 16, marginTop: 46 }, 'Play free at ANR.makinitmag.com'),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, `Top A&Rs compete for ${PRIZE} monthly`),
+    row({ marginTop: 44, gap: 14, width: '100%' }, [step('1', 'Evaluate'), step('2', 'Predict'), step('3', 'Rank')]),
+    text({ fontFamily: SANS, fontWeight: 800, fontSize: 30, color: '#08240a', background: C.signal, padding: '22px 44px', borderRadius: 16, marginTop: 46 }, 'Claim your profile at makinitmag.com/ANR'),
   ]);
 }
 
@@ -209,12 +209,12 @@ function bodyReport1(d) {
   return col({ alignItems: 'center' }, [
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 290, color: C.signal, lineHeight: 1 }, d.mean),
     text({ fontFamily: SANS, fontWeight: 400, fontSize: 32, color: C.inkFaint, marginTop: 4 }, 'out of 9'),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 25, letterSpacing: 7, textTransform: 'uppercase', color: C.inkDim, marginTop: 22 }, 'Room score'),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 25, letterSpacing: 7, textTransform: 'uppercase', color: C.inkDim, marginTop: 22 }, 'Final room score'),
     row({ marginTop: 48, gap: 18 }, [
-      chip(`${d.heatPct}% scored it 8+`, true),
-      chip(`${d.votes} verified A&Rs`, false),
+      chip(`Room favorite · ${d.heatPct}% scored it 8+`, true),
+      chip(`Evaluated by ${d.votes} verified A&Rs`, false),
     ]),
-    text({ fontFamily: SANS, fontWeight: 400, fontSize: 25, color: C.inkDim, marginTop: 46 }, `Rated live by a real audience · ${d.dateLabel}`),
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 25, color: C.inkDim, marginTop: 46 }, `Evaluated live in The A&R Room · ${d.dateLabel}`),
   ]);
 }
 
@@ -247,18 +247,18 @@ function bodyReport2(d) {
     borderRadius: 20, padding: '22px 28px', alignItems: 'center',
   }, [
     col({ flexGrow: 1, flexShrink: 1 }, [
-      text({ fontFamily: SANS, fontWeight: 800, fontSize: 24, color: C.ink }, 'First impressions vs. final score'),
+      text({ fontFamily: SANS, fontWeight: 800, fontSize: 24, color: C.ink }, 'Prediction vs. final score'),
       text({ fontFamily: SANS, fontWeight: 400, fontSize: 22, color: C.inkDim, lineHeight: 1.35, marginTop: 4 },
-        `The room predicted ${d.predictMean} before the reveal, then scored it ${d.mean}. ${d.gapWord}.`),
+        `The room predicted ${d.predictMean} before the reveal and delivered a final score of ${d.mean}. ${d.gapWord}.`),
     ]),
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 52, color: d.gapUp ? C.signal : C.inkDim, marginLeft: 24, flexShrink: 0 }, d.gapLabel),
   ]);
   return col({}, [
-    row({ gap: 18 }, [tile(d.votes, 'Votes', false), tile(d.mean, 'Average', false), tile(d.median, 'Median', true), tile(d.mode, 'Mode', true)]),
+    row({ gap: 18 }, [tile(d.votes, 'A&Rs', false), tile(d.mean, 'Final score', false), tile(d.median, 'Median', true), tile(d.mode, 'Most common', true)]),
     col({ marginTop: 30, gap: 16 }, [
-      expl(C.signal, `Average ${d.mean}`, 'The overall room score — every vote weighs the same.'),
+      expl(C.signal, `Final score ${d.mean}`, 'The average of all eligible A&R evaluations.'),
       expl(C.gold, `Median ${d.median}`, d.medianNote),
-      expl(C.gold, `Mode ${d.mode}`, 'The single most common score in the room.'),
+      expl(C.gold, `Most common ${d.mode}`, 'The score submitted most often by the room.'),
     ]),
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 21, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginTop: 34 }, 'How the room scored it'),
     bars,
@@ -288,28 +288,28 @@ function bodyReport3(d) {
     text({ fontFamily: SANS, fontWeight: 400, fontSize: 21, color: C.inkDim, marginTop: 8, textAlign: 'center', lineHeight: 1.3 }, k),
   ]);
   const boxes = [];
-  if (d.rankInRoom) boxes.push(ctxBox(`#${d.rankInRoom.rank}`, `of ${d.rankInRoom.total} songs in this room`));
-  if (d.seriesPct) boxes.push(ctxBox(`Top ${d.seriesPct.pct}%`, `of ${d.seriesPct.total} songs this series`));
-  if (d.pools) boxes.push(ctxBox(`${d.pools.in.avg.toFixed(1)} / ${d.pools.remote.avg.toFixed(1)}`, 'in-room vs. remote score'));
+  if (d.rankInRoom) boxes.push(ctxBox(`#${d.rankInRoom.rank}`, `of ${d.rankInRoom.total} records in this session`));
+  if (d.seriesPct) boxes.push(ctxBox(`Top ${d.seriesPct.pct}%`, `of ${d.seriesPct.total} records this series`));
+  if (d.pools) boxes.push(ctxBox(`${d.pools.in.avg.toFixed(1)} / ${d.pools.remote.avg.toFixed(1)}`, 'in-room vs. remote evaluations'));
   return col({}, [
-    segBlock('By role', d.roles || [], 'votes'),
-    segBlock('By city', d.cities || [], 'votes'),
+    segBlock('By professional role', d.roles || [], 'A&Rs'),
+    segBlock('By city', d.cities || [], 'A&Rs'),
     boxes.length ? row({ marginTop: 34, gap: 18 }, boxes) : col({}, []),
     text({ fontFamily: SANS, fontWeight: 400, fontSize: 19, color: C.inkFaint, lineHeight: 1.45, marginTop: 30 },
-      `Aggregates only — a segment is shown when 3+ A&Rs are in it. Based on ${d.votes} verified votes, one per A&R, locked before the reveal.`),
+      `Aggregated results only. A segment appears when at least three A&Rs qualify. Based on ${d.votes} verified evaluations, one per A&R, submitted before the reveal.`),
   ]);
 }
 
 // ---- element builders per type ----
 function element(type, data = {}) {
   const showNumbers = !!data.showNumbers;
-  if (type === 'score') return frame({ title: 'Score Card', sub: data.session || null, body: bodyScore(data) });
+  if (type === 'score') return frame({ title: 'A&R Record', sub: data.session || null, body: bodyScore(data) });
   if (type === 'ars')   return frame({ title: 'Top 8 A&Rs', sub: data.scope || data.session || null, body: bodyArs(data.list || [], showNumbers) });
-  if (type === 'songs') return frame({ title: 'Top 8 Songs', sub: data.session || null, body: bodySongs(data.list || [], showNumbers) });
-  if (type === 'promo') return frame({ title: 'Become an A&R', sub: 'Free to play', body: bodyPromo() });
+  if (type === 'songs') return frame({ title: 'Top 8 Records', sub: data.session || null, body: bodySongs(data.list || [], showNumbers) });
+  if (type === 'promo') return frame({ title: 'Join the A&R Team', sub: 'Free to join', body: bodyPromo() });
   if (type === 'report1') return frame({ pill: 'report', title: clip(data.title, 18), sub: data.sub, body: bodyReport1(data) });
-  if (type === 'report2') return frame({ pill: 'report', titleSize: 60, title: 'The numbers', sub: data.sub, body: bodyReport2(data) });
-  if (type === 'report3') return frame({ pill: 'report', titleSize: 60, title: 'Who felt it', sub: data.sub, body: bodyReport3(data) });
+  if (type === 'report2') return frame({ pill: 'report', titleSize: 60, title: "The room's verdict", sub: data.sub, body: bodyReport2(data) });
+  if (type === 'report3') return frame({ pill: 'report', titleSize: 60, title: 'Who connected', sub: data.sub, body: bodyReport3(data) });
   throw new Error('unknown card type: ' + type);
 }
 

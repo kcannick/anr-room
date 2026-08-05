@@ -110,7 +110,7 @@
      zones (120px): header (brand + dual QR CTAs) → round card → transient board. */
   body.vertical{width:1080px;height:1920px}
   /* header card — one compact row, minimal vertical footprint:
-     [win QR]   The A&R Room / ◄ WIN $500 / ─ / SUBMIT MUSIC ►   [submit QR]
+     [join QR]  The A&R Room / ◄ EARN THE $500 A&R AWARD / ─ / SUBMIT MUSIC ►  [submit QR]
      Arrows point each call-to-action at its code.
      (No LIVE pill — every platform already badges its own live state.) */
   #vHero{position:absolute;top:230px;left:120px;right:120px;padding:16px 26px}
@@ -123,7 +123,9 @@
   #vHero .room{font-weight:800;font-size:28px;letter-spacing:-.01em}
   #vHero .room span{color:var(--signal)}
   #vHero .lbl{font-weight:800;font-size:40px;line-height:1;letter-spacing:-.01em;white-space:nowrap}
-  #vHero .lbl.win{color:var(--gold)}
+  /* the award call-to-action is much longer than "WIN $500" was — drop a size and let it
+     wrap rather than overflow the 488px mid column between the two QR boxes. */
+  #vHero .lbl.win{color:var(--gold);font-size:30px;white-space:normal;line-height:1.06}
   #vHero .lbl.sub{color:#a99cff}
   #vHero .lbl .arr{font-size:30px;vertical-align:3px}
   #vHero .sep{width:64%;height:1px;background:var(--line)}
@@ -181,7 +183,7 @@
       <div class="qbox win"><img id="qrWin" alt="Join QR"></div>
       <div class="mid">
         <div class="room">The A&amp;R <span>Room</span></div>
-        <div class="lbl win"><span class="arr">◄</span> WIN $500</div>
+        <div class="lbl win"><span class="arr">◄</span> EARN THE $500 A&amp;R AWARD</div>
         <div class="sep"></div>
         <div class="lbl sub">SUBMIT MUSIC <span class="arr">►</span></div>
       </div>
@@ -191,12 +193,12 @@
   <!-- horizontal-only single join QR (top-right rail) -->
   <div id="vQr" class="card hide">
     <div class="qbox"><img id="vQrImg" alt=""></div>
-    <div class="label">Scan to Win $500!</div>
+    <div class="label">Scan to Join the A&amp;R Team</div>
   </div>
 
   <!-- LEADERBOARD (horizontal: always on unless ?view hides. vertical: transient after a win) -->
   <div id="board" class="card hide">
-    <h3><span class="dotlive"></span> Top A&amp;Rs <span class="scopetag" id="lbScopeTag"></span></h3>
+    <h3><span class="dotlive"></span> A&amp;R Rankings <span class="scopetag" id="lbScopeTag"></span></h3>
     <div id="lbRows"></div>
   </div>
 
@@ -207,7 +209,7 @@
       <div class="sess" id="sessName">—</div>
     </div>
     <div class="main">
-      <div class="nowtag"><span id="nowTag">Now rating · Round 1</span><span id="ovTimer" class="ovtimer hide"></span></div>
+      <div class="nowtag"><span id="nowTag">Now evaluating · Round 1</span><span id="ovTimer" class="ovtimer hide"></span></div>
       <!-- rating: single song -->
       <div id="ratingMain">
         <div class="title" id="curTitle">—</div>
@@ -227,7 +229,7 @@
       </div>
     </div>
     <div class="right">
-      <div class="countlabel" id="rightLabel">Votes in</div>
+      <div class="countlabel" id="rightLabel">Evaluations in</div>
       <div class="bignum" id="rightNum">0</div>
       <div class="sub" id="rightSub"></div>
     </div>
@@ -249,7 +251,7 @@
   <div id="result" class="card hide">
     <div class="crown">👑</div>
     <div class="rmeta">
-      <div class="rlabel" id="resLabel">Round winner</div>
+      <div class="rlabel" id="resLabel">Round leader</div>
       <div class="rwin" id="resWinner">—</div>
       <!-- rating: song line under the winner -->
       <div class="rsong" id="resSong"></div>
@@ -260,7 +262,7 @@
       </div>
     </div>
     <div class="rroom" id="resRoom">
-      <div class="k" id="resRoomK">Room average</div>
+      <div class="k" id="resRoomK">Final room average</div>
       <div class="v" id="resRoomV">—</div>
     </div>
   </div>
@@ -419,7 +421,7 @@ function render(st){
   let showingResult=false;
   if(showResultView && result && !showingBroadcast){
     showingResult=true;
-    $('#resWinner').textContent=result.winner||'No votes';
+    $('#resWinner').textContent=result.winner||'No eligible evaluations';
     if(resBin){
       // Binary winner: full-width split revealed here (post-ratify only). Hide the
       // rating song line + the room-average right slot; show the split bar instead.
@@ -439,7 +441,7 @@ function render(st){
       $('#resSong').classList.remove('hide');
       $('#resSong').textContent=result.song_title+(result.song_artist?' · '+result.song_artist:'');
       $('#resRoom').classList.remove('hide');
-      $('#resRoomK').textContent='Room average';
+      $('#resRoomK').textContent='Final room average';
       $('#resRoomV').textContent=fmt1(result.room.average);
     }
     $('#result').classList.remove('hide');
@@ -455,7 +457,7 @@ function render(st){
   if(!showingResult) lastResultKey=null;
   wantBoard = wantBoard && Date.now()<boardHideAt;
   if(wantBoard){
-    $('#lbScopeTag').textContent=({round:'This round',series:'This series',room:'This room'})[st.leaderboardScope||LB_SCOPE]||'';
+    $('#lbScopeTag').textContent=({round:'This round',series:'This series',room:'This session'})[st.leaderboardScope||LB_SCOPE]||'';
     $('#lbRows').innerHTML=st.leaderboard.slice(0,rows).map(r=>`
       <div class="lbrow ${r.rank<=3?('top'+r.rank):''}">
         <div class="rk">${r.rank}</div>
@@ -468,7 +470,7 @@ function render(st){
   // --- lower third (current round), hidden while a winner reveal or broadcast is up ---
   // ?current_song=false hides it entirely.
   if(showLower && SHOW_SONG && current && !showingResult && !showingBroadcast){
-    $('#nowTag').textContent=(curBin?'Now playing · Round ':'Now rating · Round ')+current.idx+(current.status==='closed'?' · voting closed':'');
+    $('#nowTag').textContent=(curBin?'Now playing · Round ':'Now evaluating · Round ')+current.idx+(current.status==='closed'?' · evaluation closed':'');
     // Vote countdown (?timer=false hides it) — only while voting is open.
     ovClosesAt=(SHOW_TIMER && current.status==='voting' && current.closes_at) ? Number(current.closes_at) : null;
     paintTimer();
@@ -481,7 +483,7 @@ function render(st){
       $('#aArtist').textContent=current.song_artist||'';
       $('#bTitle').textContent=current.option_b_title||'B';
       $('#bArtist').textContent=current.option_b_artist||'';
-      $('#rightLabel').textContent='Votes in';
+      $('#rightLabel').textContent='Evaluations in';
       $('#rightNum').textContent=current.votes||0;
       $('#rightSub').textContent='';
     }else{
@@ -490,7 +492,7 @@ function render(st){
       $('#curTitle').textContent=current.song_title||'—';
       $('#curArtist').textContent=current.song_artist||'';
       // Room average stays sealed until ratify to preserve the reveal — show votes-in.
-      $('#rightLabel').textContent='Votes in';
+      $('#rightLabel').textContent='Evaluations in';
       $('#rightNum').textContent=current.votes||0;
       $('#rightSub').textContent='';
     }
@@ -504,7 +506,7 @@ function render(st){
   else{
     $('#idle').classList.remove('hide');
     $('#idleT').textContent=st.session.name||'The A&R Room';
-    $('#idleS').textContent=(st.session.status==='upcoming')?'Starting soon…':((st.participants||0)+' A&Rs in the room · waiting for the next song');
+    $('#idleS').textContent=(st.session.status==='upcoming')?'Starting soon…':((st.participants||0)+' A&Rs active · preparing the next record');
   }
   placeVBoard();
 }

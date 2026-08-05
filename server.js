@@ -212,6 +212,249 @@ function effectivePerms(user) {
   HOST_PERMS.forEach(k => { out[k] = isAdmin ? true : !!granted[k]; });
   return out;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATION CONTACT CENTER (028) — per-topic, per-channel subscriptions.
+// ─────────────────────────────────────────────────────────────────────────────
+// This catalog IS the schema for topics. A notify_prefs row exists only where an A&R
+// made an explicit choice; everyone else resolves to the defaults below. Adding a topic
+// or a channel is an edit to this object — no migration, no backfill (see 028's header).
+//
+// A channel key that is ABSENT means the channel is not offered for that topic:
+// notifyAudience() returns null, so "no daily digest by SMS" is enforced server-side
+// rather than by trusting the client not to ask for it.
+//
+// SMS defaults of 1 are only ever permissive UNDER users.sms_marketing_consent — an ON
+// default never texts anyone who lacks master consent and a phone on file.
+// NOTE on invite-only ("VIP") rooms: they are NOT a separate topic. A draft carried a
+// `vip_rooms` topic, but it isn't exposed in the UI (operator's call — fewer decisions
+// per A&R), and an unexposed topic that still gates sends is a trap: unchecking "a room
+// goes live" would leave private-room alerts firing with no control to stop them. So
+// room_live governs EVERY room, public or invite-only. The table is topic-agnostic, so
+// splitting them later is one line here plus a UI row — no migration.
+const NOTIFY_TOPICS = {
+  room_live:     { label: 'A room goes live', channels: { email: 1, sms: 1 } },
+  digest_daily:  { label: 'Daily update',     channels: { email: 0 } },
+  digest_weekly: { label: 'Weekly update',    channels: { email: 0 } },
+};
+const NOTIFY_CHANNELS = ['email', 'sms'];
+
+// Is (topic, channel) a real, offered pair? Everything that writes prefs goes through this
+// so a client can never invent a topic or subscribe to a channel a topic doesn't offer.
+function notifyTopicOffers(topic, channel) {
+  const t = NOTIFY_TOPICS[topic];
+  return !!(t && t.channels[channel] !== undefined);
+}
+function notifyDefault(topic, channel) {
+  const t = NOTIFY_TOPICS[topic];
+  if (!t || t.channels[channel] === undefined) return null;
+  return t.channels[channel] ? 1 : 0;
+}
+
+// Audience resolution for (topic, channel). Returns { sql, params } — a FRAGMENT, not
+// rows — so senders can drop it straight into an `INSERT ... SELECT` the way
+// /api/admin/notify/start already does, keeping the whole fan-out set-based (the #1 rule:
+// never a per-user loop). Returns null when the channel isn't offered for the topic.
+//
+// "Absent row = default" happens inside the one query: the LEFT JOIN yields NULL for
+// every user who never chose, and COALESCE substitutes the catalog default in place.
+//
+// THREE DIALECT TRAPS, all deliberate:
+//  1. The default is INLINED as a literal 0/1 while `topic` stays a ? param. Postgres can
+//     raise "could not determine data type of parameter" for COALESCE(int_col, $n)
+//     because node-postgres sends params untyped. The literal comes from NOTIFY_TOPICS
+//     via notifyDefault() and is always exactly 0 or 1, so it can't carry injection.
+//  2. NOT `p.enabled = 1 OR p.enabled IS NULL` — that reads equivalent and is wrong: it
+//     produces default-ON behaviour even for topics whose default is OFF.
+//  3. `= 1`, not `IS TRUE` — the column is INTEGER on both engines.
+//
+// The channel gates are byte-identical to /api/admin/notify/start (including the
+// LENGTH(phone) >= 7 quirk, which counts formatting characters) so audience counts stay
+// consistent with the existing admin readout. Do not "improve" them here in isolation.
+function notifyAudience(topic, channel) {
+  const def = notifyDefault(topic, channel);
+  if (def === null) return null;
+  const join = `FROM users u
+      LEFT JOIN notify_prefs p
+             ON p.uid = u.uid AND p.topic = ? AND p.channel = '${channel}'`;
+  if (channel === 'email') {
+    return {
+      sql: `${join}
+     WHERE COALESCE(u.blocked, 0) = 0
+       AND COALESCE(u.email_opt_out, 0) = 0
+       AND u.email IS NOT NULL AND u.email != ''
+       AND COALESCE(p.enabled, ${def}) = 1`,
+      params: [topic],
+    };
+  }
+  if (channel === 'sms') {
+    return {
+      sql: `${join}
+     WHERE COALESCE(u.blocked, 0) = 0
+       AND u.sms_marketing_consent = 1
+       AND u.phone IS NOT NULL AND LENGTH(u.phone) >= 7
+       AND COALESCE(p.enabled, ${def}) = 1`,
+      params: [topic],
+    };
+  }
+  return null;
+}
+// How many A&Rs would receive (topic, channel) right now. Bounded aggregate, admin-only
+// callers — never on the boot or poll path.
+async function notifyAudienceCount(topic, channel) {
+  const a = notifyAudience(topic, channel);
+  if (!a) return null;
+  const r = await db.get(`SELECT COUNT(*) AS c ${a.sql}`, a.params);
+  return Number(r && r.c) || 0;
+}
+
+// Resolve one user's full preference set: the stored choice where they made one, the
+// catalog default everywhere else. `smsEffective` lets the UI say "SMS is on but you
+// haven't picked any topics" instead of silently doing nothing.
+async function notifyPrefsFor(user) {
+  const rows = await db.all('SELECT topic, channel, enabled FROM notify_prefs WHERE uid = ?', [user.uid]);
+  const stored = new Map(rows.map(r => [`${r.topic}:${r.channel}`, Number(r.enabled) ? 1 : 0]));
+  const topics = {};
+  let anySms = false;
+  for (const [topic, spec] of Object.entries(NOTIFY_TOPICS)) {
+    const entry = { label: spec.label, channels: {} };
+    for (const channel of NOTIFY_CHANNELS) {
+      if (spec.channels[channel] === undefined) continue;
+      const key = `${topic}:${channel}`;
+      const on = stored.has(key) ? stored.get(key) : notifyDefault(topic, channel);
+      entry.channels[channel] = !!on;
+      if (channel === 'sms' && on) anySms = true;
+    }
+    topics[topic] = entry;
+  }
+  const smsConsent = user.sms_marketing_consent === 1 || user.sms_marketing_consent === true;
+  const hasPhone = !!(user.phone && String(user.phone).replace(/\D/g, '').length >= 7);
+  return {
+    topics,
+    emailOptOut: !!(user.email_opt_out === 1 || user.email_opt_out === true),
+    smsConsent, hasPhone,
+    // True only when a text could actually be delivered for at least one topic.
+    smsEffective: smsConsent && hasPhone && anySms,
+    smsPrefSet: user.sms_pref_set_at != null,
+  };
+}
+
+// Write one preference. `source` is audit-only ('register' | 'prefs' | 'link').
+async function setNotifyPref(uid, topic, channel, enabled, source) {
+  if (!notifyTopicOffers(topic, channel)) return false;
+  const val = enabled ? 1 : 0;
+  await db.run(
+    `INSERT INTO notify_prefs (uid, topic, channel, enabled, source, updated_at) VALUES (?,?,?,?,?,?)
+       ON CONFLICT (uid, topic, channel)
+       DO UPDATE SET enabled = excluded.enabled, source = excluded.source, updated_at = excluded.updated_at`,
+    [uid, topic, channel, val, source || null, now()]);
+  return true;
+}
+
+// The registration checkbox: "Notify me when this and future rooms go live." Writes the
+// room_live topic on BOTH channels (SMS stays inert without master consent + a phone).
+//
+// It deliberately does NOT stamp users.sms_pref_set_at. That flag means "this A&R made an
+// explicit SMS MASTER decision in the contact center", and the registration flow is
+// exactly where the phone-presence consent basis lives — so it must not disable itself.
+// Consequence, and it's the intended one: the contact center is the durable override,
+// while this checkbox is a fresh topic choice re-expressed at each registration.
+//
+// Callers pass the RAW body value: `undefined` means the client never sent the field, and
+// we must write NOTHING (an older client must never silently unsubscribe anybody).
+async function applyRegisterNotifyChoice(uid, raw) {
+  if (raw === undefined || raw === null || !uid) return;
+  const on = raw === true || raw === 1 || raw === '1' || raw === 'true';
+  await setNotifyPref(uid, 'room_live', 'email', on, 'register');
+  await setNotifyPref(uid, 'room_live', 'sms', on, 'register');
+}
+
+// ---- notification manage/unsubscribe link token ----
+// A signed, URL-safe token that opens the contact center with no login, so every message
+// we send can carry a working manage/unsubscribe link (CAN-SPAM, and plain decency).
+//
+// SCOPE IS THE WHOLE POINT: this authorizes the notify-prefs endpoints and NOTHING else.
+// verifyNotifyLink() is standalone and is deliberately NOT called from resolveUserId(),
+// userFromAuth(), participantFromReq(), platformAdmin() or canAdminSession() — so a
+// leaked link can't reach /api/me/profile, an admin surface, or anything else BY
+// CONSTRUCTION rather than by a checklist someone has to remember. It never mints an
+// auth_tokens row and never sets a cookie: there is no upgrade path to a real session.
+const NOTIFY_LINK_TTL = 30 * 24 * 60 * 60; // seconds; mirrors AUTH_TTL
+const notifyLinkSecret = () => process.env.NOTIFY_LINK_SECRET || '';
+
+function mintNotifyLink(uid) {
+  const secret = notifyLinkSecret();
+  if (!secret || !uid) return null;   // unconfigured → callers fall back to a login link
+  const exp = Math.floor(now() / 1000) + NOTIFY_LINK_TTL;
+  const msg = `np1.${uid}.${exp}`;
+  const sig = crypto.createHmac('sha256', secret).update(msg).digest('base64url');
+  return `${msg}.${sig}`;
+}
+// Full manage URL for a message footer, or the bare settings URL when links aren't
+// configured (which still works — it just requires the normal email-code login).
+function notifyManageUrl(base, uid) {
+  const tok = mintNotifyLink(uid);
+  return tok ? `${base}/profile#nt=${tok}` : `${base}/profile`;
+}
+
+// Verify, cheapest-and-most-decisive first. Returns { uid } or { error, status }.
+// Signature mismatch and malformed both return `bad_link` — never distinguish them.
+async function verifyNotifyLink(req, url) {
+  const secret = notifyLinkSecret();
+  // Fails CLOSED: no default secret, no derivation from another secret, no permissive
+  // "accept anything when unset". Header auth still works, so the contact center stays
+  // fully usable by a logged-in A&R; only the no-login deep link is dark.
+  if (!secret) return { error: 'notify_links_unconfigured', status: 503 };
+  const raw = (req.headers['x-notify-link'] || (url && url.searchParams.get('nt')) || '').toString();
+  if (!raw) return { error: 'bad_link', status: 401 };
+  const parts = raw.split('.');
+  if (parts.length !== 4 || parts[0] !== 'np1') return { error: 'bad_link', status: 401 };
+  const [, uid, exp, sig] = parts;
+  if (!/^[A-Za-z0-9_-]{6,32}$/.test(uid)) return { error: 'bad_link', status: 401 };
+  if (!/^\d{1,12}$/.test(exp)) return { error: 'bad_link', status: 401 };
+  if (Number(exp) * 1000 < now()) return { error: 'link_expired', status: 401 };
+  const expected = crypto.createHmac('sha256', secret).update(`np1.${uid}.${exp}`).digest('base64url');
+  // The length pre-check is MANDATORY — timingSafeEqual throws on unequal lengths.
+  if (sig.length !== expected.length
+      || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+    return { error: 'bad_link', status: 401 };
+  }
+  const u = await db.get('SELECT * FROM users WHERE uid = ?', [uid]);
+  if (!u) return { error: 'bad_link', status: 401 };
+  if (u.blocked === 1 || u.blocked === true) return { error: 'account_suspended', status: 403 };
+  return { uid: u.uid, user: u };
+}
+
+// Footers that make every message we send carry a working way out. `manage` comes from
+// notifyManageUrl(), so it deep-links straight into the contact center when
+// NOTIFY_LINK_SECRET is configured and degrades to a login-gated /profile when it isn't.
+function notifyFooterHtml(manage) {
+  return `<p style="color:#6f688f;font-size:12px;margin:22px 0 0;border-top:1px solid #2e2750;padding-top:12px">
+    You're getting this as a registered A&amp;R of The A&amp;R Room.
+    <a href="${manage}" style="color:#6d5fe0">Manage your notifications</a>.</p>`;
+}
+function notifyFooterText(manage) {
+  return `Manage your notifications: ${manage}`;
+}
+// SMS footer. "Reply STOP" is the legally sufficient opt-out; the link is a convenience,
+// and it can push a message into a second billed segment — drop it here if that ever
+// matters more than the convenience.
+function smsFooter(manage) {
+  return `Reply STOP to opt out. Manage: ${manage}`;
+}
+
+// Mask helpers for the token-authed read: a link holder sees enough to recognise the
+// account, never enough to harvest it (PII rule).
+function maskEmail(e) {
+  const s = String(e || '');
+  const at = s.indexOf('@');
+  if (at < 1) return '';
+  return s[0] + '•••' + s.slice(at);
+}
+function maskPhone(p) {
+  const d = String(p || '').replace(/\D/g, '');
+  return d.length >= 4 ? '••• ' + d.slice(-4) : '';
+}
 // Does this user have a given feature? Admin = always; host = per-grant; anyone else = no.
 function hasPerm(user, key) { return !!(user && (user.role === 'admin' || (user.role === 'host' && effectivePerms(user)[key]))); }
 // Gate for session-management features: block ONLY an identity host that lacks the grant.
@@ -795,10 +1038,10 @@ async function songReportData(round, session) {
     predictMean: predictMean != null ? predictMean.toFixed(1) : null,
     gapUp: gap != null && gap >= 0,
     gapLabel: gap == null ? '' : (gap >= 0 ? '+' : '') + gap.toFixed(1),
-    gapWord: gap == null ? '' : (gap >= 0.05 ? 'It over-delivered on first impressions'
-      : gap <= -0.05 ? 'Expectations ran ahead of the room' : 'It landed right on expectations'),
-    medianNote: 'Half the room scored it ' + fmt(median) + ' or higher.'
-      + (median > mean + 0.2 ? ' The typical listener heard more than the average shows — a few tough critics pulled it down.' : ''),
+    gapWord: gap == null ? '' : (gap >= 0.05 ? "It exceeded the room's expectations"
+      : gap <= -0.05 ? 'Expectations finished above the final score' : 'It finished in line with expectations'),
+    medianNote: 'Half of eligible A&Rs scored it ' + fmt(median) + ' or higher.'
+      + (median > mean + 0.2 ? ' The typical evaluation was stronger than the final average; a small number of lower scores shifted the result.' : ''),
     roles: segment('cat'),
     cities: segment('loc'),
     pools: (inP && rem) ? { in: inP, remote: rem } : null,
@@ -836,18 +1079,19 @@ async function uploadPng(pathname, buf) {
 
 // Recap email — a light, email-safe HTML wrapper around the four graphics (hosted URLs).
 const GIVEAWAY_PRIZE_LABEL = shareCards.PRIZE;
-function recapEmailText(d, sessionName) {
-  return `Your A&R Room recap — ${sessionName}\n\nYou ranked #${d.rank} of ${d.total}. `
-    + `Post your Score Card, the Top 8 Songs and Top 8 A&Rs as one Instagram carousel and add `
-    + `@Makinit4indies as a collaborator to double your reach. Play again at ANR.makinitmag.com.`;
+function recapEmailText(d, sessionName, manage) {
+  return `Your A&R Room session record — ${sessionName}\n\nYou finished #${d.rank} of ${d.total}. `
+    + `Share your A&R Record, the Top 8 Records, and the Top 8 A&Rs as one Instagram carousel. Add `
+    + `@Makinit4indies as a collaborator to extend its reach. Return for the next evaluation at ANR.makinitmag.com.`
+    + (manage ? `\n\n${notifyFooterText(manage)}` : '');
 }
-function recapEmailHtml({ name, sessionName, rank, total, cards }) {
+function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
   const first = dispName(name); // greet with the full display name, not just the first word
   const imgs = [
-    ['Your Score Card', cards.score],
+    ['Your A&R Record', cards.score],
     ['Top 8 Songs', cards.songs],
     ['Top 8 A&Rs', cards.ars],
-    [`Win ${GIVEAWAY_PRIZE_LABEL}`, cards.promo],
+    [`${GIVEAWAY_PRIZE_LABEL} Monthly A&R Award`, cards.promo],
   ].filter(([, u]) => !!u);
   const block = imgs.map(([alt, u]) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="${escapeHtml(alt)}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
@@ -855,46 +1099,54 @@ function recapEmailHtml({ name, sessionName, rank, total, cards }) {
   return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
     <div style="max-width:360px;margin:0 auto;text-align:center">
       <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">The A&amp;R Room</div>
-      <h1 style="font-size:22px;margin:8px 0 4px">Nice ears, ${escapeHtml(first)}.</h1>
-      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">You ranked <b style="color:#4bb749">#${rank}</b> of ${total} in <b style="color:#f3f0fb">${escapeHtml(sessionName)}</b>. Here's your recap to share.</p>
+      <h1 style="font-size:22px;margin:8px 0 4px">Your A&amp;R record, ${escapeHtml(first)}.</h1>
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">You finished <b style="color:#4bb749">#${rank}</b> of ${total} in <b style="color:#f3f0fb">${escapeHtml(sessionName)}</b>. Your verified session record is ready to share.</p>
       ${block}
       <div style="background:#171328;border:1px solid #6d5fe0;border-radius:14px;padding:16px;text-align:left;margin-top:6px">
-        <div style="font-weight:700;font-size:14px;margin-bottom:6px">📲 Post it — and double your reach</div>
-        <div style="font-size:13px;line-height:1.6;color:#a9a2c9">Post all four as one Instagram <b>carousel</b>. When you upload, add <b style="color:#f3f0fb">@Makinit4indies</b> as a <b>collaborator</b> — it shows on both feeds. Tag us + use <b>#TheARoom</b>.</div>
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">📲 Share your A&amp;R record</div>
+        <div style="font-size:13px;line-height:1.6;color:#a9a2c9">Post all four graphics as one Instagram <b>carousel</b>. Add <b style="color:#f3f0fb">@Makinit4indies</b> as a <b>collaborator</b> and tag us with <b>#TheARRoom</b>.</div>
       </div>
-      <p style="font-size:13px;color:#6f688f;margin:22px 0 0">Play again → <a href="https://anr.makinitmag.com" style="color:#4bb749;text-decoration:none">ANR.makinitmag.com</a></p>
+      <p style="font-size:13px;color:#6f688f;margin:22px 0 0">Return for the next evaluation → <a href="https://anr.makinitmag.com" style="color:#4bb749;text-decoration:none">ANR.makinitmag.com</a></p>
+      ${manage ? notifyFooterHtml(manage) : ''}
     </div>
   </div>`;
 }
 
 // ===== POST-SHOW ARTIST NOTICES =====
-// Quiet hours (TCPA): artist SMS only sends 10AM-8PM ET. The show ends at 11PM, so a
+// Quiet hours (TCPA): artist SMS only sends 10AM-10:30PM ET. The show ends at 11PM, so a
 // text queued at wrap sits pending until the next morning — /api/cron/artist-sms drains
 // it. Email has no such window (inboxes are asynchronous by nature).
-const SMS_WINDOW_START_ET = 10, SMS_WINDOW_END_ET = 20;
-function etHour(ts = Date.now()) {
+// The window edge is on a half hour, so the gate works in minutes-of-day, not whole hours.
+const SMS_WINDOW_START_MIN = 10 * 60;      // 10:00 AM ET
+const SMS_WINDOW_END_MIN = 22 * 60 + 30;   // 10:30 PM ET
+const SMS_WINDOW_START_LABEL = '10 AM ET', SMS_WINDOW_END_LABEL = '10:30 PM ET';
+function etHourMinute(ts = Date.now()) {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
+    hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date(ts));
+  const num = (t) => parseInt(p.find(x => x.type === t)?.value ?? '', 10);
   // hour12:false can render midnight as "24" depending on ICU — normalize to 0-23.
-  const h = parseInt(new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(new Date(ts)), 10);
-  return (Number.isFinite(h) ? h : 0) % 24;
+  const h = num('hour'), m = num('minute');
+  return { h: (Number.isFinite(h) ? h : 0) % 24, m: Number.isFinite(m) ? m : 0 };
 }
+function etHour(ts = Date.now()) { return etHourMinute(ts).h; }
 function withinSmsWindow(ts = Date.now()) {
-  const h = etHour(ts);
-  return h >= SMS_WINDOW_START_ET && h < SMS_WINDOW_END_ET;
+  const { h, m } = etHourMinute(ts);
+  const mins = h * 60 + m;
+  return mins >= SMS_WINDOW_START_MIN && mins < SMS_WINDOW_END_MIN;
 }
 // Human "when the queue next moves", for the panel's status line.
 function nextSmsWindowLabel(ts = Date.now()) {
-  return withinSmsWindow(ts) ? 'sending now' : `holds until ${SMS_WINDOW_START_ET} AM ET`;
+  return withinSmsWindow(ts) ? 'sending now' : `holds until ${SMS_WINDOW_START_LABEL}`;
 }
 
-const artistEmailText = (d) => `Your record got played live — ${d.title}\n\n`
-  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} went in front of the room on ${d.dateLabel}. `
-  + `It scored ${d.mean} (room average), ranked #${d.rank} of ${d.total} records played that night.\n\n`
-  + (d.watchUrl ? `Watch the room review your record: ${d.watchUrl}\nScrub to your song and screen-record the feedback — it's content.\n\n` : '')
+const artistEmailText = (d) => `Your record was evaluated live — ${d.title}\n\n`
+  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was evaluated by The A&R Room on ${d.dateLabel}. `
+  + `It earned a final room score of ${d.mean} and ranked #${d.rank} of ${d.total} records evaluated in the session.\n\n`
+  + (d.watchUrl ? `Watch the evaluation: ${d.watchUrl}\n\n` : '')
   + artistCommentsText(d.comments)
-  + `Your full report card is attached as three images. Post them as one Instagram carousel and `
-  + `add @Makinit4indies as a collaborator so it shows on both feeds. Tag us + use #TheARoom.\n\n`
-  + `Submit your next record → https://makinitmag.com/review`;
+  + `Your Official Room Report is attached as three images. Share them as one Instagram carousel, `
+  + `add @Makinit4indies as a collaborator, and tag #TheARRoom.\n\n`
+  + `Submit another record for consideration: https://makinitmag.com/review`;
 
 // The artist's post-show email: full 3-page report card + the replay link + post instructions.
 // Deliberately carries NO price or upsell — the operator's call: visibility first
@@ -931,28 +1183,28 @@ function artistEmailHtml({ title, artist, mean, rank, total, dateLabel, sessionN
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
   ).join('');
   const watchBlock = watchUrl ? `
-      <a href="${watchUrl}" style="display:block;background:#4bb749;color:#07130a;font-weight:700;font-size:15px;border-radius:12px;padding:14px 16px;text-decoration:none;margin:4px 0 8px">▶ Watch the room review your record</a>
-      <p style="font-size:12.5px;line-height:1.55;color:#a9a2c9;margin:0 0 18px">Scrub to your song in the replay and <b style="color:#f3f0fb">screen-record the live feedback</b> — clips of a real A&amp;R room reacting to your record are content gold.</p>` : '';
+      <a href="${watchUrl}" style="display:block;background:#4bb749;color:#07130a;font-weight:700;font-size:15px;border-radius:12px;padding:14px 16px;text-decoration:none;margin:4px 0 8px">▶ Watch the room evaluate your record</a>
+      <p style="font-size:12.5px;line-height:1.55;color:#a9a2c9;margin:0 0 18px">Go to your record in the replay to hear the room's live response. Short clips can help you share the evaluation in context.</p>` : '';
   return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
     <div style="max-width:360px;margin:0 auto;text-align:center">
       <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">The A&amp;R Room</div>
-      <h1 style="font-size:22px;margin:8px 0 4px">Your record got played live${artist ? ', ' + escapeHtml(String(artist).split(/\s+/)[0]) : ''}.</h1>
-      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 18px"><b style="color:#f3f0fb">“${escapeHtml(title)}”</b> went in front of the room on <b style="color:#f3f0fb">${escapeHtml(dateLabel)}</b> — here's your full report card.</p>
+      <h1 style="font-size:22px;margin:8px 0 4px">Your record was evaluated live${artist ? ', ' + escapeHtml(String(artist).split(/\s+/)[0]) : ''}.</h1>
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 18px"><b style="color:#f3f0fb">“${escapeHtml(title)}”</b> was evaluated by The A&amp;R Room on <b style="color:#f3f0fb">${escapeHtml(dateLabel)}</b>. Your Official Room Report is ready.</p>
       <div style="background:#171328;border:1px solid #2e2750;border-radius:14px;padding:18px 16px;margin-bottom:16px">
         <div style="font-weight:700;font-size:17px">${escapeHtml(title)}</div>
         ${artist ? `<div style="font-size:13px;color:#a9a2c9;margin-top:2px">${escapeHtml(artist)}</div>` : ''}
         <div style="font-family:'Space Mono',monospace;font-size:44px;font-weight:700;color:#4bb749;line-height:1.1;margin-top:10px">${escapeHtml(mean)}</div>
-        <div style="font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6f688f">room average · out of 9</div>
-        ${total > 1 ? `<div style="font-size:13px;color:#a9a2c9;margin-top:8px">Ranked <b style="color:#f3f0fb">#${rank} of ${total}</b> records played that night</div>` : ''}
+        <div style="font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6f688f">final room score · out of 9</div>
+        ${total > 1 ? `<div style="font-size:13px;color:#a9a2c9;margin-top:8px">Ranked <b style="color:#f3f0fb">#${rank} of ${total}</b> records evaluated in the session</div>` : ''}
       </div>
       ${pageBlock}
       ${watchBlock}
       ${artistCommentsHtml(comments)}
       <div style="background:#171328;border:1px solid #6d5fe0;border-radius:14px;padding:16px;text-align:left">
-        <div style="font-weight:700;font-size:14px;margin-bottom:6px">📲 Post your report card</div>
-        <div style="font-size:13px;line-height:1.6;color:#a9a2c9">Share all three pages as one Instagram <b style="color:#f3f0fb">carousel</b>. Add <b style="color:#f3f0fb">@Makinit4indies</b> as a <b>collaborator</b> when you upload — it shows on both feeds. Tag us + use <b style="color:#f3f0fb">#TheARoom</b>.</div>
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">📲 Share your Official Room Report</div>
+        <div style="font-size:13px;line-height:1.6;color:#a9a2c9">Share all three report pages as one Instagram <b style="color:#f3f0fb">carousel</b>. Add <b style="color:#f3f0fb">@Makinit4indies</b> as a <b>collaborator</b> and tag us with <b style="color:#f3f0fb">#TheARRoom</b>.</div>
       </div>
-      <p style="font-size:13px;color:#6f688f;margin:20px 0 0">Submit your next record → <a href="https://makinitmag.com/review" style="color:#4bb749;text-decoration:none">makinitmag.com/review</a></p>
+      <p style="font-size:13px;color:#6f688f;margin:20px 0 0">Submit another record for consideration → <a href="https://makinitmag.com/review" style="color:#4bb749;text-decoration:none">makinitmag.com/review</a></p>
     </div>
   </div>`;
 }
@@ -972,7 +1224,7 @@ const ARTIST_ELIGIBLE_SQL = `
 // small room never decomposes into near-individual scores.
 async function sendArtistReportEmail(round, session, dest) {
   const d = await songReportData(round, session);
-  if (!d) return { ok: false, error: 'No votes to report' };
+  if (!d) return { ok: false, error: 'No eligible evaluations to report' };
   const pageCount = d.votes >= 8 ? 3 : 2;
   const pages = [];
   for (let i = 1; i <= pageCount; i++) {
@@ -1004,15 +1256,18 @@ async function sendArtistReportEmail(round, session, dest) {
     rank: d.rankInRoom ? d.rankInRoom.rank : 1, total: d.rankInRoom ? d.rankInRoom.total : 1,
     dateLabel: d.dateLabel, watchUrl: session.watch_url || null, comments,
   });
-  const r = await sendEmail(dest, `Your record got played — “${round.song_title || 'your song'}” scored ${d.mean}`, html, text);
+  const r = await sendEmail(dest, `Official Room Report: “${round.song_title || 'your song'}” scored ${d.mean}`, html, text);
   return r.ok ? { ok: true, pages } : { ok: false, error: r.error };
 }
 
-// Drain pending artist SMS — optionally scoped to one session (host-triggered) or across
-// all of them (cron). A no-op outside the ET window: the rows simply stay pending.
-async function drainArtistSms({ sessionId = null, limit = 10 } = {}) {
+// Drain pending artist SMS — optionally scoped to one round (a per-round resend), one
+// session (host-triggered at wrap), or across all of them (cron). A no-op outside the ET
+// window: the rows simply stay pending and the cron gets them in the morning.
+async function drainArtistSms({ sessionId = null, roundId = null, limit = 10 } = {}) {
   if (!withinSmsWindow()) return { sent: 0, failed: 0, held: true };
-  const rows = sessionId
+  const rows = roundId
+    ? await db.all("SELECT * FROM artist_notices WHERE round_id = ? AND status = 'pending' AND channel = 'sms'", [roundId])
+    : sessionId
     ? await db.all("SELECT * FROM artist_notices WHERE session_id = ? AND status = 'pending' AND channel = 'sms' ORDER BY created_at ASC LIMIT ?", [sessionId, limit])
     : await db.all("SELECT * FROM artist_notices WHERE status = 'pending' AND channel = 'sms' ORDER BY created_at ASC LIMIT ?", [limit]);
   let sent = 0, failed = 0;
@@ -1026,7 +1281,7 @@ async function drainArtistSms({ sessionId = null, limit = 10 } = {}) {
     try {
       const round = await db.get('SELECT song_title FROM rounds WHERE id = ?', [row.round_id]);
       const title = (round && round.song_title) || 'your record';
-      const body = `🎧 The A&R Room: "${title}" got played live — your full report card is in your email inbox. Check it out. Reply STOP to opt out.`;
+      const body = `🎧 The A&R Room: "${title}" was evaluated live. Your Official Room Report is in your email. Reply STOP to opt out.`;
       const r = await sendSms(row.dest, body);
       if (r.ok) { await db.run("UPDATE artist_notices SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
       else { await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
@@ -1071,8 +1326,8 @@ async function postKitCaption(sessionId, ars, songs) {
   const lines = [];
   if (arLine) lines.push(`🏆 Top 8 A&Rs: ${arLine}`);
   if (songLine) lines.push(`🎧 Top 8 Records: ${songLine}`);
-  if (top) lines.push(`Top record of the night: “${top.title}”${top.artist ? ' — ' + top.artist : ''} (${Number(top.score).toFixed(1)})`);
-  lines.push('#TheARoom @Makinit4indies');
+  if (top) lines.push(`Top-rated record of the session: “${top.title}”${top.artist ? ' — ' + top.artist : ''} (${Number(top.score).toFixed(1)})`);
+  lines.push('#TheARRoom @Makinit4indies');
   return lines.join('\n');
 }
 
@@ -1236,30 +1491,59 @@ async function dispatchGoLiveNotifications(session, base, channels) {
   // Push (channels.push) is not wired yet — deferred behind the PWA shell; ignore it here.
   if (!wantEmail && !wantSms) return { attempted: 0, sent: 0, failed: 0 };
   const sessionId = session.id;
+  // AUDIENCE vs GATE — keep these straight (028):
+  //   AUDIENCE = this room's own verified participants. Registering for a room is what
+  //     puts you on this list; it is NOT a platform-wide broadcast list.
+  //   GATE = the room_live topic preference. The register screen carries a "notify me
+  //     when this and future rooms go live" checkbox, so honouring the topic here is just
+  //     honouring the box they ticked. Without this gate the settings page would offer a
+  //     switch that does nothing, which is worse than not offering it.
+  // Invite-only rooms use the SAME topic deliberately — see the NOTIFY_TOPICS comment.
+  const topic = 'room_live';
+  // Consent and phone come from `users`, NOT from the participant snapshot: the snapshot
+  // is written at join time, so a room joined before an opt-out would otherwise still
+  // carry a stale sms_marketing_consent = 1 and get texted.
   const parts = await db.all(
-    'SELECT id, user_id, email, phone, sms_marketing_consent FROM participants WHERE session_id = ? AND verified = 1',
-    [sessionId]);
+    `SELECT pt.id, pt.user_id, pt.email, COALESCE(u.phone, pt.phone) AS phone,
+            COALESCE(u.sms_marketing_consent, pt.sms_marketing_consent) AS sms_marketing_consent,
+            COALESCE(u.blocked, 0) AS blocked, COALESCE(u.email_opt_out, 0) AS email_opt_out,
+            pe.enabled AS pref_email, ps.enabled AS pref_sms
+       FROM participants pt
+       LEFT JOIN users u ON u.uid = pt.user_id
+       LEFT JOIN notify_prefs pe ON pe.uid = pt.user_id AND pe.topic = ? AND pe.channel = 'email'
+       LEFT JOIN notify_prefs ps ON ps.uid = pt.user_id AND ps.topic = ? AND ps.channel = 'sms'
+      WHERE pt.session_id = ? AND pt.verified = 1`,
+    [topic, topic, sessionId]);
   if (!parts.length) return { attempted: 0, sent: 0, failed: 0 };
+  // Absent pref row => the catalog default, exactly as notifyAudience() resolves it.
+  const defEmail = notifyDefault(topic, 'email'), defSms = notifyDefault(topic, 'sms');
+  const onEmail = p => (p.pref_email == null ? defEmail : Number(p.pref_email)) === 1;
+  const onSms   = p => (p.pref_sms   == null ? defSms   : Number(p.pref_sms))   === 1;
   const capped = parts.slice(0, NOTIFY_CAP);
   if (parts.length > NOTIFY_CAP) console.warn(`[NOTIFY] session ${sessionId}: ${parts.length} participants exceeds cap ${NOTIFY_CAP}; notifying first ${NOTIFY_CAP}.`);
   const url = `${base}/?s=${encodeURIComponent(sessionId)}`;
   const name = session.name || 'The A&R Room';
-  const smsBody = `🎧 ${name} is LIVE on The A&R Room — rate songs & read the room: ${url}\nReply STOP to opt out.`;
-  const subject = `${name} is live now 🎧`;
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.5">
-    <p><strong>${escapeHtml(name)}</strong> just went live on The A&amp;R Room.</p>
-    <p>Rate songs 0–9, predict the room, and climb the leaderboard.</p>
-    <p><a href="${url}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none">Join the room →</a></p>
-    <p style="color:#666;font-size:13px">${url}</p></div>`;
-  const text = `${name} is live on The A&R Room. Join: ${url}`;
+  const subject = `${name} is live · Enter the A&R evaluation`;
+  const text = `${name} is live in The A&R Room. Enter the evaluation: ${url}`;
   let sent = 0, failed = 0;
   await runLimited(capped, NOTIFY_CONCURRENCY, async (p) => {
-    if (wantEmail && p.email && !(await alreadyNotified(sessionId, p.id, 'email'))) {
-      const r = await sendEmail(p.email, subject, html, text);
+    if (Number(p.blocked) === 1) return;
+    if (wantEmail && p.email && !Number(p.email_opt_out) && onEmail(p)
+        && !(await alreadyNotified(sessionId, p.id, 'email'))) {
+      const manage = notifyManageUrl(base, p.user_id);
+      const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.5">
+    <p><strong>${escapeHtml(name)}</strong> is now live in The A&amp;R Room.</p>
+    <p>Evaluate records, predict the room's consensus, and build your monthly ranking.</p>
+    <p><a href="${url}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none">Enter the evaluation →</a></p>
+    <p style="color:#666;font-size:13px">${url}</p>
+    ${notifyFooterHtml(manage)}</div>`;
+      const r = await sendEmail(p.email, subject, html, `${text}\n\n${notifyFooterText(manage)}`);
       await logNotify(sessionId, p, 'email', p.email, r.ok ? 'sent' : 'failed', r.error);
       r.ok ? sent++ : failed++;
     }
-    if (wantSms && p.phone && p.sms_marketing_consent && !(await alreadyNotified(sessionId, p.id, 'sms'))) {
+    if (wantSms && p.phone && Number(p.sms_marketing_consent) === 1 && onSms(p)
+        && !(await alreadyNotified(sessionId, p.id, 'sms'))) {
+      const smsBody = `🎧 ${name} is LIVE in The A&R Room—evaluate records and predict the room: ${url}\n${smsFooter(notifyManageUrl(base, p.user_id))}`;
       const r = await sendSms(p.phone, smsBody);
       await logNotify(sessionId, p, 'sms', p.phone, r.ok ? 'sent' : 'failed', r.error);
       r.ok ? sent++ : failed++;
@@ -1391,7 +1675,7 @@ async function handleApi(req, res, url) {
   }
 
   if (p === '/api/auth/verify' && method === 'POST') {
-    const { email, code, name, phone } = await readBody(req);
+    const { email, code, name, phone, notifyRooms } = await readBody(req);
     if (!email || !code) return bad(res, 'Email and code required');
     const em = email.toLowerCase();
     const otp = await db.get("SELECT * FROM otps WHERE email = ? AND session_id = '__auth__'", [em]);
@@ -1418,8 +1702,20 @@ async function handleApi(req, res, url) {
     if (sName) { await db.run("UPDATE users SET name = COALESCE(NULLIF(?, ''), name) WHERE uid = ?", [sName, user.uid]); user.name = user.name || sName; }
     const sPhoneRaw = (phone || '').toString().trim();
     if (sPhoneRaw && !sPhoneRaw.includes('•') && sPhoneRaw.replace(/\D/g, '').length >= 7) {
-      await db.run('UPDATE users SET phone = ?, sms_marketing_consent = 1, sms_consent_at = ? WHERE uid = ?', [sPhoneRaw, now(), user.uid]);
+      // DERIVATION SITE 1 of 3 (see also /api/join/verify and /api/join/account).
+      // Phone presence is still the consent basis for anyone who has never opened the
+      // contact center. Once they HAVE (sms_pref_set_at set), the number is still saved
+      // but consent is left exactly as they set it — otherwise a deliberate opt-out gets
+      // silently reversed by the next signup, which is a real TCPA problem (028).
+      if (user.sms_pref_set_at == null) {
+        await db.run('UPDATE users SET phone = ?, sms_marketing_consent = 1, sms_consent_at = ? WHERE uid = ?', [sPhoneRaw, now(), user.uid]);
+      } else {
+        await db.run('UPDATE users SET phone = ? WHERE uid = ?', [sPhoneRaw, user.uid]);
+      }
     }
+    // Registration checkbox: "Notify me when this and future rooms go live." Absent =>
+    // write nothing, so an older client can never silently unsubscribe anybody.
+    await applyRegisterNotifyChoice(user.uid, notifyRooms);
     // First-account-is-admin: the operator's first host login on a fresh install becomes
     // admin (a session can't exist without a host, so this fires before any player joins).
     if (user.role !== 'admin' && await maybePromoteFirstAdmin(user.uid)) user.role = 'admin';
@@ -1519,7 +1815,7 @@ async function handleApi(req, res, url) {
 
   // ----- verify OTP + create/return participant -----
   if (p === '/api/join/verify' && method === 'POST') {
-    const { sessionId, email, code, name, phone, keepPhone, ref } = await readBody(req);
+    const { sessionId, email, code, name, phone, keepPhone, ref, notifyRooms } = await readBody(req);
     const em = (email || '').toLowerCase();
     // Phone handling: ignore the masked hint if it's ever echoed back; only a value with
     // real digits counts as a newly typed number.
@@ -1550,20 +1846,30 @@ async function handleApi(req, res, url) {
     const keepingStored = (keepPhone === true || keepPhone === 1 || keepPhone === '1') && storedDigits.length >= 7;
     const effectivePhone = newPhone || (keepingStored ? user.phone : '');
     const consent = (effectivePhone.replace(/\D/g, '').length >= 7) ? 1 : 0;
+    // DERIVATION SITE 2 of 3. `consent` above is the phone-presence derivation; it governs
+    // only until an A&R makes an explicit SMS decision in the contact center. After that
+    // (sms_pref_set_at set) their stored choice wins and this join must not touch it — in
+    // BOTH directions, so neither a re-typed number nor an omitted one can flip it (028).
+    const prefSet = !!(user && user.sms_pref_set_at != null);
+    let effConsent = consent;
 
     if (user) {
       await db.run('UPDATE users SET last_seen = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE uid = ?',
         [now(), (name || '').trim().slice(0, MAX_NAME), user.uid]);
-      // Save a newly typed number (masked/echoed values were filtered out above).
+      // Save a newly typed number (masked/echoed values were filtered out above). A number
+      // is data — storing it is always fine; only the CONSENT flag is protected.
       if (newPhone) await db.run('UPDATE users SET phone = ? WHERE uid = ?', [newPhone, user.uid]);
-      // Consent reconciliation. A phone present (new or kept) => opted in (stamp on a
-      // fresh opt-in). If they previously had consent but provided/kept no number now,
-      // treat that as a withdrawal (keep the stored number on file, flip the flag off).
       const wasConsented = user.sms_marketing_consent === 1 || user.sms_marketing_consent === true;
-      if (consent && !wasConsented) {
+      if (prefSet) {
+        effConsent = wasConsented ? 1 : 0;   // their explicit choice stands, untouched
+      } else if (consent && !wasConsented) {
+        // Consent reconciliation (unchanged for anyone who never set a preference). A
+        // phone present (new or kept) => opted in, stamped on a fresh opt-in.
         await db.run('UPDATE users SET sms_marketing_consent = 1, sms_consent_at = ? WHERE uid = ?', [now(), user.uid]);
       } else if (!consent && wasConsented) {
-        await db.run('UPDATE users SET sms_marketing_consent = 0 WHERE uid = ?', [user.uid]);
+        // Had consent, provided/kept no number now => withdrawal. The stored number stays
+        // on file; sms_consent_at is never cleared, sms_optout_at records the withdrawal.
+        await db.run('UPDATE users SET sms_marketing_consent = 0, sms_optout_at = ? WHERE uid = ?', [now(), user.uid]);
       }
     } else {
       const uid = id(12);
@@ -1571,15 +1877,21 @@ async function handleApi(req, res, url) {
         [uid, em, (name || '').trim().slice(0, MAX_NAME), effectivePhone || null, consent, consent ? now() : null, now(), now()]);
       user = { uid, email: em, isNewAccount: true };
     }
-    // The per-session participant records the phone + consent for THIS signup.
-    const ph = effectivePhone;
+    // The per-session participant records the phone + consent for THIS signup. For an A&R
+    // who has set an explicit preference, the snapshot mirrors their LIVE account consent
+    // rather than re-deriving it — otherwise the admin export (and anything else reading
+    // the snapshot) would claim a consent they've since revoked.
+    const ph = effectivePhone || (prefSet ? (user.phone || '') : '');
 
     // ---- per-session player record (participants = this user, in this session) ----
     let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
     const token = id(18);
     if (participant) {
       await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END WHERE id = ?',
-        [token, user.uid, (name || '').trim().slice(0, MAX_NAME), ph, consent, participant.id]);
+        [token, user.uid, (name || '').trim().slice(0, MAX_NAME), ph, effConsent, participant.id]);
+      // An explicit opt-out must also clear a stale snapshot left by an earlier signup —
+      // the CASE above only ever raises the flag, never lowers it.
+      if (prefSet && !effConsent) await db.run('UPDATE participants SET sms_marketing_consent = 0 WHERE id = ?', [participant.id]);
       // Give an existing referral-less participant a code if they somehow lack one.
       if (!participant.ref_code) await db.run('UPDATE participants SET ref_code = ? WHERE id = ?', [refCode(), participant.id]);
     } else {
@@ -1608,10 +1920,13 @@ async function handleApi(req, res, url) {
         myCode = refCode();
       }
       await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?)',
-        [pid, sessionId, user.uid, em, (name || '').trim().slice(0, MAX_NAME), ph || null, consent, myCode, referredBy, token, now()]);
+        [pid, sessionId, user.uid, em, (name || '').trim().slice(0, MAX_NAME), ph || null, effConsent, myCode, referredBy, token, now()]);
       // First time this user appears in this session → count it toward sessions_played.
       await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }
+    // Registration checkbox: "Notify me when this and future rooms go live." Absent =>
+    // write nothing, so an older client can never silently unsubscribe anybody.
+    await applyRegisterNotifyChoice(user.uid, notifyRooms);
     await db.run('DELETE FROM otps WHERE email = ? AND session_id = ?', [em, sessionId]);
     return send(res, 200, { token });
   }
@@ -1623,12 +1938,18 @@ async function handleApi(req, res, url) {
     const user = await userFromAuth(req);
     if (!user) return bad(res, 'Not logged in', 401);
     if (user.blocked) return bad(res, 'This account has been suspended.', 403);
-    const { sessionId, accessCode } = await readBody(req);
+    const { sessionId, accessCode, notifyRooms } = await readBody(req);
     const session = await db.get('SELECT id, status, deleted_at, access_code FROM sessions WHERE id = ?', [sessionId]);
     if (!session || session.deleted_at) return bad(res, 'Room not found', 404);
     if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This room is closed — you can only register for upcoming or live rooms', 400);
     const em = (user.email || '').toLowerCase();
-    const consent = ((user.phone || '').replace(/\D/g, '').length >= 7) ? 1 : 0;
+    // DERIVATION SITE 3 of 3 — the one-tap path, and the easiest to miss. Once an A&R has
+    // made an explicit SMS decision, the snapshot mirrors their LIVE account consent
+    // instead of re-deriving it from phone presence, so a one-tap re-join can't quietly
+    // resurrect a consent they revoked (028).
+    const consent = (user.sms_pref_set_at != null)
+      ? ((user.sms_marketing_consent === 1 || user.sms_marketing_consent === true) ? 1 : 0)
+      : (((user.phone || '').replace(/\D/g, '').length >= 7) ? 1 : 0);
     const token = id(18);
     let participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [sessionId, em]);
     // Invite-only gate for the one-tap account join: same rule as /api/join/request.
@@ -1640,8 +1961,8 @@ async function handleApi(req, res, url) {
       }
     }
     if (participant) {
-      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone) WHERE id = ?',
-        [token, user.uid, (user.name || '').trim(), user.phone || '', participant.id]);
+      await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = ? WHERE id = ?',
+        [token, user.uid, (user.name || '').trim(), user.phone || '', consent, participant.id]);
       if (!participant.ref_code) await db.run('UPDATE participants SET ref_code = ? WHERE id = ?', [refCode(), participant.id]);
     } else {
       const pid = id(9);
@@ -1651,6 +1972,9 @@ async function handleApi(req, res, url) {
         [pid, sessionId, user.uid, em, (user.name || '').trim(), user.phone || null, consent, myCode, null, token, now()]);
       await db.run('UPDATE users SET sessions_played = sessions_played + 1, last_seen = ? WHERE uid = ?', [now(), user.uid]);
     }
+    // Registration checkbox: "Notify me when this and future rooms go live." Absent =>
+    // write nothing, so an older client can never silently unsubscribe anybody.
+    await applyRegisterNotifyChoice(user.uid, notifyRooms);
     return send(res, 200, { token });
   }
 
@@ -1728,7 +2052,7 @@ async function handleApi(req, res, url) {
   if (p === '/api/me/profile' && method === 'GET') {
     const userId = await resolveUserId(req);
     if (!userId) return bad(res, 'Not authenticated', 401);
-    const u = await db.get('SELECT name, categories, primary_category, location, instagram, tiktok, photo_url, profile_complete FROM users WHERE uid = ?', [userId]);
+    const u = await db.get('SELECT * FROM users WHERE uid = ?', [userId]);
     if (!u) return bad(res, 'Not found', 404);
     let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
     return send(res, 200, {
@@ -1736,8 +2060,12 @@ async function handleApi(req, res, url) {
         name: u.name || '', categories: cats, primaryCategory: u.primary_category || '',
         location: u.location || '', instagram: u.instagram || '', tiktok: u.tiktok || '',
         photoUrl: u.photo_url || null, complete: !!u.profile_complete,
+        // Private-to-self contact fields. This is a header-authenticated route only
+        // (the notify-link token can NEVER reach it), so the real values are safe here.
+        phone: u.phone || '',
       },
       categoriesAvailable: PROFILE_CATEGORIES,
+      notify: await notifyPrefsFor(u),
     });
   }
 
@@ -1763,11 +2091,144 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE users SET name = ? WHERE uid = ?', [newName, userId]);
       await db.run('UPDATE participants SET name = ? WHERE user_id = ?', [newName, userId]);
     }
+    // NOTE: the phone number is NOT writable here. It lives on /api/me/notify-prefs
+    // (header auth only) so exactly one code path owns the number and its TCPA consent
+    // side-effects — two endpoints with subtly different consent rules is a bug waiting.
     const u = await db.get('SELECT name FROM users WHERE uid = ?', [userId]);
     const complete = isProfileComplete({ name: u && u.name, categories: JSON.stringify(cats), primary_category: primary, location }) ? 1 : 0;
     await db.run('UPDATE users SET categories = ?, primary_category = ?, location = ?, instagram = ?, tiktok = ?, profile_complete = ? WHERE uid = ?',
       [JSON.stringify(cats), primary, location, instagram, tiktok, complete, userId]);
     return send(res, 200, { ok: true, complete: !!complete });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // NOTIFICATION CONTACT CENTER (028) — read/write an A&R's own subscriptions.
+  // ─────────────────────────────────────────────────────────────────────────
+  // Dual auth: the normal header token wins; failing that, a signed manage-link token
+  // (see verifyNotifyLink). These live on their OWN paths, deliberately not under
+  // /api/me/profile, so the link token has no route to the profile handler.
+  //
+  // resolveNotifyActor returns { user, viaLink } — viaLink narrows what may be read
+  // (masked contact only) and written (never the phone number).
+  async function resolveNotifyActor(req, url) {
+    const userId = await resolveUserId(req);
+    if (userId) {
+      const u = await db.get('SELECT * FROM users WHERE uid = ?', [userId]);
+      if (u) return { user: u, viaLink: false };
+    }
+    const v = await verifyNotifyLink(req, url);
+    if (v.error) return { error: v.error, status: v.status };
+    return { user: v.user, viaLink: true };
+  }
+
+  if (p === '/api/me/notify-prefs' && (method === 'GET' || method === 'POST')) {
+    const actor = await resolveNotifyActor(req, url);
+    if (actor.error) return bad(res, actor.error, actor.status);
+    const u = actor.user;
+    // A manage link must never be cached by a shared proxy, and must not leak into the
+    // Referer of anything the settings page links out to.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+
+    if (method === 'POST') {
+      const body = await readBody(req);
+
+      // --- Phone. HEADER AUTH ONLY: changing the number is an account change, and a
+      // leaked manage link must never be able to REDIRECT someone's texts. ---
+      if ('phone' in body) {
+        if (actor.viaLink) return bad(res, 'login_required', 403);
+        const rawPhone = (body.phone || '').toString().trim().slice(0, 40);
+        const digits = rawPhone.replace(/\D/g, '');
+        if (rawPhone && digits.length < 7) return bad(res, 'That mobile number looks incomplete', 400);
+        if (rawPhone) {
+          await db.run('UPDATE users SET phone = ?, sms_pref_set_at = ? WHERE uid = ?', [rawPhone, now(), u.uid]);
+        } else {
+          // No number, no consent — regardless of what the topic rows say.
+          await db.run('UPDATE users SET phone = NULL, sms_marketing_consent = 0, sms_optout_at = ?, sms_pref_set_at = ? WHERE uid = ?',
+            [now(), now(), u.uid]);
+        }
+        await db.run('UPDATE participants SET phone = ? WHERE user_id = ?', [rawPhone || null, u.uid]);
+        u.phone = rawPhone || null;   // so the smsConsent branch below sees the new number
+      }
+
+      // --- SMS master (the TCPA record). Never inferred from the topic rows. ---
+      if ('smsConsent' in body) {
+        const wantSms = body.smsConsent === true || body.smsConsent === 1;
+        const hasPhone = !!(u.phone && String(u.phone).replace(/\D/g, '').length >= 7);
+        if (wantSms && !hasPhone) return bad(res, 'Add a mobile number first', 400);
+        if (wantSms) {
+          // sms_consent_at records the GRANT, stamped on each 0 -> 1 transition.
+          await db.run('UPDATE users SET sms_marketing_consent = 1, sms_consent_at = ?, sms_pref_set_at = ? WHERE uid = ?',
+            [now(), now(), u.uid]);
+        } else {
+          // The number stays on file — revoking consent is not deleting the contact.
+          // sms_consent_at is NEVER cleared; sms_optout_at records the withdrawal, so
+          // the pair reads as a consent history rather than a mutable flag.
+          await db.run('UPDATE users SET sms_marketing_consent = 0, sms_optout_at = ?, sms_pref_set_at = ? WHERE uid = ?',
+            [now(), now(), u.uid]);
+        }
+        await db.run('UPDATE participants SET sms_marketing_consent = ? WHERE user_id = ?', [wantSms ? 1 : 0, u.uid]);
+      }
+
+      // --- Global email kill switch (one-click unsubscribe-all). ---
+      if ('emailOptOut' in body) {
+        const off = body.emailOptOut === true || body.emailOptOut === 1;
+        await db.run('UPDATE users SET email_opt_out = ?, email_opt_out_at = ? WHERE uid = ?',
+          [off ? 1 : 0, off ? now() : null, u.uid]);
+      }
+
+      // --- Per-topic rows. Only allowlisted (topic, channel) pairs are ever written. ---
+      const topics = (body.topics && typeof body.topics === 'object') ? body.topics : {};
+      let touchedSms = false;
+      for (const [topic, channels] of Object.entries(topics)) {
+        if (!channels || typeof channels !== 'object') continue;
+        for (const channel of NOTIFY_CHANNELS) {
+          if (!(channel in channels)) continue;
+          if (!notifyTopicOffers(topic, channel)) continue;   // unknown topic or channel not offered
+          await setNotifyPref(u.uid, topic, channel, !!channels[channel], actor.viaLink ? 'link' : 'prefs');
+          if (channel === 'sms') touchedSms = true;
+        }
+      }
+      // Toggling an SMS topic in the contact center is an explicit SMS decision, so the
+      // phone-presence derivation stops guessing for this user from here on. Note this
+      // does NOT flip the master: inferring a TCPA record change from a narrower choice
+      // is worse than leaving it explicit.
+      if (touchedSms) await db.run('UPDATE users SET sms_pref_set_at = COALESCE(sms_pref_set_at, ?) WHERE uid = ?', [now(), u.uid]);
+    }
+
+    const fresh = await db.get('SELECT * FROM users WHERE uid = ?', [u.uid]);
+    const out = await notifyPrefsFor(fresh);
+    // Contact fields are MASKED for a link holder: enough to recognise the account,
+    // never enough to harvest it. Header-authenticated callers get the real values.
+    out.email = actor.viaLink ? maskEmail(fresh.email) : (fresh.email || '');
+    out.phone = actor.viaLink ? maskPhone(fresh.phone) : (fresh.phone || '');
+    out.name = fresh.name || '';
+    out.viaLink = actor.viaLink;
+    // Changing the number is an account change: a leaked link must never be able to
+    // REDIRECT someone's texts. The client hides the phone field when this is false.
+    out.canEditPhone = !actor.viaLink;
+    out.topicsAvailable = Object.fromEntries(
+      Object.entries(NOTIFY_TOPICS).map(([k, v]) => [k, { label: v.label, channels: Object.keys(v.channels) }]));
+    return send(res, 200, out);
+  }
+
+  // One-click unsubscribe: everything off, no confirm step, no login. CAN-SPAM wants
+  // this to just work — a link that demands a login is a spam complaint waiting to happen.
+  if (p === '/api/me/notify-prefs/unsubscribe-all' && method === 'POST') {
+    const actor = await resolveNotifyActor(req, url);
+    if (actor.error) return bad(res, actor.error, actor.status);
+    const u = actor.user;
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    await db.run('UPDATE users SET email_opt_out = 1, email_opt_out_at = ?, sms_marketing_consent = 0, sms_optout_at = ?, sms_pref_set_at = ? WHERE uid = ?',
+      [now(), now(), now(), u.uid]);
+    await db.run('UPDATE participants SET sms_marketing_consent = 0 WHERE user_id = ?', [u.uid]);
+    for (const [topic, spec] of Object.entries(NOTIFY_TOPICS)) {
+      for (const channel of Object.keys(spec.channels)) {
+        await setNotifyPref(u.uid, topic, channel, false, actor.viaLink ? 'link' : 'prefs');
+      }
+    }
+    return send(res, 200, { ok: true });
   }
 
   // Upload a profile photo (3.5a). Receives a client-cropped, downscaled square as a
@@ -1926,6 +2387,7 @@ async function handleApi(req, res, url) {
       await tx.run('DELETE FROM participants WHERE user_id = ?', [uid]);
       await tx.run('DELETE FROM auth_tokens WHERE uid = ?', [uid]);
       await tx.run('DELETE FROM otps WHERE email = ?', [u.email]);
+      await tx.run('DELETE FROM notify_prefs WHERE uid = ?', [uid]);
       await tx.run('DELETE FROM users WHERE uid = ?', [uid]);
     });
     return send(res, 200, { ok: true, deleted: true });
@@ -2104,7 +2566,7 @@ async function handleApi(req, res, url) {
     // Out of radius.
     if (mode === 'required') {
       return send(res, 200, { pool: null, checked_in: false, geofenced: true, distance: coarse,
-        message: 'You\u2019re not at the event location, so you can\u2019t vote in this in-person room.' });
+        message: 'You\u2019re outside the event location and can\u2019t participate in this in-person session.' });
     }
     await db.run("UPDATE participants SET pool = 'online', checkin_distance = ? WHERE id = ?", [coarse, participant.id]);
     return send(res, 200, { pool: 'online', checked_in: true, geofenced: true, distance: coarse });
@@ -2240,7 +2702,7 @@ async function handleApi(req, res, url) {
     }
     const body = await readBody(req);
     const round = await activeRound(participant.session_id);
-    if (!round || round.status !== 'voting') return bad(res, 'Voting is not open');
+    if (!round || round.status !== 'voting') return bad(res, 'Evaluation is not open');
     if (round.closes_at && now() > Number(round.closes_at)) return bad(res, 'Time is up');
     const existing = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
     if (existing) return bad(res, 'You already locked in');
@@ -2403,7 +2865,15 @@ async function handleApi(req, res, url) {
               (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id) AS comments,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared,
-              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'pending') AS comments_pending
+              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'pending') AS comments_pending,
+              -- Per-round notice state drives the Rounds-tab 📨 button: whether it reads
+              -- "send" or "resend", and whether the last attempt failed (and why).
+              (SELECT n.status   FROM artist_notices n WHERE n.round_id = r.id AND n.channel = 'email') AS notice_email_status,
+              (SELECT n.sent_at  FROM artist_notices n WHERE n.round_id = r.id AND n.channel = 'email') AS notice_email_at,
+              (SELECT n.error    FROM artist_notices n WHERE n.round_id = r.id AND n.channel = 'email') AS notice_email_error,
+              (SELECT n.status   FROM artist_notices n WHERE n.round_id = r.id AND n.channel = 'sms')   AS notice_sms_status,
+              (SELECT n.sent_at  FROM artist_notices n WHERE n.round_id = r.id AND n.channel = 'sms')   AS notice_sms_at,
+              (SELECT n.error    FROM artist_notices n WHERE n.round_id = r.id AND n.channel = 'sms')   AS notice_sms_error
          FROM rounds r WHERE r.session_id = ? ORDER BY r.idx ASC`, [sessionId]);
     // Artist contact is host-facing only (it's how they reach the artist post-show) and
     // this endpoint is already admin/owner-gated — it never reaches a public surface.
@@ -2418,7 +2888,19 @@ async function handleApi(req, res, url) {
       comments: Number(r.comments) || 0,
       comments_shared: Number(r.comments_shared) || 0,
       comments_pending: Number(r.comments_pending) || 0,
-    })) });
+      notice: {
+        email: r.notice_email_status
+          ? { status: r.notice_email_status, at: r.notice_email_at != null ? Number(r.notice_email_at) : null, error: r.notice_email_error || null }
+          : null,
+        sms: r.notice_sms_status
+          ? { status: r.notice_sms_status, at: r.notice_sms_at != null ? Number(r.notice_sms_at) : null, error: r.notice_sms_error || null }
+          : null,
+      },
+    })),
+    // Rides along so the per-round resend dialog can warn that a text will be held,
+    // without hardcoding the window in the client or spending a request to ask.
+    smsWindow: { open: withinSmsWindow(), from: SMS_WINDOW_START_LABEL, to: SMS_WINDOW_END_LABEL },
+    });
   }
 
   // ----- round comments: the host's moderation queue (admin/owner only) -----
@@ -2474,9 +2956,32 @@ async function handleApi(req, res, url) {
   // set-based INSERT..SELECTs; the panel then drives small process batches.
   if (p === '/api/admin/notify/audience' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
-    const em = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND email IS NOT NULL AND email != ''")).c;
+    // email_opt_out (028) is the global kill switch every unsubscribe link sets. Without
+    // it here, an A&R who unsubscribed would still be counted — and still be mailed.
+    const em = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND COALESCE(email_opt_out,0) = 0 AND email IS NOT NULL AND email != ''")).c;
     const sm = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7")).c;
     return send(res, 200, { email: Number(em) || 0, sms: Number(sm) || 0 });
+  }
+
+  // Subscription readout for the Platform panel (028): who would actually receive each
+  // topic right now. This is how the operator can see the contact center working before
+  // any digest sender exists. A handful of bounded COUNT(*)s, admin-triggered only —
+  // never on the boot or poll path.
+  if (p === '/api/admin/notify/topics' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const topics = [];
+    for (const [key, spec] of Object.entries(NOTIFY_TOPICS)) {
+      const counts = {};
+      for (const channel of Object.keys(spec.channels)) {
+        counts[channel] = { count: await notifyAudienceCount(key, channel), default: !!spec.channels[channel] };
+      }
+      topics.push({ key, label: spec.label, channels: counts });
+    }
+    const optedOut = Number((await db.get('SELECT COUNT(*) AS c FROM users WHERE COALESCE(email_opt_out,0) = 1')).c) || 0;
+    const explicit = Number((await db.get('SELECT COUNT(DISTINCT uid) AS c FROM notify_prefs')).c) || 0;
+    // Boolean only — never the secret itself.
+    return send(res, 200, { topics, emailOptedOut: optedOut, withExplicitPrefs: explicit,
+      manageLinksConfigured: !!notifyLinkSecret() });
   }
   if (p === '/api/admin/notify/start' && method === 'POST') {
     const admin = await platformAdmin(req);
@@ -2494,7 +2999,8 @@ async function handleApi(req, res, url) {
     if (wantEmail) await db.run(
       `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
          SELECT ?, uid, 'email', email FROM users
-          WHERE COALESCE(blocked,0) = 0 AND email IS NOT NULL AND email != ''`, [bcId]);
+          WHERE COALESCE(blocked,0) = 0 AND COALESCE(email_opt_out,0) = 0
+            AND email IS NOT NULL AND email != ''`, [bcId]);
     if (wantSms) await db.run(
       `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
          SELECT ?, uid, 'sms', phone FROM users
@@ -2510,16 +3016,22 @@ async function handleApi(req, res, url) {
     const n = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 20);
     const batch = await db.all("SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [broadcastId, n]);
     let sentN = 0, failedN = 0;
-    const html = `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
+    const base = publicBaseFromReq(req);
+    // The footer is per-recipient (the manage link is signed with their uid), so the body
+    // is built inside the loop. Note the SMS branch previously carried NO opt-out language
+    // at all, unlike the go-live and artist texts — smsFooter() fixes that too.
+    const htmlFor = (manage) => `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
       <div style="max-width:520px;margin:0 auto;background:#171328;border:1px solid #2e2750;border-radius:16px;padding:26px">
         <p style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;font-weight:700;margin:0 0 14px">The A&amp;R Room</p>
         <div style="font-size:15px;line-height:1.6;color:#f3f0fb">${escapeHtml(bc.message).replace(/\n/g, '<br>')}</div>
         <p style="font-size:12px;color:#6f688f;margin:22px 0 0">Makin' It Magazine · The A&amp;R Room · <a href="https://anr.makinitmag.com" style="color:#6d5fe0">anr.makinitmag.com</a></p>
+        ${notifyFooterHtml(manage)}
       </div></div>`;
     for (const r of batch) {
+      const manage = notifyManageUrl(base, r.uid);
       const out = r.channel === 'email'
-        ? await sendEmail(r.dest, bc.subject || 'The A&R Room', html, bc.message)
-        : await sendSms(r.dest, bc.message);
+        ? await sendEmail(r.dest, bc.subject || 'The A&R Room', htmlFor(manage), `${bc.message}\n\n${notifyFooterText(manage)}`)
+        : await sendSms(r.dest, `${bc.message}\n${smsFooter(manage)}`);
       if (out.ok) { sentN++; await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); }
       else { failedN++; await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); }
     }
@@ -3454,8 +3966,8 @@ async function handleApi(req, res, url) {
         if (session.poll_type === 'binary') return bad(res, 'Song Reports cover rating rounds (Versus reports come later)', 409);
         if (round.status !== 'ratified' || round.room_average == null) return bad(res, 'Ratify the round first — the report reads final scores');
         const d = await songReportData(round, session);
-        if (!d) return bad(res, 'No votes to report', 404);
-        if (page === 3 && d.votes < 8) return bad(res, 'The segments page needs at least 8 votes', 409);
+        if (!d) return bad(res, 'No eligible evaluations to report', 404);
+        if (page === 3 && d.votes < 8) return bad(res, 'The segments page requires at least 8 eligible evaluations', 409);
         return sendPng(await shareCards.renderPng('report' + page, page === 1 ? d : { ...d, sub: d.sub23 }), 'private, no-store');
       }
       return bad(res, 'Unknown card', 404);
@@ -3537,8 +4049,9 @@ async function handleApi(req, res, url) {
         const participant = await db.get('SELECT * FROM participants WHERE id = ?', [row.participant_id]);
         const d = await cardScoreData(participant);
         const scoreUrl = await uploadPng(`recap/${sessionId}/score-${row.participant_id}.png`, await shareCards.renderPng('score', d));
-        const html = recapEmailHtml({ name: d.name, sessionName: session.name, rank: d.rank, total: d.total, cards: { score: scoreUrl, songs: job.songs_url, ars: job.ars_url, promo: job.promo_url } });
-        const r = await sendEmail(row.email, `Your A&R Room recap — ${session.name}`, html, recapEmailText(d, session.name));
+        const manage = notifyManageUrl(publicBaseFromReq(req), participant && participant.user_id);
+        const html = recapEmailHtml({ name: d.name, sessionName: session.name, rank: d.rank, total: d.total, cards: { score: scoreUrl, songs: job.songs_url, ars: job.ars_url, promo: job.promo_url }, manage });
+        const r = await sendEmail(row.email, `Your A&R Room session record — ${session.name}`, html, recapEmailText(d, session.name, manage));
         if (r.ok) { await db.run("UPDATE recap_emails SET status = 'sent', score_url = ?, sent_at = ?, error = NULL WHERE id = ?", [scoreUrl, now(), row.id]); sent++; }
         else { await db.run("UPDATE recap_emails SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
       } catch (e) {
@@ -3565,7 +4078,8 @@ async function handleApi(req, res, url) {
     return send(res, 200, {
       configured: !!process.env.BLOB_READ_WRITE_TOKEN,
       rounds: rounds.length, withEmail, withPhone, missing: rounds.length - withEmail,
-      smsWindow: { open: withinSmsWindow(), label: nextSmsWindowLabel(), from: SMS_WINDOW_START_ET, to: SMS_WINDOW_END_ET },
+      smsWindow: { open: withinSmsWindow(), label: nextSmsWindowLabel(),
+        from: SMS_WINDOW_START_LABEL, to: SMS_WINDOW_END_LABEL },
       email: { sent: tally('email', 'sent'), failed: tally('email', 'failed'), pending: tally('email', 'pending') },
       sms: { sent: tally('sms', 'sent'), failed: tally('sms', 'failed'), pending: tally('sms', 'pending') },
     });
@@ -3626,6 +4140,75 @@ async function handleApi(req, res, url) {
     const smsRem = await db.get("SELECT COUNT(*) AS c FROM artist_notices WHERE session_id = ? AND status = 'pending' AND channel = 'sms'", [sessionId]);
     return send(res, 200, { ok: true, sent, failed, remaining: Number(rem.c) || 0,
       sms: { ...smsOut, remaining: Number(smsRem.c) || 0, held: !withinSmsWindow() } });
+  }
+
+  // Send (or RE-send) the notice for ONE round. The room-wide queue above is deliberately
+  // idempotent — `ON CONFLICT DO NOTHING` means a round that already sent can never send
+  // again — which is right for "run the batch twice" but leaves the host stuck when a
+  // single address had a typo, an inbox bounced, or contact arrived after the batch ran.
+  // This is the per-round escape hatch, and the only path that intentionally re-sends.
+  //
+  // The destination is re-read from the round EVERY time rather than reusing the queued
+  // row's snapshot: fixing a wrong address and pressing resend is the whole point, so a
+  // stale dest would defeat it. The report itself is re-rendered too, so comments shared
+  // since the first send are included.
+  if (p === '/api/admin/session/artist-notices/resend' && method === 'POST') {
+    const { sessionId, roundId, email: wantEmail, sms: wantSms } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Not authorized', 403);
+    if (!roundId) return bad(res, 'roundId required');
+    // Eligibility is the same rule the batch uses — a ratified rating round with real
+    // evaluations. Checked here rather than trusted from the client so a hand-made request
+    // can't mail a report for a Versus round (which has no room average to report).
+    const eligible = await db.all(ARTIST_ELIGIBLE_SQL, [sessionId]);
+    const round = eligible.find(r => r.id === roundId);
+    if (!round) return bad(res, 'That round has no report to send — it needs to be a ratified song round with evaluations', 409);
+    const em = (round.artist_email || '').trim(), ph = (round.artist_phone || '').trim();
+    if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
+    if (wantEmail && !em) return bad(res, 'No artist email on this round — add it with ✎ first', 409);
+    if (wantSms && !ph) return bad(res, 'No artist phone on this round — add it with ✎ first', 409);
+    if (wantEmail && !process.env.BLOB_READ_WRITE_TOKEN) return bad(res, 'Image hosting not configured (set BLOB_READ_WRITE_TOKEN)', 409);
+
+    // Reset the queue row (or create it) to pending with the CURRENT destination, so the
+    // uniq_artist_notice index keeps one row per round per channel and the audit trail
+    // shows the address we actually used.
+    async function requeue(channel, dest) {
+      await db.run(
+        `INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at)
+         VALUES (?,?,?,?,?, 'pending', ?)
+         ON CONFLICT (round_id, channel) DO UPDATE
+           SET dest = excluded.dest, status = 'pending', error = NULL, sent_at = NULL`,
+        [id(12), sessionId, roundId, channel, dest, now()]);
+    }
+
+    const out = { ok: true, email: null, sms: null };
+    if (wantEmail) {
+      await requeue('email', em);
+      const row = await db.get("SELECT id FROM artist_notices WHERE round_id = ? AND channel = 'email'", [roundId]);
+      try {
+        const r = await sendArtistReportEmail(round, session, em);
+        if (r.ok) {
+          await db.run("UPDATE artist_notices SET status = 'sent', report_urls = ?, sent_at = ?, error = NULL WHERE id = ?", [JSON.stringify(r.pages), now(), row.id]);
+          out.email = { ok: true, dest: em };
+        } else {
+          await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]);
+          out.email = { ok: false, error: r.error || 'send failed' };
+        }
+      } catch (e) {
+        await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(e.message || 'error').slice(0, 300), row.id]);
+        out.email = { ok: false, error: (e.message || 'error') };
+      }
+    }
+    if (wantSms) {
+      await requeue('sms', ph);
+      // TCPA quiet hours still apply — a per-round resend is not a reason to text someone
+      // at 2AM. Outside the window the row stays pending and the cron sends it at 10AM ET.
+      const s = await drainArtistSms({ roundId });
+      out.sms = s.held
+        ? { ok: true, held: true, label: nextSmsWindowLabel() }
+        : { ok: s.sent > 0, held: false, error: s.sent > 0 ? null : 'send failed' };
+    }
+    return send(res, 200, out);
   }
 
   // Cron: drain artist SMS queued overnight, across ALL sessions, once the ET window
@@ -3702,7 +4285,7 @@ async function handleApi(req, res, url) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {
-          name: `Post kit — ${session.name} (${dateLabel})`,
+          name: `A&R Room post kit — ${session.name} (${dateLabel})`,
           notes: `Caption (paste as-is):\n\n${caption}\n\n—\nPost the graphics as one Instagram carousel. Add @Makinit4indies as a collaborator.\nGenerated by The A&R Room.`,
           projects: [String(project)],
         } }),
@@ -3781,7 +4364,7 @@ async function handleApi(req, res, url) {
   // Pulls the full session dataset — participants, rounds, and every vote with
   // computed scores — for analysis or fan-list building.
   //   format = csv | json
-  //   anon   = 1  -> replace names/emails with "Player N" (safe to share)
+  //   anon   = 1  -> replace names/emails with "A&R N" (safe to share)
   if (p === '/api/admin/export' && method === 'GET') {
     const sessionId = url.searchParams.get('sessionId');
     const session = await canAdminSession(req, sessionId);
@@ -3814,9 +4397,10 @@ async function handleApi(req, res, url) {
       [sessionId]
     );
 
-    // Stable anonymization: map each participant to "Player N" by join order.
+    // Stable anonymization: map each participant to "A&R N" by join order. The `player`
+    // JSON key is a data field name and stays put; only the visible label was repositioned.
     const labelById = {};
-    participants.forEach((pt, i) => { labelById[pt.id] = `Player ${i + 1}`; });
+    participants.forEach((pt, i) => { labelById[pt.id] = `A&R ${i + 1}`; });
     const roomAvgByRound = {}, splitAByRound = {};
     rounds.forEach(r => { roomAvgByRound[r.id] = r.room_average; splitAByRound[r.id] = r.split_a; });
 
@@ -3832,7 +4416,7 @@ async function handleApi(req, res, url) {
     const cleanVotes = votes.map(v => {
       const rt = roundTypeById[v.round_id] || 'rating';
       const base = {
-        player: labelById[v.participant_id] || 'Player ?',
+        player: labelById[v.participant_id] || 'A&R ?',
         round: (rounds.find(r => r.id === v.round_id) || {}).idx,
       };
       if (mixed) base.round_type = rt;
@@ -4058,3 +4642,6 @@ module.exports._etHour = etHour;
 // eyeballed without a live Blob token or a real send.
 module.exports._artistEmailHtml = artistEmailHtml;
 module.exports._drainArtistSms = drainArtistSms;
+// Exported for tests: minting a manage link is what a real sender does, and the scope
+// test needs a genuine token to prove it's rejected everywhere except the prefs routes.
+module.exports._mintNotifyLink = mintNotifyLink;
