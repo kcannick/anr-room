@@ -14,10 +14,27 @@ const path = require('path');
 const W = 1080, H = 1440;
 const PRIZE = '$500';
 
+// Two URLs, two audiences — never collapse them. /review is where ARTISTS submit (it
+// mirrors the built-in submit fallback in server.js); /ANR is where VIEWERS join the team.
+const SUBMIT_URL = 'makinitmag.com/review';
+const JOIN_URL = 'makinitmag.com/ANR';
+
+// The score key printed on the chart graphics (operator copy, 2026-08-05). Bands are
+// LOWER-INCLUSIVE and stated as half-open ranges so 3.0 and 6.0 each land in exactly one
+// band — the operator's original "0-3 / 3-6 / 6+" double-counted both edges.
+// CHART_SCALE_MAX is the rating ceiling; it moves 9 -> 10 with the scale switch, and the
+// band cuts should be revisited in the same change (see the scoring-scale-0-10 plan).
+const CHART_SCALE_MAX = 9;
+const CHART_BANDS = [
+  { min: 0, max: 3, range: '0–2.9', short: 'Studio', label: 'Keep it in the studio' },
+  { min: 3, max: 6, range: '3–5.9', short: 'Release Ready', label: 'Release Ready' },
+  { min: 6, max: null, range: '6+', short: 'Potential Single', label: 'Potential Single' },
+];
+
 // ---- design tokens ----
 const C = {
   bg: '#0d0b16', ink: '#f3f0fb', inkDim: '#a9a2c9', inkFaint: '#6f688f',
-  signal: '#4bb749', accent: '#6d5fe0', gold: '#f5c518',
+  signal: '#4bb749', accent: '#6d5fe0', gold: '#f5c518', hot: '#ff5d6c',
   line: '#2e2750', panel: 'rgba(23,19,40,0.66)', avBg: '#2c2352',
 };
 const MONO = 'Space Mono', SANS = 'DM Sans';
@@ -78,15 +95,16 @@ function frame(opts) {
         border: `2px solid ${C.gold}`, padding: '9px 18px', borderRadius: 999, flexShrink: 0 }, 'OFFICIAL ROOM REPORT')
     : text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.bg,
         background: C.gold, padding: '11px 20px', borderRadius: 999, flexShrink: 0 }, `${PRIZE} A&R AWARD`);
+  // A null title leaves the header as eyebrow + pill only — the chart COVER carries its
+  // own oversized title in the body, centred, and would collide with a header one.
+  const headLeft = [eyebrow];
+  if (title) headLeft.push(text({ marginTop: 16, fontFamily: SANS, fontWeight: 900, fontSize: opts.titleSize || 78, color: C.ink, lineHeight: 1, ...NOWRAP }, title));
+  if (sub) headLeft.push(row({ marginTop: title ? 18 : 14 }, [
+    h({ width: 12, height: 12, borderRadius: 12, background: C.signal, marginRight: 12, flexShrink: 0 }, ''),
+    text({ fontFamily: SANS, fontWeight: 700, fontSize: 27, color: C.ink, ...NOWRAP }, sub),
+  ]));
   const header = row({ justifyContent: 'space-between', alignItems: 'flex-start' }, [
-    col({}, [
-      eyebrow,
-      text({ marginTop: 16, fontFamily: SANS, fontWeight: 900, fontSize: opts.titleSize || 78, color: C.ink, lineHeight: 1, ...NOWRAP }, title),
-      sub ? row({ marginTop: 18 }, [
-        h({ width: 12, height: 12, borderRadius: 12, background: C.signal, marginRight: 12, flexShrink: 0 }, ''),
-        text({ fontFamily: SANS, fontWeight: 700, fontSize: 27, color: C.ink, ...NOWRAP }, sub),
-      ]) : text({}, ''),
-    ]),
+    col({}, headLeft),
     pill,
   ]);
   const footer = row({ justifyContent: 'space-between', alignItems: 'center',
@@ -300,6 +318,80 @@ function bodyReport3(d) {
   ]);
 }
 
+// ---- Chart carousel: cover slide + list slides ("Makin' It HOT 100") ----
+// The cover carries the oversized title itself (frame's header title is suppressed), the
+// period, what the room is, the score key, and the join CTA. List slides repeat the key in
+// one line so someone who swipes past the cover can still decode an 8.6.
+const BAND_COLOR = [C.inkFaint, C.gold, C.signal];
+
+function bandKeyRow(b, i) {
+  return row({
+    background: C.panel, border: `1px solid ${i === 2 ? 'rgba(75,183,73,0.45)' : C.line}`,
+    borderRadius: 14, padding: '14px 22px', width: '100%',
+  }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: BAND_COLOR[i], width: 110, flexShrink: 0 }, b.range),
+    text({ fontFamily: SANS, fontWeight: 700, fontSize: 26, color: C.ink, ...NOWRAP }, b.label),
+  ]);
+}
+
+function bodyChartCover(d) {
+  const words = esc(d.title).trim().split(/\s+/);
+  const hot = words.length > 2 ? words.slice(-2).join(' ') : words.slice(-1).join(' ');
+  const top = words.length > 2 ? words.slice(0, -2).join(' ') : words.slice(0, -1).join(' ');
+  const bands = d.bands || CHART_BANDS;
+  return col({ alignItems: 'center', width: '100%' }, [
+    top ? text({ fontFamily: SANS, fontWeight: 900, fontSize: 96, color: C.ink, lineHeight: 1.02, ...NOWRAP }, top.toUpperCase()) : text({}, ''),
+    text({ fontFamily: SANS, fontWeight: 900, fontSize: 96, color: C.hot, lineHeight: 1.02, ...NOWRAP }, hot.toUpperCase()),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, letterSpacing: 8, textTransform: 'uppercase', color: C.gold, marginTop: 18, ...NOWRAP }, clip(d.sub, 30)),
+    h({ width: 150, height: 4, background: C.signal, marginTop: 30, marginBottom: 30 }, ''),
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 27, color: C.inkDim }, 'Tracks submitted to the A&R Room'),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 29, color: C.ink, marginTop: 8 }, SUBMIT_URL),
+    col({ gap: 12, width: '100%', marginTop: 38 }, bands.map(bandKeyRow)),
+    text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink, marginTop: 40 }, 'Join the A&R Team'),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: C.signal, marginTop: 8 }, JOIN_URL),
+  ]);
+}
+
+// Rows arrive pre-normalized ({rank, line1, line2, value}) so this stays dumb about
+// whether it's ranking records or A&Rs. Density flips to one line past 12 per slide —
+// 20 two-line rows don't fit 1440px, and a clipped chart is worse than a terse one.
+function bodyChartList(d) {
+  const rows = d.rows || [], per = rows.length;
+  const tight = per > 12;
+  // Row heights are budgeted against the ~1045px the frame leaves below the header and
+  // key line. 20 two-line rows can't fit 1440px, and 20 loose one-line rows overflow the
+  // footer — hence the explicit lineHeight, which Satori otherwise pads unpredictably.
+  const s = tight
+    ? { pad: '5px 18px', gap: 5, rank: 22, title: 22, sub: 18, val: 24, rankW: 56, rad: 12, clipT: 28, clipS: 22 }
+    : { pad: '11px 24px', gap: 10, rank: 36, title: 33, sub: 22, val: 40, rankW: 74, rad: 16, clipT: 25, clipS: 32 };
+  const key = row({ justifyContent: 'center', gap: 26, marginBottom: 18 },
+    (d.bands || CHART_BANDS).map((b, i) => row({ gap: 8 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 19, color: BAND_COLOR[i] }, b.range),
+      text({ fontFamily: SANS, fontWeight: 400, fontSize: 19, color: C.inkFaint, ...NOWRAP }, b.short),
+    ])));
+  const list = col({ gap: s.gap, width: '100%' }, rows.map(r => {
+    // `top` is explicit, not `rank === 1` — a Room #1s slide is ten different #1s and
+    // must not gold-plate all ten (or, worse, only the first).
+    const first = !!r.top;
+    const line = col({ flexGrow: 1, flexShrink: 1, marginLeft: 8, overflow: 'hidden' }, tight
+      ? [text({ fontFamily: SANS, fontWeight: 700, fontSize: s.title, lineHeight: 1.15, color: C.ink, ...NOWRAP },
+          clip(r.line1, s.clipT) + (r.line2 ? '  ·  ' + clip(r.line2, s.clipS) : ''))]
+      : [
+          text({ fontFamily: SANS, fontWeight: 800, fontSize: s.title, lineHeight: 1.2, color: C.ink, ...NOWRAP }, clip(r.line1, s.clipT)),
+          text({ fontFamily: SANS, fontWeight: 400, fontSize: s.sub, lineHeight: 1.2, color: C.inkDim, ...NOWRAP }, clip(r.line2 || '', s.clipS)),
+        ]);
+    return row({
+      background: C.panel, border: `1px solid ${first ? 'rgba(245,197,24,0.45)' : C.line}`,
+      borderRadius: s.rad, padding: s.pad, width: '100%', flexShrink: 0,
+    }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: s.rank, color: first ? C.gold : C.inkFaint, width: s.rankW, flexShrink: 0 }, r.rank),
+      line,
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: s.val, color: C.signal, flexShrink: 0 }, r.value),
+    ]);
+  }));
+  return col({ width: '100%' }, [key, list]);
+}
+
 // ---- element builders per type ----
 function element(type, data = {}) {
   const showNumbers = !!data.showNumbers;
@@ -310,6 +402,8 @@ function element(type, data = {}) {
   if (type === 'report1') return frame({ pill: 'report', title: clip(data.title, 18), sub: data.sub, body: bodyReport1(data) });
   if (type === 'report2') return frame({ pill: 'report', titleSize: 60, title: "The room's verdict", sub: data.sub, body: bodyReport2(data) });
   if (type === 'report3') return frame({ pill: 'report', titleSize: 60, title: 'Who connected', sub: data.sub, body: bodyReport3(data) });
+  if (type === 'chartCover') return frame({ title: null, sub: null, body: bodyChartCover(data) });
+  if (type === 'chartList') return frame({ titleSize: 66, title: clip(data.title, 18), sub: data.sub, body: bodyChartList(data) });
   throw new Error('unknown card type: ' + type);
 }
 
@@ -323,4 +417,4 @@ async function renderPng(type, data) {
   return png;
 }
 
-module.exports = { renderPng, element, W, H, PRIZE };
+module.exports = { renderPng, element, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL };

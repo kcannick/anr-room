@@ -1,0 +1,325 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — Charts (Makin' It HOT 100)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Tokens + the handful of ui.css components this mockup uses, inlined so the file
+     opens standalone (file://) as well as off the dev server. Values are copied from
+     public/tokens.css + public/ui.css — the real page links them, never inlines them. */
+  :root{
+    --bg:#0d0b16; --panel:#171328; --panel-2:#1d1733; --line:#2e2750; --inset:#0a0814;
+    --ink:#f3f0fb; --ink-dim:#a9a2c9; --ink-faint:#8c84ad;
+    --signal:#4bb749; --on-signal:#06210b; --accent:#6d5fe0; --gold:#f5c518; --hot:#ff5d6c;
+    --r-sm:10px; --r-md:12px; --r-lg:16px; --r-xl:18px; --r-pill:999px; --pad-panel:20px;
+  }
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+    background:var(--signal);color:var(--on-signal);border:1px solid transparent;
+    font-family:inherit;font-weight:700;font-size:14px;line-height:1.2;
+    padding:11px 16px;border-radius:var(--r-md);letter-spacing:.01em;text-decoration:none}
+  .btn.ghost{background:transparent;border-color:var(--line);color:var(--ink-dim);font-weight:600}
+  .btn.sm{padding:8px 12px;font-size:13px;border-radius:var(--r-sm);white-space:nowrap}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;
+    border-radius:var(--r-pill);border:1px solid var(--line);background:var(--inset);color:var(--ink-dim)}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:'DM Sans',system-ui,sans-serif;padding:28px 20px 80px}
+  h2.mocklabel{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;
+    color:var(--ink-faint);margin:50px 0 16px;text-align:center}
+  h2.mocklabel:first-of-type{margin-top:0}
+  .wrap{max-width:940px;margin:0 auto}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-xl);padding:var(--pad-panel)}
+  .panel+.panel{margin-top:18px}
+  .panel h3{margin:0 0 4px;font-size:16px}
+  .panel .hint{font-size:12px;color:var(--ink-faint);margin:0 0 14px;line-height:1.5}
+  label{display:block;font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-faint);margin:0 0 5px}
+  select,input{width:100%;font-family:inherit;font-size:13.5px;background:var(--inset);
+    border:1px solid var(--line);border-radius:var(--r-sm);color:var(--ink);padding:9px 11px;outline:none}
+  .grid{display:grid;gap:12px}
+  .g4{grid-template-columns:1.4fr 1fr .8fr .8fr}
+  .g2{grid-template-columns:1fr 1fr}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .spacer{flex:1}
+  .seg{display:inline-flex;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px}
+  .seg button{font-family:inherit;font-size:12.5px;font-weight:600;border:0;background:transparent;color:var(--ink-dim);
+    padding:7px 14px;border-radius:var(--r-pill);cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  .summary{font-family:'Space Mono',monospace;font-size:12px;color:var(--ink-dim);background:var(--inset);
+    border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;line-height:1.7;margin:14px 0}
+  .summary b{color:var(--signal)}
+  .summary .warn{color:var(--gold)}
+  .chart-row{display:flex;align-items:center;gap:12px;padding:9px 6px;border-top:1px solid #241d3d}
+  .chart-row:first-of-type{border-top:0}
+  .crank{font-family:'Space Mono',monospace;font-size:14px;color:var(--ink-faint);width:34px;flex:none;text-align:right}
+  .crank.r1{color:var(--gold)} .crank.r2{color:#cdd1e6} .crank.r3{color:#e59b6b}
+  .cmain{flex:1;min-width:0}
+  .ctitle{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .csub{font-size:12px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmeta{font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-faint);width:88px;flex:none;text-align:right}
+  .cscore{font-family:'Space Mono',monospace;font-size:16px;color:var(--signal);width:44px;flex:none;text-align:right}
+  .fade{position:relative;max-height:420px;overflow:hidden}
+  .fade:after{content:'';position:absolute;inset:auto 0 0 0;height:70px;background:linear-gradient(transparent,var(--panel))}
+  .cutline{display:flex;align-items:center;gap:10px;margin:6px 0;font-family:'Space Mono',monospace;
+    font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+  .cutline:before,.cutline:after{content:'';flex:1;height:1px;background:var(--line)}
+  .excl{opacity:.42}
+  .caption{font-family:'Space Mono',monospace;font-size:11.5px;line-height:1.7;background:var(--inset);
+    border:1px solid var(--line);border-radius:var(--r-sm);color:var(--ink-dim);padding:12px;
+    white-space:pre-wrap;max-height:190px;overflow:auto}
+
+  /* ---- carousel slide previews (3:4, 1080x1440 scaled) ---- */
+  .slides{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+  .slide{width:300px;height:400px;border-radius:14px;overflow:hidden;border:1px solid #1d1833;
+    background:linear-gradient(176deg,#241a4d 0%,#0d0b16 50%);padding:16px 19px 12px;display:flex;flex-direction:column}
+  .s-eye{font-family:'Space Mono',monospace;font-weight:700;font-size:6px;letter-spacing:1.4px;text-transform:uppercase;color:var(--ink-dim)}
+  .s-eye i{color:var(--signal);font-style:normal}
+  .s-head{display:flex;justify-content:space-between;align-items:flex-start}
+  .s-pill{font-family:'Space Mono',monospace;font-weight:700;font-size:5px;letter-spacing:.4px;color:#0d0b16;
+    background:var(--gold);padding:3px 6px;border-radius:999px;white-space:nowrap}
+  .s-title{font-weight:900;font-size:23px;line-height:1;margin-top:5px}
+  .s-title .hot{color:var(--hot)}
+  .s-sub{display:flex;align-items:center;gap:4px;font-weight:700;font-size:8px;margin-top:6px}
+  .s-sub i{width:4px;height:4px;border-radius:4px;background:var(--signal);display:block}
+  .s-body{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2.5px;padding:5px 0;min-height:0}
+  .s-foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:8px;
+    font-family:'Space Mono',monospace;font-weight:700;font-size:7.5px}
+  .s-foot .ig{font-family:'DM Sans';font-weight:800;font-size:7.5px}
+  .s-foot .lbl{font-family:'DM Sans';font-weight:400;font-size:5px;color:var(--ink-faint);text-align:right}
+  .s-r{display:flex;align-items:center;gap:6px;background:rgba(23,19,40,.66);border:1px solid var(--line);
+    border-radius:7px;padding:3px 7px;flex:none}
+  .s-r.top{border-color:rgba(245,197,24,.45)}
+  .s-r .n{font-family:'Space Mono',monospace;font-weight:700;font-size:10px;color:var(--ink-faint);width:16px;flex:none}
+  .s-r.top .n{color:var(--gold)}
+  .s-r .t{flex:1;min-width:0;overflow:hidden}
+  .s-r .t b{display:block;font-size:8px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .s-r .t span{display:block;font-size:6.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .s-r .v{font-family:'Space Mono',monospace;font-weight:700;font-size:9px;color:var(--signal)}
+  .s-cover{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .s-cover .big{font-weight:900;font-size:58px;line-height:.92;letter-spacing:-2px}
+  .s-cover .big .hot{color:var(--hot)}
+  .s-cover .mo{font-family:'Space Mono',monospace;font-weight:700;font-size:11px;letter-spacing:3px;
+    text-transform:uppercase;color:var(--gold);margin-top:10px}
+  .s-cover .ln{width:60px;height:2px;background:var(--signal);margin:12px 0}
+  .s-cover .dk{font-size:8px;color:var(--ink-dim);line-height:1.6;max-width:190px}
+  /* score-band key — the reader's decoder ring for "8.6" */
+  .key{display:flex;flex-direction:column;gap:3px;width:100%;max-width:200px;margin-top:12px}
+  .key .kr{display:flex;align-items:center;gap:6px;background:rgba(23,19,40,.66);
+    border:1px solid var(--line);border-radius:6px;padding:4px 7px}
+  .key .kn{font-family:'Space Mono',monospace;font-weight:700;font-size:8px;width:26px;flex:none}
+  .key .kt{font-size:7.5px;font-weight:700;color:var(--ink)}
+  .key .k1{color:var(--ink-faint)} .key .k2{color:var(--gold)} .key .k3{color:var(--signal)}
+  .key .kr.b3{border-color:rgba(75,183,73,.45)}
+  .cta{margin-top:12px;text-align:center}
+  .cta .t{font-size:9px;font-weight:800}
+  .cta .u{font-family:'Space Mono',monospace;font-weight:700;font-size:8px;color:var(--signal);margin-top:2px}
+  /* one-line key on the list slides — same bands, compressed */
+  .keyline{display:flex;justify-content:center;gap:8px;font-family:'Space Mono',monospace;
+    font-size:5.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--ink-faint);margin-top:5px}
+  .keyline b{font-weight:700}
+  .keyline .g{color:var(--signal)}
+  .cap{text-align:center;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-faint);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h2 class="mocklabel">Mockup 1 — Charts screen (admin) · Top Records</h2>
+
+<div class="panel">
+  <h3>📈 Charts</h3>
+  <p class="hint">Build a ranked chart of records or A&amp;Rs over any series or date range. Export to CSV, render an Instagram carousel, or copy the caption.</p>
+
+  <div class="row" style="margin-bottom:14px">
+    <div class="seg">
+      <button class="on">Top Records</button>
+      <button>Top A&amp;Rs</button>
+      <button>Weekly #1s</button>
+    </div>
+  </div>
+
+  <div class="grid g4">
+    <div>
+      <label>Scope</label>
+      <select><option>Series — July 2026</option><option>Series — June 2026</option><option>Date range…</option><option>Last 4 rooms</option><option>All time</option></select>
+    </div>
+    <div>
+      <label>Chart size</label>
+      <select><option>Top 100</option><option>Top 50</option><option>Top 20</option><option>Top 10</option><option>All</option></select>
+    </div>
+    <div>
+      <label>Min votes</label>
+      <input value="10">
+    </div>
+    <div>
+      <label>Order</label>
+      <select><option>#1 first</option><option>Countdown (#100 → #1)</option></select>
+    </div>
+  </div>
+
+  <div class="summary">
+    scope · <b>Series “July 2026”</b> — 4 rooms, Jul 1 – Jul 29<br>
+    pool · <b>137</b> ratified records · <span class="warn">23 excluded</span> (under 10 votes) · <b>114</b> charting<br>
+    votes · min <b>11</b> · median <b>68</b> · max <b>241</b>
+  </div>
+
+  <div class="row" style="margin-bottom:16px">
+    <button class="btn sm">⬇ Export CSV</button>
+    <button class="btn ghost sm">🖼 Build carousel</button>
+    <button class="btn ghost sm">📋 Copy caption</button>
+    <div class="spacer"></div>
+    <span class="pill">114 rows</span>
+  </div>
+
+  <div class="fade">
+    <div class="chart-row"><div class="crank r1">1</div><div class="cmain"><div class="ctitle">Midnight Run</div><div class="csub">Jaylen Cole · @jaylencole · Jul 8</div></div><div class="cmeta">241 votes</div><div class="cscore">8.6</div></div>
+    <div class="chart-row"><div class="crank r2">2</div><div class="cmain"><div class="ctitle">No Ceiling</div><div class="csub">Sasha Vale · @sashavale · Jul 22</div></div><div class="cmeta">198 votes</div><div class="cscore">8.4</div></div>
+    <div class="chart-row"><div class="crank r3">3</div><div class="cmain"><div class="ctitle">Brooklyn Winter</div><div class="csub">Rome Adler · @romeadler · Jul 1</div></div><div class="cmeta">176 votes</div><div class="cscore">8.3</div></div>
+    <div class="chart-row"><div class="crank">4</div><div class="cmain"><div class="ctitle">Do Not Disturb</div><div class="csub">Tayo &amp; The Bridge · @tayobridge · Jul 15</div></div><div class="cmeta">203 votes</div><div class="cscore">8.1</div></div>
+    <div class="chart-row"><div class="crank">5</div><div class="cmain"><div class="ctitle">Glass House Blues</div><div class="csub">Nia Sun · @niasun · Jul 22</div></div><div class="cmeta">154 votes</div><div class="cscore">8.0</div></div>
+    <div class="chart-row"><div class="crank">6</div><div class="cmain"><div class="ctitle">Backroad Gospel</div><div class="csub">The Vandelays · Jul 1</div></div><div class="cmeta">168 votes</div><div class="cscore">7.9</div></div>
+    <div class="chart-row"><div class="crank">7</div><div class="cmain"><div class="ctitle">Overtime</div><div class="csub">K. Mercer · @kmercer · Jul 8</div></div><div class="cmeta">221 votes</div><div class="cscore">7.9</div></div>
+    <div class="chart-row"><div class="crank">8</div><div class="cmain"><div class="ctitle">Same Old Sunday</div><div class="csub">Priya Raines · @priyaraines · Jul 15</div></div><div class="cmeta">187 votes</div><div class="cscore">7.8</div></div>
+    <div class="chart-row"><div class="crank">9</div><div class="cmain"><div class="ctitle">Cold Feature</div><div class="csub">Dex Ola · @dexola · Jul 29</div></div><div class="cmeta">142 votes</div><div class="cscore">7.7</div></div>
+    <div class="chart-row"><div class="crank">10</div><div class="cmain"><div class="ctitle">Long Way From Bed-Stuy</div><div class="csub">Marlon Ashe · @marlonashe · Jul 1</div></div><div class="cmeta">159 votes</div><div class="cscore">7.6</div></div>
+    <div class="chart-row"><div class="crank">11</div><div class="cmain"><div class="ctitle">Paper Skyline</div><div class="csub">June Halliday · Jul 22</div></div><div class="cmeta">177 votes</div><div class="cscore">7.6</div></div>
+    <div class="chart-row"><div class="crank">12</div><div class="cmain"><div class="ctitle">Nothing Personal</div><div class="csub">Tre Bishop · @trebishop · Jul 8</div></div><div class="cmeta">210 votes</div><div class="cscore">7.5</div></div>
+  </div>
+
+  <div class="cutline">Below the min-votes floor — not charting</div>
+  <div class="chart-row excl"><div class="crank">—</div><div class="cmain"><div class="ctitle">Late Bloomer</div><div class="csub">Ivy Cordero · Jul 29 · closed early</div></div><div class="cmeta">7 votes</div><div class="cscore">9.0</div></div>
+  <div class="chart-row excl"><div class="crank">—</div><div class="cmain"><div class="ctitle">Test Record</div><div class="csub">— · Jul 1</div></div><div class="cmeta">4 votes</div><div class="cscore">8.8</div></div>
+</div>
+
+<h2 class="mocklabel">Mockup 2 — Weekly #1s (top record from each of the last N rooms)</h2>
+
+<div class="panel">
+  <div class="row" style="margin-bottom:14px">
+    <div class="seg"><button>Top Records</button><button>Top A&amp;Rs</button><button class="on">Weekly #1s</button></div>
+  </div>
+  <div class="grid g2" style="margin-bottom:4px">
+    <div><label>Look back</label><select><option>Last 4 rooms</option><option>Last 8 rooms</option><option>Last 12 rooms</option><option>This series</option></select></div>
+    <div><label>Min votes</label><input value="10"></div>
+  </div>
+  <div class="summary">4 rooms · <b>4</b> #1 records · every room cleared the floor</div>
+  <div class="row" style="margin-bottom:12px">
+    <button class="btn sm">⬇ Export CSV</button>
+    <button class="btn ghost sm">🖼 Build carousel</button>
+    <button class="btn ghost sm">📋 Copy caption</button>
+  </div>
+  <div class="chart-row"><div class="crank r1">1</div><div class="cmain"><div class="ctitle">Cold Feature</div><div class="csub">Dex Ola · @dexola · <b>Wed Jul 29</b> — A&amp;R Room #58</div></div><div class="cmeta">142 votes</div><div class="cscore">7.7</div></div>
+  <div class="chart-row"><div class="crank r1">1</div><div class="cmain"><div class="ctitle">No Ceiling</div><div class="csub">Sasha Vale · @sashavale · <b>Wed Jul 22</b> — A&amp;R Room #57</div></div><div class="cmeta">198 votes</div><div class="cscore">8.4</div></div>
+  <div class="chart-row"><div class="crank r1">1</div><div class="cmain"><div class="ctitle">Do Not Disturb</div><div class="csub">Tayo &amp; The Bridge · <b>Wed Jul 15</b> — A&amp;R Room #56</div></div><div class="cmeta">203 votes</div><div class="cscore">8.1</div></div>
+  <div class="chart-row"><div class="crank r1">1</div><div class="cmain"><div class="ctitle">Midnight Run</div><div class="csub">Jaylen Cole · @jaylencole · <b>Wed Jul 8</b> — A&amp;R Room #55</div></div><div class="cmeta">241 votes</div><div class="cscore">8.6</div></div>
+</div>
+
+<h2 class="mocklabel">Mockup 3 — Copy caption</h2>
+<div class="panel" style="max-width:600px;margin:0 auto">
+  <h3>📋 Caption</h3>
+  <p class="hint">Copied to your clipboard, ready to paste into the Instagram post.</p>
+  <div class="caption">MAKIN' IT HOT 100 — JULY 2026 🔥
+
+Tracks submitted to the A&amp;R Room at makinitmag.com/review — rated live, 0–9, by the room.
+
+0–3 | Keep it in the studio
+3–6 | Release Ready
+6+  | Potential Single
+
+1. Midnight Run — @jaylencole (8.6)
+2. No Ceiling — @sashavale (8.4)
+3. Brooklyn Winter — @romeadler (8.3)
+4. Do Not Disturb — Tayo &amp; The Bridge (8.1)
+5. Glass House Blues — @niasun (8.0)
+…
+
+Swipe for the full 100 →
+
+Join the A&amp;R Team → makinitmag.com/ANR
+Submit your record → makinitmag.com/review
+
+@Makinit4indies #TheARoom #MakinItHot100</div>
+</div>
+
+<h2 class="mocklabel">Mockup 4 — Carousel slides (1080×1440, same pipeline as the share cards)</h2>
+<div class="slides">
+
+  <div>
+    <div class="slide">
+      <div class="s-head"><div class="s-eye">The A&amp;R <i>Room</i></div><div class="s-pill">$500 A&amp;R AWARD</div></div>
+      <div class="s-cover">
+        <div class="big">MAKIN' IT<br><span class="hot">HOT 100</span></div>
+        <div class="mo">July 2026</div>
+        <div class="ln"></div>
+        <div class="dk">Tracks submitted to the A&amp;R Room<br><b style="color:var(--ink)">makinitmag.com/review</b></div>
+        <div class="key">
+          <div class="kr"><div class="kn k1">0–3</div><div class="kt">Keep it in the studio</div></div>
+          <div class="kr"><div class="kn k2">3–6</div><div class="kt">Release Ready</div></div>
+          <div class="kr b3"><div class="kn k3">6+</div><div class="kt">Potential Single</div></div>
+        </div>
+        <div class="cta"><div class="t">Join the A&amp;R Team</div><div class="u">makinitmag.com/ANR</div></div>
+      </div>
+      <div class="s-foot"><div>makinitmag.com<span style="color:var(--signal)">/ANR</span></div><div><div class="lbl">Follow</div><div class="ig">@Makinit4indies</div></div></div>
+    </div>
+    <div class="cap">Slide 1 — cover</div>
+  </div>
+
+  <div>
+    <div class="slide">
+      <div class="s-head"><div class="s-eye">The A&amp;R <i>Room</i></div><div class="s-pill">$500 A&amp;R AWARD</div></div>
+      <div class="s-title">HOT <span class="hot">100</span></div>
+      <div class="s-sub"><i></i>July 2026 · #1–10</div>
+      <div class="keyline"><span><b>0–3</b> Studio</span><span><b>3–6</b> Release Ready</span><span class="g"><b>6+</b> Potential Single</span></div>
+      <div class="s-body">
+        <div class="s-r top"><div class="n">1</div><div class="t"><b>Midnight Run</b><span>Jaylen Cole · @jaylencole</span></div><div class="v">8.6</div></div>
+        <div class="s-r"><div class="n">2</div><div class="t"><b>No Ceiling</b><span>Sasha Vale · @sashavale</span></div><div class="v">8.4</div></div>
+        <div class="s-r"><div class="n">3</div><div class="t"><b>Brooklyn Winter</b><span>Rome Adler · @romeadler</span></div><div class="v">8.3</div></div>
+        <div class="s-r"><div class="n">4</div><div class="t"><b>Do Not Disturb</b><span>Tayo &amp; The Bridge · @tayobridge</span></div><div class="v">8.1</div></div>
+        <div class="s-r"><div class="n">5</div><div class="t"><b>Glass House Blues</b><span>Nia Sun · @niasun</span></div><div class="v">8.0</div></div>
+        <div class="s-r"><div class="n">6</div><div class="t"><b>Backroad Gospel</b><span>The Vandelays</span></div><div class="v">7.9</div></div>
+        <div class="s-r"><div class="n">7</div><div class="t"><b>Overtime</b><span>K. Mercer · @kmercer</span></div><div class="v">7.9</div></div>
+        <div class="s-r"><div class="n">8</div><div class="t"><b>Same Old Sunday</b><span>Priya Raines · @priyaraines</span></div><div class="v">7.8</div></div>
+        <div class="s-r"><div class="n">9</div><div class="t"><b>Cold Feature</b><span>Dex Ola · @dexola</span></div><div class="v">7.7</div></div>
+        <div class="s-r"><div class="n">10</div><div class="t"><b>Long Way From Bed-Stuy</b><span>Marlon Ashe · @marlonashe</span></div><div class="v">7.6</div></div>
+      </div>
+      <div class="s-foot"><div>makinitmag.com<span style="color:var(--signal)">/ANR</span></div><div><div class="lbl">Follow</div><div class="ig">@Makinit4indies</div></div></div>
+    </div>
+    <div class="cap">Slide 2 — #1–10</div>
+  </div>
+
+  <div>
+    <div class="slide">
+      <div class="s-head"><div class="s-eye">The A&amp;R <i>Room</i></div><div class="s-pill">$500 A&amp;R AWARD</div></div>
+      <div class="s-title">HOT <span class="hot">100</span></div>
+      <div class="s-sub"><i></i>July 2026 · #11–20</div>
+      <div class="keyline"><span><b>0–3</b> Studio</span><span><b>3–6</b> Release Ready</span><span class="g"><b>6+</b> Potential Single</span></div>
+      <div class="s-body">
+        <div class="s-r"><div class="n">11</div><div class="t"><b>Paper Skyline</b><span>June Halliday</span></div><div class="v">7.6</div></div>
+        <div class="s-r"><div class="n">12</div><div class="t"><b>Nothing Personal</b><span>Tre Bishop · @trebishop</span></div><div class="v">7.5</div></div>
+        <div class="s-r"><div class="n">13</div><div class="t"><b>Ghost Money</b><span>Ali Fontaine · @alifontaine</span></div><div class="v">7.5</div></div>
+        <div class="s-r"><div class="n">14</div><div class="t"><b>Southside Lullaby</b><span>Ramona Pike</span></div><div class="v">7.4</div></div>
+        <div class="s-r"><div class="n">15</div><div class="t"><b>Two Weeks Notice</b><span>Calvin Ro · @calvinro</span></div><div class="v">7.4</div></div>
+        <div class="s-r"><div class="n">16</div><div class="t"><b>Heavy Rotation</b><span>Skye Amadi · @skyeamadi</span></div><div class="v">7.3</div></div>
+        <div class="s-r"><div class="n">17</div><div class="t"><b>Runner's High</b><span>The Ellis Set</span></div><div class="v">7.3</div></div>
+        <div class="s-r"><div class="n">18</div><div class="t"><b>Bad Investment</b><span>Zo Marquez · @zomarquez</span></div><div class="v">7.2</div></div>
+        <div class="s-r"><div class="n">19</div><div class="t"><b>Church Clothes</b><span>Dee Verrett</span></div><div class="v">7.2</div></div>
+        <div class="s-r"><div class="n">20</div><div class="t"><b>Neon Tithe</b><span>Isla Bram · @islabram</span></div><div class="v">7.1</div></div>
+      </div>
+      <div class="s-foot"><div>makinitmag.com<span style="color:var(--signal)">/ANR</span></div><div><div class="lbl">Follow</div><div class="ig">@Makinit4indies</div></div></div>
+    </div>
+    <div class="cap">Slide 3 — #11–20 (…repeats to #100)</div>
+  </div>
+
+</div>
+
+<p style="text-align:center;color:var(--ink-faint);font-size:12px;max-width:600px;margin:26px auto 0;line-height:1.6">
+  Instagram allows 20 slides per carousel — a Top 100 at 10 per slide is 1 cover + 10 list slides = 11.
+  At 20 per slide it's 6. Slide density will be a setting.
+</p>
+
+</div>
+</body>
+</html>

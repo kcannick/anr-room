@@ -193,6 +193,28 @@ live on anr.makinitmag.com.
   global kill switch and now gates the mass announcement, which previously honored nothing.
   Platform panel has a per-topic audience readout.
 
+- **Charts / "Makin' It HOT 100"** (no migration — pure read layer): an admin-only Charts
+  screen that ranks **records** or **A&Rs** over a series, a date range, the last N rooms,
+  or all time, and emits three things off ONE query string (so the screen, the CSV and the
+  carousel can never disagree): a ranked table, a CSV, and an Instagram carousel of 1080×1440
+  PNGs (cover + list slides, 10–20 rows each) through the existing Satori pipeline, plus a
+  copyable caption. **Ranking = room average with a MIN-VOTE FLOOR** (operator's call): a 9.0
+  from 4 voters must not outrank an 8.6 from 200, but the number PRINTED stays the room's real
+  average — so the floor EXCLUDES rows rather than reweighting them into a score nobody voted.
+  Excluded rounds come back in their own list and render below a cut line, because a chart
+  that silently truncates reads as "this is everything" when it isn't. Versus rounds never
+  chart (a split isn't an average). A record replayed in a later room charts once at its best
+  showing, with a `plays` count kept in the CSV (`dedupe=0` turns it off). "Room #1s" is the
+  top record from each of the last N rooms; a room whose best is under the floor reports null
+  rather than dropping out. A SERIES A&R chart reads `SERIES_POINTS_SRC` verbatim so it can
+  never disagree with the public $500 board. **Platform-admin only** — it spans every room
+  regardless of owner; a per-host flavour would need the scope query filtered by `owner_uid`.
+  Endpoints: `/api/admin/charts` (`?format=csv|caption`) + `/api/card/chart?slide=N`.
+  Band key printed on the graphics: `0–2.9 Keep it in the studio` / `3–5.9 Release Ready` /
+  `6+ Potential Single` — the operator's original "0-3 / 3-6 / 6+" double-counted both edges,
+  so the shipped bands are half-open. `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling
+  and the band cuts move with the 0–10 switch.
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count

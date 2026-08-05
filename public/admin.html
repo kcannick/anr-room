@@ -176,6 +176,7 @@
       <h2 style="margin:0">Your rooms</h2>
       <div class="row" style="gap:8px;flex:0 0 auto">
         <button class="btn ghost sm hide" id="btnAnalytics">Analytics</button>
+        <button class="btn ghost sm hide" id="btnCharts">Charts</button>
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
         <button class="btn ghost sm" id="btnHostDefaults">Defaults</button>
@@ -767,6 +768,93 @@
   </div>
 </div>
 
+<!-- CHARTS (admin role only): ranked records / A&Rs -> CSV, Instagram carousel, caption -->
+<div id="charts" class="grid hide">
+  <style>
+    /* .grid is a two-column shell; a full-width screen has to claim both tracks. */
+    #charts .stack{grid-column:1/-1;max-width:900px;margin:0 auto;width:100%}
+    #charts .ctrls{display:grid;grid-template-columns:1.5fr 1fr .8fr .9fr;gap:10px}
+    @media(max-width:760px){#charts .ctrls{grid-template-columns:1fr 1fr}}
+    #charts select,#charts input[type=text],#charts input[type=number],#charts input[type=date]{width:100%;
+      background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:8px 10px;border-radius:9px}
+    /* Field eyebrows only — .pref-row is itself a <label> and must keep its own type. */
+    #charts label:not(.pref-row){display:block;font-family:'Space Mono',monospace;font-size:10px;
+      letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 5px}
+    #charts .summary{font-family:'Space Mono',monospace;font-size:12px;color:var(--ink-dim);background:#0a0814;
+      border:1px solid var(--line);border-radius:10px;padding:10px 12px;line-height:1.7;margin:14px 0}
+    #charts .summary b{color:var(--signal)}
+    #charts .summary .warn{color:var(--gold)}
+    #charts .crow{display:flex;align-items:center;gap:12px;padding:9px 6px;border-top:1px solid #241d3d}
+    #charts .crow:first-child{border-top:0}
+    #charts .crank{font-family:'Space Mono',monospace;font-size:14px;color:var(--ink-faint);width:40px;flex:none;text-align:right}
+    #charts .crank.r1{color:var(--gold)} #charts .crank.r2{color:#cdd1e6} #charts .crank.r3{color:#e59b6b}
+    #charts .cmain{flex:1;min-width:0}
+    #charts .ctitle{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #charts .csub{font-size:12px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #charts .cmeta{font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-faint);width:94px;flex:none;text-align:right}
+    #charts .cscore{font-family:'Space Mono',monospace;font-size:16px;color:var(--signal);width:54px;flex:none;text-align:right}
+    #charts .cutline{display:flex;align-items:center;gap:10px;margin:12px 0 2px;font-family:'Space Mono',monospace;
+      font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+    #charts .cutline:before,#charts .cutline:after{content:'';flex:1;height:1px;background:var(--line)}
+    #charts .excl{opacity:.45}
+    #charts .list{max-height:560px;overflow:auto}
+    #charts .slides{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:12px}
+    #charts .slides figure{margin:0}
+    #charts .slides img{width:100%;border-radius:10px;border:1px solid var(--line);display:block}
+    #charts .slides figcaption{font-family:'Space Mono',monospace;font-size:10px;color:var(--ink-faint);text-align:center;margin-top:5px}
+  </style>
+  <div class="stack">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <h2 style="margin:0">Charts</h2>
+        <button class="btn ghost sm" id="btnChartsBack">← My rooms</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin:0 0 14px">Rank records or A&amp;Rs over a series, a date range, or the last few rooms — then export a CSV, build the Instagram carousel, or copy the caption. Records rank on <b>room average</b>; rounds under the vote floor are listed but don't chart. Versus rounds are excluded (a split isn't an average).</p>
+
+      <div class="row" style="gap:8px;margin-bottom:12px">
+        <button class="btn sm chart-mode on" data-mode="records">Top Records</button>
+        <button class="btn ghost sm chart-mode" data-mode="ars">Top A&amp;Rs</button>
+        <button class="btn ghost sm chart-mode" data-mode="weekly1s">Room #1s</button>
+      </div>
+
+      <div class="ctrls">
+        <div><label>Scope</label><select id="chScope"></select></div>
+        <div><label id="chLimitLabel">Chart size</label>
+          <select id="chLimit">
+            <option value="100" selected>Top 100</option><option value="50">Top 50</option>
+            <option value="20">Top 20</option><option value="10">Top 10</option><option value="1000">All</option>
+          </select></div>
+        <div><label>Min votes</label><input type="number" id="chMinVotes" value="10" min="0" step="1"></div>
+        <div><label>Order</label><select id="chOrder">
+          <option value="top">#1 first</option><option value="countdown">Countdown</option></select></div>
+      </div>
+      <div class="ctrls" id="chRangeRow" style="margin-top:10px;display:none">
+        <div><label>From</label><input type="date" id="chFrom"></div>
+        <div><label>To</label><input type="date" id="chTo"></div>
+      </div>
+      <div class="row" style="gap:14px;margin-top:10px;align-items:center">
+        <div style="flex:0 0 auto"><label style="margin:0 0 4px">Per slide</label>
+          <select id="chPer" style="width:auto"><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option></select></div>
+        <label class="pref-row" id="chDedupeRow" style="flex:1;min-width:220px">
+          <input type="checkbox" id="chDedupe" checked>
+          <span><b>Merge repeat plays</b><small>A record played in more than one room charts once, at its best showing. The CSV keeps a <code>plays</code> count.</small></span>
+        </label>
+      </div>
+
+      <div class="summary" id="chSummary">Loading…</div>
+
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn sm" id="chCsv">⬇ Export CSV</button>
+        <button class="btn ghost sm" id="chBuild">🖼 Build carousel</button>
+        <button class="btn ghost sm" id="chCaption">📋 Copy caption</button>
+      </div>
+
+      <div class="list" id="chList"><div class="empty">Loading…</div></div>
+      <div id="chSlides"></div>
+    </div>
+  </div>
+</div>
+
 <!-- HOST DEFAULTS MODAL: prefill for every new room this host creates -->
 <div id="hdModal" class="modal-scrim" style="z-index:35">
   <div class="modal-card md">
@@ -1336,7 +1424,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','picker','create','console','series','users','platform','analytics'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','picker','create','console','series','users','platform','analytics','charts'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -1466,6 +1554,7 @@ async function openPicker(){
   $('#btnManageUsers').classList.toggle('hide',!isAdmin());
   $('#btnPlatform').classList.toggle('hide',!isAdmin());
   $('#btnAnalytics').classList.toggle('hide',!isAdmin());
+  $('#btnCharts').classList.toggle('hide',!isAdmin());
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
@@ -1985,6 +2074,195 @@ async function anCopySummary(){
 $('#anWindow')&&$('#anWindow').addEventListener('change',loadAnalytics);
 $('#btnAnalytics')&&($('#btnAnalytics').onclick=openAnalytics);
 $('#btnAnalyticsBack')&&($('#btnAnalyticsBack').onclick=openPicker);
+
+// ---- Charts (admin): ranked records / A&Rs -> CSV, IG carousel, caption ----
+// The three outputs all read the SAME query string, so what's on screen is exactly what
+// exports and what renders — no chance of the CSV and the carousel disagreeing.
+let chMode='records',chData=null;
+function chScopeOptions(){
+  const sel=$('#chScope'),prev=sel.value;
+  let html='';
+  (SERIES||[]).forEach(s=>{html+=`<option value="series:${s.id}">Series — ${esc(s.title)}</option>`;});
+  html+='<option value="last:4">Last 4 rooms</option><option value="last:8">Last 8 rooms</option>'
+      +'<option value="last:12">Last 12 rooms</option><option value="range">Date range…</option>'
+      +'<option value="all">All time</option>';
+  sel.innerHTML=html;
+  sel.value=prev&&[...sel.options].some(o=>o.value===prev)?prev:sel.options[0].value;
+}
+// Dates are read as ET calendar days: the show that ran Wed 7-11pm ET must land in the day
+// the operator thinks it did, not the UTC day its timestamps fall in.
+const chDayMs=(str,endOfDay)=>{
+  if(!str)return null;
+  const t=Date.parse(str+'T'+(endOfDay?'23:59:59.999':'00:00:00')+'-05:00');
+  return Number.isFinite(t)?t:null;
+};
+function chParams(extra){
+  const p=new URLSearchParams();
+  p.set('mode',chMode);
+  const sc=$('#chScope').value||'all';
+  if(sc.startsWith('series:')){p.set('scope','series');p.set('seriesId',sc.slice(7));}
+  else if(sc.startsWith('last:')){p.set('scope','last');p.set('lastN',sc.slice(5));}
+  else if(sc==='range'){
+    p.set('scope','range');
+    p.set('from',String(chDayMs($('#chFrom').value,false)||0));
+    p.set('to',String(chDayMs($('#chTo').value,true)||Date.now()));
+  } else p.set('scope','all');
+  p.set('limit',$('#chLimit').value);
+  p.set('minVotes',String(Math.max(0,parseInt($('#chMinVotes').value,10)||0)));
+  p.set('order',$('#chOrder').value);
+  p.set('per',$('#chPer').value);
+  p.set('dedupe',$('#chDedupe').checked?'1':'0');
+  Object.entries(extra||{}).forEach(([k,v])=>p.set(k,v));
+  return p;
+}
+function chAuthHeaders(){const h={};if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;if(ATOK)h['X-Admin-Token']=ATOK;return h;}
+async function openCharts(){
+  showScreen('charts');
+  $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
+  await loadSeriesCache();
+  chScopeOptions();
+  await loadCharts();
+}
+async function loadCharts(){
+  $('#chSlides').innerHTML='';
+  $('#chSummary').textContent='Loading…';
+  try{
+    chData=await api('/api/admin/charts?'+chParams().toString(),null,'GET');
+    renderCharts(chData);
+  }catch(e){
+    chData=null;
+    $('#chSummary').textContent=e.message;
+    $('#chList').innerHTML='<div class="err">'+esc(e.message)+'</div>';
+  }
+}
+function chRankClass(n){return n===1?'r1':n===2?'r2':n===3?'r3':'';}
+function renderCharts(d){
+  const s=d.summary,sc=d.scope;
+  const when=sc.from?`${chFmtDay(sc.from)} – ${chFmtDay(sc.to)}`:'no rooms yet';
+  let sum=`scope · <b>${esc(sc.label)}</b> — ${sc.rooms} room${sc.rooms===1?'':'s'}, ${esc(when)}<br>`;
+  if(d.mode==='ars'){
+    sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`;
+  }else if(d.mode==='weekly1s'){
+    sum+=`rooms · <b>${s.charting}</b> with a #1`+(s.excluded?` · <span class="warn">${s.excluded} had nothing clear the floor</span>`:' · every room cleared the floor');
+  }else{
+    sum+=`pool · <b>${s.pool}</b> ratified records`
+      +(s.excluded?` · <span class="warn">${s.excluded} excluded</span> (under ${d.minVotes} vote${d.minVotes===1?'':'s'})`:'')
+      +(s.deduped?` · <span class="warn">${s.deduped} merged</span> (repeat plays)`:'')
+      +` · <b>${s.charting}</b> charting`;
+  }
+  if(s.votes)sum+=`<br>votes · min <b>${s.votes.min}</b> · median <b>${s.votes.median}</b> · max <b>${s.votes.max}</b>`;
+  $('#chSummary').innerHTML=sum;
+
+  const box=$('#chList');
+  if(!d.rows.length){box.innerHTML='<div class="empty">Nothing charts in this scope yet.</div>';return;}
+  let html='';
+  for(const r of d.rows){
+    if(d.mode==='ars'){
+      html+=`<div class="crow"><div class="crank ${chRankClass(r.rank)}">${r.rank}</div>
+        <div class="cmain"><div class="ctitle">${esc(r.name)}</div>
+        <div class="csub">${esc([r.ig?'@'+r.ig:'',r.category,r.location].filter(Boolean).join(' · ')||'—')}</div></div>
+        <div class="cmeta">${r.rounds==null?'':r.rounds+' rounds'}</div>
+        <div class="cscore">${r.points.toLocaleString()}</div></div>`;
+    }else if(d.mode==='weekly1s'){
+      const rec=r.record;
+      html+=`<div class="crow${rec?'':' excl'}"><div class="crank r1">${rec?'#1':'—'}</div>
+        <div class="cmain"><div class="ctitle">${esc(rec?rec.title:'No record cleared the floor')}</div>
+        <div class="csub">${esc([rec&&rec.artist,rec&&rec.ig?'@'+rec.ig:'',r.room+' · '+chFmtDay(r.showAt)].filter(Boolean).join(' · '))}</div></div>
+        <div class="cmeta">${rec?rec.votes+' votes':''}</div>
+        <div class="cscore">${rec?rec.score.toFixed(1):'—'}</div></div>`;
+    }else{
+      html+=`<div class="crow"><div class="crank ${chRankClass(r.rank)}">${r.rank}</div>
+        <div class="cmain"><div class="ctitle">${esc(r.title)}${r.plays>1?` <span class="muted" style="font-size:11px">×${r.plays} plays</span>`:''}</div>
+        <div class="csub">${esc([r.artist,r.ig?'@'+r.ig:'',r.room+' · '+chFmtDay(r.showAt)].filter(Boolean).join(' · '))}</div></div>
+        <div class="cmeta">${r.votes} votes</div>
+        <div class="cscore">${r.score.toFixed(1)}</div></div>`;
+    }
+  }
+  // The excluded rounds stay visible so the floor is a judgement call the operator can see
+  // and tune, not a silent truncation that reads as "this is everything".
+  if(d.excluded&&d.excluded.length){
+    html+=`<div class="cutline">Below the ${d.minVotes}-vote floor — not charting</div>`;
+    for(const r of d.excluded){
+      html+=`<div class="crow excl"><div class="crank">—</div>
+        <div class="cmain"><div class="ctitle">${esc(r.title)}</div>
+        <div class="csub">${esc([r.artist,r.room+' · '+chFmtDay(r.showAt)].filter(Boolean).join(' · '))}</div></div>
+        <div class="cmeta">${r.votes} vote${r.votes===1?'':'s'}</div>
+        <div class="cscore">${r.score.toFixed(1)}</div></div>`;
+    }
+    if(d.summary.excluded>d.excluded.length)html+=`<div class="cutline">+${d.summary.excluded-d.excluded.length} more below the floor</div>`;
+  }
+  box.innerHTML=html;
+}
+const chFmtDay=ms=>new Date(Number(ms)||0).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'America/New_York'});
+
+async function chDownloadCsv(){
+  if(!chData)return;
+  try{
+    const r=await fetch('/api/admin/charts?'+chParams({format:'csv'}).toString(),{headers:chAuthHeaders()});
+    if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Export failed');
+    const name=(chData.title+'-'+chData.scope.label).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    anDownload(name+'.csv',await r.text(),'text/csv');
+  }catch(e){alert(e.message);}
+}
+async function chCopyCaption(){
+  const b=$('#chCaption');
+  try{
+    const r=await fetch('/api/admin/charts?'+chParams({format:'caption'}).toString(),{headers:chAuthHeaders()});
+    if(!r.ok)throw new Error('Caption failed');
+    const txt=await r.text();
+    try{await navigator.clipboard.writeText(txt);b.textContent='Copied ✓';setTimeout(()=>b.textContent='📋 Copy caption',1500);}
+    catch(e){prompt('Copy the caption:',txt);}
+  }catch(e){alert(e.message);}
+}
+// Slides render one at a time (each is a full Satori pass) so a 100-row chart doesn't fire
+// eleven concurrent renders at a serverless function.
+async function chBuildCarousel(){
+  if(!chData||!chData.rows.length)return;
+  const per=parseInt($('#chPer').value,10)||10;
+  const box=$('#chSlides'),btn=$('#chBuild');
+  const total=1+Math.ceil(chData.rows.length/per);
+  box.innerHTML='<div class="muted" style="font-size:12px;margin-top:12px">Rendering 1 of '+total+'…</div>';
+  btn.disabled=true;
+  const figs=[];
+  try{
+    for(let i=0;i<total;i++){
+      const r=await fetch('/api/card/chart?'+chParams({slide:String(i)}).toString(),{headers:chAuthHeaders()});
+      if(!r.ok)break;
+      const url=URL.createObjectURL(await r.blob());
+      figs.push({url,name:(i===0?'cover':'slide-'+i)+'.png',label:i===0?'Cover':'Slide '+i});
+      box.innerHTML='<div class="muted" style="font-size:12px;margin-top:12px">Rendering '+Math.min(i+2,total)+' of '+total+'…</div>';
+    }
+    box.innerHTML='<div class="row" style="margin-top:14px;align-items:center"><b style="font-size:13px">'+figs.length+' slides</b>'
+      +'<button class="btn ghost sm" id="chDlAll">⬇ Download all</button>'
+      +'<span class="muted" style="font-size:11.5px">Instagram allows 20 slides per carousel.</span></div>'
+      +'<div class="slides">'+figs.map(f=>`<figure><a href="${f.url}" download="${f.name}"><img src="${f.url}" alt="${f.label}"></a><figcaption>${f.label}</figcaption></figure>`).join('')+'</div>';
+    $('#chDlAll').onclick=()=>figs.forEach((f,i)=>setTimeout(()=>{
+      const a=document.createElement('a');a.href=f.url;a.download=f.name;a.click();
+    },i*250));
+  }catch(e){box.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+  finally{btn.disabled=false;}
+}
+
+document.querySelectorAll('.chart-mode').forEach(b=>b.onclick=()=>{
+  chMode=b.dataset.mode;
+  document.querySelectorAll('.chart-mode').forEach(x=>{x.classList.toggle('ghost',x!==b);x.classList.toggle('on',x===b);});
+  $('#chDedupeRow').style.display=chMode==='records'?'':'none';
+  $('#chLimitLabel').textContent=chMode==='weekly1s'?'Rooms':'Chart size';
+  loadCharts();
+});
+['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo'].forEach(sel=>{
+  const el=$(sel);if(!el)return;
+  el.addEventListener('change',()=>{
+    if(sel==='#chScope')$('#chRangeRow').style.display=$('#chScope').value==='range'?'':'none';
+    loadCharts();
+  });
+});
+$('#chPer')&&$('#chPer').addEventListener('change',()=>{$('#chSlides').innerHTML='';});
+$('#btnCharts')&&($('#btnCharts').onclick=openCharts);
+$('#btnChartsBack')&&($('#btnChartsBack').onclick=openPicker);
+$('#chCsv')&&($('#chCsv').onclick=chDownloadCsv);
+$('#chCaption')&&($('#chCaption').onclick=chCopyCaption);
+$('#chBuild')&&($('#chBuild').onclick=chBuildCarousel);
 
 async function openSeries(){
   showScreen('series');

@@ -967,6 +967,265 @@ async function cardSongsData(sessionId, limit = 8) {
   });
 }
 
+// ---- Charts (admin): "Makin' It HOT 100" and friends -----------------------------------
+// A ranked chart of RECORDS or A&Rs across a series, a date range, or the last N rooms —
+// feeding the Charts screen, the CSV export, and the Instagram carousel.
+//
+// Ranking is the ROOM AVERAGE with a MIN-VOTE FLOOR (operator's call, 2026-08-05): a 9.0
+// from 4 voters must not outrank an 8.6 from 200, but the number PRINTED stays the room's
+// real average, so the floor excludes rows rather than reweighting them into something no
+// A&R ever voted. Excluded rounds come back in their own list instead of vanishing — a
+// chart that silently truncates reads as "this is everything" when it isn't, and the
+// operator needs to see what the floor cost before choosing where to put it.
+//
+// Versus/binary rounds never chart: a split isn't an average (same rule as cardSongsData).
+// All of this scales with ROUNDS and is admin-triggered — it must never become reachable
+// from the boot or poll path (CLAUDE.md #1 rule).
+
+const CHART_DEFAULT_MIN_VOTES = 10;
+const chartDate = ms => new Date(Number(ms) || 0)
+  .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
+const chartDay = ms => new Date(Number(ms) || 0)
+  .toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // YYYY-MM-DD, for CSV/sorting
+// Loose match for "same record, played twice": case/punctuation-insensitive title+artist.
+const chartKey = s => (s == null ? '' : String(s)).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+// Resolve the requested scope to a concrete set of rooms + a human label.
+// Soft-deleted rooms never chart. Returns null when the scope names something that's gone.
+async function chartScope(q) {
+  const pick = (where, params) => db.all(
+    `SELECT id, name, series_id, status, COALESCE(scheduled_at, created_at) AS show_at
+       FROM sessions WHERE deleted_at IS NULL ${where}
+      ORDER BY COALESCE(scheduled_at, created_at) DESC`, params);
+  if (q.scope === 'series') {
+    const ser = await db.get('SELECT id, title FROM series WHERE id = ?', [q.seriesId]);
+    if (!ser) return null;
+    return { kind: 'series', label: ser.title, seriesId: ser.id, sessions: await pick('AND series_id = ?', [ser.id]) };
+  }
+  if (q.scope === 'range') {
+    if (!(q.from >= 0) || !(q.to > q.from)) return null;
+    return { kind: 'range', label: `${chartDate(q.from)} – ${chartDate(q.to)}`, from: q.from, to: q.to,
+      sessions: await pick('AND COALESCE(scheduled_at, created_at) BETWEEN ? AND ?', [q.from, q.to]) };
+  }
+  if (q.scope === 'last') {
+    // "Last N rooms" means N rooms that actually RAN — an empty upcoming room isn't a show.
+    const ran = await pick("AND status <> 'upcoming'", []);
+    return { kind: 'last', label: `Last ${q.lastN} rooms`, lastN: q.lastN, sessions: ran.slice(0, q.lastN) };
+  }
+  return { kind: 'all', label: 'All time', sessions: await pick('', []) };
+}
+
+// Every ratified rating round in scope, split by the floor. Ties: more voters wins (a
+// bigger room agreeing is the stronger result), then the earlier play — first to hit it.
+const chartRank = (a, b) => b.score - a.score || b.votes - a.votes || a.showAt - b.showAt;
+async function chartRecords(sessions, { minVotes, dedupe }) {
+  if (!sessions.length) return { charting: [], excluded: [], pool: 0 };
+  const ids = sessions.map(s => s.id);
+  const ph = ids.map(() => '?').join(',');
+  const rows = await db.all(
+    `SELECT r.id, r.idx, r.song_title, r.song_artist, r.song_note, r.room_average, r.session_id,
+            s.name AS session_name, COALESCE(s.scheduled_at, s.created_at) AS show_at,
+            COUNT(v.id) AS votes
+       FROM rounds r
+       JOIN sessions s ON s.id = r.session_id
+       LEFT JOIN votes v ON v.round_id = r.id AND v.taste IS NOT NULL
+      WHERE r.session_id IN (${ph}) AND r.status = 'ratified'
+        AND r.poll_type <> 'binary' AND r.room_average IS NOT NULL
+      GROUP BY r.id, r.idx, r.song_title, r.song_artist, r.song_note, r.room_average,
+               r.session_id, s.name, s.scheduled_at, s.created_at`, ids);
+  const all = rows.map(r => {
+    const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+    return {
+      roundId: r.id, title: r.song_title || '—', artist: r.song_artist || '', ig: m ? m[1] : null,
+      score: Number(r.room_average), votes: Number(r.votes) || 0, plays: 1,
+      room: r.session_name, roomId: r.session_id, showAt: Number(r.show_at),
+    };
+  });
+  const excluded = all.filter(r => r.votes < minVotes).sort(chartRank);
+  let charting = all.filter(r => r.votes >= minVotes).sort(chartRank);
+  if (dedupe) {
+    // A record replayed in a later room charts ONCE, at its best showing. `plays` keeps the
+    // repeat visible in the CSV instead of quietly dropping a row the operator can see.
+    const best = new Map();
+    for (const r of charting) {
+      const k = chartKey(r.title) + '|' + chartKey(r.artist);
+      const prev = best.get(k);
+      if (prev) { prev.plays++; continue; }
+      best.set(k, r);
+    }
+    charting = [...best.values()]; // already in ranked order — Map preserves insertion
+  }
+  return { charting, excluded, pool: all.length };
+}
+
+// Top A&Rs over the scope. A SERIES chart reads the public board verbatim (bonus
+// point_events included) — that's the $500 board, and a chart that disagreed with it
+// would be a support ticket. Other scopes sum vote points over the scoped rooms.
+async function chartArs(scope, sessions) {
+  const ids = sessions.map(s => s.id);
+  const ph = ids.map(() => '?').join(',');
+  const shape = r => ({
+    id: r.uid, name: r.name || 'A&R', ig: igClean(r.instagram),
+    category: r.primary_category || null, location: r.location || null,
+    points: Number(r.pts) || 0, rounds: r.rounds == null ? null : Number(r.rounds),
+  });
+  if (scope.kind === 'series') {
+    const rows = await db.all(
+      `SELECT u.uid, u.name, u.instagram, u.primary_category, u.location, SUM(t.pts) AS pts
+         FROM (${SERIES_POINTS_SRC}) t JOIN users u ON t.puid = u.uid
+        WHERE u.profile_complete = 1 AND u.blocked = 0
+        GROUP BY u.uid, u.name, u.instagram, u.primary_category, u.location
+        ORDER BY pts DESC, u.name ASC`, [scope.seriesId, scope.seriesId]);
+    // Rounds-scored isn't derivable from the points union (it carries bonus events too),
+    // so count it off the scoped rooms and merge.
+    const counts = ids.length ? await db.all(
+      `SELECT p.user_id AS uid, COUNT(v.id) AS rounds
+         FROM votes v JOIN participants p ON v.participant_id = p.id
+         JOIN rounds r ON r.id = v.round_id
+        WHERE r.session_id IN (${ph}) AND v.points IS NOT NULL AND p.user_id IS NOT NULL
+        GROUP BY p.user_id`, ids) : [];
+    const byUid = new Map(counts.map(c => [c.uid, Number(c.rounds) || 0]));
+    return rows.map(r => shape({ ...r, rounds: byUid.get(r.uid) ?? 0 }));
+  }
+  if (!ids.length) return [];
+  const rows = await db.all(
+    `SELECT u.uid, u.name, u.instagram, u.primary_category, u.location,
+            SUM(v.points) AS pts, COUNT(v.id) AS rounds
+       FROM votes v
+       JOIN participants p ON v.participant_id = p.id
+       JOIN rounds r ON r.id = v.round_id
+       JOIN users u ON p.user_id = u.uid
+      WHERE r.session_id IN (${ph}) AND v.points IS NOT NULL
+        AND u.profile_complete = 1 AND u.blocked = 0
+      GROUP BY u.uid, u.name, u.instagram, u.primary_category, u.location
+      ORDER BY pts DESC, u.name ASC`, ids);
+  return rows.map(shape);
+}
+
+// Parse + clamp everything the chart endpoints accept, in one place so the JSON, the CSV
+// and the carousel can never disagree about what was asked for.
+function chartQuery(url) {
+  const g = k => url.searchParams.get(k);
+  // Number.isFinite, not `|| d` — a legitimate 0 (minVotes=0 turns the floor OFF) is
+  // falsy, and `|| d` would silently restore the default floor the operator just cleared.
+  const int = (k, d, lo, hi) => { const n = parseInt(g(k), 10); return Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : d)); };
+  const mode = ['records', 'ars', 'weekly1s'].includes(g('mode')) ? g('mode') : 'records';
+  const scope = ['series', 'range', 'last', 'all'].includes(g('scope')) ? g('scope') : 'all';
+  return {
+    mode, scope,
+    seriesId: g('seriesId') || null,
+    from: parseInt(g('from'), 10) || 0,
+    to: parseInt(g('to'), 10) || 0,
+    lastN: int('lastN', 4, 1, 52),
+    minVotes: int('minVotes', CHART_DEFAULT_MIN_VOTES, 0, 100000),
+    limit: int('limit', 100, 1, 1000),
+    per: int('per', 10, 5, 20),          // rows per carousel slide (IG caps a carousel at 20)
+    order: g('order') === 'countdown' ? 'countdown' : 'top',
+    dedupe: g('dedupe') !== '0',
+    title: (g('title') || '').trim().slice(0, 40) || null,
+  };
+}
+
+async function chartsData(q) {
+  const scope = await chartScope(q);
+  if (!scope) return null;
+  const sessions = scope.sessions;
+  const out = {
+    mode: q.mode, order: q.order, minVotes: q.minVotes, limit: q.limit, per: q.per,
+    dedupe: q.dedupe, scaleMax: shareCards.CHART_SCALE_MAX, bands: shareCards.CHART_BANDS,
+    scope: { kind: scope.kind, label: scope.label, rooms: sessions.length,
+      from: sessions.length ? Math.min(...sessions.map(s => Number(s.show_at))) : null,
+      to: sessions.length ? Math.max(...sessions.map(s => Number(s.show_at))) : null },
+    generatedAt: now(),
+  };
+
+  if (q.mode === 'ars') {
+    const all = await chartArs(scope, sessions);
+    const rows = all.slice(0, q.limit).map((r, i) => ({ rank: i + 1, ...r }));
+    out.rows = q.order === 'countdown' ? rows.slice().reverse() : rows;
+    out.excluded = [];
+    out.summary = { pool: all.length, charting: rows.length, excluded: 0, votes: null };
+    out.title = q.title || 'Top A&Rs';
+    return out;
+  }
+
+  const { charting, excluded, pool } = await chartRecords(sessions, q);
+
+  if (q.mode === 'weekly1s') {
+    // One row per room that ran, newest first: its top record over the floor. A room whose
+    // best record is UNDER the floor reports null rather than silently dropping out — the
+    // gap in the week is the story.
+    const bySession = new Map();
+    for (const r of charting) if (!bySession.has(r.roomId)) bySession.set(r.roomId, r);
+    const ran = sessions.filter(s => s.status !== 'upcoming').slice(0, q.limit);
+    const rows = ran.map(s => {
+      const top = bySession.get(s.id) || null;
+      return { rank: 1, room: s.name, roomId: s.id, showAt: Number(s.show_at),
+        showDate: chartDay(s.show_at), record: top };
+    });
+    out.rows = q.order === 'countdown' ? rows.slice().reverse() : rows;
+    out.excluded = [];
+    out.summary = { pool, charting: rows.filter(r => r.record).length, excluded: rows.filter(r => !r.record).length,
+      votes: chartVoteSpread(charting) };
+    out.title = q.title || 'Room #1s';
+    return out;
+  }
+
+  const ranked = charting.slice(0, q.limit).map((r, i) => ({ rank: i + 1, ...r, showDate: chartDay(r.showAt) }));
+  out.rows = q.order === 'countdown' ? ranked.slice().reverse() : ranked;
+  // Keep the excluded preview small — it exists to justify the floor, not to be a second chart.
+  out.excluded = excluded.slice(0, 25).map(r => ({ ...r, showDate: chartDay(r.showAt) }));
+  out.summary = { pool, charting: charting.length, excluded: excluded.length,
+    deduped: q.dedupe ? ranked.reduce((n, r) => n + (r.plays - 1), 0) : 0,
+    votes: chartVoteSpread(charting) };
+  out.title = q.title || 'Makin’ It HOT ' + (charting.length >= q.limit ? q.limit : charting.length);
+  return out;
+}
+
+function chartVoteSpread(rows) {
+  if (!rows.length) return null;
+  const v = rows.map(r => r.votes).sort((a, b) => a - b);
+  const mid = v.length % 2 ? v[(v.length - 1) / 2] : Math.round((v[v.length / 2 - 1] + v[v.length / 2]) / 2);
+  return { min: v[0], median: mid, max: v[v.length - 1] };
+}
+
+// CSV per mode. Same rows, same order, same floor as the on-screen chart.
+function chartsCsv(d) {
+  const esc = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  let head, body;
+  if (d.mode === 'ars') {
+    head = ['rank', 'name', 'instagram', 'category', 'location', 'points', 'rounds_scored'];
+    body = d.rows.map(r => [r.rank, r.name, r.ig ? '@' + r.ig : '', r.category, r.location, r.points, r.rounds]);
+  } else if (d.mode === 'weekly1s') {
+    head = ['room', 'show_date', 'title', 'artist', 'instagram', 'room_average', 'votes'];
+    body = d.rows.map(r => r.record
+      ? [r.room, r.showDate, r.record.title, r.record.artist, r.record.ig ? '@' + r.record.ig : '', r.record.score.toFixed(1), r.record.votes]
+      : [r.room, r.showDate, '', '', '', '', '']);
+  } else {
+    head = ['rank', 'title', 'artist', 'instagram', 'room_average', 'votes', 'plays', 'room', 'show_date', 'round_id'];
+    body = d.rows.map(r => [r.rank, r.title, r.artist, r.ig ? '@' + r.ig : '', r.score.toFixed(1), r.votes, r.plays, r.room, r.showDate, r.roundId]);
+  }
+  return [head.join(',')].concat(body.map(row => row.map(esc).join(','))).join('\n');
+}
+
+// The Instagram caption: the chart as pasteable text, with the band key and both CTAs.
+function chartsCaption(d) {
+  const L = [];
+  L.push(`${d.title.toUpperCase()} — ${d.scope.label.toUpperCase()} 🔥`, '');
+  L.push(`Tracks submitted to the A&R Room at ${shareCards.SUBMIT_URL} — rated live, 0–${d.scaleMax}, by the room.`, '');
+  if (d.mode !== 'ars') { d.bands.forEach(b => L.push(`${b.range} | ${b.label}`)); L.push(''); }
+  d.rows.forEach(r => {
+    if (d.mode === 'ars') return L.push(`${r.rank}. ${r.name}${r.ig ? ' — @' + r.ig : ''} (${r.points.toLocaleString()} pts)`);
+    if (d.mode === 'weekly1s') return L.push(r.record
+      ? `${r.room} — ${r.record.title}${r.record.ig ? ' — @' + r.record.ig : ' — ' + r.record.artist} (${r.record.score.toFixed(1)})`
+      : `${r.room} — no record cleared the floor`);
+    L.push(`${r.rank}. ${r.title}${r.ig ? ' — @' + r.ig : (r.artist ? ' — ' + r.artist : '')} (${r.score.toFixed(1)})`);
+  });
+  L.push('', `Join the A&R Team → ${shareCards.JOIN_URL}`, `Submit your record → ${shareCards.SUBMIT_URL}`, '',
+    '@Makinit4indies #TheARoom');
+  return L.join('\n');
+}
+
 // Song Report (paid artist tier): everything the 3-page report needs, computed live
 // from one ratified rating round. Host-triggered only — never on the boot/poll path.
 // Aggregates only: segments (role/city/pool) surface at 3+ voters; individual scores
@@ -3049,6 +3308,28 @@ async function handleApi(req, res, url) {
   // any name/email/phone/uid. Admin-triggered, bounded to the window, off every hot path —
   // NOT on the boot/poll path (the #1 rule). Every query rides an existing index
   // (idx_round_session, idx_votes_round, idx_part_session).
+  // ---- Charts: ranked records / A&Rs over a series, date range, or the last N rooms ----
+  // Platform-admin only. It spans EVERY room regardless of owner, so it is not a host tool;
+  // a per-host flavour would need the scope query filtered by owner_uid first.
+  // ?format=csv returns the same rows as a download; ?format=caption returns the IG text.
+  if (p === '/api/admin/charts' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const q = chartQuery(url);
+    const data = await chartsData(q);
+    if (!data) return bad(res, 'Scope not found', 404);
+    const format = (url.searchParams.get('format') || 'json').toLowerCase();
+    const slug = (data.title + '-' + data.scope.label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (format === 'csv') {
+      res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${slug}.csv"` });
+      return res.end(chartsCsv(data));
+    }
+    if (format === 'caption') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end(chartsCaption(data));
+    }
+    return send(res, 200, data);
+  }
+
   if (p === '/api/admin/analytics' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const window = Math.max(1, Math.min(52, parseInt(url.searchParams.get('window') || '12', 10) || 12));
@@ -3969,6 +4250,38 @@ async function handleApi(req, res, url) {
         if (!d) return bad(res, 'No eligible evaluations to report', 404);
         if (page === 3 && d.votes < 8) return bad(res, 'The segments page requires at least 8 eligible evaluations', 409);
         return sendPng(await shareCards.renderPng('report' + page, page === 1 ? d : { ...d, sub: d.sub23 }), 'private, no-store');
+      }
+      // Chart carousel (admin): slide 0 is the cover, 1..N are the list slides. Same query
+      // params as /api/admin/charts, plus &per= (rows per slide) and &slide=.
+      if (kind === 'chart') {
+        if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+        const q = chartQuery(url);
+        const data = await chartsData(q);
+        if (!data) return bad(res, 'Scope not found', 404);
+        const slide = Math.max(0, parseInt(url.searchParams.get('slide') || '0', 10) || 0);
+        if (slide === 0) {
+          return sendPng(await shareCards.renderPng('chartCover',
+            { title: data.title, sub: data.scope.label, bands: data.bands }), 'private, no-store');
+        }
+        const chunk = data.rows.slice((slide - 1) * q.per, slide * q.per);
+        if (!chunk.length) return bad(res, 'No such slide', 404);
+        const shaped = chunk.map(r => {
+          if (data.mode === 'ars') return { rank: r.rank, top: r.rank === 1, line1: r.name,
+            line2: r.ig ? '@' + r.ig : [r.category, r.location].filter(Boolean).join(' · '),
+            value: (r.points || 0).toLocaleString() };
+          if (data.mode === 'weekly1s') return { rank: '#1', top: false,
+            line1: r.record ? r.record.title : '—',
+            line2: r.record ? [r.room, chartDate(r.showAt)].filter(Boolean).join(' · ') : r.room + ' · no record cleared the floor',
+            value: r.record ? r.record.score.toFixed(1) : '—' };
+          return { rank: r.rank, top: r.rank === 1, line1: r.title,
+            line2: [r.artist, r.ig ? '@' + r.ig : ''].filter(Boolean).join(' · '),
+            value: r.score.toFixed(1) };
+        });
+        const first = chunk[0], last = chunk[chunk.length - 1];
+        const span = data.mode === 'weekly1s' ? `${chunk.length} rooms`
+          : (first.rank === last.rank ? `#${first.rank}` : `#${first.rank}–${last.rank}`);
+        return sendPng(await shareCards.renderPng('chartList',
+          { title: data.title, sub: `${data.scope.label} · ${span}`, rows: shaped, bands: data.bands }), 'private, no-store');
       }
       return bad(res, 'Unknown card', 404);
     } catch (e) {

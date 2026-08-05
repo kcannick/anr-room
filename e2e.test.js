@@ -2020,6 +2020,155 @@ async function call(path, body, method='POST', headers={}) {
   const delAfter = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [cbAUid])).c);
   ok('prefs die with the account', delAfter === 0, 'rows ' + delAfter);
 
+  // ============================ CHARTS ("Makin' It HOT 100") ============================
+  console.log('\n— charts: the min-vote floor ranks and excludes, it never reweights —');
+  const chSeries = await call('/api/admin/series/create', { title: 'Chart Series', status: 'active' }, 'POST', ADMINH);
+  const CHSER = chSeries.d.seriesId;
+  // Five A&Rs, so a round can carry anywhere from 2 to 5 votes and cross a floor of 3.
+  const chVoters = [];
+  const chRoom = async name => {
+    const c = await call('/api/session', { name }, 'POST', BOOTH);
+    await call('/api/admin/series/tag', { sessionId: c.d.sessionId, seriesId: CHSER }, 'POST', ADMINH);
+    return { id: c.d.sessionId, h: { 'X-Admin-Token': c.d.adminToken } };
+  };
+  const chSeat = async (room, email, name) => {
+    const rq = await call('/api/join/request', { sessionId: room.id, email });
+    const vr = await call('/api/join/verify', { sessionId: room.id, email, code: rq.d.devCode, name });
+    return { 'X-Player-Token': vr.d.token };
+  };
+  // `tastes` drives both the room average and the vote count.
+  const chPlay = async (room, seats, title, artist, tastes, note) => {
+    const ar = await call('/api/admin/round', { sessionId: room.id, song_title: title, song_artist: artist, song_note: note || null }, 'POST', room.h);
+    const rid = ar.d.roundId;
+    if (!ar.d.opened) await call('/api/admin/round/open', { sessionId: room.id, roundId: rid, minutes: 5 }, 'POST', room.h);
+    for (let i = 0; i < tastes.length; i++) await call('/api/vote', { taste: tastes[i], predict: 5 }, 'POST', seats[i]);
+    await call('/api/admin/round/close', { sessionId: room.id, roundId: rid }, 'POST', room.h);
+    await call('/api/admin/round/ratify', { sessionId: room.id, roundId: rid }, 'POST', room.h);
+    return rid;
+  };
+
+  const chR1 = await chRoom('Chart Room One');
+  const chSeats1 = [];
+  for (const [e, n] of [['ch1@fan.com', 'Cee One'], ['ch2@fan.com', 'Cee Two'], ['ch3@fan.com', 'Cee Three'], ['ch4@fan.com', 'Cee Four'], ['ch5@fan.com', 'Cee Five']]) chSeats1.push(await chSeat(chR1, e, n));
+  chVoters.push(...chSeats1);
+  // 5 votes, avg 7.0 — the honest chart-topper.
+  await chPlay(chR1, chSeats1, 'Broad Appeal', 'Big Room', [9, 8, 7, 6, 5], 'IG: bigroom');
+  // 2 votes, avg 9.0 — the trap the floor exists to catch.
+  await chPlay(chR1, chSeats1, 'Tiny Sample', 'Two Voters', [9, 9]);
+  // 4 votes, avg 6.0.
+  await chPlay(chR1, chSeats1, 'Solid Middle', 'Mid Artist', [7, 6, 6, 5]);
+
+  const chR2 = await chRoom('Chart Room Two');
+  const chSeats2 = [];
+  for (const [e, n] of [['ch1@fan.com', 'Cee One'], ['ch2@fan.com', 'Cee Two'], ['ch3@fan.com', 'Cee Three'], ['ch4@fan.com', 'Cee Four']]) chSeats2.push(await chSeat(chR2, e, n));
+  // Same record, replayed in a later room and doing WORSE — the dedupe case.
+  await chPlay(chR2, chSeats2, 'broad  appeal!', 'Big Room', [5, 5, 4, 4]);
+  await chPlay(chR2, chSeats2, 'Room Two Best', 'Second Night', [6, 6, 5, 5]);
+
+  const chGet = (q) => call('/api/admin/charts?' + q, null, 'GET', ADMINH);
+  const chBase = `scope=series&seriesId=${CHSER}&minVotes=3`;
+
+  const chTop = await chGet(chBase);
+  ok('charts: admin can pull a series chart', chTop.status === 200, JSON.stringify(chTop.d).slice(0, 200));
+  const titles = chTop.d.rows.map(r => r.title);
+  ok('charts: the 2-vote 9.0 does NOT chart', !titles.includes('Tiny Sample'), JSON.stringify(titles));
+  ok('charts: it is reported as excluded, not vanished', chTop.d.excluded.some(r => r.title === 'Tiny Sample'), JSON.stringify(chTop.d.excluded.map(r => r.title)));
+  ok('charts: the excluded count is real', chTop.d.summary.excluded === 1, 'excluded ' + chTop.d.summary.excluded);
+  ok('charts: #1 is the 5-voter 7.0', chTop.d.rows[0].title === 'Broad Appeal' && chTop.d.rows[0].score === 7, JSON.stringify(chTop.d.rows[0]));
+  ok('charts: the printed score is the REAL room average (not shrunk)', chTop.d.rows[0].score === 7 && chTop.d.rows[0].votes === 5, JSON.stringify(chTop.d.rows[0]));
+  ok('charts: IG is parsed out of the note', chTop.d.rows[0].ig === 'bigroom', String(chTop.d.rows[0].ig));
+  ok('charts: ranks are 1..n with no gaps', chTop.d.rows.every((r, i) => r.rank === i + 1));
+
+  ok('charts: a replayed record charts ONCE', titles.filter(t => /broad/i.test(t)).length === 1, JSON.stringify(titles));
+  ok('charts: ...at its BEST showing, with the repeat counted', chTop.d.rows[0].plays === 2, JSON.stringify(chTop.d.rows[0]));
+  const cDup = await chGet(chBase + '&dedupe=0');
+  ok('charts: dedupe=0 charts both plays', cDup.d.rows.filter(r => /broad/i.test(r.title)).length === 2, JSON.stringify(cDup.d.rows.map(r => r.title)));
+
+  console.log('\n— charts: the floor is a knob, and order/limit are presentation only —');
+  const cLow = await chGet(`scope=series&seriesId=${CHSER}&minVotes=0`);
+  ok('charts: dropping the floor lets the small sample top the chart', cLow.d.rows[0].title === 'Tiny Sample', JSON.stringify(cLow.d.rows.map(r => r.title)));
+  ok('charts: ...and nothing is excluded at a floor of 0', cLow.d.summary.excluded === 0, 'excluded ' + cLow.d.summary.excluded);
+  const cCount = await chGet(chBase + '&order=countdown');
+  ok('charts: countdown reverses the rows', cCount.d.rows[0].rank === chTop.d.rows.length && cCount.d.rows[cCount.d.rows.length - 1].rank === 1, JSON.stringify(cCount.d.rows.map(r => r.rank)));
+  ok('charts: countdown keeps the same #1 record', cCount.d.rows[cCount.d.rows.length - 1].title === chTop.d.rows[0].title);
+  const cLim = await chGet(chBase + '&limit=2');
+  ok('charts: limit truncates the chart', cLim.d.rows.length === 2, 'rows ' + cLim.d.rows.length);
+  ok('charts: ...but the pool count still reports everything', cLim.d.summary.charting === chTop.d.summary.charting, JSON.stringify(cLim.d.summary));
+
+  console.log('\n— charts: Versus rounds never chart (a split is not an average) —');
+  const chBin = await chRoom('Chart Versus Room');
+  const bSeats = [];
+  for (const [e, n] of [['ch1@fan.com', 'Cee One'], ['ch2@fan.com', 'Cee Two'], ['ch3@fan.com', 'Cee Three']]) bSeats.push(await chSeat(chBin, e, n));
+  const bAdd = await call('/api/admin/round', { sessionId: chBin.id, song_title: 'Versus A', option_b_title: 'Versus B', poll_type: 'binary' }, 'POST', chBin.h);
+  if (!bAdd.d.opened) await call('/api/admin/round/open', { sessionId: chBin.id, roundId: bAdd.d.roundId, minutes: 5 }, 'POST', chBin.h);
+  for (const s of bSeats) await call('/api/vote', { pick: 'a', predict_split: 60 }, 'POST', s);
+  await call('/api/admin/round/close', { sessionId: chBin.id, roundId: bAdd.d.roundId }, 'POST', chBin.h);
+  await call('/api/admin/round/ratify', { sessionId: chBin.id, roundId: bAdd.d.roundId }, 'POST', chBin.h);
+  const cAll = await chGet(`scope=series&seriesId=${CHSER}&minVotes=0&limit=1000`);
+  ok('charts: a Versus round is absent from the chart', !cAll.d.rows.some(r => /Versus/.test(r.title)), JSON.stringify(cAll.d.rows.map(r => r.title)));
+  ok('charts: ...and absent from the excluded list too', !cAll.d.excluded.some(r => /Versus/.test(r.title)));
+
+  console.log('\n— charts: Room #1s takes the top record from each room —');
+  const cW = await chGet(`scope=series&seriesId=${CHSER}&mode=weekly1s&minVotes=3`);
+  ok('charts: one row per room that ran', cW.d.rows.length >= 2, 'rows ' + cW.d.rows.length);
+  const w1 = cW.d.rows.find(r => r.room === 'Chart Room One'), w2 = cW.d.rows.find(r => r.room === 'Chart Room Two');
+  ok('charts: room one\'s #1 is its best over the floor', w1 && w1.record && w1.record.title === 'Broad Appeal', JSON.stringify(w1 && w1.record));
+  ok('charts: room two\'s #1 is its own best, not the series best', w2 && w2.record && w2.record.title === 'Room Two Best', JSON.stringify(w2 && w2.record));
+  ok('charts: a room with nothing over the floor reports null, not silence',
+    cW.d.rows.some(r => r.record === null) ? cW.d.rows.filter(r => r.record === null).every(r => !!r.room) : true);
+
+  console.log('\n— charts: Top A&Rs matches the public series board —');
+  // The A&R board only ranks QUALIFIED profiles, so complete them — otherwise both the
+  // chart and the board come back empty and the comparison proves nothing.
+  for (let i = 0; i < chSeats1.length; i++) {
+    await call('/api/me/profile', { name: 'Cee ' + i, categories: ['Producer'], primaryCategory: 'Producer', location: 'Atlanta, GA', instagram: 'cee' + i }, 'POST', chSeats1[i]);
+  }
+  const cA = await chGet(`scope=series&seriesId=${CHSER}&mode=ars`);
+  const pubBoard = (await call(`/api/admin/series/leaderboard?seriesId=${CHSER}`, null, 'GET', ADMINH)).d.leaderboard;
+  ok('charts: the A&R chart is non-empty', cA.d.rows.length > 0, JSON.stringify(cA.d.rows).slice(0, 200));
+  ok('charts: its #1 and points match the series board exactly',
+    cA.d.rows[0].points === pubBoard[0].points, JSON.stringify([cA.d.rows[0].points, pubBoard[0].points]));
+  ok('charts: A&R rows never carry contact PII',
+    cA.d.rows.every(r => !('email' in r) && !('phone' in r)), JSON.stringify(Object.keys(cA.d.rows[0])));
+
+  console.log('\n— charts: CSV and caption carry the same rows as the screen —');
+  const chCsvRes = await fetch(`${base}/api/admin/charts?${chBase}&format=csv`, { headers: ADMINH });
+  const csvTxt = await chCsvRes.text();
+  ok('charts: CSV downloads', chCsvRes.status === 200 && /text\/csv/.test(chCsvRes.headers.get('content-type') || ''), chCsvRes.status + ' ' + chCsvRes.headers.get('content-type'));
+  ok('charts: CSV is an attachment', /attachment; filename=/.test(chCsvRes.headers.get('content-disposition') || ''));
+  ok('charts: CSV header names the floor-relevant columns', /^rank,title,artist,instagram,room_average,votes,plays/.test(csvTxt));
+  ok('charts: CSV has one row per charting record', csvTxt.trim().split('\n').length === chTop.d.rows.length + 1, 'lines ' + csvTxt.trim().split('\n').length);
+  ok('charts: CSV excludes what the screen excludes', !/Tiny Sample/.test(csvTxt));
+  ok('charts: CSV keeps the repeat-play count', /Broad Appeal.*,2,/.test(csvTxt), csvTxt.split('\n')[1]);
+  const capRes = await fetch(`${base}/api/admin/charts?${chBase}&format=caption`, { headers: ADMINH });
+  const capTxt = await capRes.text();
+  ok('charts: caption returns text', capRes.status === 200 && capTxt.length > 40);
+  ok('charts: caption carries the score key', /Keep it in the studio/.test(capTxt) && /Potential Single/.test(capTxt), capTxt.slice(0, 200));
+  ok('charts: caption sends artists to /review and viewers to /ANR',
+    /makinitmag\.com\/review/.test(capTxt) && /makinitmag\.com\/ANR/.test(capTxt), capTxt.slice(-200));
+  ok('charts: caption lists the #1 record', capTxt.includes('1. Broad Appeal'), capTxt.slice(0, 300));
+
+  console.log('\n— charts: the carousel renders, and the band edges do not overlap —');
+  const slide0 = await fetch(`${base}/api/card/chart?${chBase}&slide=0`, { headers: ADMINH });
+  ok('charts: cover slide renders a PNG', slide0.status === 200 && slide0.headers.get('content-type') === 'image/png', slide0.status);
+  const slide1 = await fetch(`${base}/api/card/chart?${chBase}&slide=1`, { headers: ADMINH });
+  ok('charts: first list slide renders a PNG', slide1.status === 200 && (await slide1.arrayBuffer()).byteLength > 5000);
+  const slideN = await fetch(`${base}/api/card/chart?${chBase}&slide=99`, { headers: ADMINH });
+  ok('charts: a slide past the end 404s (the client stops there)', slideN.status === 404, 'status ' + slideN.status);
+  const bands = require('./share-cards.js').CHART_BANDS;
+  ok('charts: every score lands in exactly one band',
+    [0, 2.9, 3, 5.9, 6, 9].every(v => bands.filter(b => v >= b.min && (b.max == null || v < b.max)).length === 1),
+    JSON.stringify(bands.map(b => b.range)));
+
+  console.log('\n— charts are platform-admin only —');
+  const chHostReq = await call('/api/auth/request', { email: 'host@test.com' });
+  const chHostVer = await call('/api/auth/verify', { email: 'host@test.com', code: chHostReq.d.devCode });
+  const CHHOST = { 'X-Auth-Token': chHostVer.d.token };
+  ok('charts: a host cannot pull the chart', (await chGet(chBase)).status === 403 || (await call('/api/admin/charts?' + chBase, null, 'GET', CHHOST)).status === 403);
+  ok('charts: an anonymous request is refused', (await call('/api/admin/charts?' + chBase, null, 'GET')).status === 403);
+  const anonCard = await fetch(`${base}/api/card/chart?${chBase}&slide=0`);
+  ok('charts: the carousel PNG is not public', anonCard.status === 403, 'status ' + anonCard.status);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);
