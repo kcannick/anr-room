@@ -162,34 +162,48 @@ async function call(path, body, method='POST', headers={}) {
   const cLong = await call('/api/comment', { roundId: RID, body: 'z'.repeat(400) }, 'POST', { 'X-Player-Token': t3 });
   ok('over-length comment truncated to 280, not rejected', cLong.status === 200 && cLong.d.body.length === 280, 'len ' + (cLong.d.body || '').length);
 
-  // Host moderation. Default is NOT shared — nothing reaches an artist by accident.
+  // Host moderation is REJECT-BY-EXCEPTION (029): comments ship by default and the host
+  // pulls the bad ones. There is no 'pending' — a status that gates sends but nothing
+  // produces would read as "held for review" while actually meaning "unreachable".
   let cAdm = (await call(`/api/admin/comments?sessionId=${SID}`, null, 'GET', AH)).d;
   ok('host sees all three comments', (cAdm.comments || []).length === 3, 'got ' + (cAdm.comments || []).length);
-  ok('comments default to pending (never auto-shared)', cAdm.comments.every(c => c.status === 'pending'), JSON.stringify(cAdm.comments.map(c => c.status)));
+  ok('comments default to SHARED (host rejects, not approves)', cAdm.comments.every(c => c.status === 'shared'), JSON.stringify(cAdm.comments.map(c => c.status)));
   ok('host queue carries the A&R name + their rating', cAdm.comments.every(c => c.name && c.taste != null), JSON.stringify(cAdm.comments[0]));
   ok('host queue carries no commenter PII', !JSON.stringify(cAdm.comments).includes('@test.com'));
   const cmtId1 = cAdm.comments.find(c => c.body === CMT_A).id;
   const cNoAdmin = await call('/api/admin/comments?sessionId=' + SID, null, 'GET');
   ok('comment queue is admin-gated', cNoAdmin.status === 401, 'got ' + cNoAdmin.status);
 
-  const cShare = await call('/api/admin/comment', { sessionId: SID, commentId: cmtId1, status: 'shared' }, 'POST', AH);
-  ok('host can share one comment', cShare.status === 200 && cShare.d.changed === 1, JSON.stringify(cShare.d));
+  const cHide = await call('/api/admin/comment', { sessionId: SID, commentId: cmtId1, status: 'hidden' }, 'POST', AH);
+  ok('host can reject one comment', cHide.status === 200 && cHide.d.changed === 1, JSON.stringify(cHide.d));
   const cBadStatus = await call('/api/admin/comment', { sessionId: SID, commentId: cmtId1, status: 'published' }, 'POST', AH);
   ok('unknown moderation status rejected', cBadStatus.status === 400, 'got ' + cBadStatus.status);
+  const cRetired = await call('/api/admin/comment', { sessionId: SID, commentId: cmtId1, status: 'pending' }, 'POST', AH);
+  ok("retired 'pending' status no longer accepted", cRetired.status === 400, 'got ' + cRetired.status);
 
-  // An edit after approval must NOT ride the host's earlier sign-off.
+  // 'hidden' is STICKY across an edit — otherwise editing would be a one-click way for an
+  // A&R to undo the host's rejection.
   const cEdit = await call('/api/comment', { roundId: RID, body: 'Actually, on a relisten — the mix is fine.' }, 'POST', { 'X-Player-Token': t1 });
   ok('author can edit their comment', cEdit.status === 200, JSON.stringify(cEdit.d));
   cAdm = (await call(`/api/admin/comments?sessionId=${SID}`, null, 'GET', AH)).d;
-  ok('editing a SHARED comment resets it to pending (fails closed)',
-    cAdm.comments.find(c => c.id === cmtId1).status === 'pending', JSON.stringify(cAdm.comments.find(c => c.id === cmtId1)));
+  ok('editing a REJECTED comment leaves it rejected (no undo-by-edit)',
+    cAdm.comments.find(c => c.id === cmtId1).status === 'hidden', JSON.stringify(cAdm.comments.find(c => c.id === cmtId1)));
+  // An edit to a normal (shared) comment stays shared — it does not need re-approving.
+  const cEdit2 = await call('/api/comment', { roundId: RID, body: 'Intro runs long, but the hook saves it.' }, 'POST', { 'X-Player-Token': t2 });
+  cAdm = (await call(`/api/admin/comments?sessionId=${SID}`, null, 'GET', AH)).d;
+  ok('editing a SHARED comment keeps it shared', cEdit2.status === 200
+    && cAdm.comments.find(c => c.body.startsWith('Intro runs long')).status === 'shared', JSON.stringify(cAdm.comments.map(c => c.status)));
 
   // Bulk actions + counts on the rounds list.
-  const cBulk = await call('/api/admin/comment', { sessionId: SID, roundId: RID, status: 'shared' }, 'POST', AH);
-  ok('host can share a whole round at once', cBulk.status === 200 && cBulk.d.changed === 3, JSON.stringify(cBulk.d));
-  const cRounds = (await call(`/api/admin/rounds?sessionId=${SID}`, null, 'GET', AH)).d;
-  const cRow = cRounds.rounds.find(r => r.id === RID);
-  ok('rounds list reports comment counts', cRow.comments === 3 && cRow.comments_shared === 3 && cRow.comments_pending === 0, JSON.stringify(cRow));
+  const cBulk = await call('/api/admin/comment', { sessionId: SID, roundId: RID, status: 'hidden' }, 'POST', AH);
+  ok('host can reject a whole round at once', cBulk.status === 200 && cBulk.d.changed === 3, JSON.stringify(cBulk.d));
+  let cRounds = (await call(`/api/admin/rounds?sessionId=${SID}`, null, 'GET', AH)).d;
+  let cRow = cRounds.rounds.find(r => r.id === RID);
+  ok('rounds list reports rejected counts', cRow.comments === 3 && cRow.comments_shared === 0 && cRow.comments_hidden === 3, JSON.stringify(cRow));
+  await call('/api/admin/comment', { sessionId: SID, roundId: RID, status: 'shared' }, 'POST', AH);
+  cRounds = (await call(`/api/admin/rounds?sessionId=${SID}`, null, 'GET', AH)).d;
+  cRow = cRounds.rounds.find(r => r.id === RID);
+  ok('host can restore a whole round', cRow.comments_shared === 3 && cRow.comments_hidden === 0, JSON.stringify(cRow));
 
   // Clearing the box deletes the row outright — a blank card would sit in the queue forever.
   const cClear = await call('/api/comment', { roundId: RID, body: '   ' }, 'POST', { 'X-Player-Token': t3 });

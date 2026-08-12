@@ -1,0 +1,24 @@
+-- 029_comments_default_shared.sql
+-- Round comments flip from approve-in to reject-by-exception (operator's call).
+--
+-- 027 shipped comments as `pending` by default, requiring the host to approve each one
+-- before it reached the artist. In practice that makes host inaction mean "nothing ships",
+-- which quietly kills the feature on any week the host doesn't work the queue. The operator
+-- would rather everything ship and selectively reject — so the default becomes 'shared'
+-- and the host's job is removing the occasional bad one.
+--
+-- 'pending' is RETIRED rather than kept as an unused third state. A status that still gates
+-- sends but nothing ever produces is a trap: it reads as "reviewed and held" while actually
+-- meaning "unreachable". Statuses are now exactly shared | hidden.
+--
+-- The conversion is one set-based UPDATE, not a per-row loop — bounded work, safe on the
+-- light/boot path (same shape as 025's backfill). Realistically it touches a handful of
+-- rows: 027 deployed days ago and comments only exist for rooms played since.
+--
+-- NOTE: the column DEFAULT is deliberately left alone. Nothing relies on it — the INSERT in
+-- /api/comment always writes status explicitly — and ALTER COLUMN ... SET DEFAULT is not
+-- portable to SQLite, so changing it would diverge the two dialects for no gain.
+--
+-- Additive + idempotent; safe on boot. Statements separated by a line of exactly --->.
+
+UPDATE round_comments SET status = 'shared' WHERE status = 'pending'

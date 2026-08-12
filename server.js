@@ -3051,13 +3051,17 @@ async function handleApi(req, res, url) {
       await db.run('DELETE FROM round_comments WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
       return send(res, 200, { saved: true, body: '' });
     }
-    // An edit resets status to 'pending'. Fails CLOSED on purpose: without it an A&R
-    // could get benign text approved and then swap in something the host never read.
+    // Comments are shared by DEFAULT (029) — the host rejects the occasional bad one
+    // rather than approving every good one. An edit therefore stays shared, EXCEPT on a
+    // comment the host already rejected: 'hidden' is sticky, or editing would be a
+    // one-click way to undo a rejection.
     await db.run(
       `INSERT INTO round_comments (id, round_id, session_id, participant_id, body, status, created_at, updated_at)
-       VALUES (?,?,?,?,?, 'pending', ?, ?)
+       VALUES (?,?,?,?,?, 'shared', ?, ?)
        ON CONFLICT (round_id, participant_id)
-       DO UPDATE SET body = excluded.body, status = 'pending', updated_at = excluded.updated_at`,
+       DO UPDATE SET body = excluded.body,
+                     status = CASE WHEN round_comments.status = 'hidden' THEN 'hidden' ELSE 'shared' END,
+                     updated_at = excluded.updated_at`,
       [id(9), round.id, round.session_id, participant.id, text, ts, ts]);
     return send(res, 200, { saved: true, body: text });
   }
@@ -3124,7 +3128,7 @@ async function handleApi(req, res, url) {
               (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id) AS comments,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared,
-              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'pending') AS comments_pending,
+              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'hidden') AS comments_hidden,
               -- Per-round notice state drives the Rounds-tab 📨 button: whether it reads
               -- "send" or "resend", and whether the last attempt failed (and why).
               (SELECT n.status   FROM artist_notices n WHERE n.round_id = r.id AND n.channel = 'email') AS notice_email_status,
@@ -3146,7 +3150,7 @@ async function handleApi(req, res, url) {
       votes: Number(r.votes) || 0,
       comments: Number(r.comments) || 0,
       comments_shared: Number(r.comments_shared) || 0,
-      comments_pending: Number(r.comments_pending) || 0,
+      comments_hidden: Number(r.comments_hidden) || 0,
       notice: {
         email: r.notice_email_status
           ? { status: r.notice_email_status, at: r.notice_email_at != null ? Number(r.notice_email_at) : null, error: r.notice_email_error || null }
@@ -3163,10 +3167,10 @@ async function handleApi(req, res, url) {
   }
 
   // ----- round comments: the host's moderation queue (admin/owner only) -----
-  // The ONLY read path for comment bodies besides the author's own. Comments default to
-  // 'pending' and reach the artist only once the host flips them to 'shared'.
-  // PII surface matches the public boards exactly — display name, role, city. Never the
-  // commenter's email or phone.
+  // The ONLY read path for comment bodies besides the author's own. Comments are 'shared'
+  // by default (029) — this queue is where the host REJECTS the occasional bad one, not
+  // where they approve the good ones. PII surface matches the public boards exactly —
+  // display name, role, city. Never the commenter's email or phone.
   if (p === '/api/admin/comments' && method === 'GET') {
     const sessionId = url.searchParams.get('sessionId');
     const session = await canAdminSession(req, sessionId);
@@ -3193,14 +3197,15 @@ async function handleApi(req, res, url) {
     })) });
   }
 
-  // Flip one comment, or every comment on a round (the "Share all" / "Hide all" buttons).
-  // 'hidden' is an explicit reject kept distinct from 'pending' so the host's queue count
-  // actually drains each week instead of carrying the same junk forward.
+  // Reject one comment, or every comment on a round ("Reject all" / "Restore all").
+  // Exactly two states: 'shared' (the default — goes to the artist) and 'hidden' (the
+  // host rejected it). 027's 'pending' was retired in 029 — a status that still gates
+  // sends but nothing produces reads as "held for review" while meaning "unreachable".
   if (p === '/api/admin/comment' && method === 'POST') {
     const { sessionId, commentId, roundId, status } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
-    if (!['pending', 'shared', 'hidden'].includes(status)) return bad(res, 'Bad status');
+    if (!['shared', 'hidden'].includes(status)) return bad(res, 'Bad status');
     let r;
     if (commentId) {
       r = await db.run('UPDATE round_comments SET status = ? WHERE id = ? AND session_id = ?', [status, commentId, sessionId]);
@@ -3730,22 +3735,7 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
-    if (round.status === 'voting') {
-      await db.run("UPDATE rounds SET status = 'closed' WHERE id = ?", [roundId]);
-    }
-    const out = await ratifyRound(round);
-    // Referral bonuses fire BEFORE the board compute so the pushed board includes them.
-    try { await creditReferralMilestones(round, session); }
-    catch (e) { console.error('[referral] milestone credit failed:', e.message); }
-    // Compute the public series board ONCE here and push it as payload, so every connected
-    // homepage applies it directly instead of each re-fetching + recomputing (O(1) at scale).
-    let lbData = null;
-    if (session.series_id) {
-      try { lbData = { series: { id: session.series_id, leaderboard: await homeSeriesBoard(session.series_id) } }; }
-      catch (e) { console.error('[realtime] series board compute failed:', e.message); }
-    }
-    await realtime.publish(sessionId, 'leaderboard', lbData);
-    return send(res, 200, { ok: true, poll_type: out.poll_type, room_average: out.room_average ?? null, split_a: out.split_a ?? null, players: out.ranked.length });
+    return send(res, 200, await ratifyAndPublish(round, session));
   }
 
   if (p === '/api/admin/session/end' && method === 'POST') {
@@ -4388,9 +4378,18 @@ async function handleApi(req, res, url) {
     const q = await db.all(
       'SELECT channel, status, COUNT(*) AS c FROM artist_notices WHERE session_id = ? GROUP BY channel, status', [sessionId]);
     const tally = (ch, st) => Number((q.find(r => r.channel === ch && r.status === st) || {}).c) || 0;
+    // How many A&R comments this batch would carry. Comments ship by DEFAULT (029), so
+    // host inaction means they all go out — the count belongs on the send panel, at the
+    // moment it's actionable, not only in the Rounds tab where it's easy to never open.
+    const cmt = await db.get(
+      `SELECT COUNT(*) AS c FROM round_comments rc
+         JOIN rounds r ON r.id = rc.round_id
+        WHERE rc.session_id = ? AND rc.status = 'shared'
+          AND r.status = 'ratified' AND COALESCE(r.poll_type,'rating') <> 'binary'`, [sessionId]);
     return send(res, 200, {
       configured: !!process.env.BLOB_READ_WRITE_TOKEN,
       rounds: rounds.length, withEmail, withPhone, missing: rounds.length - withEmail,
+      comments: Number(cmt && cmt.c) || 0,
       smsWindow: { open: withinSmsWindow(), label: nextSmsWindowLabel(),
         from: SMS_WINDOW_START_LABEL, to: SMS_WINDOW_END_LABEL },
       email: { sent: tally('email', 'sent'), failed: tally('email', 'failed'), pending: tally('email', 'pending') },

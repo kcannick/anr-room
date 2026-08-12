@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 028; suite 811 green)
+## Current state (migrations through 030; suite 845 green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -156,13 +156,21 @@ live on anr.makinitmag.com.
 - **Optional round comments** (027): after locking in, an A&R may leave ONE short note
   (≤280 chars) on a rating round. Own table `round_comments`, never a column on `votes`
   (that table is read by every board sum and ratify recompute). SEALED like the split.
-  Default `status='pending'` — nothing reaches an artist until the host flips it to
-  `shared` in the Rounds tab (`hidden` is an explicit reject, kept distinct so the queue
-  drains); shared comments ride the artist's report email, attributed by A&R name + role +
-  city. An A&R editing an approved comment resets it to pending (fails closed). The write
-  window deliberately stays open past ratify and the composer is ONE DOM node moved between
-  the locked and results screens (plus a localStorage mirror) — the reveal must never eat
-  half-typed work. Versus rounds take no comments. **No points are awarded** (see below).
+  **REJECT-BY-EXCEPTION as of 029** (operator's call — 027 originally shipped approve-in):
+  comments default to `status='shared'` and ride the artist's report email attributed by
+  A&R name + role + city; the host's job in the Rounds tab is REJECTING the odd bad one,
+  not approving each good one. Approve-in was reversed because host inaction meant nothing
+  ever shipped, which kills the feature on any week the queue doesn't get worked. 029
+  retired `pending` entirely rather than leaving it as an unused third state — a status
+  that still gates sends but nothing produces reads as "held for review" while meaning
+  "unreachable". Exactly two states: `shared | hidden`. `hidden` is STICKY across an A&R's
+  edit (else editing is a one-click undo of the host's rejection); editing a shared comment
+  keeps it shared. **The tradeoff to remember: inaction now ships everything**, and there
+  is no unsend — so the artist-notices send panel prints how many comments are about to go
+  out, with a link into the Rounds tab, and the confirm dialog repeats it.
+  The write window deliberately stays open past ratify and the composer is ONE DOM node
+  moved between the locked and results screens (plus a localStorage mirror) — the reveal
+  must never eat half-typed work. Versus rounds take no comments. **No points** (see below).
 
 - **Notification contact center** (028): A&Rs choose how they're contacted. Own table
   `notify_prefs (uid, topic, channel, enabled)` — never columns on `users`, because topics

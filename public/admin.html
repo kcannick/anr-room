@@ -1141,10 +1141,10 @@ async function loadRounds(){
       // Every played round is editable — descriptive fields only (the server refuses to
       // touch scores). This is how contact gets added retroactively, after the show.
       const edit=`<button class="btn ghost sm" style="padding:6px 9px" onclick="event.stopPropagation();toggleRoundEdit('${r.id}')" title="Edit song details + artist contact">✎</button>`;
-      // A&R comments on this round. Gold while any are still awaiting review, so the
-      // queue reads at a glance and actually drains after a show.
-      const cN=r.comments||0, cP=r.comments_pending||0;
-      const cmt=cN?`<button class="btn ghost sm" style="padding:6px 9px${cP?';border-color:var(--gold);color:var(--gold)':''}" onclick="event.stopPropagation();toggleRoundComments('${r.id}')" title="${cN} A&amp;R comment${cN==1?'':'s'}${cP?' — '+cP+' awaiting your review':' — all reviewed'}">💬&nbsp;${cN}</button>`:'';
+      // A&R comments on this round. The badge counts what will GO OUT with the artist's
+      // report — comments ship by default, so that's the number the host needs to see.
+      const cN=r.comments||0, cS=r.comments_shared||0, cH=r.comments_hidden||0;
+      const cmt=cN?`<button class="btn ghost sm" style="padding:6px 9px" onclick="event.stopPropagation();toggleRoundComments('${r.id}')" title="${cS} A&amp;R comment${cS==1?'':'s'} going to the artist${cH?' — '+cH+' rejected':''}. Click to review.">💬&nbsp;${cS}</button>`:'';
       // Contact state, but only where a report is actually deliverable (rated rounds).
       const wantsContact=!isVs&&r.status==='ratified'&&r.votes>0;
       const hasContact=!!(r.artist_email||r.artist_phone);
@@ -1195,8 +1195,9 @@ async function loadRounds(){
 }
 // ---- A&R comment moderation ----
 // Comments are SEALED — this panel and the author's own screen are the only places a
-// body is ever readable. Nothing reaches the artist until it's explicitly Shared here;
-// Hide is a real reject, kept distinct from unreviewed so the pending count drains.
+// body is ever readable. They go to the artist by DEFAULT (029): this panel is where the
+// host REJECTS the occasional bad one, not where they approve the good ones. Two states
+// only, shared | hidden. Rejection is the exception, so it's the button that gets emphasis.
 function cmtInitials(n){
   const parts=String(n||'').trim().split(/\s+/).filter(Boolean);
   return ((parts[0]||'?')[0]+(parts.length>1?parts[parts.length-1][0]:'')).toUpperCase();
@@ -1207,9 +1208,9 @@ function renderRoundComments(rid){
   const r=ROUNDS_CACHE.find(x=>x.id===rid);
   if(!list.length){box.innerHTML='<div class="muted" style="font-size:12px;padding:8px 0">No comments on this round.</div>';return;}
   const shared=list.filter(c=>c.status==='shared').length;
-  const pending=list.filter(c=>c.status==='pending').length;
+  const hidden=list.filter(c=>c.status==='hidden').length;
   const reach=r&&r.artist_email?`<span class="muted" style="font-size:11.5px">Artist: ${esc(r.artist_email)}</span>`
-    :'<span style="font-size:11.5px;color:var(--gold)">⚠ No artist email — shared comments have nowhere to go</span>';
+    :'<span style="font-size:11.5px;color:var(--gold)">⚠ No artist email — these have nowhere to go</span>';
   const cards=list.map(c=>{
     const meta=[c.role,c.location].filter(Boolean).map(esc).join(' · ');
     const isShared=c.status==='shared', isHidden=c.status==='hidden';
@@ -1225,20 +1226,24 @@ function renderRoundComments(rid){
         <div style="font-size:13.5px;line-height:1.5;color:var(--ink-dim,#a9a2c9);margin-top:5px;white-space:pre-wrap;overflow-wrap:anywhere">${esc(c.body)}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex:none">
-        <button class="btn ${isShared?'good':'ghost'} sm" style="padding:6px 11px" onclick="setCommentStatus('${rid}','${c.id}','${isShared?'pending':'shared'}',this)">${isShared?'✓ Shared':'Share'}</button>
-        <button class="btn ghost sm" style="padding:6px 11px${isHidden?';border-color:var(--gold);color:var(--gold)':''}" onclick="setCommentStatus('${rid}','${c.id}','${isHidden?'pending':'hidden'}',this)">${isHidden?'Hidden':'Hide'}</button>
+        ${isHidden
+          ? `<span class="mono" style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--hot,#ff5d6c);text-align:center">Rejected</span>
+             <button class="btn ghost sm" style="padding:6px 11px" onclick="setCommentStatus('${rid}','${c.id}','shared',this)">Restore</button>`
+          : `<span class="mono" style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--signal);text-align:center">Going out</span>
+             <button class="btn danger sm" style="padding:6px 11px" onclick="setCommentStatus('${rid}','${c.id}','hidden',this)">Reject</button>`}
       </div>
     </div>`;
   }).join('');
   box.innerHTML=`<div style="background:var(--bg-deep,#0f0c1d);border:1px solid #2e2750;border-radius:12px;padding:13px">
     <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px;padding-bottom:11px;border-bottom:1px solid #241d3d">
-      <span class="mono" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:${pending?'var(--gold)':'var(--ink-faint,#8c84ad)'}">${list.length} comment${list.length==1?'':'s'} · ${shared} shared · ${pending} pending</span>
+      <span class="mono" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--signal)">${shared} going to the artist</span>
+      ${hidden?`<span class="mono" style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--hot,#ff5d6c)">${hidden} rejected</span>`:''}
       <span style="flex:1"></span>${reach}
-      <button class="btn ghost sm" onclick="bulkComments('${rid}','shared',this)">Share all</button>
-      <button class="btn ghost sm" onclick="bulkComments('${rid}','hidden',this)">Hide all</button>
+      <button class="btn danger sm" onclick="bulkComments('${rid}','hidden',this)">Reject all</button>
+      ${hidden?`<button class="btn ghost sm" onclick="bulkComments('${rid}','shared',this)">Restore all</button>`:''}
     </div>
     ${cards}
-    <div class="muted" style="font-size:11px;margin-top:4px">Only <b>Shared</b> comments go out with the artist's report email — with the A&amp;R's name on them. An A&amp;R editing their comment sends it back to pending.</div>
+    <div class="muted" style="font-size:11px;margin-top:4px">Comments go out with the artist's report email <b>by default</b>, carrying the A&amp;R's name — reject the ones you don't want. A rejected comment stays rejected even if the A&amp;R edits it.</div>
   </div>`;
 }
 window.toggleRoundComments=(rid)=>{
@@ -1262,20 +1267,17 @@ window.bulkComments=async(rid,status,btn)=>{
   try{ await api('/api/admin/comment',{sessionId:SID,roundId:rid,status}); refreshRoundCommentCounts(rid); }
   catch(e){ list.forEach((c,i)=>{c.status=prev[i];}); renderRoundComments(rid); alert(e.message); }
 };
-// Keep the row's 💬 badge (count + gold-while-pending) in step without refetching the
-// whole tab, which would collapse every panel the host has open.
+// Keep the row's 💬 badge in step without refetching the whole tab, which would collapse
+// every panel the host has open. The badge counts what will actually GO OUT — under
+// reject-by-exception that's the number worth seeing at a glance, not the raw total.
 function refreshRoundCommentCounts(rid){
   const r=ROUNDS_CACHE.find(x=>x.id===rid); if(!r)return;
   const list=COMMENTS_CACHE.filter(c=>c.round_id===rid);
   r.comments=list.length;
   r.comments_shared=list.filter(c=>c.status==='shared').length;
-  r.comments_pending=list.filter(c=>c.status==='pending').length;
+  r.comments_hidden=list.filter(c=>c.status==='hidden').length;
   const btn=document.querySelector(`button[onclick*="toggleRoundComments('${rid}')"]`);
-  if(btn){
-    btn.innerHTML='💬&nbsp;'+r.comments;
-    btn.style.borderColor=r.comments_pending?'var(--gold)':'';
-    btn.style.color=r.comments_pending?'var(--gold)':'';
-  }
+  if(btn)btn.innerHTML='💬&nbsp;'+r.comments_shared;
 }
 
 // Inline round editor. Open on any played round — including ratified ones, which is the
@@ -2678,7 +2680,12 @@ window.refreshArtistNotices=async()=>{
     const smsLine=st.withPhone
       ? `text &nbsp;· ${pill(st.withPhone,'reachable')} — ${st.sms.pending?st.sms.pending+' queued, '+st.smsWindow.label:(st.sms.sent?st.sms.sent+' sent':'none queued')}`
       : 'text &nbsp;· no phone numbers on file';
-    box.innerHTML=`email · ${pill(st.withEmail,'of '+st.rounds+' artists reachable')}${miss}<br>${smsLine}<br>`
+    // Comments ride along by default, so surface the count HERE — the send panel is the
+    // last point where the host can still pull one, and the Rounds tab is easy to skip.
+    const cmtLine=st.comments
+      ? `<br>notes &nbsp;· <b style="color:var(--signal)">${st.comments}</b> A&amp;R comment${st.comments==1?'':'s'} will be included — <a href="#" onclick="setTab('paneRounds',true);document.getElementById('paneRounds').scrollIntoView();return false" style="color:var(--gold)">review in Rounds</a>`
+      : '';
+    box.innerHTML=`email · ${pill(st.withEmail,'of '+st.rounds+' artists reachable')}${miss}<br>${smsLine}${cmtLine}<br>`
       +`status · ${st.email.sent} sent / ${st.email.pending} pending${st.email.failed?' / <span style="color:var(--bad,#e05f5f)">'+st.email.failed+' failed</span>':''}`;
     const btn=$('#anSend');
     if(btn){
@@ -2696,9 +2703,10 @@ $('#anSend')&&($('#anSend').onclick=async()=>{
     if(!st.configured){alert('Image hosting isn’t set up yet (BLOB_READ_WRITE_TOKEN). Report cards need it to render.');return;}
     const already=(st.email.sent||st.sms.sent)?'\n\nAlready sent: '+st.email.sent+' email, '+st.sms.sent+' text — those are skipped.':'';
     const smsNote=st.withPhone?('\n'+st.withPhone+' text'+(st.withPhone==1?'':'s')+' — '+(st.smsWindow.open?'sending now (inside the 10 AM–10:30 PM ET window).':'queued; they send automatically after 10 AM ET.')):'';
+    const cmtNote=st.comments?('\n\n'+st.comments+' A&R comment'+(st.comments==1?'':'s')+' will be included, with the A&R\'s name. Reject any you don\'t want in the Rounds tab first — this can\'t be undone once sent.'):'';
     if(!confirm('Email the full report card to '+st.withEmail+' artist'+(st.withEmail==1?'':'s')+'?'
       +(st.missing?'\n\n'+st.missing+' round'+(st.missing==1?' has':'s have')+' no contact and will be skipped — add it in the Rounds tab.':'')
-      +smsNote+already))return;
+      +cmtNote+smsNote+already))return;
     anBusy=true;btn.disabled=true;
     const start=await api('/api/admin/session/artist-notices/start',{sessionId:SID});
     let guard=0,sent=0,failed=0;

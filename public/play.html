@@ -580,7 +580,7 @@
       </div>
     </div>
     <div class="c-privacy" id="cmtPrivacy">
-      🔒 <span>Nobody in the room sees this. The host may share selected comments with the artist — under your A&amp;R name.</span>
+      🔒 <span>Nobody in the room sees this. It goes to the artist under your A&amp;R name, unless the host removes it.</span>
     </div>
   </div>
 
@@ -1600,9 +1600,10 @@ function cmtPaint(){
   const showSaved = !!cmtSaved && !cmtEditing;
   $('#cmtEdit').classList.toggle('hide', showSaved);
   $('#cmtSaved').classList.toggle('hide', !showSaved);
-  $('#cmtPrivacy').querySelector('span').innerHTML = cmtSaved
-    ? "Sent to the host. If it's shared with the artist it'll carry your A&R name."
-    : 'Nobody in the room sees this. The host may share selected comments with the artist — under your A&R name.';
+  // One line in every state: the A&R should never be unclear that this reaches the artist.
+  // Comments ship by default (029) — the host removes the odd one rather than approving each.
+  $('#cmtPrivacy').querySelector('span').textContent =
+    'Nobody in the room sees this. It goes to the artist under your A&R name, unless the host removes it.';
   if(showSaved){
     $('#cmtTitle').textContent='✓ Your comment';
     $('#cmtPill').textContent='Saved';
@@ -1616,7 +1617,7 @@ function cmtPaint(){
   $('#cmtPill').textContent='Optional';
   $('#cmtHelp').classList.remove('hide');
   $('#cmtHelp').textContent = cmtSaved
-    ? 'Edits go back to the host for review.'
+    ? 'Your edit replaces what the artist receives.'
     : (cmtPhase==='results' && v)
       ? "Your draft is still here — the reveal doesn't cut you off."
       : "One or two lines. What landed, what didn't.";
