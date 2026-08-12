@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 030; suite 845 green)
+## Current state (migrations through 031; suite 863 green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -251,6 +251,30 @@ live on anr.makinitmag.com.
   the context is primed on first click.
   Tests use a `startVoting()` helper (idempotent — a no-op unless something is listening)
   after each add-round, since adding a record now puts it on deck rather than starting a clock.
+
+- **Review-site submissions straight to the fields** (031): `sessions.ingest_auto` = 1 makes
+  the console fill the queue form the moment a push from makinitmag.com/review lands, instead
+  of lighting up "Pull latest submission" — one press per song instead of two. Set per room
+  (Edit room settings) AND as a **host default** (My rooms → Defaults): the show spins up a
+  NEW room every week, so a per-room-only flag is off the week you forget. **Platform-admin
+  only to arm** (per room and as a default, re-checked against the live role at creation
+  rather than trusted from the stored blob) because the staged payload carries the artist's
+  email/phone; turning it OFF is not privileged. It fills the FORM, never the room — "Add &
+  open round" still gates what the room sees. **It does NOT make a song openable from the
+  Stream Deck**: Advance drives off the server-side queue (`nextStage()` → `none` → 400
+  "Nothing queued"), and a filled form is browser text the server has never seen. Delivering
+  the push into the QUEUE instead would fix that; the operator chose the form (2026-08-12).
+  The newest push always wins (operator's call), so auto-fill can replace a record staged but
+  not added — hence the one-press undo, the 2s field flash, and no `focus()` steal. It
+  baselines on console open so a record staged before you got there stays behind the button,
+  and baselines even when the slot is EMPTY (or the first push of the night gets eaten as the
+  baseline). **No submit-link heuristic**: the link decides which pull BUTTON shows, but it
+  must never silently override the explicit room toggle — the first pass skipped
+  nero.fan-linked rooms and would have read as broken rather than off. The ingest POST
+  publishes to live auto rooms on the room's existing Ably channel so it lands in ~1s instead
+  of on the console's 15s connected-poll heartbeat. The staging slot is still ONE GLOBAL
+  settings row: two pushes before you add = the first is gone, and two auto rooms would draw
+  from the same slot — fine for a one-operator show, a per-room queue is a different change.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
