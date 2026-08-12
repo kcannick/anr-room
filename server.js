@@ -1783,6 +1783,7 @@ async function adminState(session, opts = {}) {
       broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
       geo_mode: session.geo_mode || 'off', geo_lat: session.geo_lat ?? null, geo_lng: session.geo_lng ?? null, geo_radius: session.geo_radius || null, geo_label: session.geo_label || null,
       visibility: session.visibility || 'public', access_code: session.access_code || null,
+      ingest_auto: (session.ingest_auto === 1 || session.ingest_auto === true) ? 1 : 0,
       scheduled_at: session.scheduled_at ? Number(session.scheduled_at) : null,
       series_id: session.series_id || null },
     pools: {
@@ -2009,20 +2010,26 @@ async function handleApi(req, res, url) {
     // Host default banner: applied when the creator set one and no explicit banner came in.
     // (Watch/submit/description defaults prefill CLIENT-side so the host can clear them.)
     let bidFinal = bid;
-    if (!bidFinal && creator.host_defaults) {
+    // Review-site auto-fill is a host default too: the show spins up a NEW room every week,
+    // and a mode you have to re-arm every week is a mode that's off the night you forget.
+    let ingestAutoFinal = 0;
+    if (creator.host_defaults) {
       try {
         const hd = JSON.parse(creator.host_defaults);
-        if (hd && hd.bannerId) {
+        if (hd && hd.bannerId && !bidFinal) {
           const b = await db.get('SELECT id FROM banners WHERE id = ? AND (owner_uid = ? OR owner_uid IS NULL)', [hd.bannerId, creator.uid]);
           if (b) bidFinal = b.id;
         }
+        // Re-checked at creation, not trusted from the stored blob: a host demoted since
+        // setting it must not keep minting rooms that stream artist contact at them.
+        if (hd && hd.ingestAuto && creator.role === 'admin') ingestAutoFinal = 1;
       } catch (e) { /* malformed defaults never block creation */ }
     }
     // A room born 'live' starts NOW — stamp scheduled_at so every started room has a
     // real start time (an unscheduled 'upcoming' room gets stamped at go-live instead).
     const ts = now();
-    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, submit_url, lobby_message, banner_id, geo_lat, geo_lng, geo_radius, geo_label, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : (st === 'live' ? ts : null), dm, pt, wu, su, lm, bidFinal, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, ts]);
+    await db.run('INSERT INTO sessions (id, name, admin_token, owner_uid, status, scheduled_at, default_minutes, poll_type, watch_url, submit_url, lobby_message, banner_id, geo_lat, geo_lng, geo_radius, geo_label, ingest_auto, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [sid, name.trim(), adminToken, ownerUid, st, scheduledAt ? Number(scheduledAt) : (st === 'live' ? ts : null), dm, pt, wu, su, lm, bidFinal, haveGeo ? gla : null, haveGeo ? gln : null, haveGeo ? grad : null, glabel, ingestAutoFinal, ts]);
     return send(res, 200, { sessionId: sid, adminToken, pollType: pt });
   }
 
@@ -2381,7 +2388,7 @@ async function handleApi(req, res, url) {
       const b = await db.get('SELECT id, label FROM banners WHERE id = ?', [d.bannerId]);
       if (b) banner = { id: b.id, label: b.label || null }; else d.bannerId = null;
     }
-    return send(res, 200, { defaults: { watchUrl: d.watchUrl || '', submitUrl: d.submitUrl || '', lobbyMessage: d.lobbyMessage || '', bannerId: d.bannerId || null }, banner });
+    return send(res, 200, { defaults: { watchUrl: d.watchUrl || '', submitUrl: d.submitUrl || '', lobbyMessage: d.lobbyMessage || '', bannerId: d.bannerId || null, ingestAuto: d.ingestAuto ? 1 : 0 }, banner });
   }
   if (p === '/api/me/host-defaults' && method === 'POST') {
     const u = await userFromAuth(req);
@@ -2393,7 +2400,12 @@ async function handleApi(req, res, url) {
       submitUrl: cleanUrl(body.submitUrl) || null,
       lobbyMessage: (body.lobbyMessage || '').toString().trim().slice(0, 500) || null,
       bannerId: ('bannerId' in body) ? (body.bannerId || null) : (cur.bannerId || null),
+      // Auto-fill default for NEW rooms. Preserved when absent (the console saves the three
+      // text defaults on their own) — an older client must never silently switch it off.
+      ingestAuto: ('ingestAuto' in body) ? ((body.ingestAuto === 1 || body.ingestAuto === true || body.ingestAuto === '1') ? 1 : 0) : (cur.ingestAuto ? 1 : 0),
     };
+    // Same gate as arming a single room: the staged push carries artist contact.
+    if (d.ingestAuto && u.role !== 'admin') return bad(res, 'Admin only', 403);
     if (d.bannerId) {
       const b = await db.get('SELECT id FROM banners WHERE id = ? AND (owner_uid = ? OR owner_uid IS NULL)', [d.bannerId, u.uid]);
       if (!b) d.bannerId = null;
@@ -2988,7 +3000,16 @@ async function handleApi(req, res, url) {
       source: clip(body.source, 60) || 'makinitmag', at: now() };
     if (!rec.title && !rec.artist) return send(res, 400, { error: 'Need at least a title or artist' }, cors);
     await db.run("INSERT INTO settings (k,v) VALUES ('ingest_latest', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [JSON.stringify(rec)]);
-    return send(res, 200, { ok: true, staged: { title: rec.title, artist: rec.artist } }, cors);
+    // Rooms in auto mode fill their queue form from this push — nudge them now instead of
+    // making the host wait out the console's poll (which drops to 15s once Ably connects).
+    // No new channel or token scope: this is the room's own channel, which the console is
+    // already subscribed to. Bounded + non-fatal; a realtime hiccup just costs the poll.
+    let autoRooms = [];
+    try {
+      autoRooms = await db.all("SELECT id FROM sessions WHERE ingest_auto = 1 AND status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 5", []);
+      for (const s of autoRooms) await realtime.publish(s.id, 'ingest');
+    } catch (e) { console.error('[ingest] auto notify failed:', e.message); }
+    return send(res, 200, { ok: true, staged: { title: rec.title, artist: rec.artist }, autoRooms: autoRooms.length }, cors);
   }
 
   // ===== ANALYTICS DATA FEED (static-token gated; machine-readable) =====
@@ -4070,6 +4091,7 @@ async function handleApi(req, res, url) {
         geoMode: s.geo_mode || 'off', geoLat: s.geo_lat, geoLng: s.geo_lng,
         geoRadius: s.geo_radius, geoLabel: s.geo_label || null,
         visibility: s.visibility || 'public', accessCode: s.access_code || null,
+        ingestAuto: (s.ingest_auto === 1 || s.ingest_auto === true) ? 1 : 0,
       },
       dependents: { votes: v, participants: pc, ratifiedRounds: rr, hasDependents: (v > 0 || pc > 0 || rr > 0) },
     });
@@ -4324,6 +4346,15 @@ async function handleApi(req, res, url) {
     if ('accessCode' in body) {
       const c = (body.accessCode || '').toString().trim().toUpperCase().slice(0, 24);
       sets.push('access_code = ?'); vals.push(c || null);
+    }
+    // Review-site submission delivery: 0 = stage behind the pull button, 1 = auto-fill the
+    // queue form the moment a push lands. Platform-admin only, matching the pull itself —
+    // the staged payload carries the artist's email/phone, so a plain host must not be able
+    // to arm a mode that streams it into their console.
+    if ('ingestAuto' in body) {
+      const on = body.ingestAuto === 1 || body.ingestAuto === true || body.ingestAuto === '1';
+      if (on && !(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+      sets.push('ingest_auto = ?'); vals.push(on ? 1 : 0);
     }
     if (!sets.length) return bad(res, 'Nothing to update');
     vals.push(body.sessionId);

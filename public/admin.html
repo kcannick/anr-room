@@ -22,6 +22,10 @@
   .card{min-width:0}
   #paneRound,#paneBoard,#paneRounds,.feed{overflow-x:auto}
   .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px}
+  /* Auto-filled-from-the-review-site flash: fields changing under the host has to be
+     visible, or it reads as the console losing their typing. Two seconds, then gone. */
+  @keyframes ingestFlash{0%{background:rgba(75,183,73,.22);border-color:var(--signal)}100%{background:var(--inset);border-color:var(--line)}}
+  .ingest-lit{animation:ingestFlash 2s ease-out 1}
   /* overlay builder */
   .ob-cols{display:flex;gap:18px;flex-wrap:wrap}
   .ob-form{flex:1;min-width:260px;display:flex;flex-direction:column;gap:10px}
@@ -543,6 +547,14 @@
         <input id="cfgWatch" placeholder="https://…"></div>
       <div><label>Submission link <span class="muted">(where artists submit; a nero.fan/…/live link enables “Pull from Nero”)</span></label>
         <input id="cfgSubmit" placeholder="https://…"></div>
+      <!-- Review-site delivery mode (platform-admin only — the push carries artist contact). -->
+      <div id="seIngestRow" class="hide"><label>Review-site submissions <span class="muted">(pushed from makinitmag.com)</span></label>
+        <select id="cfgIngestAuto" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+          <option value="0">Hold for the button — I pull each one when I'm ready</option>
+          <option value="1">Send straight to the fields — fill the queue form on arrival</option>
+        </select>
+        <div class="muted" style="font-size:12px;margin-top:6px">Straight-to-fields still waits on you to press <b>Add &amp; open round</b> — it only saves the pull. The newest push always wins, so a record you staged but didn't add gets replaced.</div>
+      </div>
       <div style="border-top:1px solid var(--line);padding-top:12px">
         <label>Who can find this room</label>
         <select id="cfgVisibility" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
@@ -894,6 +906,14 @@
       <div><label>Default submission link</label><input id="hdSubmit" placeholder="https://…"></div>
       <div><label>Default description <span class="muted">(A&amp;Rs see this while they wait)</span></label>
         <textarea id="hdLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea></div>
+      <!-- Admin-only: a new room every week means a per-room-only toggle is off the week you forget. -->
+      <div id="hdIngestRow" class="hide"><label>Review-site submissions <span class="muted">(pushed from makinitmag.com)</span></label>
+        <select id="hdIngestAuto" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
+          <option value="0">Hold for the button</option>
+          <option value="1">Send straight to the fields</option>
+        </select>
+        <div class="muted" style="font-size:11px;margin-top:6px">Applies to rooms you create from now on. Existing rooms keep whatever they're set to.</div>
+      </div>
       <div style="border-top:1px solid var(--line);padding-top:12px">
         <label>Default banner <span class="muted">(auto-assigned to rooms you create)</span></label>
         <div id="hdBannerRow" class="muted" style="font-size:12.5px;margin:4px 0 8px">None set.</div>
@@ -1736,6 +1756,8 @@ async function openHostDefaults(){
   $('#hdWatch').value=d.defaults.watchUrl||'';
   $('#hdSubmit').value=d.defaults.submitUrl||'';
   $('#hdLobby').value=d.defaults.lobbyMessage||'';
+  $('#hdIngestAuto').value=Number(d.defaults.ingestAuto)===1?'1':'0';
+  $('#hdIngestRow').classList.toggle('hide',!isAdmin());
   $('#hdBannerRow').innerHTML=d.banner
     ?`<img src="/api/banner/image?id=${d.banner.id}" alt="" style="height:34px;width:auto;max-width:120px;border-radius:5px;vertical-align:middle;background:#0a0814"> <span>${esc(d.banner.label||'Default banner')}</span> <button class="btn ghost sm" style="margin-left:8px" onclick="hdClearBanner()">Remove</button>`
     :'None set.';
@@ -1758,7 +1780,10 @@ $('#hdSave').onclick=async()=>{
       const dataUri=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
       await api('/api/me/host-defaults/banner',{image_data:dataUri,label:'Default banner'});
     }
-    await api('/api/me/host-defaults',{watchUrl:$('#hdWatch').value.trim(),submitUrl:$('#hdSubmit').value.trim(),lobbyMessage:$('#hdLobby').value.trim()});
+    const hdBody={watchUrl:$('#hdWatch').value.trim(),submitUrl:$('#hdSubmit').value.trim(),lobbyMessage:$('#hdLobby').value.trim()};
+    // Omitted when the row is hidden — the server then preserves it rather than clearing it.
+    if(!$('#hdIngestRow').classList.contains('hide'))hdBody.ingestAuto=Number($('#hdIngestAuto').value)?1:0;
+    await api('/api/me/host-defaults',hdBody);
     await loadHostDefaults();
     $('#hdModal').style.display='none';
   }catch(e){$('#hdErr').textContent=e.message;}
@@ -1794,7 +1819,7 @@ window.editSession=async(sid)=>{
     // Same modal the console uses — one form, two entry points.
     await openSessEdit({ id:m.id, name:m.name, scheduled_at:m.scheduledAt, default_minutes:m.defaultMinutes,
       poll_type:m.pollType, series_id:m.seriesId, lobby_message:m.lobbyMessage, watch_url:m.watchUrl,
-      submit_url:m.submitUrl, visibility:m.visibility, access_code:m.accessCode,
+      submit_url:m.submitUrl, visibility:m.visibility, access_code:m.accessCode, ingest_auto:m.ingestAuto,
       geo_mode:m.geoMode, geo_radius:m.geoRadius, geo_label:m.geoLabel });
   }catch(e){alert(e.message);}
 };
@@ -2524,8 +2549,9 @@ $('#btnAddRound').onclick=async()=>{
     $('#rTitle').value='';$('#rArtist').value='';$('#rNote').value='';$('#rGive').value='';
     $('#rAEmail').value='';$('#rAPhone').value='';
     if($('#rBTitle')){$('#rBTitle').value='';$('#rBArtist').value='';}
-    // A stale "Pulled: …" note would misdescribe the now-empty form.
-    $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');
+    // A stale "Pulled: …" note would misdescribe the now-empty form (and there's nothing
+    // left to undo once the record is on deck).
+    $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');_ingUndo=null;
     refresh();
   }catch(e){$('#addErr').textContent=e.message;}
 };
@@ -2547,6 +2573,33 @@ $('#btnNeroPull').onclick=async()=>{
   finally{b.disabled=false;b.textContent=old;msg.classList.remove('hide');}
 };
 
+// ---- review-site submissions -> the queue form ----
+// ONE writer for both entry points (the manual pull button and auto mode), so a change to
+// which fields a submission owns can't apply to one and not the other. Returns what it
+// displaced, which is what makes auto-fill undoable.
+const INGEST_FIELDS=['rTitle','rArtist','rNote','rAEmail','rAPhone'];
+function fillFromIngest(d){
+  const prev={rTitle:$('#rTitle').value,rArtist:$('#rArtist').value,rNote:$('#rNote').value,rAEmail:$('#rAEmail').value,rAPhone:$('#rAPhone').value};
+  $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
+  // Only touch the note when there's an IG to put in it — the host's own note stays.
+  if(d.instagram)$('#rNote').value='IG: @'+String(d.instagram).replace(/^@/,'');
+  // Contact rides along from the review site so the report card can reach them later.
+  $('#rAEmail').value=d.email||'';$('#rAPhone').value=d.phone||'';
+  return prev;
+}
+function ingestSummary(d){
+  const got=[d.instagram?'IG':null,d.email?'email':null,d.phone?'phone':null].filter(Boolean);
+  return (d.title||'?')+(d.artist?' — '+d.artist:'')+(got.length?' ('+got.join(' + ')+' added)':'');
+}
+// Fields changing on their own has to be SEEN, or it reads as the console eating your typing.
+function flashIngestFields(){
+  for(const id of INGEST_FIELDS){
+    const el=$('#'+id); if(!el)continue;
+    el.classList.remove('ingest-lit'); void el.offsetWidth; el.classList.add('ingest-lit');
+    setTimeout(()=>el.classList.remove('ingest-lit'),2100);
+  }
+}
+
 // Pull the latest song pushed from the magazine review site into the queue form.
 $('#btnIngestPull').onclick=async()=>{
   const b=$('#btnIngestPull'),msg=$('#ingestMsg'),old=b.textContent;
@@ -2555,17 +2608,65 @@ $('#btnIngestPull').onclick=async()=>{
     const d=await api('/api/admin/ingest/latest',null,'GET');
     if(d.empty){msg.textContent='No submission pushed from the review site yet.';}
     else{
-      $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
-      if(d.instagram)$('#rNote').value='IG: @'+String(d.instagram).replace(/^@/,'');
-      // Contact rides along from the review site so the report card can reach them later.
-      $('#rAEmail').value=d.email||'';$('#rAPhone').value=d.phone||'';
-      const got=[d.instagram?'IG':null,d.email?'email':null,d.phone?'phone':null].filter(Boolean);
-      msg.textContent='Pulled: '+(d.title||'?')+(d.artist?' — '+d.artist:'')+(got.length?' ('+got.join(' + ')+' added)':'')+'. Review, then add it.';
+      fillFromIngest(d);
+      _ingUndo=null; // a deliberate pull isn't something to offer to undo
+      if(d.at)_ingMark(Number(d.at));
+      msg.textContent='Pulled: '+ingestSummary(d)+'. Review, then add it.';
       $('#rTitle').focus();
     }
   }catch(e){msg.textContent=e.message;}
   finally{b.disabled=false;b.textContent=old;msg.classList.remove('hide');}
 };
+
+// ---- auto mode: "Send straight to fields" (sessions.ingest_auto) ----
+// The server still stages the push in one global slot; this just applies it without the
+// press. Ably makes it land in about a second (the ingest POST publishes to live auto
+// rooms); the state poll is the fallback. The newest push always wins — the operator's
+// call — so this can replace a record staged but not yet added, which is why it's undoable.
+let _ingSeenAt=null, _ingUndo=null, _ingBusy=false;
+const _ingKey=()=>'anr_ingest_at_'+(SID||'');
+function _ingMark(at){ _ingSeenAt=at; try{localStorage.setItem(_ingKey(),String(at));}catch(e){} }
+async function maybeAutoIngest(st){
+  const s=(st&&st.session)||{};
+  if(!(Number(s.ingest_auto)===1)||!isAdmin()||_ingBusy)return;
+  // NOTE deliberately no "is this a Nero room?" check. The submit link decides which PULL
+  // BUTTON shows, but auto mode is an explicit per-room decision, and a link heuristic
+  // silently overriding it is a feature that looks broken instead of off. (The house default
+  // submission link is a nero.fan/…/live link, so this guard would have killed auto-fill on
+  // every new room.) The Nero pull stays available; it's a button, and buttons are a choice.
+  const at=st.ingestLatest&&st.ingestLatest.at?Number(st.ingestLatest.at):null;
+  if(_ingSeenAt==null){
+    // First render after opening the console: BASELINE, don't fill. Anything staged before
+    // we got here has most likely already been played; re-dropping it into the form on every
+    // console open would be worse than the press this feature removes. The button still has it.
+    // Baseline even when the slot is EMPTY (the 1) — otherwise the first push of the night
+    // would be eaten as the baseline instead of filling the form, which is the whole feature.
+    let saved=0; try{saved=Number(localStorage.getItem(_ingKey())||0)||0;}catch(e){}
+    _ingMark(Math.max(saved,at||0,1));
+    return;
+  }
+  if(!at||at<=_ingSeenAt)return;
+  _ingBusy=true;
+  try{
+    const d=await api('/api/admin/ingest/latest',null,'GET');
+    if(!d||d.empty)return;
+    _ingMark(Number(d.at)||at);
+    const prev=fillFromIngest(d);
+    _ingUndo=prev;
+    const msg=$('#ingestMsg');
+    msg.innerHTML='⚡ Auto-filled: '+esc(ingestSummary(d))+' — review, then add. <a href="#" id="ingUndo" style="color:var(--signal)">undo</a>';
+    msg.classList.remove('hide');
+    // Deliberately no focus() — the host may be typing somewhere else on the console.
+    $('#ingUndo').onclick=(e)=>{
+      e.preventDefault();
+      if(!_ingUndo)return;
+      for(const id of INGEST_FIELDS)$('#'+id).value=_ingUndo[id]||'';
+      _ingUndo=null;
+      msg.textContent='Put back what was in the form. Use the pull button to load it again.';
+    };
+    flashIngestFields();
+  }finally{_ingBusy=false;}
+}
 
 $('#btnCopy').onclick=()=>{navigator.clipboard.writeText($('#playLink').textContent);$('#btnCopy').textContent='Copied!';setTimeout(()=>$('#btnCopy').textContent='Copy link',1200);};
 $('#btnQrDl')&&($('#btnQrDl').onclick=async()=>{
@@ -2668,6 +2769,8 @@ async function openSessEdit(s){
   $('#cfgSubmit').value=s.submit_url||'';
   $('#cfgVisibility').value=(s.visibility==='unlisted')?'unlisted':'public';
   $('#cfgAccessCode').value=s.access_code||'';
+  $('#cfgIngestAuto').value=(s.ingest_auto==1)?'1':'0';
+  $('#seIngestRow').classList.toggle('hide',!isAdmin()); // the pull itself is admin-only
   $('#geoAddr').value='';
   $('#geoMode').value=s.geo_mode||'off';
   $('#geoRadius').value=s.geo_radius||200;
@@ -2801,6 +2904,9 @@ $('#seSave').onclick=async()=>{
     accessCode:$('#cfgAccessCode').value.trim(),
     geoMode:$('#geoMode').value,
     geoRadius:Number($('#geoRadius').value)||200};
+  // Only send it when the row was actually shown — a non-admin's Save must never
+  // silently write the mode off.
+  if(!$('#seIngestRow').classList.contains('hide'))body.ingestAuto=Number($('#cfgIngestAuto').value)?1:0;
   if(geoResolvedLat!=null&&geoResolvedLng!=null){
     body.geoLat=geoResolvedLat;body.geoLng=geoResolvedLng;
     body.geoLabel=$('#geoResolved').textContent.replace(/^📍 /,'');
@@ -3180,13 +3286,19 @@ function render(st){
   // "Pull latest submission" (review-site push) — hidden while Nero is the active source.
   const ing=st.ingestLatest;
   const hasIng=!!(ing&&(ing.title||ing.artist));
-  $('#btnIngestPull').classList.toggle('hide', !hasIng || !isAdmin() || isNero); // Drupal ingest is platform-only
+  // Drupal ingest is platform-only. Normally hidden in a Nero room (one source, one button) —
+  // but a room set to auto-fill FROM the review site always keeps its manual fallback.
+  const ingAuto=Number(st.session&&st.session.ingest_auto)===1;
+  $('#btnIngestPull').classList.toggle('hide', !hasIng || !isAdmin() || (isNero && !ingAuto));
   // (SMS test lives on the admin-only Users screen now.)
   // Per-host feature gating (admins see everything).
   if($('#bcBlock'))$('#bcBlock').classList.toggle('hide', !hasP('broadcast'));
   if($('#adsCard'))$('#adsCard').classList.toggle('hide', !hasP('ads'));
   if($('#exportBlock'))$('#exportBlock').classList.toggle('hide', !hasP('export'));
   if(hasIng)$('#btnIngestPull').textContent=('⬇ Pull submission: '+(ing.title||'')+(ing.artist?' — '+ing.artist:'')).slice(0,46);
+  // Rooms set to "Send straight to fields" fill the form themselves; the button stays
+  // for anything staged before this console was opened.
+  maybeAutoIngest(st).catch(()=>{});
   $('#who').textContent=st.session.name+' · '+st.session.status+sessionTypeSuffix(st);
   // lifecycle controls reflect current status
   const stx=st.session.status;
@@ -3241,6 +3353,9 @@ function render(st){
     sumRow('Watch link',linkVal(sess.watch_url)||'Not set',!sess.watch_url)+
     sumRow('Submit link',linkVal(sess.submit_url)||'Not set',!sess.submit_url)+
     sumRow('Access',accessTxt,sess.visibility!=='unlisted'&&!sess.access_code)+
+    // Auto-fill is a mode that moves fields on its own — it belongs on the face of the
+    // console, not only inside the Edit modal. Admin-only, like the pull itself.
+    (isAdmin()?sumRow('Submissions',Number(sess.ingest_auto)===1?'⚡ Straight to the fields':'Held for the pull button',Number(sess.ingest_auto)!==1):'')+
     sumRow('Location',geoTxt||'Off — no check-in',!geoTxt);
   // Clock sync, NOT latency tracking: adopt the server offset only when it's off by
   // seconds (a genuinely wrong client clock). Re-sampling every poll folded network
@@ -3520,6 +3635,7 @@ function boot(){
   tabManual=false;setTab('paneRound',false); // fresh session → tab follows round state again
   // A "Pulled: …" note from the previous session would misdescribe this one.
   $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');
+  _ingSeenAt=null;_ingUndo=null; // re-baseline auto-fill against THIS room
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
   loadDeckKey(); // once per console open — the key never changes on its own
   initRealtime();

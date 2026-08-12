@@ -1359,6 +1359,45 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const adminBc = await call('/api/admin/session/broadcast', { sessionId: HS, text: 'admin msg' }, 'POST', ADMINH);
   ok('admin can broadcast regardless of perms', adminBc.status === 200, JSON.stringify(adminBc.d));
 
+  console.log('\n— review-site auto-fill: per-room mode, admin-gated, realtime nudge —');
+  // Default is HOLD FOR THE BUTTON: an existing room must not start auto-filling because
+  // the column arrived.
+  const aiRoom = await call('/api/session', { name: 'Auto Ingest', status: 'live' }, 'POST', ADMINH);
+  const AIID = aiRoom.d.sessionId;
+  const aiState0 = (await call('/api/admin/state?sessionId=' + AIID, null, 'GET', ADMINH)).d;
+  ok('a new room holds submissions for the button by default', aiState0.session.ingest_auto === 0, JSON.stringify(aiState0.session.ingest_auto));
+  // With no room in auto mode, a push notifies nobody (it just stages, as always).
+  const pushNoAuto = await call('/api/ingest/submission', { title: 'Held Song', artist: 'Nobody' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  ok('a push with no auto room notifies nobody', pushNoAuto.status === 200 && pushNoAuto.d.autoRooms === 0, JSON.stringify(pushNoAuto.d));
+  // Arming it is admin-only — the staged payload carries the artist's email/phone, so a
+  // plain host must not be able to point that stream at their own console.
+  const aiHostDenied = await call('/api/admin/session/config', { sessionId: HS, ingestAuto: 1 }, 'POST', HOSTH);
+  ok('a non-admin host cannot arm auto-fill (403)', aiHostDenied.status === 403, 'got ' + aiHostDenied.status);
+  const hsAfter = (await call('/api/admin/state?sessionId=' + HS, null, 'GET', ADMINH)).d;
+  ok('the denied room stays on hold-for-button', hsAfter.session.ingest_auto === 0, JSON.stringify(hsAfter.session.ingest_auto));
+  // Turning it OFF is not privileged — a host can always stop their own room auto-filling.
+  const aiHostOff = await call('/api/admin/session/config', { sessionId: HS, ingestAuto: 0 }, 'POST', HOSTH);
+  ok('a host can still turn auto-fill off', aiHostOff.status === 200, 'got ' + aiHostOff.status);
+  // …and can't get there the long way round either, via their room defaults.
+  const aiHostDefault = await call('/api/me/host-defaults', { watchUrl: '', submitUrl: '', lobbyMessage: '', ingestAuto: 1 }, 'POST', HOSTH);
+  ok('a non-admin host cannot default new rooms to auto-fill (403)', aiHostDefault.status === 403, 'got ' + aiHostDefault.status);
+  const aiOn = await call('/api/admin/session/config', { sessionId: AIID, ingestAuto: 1 }, 'POST', ADMINH);
+  ok('admin arms auto-fill on a room', aiOn.status === 200, JSON.stringify(aiOn.d));
+  const aiState1 = (await call('/api/admin/state?sessionId=' + AIID, null, 'GET', ADMINH)).d;
+  ok('adminState reports the armed mode', aiState1.session.ingest_auto === 1, JSON.stringify(aiState1.session.ingest_auto));
+  const aiGet = (await call('/api/admin/session/get?id=' + AIID, null, 'GET', ADMINH)).d;
+  ok('session/get carries the mode (so the room-list Edit cannot save it off)', aiGet.session.ingestAuto === 1, JSON.stringify(aiGet.session));
+  // Now a push resolves to that live room so the console gets nudged instead of waiting
+  // out the poll. The record itself still stages exactly as before.
+  const pushAuto = await call('/api/ingest/submission', { title: 'Straight Through', artist: 'The Verge', email: 'v@band.com' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  ok('a push resolves to the live auto room', pushAuto.status === 200 && pushAuto.d.autoRooms === 1, JSON.stringify(pushAuto.d));
+  const aiPull = (await call('/api/admin/ingest/latest', null, 'GET', ADMINH)).d;
+  ok('auto mode changes delivery, not the staged record', aiPull.title === 'Straight Through' && aiPull.email === 'v@band.com' && !!aiPull.at, JSON.stringify(aiPull));
+  // A completed room is not a place to deliver songs — the resolution is live-only.
+  await call('/api/admin/session/status', { sessionId: AIID, status: 'completed' }, 'POST', ADMINH);
+  const pushDone = await call('/api/ingest/submission', { title: 'Too Late', artist: 'Nobody' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  ok('a finished auto room is no longer a delivery target', pushDone.status === 200 && pushDone.d.autoRooms === 0, JSON.stringify(pushDone.d));
+
   console.log('\n— shareable report graphics (PNG endpoints) —');
   const img = async (path, headers = {}) => { const r = await fetch(base + path, { headers }); return { status: r.status, type: r.headers.get('content-type') || '' }; };
   const isPng = (x) => x.status === 200 && /image\/png/.test(x.type);
@@ -1480,6 +1519,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const hdRoom = await call('/api/session', { name: 'Defaults Night' }, 'POST', BOOTH);
   const hdState = (await call(`/api/admin/state?sessionId=${hdRoom.d.sessionId}`, null, 'GET', { 'X-Admin-Token': hdRoom.d.adminToken })).d;
   ok('new room auto-assigned the default banner', hdState.session.banner_id === hdBan.d.bannerId, JSON.stringify(hdState.session.banner_id));
+  // Review-site auto-fill as a host default: the show spins up a new room every week, so a
+  // per-room-only toggle is off the week you forget to set it.
+  const hdIng = await call('/api/me/host-defaults', { watchUrl: '', submitUrl: '', lobbyMessage: '', ingestAuto: 1 }, 'POST', BOOTH);
+  ok('admin can default new rooms to auto-fill', hdIng.status === 200 && hdIng.d.defaults.ingestAuto === 1, JSON.stringify(hdIng.d.defaults));
+  const hdIngRoom = await call('/api/session', { name: 'Auto By Default' }, 'POST', BOOTH);
+  const hdIngState = (await call('/api/admin/state?sessionId=' + hdIngRoom.d.sessionId, null, 'GET', { 'X-Admin-Token': hdIngRoom.d.adminToken })).d;
+  ok('a new room is born armed when the default is on', hdIngState.session.ingest_auto === 1, JSON.stringify(hdIngState.session.ingest_auto));
+  // A save that doesn't mention it must not switch it off — the console saves the three text
+  // defaults on their own, and an older client sends no such field at all.
+  await call('/api/me/host-defaults', { watchUrl: '', submitUrl: '', lobbyMessage: 'x' }, 'POST', BOOTH);
+  const hdKept = await call('/api/me/host-defaults', null, 'GET', BOOTH);
+  ok('a save without the field preserves the default', hdKept.d.defaults.ingestAuto === 1, JSON.stringify(hdKept.d.defaults));
+  // Turning it back off is a normal save, and new rooms follow immediately.
+  await call('/api/me/host-defaults', { watchUrl: '', submitUrl: '', lobbyMessage: '', ingestAuto: 0 }, 'POST', BOOTH);
+  const hdOffRoom = await call('/api/session', { name: 'Held By Default' }, 'POST', BOOTH);
+  const hdOffState = (await call('/api/admin/state?sessionId=' + hdOffRoom.d.sessionId, null, 'GET', { 'X-Admin-Token': hdOffRoom.d.adminToken })).d;
+  ok('clearing the default returns new rooms to hold-for-button', hdOffState.session.ingest_auto === 0, JSON.stringify(hdOffState.session.ingest_auto));
   // Tidy: clear the default so later banner tests see a clean slate.
   await call('/api/me/host-defaults', { bannerId: null, watchUrl: '', submitUrl: '', lobbyMessage: '' }, 'POST', BOOTH);
 

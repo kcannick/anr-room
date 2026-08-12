@@ -266,6 +266,20 @@ async function freshDb() {
   const applied28 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('028 idempotent (not duplicated)', applied28.filter(x => x === '028_notify_prefs').length === 1, JSON.stringify(applied28));
 
+  // ── 031: per-room review-site auto-fill ───────────────────────────────────
+  // One nullable column, no default and no backfill: absent = hold for the button, so
+  // every existing room keeps today's behavior until someone turns it on.
+  clean();
+  db = await freshDb();
+  await db.init();
+  const scols31 = (await db.all('PRAGMA table_info(sessions)', [])).map(c => c.name);
+  ok('031 creates sessions.ingest_auto', scols31.includes('ingest_auto'), JSON.stringify(scols31));
+  const ia31 = (await db.all('PRAGMA table_info(sessions)', [])).find(c => c.name === 'ingest_auto');
+  ok('ingest_auto defaults to NULL (= off, no backfill)', ia31 && ia31.dflt_value == null, JSON.stringify(ia31));
+  await db.init();
+  const applied31 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('031 idempotent (not duplicated)', applied31.filter(x => x === '031_ingest_auto').length === 1, JSON.stringify(applied31));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

@@ -1,0 +1,21 @@
+-- 031_ingest_auto.sql
+-- sessions.ingest_auto — per-room delivery mode for review-site (Drupal) submissions.
+--
+--   NULL / 0  = HOLD FOR BUTTON (today's behavior): a push stages into settings.ingest_latest
+--               and lights up "⬇ Pull latest submission"; the host pulls when ready.
+--   1         = SEND STRAIGHT TO FIELDS: the console fills the queue form the moment a push
+--               lands — title, artist, IG→note, artist email/phone — and the host only has to
+--               press "Add & open round". It fills the FORM, never the room: an auto-filled
+--               record is still reviewed before it reaches the overlay.
+--
+-- Nullable with no default so existing rooms are untouched (absent = off). One less press per
+-- song; the host stays the gate.
+--
+-- NOTE the staging slot itself is unchanged and still GLOBAL + single-slot (one settings row,
+-- overwritten by each push). Auto mode makes an overwrite silent rather than a button you
+-- never clicked, and if two rooms ran auto at once they'd draw from the same slot. Fine for a
+-- one-operator show; a per-room queue would be a different (larger) change.
+--
+-- Additive; safe on boot.
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ingest_auto INTEGER
