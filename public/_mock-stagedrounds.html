@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — Staged rounds, buzzer, Stream Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Token values mirrored from public/tokens.css so the mockup renders standalone. */
+  :root{
+    --bg:#0d0b16; --panel:#171328; --panel-2:#1d1733; --line:#2e2750; --inset:#0a0814;
+    --ink:#f3f0fb; --ink-dim:#a9a2c9; --ink-faint:#8c84ad;
+    --signal:#4bb749; --signal-deep:#379235; --on-signal:#06210b;
+    --accent:#6d5fe0; --gold:#f5c518; --hot:#ff5d6c; --on-hot:#2a0a0e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;padding:30px 20px 80px}
+  .mocklabel{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);margin:54px 0 6px;text-align:center}
+  .mocklabel:first-of-type{margin-top:0}
+  .mocknote{font-size:13.5px;line-height:1.55;color:var(--ink-dim);text-align:center;max-width:640px;margin:0 auto 22px}
+  .mocknote b{color:var(--ink)}
+  .cols{display:flex;gap:26px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+  .caption{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--signal);text-align:center;margin:10px 0 0}
+  .caption.step{color:var(--gold)}
+  .mono{font-family:"Space Mono",monospace}
+  .muted{color:var(--ink-dim)}
+
+  /* ---- admin card ---- */
+  .card{width:330px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
+  .card h3{margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:"Space Mono",monospace}
+  .pill{display:inline-block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;border-radius:999px;padding:4px 9px;border:1px solid var(--line);color:var(--ink-dim)}
+  .pill.live{color:var(--signal);border-color:var(--signal)}
+  .pill.deck{color:var(--gold);border-color:rgba(245,197,24,.5)}
+  .pill.done{color:var(--ink-faint)}
+  .songrow{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .songttl{font-size:18px;font-weight:600;line-height:1.25}
+  .songart{font-size:13px;color:var(--ink-dim);margin-top:1px}
+  .rnum{font-size:12px;color:var(--ink-faint)}
+  .timer-big{font-family:"Space Mono",monospace;font-size:34px;font-weight:700;margin:12px 0 2px}
+  .timer-big.warn{color:var(--hot)}
+  .timer-none{font-family:"Space Mono",monospace;font-size:34px;font-weight:700;margin:12px 0 2px;color:var(--ink-faint);opacity:.45}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border:1px solid transparent;
+    border-radius:12px;font-family:inherit;font-weight:700;background:var(--signal);color:var(--on-signal);padding:11px 16px;font-size:14.5px}
+  .btn.ghost{background:transparent;border-color:var(--line);color:var(--ink-dim);font-weight:600}
+  .btn.warn{background:transparent;border-color:var(--gold);color:var(--gold);font-weight:600}
+  .btn.sm{padding:7px 11px;font-size:12.5px;border-radius:10px}
+  .btn.block{display:flex;width:100%}
+  .btn.stage{flex-direction:column;gap:0;padding:15px 16px;font-size:16px;font-weight:800;margin-top:12px;line-height:1.2}
+  .btn.stage .sub{display:block;font-size:11px;font-weight:500;opacity:.72;margin-top:2px;letter-spacing:.02em}
+  .stagewrap{display:flex;flex-direction:column;align-items:stretch}
+  .row{display:flex;gap:8px}
+  .row .btn{flex:1}
+  .hint{font-size:11.5px;line-height:1.5;color:var(--ink-faint);margin:9px 0 0;text-align:center}
+
+  /* ---- phone (player) ---- */
+  .phone{width:330px;background:radial-gradient(130% 90% at 50% -10%,#241a4d 0%,var(--bg) 58%);
+    border:1px solid #1d1833;border-radius:20px;padding:20px 16px 24px}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:18px;padding:20px;text-align:center}
+  .eyebrow{font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-faint);font-weight:600}
+  .pulse-wait{display:flex;gap:6px;justify-content:center;margin-top:16px}
+  .pulse-wait i{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);opacity:.5;animation:bl 1.4s infinite}
+  .pulse-wait i:nth-child(2){animation-delay:.2s}.pulse-wait i:nth-child(3){animation-delay:.4s}
+  @keyframes bl{0%,80%,100%{opacity:.25}40%{opacity:.9}}
+  .eq{display:flex;gap:4px;justify-content:center;align-items:flex-end;height:34px;margin:6px 0 2px}
+  .eq i{width:5px;background:var(--signal);border-radius:2px;animation:eqb 1.1s infinite ease-in-out}
+  .eq i:nth-child(1){animation-delay:0s}.eq i:nth-child(2){animation-delay:.15s}.eq i:nth-child(3){animation-delay:.3s}
+  .eq i:nth-child(4){animation-delay:.45s}.eq i:nth-child(5){animation-delay:.6s}
+  @keyframes eqb{0%,100%{height:8px;opacity:.5}50%{height:30px;opacity:1}}
+  .rate-row{display:flex;gap:6px;justify-content:space-between;margin-top:6px}
+  .pip{flex:1;aspect-ratio:1/1.15;border:1px solid var(--line);border-radius:9px;background:var(--inset);
+    display:flex;align-items:center;justify-content:center;font-family:"Space Mono",monospace;font-size:14px;color:var(--ink-dim)}
+
+  /* ---- overlay ---- */
+  .ovbox{width:330px;background:linear-gradient(160deg,#1a1430,#0b0916);border:1px solid #2e2750;border-radius:20px;padding:18px}
+  .ovlabel{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--signal)}
+  .ovttl{font-size:21px;font-weight:700;margin-top:6px;line-height:1.2}
+  .ovart{font-size:14px;color:var(--ink-dim);margin-top:2px}
+  .ovtimer{font-family:"Space Mono",monospace;font-size:30px;font-weight:700;color:var(--ink);margin-top:12px}
+
+  /* ---- streamdeck ---- */
+  .sd{width:660px;background:var(--bg);border:1px solid #1d1833;border-radius:18px;padding:20px}
+  .keyrow{display:flex;gap:8px;align-items:center;background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0 4px}
+  .keyrow code{flex:1;font-family:"Space Mono",monospace;font-size:12.5px;color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .urlrow{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid #241d3d}
+  .urlrow .lbl{width:120px;flex:none;font-size:13px;font-weight:700}
+  .urlrow code{flex:1;font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .warn-box{background:rgba(245,197,24,.07);border:1px solid rgba(245,197,24,.4);border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.55;color:var(--ink-dim);margin-top:14px}
+  .warn-box b{color:var(--gold)}
+  .deckgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}
+  .key{aspect-ratio:1;background:#12101c;border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:5px;font-size:11px;color:var(--ink-dim);text-align:center;padding:6px}
+  .key .ic{font-size:21px}
+  .key.on{border-color:var(--signal);color:var(--signal)}
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<p class="mocklabel">1 · One button, three stages</p>
+<p class="mocknote">The same big button drives the whole show — it just changes what it does. Press it three times and a record goes up, gets voted on, and gets tallied. <b>Press it twice quickly</b> and you're back to today's one-shot behaviour, so nothing needs a room setting.</p>
+<div class="cols">
+
+  <div>
+    <div class="card">
+      <h3>This round</h3>
+      <div class="songrow"><div>
+        <div class="rnum">Up next · 4 queued</div>
+        <div class="songttl">Nights Like This</div>
+        <div class="songart">Maya Ford</div>
+      </div><span class="pill">Queued</span></div>
+      <div class="timer-none">—:—</div>
+      <div class="stagewrap">
+        <button class="btn stage block">▶ Open Round<span class="sub">Song goes on the overlay · no timer yet</span></button>
+      </div>
+      <p class="hint">A&Rs see the record and listen. Voting is closed.</p>
+    </div>
+    <p class="caption step">Stage 1 · press once</p>
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>This round</h3>
+      <div class="songrow"><div>
+        <div class="rnum">Round 4</div>
+        <div class="songttl">Nights Like This</div>
+        <div class="songart">Maya Ford</div>
+      </div><span class="pill deck">● On deck — listening</span></div>
+      <div class="timer-none">—:—</div>
+      <div class="stagewrap">
+        <button class="btn stage block">🎙 Open Voting<span class="sub">Starts the 3:00 countdown for everyone at once</span></button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost sm">✎ Edit song</button>
+        <button class="btn ghost sm">↩ Back to queue</button>
+      </div>
+      <p class="hint">Nobody can vote yet — the server refuses it, not just the UI.</p>
+    </div>
+    <p class="caption step">Stage 2 · when the song ends</p>
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>This round</h3>
+      <div class="songrow"><div>
+        <div class="rnum">Round 4</div>
+        <div class="songttl">Nights Like This</div>
+        <div class="songart">Maya Ford</div>
+      </div><span class="pill live">● Evaluation open</span></div>
+      <div class="timer-big">2:43</div>
+      <div class="muted mono" style="font-size:11px">18 of 41 locked in</div>
+      <div class="stagewrap">
+        <button class="btn stage block">🏁 Ratify — tally the room<span class="sub">Closes voting and reveals results</span></button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost sm">+30s</button>
+        <button class="btn ghost sm">+1 min</button>
+        <button class="btn ghost sm">✎ Edit</button>
+      </div>
+      <p class="hint">Buzzer sounds here when the clock hits 0:00.</p>
+    </div>
+    <p class="caption step">Stage 3 · tally</p>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<p class="mocklabel">2 · The buzzer</p>
+<p class="mocknote">Fires once when the countdown crosses zero — synthesized in the browser, no audio files, same engine the player page already uses. Last five seconds tick so you hear it coming. Mute is per-device and sticky.</p>
+<div class="cols">
+  <div>
+    <div class="card">
+      <h3>This round</h3>
+      <div class="songrow"><div>
+        <div class="rnum">Round 4</div>
+        <div class="songttl">Nights Like This</div>
+        <div class="songart">Maya Ford</div>
+      </div><span class="pill live">● Evaluation open</span></div>
+      <div class="timer-big warn">0:04</div>
+      <div class="muted mono" style="font-size:11px">🔔 tick · tick · tick</div>
+      <div class="stagewrap">
+        <button class="btn stage block">🏁 Ratify — tally the room<span class="sub">Closes voting and reveals results</span></button>
+      </div>
+    </div>
+    <p class="caption">Final 5s · ticking</p>
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>This round</h3>
+      <div class="songrow"><div>
+        <div class="rnum">Round 4</div>
+        <div class="songttl">Nights Like This</div>
+        <div class="songart">Maya Ford</div>
+      </div><span class="pill live">● Evaluation open</span></div>
+      <div class="timer-big warn">0:00</div>
+      <div style="color:var(--hot);font-size:13px;font-weight:700;margin-top:2px">🔊 BUZZ — time's up</div>
+      <div class="stagewrap">
+        <button class="btn stage block">🏁 Ratify — tally the room<span class="sub">Closes voting and reveals results</span></button>
+      </div>
+      <p class="hint">The round does <b>not</b> auto-close — you still decide when to tally.</p>
+    </div>
+    <p class="caption">0:00 · buzzer</p>
+  </div>
+
+  <div>
+    <div class="card" style="width:250px">
+      <h3>Top bar</h3>
+      <div class="row">
+        <button class="btn ghost sm">🔊 Sound on</button>
+        <button class="btn ghost sm">🔇 Muted</button>
+      </div>
+      <p class="hint" style="text-align:left;margin-top:12px">Browsers block audio until you interact with the page, so the first click anywhere in the console unlocks it. If the tab has never been touched, the buzzer stays silent — worth knowing before you rely on it.</p>
+    </div>
+    <p class="caption">Mute toggle</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<p class="mocklabel">3 · What the A&amp;Rs see while the song plays</p>
+<p class="mocknote">A new screen between "waiting" and "vote". They can see the record, but there is no dial and no timer — so nobody can rate it three bars in, and everyone gets the same window once voting opens.</p>
+<div class="cols">
+  <div>
+    <div class="phone">
+      <div class="panel">
+        <div class="eq"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="eyebrow" style="margin-top:8px">Round 4 · Now playing</div>
+        <h2 style="font-size:21px;margin:8px 0 3px;font-weight:600">Nights Like This</h2>
+        <div class="muted" style="font-size:14px">Maya Ford</div>
+        <div style="background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:13px;margin-top:16px">
+          <div style="font-size:14.5px;font-weight:700">🎧 Listen all the way through</div>
+          <div class="muted" style="font-size:12.5px;line-height:1.5;margin-top:4px">Voting opens when the record ends — everyone gets the same clock.</div>
+        </div>
+        <div class="pulse-wait"><i></i><i></i><i></i></div>
+      </div>
+    </div>
+    <p class="caption step">Listening · no dial, no timer</p>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="panel" style="text-align:left">
+        <div class="eyebrow">Round 4 · Rate it</div>
+        <h2 style="font-size:20px;margin:7px 0 3px;font-weight:600">Nights Like This</h2>
+        <div class="muted" style="font-size:13px;margin-bottom:12px">Maya Ford</div>
+        <div class="mono" style="font-size:26px;font-weight:700;text-align:center;color:var(--signal)">3:00</div>
+        <div class="muted" style="font-size:11px;text-align:center;margin-bottom:10px">everyone started together</div>
+        <div class="rate-row"><span class="pip">0</span><span class="pip">1</span><span class="pip">2</span><span class="pip">3</span><span class="pip">4</span></div>
+        <div class="rate-row"><span class="pip">5</span><span class="pip">6</span><span class="pip">7</span><span class="pip">8</span><span class="pip">9</span></div>
+      </div>
+    </div>
+    <p class="caption">Voting opens · full clock for all</p>
+  </div>
+
+  <div>
+    <div class="ovbox">
+      <div class="ovlabel">● Now playing · listen</div>
+      <div class="ovttl">Nights Like This</div>
+      <div class="ovart">Maya Ford</div>
+      <div style="height:1px;background:#2e2750;margin:14px 0"></div>
+      <div class="muted" style="font-size:12.5px">Voting opens when the record ends</div>
+    </div>
+    <div class="ovbox" style="margin-top:14px">
+      <div class="ovlabel">● Evaluation open</div>
+      <div class="ovttl">Nights Like This</div>
+      <div class="ovart">Maya Ford</div>
+      <div class="ovtimer">2:43</div>
+    </div>
+    <p class="caption">Overlay · both states</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<p class="mocklabel">4 · Stream Deck</p>
+<p class="mocknote">One key on your account, and the server figures out which room you're running. Configure the deck <b>once</b> — the URLs never change, week to week.</p>
+<div class="cols">
+  <div class="sd">
+    <div style="font-size:15px;font-weight:700">Stream Deck / external control</div>
+    <div class="muted" style="font-size:12.5px;margin-top:3px">Buttons act on whichever room you currently have live.</div>
+
+    <div class="keyrow">
+      <code>k_7Fq2xR9tLmA4vNb8ZcW3</code>
+      <button class="btn ghost sm">Copy</button>
+      <button class="btn ghost sm">Hide</button>
+      <button class="btn warn sm">Regenerate</button>
+    </div>
+
+    <div style="margin-top:14px">
+      <div class="urlrow"><span class="lbl">Advance ▶</span><code>…/api/control/advance?k=k_7Fq2…</code><button class="btn ghost sm">Copy</button></div>
+      <div class="urlrow"><span class="lbl">+30 seconds</span><code>…/api/control/extend?k=k_7Fq2…&amp;seconds=30</code><button class="btn ghost sm">Copy</button></div>
+      <div class="urlrow"><span class="lbl">+1 minute</span><code>…/api/control/extend?k=k_7Fq2…&amp;minutes=1</code><button class="btn ghost sm">Copy</button></div>
+      <div class="urlrow"><span class="lbl">Status</span><code>…/api/control/state?k=k_7Fq2…</code><button class="btn ghost sm">Copy</button></div>
+    </div>
+
+    <div class="warn-box">
+      <b>Treat this key like a password.</b> Anyone with it can open, time and tally rounds in your live room. It can't read A&amp;R contact details, change settings, or delete anything — but regenerate it if a screen-share ever caught it.
+    </div>
+
+    <div class="deckgrid">
+      <div class="key on"><span class="ic">▶</span>Advance</div>
+      <div class="key"><span class="ic">＋</span>+30s</div>
+      <div class="key"><span class="ic">＋</span>+1 min</div>
+      <div class="key"><span class="ic">◉</span>Status</div>
+    </div>
+    <p class="hint" style="text-align:left;margin-top:12px">The <b>Advance</b> button reads the room and does the right next thing: Open Round → Open Voting → Ratify → Open Round. Same logic as the big button in the console, so the deck and the screen can never disagree.</p>
+  </div>
+</div>
+
+</body>
+</html>

@@ -78,6 +78,10 @@
   .link{font-family:"Space Mono",monospace;font-size:13px;word-break:break-all;background:#0a0814;border:1px solid var(--line);padding:10px;border-radius:10px;color:var(--cool)}
   .timer-big{font-family:"Space Mono",monospace;font-size:30px;font-weight:700}
   .timer-big.warn{color:var(--hot)}
+  /* the staged Advance button — one control, three jobs */
+  .stage-btn{display:flex;flex-direction:column;gap:0;width:100%;padding:15px 16px;font-size:16px;font-weight:800;line-height:1.2}
+  .stage-btn .stage-s{display:block;font-size:11px;font-weight:500;opacity:.75;margin-top:3px;letter-spacing:.01em}
+  .pill.deck{color:var(--gold);border-color:rgba(245,197,24,.5)}
   .feed{max-height:240px;overflow:auto}
   .empty{color:var(--ink-faint);font-size:14px;padding:16px 0;text-align:center}
   .hide{display:none!important}
@@ -428,6 +432,30 @@
       </div>
     </div>
 
+    <!-- Stream Deck / external control. The key is per-HOST and resolves to whichever room
+         is live, so the deck is configured once and never again. -->
+    <div class="card" id="deckCard">
+      <h2>Stream Deck / external control</h2>
+      <div class="muted" style="font-size:12.5px;margin-bottom:10px">Buttons act on whichever room you currently have <b>live</b> — the URLs never change, week to week.</div>
+      <div id="deckNoKey">
+        <button class="btn ghost sm" id="btnDeckMint">Generate a control key</button>
+      </div>
+      <div id="deckHasKey" class="hide">
+        <div class="row" style="gap:6px;align-items:center">
+          <code id="deckKey" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--inset,#0a0814);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:'Space Mono',monospace;font-size:12px;color:var(--gold)"></code>
+          <button class="btn ghost sm" id="btnDeckCopy" style="flex:0 0 auto">Copy</button>
+          <button class="btn ghost sm" id="btnDeckHide" style="flex:0 0 auto">Hide</button>
+          <button class="btn warn sm" id="btnDeckRoll" style="flex:0 0 auto">Regenerate</button>
+        </div>
+        <div id="deckUrls" style="margin-top:10px"></div>
+        <div style="background:rgba(245,197,24,.07);border:1px solid rgba(245,197,24,.4);border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.55;color:var(--ink-dim);margin-top:12px">
+          <b style="color:var(--gold)">Treat this key like a password.</b> Anyone holding it can open, time and tally rounds in your live room. It <b>cannot</b> read A&amp;R contact details, change settings, or delete anything — but regenerate it if a screen-share ever caught it.
+        </div>
+        <div class="muted" style="font-size:11.5px;margin-top:9px"><b>Advance</b> does the right next thing: Open Round → Open Voting → Ratify. Ratify needs <b>two presses</b> — the first arms it, the second tallies.</div>
+      </div>
+      <div class="err" id="deckErr"></div>
+    </div>
+
     <div class="card" id="toolsCard">
       <h2>Event tools</h2>
       <!-- Broadcast (host-gated by the 'broadcast' perm) -->
@@ -480,6 +508,7 @@
       </div>
     </div>
 
+    <button class="btn ghost sm" id="adMuteBtn" title="Buzzer on — click to mute" style="width:38px;padding:0;justify-content:center">🔊</button>
     <button class="btn ghost sm" id="btnBackToSessions">← My rooms</button>
   </div>
 </div>
@@ -2877,10 +2906,112 @@ $('#btnExpCsvAnon').onclick=()=>downloadExport('csv',true);
 $('#btnExpJsonAnon').onclick=()=>downloadExport('json',true);
 
 // ---- round control render ----
+// ---- Stream Deck control key ----
+// Fetched once when the console opens (not on the 2s poll — it never changes on its own).
+// Masked by default so a screen-share doesn't hand out room control.
+let DECK_KEY=null, deckShown=false;
+function deckUrl(path,extra){ return location.origin+'/api/control/'+path+'?k='+(DECK_KEY||'')+(extra||''); }
+function deckMask(k){ return k ? k.slice(0,6)+'…'+k.slice(-4) : ''; }
+function renderDeck(){
+  const has=!!DECK_KEY;
+  $('#deckNoKey').classList.toggle('hide',has);
+  $('#deckHasKey').classList.toggle('hide',!has);
+  if(!has)return;
+  $('#deckKey').textContent=deckShown?DECK_KEY:deckMask(DECK_KEY);
+  $('#btnDeckHide').textContent=deckShown?'Hide':'Reveal';
+  const rows=[
+    ['Advance ▶','advance',''],
+    ['+30 seconds','extend','&seconds=30'],
+    ['+1 minute','extend','&minutes=1'],
+    ['Status','state',''],
+  ];
+  $('#deckUrls').innerHTML=rows.map(([lbl,path,extra])=>{
+    const full=deckUrl(path,extra);
+    const shown=deckShown?full:full.replace(DECK_KEY,deckMask(DECK_KEY));
+    return `<div style="display:flex;gap:9px;align-items:center;padding:8px 0;border-top:1px solid #241d3d">
+      <span style="width:104px;flex:none;font-size:12.5px;font-weight:700">${lbl}</span>
+      <code style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-dim)">${esc(shown)}</code>
+      <button class="btn ghost sm" style="flex:none" onclick="copyDeckUrl('${path}','${extra}',this)">Copy</button>
+    </div>`;
+  }).join('');
+}
+window.copyDeckUrl=(path,extra,btn)=>{
+  navigator.clipboard.writeText(deckUrl(path,extra));
+  const o=btn.textContent; btn.textContent='Copied!'; setTimeout(()=>btn.textContent=o,1200);
+};
+async function loadDeckKey(){
+  if(!AUTHTOK)return; // legacy per-room admin-token sessions have no user to hang a key on
+  try{ DECK_KEY=(await api('/api/me/control-key',null,'GET')).key||null; renderDeck(); }
+  catch(e){ /* non-fatal: the console works fine without it */ }
+}
+$('#btnDeckMint')&&($('#btnDeckMint').onclick=async()=>{
+  $('#deckErr').textContent='';
+  try{ DECK_KEY=(await api('/api/me/control-key',{})).key; deckShown=true; renderDeck(); }
+  catch(e){ $('#deckErr').textContent=e.message; }
+});
+$('#btnDeckRoll')&&($('#btnDeckRoll').onclick=async()=>{
+  if(!confirm('Regenerate the control key?\n\nEvery Stream Deck button using the old key stops working until you paste the new one in.'))return;
+  try{ DECK_KEY=(await api('/api/me/control-key',{})).key; deckShown=true; renderDeck(); }
+  catch(e){ $('#deckErr').textContent=e.message; }
+});
+$('#btnDeckHide')&&($('#btnDeckHide').onclick=()=>{ deckShown=!deckShown; renderDeck(); });
+$('#btnDeckCopy')&&($('#btnDeckCopy').onclick=()=>{
+  navigator.clipboard.writeText(DECK_KEY||'');
+  $('#btnDeckCopy').textContent='Copied!'; setTimeout(()=>$('#btnDeckCopy').textContent='Copy',1200);
+});
+
+// ---- the staged Advance button ----
+// One control drives the show: Open Round → Open Voting → Ratify → Open Round. The label
+// comes from the SAME server state machine the press itself runs (/api/admin/advance), so
+// the console, the Stream Deck and the database can't drift apart.
+//
+// Ratify takes two presses. It's the only irreversible step in the loop, and this button
+// sits under the host's finger all night. The arm lives server-side (sessions.advance_armed_at)
+// so the deck and the console share one guard rather than each keeping their own.
+let advArmed=false, advArmTimer=null, advBusy=false;
+function stageLabel(st){
+  const r=st&&st.activeRound;
+  if(r&&r.status==='listening')return {t:'🎙 Open Voting',s:'Starts the countdown for everyone at once',cls:'good'};
+  if(r&&(r.status==='voting'||r.status==='closed')){
+    return advArmed
+      ? {t:'⚠ Press again to tally',s:'This reveals results and can\'t be undone',cls:'warn'}
+      : {t:'🏁 Ratify — tally the room',s:'Closes evaluation and reveals results',cls:'good'};
+  }
+  return {t:'▶ Open Round',s:'Record goes on the overlay · no timer yet',cls:'good'};
+}
+function stageButton(){
+  const L=stageLabel(lastState);
+  return `<button class="btn ${L.cls} stage-btn" onclick="doAdvance(this)" ${advBusy?'disabled':''}>
+      <span class="stage-t">${L.t}</span><span class="stage-s">${L.s}</span></button>`;
+}
+window.doAdvance=async(btn)=>{
+  if(advBusy)return; advBusy=true; if(btn)btn.disabled=true;
+  try{
+    const d=await api('/api/admin/advance',{sessionId:SID});
+    if(d.confirmNeeded){
+      // Armed, not fired. Hold the warning state for the server's window, then drop it —
+      // an armed button that stays armed forever is a foot-gun on the next glance.
+      advArmed=true;
+      if(advArmTimer)clearTimeout(advArmTimer);
+      advArmTimer=setTimeout(()=>{advArmed=false;refresh();},d.armMs||8000);
+      SFX.tick();
+    }else{
+      advArmed=false; if(advArmTimer)clearTimeout(advArmTimer);
+      if(d.action==='vote')SFX.chime();
+    }
+  }catch(e){ alert(e.message); }
+  advBusy=false; await refresh();
+};
+window.unopenRound=async(rid)=>{
+  if(!confirm('Send this record back to the queue?'))return;
+  try{ await api('/api/admin/round/unopen',{sessionId:SID,roundId:rid}); await refresh(); }
+  catch(e){ alert(e.message); }
+};
+
 function roundControls(st){
   const r=st.activeRound;
-  // A song added now goes straight to open unless a round is in play (voting or tallying).
-  const inPlay=!!(r&&(r.status==='voting'||r.status==='closed'));
+  // A song added now goes straight to open unless a round is in play.
+  const inPlay=!!(r&&(r.status==='listening'||r.status==='voting'||r.status==='closed'));
   // Music plays outside the app, so a round is "started," not a song "played." When one
   // is live the new round joins the queue instead.
   const addBtn=$('#btnAddRound'); if(addBtn)addBtn.textContent=inPlay?'+ Add Round':'▶ Start Round';
@@ -2888,34 +3019,48 @@ function roundControls(st){
   const box=$('#roundBox');
   if(!r){box.innerHTML=sessLocked
     ?'<div class="empty">Room complete—no evaluation rounds were completed.</div>'
-    :'<div class="empty">No active round. Add a record below to open an evaluation immediately.</div>';return;}
-  const statusPill={voting:'<span class="pill live">● Evaluation open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
+    :((st.queue||[]).length
+      ?`<div class="muted" style="font-size:13px;margin-bottom:4px">Nothing on deck — ${(st.queue||[]).length} record${(st.queue||[]).length==1?'':'s'} waiting.</div>`+stageButton()
+      :'<div class="empty">No active round. Add a record below to put it on deck.</div>');return;}
+  const statusPill={listening:'<span class="pill deck">● On deck — listening</span>',voting:'<span class="pill live">● Evaluation open</span>',closed:'<span class="pill closed">Closed — tallying</span>',ratified:'<span class="pill done">Ratified ✓</span>',pending:'<span class="pill">Queued</span>'}[r.status]||'';
   let timer='';
   if(r.status==='voting'&&r.closes_at){
     const left=secsLeft(r.closes_at); // same math as the 250ms ticker — no flicker on re-render
     const m=Math.floor(left/60),s=left%60;
     timer=`<div class="timer-big ${left<=10?'warn':''}" style="margin:10px 0">${m}:${String(s).padStart(2,'0')}</div>`;
+  }else if(r.status==='listening'){
+    // No clock by design — a listening round hasn't started one. The dash holds the card's
+    // height so the big button doesn't jump when the stage changes under the host's finger.
+    timer=`<div class="timer-big" style="margin:10px 0;color:var(--ink-faint);opacity:.45">—:—</div>`;
   }
   let actions='';
-  if(r.status==='voting'){
-    actions=`<div class="row">
+  if(r.status==='listening'){
+    actions=stageButton()
+      +`<div class="row" style="margin-top:8px">
+        <button class="btn ghost sm" onclick="editRound('${r.id}')">✎ Edit song</button>
+        <button class="btn ghost sm" onclick="unopenRound('${r.id}')">↩ Back to queue</button>
+      </div>
+      <p class="muted" style="font-size:11.5px;margin:9px 0 0;text-align:center">A&Rs see the record but can't evaluate yet — the server refuses it, not just the UI.</p>`;
+  }else if(r.status==='voting'){
+    actions=stageButton()
+      +`<div class="row" style="margin-top:8px">
         <button class="btn ghost sm" onclick="extendRound('${r.id}',0.5)">+30s</button>
         <button class="btn ghost sm" onclick="extendRound('${r.id}',1)">+1 min</button>
-        <button class="btn warn sm" onclick="closeRound('${r.id}')">Close now</button>
+        <button class="btn ghost sm" onclick="editRound('${r.id}')">✎ Edit</button>
       </div>
-      <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="editRound('${r.id}')">✎ Edit song</button>
-      <button class="btn good" style="margin-top:8px;width:100%" onclick="ratifyRound('${r.id}')">Close & tally → review</button>`;
+      <button class="btn warn sm" style="margin-top:8px;width:100%" onclick="closeRound('${r.id}')">Close without tallying</button>`;
   }else if(r.status==='closed'){
-    actions=`<div class="row">
+    actions=stageButton()
+      +`<div class="row" style="margin-top:8px">
         <button class="btn ghost sm" onclick="reopenRound('${r.id}')">↺ Reopen evaluation</button>
         <button class="btn ghost sm" onclick="editRound('${r.id}')">✎ Edit song</button>
-      </div>
-      <button class="btn good" style="margin-top:8px;width:100%" onclick="ratifyRound('${r.id}')">Tally the room → review winners</button>`;
+      </div>`;
   }else if(r.status==='ratified'){
     const qn=(st.queue||[]).length;
     actions=sessLocked
       ?`<p class="muted" style="font-size:13px;margin:8px 0 0">Final round ratified—the room is complete. A&Rs can view their session records; wrap-up actions are in the Room panel.</p>`
-      :`<p class="muted" style="font-size:13px;margin:8px 0 0">Results are live on A&R screens. ${qn?'Open the next record from the queue when ready.':'Add the next record below when ready.'}</p>`;
+      :(qn?stageButton():'')
+        +`<p class="muted" style="font-size:13px;margin:8px 0 0">Results are live on A&R screens. ${qn?'':'Add the next record below when ready.'}</p>`;
   }
   box.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center">
       <div><div class="muted" style="font-size:12px">Round ${r.idx}</div>
@@ -3312,9 +3457,47 @@ const mb=$('#miniBar');
 if(mb)mb.onclick=()=>{const rc=$('#roundCard');if(rc)rc.scrollIntoView({block:'start'});};
 function secsLeft(closesAt){return Math.max(0,Math.ceil((Number(closesAt)-(Date.now()+serverSkew))/1000));}
 function fmtLeft(closesAt){const s=secsLeft(closesAt);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+// ---- host buzzer (WebAudio; no asset files — same engine the player page uses) ----
+// The host is watching the room, not the clock. This is the cue that time is up. It does
+// NOT close the round — the host still decides when to tally.
+let adAudioCtx=null, adSoundOn=(localStorage.getItem('rt_admin_muted')!=='1');
+function adAc(){ if(!adAudioCtx){ try{adAudioCtx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} }
+  if(adAudioCtx&&adAudioCtx.state==='suspended')adAudioCtx.resume(); return adAudioCtx; }
+function adTone(freq,start,dur,type='sine',gain=0.2){
+  const c=adAc();if(!c)return;const o=c.createOscillator(),g=c.createGain();
+  o.type=type;o.frequency.value=freq;o.connect(g);g.connect(c.destination);
+  const t=c.currentTime+start;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(gain,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0008,t+dur);o.start(t);o.stop(t+dur+0.02);
+}
+const SFX={
+  buzzer(){ if(!adSoundOn)return; adTone(160,0,0.6,'sawtooth',0.26); adTone(120,0,0.6,'square',0.16); },
+  chime(){ if(!adSoundOn)return; adTone(880,0,0.18,'sine',0.18); adTone(1320,0.08,0.22,'sine',0.14); },
+  tick(){ if(!adSoundOn)return; adTone(660,0,0.06,'square',0.12); },
+};
+function updateAdMute(){ const b=$('#adMuteBtn'); if(b){b.textContent=adSoundOn?'🔊':'🔇';b.title=adSoundOn?'Buzzer on — click to mute':'Buzzer muted — click to unmute';} }
+$('#adMuteBtn')&&($('#adMuteBtn').onclick=()=>{
+  adSoundOn=!adSoundOn; localStorage.setItem('rt_admin_muted',adSoundOn?'0':'1'); updateAdMute();
+  if(adSoundOn){adAc();SFX.chime();}
+});
+updateAdMute();
+// Browsers refuse audio until the page has been interacted with. Prime the context on the
+// first click anywhere — without this the buzzer is silent on a tab nobody has touched.
+document.addEventListener('pointerdown',()=>{adAc();},{once:true});
+
+// Buzzer edge-trigger. Keyed to the ROUND id so it fires exactly once per round: the
+// countdown sits at 0:00 for as long as the host takes to tally, and a plain `<=0` test
+// would re-fire on every one of the 250ms ticks in between.
+let adBuzzedRound=null, adLastTickSec=null;
 function tickTimers(){
   const r=lastState&&lastState.activeRound;
-  const inPlay=!!(r&&(r.status==='voting'||r.status==='closed'));
+  const inPlay=!!(r&&(r.status==='listening'||r.status==='voting'||r.status==='closed'));
+  if(r&&r.status==='voting'&&r.closes_at){
+    const left=secsLeft(r.closes_at);
+    if(left<=0&&adBuzzedRound!==r.id){ adBuzzedRound=r.id; SFX.buzzer(); }
+    // Last five seconds tick, so the buzzer isn't a surprise.
+    if(left>0&&left<=5&&left!==adLastTickSec){ adLastTickSec=left; SFX.tick(); }
+    if(left>5)adLastTickSec=null;
+  }else if(!r||r.status!=='voting'){ adLastTickSec=null; }
   // big timer on the round card
   const t=document.querySelector('.timer-big');
   if(t&&r&&r.status==='voting'&&r.closes_at){
@@ -3326,8 +3509,8 @@ function tickTimers(){
   const show=inPlay&&!roundCardVisible()&&!document.getElementById('console').classList.contains('hide');
   mb.classList.toggle('hide',!show);
   if(!show)return;
-  $('#mbStatus').textContent=r.status==='voting'?'● Voting':'Tallying';
-  $('#mbStatus').className='pill '+(r.status==='voting'?'live':'closed');
+  $('#mbStatus').textContent=r.status==='listening'?'● On deck':(r.status==='voting'?'● Voting':'Tallying');
+  $('#mbStatus').className='pill '+(r.status==='listening'?'deck':(r.status==='voting'?'live':'closed'));
   $('#mbTitle').textContent=r.song_title+(r.option_b_title?' vs '+r.option_b_title:'');
   $('#mbTimer').textContent=(r.status==='voting'&&r.closes_at)?fmtLeft(r.closes_at):'';
   $('#mbVotes').textContent=(lastState.liveVotes?lastState.liveVotes.length:0)+' in';
@@ -3338,6 +3521,7 @@ function boot(){
   // A "Pulled: …" note from the previous session would misdescribe this one.
   $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
+  loadDeckKey(); // once per console open — the key never changes on its own
   initRealtime();
   // 250ms tick = the display flips within a quarter-second of each real second
   // boundary, whatever phase the interval starts on. Pure client-side countdown;

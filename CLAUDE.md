@@ -223,6 +223,35 @@ live on anr.makinitmag.com.
   so the shipped bands are half-open. `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling
   and the band cuts move with the 0–10 switch.
 
+- **Staged rounds + one-button show control + host buzzer** (030): a round now opens into a
+  new **`listening`** status — the record is on the overlay and in everyone's hands while it
+  plays, with NO dial and NO clock — and the host explicitly opens voting when it ends. That
+  makes every A&R's voting window identical and stops anyone rating three bars in. The guard
+  is real: `/api/vote` requires `status='voting'`, so listening rounds are refused at the
+  server, not just hidden in the UI. `listening` needed no schema change (rounds.status is
+  free TEXT; a listening round simply has `closes_at = NULL`).
+  **One Advance action drives the whole show** — Open Round → Open Voting → Ratify → Open
+  Round — implemented ONCE in `advanceRoom()` and called by both the console's big button
+  and the Stream Deck, so a physical key and the screen can't drift. **Ratify is
+  double-pressed**: first press arms, second commits. The arm lives in the DB
+  (`sessions.advance_armed_at` + `advance_armed_round`, 8s window) precisely because Vercel
+  may route the two presses to different instances — an in-memory arm would never fire. The
+  round id is stored with it so a stale arm can't tally the NEXT song.
+  **Stream Deck / external control:** `users.control_key` (per HOST, not per room) →
+  `/api/control/{advance,extend,state}`. The key resolves to whichever room that host has
+  live (same live-then-upcoming resolution as the host-keyed overlay), so a deck is
+  configured ONCE and never re-pointed. GET is accepted deliberately — Stream Deck's built-in
+  action and most of its plugins only do GET. **Scope is round control only**: it cannot read
+  A&R contact details, change settings, or delete anything, so a leaked key costs a disrupted
+  show, not a breach. Revocable + regenerable from the console (rolling invalidates instantly).
+  **Host buzzer:** WebAudio in admin.html (no asset files), edge-triggered on the ROUND id so
+  it fires once — the clock sits at 0:00 for as long as the host takes to tally and a plain
+  `<=0` test would re-fire on every 250ms tick. Last 5s tick; sticky per-device mute. It does
+  NOT auto-close the round. Note browsers block audio until the tab is interacted with, so
+  the context is primed on first click.
+  Tests use a `startVoting()` helper (idempotent — a no-op unless something is listening)
+  after each add-round, since adding a record now puts it on deck rather than starting a clock.
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count

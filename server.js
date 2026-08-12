@@ -539,10 +539,15 @@ async function resolveBanner(session) {
 // tally, or the most-recently ratified result. Pending (queued) rounds are NOT
 // active — they live in the queue until the admin opens one. This is what keeps
 // queuing a second song from hijacking the screen.
+// 'listening' (030) is a round that's OPEN but not yet taking votes — the record is on the
+// overlay and in everyone's hands while it plays, and the clock only starts when the host
+// opens voting. That's what makes the voting window uniform: nobody can rate three bars in,
+// and everyone gets the same countdown. It sorts ahead of everything else because a
+// listening round is the one the room is currently looking at.
 async function activeRound(sessionId) {
   return db.get(
-    `SELECT * FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')
-     ORDER BY CASE status WHEN 'voting' THEN 0 WHEN 'closed' THEN 1 ELSE 2 END,
+    `SELECT * FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed','ratified')
+     ORDER BY CASE status WHEN 'listening' THEN 0 WHEN 'voting' THEN 1 WHEN 'closed' THEN 2 ELSE 3 END,
               idx DESC LIMIT 1`,
     [sessionId]
   );
@@ -554,6 +559,107 @@ async function queuedRounds(sessionId) {
     `SELECT * FROM rounds WHERE session_id = ? AND status = 'pending' ORDER BY queue_pos ASC, idx ASC`,
     [sessionId]
   );
+}
+
+// ---------- the staged round machine (one button drives the show) ----------
+// Open Round -> Open Voting -> Ratify -> Open Round. ONE implementation, called by both the
+// console's big button and the Stream Deck's /api/control/advance, so a physical key and the
+// screen can never disagree about what the next press does.
+//
+// Ratify is DOUBLE-PRESSED. It's the only irreversible step in the loop (it computes points
+// and flips every player to results), and a Stream Deck is a physical key that gets leaned
+// on mid-song. First press arms, second within the window commits.
+const ADVANCE_ARM_MS = 8000;
+
+// What the next press will do, without doing it. Powers the button's label on both surfaces
+// and the /api/control/state readout.
+async function nextStage(sessionId) {
+  const r = await activeRound(sessionId);
+  if (r && r.status === 'listening') return { action: 'vote', round: r, label: 'Open Voting' };
+  if (r && (r.status === 'voting' || r.status === 'closed')) return { action: 'ratify', round: r, label: 'Ratify — tally the room' };
+  const q = (await queuedRounds(sessionId))[0] || null;
+  if (q) return { action: 'open', round: q, label: 'Open Round' };
+  return { action: 'none', round: null, label: 'Nothing queued' };
+}
+
+function clearAdvanceArm(sessionId) {
+  return db.run('UPDATE sessions SET advance_armed_at = NULL, advance_armed_round = NULL WHERE id = ?', [sessionId]);
+}
+
+// Ratify + every side effect that must ride with it. Extracted so the console route and the
+// staged advance share one path — a second copy would drift, and the copy that forgot to
+// credit referral milestones or push the board would be silently wrong.
+async function ratifyAndPublish(round, session) {
+  if (round.status === 'voting' || round.status === 'listening') {
+    await db.run("UPDATE rounds SET status = 'closed' WHERE id = ?", [round.id]);
+  }
+  const out = await ratifyRound(round);
+  // Referral bonuses fire BEFORE the board compute so the pushed board includes them.
+  try { await creditReferralMilestones(round, session); }
+  catch (e) { console.error('[referral] milestone credit failed:', e.message); }
+  // Compute the public series board ONCE here and push it as payload, so every connected
+  // homepage applies it directly instead of each re-fetching + recomputing (O(1) at scale).
+  let lbData = null;
+  if (session.series_id) {
+    try { lbData = { series: { id: session.series_id, leaderboard: await homeSeriesBoard(session.series_id) } }; }
+    catch (e) { console.error('[realtime] series board compute failed:', e.message); }
+  }
+  await realtime.publish(session.id, 'leaderboard', lbData);
+  return { ok: true, poll_type: out.poll_type, room_average: out.room_average ?? null,
+    split_a: out.split_a ?? null, players: out.ranked.length };
+}
+
+// Drive the room forward one stage. `minutes` only applies to the vote stage.
+async function advanceRoom(session, { minutes = null } = {}) {
+  const sessionId = session.id;
+  const stage = await nextStage(sessionId);
+  if (stage.action === 'none') return { ok: false, action: 'none', error: 'Nothing queued — add a record first' };
+  const round = stage.round;
+
+  if (stage.action === 'open') {
+    // The round number is assigned when it actually STARTS, not when it was queued — so a
+    // reordered or deleted queue never leaves a gap in the numbering the room sees.
+    const started = (await db.get(
+      "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed','ratified')",
+      [sessionId])).c;
+    // closes_at stays NULL: a listening round has no clock, and that's exactly the point.
+    await db.run("UPDATE rounds SET status = 'listening', idx = ?, opens_at = ?, closes_at = NULL WHERE id = ?",
+      [Number(started) + 1, now(), round.id]);
+    if (session.status === 'upcoming') {
+      await db.run("UPDATE sessions SET status = 'live', scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?", [now(), sessionId]);
+    }
+    await clearAdvanceArm(sessionId);
+    await realtime.publish(sessionId, 'round');
+    return { ok: true, action: 'open', status: 'listening', roundId: round.id,
+      idx: Number(started) + 1, title: round.song_title || '', next: 'vote' };
+  }
+
+  if (stage.action === 'vote') {
+    const dur = clampMinutes(minutes != null ? minutes
+      : (session.default_minutes != null ? session.default_minutes : DEFAULT_MINUTES)) * 60 * 1000;
+    const closes = now() + dur;
+    await db.run("UPDATE rounds SET status = 'voting', closes_at = ? WHERE id = ?", [closes, round.id]);
+    await clearAdvanceArm(sessionId);
+    await realtime.publish(sessionId, 'round');
+    return { ok: true, action: 'vote', status: 'voting', roundId: round.id,
+      idx: round.idx, title: round.song_title || '', closes_at: closes, next: 'ratify' };
+  }
+
+  // ---- ratify: arm on the first press, commit on the second ----
+  // Re-read the arm from the DB rather than trusting the caller's `session` row, which may
+  // predate the arming press by a whole request on a different serverless instance.
+  const armRow = await db.get('SELECT advance_armed_at, advance_armed_round FROM sessions WHERE id = ?', [sessionId]);
+  const armed = !!armRow && armRow.advance_armed_round === round.id
+    && Number(armRow.advance_armed_at || 0) > now() - ADVANCE_ARM_MS;
+  if (!armed) {
+    await db.run('UPDATE sessions SET advance_armed_at = ?, advance_armed_round = ? WHERE id = ?',
+      [now(), round.id, sessionId]);
+    return { ok: true, action: 'ratify', confirmNeeded: true, armed: true, roundId: round.id,
+      idx: round.idx, title: round.song_title || '', armMs: ADVANCE_ARM_MS, next: 'ratify' };
+  }
+  await clearAdvanceArm(sessionId);
+  const out = await ratifyAndPublish(round, session);
+  return { ...out, action: 'ratify', confirmNeeded: false, roundId: round.id, idx: round.idx, next: 'open' };
 }
 
 // End-of-session recap for one player: the big shareable reveal. Computed only
@@ -658,7 +764,12 @@ async function playerState(participant) {
       ? (isBinary ? { pick: v.pick, predict_split: v.predict_split } : { taste: v.taste, predict: v.predict })
       : null;
 
-    if (round.status === 'voting') {
+    if (round.status === 'listening') {
+      // The record is up and playing; nobody can vote yet. No dial, no clock — that's what
+      // makes everyone's voting window identical once the host starts it. /api/vote refuses
+      // this status outright, so the guard is real and not just a hidden button.
+      view = { phase: 'listening', round: roundBase, myVote: null };
+    } else if (round.status === 'voting') {
       view = {
         phase: myVote ? 'locked' : 'voting',
         round: roundBase,
@@ -746,7 +857,7 @@ async function playerState(participant) {
   };
   // Ad slot — lobby, voting, and locked only. Never on results/recap.
   // Cascade: the room's own banner -> Revive zone (when configured) -> global banner.
-  if (out.phase === 'waiting' || out.phase === 'voting' || out.phase === 'locked') {
+  if (out.phase === 'waiting' || out.phase === 'listening' || out.phase === 'voting' || out.phase === 'locked') {
     const own = session.banner_id ? await getBanner(session.banner_id) : null;
     if (own) out.banner = own;
     else {
@@ -847,7 +958,12 @@ async function overlayState(session, lbScope) {
       song_title: round.song_title, song_artist: round.song_artist, giveaway: round.giveaway,
     };
     if (isBinary) { base.option_b_title = round.option_b_title; base.option_b_artist = round.option_b_artist; }
-    if (round.status === 'voting' || round.status === 'closed') {
+    if (round.status === 'listening') {
+      // On deck: the record is on screen while it plays. No vote count (there are none)
+      // and no clock — closes_at is null, so the overlay's timer stays off on its own.
+      base.votes = 0;
+      current = base;
+    } else if (round.status === 'voting' || round.status === 'closed') {
       // Live tally: only the vote count is safe to show (the hype number). The room
       // average (rating) and the A/B split (binary) are the prediction targets — they
       // stay sealed until ratify, so we do NOT send them on the live payload at all.
@@ -3114,6 +3230,78 @@ async function handleApi(req, res, url) {
     return send(res, 200, { videoId, channelId, live });
   }
 
+  // ===== EXTERNAL CONTROL (Stream Deck / any HTTP button) =====
+  // A long-lived per-HOST key, so a deck is configured ONCE and never again: the key
+  // resolves to whichever room that host currently has live (same live-then-upcoming
+  // resolution the host-keyed overlay uses). Buttons are static URLs forever.
+  //
+  // GET is accepted deliberately. Stream Deck's built-in website action and most of its
+  // HTTP plugins only do GET, and an endpoint the operator can't actually wire up is worth
+  // nothing. The key may ride a header (preferred) or the query string (what the simple
+  // plugins can manage) — same shape as the existing INGEST_TOKEN/ANALYTICS_TOKEN pattern.
+  //
+  // SCOPE IS ROUND CONTROL ONLY. These endpoints cannot read A&R contact details, touch
+  // settings, or delete anything — so a key that leaks costs the operator a disrupted show,
+  // not a data breach. It is revocable and regenerable from the console.
+  if (p.startsWith('/api/control/')) {
+    const given = (req.headers['x-control-key'] || url.searchParams.get('k') || url.searchParams.get('key') || '').toString();
+    if (!given || given.length < 12) return send(res, 401, { error: 'Bad key' });
+    // Compare in the DB by exact match (the column is uniquely indexed). A timing-safe
+    // compare against every row would mean scanning the table on each press.
+    const host = await db.get('SELECT uid, blocked FROM users WHERE control_key = ?', [given]);
+    if (!host || host.blocked) return send(res, 401, { error: 'Bad key' });
+    // Explicit room wins; otherwise the host's live room, then their soonest upcoming one.
+    const wanted = url.searchParams.get('s') || url.searchParams.get('sessionId');
+    const session = wanted
+      ? await db.get('SELECT * FROM sessions WHERE id = ? AND owner_uid = ? AND deleted_at IS NULL', [wanted, host.uid])
+      : (await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1", [host.uid])
+        || await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'upcoming' AND deleted_at IS NULL ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", [host.uid]));
+    if (!session) return send(res, 404, { error: 'No live room' });
+
+    const act = p.slice('/api/control/'.length);
+    // Read-only: what the next press would do. Safe on GET by any definition.
+    if (act === 'state') {
+      const stage = await nextStage(session.id);
+      const r = stage.round;
+      return send(res, 200, { room: session.name, action: stage.action, label: stage.label,
+        round: r ? { idx: r.idx, status: r.status, song_title: r.song_title, closes_at: r.closes_at ? Number(r.closes_at) : null } : null });
+    }
+    if (act === 'advance') {
+      const out = await advanceRoom(session, { minutes: url.searchParams.get('minutes') });
+      return send(res, out.ok ? 200 : 400, out);
+    }
+    if (act === 'extend') {
+      const round = await activeRound(session.id);
+      if (!round || round.status !== 'voting') return send(res, 400, { error: 'No round is taking votes' });
+      const mins = url.searchParams.get('minutes'), secs = url.searchParams.get('seconds');
+      const add = (mins != null ? Number(mins) * 60 : (Number(secs) || 30)) * 1000;
+      if (!Number.isFinite(add) || add <= 0 || add > 60 * 60 * 1000) return send(res, 400, { error: 'Bad duration' });
+      const base = Math.max(Number(round.closes_at) || now(), now());
+      await db.run("UPDATE rounds SET closes_at = ? WHERE id = ?", [base + add, round.id]);
+      await realtime.publish(session.id, 'round');
+      return send(res, 200, { ok: true, action: 'extend', added: add / 1000, closes_at: base + add });
+    }
+    return send(res, 404, { error: 'Unknown control action' });
+  }
+
+  // Mint / rotate / clear this host's control key. Returns the key in full ONLY here —
+  // it's the one place the operator copies it from.
+  if (p === '/api/me/control-key' && (method === 'POST' || method === 'GET' || method === 'DELETE')) {
+    const user = await userFromAuth(req);
+    if (!user) return bad(res, 'Sign in first', 401);
+    if (method === 'GET') {
+      const row = await db.get('SELECT control_key FROM users WHERE uid = ?', [user.uid]);
+      return send(res, 200, { key: (row && row.control_key) || null });
+    }
+    if (method === 'DELETE') {
+      await db.run('UPDATE users SET control_key = NULL WHERE uid = ?', [user.uid]);
+      return send(res, 200, { key: null });
+    }
+    const key = 'k_' + id(18);
+    await db.run('UPDATE users SET control_key = ? WHERE uid = ?', [key, user.uid]);
+    return send(res, 200, { key });
+  }
+
   // ===== ADMIN =====
   // Round history for the console's Rounds tab. Fetched lazily when the tab opens
   // (NOT on the 2s poll), so it adds nothing to the steady-state request path.
@@ -3582,19 +3770,77 @@ async function handleApi(req, res, url) {
        isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
        cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), now()]
     );
-    // Straight to open unless a round is already in play (voting or awaiting tally) — then it
-    // waits in the queue. Removes the mandatory add-then-open two-step for the common case.
-    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('voting','closed')", [sessionId]);
+    // Straight to open unless a round is already in play — then it waits in the queue.
+    // Removes the mandatory add-then-open two-step for the common case. As of 030 "open"
+    // means LISTENING: the record goes up and the room hears it, and the host presses
+    // Advance to start the clock. Opening straight into voting would start a countdown
+    // before anyone had heard the song, which is the thing staging exists to prevent.
+    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed')", [sessionId]);
     if (!inPlay) {
-      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [sessionId])).c;
-      const dur = clampMinutes(session.default_minutes != null ? session.default_minutes : DEFAULT_MINUTES) * 60 * 1000;
-      await db.run("UPDATE rounds SET status = 'voting', idx = ?, opens_at = ?, closes_at = ? WHERE id = ?",
-        [Number(started) + 1, now(), now() + dur, rid]);
+      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed','ratified')", [sessionId])).c;
+      await db.run("UPDATE rounds SET status = 'listening', idx = ?, opens_at = ?, closes_at = NULL WHERE id = ?",
+        [Number(started) + 1, now(), rid]);
       if (session.status === 'upcoming') await db.run("UPDATE sessions SET status = 'live', scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?", [now(), sessionId]);
       await realtime.publish(sessionId, 'round');
-      return send(res, 200, { roundId: rid, opened: true });
+      return send(res, 200, { roundId: rid, opened: true, status: 'listening' });
     }
     return send(res, 200, { roundId: rid, opened: false });
+  }
+
+  // ---- the staged advance: one action drives the whole show ----
+  // Open Round -> Open Voting -> Ratify -> Open Round. The console's big button and the
+  // Stream Deck both land here (via /api/control/advance), so they can never disagree.
+  // Ratify needs two presses; the first returns confirmNeeded and changes nothing.
+  if (p === '/api/admin/advance' && method === 'POST') {
+    const { sessionId, minutes } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const out = await advanceRoom(session, { minutes });
+    return send(res, out.ok ? 200 : 400, out);
+  }
+
+  // What the next Advance press will do, without doing it. Lets the console label its button
+  // from the same source of truth the press itself uses.
+  if (p === '/api/admin/advance/state' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId');
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const stage = await nextStage(sessionId);
+    return send(res, 200, { action: stage.action, label: stage.label,
+      round: stage.round ? { id: stage.round.id, idx: stage.round.idx, status: stage.round.status, song_title: stage.round.song_title } : null });
+  }
+
+  // Start the clock on a listening round. This is the 'vote' stage of advance, exposed
+  // directly so the console can offer it with an explicit duration.
+  if (p === '/api/admin/round/start-voting' && method === 'POST') {
+    const { sessionId, roundId, minutes } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
+    if (!round) return bad(res, 'Round not found', 404);
+    if (round.status !== 'listening') return bad(res, 'That round is not on deck');
+    const dur = clampMinutes(minutes != null ? minutes
+      : (session.default_minutes != null ? session.default_minutes : DEFAULT_MINUTES)) * 60 * 1000;
+    const closes = now() + dur;
+    await db.run("UPDATE rounds SET status = 'voting', closes_at = ? WHERE id = ?", [closes, roundId]);
+    await clearAdvanceArm(sessionId);
+    await realtime.publish(sessionId, 'round');
+    return send(res, 200, { ok: true, closes_at: closes });
+  }
+
+  // Send a listening round back to the queue — the host opened the wrong song. Only before
+  // voting starts; once a clock has run there are votes to protect.
+  if (p === '/api/admin/round/unopen' && method === 'POST') {
+    const { sessionId, roundId } = await readBody(req);
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
+    if (!round) return bad(res, 'Round not found', 404);
+    if (round.status !== 'listening') return bad(res, 'Only a round that has not started voting can go back to the queue');
+    await db.run("UPDATE rounds SET status = 'pending', idx = 0, opens_at = NULL, closes_at = NULL WHERE id = ?", [roundId]);
+    await clearAdvanceArm(sessionId);
+    await realtime.publish(sessionId, 'round');
+    return send(res, 200, { ok: true });
   }
 
   // Reorder a queued song up/down, or delete it from the queue.
@@ -3629,12 +3875,12 @@ async function handleApi(req, res, url) {
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     // Don't open a new round while another is mid-flight (voting or awaiting tally).
-    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('voting','closed') AND id != ?", [sessionId, roundId]);
+    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed') AND id != ?", [sessionId, roundId]);
     if (inPlay) return bad(res, 'Close and tally the current round first');
     // Assign the real round number now, at open time = number of rounds already started + 1.
     let idx = round.idx;
     if (!idx || round.status === 'pending') {
-      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [sessionId])).c;
+      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed','ratified')", [sessionId])).c;
       idx = Number(started) + 1;
     }
     // Voting window in minutes, clamped to 2–60.

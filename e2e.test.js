@@ -26,6 +26,18 @@ async function call(path, body, method='POST', headers={}) {
   return { status: r.status, d };
 }
 
+// Rounds open into 'listening' now (staged rounds, 030): the record goes up on the overlay
+// and the room hears it, then the host starts the clock. Most tests just want a round taking
+// votes, so this walks whatever is on deck into voting. Idempotent by design — a no-op when
+// nothing is listening — so it's safe to call after any add.
+async function startVoting(sessionId, headers, minutes = 5) {
+  const st = (await call(`/api/admin/state?sessionId=${sessionId}`, null, 'GET', headers)).d;
+  const r = st && st.activeRound;
+  if (r && r.status === 'listening') {
+    await call('/api/admin/round/start-voting', { sessionId, roundId: r.id, minutes }, 'POST', headers);
+  }
+}
+
 (async () => {
   const server = require('./server');
   // server.js only auto-listens when run directly; when required (here, and on
@@ -68,6 +80,7 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— add + open round —');
   const ar = await call('/api/admin/round', { sessionId: SID, song_title: 'Midnight City', song_artist: 'M83', giveaway: 'Vinyl' }, 'POST', AH);
+  await startVoting(SID, AH);
   ok('round added', ar.status === 200 && ar.d.roundId);
   const RID = ar.d.roundId;
   const op = await call('/api/admin/round/open', { sessionId: SID, roundId: RID, minutes: 1 }, 'POST', AH);
@@ -214,12 +227,15 @@ async function call(path, body, method='POST', headers={}) {
   console.log('\n— add-song: straight to open; extras queue; none lost —');
   // Prior round is ratified, so nothing is in play — the first add opens immediately.
   const qa = await call('/api/admin/round', { sessionId: SID, song_title: 'Auto Open A' }, 'POST', AH);
+  await startVoting(SID, AH);
   ok('first add opens immediately (no round in play)', qa.d.opened === true, JSON.stringify(qa.d));
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   ok('auto-opened Song A, numbered 2', st.activeRound && st.activeRound.song_title === 'Auto Open A' && st.activeRound.idx === 2, JSON.stringify(st.activeRound));
   // While A is live, further adds go to the queue (both persist — the old bug).
   const qb = await call('/api/admin/round', { sessionId: SID, song_title: 'Queue Song B' }, 'POST', AH);
+  await startVoting(SID, AH);
   const qc0 = await call('/api/admin/round', { sessionId: SID, song_title: 'Queue Song C' }, 'POST', AH);
+  await startVoting(SID, AH);
   ok('adds during a live round go to the queue', qb.d.opened === false && qc0.d.opened === false, JSON.stringify([qb.d, qc0.d]));
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   ok('both queued songs present (none lost)', st.queue.length === 2 && st.queue[0].song_title === 'Queue Song B' && st.queue[1].song_title === 'Queue Song C', 'queue len ' + st.queue.length);
@@ -252,8 +268,10 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— guard: cannot open while a round is in play —');
   const qc = await call('/api/admin/round', { sessionId: SID, song_title: 'Mid-flight' }, 'POST', AH);
+  await startVoting(SID, AH);
   await call('/api/admin/round/open', { sessionId: SID, roundId: qc.d.roundId, minutes: 1 }, 'POST', AH);
   const qd = await call('/api/admin/round', { sessionId: SID, song_title: 'Should block' }, 'POST', AH);
+  await startVoting(SID, AH);
   const blocked = await call('/api/admin/round/open', { sessionId: SID, roundId: qd.d.roundId, minutes: 1 }, 'POST', AH);
   ok('open blocked while another round is voting', blocked.status === 400, JSON.stringify(blocked.d));
   await call('/api/admin/round/close', { sessionId: SID, roundId: qc.d.roundId }, 'POST', AH);
@@ -264,6 +282,7 @@ async function call(path, body, method='POST', headers={}) {
   // but their cumulative total must not drop below 0.
   const tn = await join('z@test.com', 'Zed');
   const qz = await call('/api/admin/round', { sessionId: SID, song_title: 'Penalty Test' }, 'POST', AH);
+  await startVoting(SID, AH);
   await call('/api/admin/round/open', { sessionId: SID, roundId: qz.d.roundId, minutes: 1 }, 'POST', AH);
   // Zed rates 0, predicts 9 -> with a solo vote the room avg = 0, err = 9 -> negative round
   await call('/api/vote', { taste: 0, predict: 9 }, 'POST', { 'X-Player-Token': tn });
@@ -276,7 +295,9 @@ async function call(path, body, method='POST', headers={}) {
   console.log('\n— edit a queued song, and reopen an accidentally-closed round —');
   // Put a round in play first so the next add queues (instead of auto-opening).
   const qFill = await call('/api/admin/round', { sessionId: SID, song_title: 'Filler (live)' }, 'POST', AH);
+  await startVoting(SID, AH);
   const qe = await call('/api/admin/round', { sessionId: SID, song_title: 'Wrong Title', song_artist: 'Wrong Artist' }, 'POST', AH);
+  await startVoting(SID, AH);
   ok('added while a round is live -> queued', qe.d.opened === false, JSON.stringify(qe.d));
   const ed = await call('/api/admin/round/edit', { sessionId: SID, roundId: qe.d.roundId, song_title: 'Right Title', song_artist: 'Right Artist', giveaway: 'Hat' }, 'POST', AH);
   ok('edit queued song ok', ed.status === 200);
@@ -315,6 +336,7 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— minutes-based voting window + 2–60 clamp —');
   const qm = await call('/api/admin/round', { sessionId: SID, song_title: 'Two Minute Song' }, 'POST', AH);
+  await startVoting(SID, AH);
   await call('/api/admin/round/open', { sessionId: SID, roundId: qm.d.roundId, minutes: 2 }, 'POST', AH);
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   let windowMs = Number(st.activeRound.closes_at) - st.serverNow;
@@ -323,6 +345,7 @@ async function call(path, body, method='POST', headers={}) {
 
   // below-minimum clamps up to 2
   const qLow = await call('/api/admin/round', { sessionId: SID, song_title: 'Too Short' }, 'POST', AH);
+  await startVoting(SID, AH);
   await call('/api/admin/round/open', { sessionId: SID, roundId: qLow.d.roundId, minutes: 0.5 }, 'POST', AH);
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   windowMs = Number(st.activeRound.closes_at) - st.serverNow;
@@ -331,6 +354,7 @@ async function call(path, body, method='POST', headers={}) {
 
   // above-maximum clamps down to 60
   const qHigh = await call('/api/admin/round', { sessionId: SID, song_title: 'Too Long' }, 'POST', AH);
+  await startVoting(SID, AH);
   await call('/api/admin/round/open', { sessionId: SID, roundId: qHigh.d.roundId, minutes: 999 }, 'POST', AH);
   st = (await call(`/api/admin/state?sessionId=${SID}`, null, 'GET', AH)).d;
   windowMs = Number(st.activeRound.closes_at) - st.serverNow;
@@ -622,8 +646,10 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— binary: round needs both A and B —');
   const missB = await call('/api/admin/round', { sessionId: BSID, song_title: 'Only A' }, 'POST', BAH);
+  await startVoting(BSID, BAH);
   ok('binary round requires Song B', missB.status === 400, 'got ' + missB.status);
   const bar = await call('/api/admin/round', { sessionId: BSID, song_title: 'Jay-Z', song_artist: 'HOV', option_b_title: 'Nas', option_b_artist: 'Nasir', giveaway: 'Tickets' }, 'POST', BAH);
+  await startVoting(BSID, BAH);
   ok('binary round added with A/B', bar.status === 200 && bar.d.roundId, JSON.stringify(bar.d));
   const VBRID = bar.d.roundId;
   const bop = await call('/api/admin/round/open', { sessionId: BSID, roundId: VBRID, minutes: 1 }, 'POST', BAH);
@@ -729,6 +755,7 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— mixed: round 1 is a RATING round (session default) —');
   const mr1 = await call('/api/admin/round', { sessionId: MSID, song_title: 'Rating One', song_artist: 'X' }, 'POST', MAH);
+  await startVoting(MSID, MAH);
   ok('R1 added + auto-opened', mr1.status === 200 && mr1.d.opened, JSON.stringify(mr1.d));
   let mxState = (await call(`/api/admin/state?sessionId=${MSID}`, null, 'GET', MAH)).d;
   ok('R1 active round poll_type=rating', mxState.activeRound.poll_type === 'rating', mxState.activeRound.poll_type);
@@ -742,8 +769,10 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— mixed: round 2 is a BINARY round in the SAME session (per-round override) —');
   const mr2miss = await call('/api/admin/round', { sessionId: MSID, song_title: 'Only A', poll_type: 'binary' }, 'POST', MAH);
+  await startVoting(MSID, MAH);
   ok('binary round in mixed session still requires Song B', mr2miss.status === 400, 'got ' + mr2miss.status);
   const mr2 = await call('/api/admin/round', { sessionId: MSID, song_title: 'Versus A', option_b_title: 'Versus B', poll_type: 'binary' }, 'POST', MAH);
+  await startVoting(MSID, MAH);
   ok('R2 binary added + auto-opened', mr2.status === 200 && mr2.d.opened, JSON.stringify(mr2.d));
   mxState = (await call(`/api/admin/state?sessionId=${MSID}`, null, 'GET', MAH)).d;
   ok('R2 active round poll_type=binary', mxState.activeRound.poll_type === 'binary', mxState.activeRound.poll_type);
@@ -761,8 +790,10 @@ async function call(path, body, method='POST', headers={}) {
 
   console.log('\n— mixed: round 3 with NO type inherits the previous (binary) — persistence —');
   const mr3inherit = await call('/api/admin/round', { sessionId: MSID, song_title: 'Inherits binary' }, 'POST', MAH);
+  await startVoting(MSID, MAH);
   ok('R3 (no poll_type) inherits binary -> Song B required', mr3inherit.status === 400, 'got ' + mr3inherit.status);
   const mr3 = await call('/api/admin/round', { sessionId: MSID, song_title: 'Rating Three', poll_type: 'rating' }, 'POST', MAH);
+  await startVoting(MSID, MAH);
   ok('R3 switched back to rating', mr3.status === 200 && mr3.d.opened, JSON.stringify(mr3.d));
   await call('/api/vote', { taste: 8, predict: 7 }, 'POST', { 'X-Player-Token': mxA });
   await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': mxB });
@@ -859,6 +890,7 @@ async function call(path, body, method='POST', headers={}) {
   const hkLive = await call('/api/session', { name: 'HK Live' }, 'POST', HKH);
   const HKLIVE = hkLive.d.sessionId;
   await call('/api/admin/round', { sessionId: HKLIVE, song_title: 'Live Song' }, 'POST', HKH); // auto-opens -> live
+  await startVoting(HKLIVE, HKH);
   const ovLive = await fetch(base + `/api/overlay/state?host=${HKUID}`).then(r => r.json());
   ok('host key prefers the LIVE room over upcoming', ovLive.session.id === HKLIVE && ovLive.session.status === 'live', JSON.stringify(ovLive.session));
   ok('host-keyed payload carries session.id for QR rebuild', typeof ovLive.session.id === 'string' && ovLive.session.id.length > 0, ovLive.session.id);
@@ -958,6 +990,7 @@ async function call(path, body, method='POST', headers={}) {
   console.log('\n— referrals: credit only after the referred player actually plays —');
   // Open a round and have the referred player vote.
   const rr = await call('/api/admin/round', { sessionId: RSID, song_title: 'Ref Song' }, 'POST', RAH);
+  await startVoting(RSID, RAH);
   const RRID = rr.d.roundId;
   await call('/api/admin/round/open', { sessionId: RSID, roundId: RRID, minutes: 2 }, 'POST', RAH);
   await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': refTok });
@@ -1006,6 +1039,7 @@ async function call(path, body, method='POST', headers={}) {
     return v.d.token;
   }
   const gRound1 = await call('/api/admin/round', { sessionId: GSID, song_title: 'Pre-enforce' }, 'POST', GAH);
+  await startVoting(GSID, GAH);
   await call('/api/admin/round/open', { sessionId: GSID, roundId: gRound1.d.roundId, minutes: 5 }, 'POST', GAH);
   const earlyTok = await gjoin('early@test.com', 'Early Bird');
   const earlyVote = await call('/api/vote', { taste: 6, predict: 6 }, 'POST', { 'X-Player-Token': earlyTok });
@@ -1015,6 +1049,7 @@ async function call(path, body, method='POST', headers={}) {
   console.log('\n— geo: flip enforcement ON (optional/dual-pool); lock-in now gated —');
   await call('/api/admin/session/config', { sessionId: GSID, geoMode: 'optional' }, 'POST', GAH);
   const gRound2 = await call('/api/admin/round', { sessionId: GSID, song_title: 'Geo Round' }, 'POST', GAH);
+  await startVoting(GSID, GAH);
   await call('/api/admin/round/open', { sessionId: GSID, roundId: gRound2.d.roundId, minutes: 5 }, 'POST', GAH);
   const inTok = await gjoin('inroom@test.com', 'In Room');
   // Player state advertises the geo requirement.
@@ -1065,6 +1100,7 @@ async function call(path, body, method='POST', headers={}) {
   await call('/api/admin/round/close', { sessionId: GSID, roundId: gRound2.d.roundId }, 'POST', GAH);
   await call('/api/admin/round/ratify', { sessionId: GSID, roundId: gRound2.d.roundId }, 'POST', GAH);
   await call('/api/admin/round', { sessionId: GSID, song_title: 'Strict Round' }, 'POST', GAH); // auto-opens
+  await startVoting(GSID, GAH);
   // Rita kept her 'online' pool from the optional phase — required mode must NOT accept it.
   const ritaStrict = await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': farTok });
   ok('online pool from the optional phase is NOT enough in required mode (428)', ritaStrict.status === 428 && ritaStrict.d.error === 'checkin_required', JSON.stringify([ritaStrict.status, ritaStrict.d]));
@@ -1167,6 +1203,7 @@ async function call(path, body, method='POST', headers={}) {
   const pjv = await call('/api/join/verify', { sessionId: PGID, email: 'purge@test.com', code: pjr.d.devCode, name: 'Purgy' });
   const pgt = pjv.d.token;
   const pgr = await call('/api/admin/round', { sessionId: PGID, song_title: 'Doomed Track' }, 'POST', PGAH);
+  await startVoting(PGID, PGAH);
   await call('/api/admin/round/open', { sessionId: PGID, roundId: pgr.d.roundId, minutes: 1 }, 'POST', PGAH);
   await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': pgt });
   await call('/api/admin/round/ratify', { sessionId: PGID, roundId: pgr.d.roundId }, 'POST', PGAH);
@@ -1488,6 +1525,7 @@ async function call(path, body, method='POST', headers={}) {
   const rvWait = (await call('/api/me/state', null, 'GET', RVTOK)).d;
   ok('lobby phase serves the lobby zone', rvWait.phase === 'waiting' && rvWait.revive && rvWait.revive.zone === '8' && !rvWait.banner, JSON.stringify(rvWait.revive));
   await call('/api/admin/round', { sessionId: rvC.d.sessionId, song_title: 'Rv Song' }, 'POST', RVAH); // auto-opens
+  await startVoting(rvC.d.sessionId, RVAH);
   const rvVote = (await call('/api/me/state', null, 'GET', RVTOK)).d;
   ok('voting phase serves the in-game zone', rvVote.phase === 'voting' && rvVote.revive && rvVote.revive.zone === '9', JSON.stringify(rvVote.revive));
   // A room banner beats the network ads.
@@ -1516,6 +1554,7 @@ async function call(path, body, method='POST', headers={}) {
   const rpC = await call('/api/session', { name: 'Report Night' }, 'POST', BOOTH);
   const RPID = rpC.d.sessionId, RPAH = { 'X-Admin-Token': rpC.d.adminToken };
   const rpRound = await call('/api/admin/round', { sessionId: RPID, song_title: 'Report Song', song_artist: 'Test Artist', song_note: 'IG: @testartist' }, 'POST', RPAH);
+  await startVoting(RPID, RPAH);
   const RPRID = rpRound.d.roundId; // auto-opened
   const tastes = [3, 5, 6, 7, 7, 8, 8, 9];
   for (let i = 0; i < tastes.length; i++) {
@@ -1637,6 +1676,7 @@ async function call(path, body, method='POST', headers={}) {
   // Song 1 arrives WITH contact (the review-site/queue-form path).
   const an1 = await call('/api/admin/round', { sessionId: ANID, song_title: 'Contact Song', song_artist: 'Reachable',
     artist_email: 'Reach@Artist.COM', artist_phone: '(305) 555-0199' }, 'POST', ANAH);
+  await startVoting(ANID, ANAH);
   const AN1 = an1.d.roundId;
   const anVote = async (rid, n, tag) => {
     for (let i = 0; i < n; i++) {
@@ -1649,6 +1689,7 @@ async function call(path, body, method='POST', headers={}) {
   await call('/api/admin/round/ratify', { sessionId: ANID, roundId: AN1 }, 'POST', ANAH);
   // Song 2 arrives with NO contact — the case the Rounds tab flags.
   const an2 = await call('/api/admin/round', { sessionId: ANID, song_title: 'Orphan Song', song_artist: 'Unreachable' }, 'POST', ANAH);
+  await startVoting(ANID, ANAH);
   const AN2 = an2.d.roundId;
   await anVote(AN2, 3, 'anB');
   await call('/api/admin/round/ratify', { sessionId: ANID, roundId: AN2 }, 'POST', ANAH);
@@ -1730,6 +1771,7 @@ async function call(path, body, method='POST', headers={}) {
   // Eligibility is re-checked server-side, so a hand-made request can't mail a report for
   // a round that has none. AN3 is a fresh unratified round.
   const an3 = await call('/api/admin/round', { sessionId: ANID, song_title: 'Not Yet', artist_email: 'x@y.com' }, 'POST', ANAH);
+  await startVoting(ANID, ANAH);
   const rsIneligible = await call(rsPath, { sessionId: ANID, roundId: an3.d.roundId, email: true }, 'POST', ANAH);
   ok('resend refuses a round with no report to send (409)', rsIneligible.status === 409, JSON.stringify(rsIneligible.d));
   // Email needs Blob (the report pages are rendered + hosted) — refused, not half-sent.
@@ -1787,6 +1829,112 @@ async function call(path, body, method='POST', headers={}) {
   // pays their referrer +10 on the series board; the 50th pays +75 more.
   // First-touch only (new accounts); idempotent across every later ratify.
   // ======================================================================
+  console.log('\n— staged rounds: listening → voting → ratify, one Advance action —');
+  const sgC = await call('/api/session', { name: 'Staged Night' }, 'POST', BOOTH);
+  const SGID = sgC.d.sessionId, SGAH = { 'X-Admin-Token': sgC.d.adminToken };
+  const sgJoin = async (email, name) => {
+    const rq = await call('/api/join/request', { sessionId: SGID, email });
+    return (await call('/api/join/verify', { sessionId: SGID, email, code: rq.d.devCode, name })).d.token;
+  };
+  const sg1 = await sgJoin('sg1@test.com', 'Sasha'), sg2 = await sgJoin('sg2@test.com', 'Rome');
+
+  // Adding a record puts it ON DECK, not straight into voting. That's the whole point:
+  // the room hears the song before any clock starts.
+  const sgAdd = await call('/api/admin/round', { sessionId: SGID, song_title: 'Staged One', song_artist: 'Deck' }, 'POST', SGAH);
+  ok('a new record opens into LISTENING, not voting', sgAdd.d.opened === true && sgAdd.d.status === 'listening', JSON.stringify(sgAdd.d));
+  let sgSt = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d;
+  ok('listening round carries no clock', sgSt.activeRound.status === 'listening' && !sgSt.activeRound.closes_at, JSON.stringify(sgSt.activeRound));
+
+  // The guard that makes voting windows uniform: it's the SERVER refusing, not a hidden button.
+  const sgEarly = await call('/api/vote', { taste: 9, predict: 9 }, 'POST', { 'X-Player-Token': sg1 });
+  ok('votes are REFUSED while a round is listening', sgEarly.status === 400, 'got ' + sgEarly.status);
+  let sgPlay = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': sg1 })).d;
+  ok('player sees the listening phase', sgPlay.phase === 'listening', sgPlay.phase);
+  ok('listening player gets the record but no clock', sgPlay.round.song_title === 'Staged One' && !sgPlay.round.closes_at, JSON.stringify(sgPlay.round));
+
+  // Advance #1: listening -> voting.
+  const sgNext1 = (await call(`/api/admin/advance/state?sessionId=${SGID}`, null, 'GET', SGAH)).d;
+  ok('next stage reads as "vote" while listening', sgNext1.action === 'vote', JSON.stringify(sgNext1));
+  const sgAdv1 = await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH);
+  ok('advance starts the clock', sgAdv1.d.action === 'vote' && sgAdv1.d.status === 'voting' && sgAdv1.d.closes_at, JSON.stringify(sgAdv1.d));
+  const sgNow = await call('/api/vote', { taste: 8, predict: 7 }, 'POST', { 'X-Player-Token': sg1 });
+  ok('votes are accepted once voting opens', sgNow.d.locked === true, JSON.stringify(sgNow.d));
+  await call('/api/vote', { taste: 6, predict: 7 }, 'POST', { 'X-Player-Token': sg2 });
+
+  // Advance #2 + #3: ratify is DOUBLE-pressed. The first press must change nothing.
+  const sgArm = await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH);
+  ok('first ratify press only ARMS', sgArm.d.action === 'ratify' && sgArm.d.confirmNeeded === true, JSON.stringify(sgArm.d));
+  sgSt = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d;
+  ok('arming does NOT tally the round', sgSt.activeRound.status === 'voting', sgSt.activeRound.status);
+  const sgFire = await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH);
+  ok('second press tallies', sgFire.d.confirmNeeded === false && sgFire.d.room_average != null, JSON.stringify(sgFire.d));
+  sgSt = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d;
+  ok('round is ratified after the confirm', sgSt.activeRound.status === 'ratified', sgSt.activeRound.status);
+
+  // A fresh round must re-arm from scratch — a stale arm can never tally the NEXT song.
+  await call('/api/admin/round', { sessionId: SGID, song_title: 'Staged Two' }, 'POST', SGAH);
+  await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH); // listening -> voting
+  await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': sg1 });
+  const sgArm2 = await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH);
+  ok('a new round requires its OWN arming press', sgArm2.d.confirmNeeded === true, JSON.stringify(sgArm2.d));
+  await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH);
+
+  // Back-to-queue only before a clock has run.
+  await call('/api/admin/round', { sessionId: SGID, song_title: 'Wrong Song' }, 'POST', SGAH);
+  const sgUn = await call('/api/admin/round/unopen', { sessionId: SGID, roundId: (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d.activeRound.id }, 'POST', SGAH);
+  ok('a listening round can go back to the queue', sgUn.status === 200, JSON.stringify(sgUn.d));
+  const sgQ = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d;
+  ok('un-opened record is back in the queue', (sgQ.queue || []).some(q => q.song_title === 'Wrong Song'), JSON.stringify(sgQ.queue));
+
+  console.log('\n— external control (Stream Deck): key auth, scope, live-room resolution —');
+  // The key hangs off the HOST, and resolves to whichever room they have live — so a deck
+  // is configured once and never re-pointed.
+  const ckMint = await call('/api/me/control-key', {}, 'POST', BOOTH);
+  ok('host can mint a control key', ckMint.status === 200 && /^k_/.test(ckMint.d.key || ''), JSON.stringify(ckMint.d));
+  const CK = ckMint.d.key;
+  const ckNoAuth = await call('/api/me/control-key', {}, 'POST');
+  ok('minting requires a signed-in host', ckNoAuth.status === 401, 'got ' + ckNoAuth.status);
+  const ckBad = await call('/api/control/state?k=k_totallywrongkey', null, 'GET');
+  ok('a bad key is rejected', ckBad.status === 401, 'got ' + ckBad.status);
+  const ckNone = await call('/api/control/state', null, 'GET');
+  ok('a missing key is rejected', ckNone.status === 401, 'got ' + ckNone.status);
+  const ckUnknown = await call(`/api/control/purge?k=${CK}`, null, 'GET');
+  ok('unknown control actions are refused (scope is round control only)', ckUnknown.status === 404, 'got ' + ckUnknown.status);
+
+  // Drive the staged room from the "deck". Explicit room id, since BOOTH owns several.
+  const ckState = await call(`/api/control/state?k=${CK}&s=${SGID}`, null, 'GET');
+  ok('control/state reports the next action', ckState.status === 200 && ckState.d.action === 'open', JSON.stringify(ckState.d));
+  ok('control/state leaks no A&R PII', !JSON.stringify(ckState.d).includes('@test.com'));
+  await call('/api/admin/round', { sessionId: SGID, song_title: 'Deck Driven' }, 'POST', SGAH);
+  const ckAdv1 = await call(`/api/control/advance?k=${CK}&s=${SGID}`, null, 'GET');
+  ok('deck advance starts voting on the listening round', ckAdv1.d.action === 'vote' && ckAdv1.d.status === 'voting', JSON.stringify(ckAdv1.d));
+  const ckExt = await call(`/api/control/extend?k=${CK}&s=${SGID}&seconds=30`, null, 'GET');
+  ok('deck can add time', ckExt.status === 200 && ckExt.d.added === 30, JSON.stringify(ckExt.d));
+  await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': sg2 });
+  const ckArm = await call(`/api/control/advance?k=${CK}&s=${SGID}`, null, 'GET');
+  ok('deck ratify ALSO needs two presses', ckArm.d.confirmNeeded === true, JSON.stringify(ckArm.d));
+  const ckFire = await call(`/api/control/advance?k=${CK}&s=${SGID}`, null, 'GET');
+  ok('deck second press tallies', ckFire.d.confirmNeeded === false && ckFire.d.room_average != null, JSON.stringify(ckFire.d));
+  // The arm is shared state, so a console press can confirm a deck press and vice versa —
+  // that's intended (one guard, not two), and worth pinning down.
+  const ckHeaderAuth = await call(`/api/control/state?s=${SGID}`, null, 'GET', { 'X-Control-Key': CK });
+  ok('the key also works as a header (not just the query string)', ckHeaderAuth.status === 200, 'got ' + ckHeaderAuth.status);
+  // A regenerated key must invalidate the old one immediately.
+  const ckRoll = await call('/api/me/control-key', {}, 'POST', BOOTH);
+  ok('regenerating issues a different key', ckRoll.d.key && ckRoll.d.key !== CK);
+  const ckStale = await call(`/api/control/state?k=${CK}&s=${SGID}`, null, 'GET');
+  ok('the old key stops working the moment it is rolled', ckStale.status === 401, 'got ' + ckStale.status);
+  // A host can only reach their OWN rooms. HKLIVE belongs to a different host account.
+  const ckForeign = await call(`/api/control/state?k=${ckRoll.d.key}&s=${HKLIVE}`, null, 'GET');
+  ok("a key can't drive another host's room", ckForeign.status === 404, 'got ' + ckForeign.status);
+  // And the other host's own key resolves to their live room with no room id at all —
+  // the property that lets a Stream Deck be configured once and never re-pointed.
+  const hkKey = (await call('/api/me/control-key', {}, 'POST', HKH)).d.key;
+  // (Which room specifically depends on what earlier tests left live vs upcoming — the
+  // property under test is that it resolves to one of THEIR rooms with no id supplied.)
+  const hkAuto = await call(`/api/control/state?k=${hkKey}`, null, 'GET');
+  ok('a bare key auto-resolves to that host\'s own room', hkAuto.status === 200 && /^HK /.test(hkAuto.d.room || ''), JSON.stringify(hkAuto.d));
+
   console.log('\n— referral bonus milestones: 10 rounds → +10, 50 → +75 —');
   const rbSer = await call('/api/admin/series/create', { title: 'Referral Bonus Series', status: 'active' }, 'POST', ADMINH);
   const rbC = await call('/api/session', { name: 'Referral Night' }, 'POST', BOOTH);
@@ -1818,6 +1966,7 @@ async function call(path, body, method='POST', headers={}) {
   const playRound = async () => {
     rbRound++;
     const r = await call('/api/admin/round', { sessionId: RBID, song_title: 'RB ' + rbRound }, 'POST', RBAH);
+    await startVoting(RBID, RBAH);
     await call('/api/vote', { taste: 6, predict: 6 }, 'POST', NIA);
     if (rbRound === 1) await call('/api/vote', { taste: 4, predict: 5 }, 'POST', MAYA_RB);
     await call('/api/admin/round/ratify', { sessionId: RBID, roundId: r.d.roundId }, 'POST', RBAH);
@@ -2053,6 +2202,7 @@ async function call(path, body, method='POST', headers={}) {
   // `tastes` drives both the room average and the vote count.
   const chPlay = async (room, seats, title, artist, tastes, note) => {
     const ar = await call('/api/admin/round', { sessionId: room.id, song_title: title, song_artist: artist, song_note: note || null }, 'POST', room.h);
+    await startVoting(room.id, room.h);
     const rid = ar.d.roundId;
     if (!ar.d.opened) await call('/api/admin/round/open', { sessionId: room.id, roundId: rid, minutes: 5 }, 'POST', room.h);
     for (let i = 0; i < tastes.length; i++) await call('/api/vote', { taste: tastes[i], predict: 5 }, 'POST', seats[i]);
@@ -2114,6 +2264,7 @@ async function call(path, body, method='POST', headers={}) {
   const bSeats = [];
   for (const [e, n] of [['ch1@fan.com', 'Cee One'], ['ch2@fan.com', 'Cee Two'], ['ch3@fan.com', 'Cee Three']]) bSeats.push(await chSeat(chBin, e, n));
   const bAdd = await call('/api/admin/round', { sessionId: chBin.id, song_title: 'Versus A', option_b_title: 'Versus B', poll_type: 'binary' }, 'POST', chBin.h);
+  await startVoting(chBin.id, chBin.h);
   if (!bAdd.d.opened) await call('/api/admin/round/open', { sessionId: chBin.id, roundId: bAdd.d.roundId, minutes: 5 }, 'POST', chBin.h);
   for (const s of bSeats) await call('/api/vote', { pick: 'a', predict_split: 60 }, 'POST', s);
   await call('/api/admin/round/close', { sessionId: chBin.id, roundId: bAdd.d.roundId }, 'POST', chBin.h);
