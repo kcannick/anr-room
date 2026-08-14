@@ -890,9 +890,10 @@ async function playerState(participant) {
     giveaway,
     ...view,
   };
-  // Ad slot — lobby, voting, and locked only. Never on results/recap.
+  // Ad slot — EVERY phase, results and recap included (banner ads fund the show;
+  // was lobby/voting/locked only until 2026-08-14).
   // Cascade: the room's own banner -> Revive zone (when configured) -> global banner.
-  if (out.phase === 'waiting' || out.phase === 'listening' || out.phase === 'voting' || out.phase === 'locked') {
+  {
     const own = session.banner_id ? await getBanner(session.banner_id) : null;
     if (own) out.banner = own;
     else {
@@ -2917,16 +2918,28 @@ async function handleApi(req, res, url) {
   // + lightweight join context only.
   if (p === '/api/session/info' && method === 'GET') {
     const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
-    const session = sessionId ? await db.get('SELECT id, name, status, deleted_at, watch_url, lobby_message FROM sessions WHERE id = ?', [sessionId]) : null;
+    const session = sessionId ? await db.get('SELECT id, name, status, deleted_at, watch_url, lobby_message, banner_id FROM sessions WHERE id = ?', [sessionId]) : null;
     if (!session || session.deleted_at) return bad(res, 'Room not found', 404);
-    return send(res, 200, {
+    const out = {
       id: session.id,
       name: session.name,
       status: session.status,
       closed: session.status === 'completed' || session.status === 'archived',
       watchUrl: session.watch_url || null,
       lobbyMessage: session.lobby_message || null,
-    });
+    };
+    // Same ad cascade the in-room state carries (room banner -> Revive -> global),
+    // so the banner is on screen from the JOIN screens on — the slot is never empty
+    // while ads fund the show. Pre-join counts as lobby for zone choice. All public
+    // data (banner image URL + link, Revive zone id) — no PII.
+    const own = session.banner_id ? await getBanner(session.banner_id) : null;
+    if (own) out.banner = own;
+    else {
+      const rv = await getReviveCfg();
+      if (rv) out.revive = { base: rv.base, zone: rv.lobby };
+      else out.banner = await resolveBanner(session);
+    }
+    return send(res, 200, out);
   }
 
   if (p === '/api/overlay/state' && method === 'GET') {

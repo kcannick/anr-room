@@ -1314,15 +1314,18 @@ function shareText(r){
 }
 
 // Ad slot dispatcher — first-party banner wins; else the Revive zone iframe (fresh
-// cache-buster per load); else clear. Rotation rides the poll: a new creative every
-// ~30s in the lobby, ~60s during gameplay (fixed 320×100 box, so no reflow mid-vote).
-let adMode=null, adZone=null, adLoadedAt=0;
+// cache-buster per load); else clear. Revive rotates on its OWN 1s ticker (not the
+// poll, whose cadence swings 2s–15s with Ably) so a new creative lands every 15s in
+// every phase (fixed 320×100 box, so no reflow mid-vote).
+const AD_ROTATE_MS=15000;
+let adMode=null, adZone=null, adLoadedAt=0, adSt=null;
+setInterval(()=>{ if(adSt&&adMode==='revive')renderAd(adSt); }, 1000);
 function renderAd(st){
+  adSt=st;
   const slot=$('#adTop'); if(!slot)return;
   if(st.banner&&st.banner.image){ adMode='banner'; adZone=null; renderBanner('adTop',st.banner); return; }
   if(st.revive&&st.revive.base&&st.revive.zone){
-    const interval=st.phase==='waiting'?30000:60000;
-    const due=adMode!=='revive'||adZone!==st.revive.zone||(Date.now()-adLoadedAt)>=interval;
+    const due=adMode!=='revive'||adZone!==st.revive.zone||(Date.now()-adLoadedAt)>=AD_ROTATE_MS;
     adMode='revive';
     if(due){
       adZone=st.revive.zone; adLoadedAt=Date.now();
@@ -1486,8 +1489,8 @@ function render(st){
 
   // Live stream embed at the top (YouTube only; tap-to-start, never autoplay).
   updateStreamEmbed(st);
-  // Ad slot right under the embed — room banner, Revive zone, or empty; the server
-  // sends nothing on results/recap so it clears itself there.
+  // Ad slot right under the embed — room banner, Revive zone, or empty. The server
+  // sends the cascade in EVERY phase (results and recap included) — ads fund the show.
   renderAd(st);
 
   // Referral: remember my code (for the invite link) + my credited count.
@@ -2005,6 +2008,9 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
   try{
     sessInfo=await fetch('/api/session/info?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status));
     if(sessInfo&&sessInfo.name)$('#sessName').textContent=sessInfo.name;
+    // Banner from the FIRST paint — the join/login screens run the same ad slot,
+    // so the banner is always showing. The in-room poll takes over after join.
+    if(sessInfo)renderAd(sessInfo);
     // Expired (completed/archived) session and no participation to show -> front page.
     if(sessInfo&&sessInfo.closed&&!getToken()){ location.replace('/'); return; }
   }catch(e){

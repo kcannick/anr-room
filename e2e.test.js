@@ -389,6 +389,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const jb = await join('banner@test.com', 'Bea');
   let bs = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': jb })).d;
   ok('player in voting sees a banner', bs.banner && bs.banner.id === upG.d.bannerId, JSON.stringify(bs.banner));
+
+  // The banner is ALWAYS showing: the public pre-join info endpoint carries the same
+  // cascade, so the slot is filled before a player even registers.
+  const preJoin = (await call('/api/session/info?s=' + SID, null, 'GET')).d;
+  ok('pre-join session info carries the banner', preJoin.banner && preJoin.banner.id === upG.d.bannerId, JSON.stringify(preJoin.banner));
   ok('banner image is a URL, not base64', bs.banner.image.startsWith('/api/banner/image'), bs.banner.image);
   ok('banner link passes through', bs.banner.link === 'https://makinitmag.com');
 
@@ -405,11 +410,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const imgRes = await fetch(base + '/api/banner/image?id=' + upS.d.bannerId);
   ok('banner image serves with image content-type', imgRes.ok && /^image\//.test(imgRes.headers.get('content-type') || ''), imgRes.status + ' ' + imgRes.headers.get('content-type'));
 
-  // Vote + ratify → results phase must NOT carry a banner.
+  // Vote + ratify → the banner keeps showing on results (ads run the full room, 2026-08-14).
   await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': jb });
   await call('/api/admin/round/ratify', { sessionId: SID, roundId: BRID }, 'POST', AH);
   bs = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': jb })).d;
-  ok('results phase carries NO banner', bs.phase === 'results' && (bs.banner === undefined || bs.banner === null), 'banner=' + JSON.stringify(bs.banner));
+  ok('results phase still carries the banner', bs.phase === 'results' && bs.banner && bs.banner.id === upS.d.bannerId, 'banner=' + JSON.stringify(bs.banner));
 
   // Delete session banner → falls back to global for the next active round.
   await call('/api/admin/banner/delete', { sessionId: SID, bannerId: upS.d.bannerId }, 'POST', AH);
