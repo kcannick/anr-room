@@ -1393,6 +1393,42 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a push resolves to the live auto room', pushAuto.status === 200 && pushAuto.d.autoRooms === 1, JSON.stringify(pushAuto.d));
   const aiPull = (await call('/api/admin/ingest/latest', null, 'GET', ADMINH)).d;
   ok('auto mode changes delivery, not the staged record', aiPull.title === 'Straight Through' && aiPull.email === 'v@band.com' && !!aiPull.at, JSON.stringify(aiPull));
+  // …and the push STAGES it as a real queued round, which is what makes it openable from a
+  // Stream Deck: a filled form is browser text the server has never seen.
+  const aiQ = (await call('/api/admin/state?sessionId=' + AIID, null, 'GET', ADMINH)).d;
+  ok('the push queues the record server-side', aiQ.queue.length === 1 && aiQ.queue[0].song_title === 'Straight Through', JSON.stringify(aiQ.queue.map(r => r.song_title)));
+  ok('the staged round carries the push timestamp (binds the form to it)', !!aiQ.queue[0].ingest_at, JSON.stringify(aiQ.queue[0].ingest_at));
+  ok('the staged round carries the artist contact', aiQ.queue[0].artist_email === 'v@band.com', JSON.stringify(aiQ.queue[0].artist_email));
+  ok('staging does NOT put it in front of the room', !aiQ.activeRound, JSON.stringify(aiQ.activeRound));
+  // Newest push wins in the queue too — otherwise songs pushed past pile up as records that
+  // were never played, and the deck opens the wrong one.
+  await call('/api/ingest/submission', { title: 'Replaced It', artist: 'Later Push' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  const aiQ2 = (await call('/api/admin/state?sessionId=' + AIID, null, 'GET', ADMINH)).d;
+  ok('a newer push replaces the staged record, not stacks on it', aiQ2.queue.length === 1 && aiQ2.queue[0].song_title === 'Replaced It', JSON.stringify(aiQ2.queue.map(r => r.song_title)));
+  // THE REGRESSION THIS EXISTS FOR: a pushed record opens from the Stream Deck with no
+  // console interaction at all. Before staging, Advance answered "Nothing queued".
+  const aiKey = (await call('/api/me/control-key', {}, 'POST', ADMINH)).d.key;
+  const aiDeck = await call(`/api/control/advance?k=${aiKey}&s=${AIID}`, null, 'GET');
+  ok('the deck opens a pushed record with no console press', aiDeck.status === 200 && aiDeck.d.action === 'open' && aiDeck.d.status === 'listening', JSON.stringify(aiDeck.d));
+  ok('the deck opened the pushed song itself', aiDeck.d.title === 'Replaced It', JSON.stringify(aiDeck.d.title));
+  // Add & open round on an auto-filled form updates the staged round instead of queueing a
+  // second copy of the same song. (Mid-show case: a round is already in play, so it stays queued.)
+  await call('/api/ingest/submission', { title: 'Next Up', artist: 'Pushed' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  const aiQ3 = (await call('/api/admin/state?sessionId=' + AIID, null, 'GET', ADMINH)).d;
+  ok('a push during a live round waits in the queue', aiQ3.queue.length === 1 && aiQ3.queue[0].song_title === 'Next Up', JSON.stringify(aiQ3.queue.map(r => r.song_title)));
+  const aiBound = await call('/api/admin/round', { sessionId: AIID, roundId: aiQ3.queue[0].id, song_title: 'Next Up (fixed)', song_artist: 'Pushed' }, 'POST', ADMINH);
+  ok('a bound Add writes to the staged round', aiBound.status === 200 && aiBound.d.roundId === aiQ3.queue[0].id, JSON.stringify(aiBound.d));
+  const aiQ4 = (await call('/api/admin/state?sessionId=' + AIID, null, 'GET', ADMINH)).d;
+  ok('a bound Add leaves no duplicate behind', aiQ4.queue.length === 1, JSON.stringify(aiQ4.queue.map(r => r.song_title)));
+  ok('the host edit wins over what was pushed', aiQ4.queue[0].song_title === 'Next Up (fixed)', JSON.stringify(aiQ4.queue[0].song_title));
+  // An unknown/stale roundId must not error at the host mid-show — it falls back to an insert.
+  const aiStale = await call('/api/admin/round', { sessionId: AIID, roundId: 'no-such-round', song_title: 'Typed By Hand' }, 'POST', ADMINH);
+  ok('a stale bound id falls back to a normal add', aiStale.status === 200 && aiStale.d.roundId !== 'no-such-round', JSON.stringify(aiStale.d));
+  // A room NOT in auto mode is untouched: the push stages nothing there.
+  const plainRoom = await call('/api/session', { name: 'Plain Ingest', status: 'live' }, 'POST', ADMINH);
+  await call('/api/ingest/submission', { title: 'Not For You', artist: 'Nobody' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
+  const plainQ = (await call('/api/admin/state?sessionId=' + plainRoom.d.sessionId, null, 'GET', ADMINH)).d;
+  ok('a hold-for-button room queues nothing', plainQ.queue.length === 0, JSON.stringify(plainQ.queue.map(r => r.song_title)));
   // A completed room is not a place to deliver songs — the resolution is live-only.
   await call('/api/admin/session/status', { sessionId: AIID, status: 'completed' }, 'POST', ADMINH);
   const pushDone = await call('/api/ingest/submission', { title: 'Too Late', artist: 'Nobody' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });

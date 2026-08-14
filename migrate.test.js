@@ -280,6 +280,18 @@ async function freshDb() {
   const applied31 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('031 idempotent (not duplicated)', applied31.filter(x => x === '031_ingest_auto').length === 1, JSON.stringify(applied31));
 
+  // ── 032: review-site pushes staged as real queued rounds ──────────────────
+  clean();
+  db = await freshDb();
+  await db.init();
+  const rcols32 = (await db.all('PRAGMA table_info(rounds)', [])).map(c => c.name);
+  ok('032 creates rounds.ingest_at', rcols32.includes('ingest_at'), JSON.stringify(rcols32));
+  const ia32 = (await db.all('PRAGMA table_info(rounds)', [])).find(c => c.name === 'ingest_at');
+  ok('ingest_at defaults to NULL (a hand-added round has no push behind it)', ia32 && ia32.dflt_value == null, JSON.stringify(ia32));
+  await db.init();
+  const applied32 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('032 idempotent (not duplicated)', applied32.filter(x => x === '032_round_ingest_stage').length === 1, JSON.stringify(applied32));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

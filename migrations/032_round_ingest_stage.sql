@@ -1,0 +1,22 @@
+-- 032_round_ingest_stage.sql
+-- rounds.ingest_at — the review-site push (settings.ingest_latest `at`) a queued round came
+-- from, or NULL for a round the host added by hand.
+--
+-- WHY: 031 auto-filled the console's queue FORM, which is browser text the server has never
+-- seen — so `nextStage()` still answered 'none' and a Stream Deck press got back 400
+-- "Nothing queued". One press per song, but not one press from the DECK. A room in auto mode
+-- now stages the pushed record as a real `pending` round as well, so Advance has something to
+-- open. It is still only STAGED: pending rounds are host-only and take no votes, and nothing
+-- reaches the overlay until an explicit Advance / "Add & open round".
+--
+-- The marker earns its column twice:
+--   * newest-push-wins — a new push REPLACES the still-pending auto-staged round instead of
+--     piling the queue up with records that were never played (the operator's rule for the
+--     form, applied to the queue);
+--   * it re-binds the console's form to that round after a reload, so pressing "Add & open
+--     round" updates the staged record rather than queueing a second copy of it.
+--
+-- Cleared implicitly by being played: the replace only ever touches status='pending'.
+-- Additive, nullable; safe on boot.
+
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS ingest_at BIGINT

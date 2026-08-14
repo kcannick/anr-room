@@ -2539,6 +2539,10 @@ $('#btnAddRound').onclick=async()=>{
   if(!song_title)return $('#addErr').textContent=(isBin?'Song A title is required':'Song title is required');
   const payload={sessionId:SID,poll_type:roundType,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim(),
     artist_email:$('#rAEmail').value.trim(),artist_phone:$('#rAPhone').value.trim()};
+  // An auto-filled form is already a queued round (the push stages it server-side so the
+  // Stream Deck can open it). Send its id so Add updates that record instead of putting a
+  // second copy of the same song on deck.
+  if(_ingRoundId&&(lastState&&(lastState.queue||[]).some(r=>r.id===_ingRoundId)))payload.roundId=_ingRoundId;
   if(isBin){
     const b=$('#rBTitle').value.trim();
     if(!b)return $('#addErr').textContent='Song B title is required';
@@ -2550,8 +2554,8 @@ $('#btnAddRound').onclick=async()=>{
     $('#rAEmail').value='';$('#rAPhone').value='';
     if($('#rBTitle')){$('#rBTitle').value='';$('#rBArtist').value='';}
     // A stale "Pulled: …" note would misdescribe the now-empty form (and there's nothing
-    // left to undo once the record is on deck).
-    $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');_ingUndo=null;
+    // left to undo — or to stay bound to — once the record is on deck).
+    $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');_ingUndo=null;_ingRoundId=null;
     refresh();
   }catch(e){$('#addErr').textContent=e.message;}
 };
@@ -2580,6 +2584,9 @@ $('#btnNeroPull').onclick=async()=>{
 const INGEST_FIELDS=['rTitle','rArtist','rNote','rAEmail','rAPhone'];
 function fillFromIngest(d){
   const prev={rTitle:$('#rTitle').value,rArtist:$('#rArtist').value,rNote:$('#rNote').value,rAEmail:$('#rAEmail').value,rAPhone:$('#rAPhone').value};
+  // Remember what we wrote, so we can later tell "the host hasn't touched this" from
+  // "the host has edits in here" without guessing.
+  setTimeout(()=>{_ingFilled={};for(const id of INGEST_FIELDS)_ingFilled[id]=$('#'+id).value;},0);
   $('#rTitle').value=d.title||'';$('#rArtist').value=d.artist||'';
   // Only touch the note when there's an IG to put in it — the host's own note stays.
   if(d.instagram)$('#rNote').value='IG: @'+String(d.instagram).replace(/^@/,'');
@@ -2623,7 +2630,25 @@ $('#btnIngestPull').onclick=async()=>{
 // press. Ably makes it land in about a second (the ingest POST publishes to live auto
 // rooms); the state poll is the fallback. The newest push always wins — the operator's
 // call — so this can replace a record staged but not yet added, which is why it's undoable.
-let _ingSeenAt=null, _ingUndo=null, _ingBusy=false;
+let _ingSeenAt=null, _ingUndo=null, _ingBusy=false, _ingRoundId=null, _ingFilled=null;
+
+// A bound record can leave the queue with the console doing nothing at all — that's the
+// Stream Deck opening it. The form is then showing a song that's already in front of the
+// room, and a habitual "Add & open round" would queue a duplicate of it. Clear the form when
+// it's still exactly what we auto-filled; if the host has typed in it, keep their text and
+// just drop the binding (never eat typed work).
+function syncIngestBinding(st){
+  if(!_ingRoundId)return;
+  if(((st&&st.queue)||[]).some(r=>r.id===_ingRoundId))return;
+  const untouched=!!_ingFilled&&INGEST_FIELDS.every(id=>$('#'+id).value===(_ingFilled[id]||''));
+  _ingRoundId=null;_ingUndo=null;
+  if(!untouched)return;
+  for(const id of INGEST_FIELDS)$('#'+id).value='';
+  _ingFilled=null;
+  const msg=$('#ingestMsg');
+  msg.textContent='▶ That record was opened — form cleared for the next one.';
+  msg.classList.remove('hide');
+}
 const _ingKey=()=>'anr_ingest_at_'+(SID||'');
 function _ingMark(at){ _ingSeenAt=at; try{localStorage.setItem(_ingKey(),String(at));}catch(e){} }
 async function maybeAutoIngest(st){
@@ -2653,8 +2678,13 @@ async function maybeAutoIngest(st){
     _ingMark(Number(d.at)||at);
     const prev=fillFromIngest(d);
     _ingUndo=prev;
+    // The same push staged the record as a queued round (that's what makes it openable from
+    // the Stream Deck). Bind the form to it so Add updates that round instead of adding a
+    // duplicate. Matched on the push timestamp, so it survives a console reload.
+    const staged=(st.queue||[]).find(r=>Number(r.ingest_at)===Number(d.at));
+    _ingRoundId=staged?staged.id:null;
     const msg=$('#ingestMsg');
-    msg.innerHTML='⚡ Auto-filled: '+esc(ingestSummary(d))+' — review, then add. <a href="#" id="ingUndo" style="color:var(--signal)">undo</a>';
+    msg.innerHTML='⚡ Auto-filled'+(_ingRoundId?' + on deck':'')+': '+esc(ingestSummary(d))+' — review, then add. <a href="#" id="ingUndo" style="color:var(--signal)">undo</a>';
     msg.classList.remove('hide');
     // Deliberately no focus() — the host may be typing somewhere else on the console.
     $('#ingUndo').onclick=(e)=>{
@@ -2662,7 +2692,10 @@ async function maybeAutoIngest(st){
       if(!_ingUndo)return;
       for(const id of INGEST_FIELDS)$('#'+id).value=_ingUndo[id]||'';
       _ingUndo=null;
-      msg.textContent='Put back what was in the form. Use the pull button to load it again.';
+      // Unbind too: the restored form is no longer a view of the staged round, so Add must
+      // queue it as its own record rather than overwriting the pushed song on deck.
+      const wasStaged=!!_ingRoundId; _ingRoundId=null;
+      msg.textContent='Put back what was in the form.'+(wasStaged?' The pushed record is still on deck — remove it from the queue if you don\'t want it.':' Use the pull button to load it again.');
     };
     flashIngestFields();
   }finally{_ingBusy=false;}
@@ -3298,6 +3331,7 @@ function render(st){
   if(hasIng)$('#btnIngestPull').textContent=('⬇ Pull submission: '+(ing.title||'')+(ing.artist?' — '+ing.artist:'')).slice(0,46);
   // Rooms set to "Send straight to fields" fill the form themselves; the button stays
   // for anything staged before this console was opened.
+  syncIngestBinding(st);
   maybeAutoIngest(st).catch(()=>{});
   $('#who').textContent=st.session.name+' · '+st.session.status+sessionTypeSuffix(st);
   // lifecycle controls reflect current status
@@ -3635,7 +3669,7 @@ function boot(){
   tabManual=false;setTab('paneRound',false); // fresh session → tab follows round state again
   // A "Pulled: …" note from the previous session would misdescribe this one.
   $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');
-  _ingSeenAt=null;_ingUndo=null; // re-baseline auto-fill against THIS room
+  _ingSeenAt=null;_ingUndo=null;_ingRoundId=null;_ingFilled=null; // re-baseline auto-fill against THIS room
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
   loadDeckKey(); // once per console open — the key never changes on its own
   initRealtime();

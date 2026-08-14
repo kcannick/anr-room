@@ -582,6 +582,41 @@ async function nextStage(sessionId) {
   return { action: 'none', round: null, label: 'Nothing queued' };
 }
 
+// Stage a review-site push as a real queued round in an auto-fill room.
+//
+// 031 filled the console's FORM, which the server never sees — so the Stream Deck's Advance
+// had nothing to open ("Nothing queued"). Staging it here is what makes a pushed song
+// openable from the deck without touching the console. It is STAGED, not opened: a pending
+// round is host-only, takes no votes, and reaches the room only via an explicit Advance.
+//
+// Returns the round id, or null when the push isn't stageable (no title, or the room is
+// running Versus rounds — a single review submission isn't an A/B matchup, so those rooms
+// keep the form-fill only).
+async function stageIngestRound(session, rec) {
+  if (!rec || !rec.title) return null;
+  // Same poll-type resolution as /api/admin/round: the last round's type wins, then the
+  // room default — so a room mid-Versus doesn't get a rating round injected behind it.
+  const last = await db.get('SELECT poll_type FROM rounds WHERE session_id = ? ORDER BY created_at DESC LIMIT 1', [session.id]);
+  const pt = (last && last.poll_type) || (session.poll_type === 'binary' ? 'binary' : 'rating');
+  if (pt === 'binary') return null;
+  // Newest push wins (the operator's rule for the form, applied to the queue): replace the
+  // previous auto-staged record if it's still waiting, rather than stacking up songs that
+  // were pushed past and never played. Only ever touches PENDING auto-staged rows — a round
+  // the host already opened, or one they typed themselves, is never in scope.
+  await db.run("DELETE FROM rounds WHERE session_id = ? AND status = 'pending' AND ingest_at IS NOT NULL", [session.id]);
+  const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [session.id])).m;
+  const rid = id(9);
+  await db.run(
+    `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway,
+       artist_email, artist_phone, status, ingest_at, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending', ?, ?)`,
+    [rid, session.id, 0, Number(maxPos) + 1, 'rating', rec.title, rec.artist || '',
+     rec.instagram ? ('IG: @' + rec.instagram) : '', '',
+     cleanArtistEmail(rec.email), cleanArtistPhone(rec.phone), Number(rec.at) || now(), now()]
+  );
+  return rid;
+}
+
 function clearAdvanceArm(sessionId) {
   return db.run('UPDATE sessions SET advance_armed_at = NULL, advance_armed_round = NULL WHERE id = ?', [sessionId]);
 }
@@ -869,7 +904,6 @@ async function playerState(participant) {
   if (session.status === 'completed') {
     out.phase = 'recap';
     out.recap = await buildRecap(participant);
-    out.banner = null;
   }
   return out;
 }
@@ -3004,12 +3038,17 @@ async function handleApi(req, res, url) {
     // making the host wait out the console's poll (which drops to 15s once Ably connects).
     // No new channel or token scope: this is the room's own channel, which the console is
     // already subscribed to. Bounded + non-fatal; a realtime hiccup just costs the poll.
-    let autoRooms = [];
+    let autoRooms = [], queued = 0;
     try {
-      autoRooms = await db.all("SELECT id FROM sessions WHERE ingest_auto = 1 AND status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 5", []);
-      for (const s of autoRooms) await realtime.publish(s.id, 'ingest');
-    } catch (e) { console.error('[ingest] auto notify failed:', e.message); }
-    return send(res, 200, { ok: true, staged: { title: rec.title, artist: rec.artist }, autoRooms: autoRooms.length }, cors);
+      autoRooms = await db.all("SELECT id, poll_type, status FROM sessions WHERE ingest_auto = 1 AND status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 5", []);
+      for (const s of autoRooms) {
+        // Stage it as a real queued round FIRST, so the console's refresh (and the deck's
+        // next press) both see the record rather than only the form text.
+        if (await stageIngestRound(s, rec)) queued++;
+        await realtime.publish(s.id, 'ingest');
+      }
+    } catch (e) { console.error('[ingest] auto stage/notify failed:', e.message); }
+    return send(res, 200, { ok: true, staged: { title: rec.title, artist: rec.artist }, autoRooms: autoRooms.length, queued }, cors);
   }
 
   // ===== ANALYTICS DATA FEED (static-token gated; machine-readable) =====
@@ -3766,9 +3805,17 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/admin/round' && method === 'POST') {
     const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type,
-      artist_email, artist_phone } = await readBody(req);
+      artist_email, artist_phone, roundId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    // `roundId` = "this form is already a queued round" — the console sends it when the form
+    // was auto-filled from a review-site push, which stages the record server-side. Without
+    // it, pressing Add would queue a SECOND copy of the song already sitting on deck. Scoped
+    // to PENDING rounds in this room, so it can never rewrite one that's playing or ratified;
+    // an unknown/stale id falls through to a normal insert rather than erroring at the host
+    // mid-show. Everything below (open-if-idle, poll-type resolution) is shared.
+    let bound = null;
+    if (roundId) bound = await db.get("SELECT * FROM rounds WHERE id = ? AND session_id = ? AND status = 'pending'", [roundId, sessionId]);
     // Poll type is PER-ROUND now. Resolve it: explicit body value → the session's most
     // recent round's type (so it persists round-to-round) → the session default → rating.
     let pt = poll_type === 'binary' ? 'binary' : (poll_type === 'rating' ? 'rating' : null);
@@ -3782,15 +3829,27 @@ async function handleApi(req, res, url) {
     if (isBinary && (!option_b_title || !option_b_title.trim())) return bad(res, 'Song B title required');
     // Queued songs don't get a round number (idx) until they're actually opened —
     // they're played in queue order, which may differ from the order added.
-    const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
-    const rid = id(9);
-    await db.run(
-      `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, status, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
-      [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
-       isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
-       cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), now()]
-    );
+    const rid = bound ? bound.id : id(9);
+    if (bound) {
+      // Same fields, written over the record already on deck — the host's edits win over what
+      // the review site pushed. queue_pos is left alone so a reordered queue stays reordered.
+      await db.run(
+        `UPDATE rounds SET poll_type = ?, song_title = ?, song_artist = ?, song_note = ?, giveaway = ?,
+           option_b_title = ?, option_b_artist = ?, artist_email = ?, artist_phone = ? WHERE id = ?`,
+        [pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
+         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), rid]
+      );
+    } else {
+      const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
+      await db.run(
+        `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
+        [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
+         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), now()]
+      );
+    }
     // Straight to open unless a round is already in play — then it waits in the queue.
     // Removes the mandatory add-then-open two-step for the common case. As of 030 "open"
     // means LISTENING: the record goes up and the room hears it, and the host presses
