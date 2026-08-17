@@ -1190,6 +1190,10 @@ async function loadRounds(){
       // Every played round is editable — descriptive fields only (the server refuses to
       // touch scores). This is how contact gets added retroactively, after the show.
       const edit=`<button class="btn ghost sm" style="padding:6px 9px" onclick="event.stopPropagation();toggleRoundEdit('${r.id}')" title="Edit song details + artist contact">✎</button>`;
+      // Only ever offered on a round nobody evaluated — the accidental open/end/ratify.
+      // A round with even one vote has scores hanging off it and the server refuses.
+      const del=r.votes===0
+        ?`<button class="btn danger sm" style="padding:6px 9px" onclick="event.stopPropagation();deletePlayedRound('${r.id}')" title="Delete this round — nobody evaluated it">🗑</button>`:'';
       // A&R comments on this round. The badge counts what will GO OUT with the artist's
       // report — comments ship by default, so that's the number the host needs to see.
       const cN=r.comments||0, cS=r.comments_shared||0, cH=r.comments_hidden||0;
@@ -1232,6 +1236,7 @@ async function loadRounds(){
         ${report}
         ${notice}
         ${edit}
+        ${del}
         ${canExpand?'<span class="muted" style="flex:none">▾</span>':''}
       </div>
       <div id="rsend-${r.id}" class="hide" style="font-size:12.5px;padding:2px 0 10px 34px"></div>
@@ -3544,6 +3549,18 @@ $('#btnAdUpload').onclick=async()=>{
 window.openRound=async(rid)=>{let mins=Math.round(+($('#openMins')?.value||5));mins=Math.min(60,Math.max(2,Number.isFinite(mins)?mins:5));try{await api('/api/admin/round/open',{sessionId:SID,roundId:rid,minutes:mins});}catch(e){alert(e.message);}refresh();};
 window.moveRound=async(rid,dir)=>{await api('/api/admin/round/move',{sessionId:SID,roundId:rid,dir});refresh();};
 window.deleteRound=async(rid)=>{if(!confirm('Remove this song from the queue?'))return;await api('/api/admin/round/delete',{sessionId:SID,roundId:rid});refresh();};
+// Delete a round that was PLAYED but drew no evaluations — the mis-press case (opened,
+// ended and ratified on an empty room). Server refuses the moment a single vote exists,
+// so this can never quietly erase somebody's points.
+window.deletePlayedRound=async(rid)=>{
+  // Title comes off the cache, not the markup: an apostrophe in a song title would break
+  // a string interpolated into the onclick attribute.
+  const r=ROUNDS_CACHE.find(x=>x.id===rid);
+  const label=r?('#'+r.idx+' '+(r.song_title||'')).trim():'this round';
+  if(!confirm('Delete round '+label+'?\n\nNobody evaluated it, so no scores change. The song is removed from this room’s history and the later rounds renumber. This can’t be undone.'))return;
+  try{await api('/api/admin/round/delete',{sessionId:SID,roundId:rid});}catch(e){alert(e.message);}
+  loadRounds();refresh();
+};
 window.extendRound=async(rid,mins)=>{await api('/api/admin/round/extend',{sessionId:SID,roundId:rid,minutes:mins});refresh();};
 window.closeRound=async(rid)=>{await api('/api/admin/round/close',{sessionId:SID,roundId:rid});refresh();};
 window.reopenRound=async(rid)=>{let mins=Math.round(+($('#openMins')?.value||5));mins=Math.min(60,Math.max(2,Number.isFinite(mins)?mins:5));try{await api('/api/admin/round/reopen',{sessionId:SID,roundId:rid,minutes:mins});}catch(e){alert(e.message);}refresh();};

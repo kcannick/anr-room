@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 031; suite 863 green)
+## Current state (migrations through 031; suite 889 green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -275,6 +275,20 @@ live on anr.makinitmag.com.
   of on the console's 15s connected-poll heartbeat. The staging slot is still ONE GLOBAL
   settings row: two pushes before you add = the first is gone, and two auto rooms would draw
   from the same slot — fine for a one-operator show, a per-room queue is a different change.
+
+- **Delete a played round nobody evaluated** (no migration): `round/delete` used to only pull
+  a PENDING song off the queue. It now also deletes a round that STARTED but drew ZERO votes
+  — the accident one-button Advance makes easy: lean on the key and a record is opened, ended
+  and ratified on an empty room, then sits in the numbering, the Rounds tab and the artist-
+  notice surfaces forever with no way out (unopen only rescues a `listening` round). A round
+  WITH votes is refused at the server: those points are somebody's score on a cash-prize
+  board, and vaporising them is not an undo — soft-delete the room instead. The delete is one
+  transaction (comments → notices → votes → round) and then **closes the gap in the
+  numbering**, because idx is assigned at open as (started rounds)+1, so a hole makes the NEXT
+  record reuse a number already on the board. It also clears an Advance arm pointing at the
+  dead round (else it could tally the next song) and pushes `round` — deleting a started round
+  changes what every player is looking at. Console: a red 🗑 in the Rounds tab, offered only
+  when `votes === 0`.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed

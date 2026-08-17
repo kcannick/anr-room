@@ -3953,12 +3953,44 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true });
   }
 
+  // Remove a round. Two jobs behind one endpoint:
+  //   * a PENDING (queued) song — pull it back off the queue, as always.
+  //   * a round that actually STARTED but drew ZERO evaluations — the accident case: the
+  //     host leans on Advance and a record gets opened, closed and ratified with nobody
+  //     voting. There is no history worth keeping, and it otherwise sits in the round
+  //     numbering, the Rounds tab and the artist-notice surfaces forever.
+  // A round WITH votes is never deletable here: those points are somebody's score on a
+  // cash-prize board, and vaporising them is not an undo. Soft-delete the room instead.
   if (p === '/api/admin/round/delete' && method === 'POST') {
     const { sessionId, roundId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
-    await db.run("DELETE FROM rounds WHERE id = ? AND session_id = ? AND status = 'pending'", [roundId, sessionId]);
-    return send(res, 200, { ok: true });
+    const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
+    if (!round) return bad(res, 'Round not found', 404);
+    const votes = Number((await db.get('SELECT COUNT(*) AS c FROM votes WHERE round_id = ?', [roundId])).c) || 0;
+    if (round.status !== 'pending' && votes > 0) {
+      return bad(res, `This round has ${votes} evaluation${votes === 1 ? '' : 's'} — only a round nobody voted on can be deleted`);
+    }
+    await db.tx(async (tx) => {
+      // A comment needs a locked-in vote, so a zero-vote round shouldn't have any — clear
+      // them (and any queued artist notice) anyway so nothing is left orphaned by id.
+      await tx.run('DELETE FROM round_comments WHERE round_id = ?', [roundId]);
+      await tx.run('DELETE FROM artist_notices WHERE round_id = ?', [roundId]);
+      await tx.run('DELETE FROM votes WHERE round_id = ?', [roundId]);
+      await tx.run('DELETE FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
+      // Close the gap in the numbering. idx is assigned at open as (started rounds)+1, so
+      // a hole would make the NEXT round reuse a number already on the board.
+      if (round.status !== 'pending' && round.idx) {
+        await tx.run("UPDATE rounds SET idx = idx - 1 WHERE session_id = ? AND idx > ? AND status IN ('listening','voting','closed','ratified')",
+          [sessionId, round.idx]);
+      }
+    });
+    // An arm pointing at a round that no longer exists must not survive to tally the next one.
+    if (session.advance_armed_round === roundId) await clearAdvanceArm(sessionId);
+    // Deleting a started round changes what every player is looking at (the live record, or
+    // the results screen they're on), so push — a queued removal is host-only.
+    if (round.status !== 'pending') await realtime.publish(sessionId, 'round');
+    return send(res, 200, { ok: true, status: round.status, idx: round.idx || null });
   }
 
   if (p === '/api/admin/round/open' && method === 'POST') {

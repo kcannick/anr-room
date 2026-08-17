@@ -1983,6 +1983,45 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const sgQ = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d;
   ok('un-opened record is back in the queue', (sgQ.queue || []).some(q => q.song_title === 'Wrong Song'), JSON.stringify(sgQ.queue));
 
+  console.log('\n— delete a round nobody evaluated (the mis-press), never one with votes —');
+  // The accident this exists for: Advance gets leaned on and a record is opened, ended and
+  // ratified on an empty room. Unopen only rescues a listening round; after ratify the only
+  // fix is deletion.
+  await call('/api/admin/round', { sessionId: SGID, song_title: 'Empty Mistake' }, 'POST', SGAH);
+  const dlMiss = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d.activeRound;
+  await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH); // listening -> voting
+  await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH); // arm
+  await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH); // ratify, zero votes
+  // A second round AFTER the mistake, with a real vote on it — it must survive, and renumber.
+  await call('/api/admin/round', { sessionId: SGID, song_title: 'After The Gap' }, 'POST', SGAH);
+  const dlKeep = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d.activeRound;
+  await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH); // listening -> voting
+  await call('/api/vote', { taste: 7, predict: 7 }, 'POST', { 'X-Player-Token': sg1 });
+  await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH); // arm
+  await call('/api/admin/advance', { sessionId: SGID }, 'POST', SGAH); // ratify
+  ok('the mis-pressed round ratified empty at #3, the next at #4', dlMiss.idx === 3 && dlKeep.idx === 4,
+    JSON.stringify([dlMiss.idx, dlKeep.idx]));
+
+  const dlNo = await call('/api/admin/round/delete', { sessionId: SGID, roundId: dlKeep.id }, 'POST', SGAH);
+  ok('a round WITH evaluations is refused', dlNo.status === 400 && /evaluation/.test(dlNo.d.error || ''), JSON.stringify(dlNo.d));
+  const dlYes = await call('/api/admin/round/delete', { sessionId: SGID, roundId: dlMiss.id }, 'POST', SGAH);
+  ok('a round nobody evaluated deletes', dlYes.status === 200, JSON.stringify(dlYes.d));
+  let dlRounds = (await call(`/api/admin/rounds?sessionId=${SGID}`, null, 'GET', SGAH)).d.rounds;
+  ok('the deleted round is gone from history', !dlRounds.some(r => r.id === dlMiss.id), JSON.stringify(dlRounds.map(r => r.song_title)));
+  ok('later rounds close the numbering gap', (dlRounds.find(r => r.id === dlKeep.id) || {}).idx === 3,
+    JSON.stringify(dlRounds.map(r => [r.idx, r.song_title])));
+  // The real cost of a gap: idx is assigned as (started rounds)+1, so an un-renumbered
+  // hole makes the NEXT record reuse a number already on the board.
+  await call('/api/admin/round', { sessionId: SGID, song_title: 'No Collision' }, 'POST', SGAH);
+  const dlNext = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d.activeRound;
+  ok('the next record numbers #4, not a duplicate #3', dlNext.idx === 4, 'idx ' + dlNext.idx);
+  await call('/api/admin/round/unopen', { sessionId: SGID, roundId: dlNext.id }, 'POST', SGAH);
+  // Scores are untouched: the surviving round's vote still carries its points.
+  const dlSt = (await call(`/api/admin/state?sessionId=${SGID}`, null, 'GET', SGAH)).d;
+  ok('the surviving round keeps its evaluations', (dlRounds.find(r => r.id === dlKeep.id) || {}).votes === 1,
+    JSON.stringify(dlRounds.map(r => [r.song_title, r.votes])));
+  ok('deleting a round does not disturb the room', dlSt.session.status === 'live', dlSt.session.status);
+
   console.log('\n— external control (Stream Deck): key auth, scope, live-room resolution —');
   // The key hangs off the HOST, and resolves to whichever room they have live — so a deck
   // is configured once and never re-pointed.
