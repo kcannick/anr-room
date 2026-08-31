@@ -2470,6 +2470,197 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const anonCard = await fetch(`${base}/api/card/chart?${chBase}&slide=0`);
   ok('charts: the carousel PNG is not public', anonCard.status === 403, 'status ' + anonCard.status);
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.log('\n— sidebet: the A&R Wars prediction contest (033) —');
+  // ═══════════════════════════════════════════════════════════════════════════
+  const SB_WARS = Date.now() + 7 * 24 * 3600 * 1000;
+  const SB_CLOSE = SB_WARS - 3600 * 1000;
+
+  ok('sidebet: nothing open reads as no contest',
+    (await call('/api/sidebet', null, 'GET')).d.pack === null);
+
+  const sbBad = await call('/api/admin/sidebet',
+    { name: 'Bad dates', picksRequired: 6, warsAt: SB_WARS, closesAt: SB_WARS + 1000 }, 'POST', ADMINH);
+  ok('sidebet: a cut-off after the tournament is refused', sbBad.status === 400, JSON.stringify(sbBad.d));
+
+  const sbMake = await call('/api/admin/sidebet', {
+    name: 'Test Service Pack', picksRequired: 6, prizeText: '$150',
+    warsAt: SB_WARS, closesAt: SB_CLOSE, status: 'draft',
+  }, 'POST', ADMINH);
+  ok('sidebet: iteration created', sbMake.status === 200 && sbMake.d.id, JSON.stringify(sbMake.d));
+  const PACK = sbMake.d.id;
+
+  ok('sidebet: a host cannot create an iteration',
+    (await call('/api/admin/sidebet', { name: 'x', warsAt: SB_WARS, closesAt: SB_CLOSE }, 'POST', CHHOST)).status === 403);
+  ok('sidebet: an anonymous request cannot list iterations',
+    (await call('/api/admin/sidebet', null, 'GET')).status === 403);
+
+  // --- songs (CSV rows) ---
+  const sbSongs = Array.from({ length: 10 }, (_, i) => ({ title: `Song ${i + 1}`, artist: `Artist ${i + 1}` }));
+  ok('sidebet: a duplicate row is refused',
+    (await call('/api/admin/sidebet/songs', { packId: PACK, songs: [...sbSongs, sbSongs[0]] }, 'POST', ADMINH)).status === 400);
+  ok('sidebet: a row with no title is refused',
+    (await call('/api/admin/sidebet/songs', { packId: PACK, songs: [{ title: '', artist: 'x' }] }, 'POST', ADMINH)).status === 400);
+  ok('sidebet: fewer songs than picks is refused',
+    (await call('/api/admin/sidebet/songs', { packId: PACK, songs: sbSongs.slice(0, 3) }, 'POST', ADMINH)).status === 400);
+  const sbLoad = await call('/api/admin/sidebet/songs', { packId: PACK, songs: sbSongs }, 'POST', ADMINH);
+  ok('sidebet: 10 songs loaded', sbLoad.status === 200 && sbLoad.d.songs === 10, JSON.stringify(sbLoad.d));
+
+  // --- open it ---
+  await call('/api/admin/sidebet', { id: PACK, name: 'Test Service Pack', picksRequired: 6, warsAt: SB_WARS, closesAt: SB_CLOSE, status: 'open' }, 'POST', ADMINH);
+  const sbPub = await call('/api/sidebet', null, 'GET');
+  ok('sidebet: the open pack is public', sbPub.status === 200 && sbPub.d.pack && sbPub.d.songs.length === 10, JSON.stringify(sbPub.d.pack));
+  ok('sidebet: an anonymous read carries no entry', sbPub.d.entry === null);
+  // SEALED: the public shape must not leak how many people picked what — the tiebreak
+  // ranking is built from it, so a visible count makes copying the crowd optimal.
+  ok('sidebet: no pick counts anywhere in the public payload',
+    !/\bcount\b|\bpicks?Count\b|\bpopular/i.test(JSON.stringify(sbPub.d)), JSON.stringify(sbPub.d).slice(0, 200));
+  ok('sidebet: the public song shape is title/artist only',
+    Object.keys(sbPub.d.songs[0]).sort().join(',') === 'artist,id,title');
+
+  // Only one open at a time — /sidebet resolves to a single pack with no disambiguation.
+  const sbSecond = await call('/api/admin/sidebet', { name: 'Second', picksRequired: 6, warsAt: SB_WARS, closesAt: SB_CLOSE, status: 'open' }, 'POST', ADMINH);
+  ok('sidebet: a second open iteration is refused', sbSecond.status === 400, JSON.stringify(sbSecond.d));
+
+  const SBIDS = sbPub.d.songs.map(s => s.id);
+
+  // --- entering ---
+  ok('sidebet: an unverified visitor cannot enter',
+    (await call('/api/sidebet/entry', { picks: SBIDS.slice(0, 6) })).status === 401);
+
+  async function sbEntrant(email) {
+    const rq = await call('/api/auth/request', { email });
+    const vf = await call('/api/auth/verify', { email, code: rq.d.devCode, name: email.split('@')[0] });
+    return { 'X-Auth-Token': vf.d.token };
+  }
+  const E1 = await sbEntrant('bet1@test.com');
+  const E2 = await sbEntrant('bet2@test.com');
+  const E3 = await sbEntrant('bet3@test.com');
+
+  ok('sidebet: too few picks is refused',
+    (await call('/api/sidebet/entry', { picks: SBIDS.slice(0, 3) }, 'POST', E1)).status === 400);
+  ok('sidebet: a duplicate pick is refused',
+    (await call('/api/sidebet/entry', { picks: [SBIDS[0], SBIDS[0], SBIDS[1], SBIDS[2], SBIDS[3], SBIDS[4]] }, 'POST', E1)).status === 400);
+  ok('sidebet: a song outside the pack is refused',
+    (await call('/api/sidebet/entry', { picks: [...SBIDS.slice(0, 5), 'not-a-song'] }, 'POST', E1)).status === 400);
+
+  // E1 nails the first six in consensus order; E2 has the same six reversed; E3 misses two.
+  const e1 = await call('/api/sidebet/entry', { picks: [SBIDS[0], SBIDS[1], SBIDS[2], SBIDS[3], SBIDS[4], SBIDS[5]] }, 'POST', E1);
+  ok('sidebet: entry saved', e1.status === 200 && e1.d.entryNo === 1 && e1.d.edited === false, JSON.stringify(e1.d));
+  await call('/api/sidebet/entry', { picks: [SBIDS[5], SBIDS[4], SBIDS[3], SBIDS[2], SBIDS[1], SBIDS[0]] }, 'POST', E2);
+  await call('/api/sidebet/entry', { picks: [SBIDS[0], SBIDS[1], SBIDS[2], SBIDS[3], SBIDS[8], SBIDS[9]] }, 'POST', E3);
+
+  const sbMine = await call('/api/sidebet', null, 'GET', E1);
+  ok('sidebet: my own entry comes back in order',
+    JSON.stringify(sbMine.d.entry.picks) === JSON.stringify([SBIDS[0], SBIDS[1], SBIDS[2], SBIDS[3], SBIDS[4], SBIDS[5]]));
+  ok('sidebet: no score before settle', sbMine.d.entry.correct === null && sbMine.d.entry.rank === null);
+  ok('sidebet: results are absent before settle', sbMine.d.results === undefined);
+
+  // Editing keeps ONE row (the unique index is what makes "one entry per person" real).
+  const e1b = await call('/api/sidebet/entry', { picks: [SBIDS[1], SBIDS[0], SBIDS[2], SBIDS[3], SBIDS[4], SBIDS[5]] }, 'POST', E1);
+  ok('sidebet: re-entering edits rather than duplicating', e1b.status === 200 && e1b.d.edited === true && e1b.d.entryNo === 1);
+  const sbList1 = await call('/api/admin/sidebet', null, 'GET', ADMINH);
+  ok('sidebet: still three entries after an edit',
+    sbList1.d.packs.find(x => x.id === PACK).entries === 3,
+    JSON.stringify(sbList1.d.packs.find(x => x.id === PACK)));
+  // Put E1 back on the consensus order for the scoring assertions below.
+  await call('/api/sidebet/entry', { picks: [SBIDS[0], SBIDS[1], SBIDS[2], SBIDS[3], SBIDS[4], SBIDS[5]] }, 'POST', E1);
+
+  // Songs can't be swapped under live entries — every pick points at a pack_songs row.
+  ok('sidebet: the song list cannot be replaced once entries exist',
+    (await call('/api/admin/sidebet/songs', { packId: PACK, songs: sbSongs }, 'POST', ADMINH)).status === 400);
+  // Nor can the pick count, which would invalidate every stored entry's length.
+  ok('sidebet: picks-required cannot change once entries exist',
+    (await call('/api/admin/sidebet', { id: PACK, name: 'Test Service Pack', picksRequired: 8, warsAt: SB_WARS, closesAt: SB_CLOSE, status: 'open' }, 'POST', ADMINH)).status === 400);
+
+  // --- settle ---
+  const sbCk = await call(`/api/admin/sidebet/checklist?packId=${PACK}`, null, 'GET', ADMINH);
+  ok('sidebet: the checklist lists every song', sbCk.status === 200 && sbCk.d.songs.length === 10);
+  ok('sidebet: a host cannot read the checklist',
+    (await call(`/api/admin/sidebet/checklist?packId=${PACK}`, null, 'GET', CHHOST)).status === 403);
+
+  const sbWrongCount = await call('/api/admin/sidebet/settle', { packId: PACK, played: SBIDS.slice(0, 5) }, 'POST', ADMINH);
+  ok('sidebet: settling with the wrong count is blocked', sbWrongCount.status === 400, JSON.stringify(sbWrongCount.d));
+  ok('sidebet: settling with a song outside the pack is blocked',
+    (await call('/api/admin/sidebet/settle', { packId: PACK, played: [...SBIDS.slice(0, 5), 'ghost'] }, 'POST', ADMINH)).status === 400);
+
+  const sbSettle = await call('/api/admin/sidebet/settle', { packId: PACK, played: SBIDS.slice(0, 6) }, 'POST', ADMINH);
+  ok('sidebet: settled', sbSettle.status === 200 && sbSettle.d.entries === 3, JSON.stringify(sbSettle.d));
+  const sbRows = sbSettle.d.results;
+  // E1 and E2 both picked all six; E1's order matches the consensus ranking and E2's is
+  // the exact reverse, so E1 wins on distance. E3's four correct can't catch either.
+  ok('sidebet: the closest order wins the tie', sbRows[0].correct === 6 && sbRows[0].distance < sbRows[1].distance,
+    JSON.stringify(sbRows));
+  ok('sidebet: ranks run 1,2,3', sbRows.map(r => r.rank).join(',') === '1,2,3', JSON.stringify(sbRows.map(r => r.rank)));
+  ok('sidebet: the entry that missed two scores 4', sbRows[2].correct === 4, JSON.stringify(sbRows[2]));
+  // PII discipline: the public standings carry a display name and score, nothing else.
+  ok('sidebet: standings carry no email or phone',
+    !/@|phone/i.test(JSON.stringify(sbRows)), JSON.stringify(sbRows));
+
+  const sbAfter = await call('/api/sidebet', null, 'GET', E1);
+  ok('sidebet: my score is readable after settle', sbAfter.d.entry.correct === 6 && sbAfter.d.entry.rank === 1, JSON.stringify(sbAfter.d.entry));
+  ok('sidebet: results are public after settle', Array.isArray(sbAfter.d.results) && sbAfter.d.results.length === 3);
+  ok('sidebet: a settled pack is closed to new entries',
+    (await call('/api/sidebet/entry', { packId: PACK, picks: SBIDS.slice(0, 6) }, 'POST', E2)).status === 400);
+
+  // Settle is re-runnable off a corrected checklist — the whole reason the host confirms.
+  const sbRe = await call('/api/admin/sidebet/settle', { packId: PACK, played: [...SBIDS.slice(0, 4), SBIDS[8], SBIDS[9]] }, 'POST', ADMINH);
+  ok('sidebet: a corrected checklist re-scores everyone', sbRe.status === 200 && sbRe.d.results[0].correct === 6,
+    JSON.stringify(sbRe.d.results));
+
+
+  // --- the played set DERIVES from Versus rounds queued out of the pack ---
+  // This is what saves the host re-ticking every box on settle night. It only works if
+  // the ids survive the round insert, so the assertion goes through the real endpoints.
+  const sbDerWars = Date.now() + 3 * 864e5, sbDerClose = sbDerWars - 3600e3;
+  const derPack = await call('/api/admin/sidebet', {
+    name: 'Derive Pack', picksRequired: 2, warsAt: sbDerWars, closesAt: sbDerClose,
+    sessionId: SID, status: 'draft',
+  }, 'POST', ADMINH);
+  await call('/api/admin/sidebet/songs',
+    { packId: derPack.d.id, songs: [{ title: 'Alpha', artist: 'A' }, { title: 'Bravo', artist: 'B' }, { title: 'Charlie', artist: 'C' }] },
+    'POST', ADMINH);
+  const derCk0 = await call(`/api/admin/sidebet/checklist?packId=${derPack.d.id}`, null, 'GET', ADMINH);
+  ok('sidebet/derive: nothing is pre-ticked before any matchup runs',
+    derCk0.d.songs.every(s => !s.played && !s.derived));
+
+  const derIds = derCk0.d.songs.map(s => s.id);
+  await call('/api/admin/round', {
+    sessionId: SID, poll_type: 'binary', song_title: 'Alpha', option_b_title: 'Bravo',
+    pack_song_a: derIds[0], pack_song_b: derIds[1],
+  }, 'POST', AH);
+  await startVoting(SID, AH);
+
+  const derCk = await call(`/api/admin/sidebet/checklist?packId=${derPack.d.id}`, null, 'GET', ADMINH);
+  const derBy = Object.fromEntries(derCk.d.songs.map(s => [s.id, s]));
+  ok('sidebet/derive: both sides of the matchup are pre-ticked',
+    derBy[derIds[0]].derived && derBy[derIds[1]].derived, JSON.stringify(derCk.d.songs));
+  ok('sidebet/derive: a song that never played is not ticked', !derBy[derIds[2]].derived);
+
+  // An id from ANOTHER pack must never stick — it would mark the wrong song as played.
+  const foreign = await call('/api/admin/round', {
+    sessionId: SID, poll_type: 'binary', song_title: 'Ghost A', option_b_title: 'Ghost B',
+    pack_song_a: SBIDS[0], pack_song_b: 'nonsense-id',
+  }, 'POST', AH);
+  ok('sidebet/derive: the round is still accepted with unusable pack ids', foreign.status === 200);
+  await startVoting(SID, AH);
+  const derCk2 = await call(`/api/admin/sidebet/checklist?packId=${derPack.d.id}`, null, 'GET', ADMINH);
+  ok('sidebet/derive: an id from a different pack is dropped, not stamped',
+    derCk2.d.songs.filter(s => s.derived).length === 2, JSON.stringify(derCk2.d.songs.filter(s => s.derived)));
+
+  // --- the cut-off is enforced at the server, not just hidden in the UI ---
+  // Both timestamps in the PAST (cut-off still before the tournament, so it validates):
+  // the pack is nominally 'open' but its window has already elapsed.
+  const sbLate = await call('/api/admin/sidebet', {
+    name: 'Closing Pack', picksRequired: 2, warsAt: Date.now() - 1000, closesAt: Date.now() - 5000, status: 'open',
+  }, 'POST', ADMINH);
+  await call('/api/admin/sidebet/songs', { packId: sbLate.d.id, songs: [{ title: 'A' }, { title: 'B' }, { title: 'C' }] }, 'POST', ADMINH);
+  const lateSongs = (await call('/api/sidebet', null, 'GET')).d.songs.map(s => s.id);
+  const sbTooLate = await call('/api/sidebet/entry', { packId: sbLate.d.id, picks: lateSongs.slice(0, 2) }, 'POST', E1);
+  ok('sidebet: an entry after the cut-off is refused by the server', sbTooLate.status === 400, JSON.stringify(sbTooLate.d));
+  ok('sidebet: a closed pack reports itself closed',
+    (await call('/api/sidebet', null, 'GET')).d.pack.open === false);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

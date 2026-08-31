@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (373 passed as of 2026-07; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (959 passed as of 2026-08-30; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 031; suite 889 green)
+## Current state (migrations through 033; suite 959 green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -290,6 +290,52 @@ live on anr.makinitmag.com.
   changes what every player is looking at. Console: a red 🗑 in the Rounds tab, offered only
   when `votes === 0`.
 
+- **A&R Wars side contest — "the sidebet"** (033): a free-entry prediction contest at
+  **/sidebet**. Entrants pick which songs from the monthly A&R Service Pack will actually be
+  **PLAYED** at A&R Wars, put them in order, and the most-right entry wins a sponsor-funded
+  cash prize. **Set membership, not ratings** — nothing reads votes, room averages or the
+  series board, and **no points are awarded**, so it never touches the $500 board.
+  **18 = the bracket** (8 competitors → 4+2 matchups + a 3-poll final = 9 binary polls × 2
+  songs), but it is `packs.picks_required`, never hardcoded — it moves if the format does.
+  **Winner: most correct** (operator's call — perfect-or-nothing would leave the prize unpaid
+  most months). Ties break on **order distance** (Spearman footrule) against the **consensus
+  ranking**: the played songs ordered by how many entrants picked them, count-ties broken by
+  **CSV row order**, which is why `pack_songs.row_no` is load-bearing and fixed before any
+  entry exists. Last resort is earliest `updated_at` — the list that actually competed, NOT
+  first submission, or an early throwaway rewritten at the deadline would keep the early
+  timestamp as a free option.
+  **SEALED like the vote split: pick counts are never emitted before settle.** The tiebreak
+  ranking is built from the entries themselves, so a live "340 people picked this" would make
+  copying the crowd dominant — every entry converges, every entry ties, and the winner is
+  whoever submitted first. There is no public read path and no aggregate in the player payload.
+  **Identity is the existing email OTP** (`/api/auth/request` + `/api/auth/verify` reused
+  verbatim; phone collected, not verified — email is the unique key an entry attaches to, so
+  verifying a phone would prove the wrong fact). An entrant becomes a `users` row with **no
+  `participants` row**: a durable verified account that never played a session, which is the
+  second job this does — **the contest seeds the audience**. `UNIQUE(pack_id, user_id)` is what
+  makes "one entry per person" real rather than a rule in the copy.
+  The form is **last** (they've done the picking, so it reads as keeping their work, not a
+  toll) and picks stay client-side until the code verifies, so bailing leaves no half-entry.
+  Entries are **editable until `closes_at`**, enforced server-side — editable past the first
+  song would let someone submit a list they already know the answer to.
+  **Admin (platform-admin only; a pack spans no room):** iterations list, create form (title ·
+  picks · download link · Wars date · cut-off, plus prize/sponsor/banner), **CSV song loader**
+  (row order shown and explained; blocked on blanks, duplicates, or fewer songs than picks),
+  and a **settle checklist** that **refuses to run at anything but exactly `picks_required`** —
+  a miscount doesn't error, it quietly crowns the wrong person. Settle is re-runnable while
+  unsettled so a corrected checklist re-scores everyone.
+  **The played set derives**: queuing a Versus matchup from the pack stamps
+  `rounds.pack_song_a/b` (validated against the pack linked to THAT room — a foreign id is
+  dropped, never stamped), so the 18 fall out of the 9 matchups; the host confirms rather than
+  ticking 18 boxes. Hand-typed matchups still work — the checklist is confirm-or-correct.
+  **The CSV cannot be replaced once entries exist** (every pick points at a `pack_songs` row),
+  and `picks_required` freezes then too. **Sponsor banner reuses the `banners` table**
+  (`packs.banner_id`) and play.html's `.ad-slot` treatment on every screen — with **no fallback
+  to the global house banner**, because the page says "courtesy of our sponsor". Scoring lives
+  in `sidebet.js` (pure, unit-tested like scoring.js). Spec:
+  docs/specs/sidebet-contest-spec.md. Mockups: `public/_mock-sidebet.html` (player) and
+  `public/_mock-sidebet-admin.html` (console).
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count
@@ -328,6 +374,14 @@ live on anr.makinitmag.com.
 - Copy-inventory spreadsheet: reconcile the Room/A&Rs terminology sweep against the operator's
   revised docs/copy-inventory.xlsx when returned.
 - Before a celebrity-scale event: upgrade Revive's shared hosting (fine at current traffic).
+
+## Copy voice (operator, 2026-08-30)
+**Plain and direct. No hip, cultural, or slangy phrasing** in any user-facing text — it reads
+as an outsider imitating the culture and costs credibility with exactly the audience the
+product needs. Say what the thing is and what the person should do. When the operator supplies
+wording, use it **verbatim** rather than improving it. Prefer the literal noun ("songs",
+"picks", "entry") over an invented one. Rejected examples, for calibration: "Got a good ear for
+music?", "Call all 18 and the money's yours", "surest bet", "dark horses", "your card".
 
 ## Design system + assets (match these)
 The design system is extracted to `docs/design-system/` (also synced to Claude Design):

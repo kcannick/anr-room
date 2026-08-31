@@ -185,6 +185,7 @@
       <div class="row" style="gap:8px;flex:0 0 auto">
         <button class="btn ghost sm hide" id="btnAnalytics">Analytics</button>
         <button class="btn ghost sm hide" id="btnCharts">Charts</button>
+        <button class="btn ghost sm hide" id="btnSidebet">Sidebet</button>
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
         <button class="btn ghost sm" id="btnHostDefaults">Defaults</button>
@@ -301,6 +302,17 @@
           <div><label>Giveaway this round</label><input id="rGive" placeholder="optional prize"></div>
         </div>
         <div id="songBRow" class="hide" style="border-top:1px solid var(--line);padding-top:12px;margin-top:2px">
+          <!-- Sidebet (033): when a service pack is linked to this room, picking the two
+               songs here stamps their pack_song ids on the round — which is what makes the
+               played 18 derive at settle instead of the host re-ticking every box. Typing
+               the titles by hand still works; the checklist is confirm-or-correct either way. -->
+          <div id="packPickRow" class="hide" style="margin-bottom:12px">
+            <label>From the service pack <span class="muted" id="packPickName"></span></label>
+            <div class="row">
+              <select id="rPackA"><option value="">Song A — type it instead</option></select>
+              <select id="rPackB"><option value="">Song B — type it instead</option></select>
+            </div>
+          </div>
           <div><label>Song B title *</label><input id="rBTitle" placeholder="The other side"></div>
           <div style="margin-top:10px"><label>Song B artist</label><input id="rBArtist" placeholder="optional"></div>
         </div>
@@ -896,6 +908,108 @@
   </div>
 </div>
 
+
+<!-- ═══ SIDEBET: the A&R Wars prediction contest (033) ═══════════════════════
+     Platform-admin only. A pack spans no single room, and the settle checklist
+     decides a cash prize. -->
+<div id="sidebet" class="grid hide">
+  <style>
+    #sidebet .stack{grid-column:1/-1;max-width:900px;margin:0 auto;width:100%}
+    #sidebet .sb-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media(max-width:700px){#sidebet .sb-grid{grid-template-columns:1fr}}
+    #sidebet .hint{font-size:12px;color:var(--ink-faint);margin:5px 0 0 2px;line-height:1.45}
+    #sidebet .hint.warn{color:var(--gold)} #sidebet .hint.bad{color:var(--hot)}
+    #sidebet .scroller{max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;background:var(--inset)}
+    #sidebet .drop{border:1.5px dashed var(--line);border-radius:14px;background:var(--inset);padding:22px 16px;text-align:center}
+    #sidebet .drop.ok{border-color:var(--signal)} #sidebet .drop.bad{border-color:var(--hot)}
+    #sidebet .ck{display:flex;align-items:center;gap:11px;padding:9px 12px;border-bottom:1px solid #1a1530;cursor:pointer;font-size:13.5px}
+    #sidebet .ck:last-child{border-bottom:0}
+    #sidebet .ck .box{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--line);flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;color:transparent}
+    #sidebet .ck.on .box{background:var(--signal);border-color:var(--signal);color:var(--on-signal)}
+    #sidebet .ck .src{margin-left:auto;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);flex:none}
+    #sidebet .ck.on .src{color:var(--signal)}
+    #sidebet .tally{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:11px}
+    #sidebet .tally .n{font-family:'Space Mono',monospace;font-size:24px;font-weight:700}
+    #sidebet .tally .n.ok{color:var(--signal)} #sidebet .tally .n.bad{color:var(--gold)}
+    #sidebet .tally .lbl{font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+    #sidebet .locked{background:var(--inset);border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.5;color:var(--ink-dim);margin-top:12px}
+    #sidebet .locked b{color:var(--ink)}
+  </style>
+  <div class="stack">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <h2 style="margin:0">Sidebet</h2>
+        <button class="btn ghost sm" id="btnSidebetBack">← My rooms</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin:0 0 14px">The A&amp;R Wars prediction contest at <b>/sidebet</b>. Entrants pick which songs from the service pack will actually get played; most right wins. <b>Only one iteration can be open at a time.</b> Pick counts stay hidden until you settle — they're the tiebreak, so showing them would make copying the crowd the winning move.</p>
+      <div id="sbList"><div class="muted" style="font-size:13px">Loading…</div></div>
+      <div class="row" style="margin-top:12px;gap:8px"><button class="btn sm" id="sbNew">New iteration</button></div>
+    </div>
+
+    <!-- create / edit -->
+    <div class="card hide" id="sbFormCard">
+      <h2 id="sbFormTitle">New iteration</h2>
+      <div class="stack">
+        <div><label>Service pack title</label><input id="sbName" placeholder="e.g. September 2026 A&amp;R Service Pack"></div>
+        <div class="sb-grid">
+          <div><label>Number of songs to predict</label><input id="sbPicks" type="number" min="1" max="50" value="18">
+            <div class="hint" id="sbPicksHint">18 = the A&amp;R Wars bracket (4 + 2 + 3 polls × 2 songs).</div></div>
+          <div><label>Prize <span class="muted">(printed on the page)</span></label><input id="sbPrize" placeholder="$150"></div>
+        </div>
+        <div><label>Sponsor line <span class="muted">(optional)</span></label><input id="sbSponsor" placeholder="courtesy of our sponsor"></div>
+        <div><label>Download link for the service pack</label><input id="sbUrl" placeholder="https://…">
+          <div class="hint">Opens in a new tab. Not a gate — nobody is blocked from entering without it.</div></div>
+        <div class="sb-grid">
+          <div><label>A&amp;R Wars tournament date <span class="muted">(ET)</span></label><input id="sbWars" type="datetime-local"></div>
+          <div><label>Cut-off to submit / edit picks <span class="muted">(ET)</span></label><input id="sbCut" type="datetime-local">
+            <div class="hint" id="sbCutHint">Entries freeze at this moment.</div></div>
+        </div>
+        <div class="sb-grid">
+          <div><label>Sponsor banner <span class="muted">(optional)</span></label>
+            <select id="sbBanner"><option value="">No banner — hide the slot</option></select>
+            <div class="hint">Same banner library as rooms. No fallback to the house banner: the page says "courtesy of our sponsor," so an unrelated advertiser there would be wrong. Unset means no slot at all.</div></div>
+          <div><label>A&amp;R Wars room <span class="muted">(links the played songs)</span></label>
+            <select id="sbSession"><option value="">Not linked yet</option></select>
+            <div class="hint">Set this once the Wars room exists — it's what pre-ticks the settle checklist.</div></div>
+        </div>
+        <div><label>Status</label>
+          <select id="sbStatus"><option value="draft">Draft — not visible</option><option value="open">Open — accepting entries</option><option value="closed">Closed — entries frozen</option></select></div>
+        <div class="hint bad hide" id="sbFormErr"></div>
+        <div class="row" style="gap:8px"><button class="btn" id="sbSave">Save iteration</button><button class="btn ghost" id="sbCancel">Cancel</button></div>
+      </div>
+    </div>
+
+    <!-- songs -->
+    <div class="card hide" id="sbSongsCard">
+      <h2>Service pack songs</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 12px"><b style="color:var(--gold)">Row order is load-bearing.</b> When two played songs were picked by the same number of entrants, CSV row order breaks the tie — so it's fixed before any entry exists. Columns: <span class="mono">title, artist</span>, header row optional.</p>
+      <div class="drop" id="sbDrop">
+        <div style="font-size:15px;font-weight:700" id="sbDropBig">Drop a CSV here, or choose a file</div>
+        <div style="font-size:12.5px;color:var(--ink-faint);margin-top:5px" id="sbDropSub">Nothing loaded yet</div>
+        <div class="row" style="justify-content:center;gap:8px;margin-top:12px">
+          <label class="btn ghost sm" style="margin:0">Choose file<input type="file" id="sbFile" accept=".csv,text/csv" style="display:none"></label>
+        </div>
+      </div>
+      <div id="sbCsvOut"></div>
+    </div>
+
+    <!-- settle -->
+    <div class="card hide" id="sbSettleCard">
+      <h2>Confirm what was played</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 12px">Pre-ticked from the A&amp;R Wars Versus rounds when the room is linked. Confirm or correct, then settle. <b>Settle is blocked at anything other than the exact count</b> — a miscount doesn't error, it quietly crowns the wrong person.</p>
+      <div class="tally">
+        <span><span class="n ok" id="sbSn">0</span> <span class="lbl" id="sbSnLbl">of 0 marked played</span></span>
+        <span class="lbl" id="sbSrc"></span>
+      </div>
+      <div class="scroller" id="sbChecks"></div>
+      <div class="hint" id="sbSettleHint"></div>
+      <div class="row" style="gap:8px;margin-top:12px"><button class="btn" id="sbSettle">Settle &amp; publish results</button></div>
+      <div class="locked">Settling scores every entry and <b>unhides pick counts</b>. It can be re-run while the iteration isn't settled, so a corrected checklist produces a corrected result.</div>
+      <div id="sbResults"></div>
+    </div>
+  </div>
+</div>
+
 <!-- HOST DEFAULTS MODAL: prefill for every new room this host creates -->
 <div id="hdModal" class="modal-scrim" style="z-index:35">
   <div class="modal-card md">
@@ -1480,7 +1594,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','picker','create','console','series','users','platform','analytics','charts'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','picker','create','console','series','users','platform','analytics','charts','sidebet'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -1611,6 +1725,7 @@ async function openPicker(){
   $('#btnPlatform').classList.toggle('hide',!isAdmin());
   $('#btnAnalytics').classList.toggle('hide',!isAdmin());
   $('#btnCharts').classList.toggle('hide',!isAdmin());
+  $('#btnSidebet').classList.toggle('hide',!isAdmin());
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
@@ -2319,6 +2434,274 @@ document.querySelectorAll('.chart-mode').forEach(b=>b.onclick=()=>{
   });
 });
 $('#chPer')&&$('#chPer').addEventListener('change',()=>{$('#chSlides').innerHTML='';});
+
+
+// ---- Service-pack pickers on the Versus form (033) ----
+// Loaded once per room rather than on every state poll: the list can't change mid-show,
+// and the poll path is the one place this codebase refuses to put extra queries.
+let PACKSONGS=null;
+async function loadRoomPack(){
+  if(!SID)return;
+  try{
+    const d=await api('/api/admin/sidebet/room-songs?sessionId='+encodeURIComponent(SID),null,'GET');
+    PACKSONGS=d;
+    const row=$('#packPickRow'); if(!row)return;
+    if(!d.pack||!d.songs.length){ row.classList.add('hide'); return; }
+    $('#packPickName').textContent='· '+d.pack.name;
+    const opts=(side)=>`<option value="">Song ${side} — type it instead</option>`+
+      d.songs.map(x=>`<option value="${esc(x.id)}">${esc(x.title)}${x.artist?' · '+esc(x.artist):''}</option>`).join('');
+    $('#rPackA').innerHTML=opts('A'); $('#rPackB').innerHTML=opts('B');
+    row.classList.remove('hide');
+  }catch(e){ /* a room with no pack linked is the normal case, not an error */ }
+}
+// Choosing a pack song fills the title/artist fields it corresponds to, so the round still
+// reads normally everywhere else — the id is the extra, not a replacement.
+function wirePackPick(sel,titleEl,artistEl){
+  const el=$(sel); if(!el)return;
+  el.onchange=()=>{
+    const s=PACKSONGS&&PACKSONGS.songs.find(x=>x.id===el.value);
+    if(!s)return;
+    $(titleEl).value=s.title; if($(artistEl))$(artistEl).value=s.artist||'';
+  };
+}
+wirePackPick('#rPackA','#rTitle','#rArtist');
+wirePackPick('#rPackB','#rBTitle','#rBArtist');
+
+// ═══ SIDEBET (033): the A&R Wars prediction contest ═══════════════════════════
+// Platform-admin only. Four surfaces on one screen: the iteration list, the create
+// form, the CSV song loader, and the settle checklist.
+//
+// Two constraints the UI has to hold up, both re-checked server-side:
+//   · the cut-off must precede the tournament (entries editable while songs play
+//     would let someone submit a list they already know the answer to), and
+//   · settle only runs at EXACTLY picks_required — a miscount doesn't error, it
+//     quietly crowns the wrong person.
+let SB = { packs: [], banners: [], rooms: [], editing: null, songs: [], checks: [], need: 0 };
+
+async function openSidebet(){
+  showScreen('sidebet');
+  $('#who').textContent=ME?(ME.email+(ME.role==='admin'?' · admin':'')):'';
+  await loadSidebet();
+}
+
+async function loadSidebet(){
+  try{
+    const d=await api('/api/admin/sidebet',null,'GET');
+    SB.packs=d.packs||[]; SB.banners=d.banners||[]; SB.rooms=d.rooms||[];
+    renderSbList();
+  }catch(e){ $('#sbList').innerHTML='<div class="hint bad">'+esc(e.message)+'</div>'; }
+}
+
+// ET-aware datetime-local round-trip. The show runs on Eastern and the operator
+// thinks in Eastern, so the field means ET regardless of where the laptop is.
+function msToLocalInput(ms){
+  if(!ms)return '';
+  const d=new Date(ms);
+  const p=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d)
+    .reduce((a,x)=>(a[x.type]=x.value,a),{});
+  return `${p.year}-${p.month}-${p.day}T${(p.hour==='24'?'00':p.hour)}:${p.minute}`;
+}
+function localInputToMs(v){
+  if(!v)return 0;
+  // Resolve the ET offset for THAT date (handles DST) by probing the same instant.
+  const guess=new Date(v+':00Z').getTime();
+  const off=(()=>{ const d=new Date(guess);
+    const et=new Date(d.toLocaleString('en-US',{timeZone:'America/New_York'}));
+    const utc=new Date(d.toLocaleString('en-US',{timeZone:'UTC'}));
+    return utc.getTime()-et.getTime(); })();
+  return guess+off;
+}
+const sbFmt=ms=>ms?new Date(ms).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})+' ET':'—';
+
+function renderSbList(){
+  if(!SB.packs.length){ $('#sbList').innerHTML='<div class="muted" style="font-size:13px">No iterations yet.</div>'; return; }
+  $('#sbList').innerHTML=`<table class="data-table"><tr>
+      <th>Service pack</th><th>Picks</th><th>Songs</th><th>Entries</th><th>Wars</th><th>Status</th><th></th></tr>`+
+    SB.packs.map(k=>`<tr>
+      <td><b>${esc(k.name)}</b></td>
+      <td class="mono">${k.picksRequired}</td>
+      <td class="mono">${k.songs}</td>
+      <td class="mono">${k.entries}</td>
+      <td>${esc(sbFmt(k.warsAt))}</td>
+      <td><span class="pill ${k.status==='open'?'live':''}">${esc(k.status)}</span></td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn ghost sm sb-edit" data-id="${esc(k.id)}">Edit</button>
+        <button class="btn ghost sm sb-songs" data-id="${esc(k.id)}">Songs</button>
+        <button class="btn ghost sm sb-settle" data-id="${esc(k.id)}">Settle</button>
+      </td></tr>`).join('')+'</table>';
+  document.querySelectorAll('#sbList .sb-edit').forEach(b=>b.onclick=()=>sbEdit(b.dataset.id));
+  document.querySelectorAll('#sbList .sb-songs').forEach(b=>b.onclick=()=>sbOpenSongs(b.dataset.id));
+  document.querySelectorAll('#sbList .sb-settle').forEach(b=>b.onclick=()=>sbOpenSettle(b.dataset.id));
+}
+
+function sbShow(card){ ['sbFormCard','sbSongsCard','sbSettleCard'].forEach(c=>$('#'+c).classList.toggle('hide',c!==card)); }
+
+function sbFillForm(k){
+  SB.editing=k?k.id:null;
+  $('#sbFormTitle').textContent=k?'Edit iteration':'New iteration';
+  $('#sbName').value=k?k.name:'';
+  $('#sbPicks').value=k?k.picksRequired:18;
+  $('#sbPrize').value=k&&k.prizeText||'';
+  $('#sbSponsor').value=k&&k.sponsorText||'';
+  $('#sbUrl').value=k&&k.downloadUrl||'';
+  $('#sbWars').value=k?msToLocalInput(k.warsAt):'';
+  $('#sbCut').value=k?msToLocalInput(k.closesAt):'';
+  $('#sbStatus').value=k?k.status:'draft';
+  $('#sbBanner').innerHTML='<option value="">No banner — hide the slot</option>'+
+    SB.banners.map(b=>`<option value="${esc(b.id)}">${esc(b.label)}</option>`).join('');
+  $('#sbBanner').value=k&&k.bannerId||'';
+  $('#sbSession').innerHTML='<option value="">Not linked yet</option>'+
+    SB.rooms.map(r=>`<option value="${esc(r.id)}">${esc(r.name)} · ${esc(r.status)}</option>`).join('');
+  $('#sbSession').value=k&&k.sessionId||'';
+  $('#sbFormErr').classList.add('hide');
+  sbCheckDates(); sbCheckPicks();
+  sbShow('sbFormCard');
+}
+function sbEdit(id){ sbFillForm(SB.packs.find(x=>x.id===id)); }
+
+function sbCheckDates(){
+  const w=localInputToMs($('#sbWars').value), c=localInputToMs($('#sbCut').value);
+  const h=$('#sbCutHint');
+  if(w&&c&&c>=w){ h.className='hint bad'; h.textContent='The cut-off must be before the tournament starts — entries can’t stay open once songs are playing.'; $('#sbSave').disabled=true; }
+  else { h.className='hint'; h.textContent='Entries freeze at this moment.'; $('#sbSave').disabled=false; }
+}
+function sbCheckPicks(){
+  const n=+$('#sbPicks').value, h=$('#sbPicksHint');
+  if(n===18){h.className='hint';h.textContent='18 = the A&R Wars bracket (4 + 2 + 3 polls × 2 songs).';}
+  else if(n%2){h.className='hint warn';h.textContent=n+' is odd — every matchup plays two songs, so a bracket total is always even.';}
+  else {h.className='hint';h.textContent=n+' songs to predict. Every screen and the scoring read this value.';}
+}
+
+async function sbSave(){
+  const err=$('#sbFormErr'); err.classList.add('hide');
+  const body={
+    id:SB.editing||undefined,
+    name:$('#sbName').value.trim(),
+    picksRequired:+$('#sbPicks').value||18,
+    prizeText:$('#sbPrize').value.trim(),
+    sponsorText:$('#sbSponsor').value.trim(),
+    downloadUrl:$('#sbUrl').value.trim(),
+    bannerId:$('#sbBanner').value||'',
+    sessionId:$('#sbSession').value||'',
+    warsAt:localInputToMs($('#sbWars').value),
+    closesAt:localInputToMs($('#sbCut').value),
+    status:$('#sbStatus').value,
+  };
+  try{
+    const d=await api('/api/admin/sidebet',body);
+    await loadSidebet();
+    sbOpenSongs(d.id);
+  }catch(e){ err.textContent=e.message; err.classList.remove('hide'); }
+}
+
+// ---- songs (CSV) ----
+function sbParseCSV(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(lines.length&&/^\s*title\s*,/i.test(lines[0]))lines.shift();
+  return lines.map(l=>{
+    // Quoted first field, so a title containing a comma survives the split.
+    const m=l.match(/^\s*"((?:[^"]|"")*)"\s*(?:,\s*(.*))?$/);
+    if(m)return {title:m[1].replace(/""/g,'"').trim(),artist:(m[2]||'').replace(/^"|"$/g,'').trim()};
+    const i=l.indexOf(',');
+    return i<0?{title:l.trim(),artist:''}:{title:l.slice(0,i).trim(),artist:l.slice(i+1).trim()};
+  });
+}
+async function sbOpenSongs(id){
+  const k=SB.packs.find(x=>x.id===id); if(!k)return;
+  SB.editing=id; SB.need=k.picksRequired; SB.songs=[];
+  $('#sbDropBig').textContent='Drop a CSV here, or choose a file';
+  $('#sbDropSub').textContent=k.songs?`${k.songs} songs already loaded for ${k.name}`:'Nothing loaded yet';
+  $('#sbDrop').className='drop'; $('#sbCsvOut').innerHTML='';
+  sbShow('sbSongsCard');
+}
+function sbRenderCSV(rows){
+  SB.songs=rows;
+  const need=SB.need||18, problems=[], seen=new Map(), dupes=[], blanks=[];
+  rows.forEach((r,i)=>{
+    if(!r.title){blanks.push(i+1);return;}
+    const k=(r.title+'|'+r.artist).toLowerCase();
+    if(seen.has(k))dupes.push(i+1); else seen.set(k,i+1);
+  });
+  if(blanks.length)problems.push(`${blanks.length} row${blanks.length>1?'s have':' has'} no title (row ${blanks.slice(0,4).join(', ')}${blanks.length>4?'…':''})`);
+  if(dupes.length)problems.push(`${dupes.length} duplicate${dupes.length>1?'s':''} (row ${dupes.slice(0,4).join(', ')}${dupes.length>4?'…':''})`);
+  if(rows.length<need)problems.push(`only ${rows.length} songs — you can't pick ${need} out of ${rows.length}`);
+  $('#sbDrop').className='drop '+(problems.length?'bad':'ok');
+  $('#sbDropBig').textContent=rows.length+' songs loaded';
+  $('#sbDropSub').textContent=problems.length?'Fix the issues below, then re-upload.':'Ready. Row order is saved exactly as shown.';
+  $('#sbCsvOut').innerHTML=`
+    <div class="tally" style="margin-top:12px">
+      <span><span class="n ${problems.length?'bad':'ok'}">${rows.length}</span> <span class="lbl">songs · picking ${need}</span></span>
+      <span class="lbl">${problems.length?problems.length+' issue'+(problems.length>1?'s':''):'no issues'}</span></div>
+    ${problems.map(p=>`<div class="hint bad" style="margin:0 0 6px 2px">⚠ ${esc(p)}</div>`).join('')}
+    <div class="hint warn" style="margin-bottom:9px">Row order below is the tiebreak order. Once the iteration has its first entry this list can no longer be replaced — every pick points at a row.</div>
+    <div class="scroller"><table class="data-table"><tr><th>#</th><th>Title</th><th>Artist</th></tr>
+      ${rows.map((r,i)=>`<tr><td class="mono muted">${i+1}</td><td>${r.title?esc(r.title):'<span class="hint bad">— missing —</span>'}</td><td class="muted">${esc(r.artist||'')}</td></tr>`).join('')}
+    </table></div>
+    <div class="row" style="gap:8px;margin-top:12px"><button class="btn" id="sbSaveSongs" ${problems.length?'disabled':''}>Save ${rows.length} songs</button></div>
+    <div class="hint bad hide" id="sbSongsErr"></div>`;
+  $('#sbSaveSongs')&&($('#sbSaveSongs').onclick=async()=>{
+    try{
+      await api('/api/admin/sidebet/songs',{packId:SB.editing,songs:SB.songs});
+      await loadSidebet(); sbShow(''); 
+    }catch(e){ const el=$('#sbSongsErr'); el.textContent=e.message; el.classList.remove('hide'); }
+  });
+}
+function sbReadFile(f){ const r=new FileReader(); r.onload=()=>sbRenderCSV(sbParseCSV(r.result)); r.readAsText(f); }
+
+// ---- settle ----
+async function sbOpenSettle(id){
+  SB.editing=id;
+  try{
+    const d=await api('/api/admin/sidebet/checklist?packId='+encodeURIComponent(id),null,'GET');
+    SB.need=d.picksRequired; SB.checks=d.songs;
+    $('#sbResults').innerHTML='';
+    sbRenderChecks(); sbShow('sbSettleCard');
+  }catch(e){ alert(e.message); }
+}
+function sbRenderChecks(){
+  $('#sbChecks').innerHTML=SB.checks.map((s,i)=>`<div class="ck ${s.played?'on':''}" data-i="${i}">
+    <span class="box">✓</span><span>${esc(s.title)} ${s.artist?`<span class="muted">· ${esc(s.artist)}</span>`:''}</span>
+    <span class="src">${s.derived?'Versus round':''}</span></div>`).join('');
+  document.querySelectorAll('#sbChecks .ck').forEach(el=>el.onclick=()=>{
+    const i=+el.dataset.i; SB.checks[i].played=!SB.checks[i].played; sbRenderChecks();
+  });
+  const n=SB.checks.filter(s=>s.played).length, need=SB.need;
+  const el=$('#sbSn'); el.textContent=n; el.className='n '+(n===need?'ok':'bad');
+  $('#sbSnLbl').textContent='of '+need+' marked played';
+  const auto=SB.checks.filter(s=>s.played&&s.derived).length;
+  $('#sbSrc').textContent=`${auto} from Versus rounds · ${n-auto} by hand`;
+  const h=$('#sbSettleHint');
+  if(n===need){h.className='hint';h.textContent='Ready to settle.';$('#sbSettle').disabled=false;}
+  else {h.className='hint bad';h.textContent=`${n} marked, ${need} required. Settle is blocked — a miscount would crown the wrong person without erroring.`;$('#sbSettle').disabled=true;}
+}
+async function sbDoSettle(){
+  const played=SB.checks.filter(s=>s.played).map(s=>s.id);
+  if(!confirm(`Settle with ${played.length} songs marked played? This scores every entry and makes pick counts readable.`))return;
+  try{
+    const d=await api('/api/admin/sidebet/settle',{packId:SB.editing,played});
+    await loadSidebet();
+    $('#sbResults').innerHTML='<h2 style="margin-top:18px">Final standings</h2>'+
+      `<table class="data-table"><tr><th>#</th><th>A&R</th><th>Right</th><th>Order distance</th></tr>`+
+      (d.results||[]).map(r=>`<tr><td class="mono">${r.rank}</td><td>${esc(r.name)}${r.location?` <span class="muted">· ${esc(r.location)}</span>`:''}</td><td class="mono">${r.correct}</td><td class="mono">${r.distance}</td></tr>`).join('')+
+      '</table>';
+  }catch(e){ const h=$('#sbSettleHint'); h.className='hint bad'; h.textContent=e.message; }
+}
+
+$('#btnSidebet')&&($('#btnSidebet').onclick=openSidebet);
+$('#btnSidebetBack')&&($('#btnSidebetBack').onclick=openPicker);
+$('#sbNew')&&($('#sbNew').onclick=()=>sbFillForm(null));
+$('#sbCancel')&&($('#sbCancel').onclick=()=>sbShow(''));
+$('#sbSave')&&($('#sbSave').onclick=sbSave);
+$('#sbWars')&&($('#sbWars').oninput=sbCheckDates);
+$('#sbCut')&&($('#sbCut').oninput=sbCheckDates);
+$('#sbPicks')&&($('#sbPicks').oninput=sbCheckPicks);
+$('#sbSettle')&&($('#sbSettle').onclick=sbDoSettle);
+$('#sbFile')&&($('#sbFile').onchange=e=>{const f=e.target.files[0];if(f)sbReadFile(f);});
+if($('#sbDrop')){
+  ['dragover','dragenter'].forEach(ev=>$('#sbDrop').addEventListener(ev,e=>e.preventDefault()));
+  $('#sbDrop').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)sbReadFile(f);});
+}
+
 $('#btnCharts')&&($('#btnCharts').onclick=openCharts);
 $('#btnChartsBack')&&($('#btnChartsBack').onclick=openPicker);
 $('#chCsv')&&($('#chCsv').onclick=chDownloadCsv);
@@ -2552,12 +2935,17 @@ $('#btnAddRound').onclick=async()=>{
     const b=$('#rBTitle').value.trim();
     if(!b)return $('#addErr').textContent='Song B title is required';
     payload.option_b_title=b;payload.option_b_artist=$('#rBArtist').value.trim();
+    // Only sent when the host actually chose from the pack. The server re-validates both
+    // ids against the pack linked to this room and drops anything it doesn't recognise.
+    if($('#rPackA')&&$('#rPackA').value)payload.pack_song_a=$('#rPackA').value;
+    if($('#rPackB')&&$('#rPackB').value)payload.pack_song_b=$('#rPackB').value;
   }
   try{
     await api('/api/admin/round',payload);
     $('#rTitle').value='';$('#rArtist').value='';$('#rNote').value='';$('#rGive').value='';
     $('#rAEmail').value='';$('#rAPhone').value='';
     if($('#rBTitle')){$('#rBTitle').value='';$('#rBArtist').value='';}
+    if($('#rPackA')){$('#rPackA').value='';$('#rPackB').value='';}
     // A stale "Pulled: …" note would misdescribe the now-empty form (and there's nothing
     // left to undo — or to stay bound to — once the record is on deck).
     $('#neroMsg').classList.add('hide');$('#ingestMsg').classList.add('hide');_ingUndo=null;_ingRoundId=null;
@@ -3689,6 +4077,7 @@ function boot(){
   _ingSeenAt=null;_ingUndo=null;_ingRoundId=null;_ingFilled=null; // re-baseline auto-fill against THIS room
   refresh();if(poll)clearInterval(poll);poll=setInterval(refresh,2000);
   loadDeckKey(); // once per console open — the key never changes on its own
+  loadRoomPack(); // service-pack songs for the Versus form, if a sidebet is linked here
   initRealtime();
   // 250ms tick = the display flips within a quarter-second of each real second
   // boundary, whatever phase the interval starts on. Pure client-side countdown;

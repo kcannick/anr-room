@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — A&R Wars prediction contest (/sidebet)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Token values mirrored from public/tokens.css so the mockup renders standalone
+     (same convention as the other _mock-*.html files). */
+  :root{
+    --bg:#0d0b16; --panel:#171328; --panel-2:#1d1733; --line:#2e2750; --inset:#0a0814;
+    --ink:#f3f0fb; --ink-dim:#a9a2c9; --ink-faint:#8c84ad;
+    --signal:#4bb749; --signal-deep:#379235; --on-signal:#06210b;
+    --accent:#6d5fe0; --gold:#f5c518; --hot:#ff5d6c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;padding:30px 20px 90px}
+  .mocklabel{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);margin:54px 0 6px;text-align:center}
+  .mocklabel:first-of-type{margin-top:0}
+  .mocknote{font-size:13.5px;line-height:1.55;color:var(--ink-dim);text-align:center;max-width:660px;margin:0 auto 20px}
+  .mocknote b{color:var(--ink)}
+  .mocknote .flag{color:var(--gold)}
+  .cols{display:flex;gap:30px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+
+  /* ---- phone frame ---- */
+  .phone{width:390px;background:radial-gradient(130% 90% at 50% -10%,#241a4d 0%,var(--bg) 58%);
+    border:1px solid #1d1833;border-radius:22px;padding:22px 18px 26px;display:flex;flex-direction:column}
+  .caption{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--signal);text-align:center;margin:10px 0 0}
+  .caption.warn{color:var(--gold)}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:18px;padding:20px}
+  .eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
+  .dim{color:var(--ink-dim)} .faint{color:var(--ink-faint)}
+  .mono{font-family:"Space Mono",monospace}
+  h1{margin:0;font-size:31px;line-height:1.1;font-weight:800;letter-spacing:-.03em}
+  h2{margin:0;font-size:21px;font-weight:700;letter-spacing:-.02em}
+  p{margin:10px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-dim)}
+
+  .brandbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .wordmark{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint)}
+  .step{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;color:var(--ink-faint)}
+
+  .prize{font-family:"Space Mono",monospace;font-weight:700;font-size:52px;color:var(--gold);letter-spacing:-.03em;line-height:1}
+  .sponsor{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
+
+  .btn{display:block;width:100%;background:var(--signal);color:var(--on-signal);border:0;border-radius:14px;padding:15px 18px;
+    font-family:inherit;font-size:16px;font-weight:800;cursor:pointer;text-align:center;margin-top:16px}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+  .btn.accent{background:var(--accent);color:#fff}
+  .btn:disabled{opacity:.35;cursor:not-allowed}
+  .btnrow{display:flex;gap:10px} .btnrow .btn{margin-top:0}
+
+  .rules{background:var(--inset);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-top:18px}
+  .rules .eyebrow{margin-bottom:8px;display:block}
+  .rules li{font-size:12.8px;line-height:1.5;color:var(--ink-dim);margin-bottom:5px}
+  .rules ul,.rules ol{margin:0;padding-left:17px}
+  .rules ol li{margin-bottom:6px}
+  .tiebreak{font-size:12.2px;line-height:1.45;color:var(--ink-faint);margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  .rules a{color:var(--ink-faint)}
+
+  /* ---- pick screen ---- */
+  .stickyhead{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px}
+  .counter{display:flex;align-items:baseline;justify-content:space-between}
+  .counter .n{font-family:"Space Mono",monospace;font-size:26px;font-weight:700}
+  .counter .n.full{color:var(--signal)}
+  .counter .lbl{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint)}
+  .bar{height:5px;background:var(--inset);border-radius:99px;margin-top:10px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .18s}
+  .bar i.full{background:var(--signal)}
+  input[type=text],input[type=email],input[type=tel]{width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);
+    font-family:inherit;font-size:15.5px;padding:12px 13px;border-radius:12px;outline:none}
+  input:focus{border-color:var(--accent)}
+  input::placeholder{color:#6f688f}
+  .search{margin-top:11px}
+
+  .list{max-height:360px;overflow-y:auto;border:1px solid var(--line);border-radius:16px;background:var(--inset)}
+  .alpha{position:sticky;top:0;background:#0e0b1c;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;
+    color:var(--ink-faint);padding:7px 14px;border-bottom:1px solid var(--line)}
+  .song{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid #1a1530;cursor:pointer}
+  .song:last-child{border-bottom:0}
+  .song .box{width:22px;height:22px;border-radius:7px;border:1.5px solid var(--line);flex:none;display:flex;align-items:center;justify-content:center;
+    font-size:13px;color:transparent}
+  .song.on .box{background:var(--signal);border-color:var(--signal);color:var(--on-signal)}
+  .song .t{font-size:14.5px;font-weight:600;line-height:1.25}
+  .song .a{font-size:12.3px;color:var(--ink-faint);margin-top:2px}
+  .song.off{opacity:.38}
+  .empty{padding:22px 14px;text-align:center;font-size:13px;color:var(--ink-faint)}
+
+  /* ---- order screen ---- */
+  .ranks{border:1px solid var(--line);border-radius:16px;background:var(--inset);overflow:hidden;max-height:420px;overflow-y:auto}
+  .rank{display:flex;align-items:center;gap:11px;padding:10px 12px;border-bottom:1px solid #1a1530;background:var(--inset)}
+  .rank:last-child{border-bottom:0}
+  .rank.drag{background:#1d1733;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+  .rank .num{font-family:"Space Mono",monospace;font-size:14px;font-weight:700;color:var(--accent);width:22px;text-align:right;flex:none}
+  .rank .num.top{color:var(--gold)}
+  .rank .t{font-size:14px;font-weight:600;line-height:1.25;flex:1;min-width:0}
+  .rank .t span{display:block;font-size:12px;color:var(--ink-faint);font-weight:400;margin-top:1px}
+  .grip{color:#4d4470;font-size:17px;flex:none;cursor:grab;padding:0 2px;letter-spacing:-1px}
+  .arrows{display:flex;flex-direction:column;gap:2px;flex:none}
+  .arrows button{background:transparent;border:1px solid var(--line);color:var(--ink-faint);border-radius:6px;
+    width:26px;height:19px;font-size:10px;line-height:1;cursor:pointer;padding:0}
+  .arrows button:disabled{opacity:.25}
+
+  /* ---- form ---- */
+  .field{margin-top:13px}
+  .field label{display:block;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}
+  .two{display:flex;gap:10px} .two .field{flex:1;margin-top:13px}
+  .check{display:flex;gap:11px;align-items:flex-start;margin-top:15px;cursor:pointer}
+  .check .box{width:21px;height:21px;border-radius:6px;border:1.5px solid var(--line);flex:none;margin-top:1px;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:transparent}
+  .check.on .box{background:var(--accent);border-color:var(--accent);color:#fff}
+  .check .txt{font-size:12.6px;line-height:1.45;color:var(--ink-dim)}
+  .legal{font-size:11.4px;line-height:1.5;color:var(--ink-faint);margin-top:14px}
+
+  .code{display:flex;gap:8px;justify-content:center;margin-top:18px}
+  .code i{width:44px;height:54px;border:1px solid var(--line);background:var(--inset);border-radius:12px;
+    font-family:"Space Mono",monospace;font-size:24px;font-weight:700;display:flex;align-items:center;justify-content:center;font-style:normal}
+  .code i.cur{border-color:var(--accent)}
+  .code i.mt{color:#3b3460}
+
+  /* ---- sponsor ad slot (same treatment as play.html .ad-slot) ---- */
+  .ad-slot{margin-top:16px}
+  .ad-slot a,.ad-slot img{display:block;width:100%}
+  .ad-slot img{width:100%;height:auto;max-height:120px;object-fit:contain;border-radius:12px}
+  .ad-slot .tag{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#5d5580;text-align:center;margin-bottom:5px}
+  /* ---- done ---- */
+  .tick{width:66px;height:66px;border-radius:50%;background:rgba(75,183,73,.13);border:1.5px solid var(--signal);
+    display:flex;align-items:center;justify-content:center;font-size:31px;color:var(--signal);margin:0 auto 16px}
+  .recap{background:var(--inset);border:1px solid var(--line);border-radius:14px;padding:13px 15px;margin-top:16px;text-align:left}
+  .recap .row{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--ink-dim)}
+  .recap .row b{color:var(--ink);font-family:"Space Mono",monospace;font-weight:700}
+
+  .pill{display:inline-block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    border:1px solid var(--line);border-radius:999px;padding:4px 10px;color:var(--ink-faint)}
+  .pill.live{color:var(--signal);border-color:var(--signal-deep)}
+  .pill.warn{color:var(--gold);border-color:#5c4a12}
+  .center{text-align:center}
+  hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+</style>
+</head>
+<body>
+
+<div class="mocklabel">A&amp;R Wars prediction contest — anr.makinitmag.com/sidebet</div>
+<div class="mocknote">Pick the 18 songs that get played at A&amp;R Wars — 9 binary polls × 2 songs each. Scoring is set membership, not ratings: a song was either played or it wasn't. <b>Email OTP</b> (reuses <span class="mono">/api/auth/request</span> + <span class="mono">/api/auth/verify</span>); phone is collected, not verified. An entrant becomes a <span class="mono">users</span> row with <b>no</b> <span class="mono">participants</span> row — a real account, not an active A&amp;R. Screens 3 and 4 are live: click songs, arrow or drag the order.</div>
+
+<!-- ============ 1 + 2 ============ -->
+<div class="mocklabel">Screen 1 — the offer · Screen 2 — the fork</div>
+<div class="mocknote">Screen 1 is your copy. Screen 2 is a fork, not a gate: <b>nobody is blocked from entering</b> because they haven't downloaded yet. <span class="flag">The "how it works" block is not decoration</span> — a $150 cash prize needs the rules stated before entry, including the tiebreak.</div>
+<div class="cols">
+
+  <div>
+  <div class="phone">
+    <div class="brandbar"><span class="wordmark">The A&amp;R Room</span><span class="pill live">Entries open</span></div>
+    <div class="panel center">
+      <span class="eyebrow">Side contest · A&amp;R Wars</span>
+      <h1 style="margin-top:12px">Pick the hits.<br>Win $150.</h1>
+      <div class="prize" style="margin-top:20px">$150</div>
+      <div class="sponsor">cash, courtesy of our sponsor</div>
+      <p style="margin-top:16px">Pick the top 18 songs from this month's A&amp;R Service Pack for a chance to win $150 cash.</p>
+      <button class="btn">Pick my 18 songs</button>
+      <div class="rules">
+        <span class="eyebrow">How it works</span>
+        <ol>
+          <li>Check out this month's A&amp;R Service Pack.</li>
+          <li>Pick your top 18 songs.</li>
+          <li>Tune into the A&amp;R Wars tournament to see if your picks get played.</li>
+          <li>Person with the most right selections wins.</li>
+        </ol>
+        <div class="tiebreak">If two people get the same number right, order decides it. Free to enter, one entry per person.</div>
+        <div class="mono" style="font-size:11px;color:var(--ink-faint);margin-top:9px">Entries close Sep 24, 7:00 PM ET · <a href="#">Full rules</a></div>
+      </div>
+    </div>
+    <div class="caption">Screen 1 · the hook + the method</div>
+  </div>
+  </div>
+
+  <div>
+  <div class="phone">
+    <div class="brandbar"><span class="wordmark">The A&amp;R Room</span><span class="step">STEP 1 OF 4</span></div>
+    <div class="panel">
+      <span class="eyebrow">Before you pick</span>
+      <h2 style="margin-top:10px">Listen to this month's pack</h2>
+      <p>You're picking 18 songs out of the <b>60</b> in the September A&amp;R Service Pack. Download it and listen, or go straight to the list if you already know it.</p>
+      <button class="btn accent">Download the September pack ↗</button>
+      <button class="btn ghost" style="margin-top:10px">I've heard it — start picking</button>
+      <div class="legal">The download opens in a new tab. This page stays open.</div>
+    </div>
+    <div class="caption">Screen 2 · fork, not a gate</div>
+  </div>
+  </div>
+
+</div>
+
+<!-- ============ 3 ============ -->
+<div class="mocklabel">Screen 3 — pick 18 of 60</div>
+<div class="mocknote">At 60 songs this is a <b>filterable alphabetical checklist</b>, not autocomplete — the entrant is scanning a list they half-remember, and a search box that hides everything until you type makes that harder. Filter narrows in place. At 18 the unpicked rows <b>dim rather than disappear</b>, so swapping still works, and Done goes live. <b>18 is <span class="mono">picks_required</span> on the pack</b>, never hardcoded — it comes from the bracket (4+2+3 polls × 2 songs), so it moves if the format does.</div>
+<div class="cols">
+  <div>
+  <div class="phone">
+    <div class="brandbar"><span class="wordmark">The A&amp;R Room</span><span class="step">STEP 2 OF 4</span></div>
+    <div class="stickyhead">
+      <div class="counter">
+        <span><span class="n" id="cnt">0</span><span class="lbl"> / 18 picked</span></span>
+        <span class="lbl" id="left">18 to go</span>
+      </div>
+      <div class="bar"><i id="bar" style="width:0%"></i></div>
+      <input class="search" type="text" id="q" placeholder="Filter by song or artist…" autocomplete="off">
+    </div>
+    <div class="list" id="list"></div>
+    <button class="btn" id="done" disabled>Done — 0 of 18</button>
+  </div>
+  <div class="caption" id="cap3">Screen 3 · live — click to pick</div>
+  </div>
+</div>
+
+<!-- ============ 4 ============ -->
+<div class="mocklabel">Screen 4 — put them in order</div>
+<div class="mocknote">Arrives <b>pre-ordered by pick order</b>, so every entry has an order even from someone who taps straight through — otherwise the tiebreak can't separate two people who both skipped it. <span class="flag">Order is compared against how many entrants picked each song</span>, most-picked first. Drag the grip or use the arrows (drag is unreliable on mobile Safari inside a scroll container, so the arrows are the real control).</div>
+<div class="cols">
+  <div>
+  <div class="phone">
+    <div class="brandbar"><span class="wordmark">The A&amp;R Room</span><span class="step">STEP 3 OF 4</span></div>
+    <div class="panel" style="padding:16px 16px 14px">
+      <h2>Put them in order</h2>
+      <p style="font-size:13.5px">Your best pick at the top. Order only matters if someone else picks the same 18 songs you did.</p>
+    </div>
+    <div class="ranks" id="ranks" style="margin-top:12px"></div>
+    <button class="btn" id="lock">Lock in my picks</button>
+    <div class="legal center">You can change your picks until entries close on Sep 24.</div>
+  </div>
+  <div class="caption">Screen 4 · live — drag or arrow</div>
+  </div>
+</div>
+
+<!-- ============ 5 ============ -->
+<div class="mocklabel">Screen 5 — who are you · Screen 5b — the code</div>
+<div class="mocknote">Deliberately <b>last</b>: they've already done the work of picking 18, so the form is the cost of keeping it rather than a toll before they see anything. Picks are held client-side until the code verifies, so people who bail here leave no half-entries. A verified email is also what makes <span class="mono">UNIQUE(pack_id, user_id)</span> real, so "one entry per person" is enforced rather than promised. <span class="flag">SMS consent is its own unchecked box</span> with its own wording (TCPA); the room-live email subscribe follows the 028 registration pattern and is checked by default.</div>
+<div class="cols">
+
+  <div>
+  <div class="phone">
+    <div class="brandbar"><span class="wordmark">The A&amp;R Room</span><span class="step">STEP 4 OF 4</span></div>
+    <div class="panel">
+      <span class="eyebrow">Almost in</span>
+      <h2 style="margin-top:9px">Where do we send the $150?</h2>
+      <p style="font-size:13.5px">We'll email you a 6-digit code to confirm it's you.</p>
+      <div class="two">
+        <div class="field"><label>First name</label><input type="text" value="Kelby"></div>
+        <div class="field"><label>Last name</label><input type="text" value="Cannick"></div>
+      </div>
+      <div class="field"><label>Email</label><input type="email" value="kelby@makinitmag.com"></div>
+      <div class="field"><label>Mobile</label><input type="tel" placeholder="(555) 123-4567"></div>
+      <div class="check on" onclick="this.classList.toggle('on')"><span class="box">✓</span>
+        <span class="txt">Email me when the A&amp;R Room goes live.</span></div>
+      <div class="check" onclick="this.classList.toggle('on')"><span class="box">✓</span>
+        <span class="txt">Text me about A&amp;R Wars and the results. Msg &amp; data rates may apply, reply STOP to opt out.</span></div>
+      <button class="btn">Send my code</button>
+      <div class="legal">By entering you agree to the <a href="#" style="color:var(--ink-faint)">contest rules</a>. Free to enter, no purchase necessary.</div>
+    </div>
+    <div class="caption">Screen 5 · name, email, phone, consent</div>
+  </div>
+  </div>
+
+  <div>
+  <div class="phone">
+    <div class="brandbar"><span class="wordmark">The A&amp;R Room</span><span class="step">STEP 4 OF 4</span></div>
+    <div class="panel center">
+      <span class="eyebrow">Check your email</span>
+      <h2 style="margin-top:10px">Enter your code</h2>
+      <p style="font-size:13.5px">Sent to <b class="mono" style="font-size:13px">kelby@makinitmag.com</b></p>
+      <div class="code"><i>4</i><i>0</i><i>2</i><i class="cur">8</i><i class="mt">–</i><i class="mt">–</i></div>
+      <button class="btn" disabled>Confirm my entry</button>
+      <button class="btn ghost" style="margin-top:10px">Resend code</button>
+      <hr>
+      <div class="pill warn">Already have an account?</div>
+      <p style="font-size:12.8px">Same code, same box. Your entry attaches to the account you already have. You don't create a second one.</p>
+    </div>
+    <div class="caption warn">Screen 5b · the existing-account merge happens here, silently</div>
+  </div>
+  </div>
+
+</div>
+
+<!-- ============ 6 + returning ============ -->
+<div class="mocklabel">Screen 6 — locked in · Returning entrant</div>
+<div class="mocknote">The confirmation <b>repeats the deadline and what happens next</b>, because it's the screen people screenshot. The right-hand frame is what <span class="mono">/sidebet</span> shows a returning entrant: their own picks, loaded for editing, and <b>nothing about anyone else's</b>. There is nothing to rank yet — no song has been played.</div>
+<div class="cols">
+
+  <div>
+  <div class="phone">
+    <div class="panel center">
+      <div class="tick">✓</div>
+      <span class="eyebrow">You're locked in</span>
+      <h2 style="margin-top:10px">Your 18 picks are in.</h2>
+      <p style="font-size:13.5px">Tune into A&amp;R Wars to see how many you got right.</p>
+      <div class="recap">
+        <div class="row"><span>Entry</span><b>#0147</b></div>
+        <div class="row"><span>Your top pick</span><b style="font-size:12.5px">Paper Planes</b></div>
+        <div class="row"><span>Entries close</span><b style="font-size:12.5px">Sep 24, 7:00 PM ET</b></div>
+        <div class="row"><span>Winner announced</span><b style="font-size:12.5px">On air, Oct 1</b></div>
+      </div>
+      <button class="btn" style="background:#ff0000;color:#fff">Subscribe on YouTube ↗</button>
+      <button class="btn ghost" style="margin-top:10px">Edit my picks</button>
+      <div class="legal">A&amp;R Wars streams live. Subscribe so you don't miss it.</div>
+    </div>
+    <div class="caption">Screen 6 · confirm + the subscribe ask</div>
+  </div>
+  </div>
+
+  <div>
+  <div class="phone">
+    <div class="brandbar"><span class="wordmark">The A&amp;R Room</span><span class="pill live">Entered</span></div>
+    <div class="panel">
+      <span class="eyebrow">Your entry · #0147</span>
+      <h2 style="margin-top:9px">Your picks are in.</h2>
+      <div class="recap" style="margin-top:14px">
+        <div class="row"><span>Songs picked</span><b>18 / 18</b></div>
+        <div class="row"><span>Picked from</span><b>60</b></div>
+        <div class="row"><span>Editable until</span><b style="font-size:12.5px">Sep 24, 7:00 PM</b></div>
+      </div>
+      <p style="font-size:13px">Results after A&amp;R Wars. How many people picked each song stays hidden until then.</p>
+      <button class="btn ghost">Edit my picks &amp; order</button>
+    </div>
+    <div class="caption warn">Returning · own picks only, no standings</div>
+  </div>
+  </div>
+
+</div>
+
+<div class="mocklabel">What this mockup is deliberately NOT showing</div>
+<div class="mocknote" style="max-width:700px;text-align:left">
+<b>Sponsor banner is the existing banner system.</b> <span class="mono">packs.banner_id</span> → the <span class="mono">banners</span> table, uploaded in the console like a room banner, served by <span class="mono">/api/banner/image</span>, click-through via <span class="mono">link_url</span>. No new table, no second uploader, no new image storage. It does <i>not</i> fall back to the global house banner: the page says "courtesy of our sponsor," so showing an unrelated advertiser there would be a lie. No pack banner set = no slot rendered.<br><br>
+<b>No pick counts anywhere.</b> The tiebreak ranking is built from the entries themselves, so showing "340 people picked this" would make copying the crowd the best strategy — it raises your number right <i>and</i> wins the tiebreak. Everyone submits the same 18, everyone ties, and the winner is whoever entered first. Hidden until settle, enforced server-side. This rules out exactly the engagement widget that would feel most natural to add.<br><br>
+<b>No admin surface yet.</b> Needs a CSV pack loader (row order is load-bearing — it breaks ties in the consensus ranking), <span class="mono">pack_song_a/b</span> stamped on each Versus round so the played 18 derive for free, and a host confirm-and-settle checklist. The join that decides a cash prize can't be a title string compare.<br><br>
+<b>Spec:</b> <span class="mono">docs/specs/sidebet-contest-spec.md</span>
+</div>
+
+<script>
+const PACK = [
+ ["Afterglow","Nyla Reign"],["Amber Lights","Sonja Wilde"],
+ ["Back Nine","Trap Manor"],["Barcelona Nights","Kito Vega"],["Bleach","VVS Marie"],["Bodega Dreams","Real Estate Rob"],
+ ["Cactus Water","Junior Bloom"],["Ceiling Fan","Amara Nine"],["Cold Pursuit","Blk Static"],["Crown Vic","Bishop Lane"],
+ ["Dial Tone","Mercy Grand"],["Dominoes","Kai Sutton"],["Drive Slow, Homie","Fourth Ward"],
+ ["East Atlanta Love Song","Peso Dre"],["Eleven Thirty","Nina Coast"],["Everything Nice","Sable Rae"],
+ ["Fair Warning","Court Dupree"],["Ferris Wheel","Loyal Tone"],["Fool's Gold","Ivory Sledge"],
+ ["Glass House","Adé Mars"],["Good Grief","Tiny Kingdom"],["Gunmetal","Saint Ozro"],
+ ["Halfway Decent","Bree Amari"],["Heat Check","Papi Solaris"],["Hollow Point","Rome Adler"],
+ ["Ice Cream Truck","Lil Sundae"],["In The Cut","Deuce Almighty"],
+ ["Jackknife","Orion Blaze"],["June Gloom","Sunday Best"],
+ ["Kerosene","Halo Nix"],["Kitchen Table","Marcus Ivy"],
+ ["Last Call","Vega Monroe"],["Level Up","Trey Bandz"],["Lily Pad","Fern Okoye"],["Long Way Down","Cassius Reign"],
+ ["Manila Folder","Office Hours"],["Midnight Oil","Quest Delaney"],["Moth To A Flame","Ruby Cascade"],
+ ["Neon Church","Zaire Holt"],["No Cap Freestyle","Youngin Tay"],["Nosebleeds","Court Vision"],
+ ["Off The Rip","Baby Sosa"],["Open Casket","Grim Tha Don"],["Overtime","Nine To Five"],
+ ["Paper Planes","Kemi Adebayo"],["Pipe Dreams","Ari Stone"],["Postcard","Della Rue"],["Pressure Cooker","Big Steam"],
+ ["Quiet Storm","Velvet Ash"],
+ ["Raincheck","Solomon Pike"],["Red Eye","Jetlag Jules"],["Rolling Papers","Hazy Duke"],
+ ["Sandcastles","Isla Kwan"],["Slow Burn","Marla Fontaine"],["Southpaw","Kid Tarantino"],["Static Cling","Wren Halliday"],
+ ["Tunnel Vision","Omar Kessler"],
+ ["Undertow","Nadia Frost"],
+ ["Velvet Rope","Chase Monáe"],
+ ["Wild Card","Rio Deluxe"]
+];
+const MAX=18, picked=[];
+const $=s=>document.querySelector(s);
+const list=$('#list'), ranks=$('#ranks');
+
+function renderList(){
+  const q=$('#q').value.trim().toLowerCase();
+  const rows=PACK.map((s,i)=>({s,i})).filter(({s})=>!q||s[0].toLowerCase().includes(q)||s[1].toLowerCase().includes(q));
+  if(!rows.length){ list.innerHTML='<div class="empty">Nothing in the pack matches that.</div>'; return; }
+  let html='', letter='';
+  for(const {s,i} of rows){
+    const L=s[0][0].toUpperCase();
+    if(L!==letter && !q){ letter=L; html+=`<div class="alpha">${L}</div>`; }
+    const on=picked.includes(i), off=!on&&picked.length>=MAX;
+    html+=`<div class="song ${on?'on':''} ${off?'off':''}" data-i="${i}"><span class="box">✓</span>
+      <span><span class="t">${s[0]}</span><span class="a">${s[1]}</span></span></div>`;
+  }
+  list.innerHTML=html;
+}
+function renderCount(){
+  const n=picked.length, full=n>=MAX;
+  $('#cnt').textContent=n; $('#cnt').className='n'+(full?' full':'');
+  $('#left').textContent=full?'list complete':`${MAX-n} to go`;
+  $('#bar').style.width=(n/MAX*100)+'%'; $('#bar').className=full?'full':'';
+  $('#done').disabled=!full; $('#done').textContent=full?'Done — put them in order':`Done — ${n} of ${MAX}`;
+  $('#cap3').textContent=full?'Screen 3 · complete — unpicked rows dim, swapping still works':'Screen 3 · live — click to call';
+}
+function renderRanks(){
+  if(!picked.length){ ranks.innerHTML='<div class="empty">Pick 18 above and they land here in the order you picked them.</div>'; return; }
+  ranks.innerHTML=picked.map((i,n)=>`<div class="rank" draggable="true" data-n="${n}">
+    <span class="grip">⣿</span><span class="num ${n<3?'top':''}">${n+1}</span>
+    <span class="t">${PACK[i][0]}<span>${PACK[i][1]}</span></span>
+    <span class="arrows"><button ${n===0?'disabled':''} data-mv="${n},-1">▲</button><button ${n===picked.length-1?'disabled':''} data-mv="${n},1">▼</button></span>
+  </div>`).join('');
+}
+function paint(){ renderList(); renderCount(); renderRanks(); }
+
+list.addEventListener('click',e=>{
+  const row=e.target.closest('.song'); if(!row) return;
+  const i=+row.dataset.i, at=picked.indexOf(i);
+  if(at>=0) picked.splice(at,1);
+  else { if(picked.length>=MAX) return; picked.push(i); }
+  paint();
+});
+$('#q').addEventListener('input',renderList);
+
+ranks.addEventListener('click',e=>{
+  const b=e.target.closest('button[data-mv]'); if(!b) return;
+  const [n,d]=b.dataset.mv.split(',').map(Number), to=n+d;
+  if(to<0||to>=picked.length) return;
+  [picked[n],picked[to]]=[picked[to],picked[n]];
+  renderRanks();
+});
+let dragFrom=null;
+ranks.addEventListener('dragstart',e=>{ const r=e.target.closest('.rank'); if(!r)return; dragFrom=+r.dataset.n; r.classList.add('drag'); });
+ranks.addEventListener('dragend',e=>{ const r=e.target.closest('.rank'); if(r)r.classList.remove('drag'); dragFrom=null; });
+ranks.addEventListener('dragover',e=>{ e.preventDefault(); });
+ranks.addEventListener('drop',e=>{
+  e.preventDefault(); const r=e.target.closest('.rank'); if(!r||dragFrom===null) return;
+  const to=+r.dataset.n; const [m]=picked.splice(dragFrom,1); picked.splice(to,0,m); renderRanks();
+});
+$('#lock').addEventListener('click',()=>{ if(picked.length<MAX) alert('Mockup: pick 18 on screen 3 first.'); });
+
+paint();
+
+/* ---- sponsor banner ----
+   Reuses the existing banners table and play.html's .ad-slot treatment: full-width
+   image, max-height 120px, optional click-through, and the whole slot hidden when no
+   banner is set. Present on EVERY screen, matching the room's ad slot which renders in
+   every phase — banner ads fund the show. On the pick and order screens it sits below
+   the list so it never competes with the task. */
+const SPONSOR = {
+  image: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#241a4d"/><stop offset="1" stop-color="#12102a"/>
+      </linearGradient></defs>
+      <rect width="640" height="160" rx="18" fill="url(#g)" stroke="#2e2750"/>
+      <text x="320" y="72" text-anchor="middle" font-family="DM Sans,sans-serif" font-size="34" font-weight="800" fill="#f3f0fb">SPONSOR BANNER</text>
+      <text x="320" y="106" text-anchor="middle" font-family="Space Mono,monospace" font-size="15" letter-spacing="3" fill="#8c84ad">640 × 160 · UPLOADED IN CONSOLE</text>
+    </svg>`),
+  link: "https://example.com"
+};
+document.querySelectorAll('.phone').forEach(ph=>{
+  if(!SPONSOR || !SPONSOR.image) return;            // no banner set = no slot at all
+  const slot=document.createElement('div');
+  slot.className='ad-slot';
+  const img=`<img src="${SPONSOR.image}" alt="Sponsor">`;
+  slot.innerHTML=`<div class="tag">Sponsor</div>`+(SPONSOR.link
+    ? `<a href="${SPONSOR.link}" target="_blank" rel="noopener noreferrer">${img}</a>` : img);
+  const cap=ph.querySelector(':scope > .caption');
+  cap ? ph.insertBefore(slot,cap) : ph.appendChild(slot);
+});
+</script>
+</body>
+</html>
