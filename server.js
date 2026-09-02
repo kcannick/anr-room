@@ -6231,10 +6231,68 @@ async function handleApi(req, res, url) {
     // House submission link for the homepage's submit section when no room link applies
     // (single source of truth: the platform setting, falling back to the built-in).
     const houseSubmitUrl = (await db.get("SELECT v FROM settings WHERE k = 'house_submit_url'"))?.v || 'https://www.makinitmag.com/review';
-    // `daily` is anonymous and cacheable like the rest of this payload — no per-viewer field
-    // here (that would be a PII/seal leak on the one endpoint worth putting behind a CDN).
-    // "13 records left" is a client-side patch using the viewer's existing session token.
-    return send(res, 200, { live, daily, next, series, winners: [], recentARs, houseSubmitUrl });
+
+    // ---- The front door's proof block ----
+    // YESTERDAY's board, deliberately, not the cumulative series board. A stranger reading
+    // 12,480 concludes they are three months behind; reading 784 concludes they could have
+    // done that. "Everyone starts over at noon" is what turns a hierarchy into an invitation,
+    // and it is also just true about the product.
+    //
+    // Its own key rather than a field on `daily`: `daily` is TODAY's open drop, and the last
+    // published day is a different session entirely (on the 9AM-to-noon gap, both exist).
+    const lastPub = await db.get(
+      `SELECT id, drop_day FROM sessions WHERE mode = 'async' AND async_state = 'published'
+         AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted')
+       ORDER BY published_at DESC LIMIT 1`, []);
+    let yesterday = null;
+    if (lastPub) {
+      // Same shape cardArsData already ranks by — participants by points within ONE session.
+      // Display name, role, city and points only: this is the most public surface there is,
+      // and the PII rule keeps email and phone off it.
+      // total_points > 0 because a board padded with people who scored nothing is not proof
+      // of anything — it just makes a short day look like a big one.
+      const rows = await db.all(
+        `SELECT p.name AS pname, p.total_points, u.name AS uname, u.primary_category, u.location, u.photo_url
+           FROM participants p LEFT JOIN users u ON u.uid = p.user_id
+          WHERE p.session_id = ? AND p.verified = 1 AND p.total_points > 0
+          ORDER BY p.total_points DESC, p.created_at ASC LIMIT 8`, [lastPub.id]);
+      yesterday = {
+        day: lastPub.drop_day, dayLabel: etDayLabel(lastPub.drop_day),
+        board: rows.map((r, i) => ({
+          rank: i + 1, name: dispName(r.uname || r.pname),
+          category: r.primary_category || null, location: r.location || null,
+          photoUrl: r.photo_url || null, points: Number(r.total_points) || 0,
+        })),
+      };
+    }
+
+    // "On the team." One bounded COUNT, and it is the membership rather than the qualified
+    // subset — someone who just joined is on the team before their profile is complete.
+    const teamCount = Number((await db.get('SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0', [])).c) || 0;
+
+    // ---- Try one right now ----
+    // Records that ALREADY RAN, so the average is a settled fact rather than a claim, and a
+    // stranger can score themselves against it before signing up. Ratified only: room_average
+    // does not exist before ratify, which is exactly what the seal guarantees — so there is
+    // no way for this to leak a live day's direction.
+    // Bounded: 24 recent rounds, each with one indexed count, then the best few by turnout.
+    const tryRows = await db.all(
+      `SELECT r.id, r.song_title, r.song_artist, r.room_average,
+              (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS voters
+         FROM rounds r
+        WHERE r.status = 'ratified' AND r.room_average IS NOT NULL
+          AND COALESCE(r.poll_type,'rating') <> 'binary'
+        ORDER BY r.created_at DESC LIMIT 24`, []);
+    const tryIt = tryRows
+      .filter(r => Number(r.voters) >= 5)   // "3 A&Rs rated this" is not proof of anything
+      .slice(0, 5)
+      .map(r => ({ title: r.song_title, artist: r.song_artist || '',
+        avg: Number(r.room_average), voters: Number(r.voters) || 0 }));
+
+    // Everything here is anonymous and cacheable — no per-viewer field on the one endpoint
+    // worth putting behind a CDN, which would be a PII/seal leak waiting to happen.
+    // "13 records left" is a client-side patch using the viewer's own session token.
+    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, houseSubmitUrl });
   }
 
 
@@ -7177,7 +7235,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
     // Bare root = the public homepage; root WITH a session param (?s=) is the voting
     // page (preserves existing QR/share links of the form /?s=<id>). /play is explicit.
-    if (url.pathname === '/') return serveStatic(res, url.searchParams.get('s') ? 'play.html' : 'home.html');
+    // Bare root = THE FRONT DOOR (The A&R Team pitch, session-aware for a member); root WITH
+    // a session param (?s=) is still the live voting page, which preserves every QR code and
+    // share link ever printed. /play stays explicit.
+    // home.html is retained but unrouted — it is the pre-rebrand homepage, kept for reference
+    // until the sections it still owns (winners, the how-it-works copy) are confirmed dead.
+    if (url.pathname === '/') return serveStatic(res, url.searchParams.get('s') ? 'play.html' : 'landing.html');
     if (url.pathname === '/play') return serveStatic(res, 'play.html');
     // A&R Daily — the async queue walk. Its own page, deliberately: play.html narrates a
     // live show, and this one exists to be the opposite of that.

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script async src="/analytics.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/png" href="/mark-color.png">
+<title>The A&R Team — Fans pick the hits. A true A&R can predict them.</title>
+<meta name="description" content="Rate records from independent artists and predict how everyone else will rate them. The closer you land, the more you score — toward a $500 monthly award. Free to join.">
+<meta property="og:title" content="The A&R Team">
+<meta property="og:description" content="Fans pick the hits. But a true A&R can predict them.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* ============================================================================
+   THE FRONT DOOR — The A&R Team.
+   Built from the approved design canvas (Landing / LandingPhone / TryIt /
+   Proof). The two widths share every component here rather than being two
+   pages, which is the same reason the canvas shared them: they drift the
+   moment they are maintained separately.
+   The pitch is a QUESTION — "can you predict the hits and the misses?" — and a
+   question is more convincing when the page lets you answer it, so TryIt runs
+   the real scoring curve against records that already ran.
+   ============================================================================ */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;
+  -webkit-font-smoothing:antialiased; overflow-x:clip;
+}
+a{color:var(--signal);text-decoration:none}
+a:hover{color:#6ACD68}
+.mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+.dim{color:var(--ink-dim)}
+.hide{display:none !important}
+h1,h2,h3{margin:0}
+img{max-width:100%}
+
+.shell{max-width:1120px;margin:0 auto}
+.pad{padding:0 20px}
+@media(min-width:900px){ .pad{padding:0 56px} }
+
+/* the 13 degree device */
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;
+  display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;letter-spacing:-.02em;color:var(--bg)}
+.tick{display:block;width:3px;height:13px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.tick.contest{background:var(--accent)} .tick.prize{background:var(--gold)}
+.rule{height:1px;background:var(--line);transform:skewX(-13deg)}
+.vrule{display:block;width:1px;height:16px;background:var(--line);transform:skewX(-13deg);flex:none}
+
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--ink-dim)}
+.eyebrow.go{color:var(--signal)}
+.sechead{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+
+.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 20px;border-bottom:1px solid var(--line)}
+@media(min-width:900px){ .bar{padding:22px 56px} }
+.wordmark{font-weight:800;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;white-space:nowrap}
+@media(min-width:900px){ .wordmark{font-size:12.5px;letter-spacing:.18em} }
+/* The endorser sits in the bar at desktop width and in the hero eyebrow on a phone —
+   the phone bar is only wide enough for the mark, the name and one button. */
+.bar .endorser{display:none}
+@media(min-width:900px){ .bar .endorser{display:block} }
+.phone-endorser{display:block}
+@media(min-width:900px){ .phone-endorser{display:none} }
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;
+  border:0;border-radius:13px;padding:18px 26px;font-family:inherit;font-weight:800;
+  font-size:17px;background:var(--signal);color:var(--bg);text-align:center}
+.btn:hover{filter:brightness(1.07);color:var(--bg)}
+.btn.sm{padding:9px 15px;font-size:12px;border-radius:9px}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.btn.block{display:flex;width:100%}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:19px}
+@media(min-width:900px){ .panel{padding:26px;border-radius:16px} }
+
+/* ---- member view ---- */
+.member{padding:30px 0 0}
+@media(min-width:900px){ .member{padding:44px 0 0;max-width:620px} }
+
+/* ---- hero ---- */
+.hero{padding:34px 0 30px;display:flex;gap:56px;align-items:flex-start;flex-direction:column}
+@media(min-width:900px){ .hero{padding:74px 0 60px;flex-direction:row} }
+.hero-copy{flex:1;min-width:0;width:100%}
+.hero h1{font-weight:900;font-size:38px;line-height:1.0;letter-spacing:-.045em;text-wrap:balance}
+@media(min-width:900px){ .hero h1{font-size:64px;line-height:.95} }
+.hero h1 .go{color:var(--signal)}
+/* The hero's second line break is a DESKTOP typographic choice; on a phone the words
+   should wrap naturally rather than being broken at a fixed point. */
+.deskbr{display:none}
+@media(min-width:900px){ .deskbr{display:inline} }
+.hero p.lede{margin:20px 0 0;font-size:16px;line-height:1.5;color:var(--ink-dim);text-wrap:pretty}
+@media(min-width:900px){ .hero p.lede{margin-top:26px;font-size:19px;max-width:44ch} }
+.hero-aside{width:100%;flex:none;display:flex;flex-direction:column;gap:14px}
+@media(min-width:900px){ .hero-aside{width:420px} }
+.free{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);letter-spacing:.12em}
+
+/* ---- try it ---- */
+.tp{flex:1;min-width:0;height:44px;border:1px solid var(--line);background:var(--inset);
+  border-radius:10px;display:flex;align-items:center;justify-content:center;
+  font-family:"Space Mono",monospace;font-size:15px;color:var(--ink-dim);cursor:pointer;
+  transition:transform .12s ease,background .12s ease}
+.tp:hover{border-color:var(--ink-dim)}
+.tp.on{background:var(--signal);border-color:var(--signal);color:var(--bg);font-weight:700;transform:translateY(-3px)}
+input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;background:none;border:0}
+.cell{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;
+  padding:13px 8px;text-align:center;min-width:0}
+.cell .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--ink-dim)}
+.cell .v{font-family:"Space Mono",monospace;font-size:23px;font-weight:700;margin-top:4px}
+
+/* ---- how it works ---- */
+.steps{display:flex;flex-direction:column;gap:12px}
+@media(min-width:900px){ .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px} }
+.qs{display:flex;flex-direction:column;gap:12px;margin-top:22px}
+@media(min-width:900px){ .qs{flex-direction:row;gap:20px;margin-top:34px} }
+.big{margin:0;font-weight:800;font-size:27px;line-height:1.16;letter-spacing:-.035em;text-wrap:pretty}
+@media(min-width:900px){ .big{font-size:38px;line-height:1.18;max-width:22ch} }
+
+/* ---- open now ---- */
+.open-now{background:linear-gradient(180deg,var(--panel),#1C1733);border:1px solid var(--line);
+  border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:16px}
+@media(min-width:900px){ .open-now{padding:30px 34px;flex-direction:row;align-items:center;gap:40px;border-radius:18px} }
+.dot{display:block;width:9px;height:9px;border-radius:50%;background:var(--signal);flex:none}
+.count-box{flex:none;background:var(--inset);border:1px solid var(--line);border-radius:13px;
+  padding:14px;text-align:center}
+@media(min-width:900px){ .count-box{padding:18px 26px;border-radius:14px} }
+
+/* ---- proof board ---- */
+.board{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.brow{display:flex;align-items:center;gap:12px;padding:12px 15px}
+.brow+.brow{border-top:1px solid var(--line)}
+.brow.first{background:rgba(245,197,24,.05)}
+.av{width:32px;height:32px;border-radius:50%;background:var(--inset);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;flex:none;overflow:hidden;
+  font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim)}
+.av img{width:100%;height:100%;object-fit:cover}
+.chips{display:flex;flex-wrap:wrap;gap:9px}
+.chip{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);
+  border-radius:999px;padding:6px 14px 6px 6px}
+
+/* ---- live banner. --hot, because a show IS happening right now. ---- */
+.livebar{display:flex;align-items:center;gap:12px;background:rgba(255,93,108,.10);
+  border:1px solid var(--hot);border-radius:14px;padding:14px 16px;margin:16px 0 0;flex-wrap:wrap}
+.pulse{width:9px;height:9px;border-radius:50%;background:var(--hot);flex:none;
+  box-shadow:0 0 0 0 rgba(255,93,108,.7);animation:pulse 2.4s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 9px rgba(255,93,108,0)}100%{box-shadow:0 0 0 0 rgba(255,93,108,0)}}
+
+.closer{padding:0 0 46px;text-align:center}
+@media(min-width:900px){ .closer{padding-bottom:86px} }
+.closer .big2{font-weight:900;font-size:38px;line-height:1.02;letter-spacing:-.04em;text-wrap:balance}
+@media(min-width:900px){ .closer .big2{font-size:56px;line-height:1.0} }
+.endorse{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:34px;
+  padding-top:28px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div style="display:flex;align-items:center;gap:11px;min-width:0">
+    <div class="mark"><span>A&amp;R</span></div>
+    <span class="wordmark">The A&amp;R Team</span>
+    <span class="vrule endorser"></span>
+    <img class="endorser" src="/logo.png" alt="Makin' It" style="height:13px;width:auto;flex:none;opacity:.9">
+  </div>
+  <a class="btn sm" id="navCta" href="/join" onclick="track('register_click',{from:'landing_nav'})">Join</a>
+</div>
+
+<div class="shell pad">
+
+  <!-- A live show is an INTERRUPTION stacked above the pitch, never a replacement for it.
+       --hot here because something is happening right now; the drop uses --signal, because
+       a drop is open all day and a red pulse on it would be a lie. -->
+  <a class="livebar hide" id="liveBar" href="#" style="color:inherit">
+    <span class="pulse"></span>
+    <span style="font-size:14.5px;flex:1;min-width:0"><b id="liveName">A show is live</b><span class="dim" id="liveSub"></span></span>
+    <span class="mono" style="font-size:11px;color:var(--hot);letter-spacing:.14em;text-transform:uppercase">Join the room →</span>
+  </a>
+
+  <!-- MEMBER VIEW. A signed-in A&R does not need the pitch — they need today's task and
+       one green button. This is the "member home" the sitemap puts at /, and it is why the
+       front door is session-aware rather than two separate URLs: the link people share, put
+       on a flyer or type from memory is the same one either way. -->
+  <div class="member hide" id="memberView">
+    <div class="sechead" style="margin-bottom:14px">
+      <span class="tick"></span>
+      <span class="eyebrow" id="mDay">A&amp;R Daily</span>
+      <span class="mono" id="mStanding" style="margin-left:auto;font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:5px 11px;white-space:nowrap"></span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <span class="mono" id="mCount" style="font-size:64px;font-weight:700;line-height:.82;color:var(--signal)">—</span>
+      <span style="font-weight:800;font-size:27px;line-height:1.02;letter-spacing:-.035em;text-wrap:pretty" id="mCountWord">records<br>are open.</span>
+    </div>
+    <p class="dim" style="margin:14px 0 0;font-size:15px;line-height:1.5;text-wrap:pretty" id="mSub"></p>
+    <a class="btn block" id="mCta" href="/daily" style="margin-top:22px">
+      Start rating
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg>
+    </a>
+    <div class="rule" style="margin:26px 0"></div>
+  </div>
+
+  <div class="hero pitch" id="pitchHero">
+    <div class="hero-copy">
+      <div class="sechead" style="margin-bottom:15px">
+        <span class="tick"></span>
+        <span class="eyebrow go">The A&amp;R Team</span>
+        <span class="vrule phone-endorser"></span>
+        <img class="phone-endorser" src="/logo.png" alt="Makin' It" style="height:12px;width:auto;flex:none;opacity:.85">
+      </div>
+      <h1>Fans pick the hits.<br><span class="go">But a true A&amp;R <br class="deskbr">can predict them.</span></h1>
+      <p class="lede">Rate records and help decide who gets booked to perform, radio play, magazine
+        features, and promo budgets. Predict how the people will rate them to score points and a
+        shot at <b class="mono" style="color:var(--gold);font-weight:700">$500</b>.</p>
+      <div style="display:flex;align-items:center;gap:18px;margin-top:26px;flex-wrap:wrap">
+        <a class="btn" href="/join" onclick="track('register_click',{from:'landing_hero'})">
+          Join the A&amp;R Team
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg>
+        </a>
+        <span class="free">FREE TO JOIN</span>
+      </div>
+    </div>
+
+    <div class="hero-aside">
+      <!-- TRY IT. The whole argument of this page in one card: a stranger answers the
+           question before being asked to sign up for anything. -->
+      <div class="panel" id="tryCard" style="border-radius:18px;padding:22px">
+        <div class="sechead" style="margin-bottom:14px">
+          <span class="tick contest"></span><span class="eyebrow">Try one right now</span>
+        </div>
+        <div style="font-weight:800;font-size:19px;letter-spacing:-.03em;margin-bottom:16px;text-wrap:pretty">
+          Can you predict the hits and the misses?</div>
+        <div id="tryBody"></div>
+      </div>
+      <a class="btn block" href="/join" onclick="track('register_click',{from:'landing_tryit'})">
+        Join the A&amp;R Team
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <div class="rule pitch"></div>
+
+  <div class="pitch" style="padding:36px 0">
+    <p class="big">This isn't just about knowing good music. It's about knowing the market.</p>
+    <div class="qs">
+      <div class="panel" style="flex:1">
+        <p style="margin:0;font-size:17px;line-height:1.35;font-weight:600;letter-spacing:-.015em;text-wrap:pretty">
+          Are you locked in to what the people want?</p>
+      </div>
+      <div class="panel" style="flex:1">
+        <p style="margin:0;font-size:17px;line-height:1.35;font-weight:600;letter-spacing:-.015em;text-wrap:pretty">
+          Can you spot a hit you don't personally like?</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="pitch" style="padding:0 0 36px">
+    <div class="sechead"><span class="tick contest"></span><span class="eyebrow">How it works</span></div>
+    <div class="steps">
+      <div class="panel">
+        <div class="mono" style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.1em">01</div>
+        <div style="font-weight:800;font-size:17px;letter-spacing:-.02em;margin-top:9px">Listen</div>
+        <p class="dim" style="margin:7px 0 0;font-size:14px;line-height:1.5;text-wrap:pretty">A handful of records
+          land every day at noon. Real submissions from independent artists, most of them unreleased.</p>
+      </div>
+      <div class="panel">
+        <div class="mono" style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.1em">02</div>
+        <div style="font-weight:800;font-size:17px;letter-spacing:-.02em;margin-top:9px">Rate it</div>
+        <p class="dim" style="margin:7px 0 0;font-size:14px;line-height:1.5;text-wrap:pretty">Score it 0 to 9 on
+          your own taste. That part is easy.</p>
+      </div>
+      <div class="panel">
+        <div class="mono" style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.1em">03</div>
+        <div style="font-weight:800;font-size:17px;letter-spacing:-.02em;margin-top:9px">Predict the average</div>
+        <p class="dim" style="margin:7px 0 0;font-size:14px;line-height:1.5;text-wrap:pretty">Now call what everyone
+          else will land on. The closer you get, the more you score — and points stack across the
+          series toward the $500.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 0 36px">
+    <div class="open-now pitch" id="openNow">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span class="dot"></span><span class="eyebrow go" id="openLabel">Open right now</span>
+        </div>
+        <div style="font-weight:900;font-size:26px;letter-spacing:-.035em;margin-top:11px;text-wrap:pretty" id="openHead"></div>
+        <p class="dim" style="margin:9px 0 0;font-size:14.5px;line-height:1.5;text-wrap:pretty" id="openSub">
+          A new set drops every day at noon. Rate them on your own time — at work, on the train,
+          at 2 in the morning.</p>
+      </div>
+      <div class="count-box">
+        <div class="mono" style="font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)">On the team</div>
+        <div class="mono" id="teamCount" style="font-size:25px;font-weight:700;margin-top:5px">—</div>
+      </div>
+    </div>
+
+    <!-- PROOF: yesterday's board, not the cumulative one. 784 says you could have done that;
+         12,480 says you are three months behind. -->
+    <div style="margin-top:30px" id="proofWrap">
+      <div class="sechead">
+        <span class="tick prize"></span><span class="eyebrow">Yesterday's top A&amp;Rs</span>
+        <span class="mono" id="proofDay" style="margin-left:auto;font-size:11px;color:var(--ink-dim);letter-spacing:.1em"></span>
+      </div>
+      <div class="board" id="proofBoard"></div>
+      <p class="dim" style="margin:12px 2px 0;font-size:13px;line-height:1.55">
+        <b style="color:var(--ink);font-weight:700">Everyone starts over at noon.</b>
+        Daily points stack across <span id="proofSeries">the series</span> toward the
+        <b class="mono" style="color:var(--gold);font-weight:700">$500</b>.</p>
+    </div>
+
+    <div style="margin-top:26px" id="joinersWrap">
+      <div class="sechead"><span class="tick"></span><span class="eyebrow">Just joined the team</span></div>
+      <div class="chips" id="joiners"></div>
+    </div>
+  </div>
+
+  <div class="closer pitch" id="join">
+    <div class="big2">Got a good ear?<br>Prove it.</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-top:24px">
+      <a class="btn block" href="/join" style="max-width:340px" onclick="track('register_click',{from:'landing_closer'})">
+        Join the A&amp;R Team
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg>
+      </a>
+    </div>
+    <div class="endorse">
+      <span class="mono" style="font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-dim)">A Makin' It property</span>
+      <img src="/logo.png" alt="Makin' It" style="height:21px;width:auto">
+      <span class="mono" style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)">Free to join</span>
+    </div>
+    <!-- Artists are not the audience for this page, but they do arrive on it. One quiet line
+         rather than a section: the pitch above is for A&Rs. -->
+    <p style="margin:22px 0 0;font-size:13px;color:var(--ink-faint)">
+      Are you an artist? <a id="submitLink" href="https://www.makinitmag.com/review">Submit a record for review</a>
+    </p>
+  </div>
+
+  <div class="endorse member-foot hide" id="memberFoot" style="margin-bottom:40px">
+    <span class="mono" style="font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-dim)">A Makin' It property</span>
+    <img src="/logo.png" alt="Makin' It" style="height:21px;width:auto">
+    <a href="/profile" class="mono" style="font-size:10px;letter-spacing:.12em;text-transform:uppercase">Your A&amp;R record</a>
+  </div>
+
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params||{}); }catch(e){} }
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const initials = n => (n||'').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('') || '—';
+
+/* ---------------------------------------------------------------------------
+   TRY IT — the real scoring curve, on records that already ran.
+   Using the ACTUAL formula matters: a stranger's first number should be the
+   number they would really have earned, not a flattering approximation. This
+   mirrors pointsForError() in scoring.js; if that ever moves, this moves.
+   --------------------------------------------------------------------------- */
+function scoreFor(err){
+  let p = 100 * Math.exp(-err * 0.5);
+  if(err <= 0.05) p += 25;          // exact tenth — the bullseye
+  if(err > 5.0) p -= 10;
+  return Math.round(p);
+}
+
+let TRY = [], tryN = 0, tryTaste = null, tryGuess = 4.5, tryRevealed = false;
+
+function renderTry(){
+  const box = $('#tryBody');
+  if(!TRY.length){
+    // No ratified records yet (a brand-new install). The card would be a broken promise,
+    // so it says what it is instead of rendering an empty widget.
+    box.innerHTML = '<p class="dim" style="margin:0;font-size:14px;line-height:1.55">'
+      + 'The first day of records is still being scored. Join the team and you will be rating '
+      + 'them from the start.</p>';
+    return;
+  }
+  const rec = TRY[tryN % TRY.length];
+  const err = Math.abs(tryGuess - rec.avg);
+  const pts = scoreFor(err);
+  const exact = err <= 0.05, close = err <= 0.5;
+
+  let html = '<div style="font-weight:800;font-size:20px;letter-spacing:-.025em">' + esc(rec.title) + '</div>'
+    + '<div class="dim" style="font-size:14px;margin-top:2px">' + esc(rec.artist) + '</div>';
+
+  if(!tryRevealed){
+    html += '<p class="dim" style="margin:16px 0 9px;font-size:13.5px;line-height:1.5">'
+      + '<b style="color:var(--ink);font-weight:700">1.</b> Rate it 0 to 9 — your honest take.</p>'
+      + '<div style="display:flex;gap:5px;margin-bottom:5px" id="tpTop"></div>'
+      + '<div style="display:flex;gap:5px" id="tpBot"></div>'
+      + '<p class="dim" style="margin:20px 0 2px;font-size:13.5px;line-height:1.5">'
+      + '<b style="color:var(--ink);font-weight:700">2.</b> Now the real test — what did the people average it at?</p>'
+      + '<div class="mono" id="tryGuessVal" style="font-size:34px;font-weight:700;text-align:center;color:var(--signal);margin:8px 0 2px">'
+      + tryGuess.toFixed(1) + '</div>'
+      + '<input type="range" id="tryRange" min="0" max="9" step="0.1" value="' + tryGuess + '">'
+      + '<button class="btn block" id="tryCheck" style="margin-top:16px;padding:15px;font-size:15px'
+      + (tryTaste === null ? ';opacity:.35;cursor:default' : '') + '">Check my read</button>';
+  }else{
+    const col = exact ? 'var(--gold)' : (close ? 'var(--signal)' : 'var(--ink)');
+    const verdict = exact ? 'Bullseye.' : (close ? 'You know the market.' : (err <= 1.5 ? 'Close.' : 'Not this time.'));
+    const blurb = exact
+      ? 'Dead on the average. That is the maximum score on a record — 125 points.'
+      : (close
+        ? 'You put your own taste aside and called what everyone else would do. That is the whole skill.'
+        : (err <= 1.5
+          ? 'Off by ' + err.toFixed(1) + '. Respectable, and it moves fast once you have a few days in.'
+          : 'Off by ' + err.toFixed(1) + '. Liking a record and knowing how it lands are two different things.'));
+    html += '<div style="display:flex;gap:10px;margin-top:18px">'
+      + '<div class="cell"><div class="k">You said</div><div class="v">' + tryGuess.toFixed(1) + '</div></div>'
+      + '<div class="cell"><div class="k">They said</div><div class="v" style="color:var(--signal)">' + rec.avg.toFixed(1) + '</div></div>'
+      + '<div class="cell"><div class="k">Points</div><div class="v" style="color:' + col + '">+' + pts + '</div></div>'
+      + '</div>'
+      + '<div style="font-weight:800;font-size:19px;letter-spacing:-.02em;margin-top:16px;text-wrap:pretty">' + verdict + '</div>'
+      + '<p class="dim" style="margin:7px 0 0;font-size:13.5px;line-height:1.55;text-wrap:pretty">' + blurb + '</p>'
+      + '<p class="mono dim" style="margin:14px 0 0;font-size:11px;line-height:1.6">'
+      + rec.voters + ' A&Rs RATED THIS ONE</p>'
+      + '<button class="btn ghost block" id="tryAgain" style="padding:12px;font-size:13.5px;margin-top:16px">Try another</button>';
+  }
+  box.innerHTML = html;
+
+  if(!tryRevealed){
+    const mkPips = (host, from, to) => {
+      for(let n = from; n <= to; n++){
+        const el = document.createElement('div');
+        el.className = 'tp' + (tryTaste === n ? ' on' : '');
+        el.textContent = n;
+        el.onclick = () => { tryTaste = n; renderTry(); };
+        $(host).appendChild(el);
+      }
+    };
+    mkPips('#tpTop', 0, 4); mkPips('#tpBot', 5, 9);
+    $('#tryRange').oninput = e => {
+      tryGuess = parseFloat(e.target.value);
+      $('#tryGuessVal').textContent = tryGuess.toFixed(1);
+    };
+    $('#tryCheck').onclick = () => {
+      if(tryTaste === null) return;
+      tryRevealed = true; track('tryit_check', {}); renderTry();
+    };
+  }else{
+    $('#tryAgain').onclick = () => {
+      tryN++; tryTaste = null; tryGuess = 4.5; tryRevealed = false; renderTry();
+    };
+  }
+}
+
+/* --------------------------------------------------------------------------- */
+
+function renderProof(d){
+  const y = d.yesterday;
+  if(!y || !y.board || !y.board.length){ $('#proofWrap').classList.add('hide'); return; }
+  $('#proofWrap').classList.remove('hide');
+  $('#proofDay').textContent = (y.dayLabel || '').toUpperCase();
+  if(d.series && d.series.title) $('#proofSeries').textContent = d.series.title;
+  $('#proofBoard').innerHTML = y.board.map((r, i) => {
+    // Prize gold is money and FIRST PLACE only — never decoration. Everyone below #1 reads
+    // as ink, or the rule stops meaning anything anywhere else in the system.
+    const first = r.rank === 1;
+    const av = r.photoUrl
+      ? '<span class="av"><img src="' + esc(r.photoUrl) + '" alt=""></span>'
+      : '<span class="av">' + esc(initials(r.name)) + '</span>';
+    const sub = [r.category, r.location].filter(Boolean).join(' · ');
+    return '<div class="brow' + (first ? ' first' : '') + '">'
+      + '<span class="mono" style="width:20px;text-align:center;font-size:13px;font-weight:700;flex:none;color:'
+      + (first ? 'var(--gold)' : 'var(--ink-dim)') + '">' + r.rank + '</span>'
+      + av
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:14.5px;font-weight:700;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.name) + '</div>'
+      + '<div class="dim" style="font-size:11.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sub) + '</div>'
+      + '</div>'
+      + '<span class="mono" style="font-size:14px;font-weight:700;flex:none;color:'
+      + (first ? 'var(--gold)' : 'var(--ink)') + '">' + Number(r.points).toLocaleString('en-US') + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+function renderJoiners(d){
+  const list = (d.recentARs || []).slice(0, 8);
+  if(!list.length){ $('#joinersWrap').classList.add('hide'); return; }
+  $('#joinersWrap').classList.remove('hide');
+  $('#joiners').innerHTML = list.map(a => {
+    const av = a.photoUrl
+      ? '<span class="av"><img src="' + esc(a.photoUrl) + '" alt=""></span>'
+      : '<span class="av">' + esc(initials(a.name)) + '</span>';
+    const sub = [a.category, a.location].filter(Boolean).join(' · ');
+    return '<div class="chip">' + av + '<div>'
+      + '<div style="font-size:13px;font-weight:700;letter-spacing:-.01em">' + esc(a.name) + '</div>'
+      + '<div class="dim" style="font-size:10.5px">' + esc(sub) + '</div>'
+      + '</div></div>';
+  }).join('');
+}
+
+function renderOpenNow(d){
+  const n = d.daily && d.daily.songs;
+  if(n){
+    $('#openLabel').textContent = 'Open right now';
+    // NEVER a fixed number. The day is 4-16 and the copy follows whatever it actually is.
+    $('#openHead').innerHTML = '<span class="mono">' + n + '</span> record' + (n === 1 ? '' : 's') + ' are waiting.';
+  }else{
+    // No drop open (the 9AM-to-noon gap, or nothing staged). Say when, not "nothing".
+    $('#openLabel').textContent = 'Next drop';
+    $('#openHead').textContent = 'The next set lands at noon.';
+  }
+  $('#teamCount').textContent = d.teamCount ? Number(d.teamCount).toLocaleString('en-US') : '—';
+}
+
+function renderLiveBar(d){
+  const bar = $('#liveBar');
+  if(!d.live){ bar.classList.add('hide'); return; }
+  bar.classList.remove('hide');
+  bar.href = '/?s=' + encodeURIComponent(d.live.id);
+  $('#liveName').textContent = d.live.name || 'A show is live';
+  const n = d.live.arCount;
+  $('#liveSub').textContent = n ? ('  ·  ' + n + ' A&R' + (n === 1 ? '' : 's') + ' in the room') : '';
+}
+
+/* ---------------------------------------------------------------------------
+   THE MEMBER BRANCH.
+   Whether someone is a member is decided by the account token in localStorage,
+   which the server cannot see — /api/home is anonymous and CDN-cacheable on
+   purpose, and putting a per-viewer field on it would be exactly the PII/seal
+   leak that note warns about. So the swap happens here, client-side, over a
+   page that is already correct for a stranger.
+   Nothing is hidden until the token is CONFIRMED: a dead or expired token must
+   fall back to the pitch, not to a blank page.
+   --------------------------------------------------------------------------- */
+function showMember(d, me){
+  const day = d.daily;
+  // Everything that exists to convince a stranger comes off: the pitch, the market
+  // questions, how it works, and the join CTA. They are on the team already — the page's
+  // job is now today's task, and their standing and yesterday's board underneath it.
+  document.querySelectorAll('.pitch').forEach(el => el.classList.add('hide'));
+  $('#memberFoot').classList.remove('hide');
+  $('#memberView').classList.remove('hide');
+  // "Join" is the wrong word for someone who already did. The nav becomes the way back into
+  // their own record instead.
+  const nav = $('#navCta');
+  nav.textContent = 'Your record'; nav.href = '/profile'; nav.onclick = null;
+  nav.className = 'btn sm ghost';
+
+  // Rank stays visible — this is still a competition — but only where it is free:
+  // /api/home already computes the series board, so their place in it costs nothing.
+  const board = (d.series && d.series.leaderboard) || [];
+  const mine = me && board.find(r => r.id === me.uid);
+  $('#mStanding').textContent = mine
+    ? ('#' + mine.rank + ' · ' + Number(mine.points).toLocaleString('en-US') + ' PTS')
+    : (me && me.name ? me.name : '');
+
+  if(day && day.songs){
+    $('#mDay').textContent = 'A&R Daily' + (day.day ? ' · ' + day.day : '');
+    $('#mCount').textContent = day.songs;
+    $('#mCountWord').innerHTML = 'record' + (day.songs === 1 ? '' : 's') + '<br>' + (day.songs === 1 ? 'is' : 'are') + ' open.';
+    $('#mSub').textContent = 'Rate every one before the window closes and you earn a completion bonus on top of what you score.';
+    $('#mCta').href = '/daily?s=' + encodeURIComponent(day.id);
+    $('#mCta').classList.remove('hide');
+  }else{
+    // The 9AM-to-noon gap, or nothing staged. Never a dead end: say when, and give them
+    // somewhere to go in the meantime.
+    $('#mDay').textContent = 'A&R Daily';
+    $('#mCount').textContent = '—';
+    $('#mCountWord').innerHTML = 'Next drop<br>at noon.';
+    $('#mSub').textContent = "Yesterday's results and today's records land together at noon ET.";
+    $('#mCta').classList.add('hide');
+  }
+}
+
+(async function boot(){
+  let d = null;
+  try{
+    d = await fetch('/api/home').then(r => r.json());
+    TRY = Array.isArray(d.tryIt) ? d.tryIt : [];
+    renderTry();
+    renderOpenNow(d);
+    renderProof(d);
+    renderJoiners(d);
+    renderLiveBar(d);
+    if(d.houseSubmitUrl) $('#submitLink').href = d.houseSubmitUrl;
+  }catch(e){
+    // The pitch is static markup and stands on its own; only the live data is missing.
+    renderTry();
+  }
+
+  const at = localStorage.getItem('rt_auth_token');
+  if(!at || !d) return;
+  try{
+    const me = await fetch('/api/auth/me', { headers: { 'X-Auth-Token': at } })
+      .then(r => r.ok ? r.json() : null);
+    if(me && me.uid) showMember(d, me);
+  }catch(e){ /* stay on the pitch — it is the safe default, not the fallback */ }
+})();
+</script>
+</body>
+</html>

@@ -2016,6 +2016,48 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a day with no drop reads as an incident, not an empty state',
     noDrop.drop === null && /nothing/i.test(noDrop.message || ''), JSON.stringify(noDrop));
 
+  console.log('\n— the front door: what the pitch is allowed to know —');
+  // /api/home is the ONE endpoint worth putting behind a CDN, so everything the fdLanding
+  // page needs has to be anonymous and identical for every viewer. Whether someone is a
+  // member is decided client-side off their own token; nothing per-viewer lives here.
+  const fdHome = (await call('/api/home', null, 'GET')).d;
+  ok('the front door gets its data with no auth at all',
+    'yesterday' in fdHome && 'teamCount' in fdHome && 'tryIt' in fdHome, JSON.stringify(Object.keys(fdHome)));
+  ok('and it never carries a viewer-specific field',
+    !('me' in fdHome) && !('myVote' in fdHome) && !('progress' in fdHome), JSON.stringify(Object.keys(fdHome)));
+  const fdJson = JSON.stringify(fdHome);
+  ok('the most public surface there is leaks no email', !/@/.test(fdJson.replace(/makinitmag\.com|@Makinit4indies/g, '')), fdJson.slice(0, 200));
+
+  // TRY IT runs on records that ALREADY RAN. Ratified only — room_average does not exist
+  // before ratify, which is exactly what the seal guarantees, so this can never expose a
+  // live day's direction.
+  ok('try-it offers only records that already have a settled average',
+    (fdHome.tryIt || []).every(t => typeof t.avg === 'number' && t.voters >= 5), JSON.stringify(fdHome.tryIt));
+  const fdOpenRound = await dDb.get("SELECT song_title FROM rounds WHERE status IN ('voting','listening','closed') LIMIT 1");
+  if (fdOpenRound) {
+    ok('and never a record that is still open for evaluation',
+      !(fdHome.tryIt || []).some(t => t.title === fdOpenRound.song_title), JSON.stringify(fdHome.tryIt));
+  }
+
+  // PROOF is YESTERDAY's board, not the cumulative series board: 784 says a stranger could
+  // have done that, 12,480 says they are three months behind.
+  if (fdHome.yesterday) {
+    ok('yesterday\'s board carries display name and points, never contact details',
+      fdHome.yesterday.board.every(r => r.name && typeof r.points === 'number' && !('email' in r) && !('phone' in r)),
+      JSON.stringify(fdHome.yesterday.board[0]));
+    ok('and nobody who scored nothing pads it out',
+      fdHome.yesterday.board.every(r => r.points > 0), JSON.stringify(fdHome.yesterday.board.map(r => r.points)));
+  }
+
+  // The front door itself, and the routes it must not have broken.
+  const fdLanding = await fetch(base + '/').then(r => r.text());
+  ok('/ serves the A&R Team front door', /The A&amp;R Team|The A&R Team/.test(fdLanding) && /Try one right now/i.test(fdLanding));
+  ok('and it is the pitch by default — the member view is opt-in on a token',
+    /id="memberView"[^>]*class="[^"]*hide|class="member hide"/.test(fdLanding), 'member view not hidden by default');
+  const fdWithS = await fetch(base + '/?s=' + SID).then(r => r.text());
+  ok('/?s= STILL serves the play page — every printed QR and share link depends on it',
+    /screen-vote|id="screen-email"/.test(fdWithS));
+
   console.log('\n— eye for talent: scouting points —');
   // The curve is the dial that decides whether scouting is a real second lane or a garnish.
   // Context for the numbers: a month of A&R Daily is ~15,000 (6-record days) to ~45,000
