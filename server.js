@@ -573,7 +573,13 @@ const ADVANCE_ARM_MS = 8000;
 
 // What the next press will do, without doing it. Powers the button's label on both surfaces
 // and the /api/control/state readout.
-async function nextStage(sessionId) {
+async function nextStage(sessionId, session = null) {
+  // A&R Daily runs on the clock, not on a button. Every record of the day is already open,
+  // and there is no "next" to advance to — so the console's Advance button and the Stream
+  // Deck both get an explicit no-op rather than opening, re-numbering or ratifying a drop
+  // round out from under a live window.
+  const s = session || await db.get('SELECT mode FROM sessions WHERE id = ?', [sessionId]);
+  if (isAsync(s)) return { action: 'none', round: null, label: 'A&R Daily — runs on the clock' };
   const r = await activeRound(sessionId);
   if (r && r.status === 'listening') return { action: 'vote', round: r, label: 'Open Voting' };
   if (r && (r.status === 'voting' || r.status === 'closed')) return { action: 'ratify', round: r, label: 'Ratify — tally the room' };
@@ -594,6 +600,12 @@ async function nextStage(sessionId) {
 // keep the form-fill only).
 async function stageIngestRound(session, rec) {
   if (!rec || !rec.title) return null;
+  // NEVER stage into a drop. This function's newest-push-wins DELETE targets pending rounds
+  // by session, and the /api/ingest/submission fan-out selects every live ingest_auto room —
+  // so without this guard one stray /review push could delete a record out of a running day.
+  // Drop rounds also carry ingest_ref rather than ingest_at, which is the second, independent
+  // half of that guard.
+  if (isAsync(session)) return null;
   // Same poll-type resolution as /api/admin/round: the last round's type wins, then the
   // room default — so a room mid-Versus doesn't get a rating round injected behind it.
   const last = await db.get('SELECT poll_type FROM rounds WHERE session_id = ? ORDER BY created_at DESC LIMIT 1', [session.id]);
@@ -608,11 +620,15 @@ async function stageIngestRound(session, rec) {
   const rid = id(9);
   await db.run(
     `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway,
-       artist_email, artist_phone, status, ingest_at, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending', ?, ?)`,
+       artist_email, artist_phone, artist_note, play_url, artist_instagram, artist_profile_url,
+       ingest_ref, ingest_url, scout_drupal_uid, status, ingest_at, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?, ?)`,
     [rid, session.id, 0, Number(maxPos) + 1, 'rating', rec.title, rec.artist || '',
      rec.instagram ? ('IG: @' + rec.instagram) : '', '',
-     cleanArtistEmail(rec.email), cleanArtistPhone(rec.phone), Number(rec.at) || now(), now()]
+     cleanArtistEmail(rec.email), cleanArtistPhone(rec.phone),
+     rec.note || null, cleanPlayUrl(rec.playUrl), rec.instagram || null, rec.profileUrl || null,
+     rec.ref || null, cleanUrl(rec.url), rec.scoutUid || null,
+     Number(rec.at) || now(), now()]
   );
   return rid;
 }
@@ -632,6 +648,10 @@ async function ratifyAndPublish(round, session) {
   // Referral bonuses fire BEFORE the board compute so the pushed board includes them.
   try { await creditReferralMilestones(round, session); }
   catch (e) { console.error('[referral] milestone credit failed:', e.message); }
+  // Eye for talent: the A&R who found this record earns in proportion to how it scored.
+  // Needs room_average, so it can only fire here — after the tally.
+  try { await creditScoutPoints(await db.get('SELECT * FROM rounds WHERE id = ?', [round.id]), session); }
+  catch (e) { console.error('[scout] credit failed:', e.message); }
   // Compute the public series board ONCE here and push it as payload, so every connected
   // homepage applies it directly instead of each re-fetching + recomputing (O(1) at scale).
   let lbData = null;
@@ -647,7 +667,10 @@ async function ratifyAndPublish(round, session) {
 // Drive the room forward one stage. `minutes` only applies to the vote stage.
 async function advanceRoom(session, { minutes = null } = {}) {
   const sessionId = session.id;
-  const stage = await nextStage(sessionId);
+  // One cut here covers BOTH callers — the console's big button and /api/control/advance —
+  // so a Stream Deck press can never drive a drop.
+  if (isAsync(session)) return { ok: false, action: 'none', error: 'A&R Daily runs on the clock — there is nothing to advance' };
+  const stage = await nextStage(sessionId, session);
   if (stage.action === 'none') return { ok: false, action: 'none', error: 'Nothing queued — add a record first' };
   const round = stage.round;
 
@@ -767,11 +790,357 @@ async function buildRecap(participant) {
   };
 }
 
+// How far through the day this A&R is. The denominator is LIVE (whatever the day currently
+// holds) rather than a stored 16 — the day is variable in size, and deleting a zero-vote
+// record must shrink it rather than make completion unreachable for everyone at n-1.
+async function asyncProgress(participant, session) {
+  const total = Number((await db.get(
+    "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')",
+    [session.id])).c) || 0;
+  const voted = Number((await db.get(
+    `SELECT COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id
+      WHERE v.participant_id = ? AND r.session_id = ?`, [participant.id, session.id])).c) || 0;
+  return { progress: { voted, total, eligible: total >= ASYNC_MIN_FOR_BONUS } };
+}
+
+// Pay the completion bonus for finishing the day. Idempotent by construction.
+//
+// THE TIER COMES FROM THE A&R'S LAST VOTE, not from now(). Inline (at their final vote) those
+// are the same instant; in a sweep they are not, and a 9AM sweep must never pay 25 to someone
+// who actually finished at 2PM. One rule, both callers.
+//
+// point_events has UNIQUE (reason, source_uid, milestone), so the session x user pair has to
+// live in source_uid: a bare uid would pay once EVER, a bare session id would pay once per day
+// across all users. milestone is a literal 1 and deliberately NOT the tier — two racing inserts
+// that computed different tiers would differ in milestone, defeat the index, and pay twice.
+async function maybeAwardCompletionBonus(participant, session, atTs = null) {
+  if (!participant.user_id) return null;   // the bonus ledger is user-level
+  const total = Number((await db.get(
+    "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')",
+    [session.id])).c) || 0;
+  if (total < ASYNC_MIN_FOR_BONUS) return null;
+  const mine = await db.get(
+    `SELECT COUNT(*) AS c, MAX(v.locked_at) AS last FROM votes v JOIN rounds r ON r.id = v.round_id
+      WHERE v.participant_id = ? AND r.session_id = ?`, [participant.id, session.id]);
+  if (Number(mine.c) < total) return null;
+  const pts = completionBonusPoints(session, atTs != null ? atTs : (Number(mine.last) || now()));
+  const ins = await db.run(
+    `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
+     VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
+    [id(9), participant.user_id, pts, session.series_id || null,
+     'async_complete', `${session.id}:${participant.user_id}`, 1, now()]);
+  if (ins.changes) await db.run('UPDATE users SET lifetime_points = lifetime_points + ? WHERE uid = ?', [pts, participant.user_id]);
+  return ins.changes ? pts : null;
+}
+
+// ===== EYE FOR TALENT — scouting =====
+// An A&R promotes makinitmag.com/review?a=<their Drupal uid>; Drupal records the referring
+// A&R on the submission and returns it in the daily push. Drupal owns the non-points rewards
+// (ambassador tiers, promo budget) natively off that uid and needs nothing from us.
+//
+// The POINTS half needs a mapping, since we credit users.uid. Bootstrapped lazily: the push
+// carries the scout's Drupal uid AND email, and the first successful email match writes
+// users.drupal_uid permanently. No handshake, no connect UI — the mapping accumulates as a
+// side effect of normal use, and a mismatched email simply doesn't earn until it's linked.
+async function linkScout(drupalUid, email) {
+  if (!drupalUid) return null;
+  const known = await db.get('SELECT uid FROM users WHERE drupal_uid = ?', [drupalUid]);
+  if (known) return known.uid;
+  if (!email) return null;
+  const byEmail = await db.get('SELECT uid, drupal_uid FROM users WHERE email = ?', [email]);
+  if (!byEmail || byEmail.drupal_uid) return byEmail ? byEmail.uid : null;
+  // Unique partial index guards against two accounts claiming one Makin' It identity; a race
+  // just means the loser stays unlinked until next time, which is harmless.
+  try { await db.run('UPDATE users SET drupal_uid = ? WHERE uid = ?', [drupalUid, byEmail.uid]); } catch {}
+  return byEmail.uid;
+}
+
+// Scouting points scale with how well the record actually SCORED — that is the "eye for
+// talent" half measured directly. Not flat-on-play: submission is free, so a flat award would
+// make referring 100 mediocre artists beat referring 5 great ones.
+//
+// Floor + linear scale, never negative. A bad referral earns zero rather than costing points,
+// or nobody refers anyone.
+//
+// SIZING (operator decision — this constant is the dial). A month of daily play is roughly
+// 15,000 points (a 6-record day, decent accuracy) to 45,000 (a full 16-record day, sharp), so:
+//   at 250/point-above-floor, a 7.0 record earns 500 and five of them ≈ 2,500 ≈ 6-15% of a
+//   month. Meaningful without letting scouting outrun accuracy on a cash-prize board.
+// Raise it to make scouting a real second lane; lower it to keep it a garnish.
+const SCOUT_FLOOR = 5.0;              // moves with the 0-9 -> 0-10 scale switch
+const SCOUT_PER_POINT = 250;
+function scoutPointsFor(roomAverage) {
+  const a = Number(roomAverage);
+  if (!Number.isFinite(a) || a <= SCOUT_FLOOR) return 0;
+  return Math.round((a - SCOUT_FLOOR) * SCOUT_PER_POINT);
+}
+
+// Credit the A&R who found this record, once it has a room average. Fires at ratify next to
+// the referral milestones, because room_average does not exist before then. Idempotent on the
+// same UNIQUE (reason, source_uid, milestone) that makes referral milestones safe.
+async function creditScoutPoints(round, session) {
+  if (!round || !round.scout_drupal_uid || round.room_average == null) return null;
+  if ((round.poll_type || 'rating') === 'binary') return null;
+  const pts = scoutPointsFor(round.room_average);
+  if (pts <= 0) return null;
+  const u = await db.get('SELECT uid, blocked FROM users WHERE drupal_uid = ?', [round.scout_drupal_uid]);
+  if (!u || u.blocked) return null;      // unlinked scouts earn nothing until the accounts match
+  const ins = await db.run(
+    `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
+     VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
+    [id(9), u.uid, pts, session.series_id || null, 'scout', round.id, 1, now()]);
+  if (ins.changes) await db.run('UPDATE users SET lifetime_points = lifetime_points + ? WHERE uid = ?', [pts, u.uid]);
+  return ins.changes ? pts : null;
+}
+
+// The unified board's counterweight. A month of A&R Daily is roughly 15,000-45,000 points;
+// one live show is a dozen records, so WITHOUT this the weekly broadcast is decorative on the
+// leaderboard it is supposed to headline. sessions.live_bonus pays an A&R who rated EVERY
+// ratified record of that show — the same unit as the daily bonus ("you showed up and played
+// the whole thing"), and unfarmable: you had to be in the room, on the clock.
+//
+// Deliberately NOT a points multiplier on votes.points. A multiplier would rewrite the column
+// every board sum, share card, Song Report, chart and recap reads (making "max 125" untrue
+// everywhere), would multiply NEGATIVE rounds into a penalty rather than a bonus, and could
+// not be undone without the heavy per-row migration the #1 rule exists to prevent.
+async function awardLiveCompletion(session) {
+  if (!session || isAsync(session)) return 0;
+  const bonus = Number(session.live_bonus) || 0;
+  if (bonus <= 0) return 0;
+  const total = Number((await db.get(
+    "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [session.id])).c) || 0;
+  if (!total) return 0;
+  const full = await db.all(
+    `SELECT p.id, p.user_id, COUNT(v.id) AS c FROM participants p
+       JOIN votes v ON v.participant_id = p.id
+       JOIN rounds r ON r.id = v.round_id AND r.status = 'ratified'
+      WHERE p.session_id = ? AND p.verified = 1 AND p.user_id IS NOT NULL
+      GROUP BY p.id, p.user_id`, [session.id]);
+  let paid = 0;
+  for (const row of full) {
+    if (Number(row.c) < total) continue;
+    const ins = await db.run(
+      `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
+       VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
+      [id(9), row.user_id, bonus, session.series_id || null,
+       'live_complete', `${session.id}:${row.user_id}`, 1, now()]);
+    if (ins.changes) { await db.run('UPDATE users SET lifetime_points = lifetime_points + ? WHERE uid = ?', [bonus, row.user_id]); paid++; }
+  }
+  return paid;
+}
+
+// Deleting a zero-vote record shrinks the day — which instantly STRANDS anyone already at
+// n-1, because the award only ever runs inside /api/vote. Bounded by room size and only ever
+// host- or cron-triggered, never on the boot or request path.
+async function sweepCompletionBonuses(session) {
+  const ps = await db.all('SELECT * FROM participants WHERE session_id = ? AND verified = 1', [session.id]);
+  let paid = 0;
+  for (const p of ps) if (await maybeAwardCompletionBonus(p, session)) paid++;   // no atTs: each A&R at their OWN last-vote tier
+  return paid;
+}
+
+// ===== A&R DAILY — the lifecycle =====
+// The day runs on the clock, not on a button: it opens at noon, closes at 9AM, tallies, and
+// publishes at noon. Driven by /api/cron/daily (and by an admin route, so the operator can
+// run it by hand and so the suite can drive it without CRON_SECRET set).
+//
+// EVERY TRANSITION IS A CONDITIONAL UPDATE. Vercel documents that a scheduled run can
+// occasionally be invoked more than once, and at 12:00PM two invocations would otherwise both
+// open the day. The claim IS the lock — the drainArtistSms pattern, applied to a state machine
+// rather than a queue row.
+//
+// AND IT IS DEADLINE-BUDGETED. ratifyRound() re-scores every vote in a round inside one
+// transaction; at the 2,000-concurrent target a full day is tens of thousands of rows, which
+// is not a 30-second job (vercel.json pins maxDuration to 30). The 9AM close gives a 3-hour
+// runway to the noon publish, so the tally deliberately takes as many ticks as it needs and
+// stops cleanly when the budget runs out. A plain `for (const r of rounds) await ratify(r)`
+// would silently produce a half-tallied day and a published-but-wrong leaderboard.
+const DROP_TICK_BUDGET_MS = 22000;   // of the 30s function ceiling
+
+async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null } = {}) {
+  const t0 = Date.now();
+  const left = () => budgetMs - (Date.now() - t0);
+  const at = ts != null ? Number(ts) : now();
+  const out = { opened: 0, closed: 0, ratified: 0, sealed: 0, budgetHit: false };
+
+  const due = await db.all(
+    `SELECT * FROM sessions
+      WHERE mode = 'async' AND deleted_at IS NULL
+        AND COALESCE(async_state, 'scheduled') IN ('scheduled','open','closing','ratified')
+      ORDER BY window_opens_at ASC LIMIT 5`, []);
+
+  for (const s of due) {
+    if (left() < 2000) { out.budgetHit = true; break; }
+    const state = s.async_state || 'scheduled';
+
+    // ---- open: scheduled -> open (claim, then flip every record in one statement) ----
+    if (state === 'scheduled' && at >= Number(s.window_opens_at)) {
+      const claim = await db.run(
+        "UPDATE sessions SET async_state = 'open', status = 'live' WHERE id = ? AND COALESCE(async_state,'scheduled') = 'scheduled'",
+        [s.id]);
+      if (!claim.changes) continue;                       // another invocation won
+      await db.run("UPDATE rounds SET status = 'voting' WHERE session_id = ? AND status = 'pending'", [s.id]);
+      await realtime.publish(s.id, 'round');
+      out.opened++;
+      continue;                                            // nothing else is due for this day yet
+    }
+
+    // ---- close: open -> closing (stop the voting, then tally over as many ticks as needed) ----
+    if (state === 'open' && at >= Number(s.window_closes_at)) {
+      const claim = await db.run(
+        "UPDATE sessions SET async_state = 'closing' WHERE id = ? AND async_state = 'open'", [s.id]);
+      if (!claim.changes) continue;
+      await db.run("UPDATE rounds SET status = 'closed' WHERE session_id = ? AND status = 'voting'", [s.id]);
+      // Anyone stranded at n-1 by a deleted record is paid here, each at their OWN last-vote
+      // tier (no atTs), rather than being silently skipped because they never cast an nth vote.
+      try { await sweepCompletionBonuses(s); } catch (e) { console.error('[daily] bonus sweep failed:', e.message); }
+      await realtime.publish(s.id, 'round');
+      out.closed++;
+    }
+
+    // ---- tally: one record at a time, budget-checked, ONE board push at the end ----
+    if ((s.async_state === 'closing' || state === 'closing') || out.closed) {
+      const pending = await db.all(
+        "SELECT * FROM rounds WHERE session_id = ? AND status = 'closed' ORDER BY idx ASC", [s.id]);
+      for (const r of pending) {
+        if (left() < 6000) { out.budgetHit = true; break; }
+        // Per-round claim: nothing else can distinguish a tally in flight from one abandoned
+        // by a dead invocation, and re-running ratifyRound would double-bump total_points.
+        const rc = await db.run(
+          'UPDATE rounds SET tally_claimed_at = ? WHERE id = ? AND status = ? AND tally_claimed_at IS NULL',
+          [Date.now(), r.id, 'closed']);
+        if (!rc.changes) continue;
+        await ratifyRound(r);                               // pure tally — no per-round board push
+        try { await creditReferralMilestones(r, s); } catch (e) { console.error('[daily] referral credit failed:', e.message); }
+        try { await creditScoutPoints(await db.get('SELECT * FROM rounds WHERE id = ?', [r.id]), s); }
+        catch (e) { console.error('[daily] scout credit failed:', e.message); }
+        out.ratified++;
+      }
+      const stillOpen = (await db.get(
+        "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed')", [s.id])).c;
+      if (!Number(stillOpen)) {
+        await db.run("UPDATE sessions SET async_state = 'ratified' WHERE id = ? AND async_state = 'closing'", [s.id]);
+        // ONE series-board recompute and ONE push for the whole day — not one per record,
+        // which is exactly the cost the per-round /ratify route exists to avoid.
+        let lbData = null;
+        if (s.series_id) {
+          try { lbData = { series: { id: s.series_id, leaderboard: await homeSeriesBoard(s.series_id) } }; }
+          catch (e) { console.error('[daily] board compute failed:', e.message); }
+        }
+        await realtime.publish(s.id, 'leaderboard', lbData);
+        out.sealed++;
+      }
+    }
+  }
+  return out;
+}
+
+// The A&R Team's daily surface. Returns the participant's whole queue — every record of the
+// day, in THEIR deterministic order — plus where they are in it and what the day is worth.
+//
+// THE SEAL, and it is stricter here than on a live show. Omit keys rather than nulling them:
+// `room_average: null` versus a number is itself a tell once one record tallies.
+//   * no room_average, no split — ever, before the results publish
+//   * no other participant's taste / predict / points / rank / tier
+//   * NO PER-RECORD VOTE COUNTS. On a live show a vote count means "how many people are in
+//     the room"; across a 21-hour window with every record open at once it is a POPULARITY
+//     signal — "record 7 has 180 evaluations and record 12 has 40" says where the room's
+//     attention went, which is the direction-adjacent inference the seal rule forbids.
+//     Only the session-level participant count ships.
+// myVote and myComment DO ship: they are the A&R's own answers, and showing "you gave this a
+// 7" on revisit is the point of being able to navigate back.
+async function asyncPlayerState(participant, session, count) {
+  const ts = now();
+  const opens = Number(session.window_opens_at) || 0;
+  const closes = Number(session.window_closes_at) || 0;
+  const results = Number(session.results_at) || 0;
+
+  const rows = await db.all(
+    `SELECT id, idx, song_title, song_artist, artist_note, play_url, artist_instagram, artist_profile_url, status
+       FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified') ORDER BY idx ASC`,
+    [session.id]);
+  const total = rows.length;
+
+  const mine = await db.all(
+    `SELECT v.round_id, v.taste, v.predict FROM votes v JOIN rounds r ON r.id = v.round_id
+      WHERE r.session_id = ? AND v.participant_id = ?`, [session.id, participant.id]);
+  const byRound = new Map(mine.map(v => [v.round_id, v]));
+  const comments = await db.all(
+    `SELECT c.round_id, c.body FROM round_comments c JOIN rounds r ON r.id = c.round_id
+      WHERE r.session_id = ? AND c.participant_id = ?`, [session.id, participant.id]);
+  const cmtBy = new Map(comments.map(c => [c.round_id, c.body]));
+
+  // The A&R's own running order. Pure function of (uid, session) — nothing stored, so resume
+  // is free and there is no cursor to go stale when a record is deleted or a second tab votes.
+  const ordered = asyncQueueOrder(participant.user_id || participant.id, session.id, rows);
+  const voted = mine.length;
+
+  let phase;
+  if (session.status === 'completed' || (session.async_state === 'published' && ts >= results)) phase = 'recap';
+  else if (ts < opens || session.async_state === 'scheduled') phase = 'waiting';
+  else if (ts >= closes) phase = 'sealed';       // rated, tallying or tallied — results at noon
+  else phase = voted >= total && total > 0 ? 'done' : 'queue';
+
+  // Before the day opens the queue ships EMPTY — titles and pre-release links are a reveal,
+  // and there is no reason for them to exist client-side three hours early.
+  const open = phase === 'queue' || phase === 'done' || phase === 'sealed';
+  const queue = !open ? [] : ordered.map((r, i) => {
+    const v = byRound.get(r.id);
+    const item = { id: r.id, position: i + 1, idx: r.idx, song_title: r.song_title,
+      song_artist: r.song_artist, artist_note: r.artist_note || null, play_url: r.play_url || null,
+      // Public promotional links only. ingest_url is the admin deep link to the submission
+      // node and carries the submitter's contact details — it must never reach a player.
+      artist_instagram: r.artist_instagram || null,
+      artist_profile_url: r.artist_profile_url || null,
+      voted: !!v };
+    if (v) item.myVote = { taste: v.taste, predict: v.predict };
+    if (cmtBy.has(r.id)) item.myComment = cmtBy.get(r.id);
+    return item;   // note: no room_average, no counts, no other votes. See the seal note above.
+  });
+
+  // Tiers are SERVER-computed and shipped as resolved epochs + a label. The client must never
+  // derive the tier from its own clock: a timezone bug would promise money the server won't
+  // pay, on a cash-prize board.
+  const day = session.drop_day;
+  const tiers = [
+    { at: etEpoch(day, 15), points: 100, label: '3:00 PM ET' },
+    { at: etEpoch(day, 18), points: 75, label: '6:00 PM ET' },
+    { at: etEpoch(day, 21), points: 50, label: '9:00 PM ET' },
+    { at: closes, points: 25, label: 'before the window closes' },
+  ];
+  const nextTier = tiers.find(t => t.at != null && ts < t.at) || null;
+  const earned = await db.get(
+    "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?",
+    [`${session.id}:${participant.user_id || ''}`]);
+
+  return {
+    session: { id: session.id, name: session.name, status: session.status, poll_type: 'rating', mode: 'async' },
+    mode: 'async',
+    async: { day, opens_at: opens, closes_at: closes, results_at: results, tiers },
+    phase,
+    progress: { voted, total,
+      // A short day still pays; only a 1-2 record day (a mis-push or a dry pool) does not.
+      eligible: total >= ASYNC_MIN_FOR_BONUS,
+      earned: earned ? Number(earned.points) : null,
+      nextTierAt: nextTier ? nextTier.at : null,
+      nextTierPoints: nextTier ? nextTier.points : null,
+      nextTierLabel: nextTier ? nextTier.label : null },
+    queue,
+    me: { name: participant.name, email: participant.email, total_points: participant.total_points },
+    myTotalPoints: participant.total_points,
+    refCode: participant.ref_code || null,
+    participants: count,
+  };
+}
+
 async function playerState(participant) {
   const sessionId = participant.session_id;
-  const session = await db.get('SELECT id, name, status, scheduled_at, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius, owner_uid, series_id FROM sessions WHERE id = ?', [sessionId]);
+  const session = await db.get('SELECT id, name, status, scheduled_at, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius, owner_uid, series_id, mode, drop_day, async_state, window_opens_at, window_closes_at, results_at FROM sessions WHERE id = ?', [sessionId]);
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating'; // session default/hint only
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
+  // A&R Daily has no single active round — every record of the day is open at once — so it
+  // never reaches activeRound(), which is single-round BY DEFINITION.
+  if (isAsync(session)) return asyncPlayerState(participant, session, count);
   const round = await activeRound(sessionId);
   // Poll type is PER-ROUND: the active round decides which widget the player sees.
   // Fall back to the session default when there's no round yet.
@@ -980,6 +1349,25 @@ async function creditReferralMilestones(round, session) {
 async function overlayState(session, lbScope) {
   const sessionId = session.id;
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
+
+  // A&R Daily has nothing to overlay — there is no stream, and every record of the day is
+  // open at once. Falling through would be a SEAL VIOLATION, not just a cosmetic wrong:
+  // activeRound() would pick one arbitrary record of the day and this function publishes its
+  // running tally on a PUBLIC surface, while the room's average is exactly what every A&R is
+  // still predicting. Refuse the whole shape; the leaderboard is safe and stays.
+  if (isAsync(session)) {
+    // The board is the only piece that still makes sense, and it is already a public shape
+    // (it's what the homepage renders). Prefer the series board — the $500 race — since a
+    // drop's own participant totals read 0 until the 9AM tally.
+    const leaderboard = session.series_id
+      ? (await homeSeriesBoard(session.series_id, 10)).map(r => ({ rank: r.rank, name: r.name, points: r.points }))
+      : (await db.all('SELECT name, total_points FROM participants WHERE session_id = ? AND verified = 1 ORDER BY total_points DESC, created_at ASC LIMIT 10', [sessionId]))
+          .map((p, i) => ({ rank: i + 1, name: dispName(p.name), points: p.total_points }));
+    return { session: { id: sessionId, name: session.name, status: session.status, mode: 'async', poll_type: 'rating' },
+      participants: count, current: null, result: null, leaderboard,
+      leaderboardScope: session.series_id ? 'series' : 'session', broadcast: null };
+  }
+
   const round = await activeRound(sessionId);
   // Per-round poll type: the current/last round decides the lower-third shape.
   const isBinary = (round ? (round.poll_type || session.poll_type) : session.poll_type) === 'binary';
@@ -1547,6 +1935,208 @@ function withinSmsWindow(ts = Date.now()) {
 // Human "when the queue next moves", for the panel's status line.
 function nextSmsWindowLabel(ts = Date.now()) {
   return withinSmsWindow(ts) ? 'sending now' : `holds until ${SMS_WINDOW_START_LABEL}`;
+}
+
+// ===== ET DAY ARITHMETIC (A&R Daily) =====
+// Everything above answers "what ET time is it NOW". A&R Daily needs the other direction:
+// given an ET calendar day and a wall-clock hour, what epoch is that? The drop's whole
+// schedule is wall clock — 12PM ET open, 9AM ET close, 12PM ET publish — and the window
+// crosses the DST switch twice a year, so deriving the close as "open + 21h" would give an
+// 8AM close in spring and a 10AM close in fall. Both ends resolve from wall clock instead.
+//
+// No tz library (package.json has none, deliberately); Intl is the only primitive.
+
+// Minutes east of UTC for America/New_York at `ts` (always negative here). Derived by
+// formatting the instant in ET, reading it back as if it were UTC, and differencing —
+// which is DST-correct by construction because Intl did the work.
+function etOffsetMinutes(ts) {
+  const p = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(new Date(ts));
+  const g = (t) => parseInt(p.find(x => x.type === t)?.value ?? '0', 10);
+  const asUtc = Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'), g('second'));
+  return Math.round((asUtc - Math.floor(ts / 1000) * 1000) / 60000);
+}
+
+// Epoch ms of an ET wall-clock time on an ET calendar day. 'YYYY-MM-DD' + hour (+ minute).
+// Two-pass: guess with the offset at the naive instant, then re-read the offset AT that
+// guess and correct. One correction is enough — offsets move by at most an hour and never
+// twice within a day. THIS is what makes 12:00PM ET mean 12:00PM ET in both March and July.
+function etEpoch(day, hh, mm = 0) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || '').trim());
+  if (!m) return null;
+  const naive = Date.UTC(+m[1], +m[2] - 1, +m[3], hh, mm, 0);
+  let ts = naive - etOffsetMinutes(naive) * 60000;
+  ts = naive - etOffsetMinutes(ts) * 60000;
+  return ts;
+}
+
+// ET calendar-day arithmetic. Anchored at ET noon so a 23- or 25-hour DST day can never
+// push the result onto the wrong date.
+function etNextDay(day, n = 1) {
+  const base = etEpoch(day, 12);
+  if (base == null) return null;
+  return chartDay(base + n * 86400000);
+}
+
+// chartDay() already renders the ET 'YYYY-MM-DD' (en-CA). Alias rather than write a second
+// formatter — two of them that can disagree about what day it is would be a nasty bug.
+const etDay = (ts = Date.now()) => chartDay(ts);
+
+// ===== A&R DAILY — the async drop =====
+// The daily schedule, as ET minutes-of-day. Defaults, not hardcodes: the drop builder takes
+// explicit overrides so a test can run a 60-second window instead of waiting for noon.
+const DROP_OPEN_MIN = 12 * 60;      // 12:00 PM ET — the day's records open
+const DROP_CLOSE_MIN = 9 * 60;      // 9:00 AM ET next day — rating closes, everything ratifies
+const DROP_PUBLISH_MIN = 12 * 60;   // 12:00 PM ET next day — results publish
+// A day is 4 random free records plus UP TO 12 paid, so its size is VARIABLE (4-16) and only
+// reaches 16 when the paid queue is full or backlogged. This is a sanity ceiling on a bad
+// push, not the expected count — nothing may treat 16 as given.
+const DROP_MAX_SONGS = 24;
+// Only guards a 1-2 record day (a mis-push, or a dry free pool) from paying a full completion
+// bonus. Deliberately NOT near the typical day size: a floor of 8 would silently withhold the
+// bonus on exactly the thin days when the pool needs the participation most.
+const ASYNC_MIN_FOR_BONUS = 3;
+
+const isAsync = (s) => !!s && s.mode === 'async';
+
+// A&R Daily has no per-round host controls. The day's records open together, close together
+// and ratify together, on the clock — so every one of open / reopen / start-voting / unopen /
+// close / extend / ratify would act on ONE arbitrary record of a day that has many open at
+// once. Two of them are worse than merely wrong: per-round /ratify fires a series-board
+// recompute AND an Ably publish per call (the exact cost the batched tally exists to avoid),
+// and /extend would move one record's clock while the session window governs the rest.
+// Returns true when it has already answered the request.
+function refuseOnDrop(res, session) {
+  if (!isAsync(session)) return false;
+  bad(res, 'A&R Daily runs on the clock — records are not opened, closed or tallied one at a time', 409);
+  return true;
+}
+
+// The completion-bonus tier, anchored to the DROP DAY's absolute epochs. NOT minutes-of-day:
+// the window crosses midnight, so an A&R who finishes at 2:00 AM is 120 minutes into the ET
+// clock and a minutes-of-day comparison would read that as "before 3PM" and pay 100 instead
+// of 25. Callers pass the A&R's LAST VOTE time, not now() — see maybeAwardCompletionBonus.
+function completionBonusPoints(session, ts) {
+  const d = session && session.drop_day;
+  if (!d) return 25;
+  if (ts < etEpoch(d, 15)) return 100;
+  if (ts < etEpoch(d, 18)) return 75;
+  if (ts < etEpoch(d, 21)) return 50;
+  return 25;   // any time before the close; the close itself is the vote guard's job
+}
+
+// The play link IS the product on an async day — the A&R listens here, not on a stream.
+// Same http(s)-only discipline as cleanUrl (a javascript: value is XSS wherever it renders),
+// but deliberately NOT host-allowlisted: the operator will use a CDN mp3 one day and a
+// Spotify link the next, and an allowlist would reject tomorrow's host as broken.
+const cleanPlayUrl = (u) => cleanUrl(u);
+
+// A deterministic running order per A&R, so no two people walk the day's records in the same
+// sequence — but the SAME person always gets the SAME order, on any device, forever. Pure
+// function of (seedKey, sessionId): nothing is stored, so resume is free and there is no
+// cursor to go stale when a round is deleted or a second tab votes.
+//
+// Why it matters beyond novelty: with a fixed order, drop-off concentrates on whatever sits
+// at the end of the list, so the last record of the day would draw a fraction of the first's
+// votes every single day. Shuffling per A&R spreads that evenly.
+//
+// SHA-256 in counter mode rather than a seeded PRNG: an LCG or xorshift is a promise about a
+// specific implementation, and this order has to survive Node upgrades. SHA-256 is a spec.
+// Rejection sampling keeps the shuffle unbiased (a bare `% bound` is not).
+// Validate + normalize one song from the daily push. Returns { rec } or { err }.
+// ALL-OR-NOTHING at the caller: the operator approved a specific set in Drupal and is looking
+// at that page, so a red error they can act on beats silently creating a short day that nobody
+// notices until noon.
+function normalizeDropSong(raw, i) {
+  const clip = (s, n) => (s == null ? '' : String(s)).trim().slice(0, n);
+  const title = clip(raw && raw.title, 200);
+  if (!title) return { err: { index: i, field: 'title', reason: 'required' } };
+  // A record with no play link is unratable for the whole window — and a day of them is a
+  // dead day. This is the one field that is fatal beyond the title.
+  const playUrl = cleanPlayUrl(raw.playUrl || raw.play_url);
+  if (!playUrl) return { err: { index: i, field: 'playUrl', reason: 'required, must be http(s)' } };
+  return { rec: {
+    ref: clip(raw.ref, 100) || null,
+    url: cleanUrl(raw.url),
+    title,
+    artist: clip(raw.artist, 200),
+    instagram: clip((raw.instagram || '').toString().replace(/^@+/, ''), 60) || null,
+    profileUrl: cleanUrl(raw.profileUrl || raw.profile_url),
+    // Unusable contact nulls out and is NOT fatal — matches /api/ingest/submission. The
+    // artist just doesn't get a report; the caller surfaces it as a warning so Drupal can flag it.
+    email: cleanArtistEmail(raw.email),
+    phone: cleanArtistPhone(raw.phone),
+    note: clip(raw.note ?? raw.ask, 500) || null,
+    playUrl,
+    scoutUid: clip(raw.scout && raw.scout.uid, 60) || null,
+    scoutEmail: cleanArtistEmail(raw.scout && raw.scout.email),
+  } };
+}
+
+// Build one day of A&R Daily from the approved batch Drupal pushes.
+//
+// The day is VARIABLE in size — 4 random free records plus up to 12 paid — so nothing here
+// assumes 16. idx is assigned AT INSERT (1..n) from the batch order, unlike a live show where
+// advanceRoom() assigns it at open: with every record opening at once there is no "open time"
+// to number from, and the per-A&R shuffle is a read-time concern that never touches idx.
+//
+// Rounds are created 'pending'; the lifecycle cron flips them all to 'voting' in one statement
+// at the open. Ingest stays dumb and the open stays atomic.
+async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, resultsAt }) {
+  const wo = opensAt != null ? Number(opensAt) : etEpoch(day, DROP_OPEN_MIN / 60, DROP_OPEN_MIN % 60);
+  const nextDay = etNextDay(day);
+  const wc = closesAt != null ? Number(closesAt) : etEpoch(nextDay, DROP_CLOSE_MIN / 60, DROP_CLOSE_MIN % 60);
+  const rp = resultsAt != null ? Number(resultsAt) : etEpoch(nextDay, DROP_PUBLISH_MIN / 60, DROP_PUBLISH_MIN % 60);
+  const sid = id(9), ts = now();
+  await db.tx(async (tx) => {
+    await tx.run(
+      `INSERT INTO sessions (id, name, admin_token, owner_uid, status, mode, drop_day, async_state,
+         window_opens_at, window_closes_at, results_at, scheduled_at, default_minutes, poll_type,
+         series_id, ingest_auto, created_at)
+       VALUES (?,?,?,?, 'upcoming', 'async', ?, 'scheduled', ?,?,?,?, 5, 'rating', ?, 0, ?)`,
+      // owner_uid NULL is deliberate: canAdminSession then admits only a platform admin, and
+      // this batch carries every artist's email and phone. Same reasoning that tightened
+      // /api/admin/ingest/latest.
+      [sid, name || `A&R Daily — ${day}`, id(12), null, day, wo, wc, rp, wo, seriesId || null, ts]);
+    let i = 0;
+    for (const s of songs) {
+      i++;
+      await tx.run(
+        `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
+           giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
+           artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, status, opens_at, closes_at, created_at)
+         VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+        [id(9), sid, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
+         s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, wo, wc, ts]);
+    }
+  });
+  return { sessionId: sid, day, rounds: songs.length, opensAt: wo, closesAt: wc, resultsAt: rp };
+}
+
+function asyncQueueOrder(seedKey, sessionId, rounds) {
+  const arr = (rounds || []).slice().sort((a, b) =>
+    (Number(a.idx) - Number(b.idx)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (arr.length < 2) return arr;
+  const seed = crypto.createHash('sha256').update(`${seedKey}|${sessionId}`).digest();
+  let pool = Buffer.alloc(0), ctr = 0;
+  const next32 = () => {
+    if (pool.length < 4) {
+      const c = Buffer.alloc(4); c.writeUInt32BE(ctr++, 0);
+      pool = crypto.createHash('sha256').update(seed).update(c).digest();  // 32 bytes = 8 draws
+    }
+    const v = pool.readUInt32BE(0); pool = pool.subarray(4); return v;
+  };
+  for (let i = arr.length - 1; i > 0; i--) {
+    const bound = i + 1;
+    const limit = Math.floor(0x100000000 / bound) * bound;
+    let r; do { r = next32(); } while (r >= limit);
+    const j = r % bound;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 }
 
 const artistEmailText = (d) => `Your record was evaluated live — ${d.title}\n\n`
@@ -2954,8 +3544,11 @@ async function handleApi(req, res, url) {
       // browser source once and reuse it every week without editing the URL. Keyed on the
       // owner's uid; the response carries session.id so the client rebuilds QR links when
       // the resolved room changes (e.g. next week's session).
-      session = await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1", [host])
-        || await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'upcoming' AND deleted_at IS NULL ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", [host]);
+      // Drops are excluded from BOTH lookups. A drop created that morning is `live` all day
+      // and would otherwise steal the OBS source from the evening's actual broadcast — and
+      // there is nothing to overlay on a drop anyway.
+      session = await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'live' AND deleted_at IS NULL AND (mode IS NULL OR mode <> 'async') ORDER BY created_at DESC LIMIT 1", [host])
+        || await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'upcoming' AND deleted_at IS NULL AND (mode IS NULL OR mode <> 'async') ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", [host]);
     }
     if (!session) return bad(res, 'Room not found', 404);
     return send(res, 200, await overlayState(session, (url.searchParams.get('leader_scope') || url.searchParams.get('lb') || '').toLowerCase()));
@@ -3041,9 +3634,21 @@ async function handleApi(req, res, url) {
     const clip = (s, n) => (s == null ? '' : String(s)).trim().slice(0, n);
     // email/phone ride along so the post-show report card can reach the artist without
     // the host retyping contact info mid-show. Private — staged, never publicly emitted.
+    // `note` is the artist's own context from the submission form ("this isn't mixed, I
+    // recorded it on Bandlab last night"). It tells the room HOW TO HEAR the record and it
+    // is the differentiator of the whole review — the host reads it on air — yet until now
+    // it never reached the room at all. Accepts `note` or the older `ask` spelling. `playUrl` lets a pulled record carry its own link.
+    // `ref`/`url` tie the round back to the Drupal node; `scout` is the A&R whose referral
+    // link the artist submitted through (see the daily push for how it resolves to points).
     const rec = { title: clip(body.title, 200), artist: clip(body.artist, 200),
       instagram: clip((body.instagram || '').toString().replace(/^@+/, ''), 60) || null,
       email: cleanArtistEmail(body.email), phone: cleanArtistPhone(body.phone),
+      note: clip(body.note || body.ask, 500) || null,
+      playUrl: cleanPlayUrl(body.playUrl || body.play_url),
+      profileUrl: cleanUrl(body.profileUrl || body.profile_url),
+      ref: clip(body.ref, 100) || null,
+      url: cleanUrl(body.url),
+      scoutUid: clip(body.scout && body.scout.uid, 60) || null,
       source: clip(body.source, 60) || 'makinitmag', at: now() };
     if (!rec.title && !rec.artist) return send(res, 400, { error: 'Need at least a title or artist' }, cors);
     await db.run("INSERT INTO settings (k,v) VALUES ('ingest_latest', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [JSON.stringify(rec)]);
@@ -3053,7 +3658,11 @@ async function handleApi(req, res, url) {
     // already subscribed to. Bounded + non-fatal; a realtime hiccup just costs the poll.
     let autoRooms = [], queued = 0;
     try {
-      autoRooms = await db.all("SELECT id, poll_type, status FROM sessions WHERE ingest_auto = 1 AND status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 5", []);
+      // Drops are never auto-fill targets. stageIngestRound's newest-push-wins DELETE is
+      // scoped by session, so a single stray /review push into a running day could otherwise
+      // delete one of its records. (stageIngestRound refuses async too — belt and braces,
+      // because either guard alone would be one edit away from being the only one.)
+      autoRooms = await db.all("SELECT id, poll_type, status FROM sessions WHERE ingest_auto = 1 AND status = 'live' AND deleted_at IS NULL AND (mode IS NULL OR mode <> 'async') ORDER BY created_at DESC LIMIT 5", []);
       for (const s of autoRooms) {
         // Stage it as a real queued round FIRST, so the console's refresh (and the deck's
         // next press) both see the record rather than only the form text.
@@ -3062,6 +3671,117 @@ async function handleApi(req, res, url) {
       }
     } catch (e) { console.error('[ingest] auto stage/notify failed:', e.message); }
     return send(res, 200, { ok: true, staged: { title: rec.title, artist: rec.artist }, autoRooms: autoRooms.length, queued }, cors);
+  }
+
+  // ----- A&R DAILY: the approved daily batch from Drupal -----
+  // The operator reviews and approves the day's records on a Drupal page (4 drawn at random
+  // from the free pool + up to 12 paid, weighted by amount — ALL of that maths lives there),
+  // then pushes the approved set here as ONE batch. No pool table, no amount/tier fields and
+  // no selection logic in this repo; a shadow copy is how the two systems stop agreeing.
+  //
+  // No CORS and no OPTIONS: this is server-to-server from PHP, not a browser button.
+  // Its own secret because the blast radius differs — /submission stages one row a host can
+  // ignore, this creates a room and every artist's contact details.
+  if (p === '/api/ingest/daily' && method === 'POST') {
+    const token = process.env.DAILY_INGEST_TOKEN || process.env.INGEST_TOKEN || '';
+    if (!token) return send(res, 503, { error: 'Daily ingest not configured' });
+    const given = (req.headers['x-ingest-token'] || '').toString();
+    // Length pre-check then constant-time compare (timingSafeEqual throws on a length
+    // mismatch). The older `given !== token` above is a timing oracle — not propagated here.
+    const okTok = given.length === token.length && given.length > 0
+      && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(token));
+    if (!okTok) return send(res, 401, { error: 'Bad token' });
+
+    const body = await readBody(req);
+    const day = (body.day || etDay()).toString().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad(res, 'day must be YYYY-MM-DD');
+    // ±2 days of ET today: catches a typo that would otherwise create a drop in 2027 and sit
+    // invisible until it opened.
+    const dayTs = etEpoch(day, 12);
+    if (dayTs == null || Math.abs(dayTs - now()) > 3 * 86400000) return bad(res, 'day is too far from today');
+
+    const songs = Array.isArray(body.songs) ? body.songs : null;
+    if (!songs || !songs.length) return bad(res, 'songs[] required');
+    if (songs.length > DROP_MAX_SONGS) return bad(res, `too many songs (max ${DROP_MAX_SONGS})`);
+
+    // ALL-OR-NOTHING. A silently-short day is worse than an error the operator can act on.
+    const recs = [], rejected = [], warnings = [], seenRef = new Set();
+    songs.forEach((raw, i) => {
+      const { rec, err } = normalizeDropSong(raw, i);
+      if (err) return rejected.push(err);
+      if (rec.ref && seenRef.has(rec.ref)) return rejected.push({ index: i, field: 'ref', reason: 'duplicate in batch' });
+      if (rec.ref) seenRef.add(rec.ref);
+      if (raw.email && !rec.email) warnings.push({ index: i, field: 'email', reason: 'unusable' });
+      if (raw.phone && !rec.phone) warnings.push({ index: i, field: 'phone', reason: 'unusable' });
+      recs.push(rec);
+    });
+    if (rejected.length) return send(res, 400, { error: 'Batch rejected', rejected });
+
+    // Link each scout's Makin' It identity to their A&R Team account while we still have the
+    // email. Best-effort and non-fatal: scout_drupal_uid is stored on the round REGARDLESS,
+    // because Drupal's own ambassador and promo reporting reads it and must not depend on us
+    // having resolved the person. An unlinked scout simply earns no points yet.
+    for (const r of recs) {
+      if (r.scoutUid) { try { await linkScout(r.scoutUid, r.scoutEmail); } catch (e) { console.error('[scout] link failed:', e.message); } }
+    }
+
+    // Without a series tag the day's points never reach the $500 board — the entire
+    // unification premise, failing silently. Resolve explicit -> active series -> refuse.
+    let seriesId = (body.seriesId || '').toString().trim() || null;
+    if (seriesId) {
+      const ser = await db.get('SELECT id FROM series WHERE id = ?', [seriesId]);
+      if (!ser) return bad(res, 'Unknown seriesId');
+    } else {
+      const active = await db.get("SELECT id FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []);
+      seriesId = active ? active.id : null;
+    }
+    if (!seriesId) return bad(res, 'No active series — a drop with no series tag earns nothing on the board', 409);
+
+    const existing = await db.get('SELECT * FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [day]);
+    if (existing) {
+      const voted = (await db.get(
+        'SELECT COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [existing.id])).c;
+      const started = existing.status !== 'upcoming' || (existing.async_state && existing.async_state !== 'scheduled');
+      if (Number(voted) > 0 || started) {
+        return send(res, 409, { error: "Today's drop is already in play", sessionId: existing.id, votes: Number(voted) });
+      }
+      // Cold and unplayed: replace the record set in place (newest push wins, the same rule
+      // 031/032 apply to a single staged record — here applied to the batch).
+      await db.tx(async (tx) => {
+        await tx.run('DELETE FROM rounds WHERE session_id = ?', [existing.id]);
+        let i = 0;
+        for (const s of recs) {
+          i++;
+          await tx.run(
+            `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
+               giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
+               artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, status, opens_at, closes_at, created_at)
+             VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+            [id(9), existing.id, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
+             s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid,
+             existing.window_opens_at, existing.window_closes_at, now()]);
+        }
+        if (seriesId && !existing.series_id) await tx.run('UPDATE sessions SET series_id = ? WHERE id = ?', [seriesId, existing.id]);
+      });
+      // Echo titles only — never the emails or phones back out (they came in over this wire,
+      // that doesn't make them safe to reflect).
+      return send(res, 200, { ok: true, replaced: true, sessionId: existing.id, day,
+        rounds: recs.length, seriesId: seriesId || existing.series_id || null, warnings });
+    }
+
+    let out;
+    try {
+      out = await createAsyncDrop({ day, name: body.name, seriesId, songs: recs,
+        opensAt: body.opensAt, closesAt: body.closesAt, resultsAt: body.resultsAt });
+    } catch (e) {
+      // The partial unique index on drop_day is the REAL guard: two simultaneous pushes race
+      // on the constraint, not on the SELECT above, and the loser lands here.
+      if (/unique|duplicate/i.test(e.message || '')) {
+        return send(res, 409, { error: "A drop already exists for that day" });
+      }
+      throw e;
+    }
+    return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings });
   }
 
   // ===== ANALYTICS DATA FEED (static-token gated; machine-readable) =====
@@ -3149,12 +3869,31 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE users SET last_seen = ? WHERE uid = ?', [now(), participant.user_id]);
     }
     const body = await readBody(req);
-    const round = await activeRound(participant.session_id);
-    if (!round || round.status !== 'voting') return bad(res, 'Evaluation is not open');
-    if (round.closes_at && now() > Number(round.closes_at)) return bad(res, 'Time is up');
+    const session = await db.get('SELECT id, poll_type, geo_mode, mode, status, deleted_at, series_id, drop_day, window_opens_at, window_closes_at FROM sessions WHERE id = ?', [participant.session_id]);
+    // `roundId` is honored ONLY on a drop. A live client never sends it and the live branch
+    // below is unchanged, so the existing live e2e section is this change's regression test.
+    let round;
+    if (isAsync(session)) {
+      // Every record of the day is open at once, so there is no "the active round" to infer —
+      // and inferring one would land the vote on the wrong record every time. Explicit id,
+      // scoped to the caller's own session: the /api/comment precedent, verbatim.
+      if (!body.roundId) return bad(res, 'Pick a record first');
+      round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, participant.session_id]);
+      if (!round) return bad(res, 'Round not found', 404);
+      if (session.deleted_at || session.status === 'archived') return bad(res, 'This room is closed');
+      if (round.status !== 'voting') return bad(res, 'Evaluation is not open');
+      // The SESSION window is the single source of truth — deliberately not round.closes_at,
+      // so an accidental per-record edit can never hold one record open longer than the rest.
+      if (now() < Number(session.window_opens_at)) return bad(res, 'Evaluation is not open');
+      if (now() >= Number(session.window_closes_at)) return bad(res, 'Time is up');
+      if ((round.poll_type || 'rating') !== 'rating') return bad(res, 'A&R Daily is rating rounds only');
+    } else {
+      round = await activeRound(participant.session_id);
+      if (!round || round.status !== 'voting') return bad(res, 'Evaluation is not open');
+      if (round.closes_at && now() > Number(round.closes_at)) return bad(res, 'Time is up');
+    }
     const existing = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
     if (existing) return bad(res, 'You already locked in');
-    const session = await db.get('SELECT poll_type, geo_mode FROM sessions WHERE id = ?', [participant.session_id]);
     // Per-round poll type (the open round decides the vote shape); session is a fallback.
     const isBinary = (round.poll_type || (session && session.poll_type)) === 'binary';
     // Geo gate: when enforcement is on, a player must check in before their FIRST
@@ -3162,7 +3901,9 @@ async function handleApi(req, res, url) {
     // 'required' demands an at-venue check-in specifically — an 'online' pool from an
     // earlier optional phase doesn't count once the host tightens the mode; the player
     // is sent back through check-in (which upgrades them to in_person at the venue).
-    if (session && session.geo_mode && session.geo_mode !== 'off') {
+    // LIVE ONLY. A drop is by definition not at a venue — enforcing a check-in would lock
+    // every remote A&R out of the primary points engine.
+    if (!isAsync(session) && session && session.geo_mode && session.geo_mode !== 'off') {
       const needCheckin = session.geo_mode === 'required'
         ? participant.pool !== 'in_person'
         : !participant.pool;
@@ -3192,6 +3933,14 @@ async function handleApi(req, res, url) {
     await db.run('INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at) VALUES (?,?,?,?,?,?)',
       [id(9), round.id, participant.id, t, pr, now()]);
     await creditReferral(participant);
+    if (isAsync(session)) {
+      // Awarded the moment the day is finished, so the tier reflects when they actually
+      // finished rather than whenever a sweep happens to run. Two indexed COUNTs — bounded
+      // and constant, not row-count-scaling, so this stays off the #1 rule's radar.
+      const bonus = await maybeAwardCompletionBonus(participant, session);
+      const prog = await asyncProgress(participant, session);
+      return send(res, 200, { locked: true, bonus, ...prog });
+    }
     return send(res, 200, { locked: true });
   }
 
@@ -3209,6 +3958,33 @@ async function handleApi(req, res, url) {
   // No points are awarded. Points on this board are accuracy-derived; paying for free
   // text would put non-accuracy points on a cash-prize board and reward volume over
   // quality — and every extra comment lands in the host's approval queue.
+  // ----- report a record that cannot be evaluated (A&R Daily) -----
+  // On a live show a dead link is obvious to the host within seconds. Across a 21-hour
+  // window with nobody watching, the A&Rs are the only smoke detector — so this is a real
+  // surface, not a support queue: two fixed reasons, and the optional body is advisory.
+  if (p === '/api/report-round' && method === 'POST') {
+    const participant = await participantFromReq(req);
+    if (!participant) return bad(res, 'Not authenticated', 401);
+    const { roundId, reason, body: rawBody } = await readBody(req);
+    if (!roundId) return bad(res, 'Round required');
+    if (!['not_playable', 'other'].includes(reason)) return bad(res, 'Unknown reason');
+    // Scoped to THIS participant's session — the /api/comment precedent. A round id from
+    // another room is not theirs to report.
+    const round = await db.get('SELECT id, session_id FROM rounds WHERE id = ? AND session_id = ?',
+      [roundId, participant.session_id]);
+    if (!round) return bad(res, 'Round not found', 404);
+    const note = (rawBody == null ? '' : String(rawBody)).trim().slice(0, 280) || null;
+    // One report each, so the console's count is PEOPLE, not clicks — which is what makes
+    // it a usable threshold for "pull this record".
+    await db.run(
+      `INSERT INTO round_reports (id, round_id, session_id, participant_id, reason, body, created_at)
+       VALUES (?,?,?,?,?,?,?) ON CONFLICT (round_id, participant_id)
+       DO UPDATE SET reason = excluded.reason, body = excluded.body, created_at = excluded.created_at`,
+      [id(9), round.id, round.session_id, participant.id, reason, note, now()]);
+    const c = (await db.get('SELECT COUNT(*) AS c FROM round_reports WHERE round_id = ?', [round.id])).c;
+    return send(res, 200, { ok: true, reports: Number(c) || 0 });
+  }
+
   if (p === '/api/comment' && method === 'POST') {
     const participant = await participantFromReq(req);
     if (!participant) return bad(res, 'Not authenticated', 401);
@@ -3327,8 +4103,10 @@ async function handleApi(req, res, url) {
     const wanted = url.searchParams.get('s') || url.searchParams.get('sessionId');
     const session = wanted
       ? await db.get('SELECT * FROM sessions WHERE id = ? AND owner_uid = ? AND deleted_at IS NULL', [wanted, host.uid])
-      : (await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'live' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1", [host.uid])
-        || await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'upcoming' AND deleted_at IS NULL ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", [host.uid]));
+      // Drops excluded from both: a Stream Deck is configured once and must keep resolving to
+      // the show, not to whatever drop happens to be open on a Wednesday afternoon.
+      : (await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'live' AND deleted_at IS NULL AND (mode IS NULL OR mode <> 'async') ORDER BY created_at DESC LIMIT 1", [host.uid])
+        || await db.get("SELECT * FROM sessions WHERE owner_uid = ? AND status = 'upcoming' AND deleted_at IS NULL AND (mode IS NULL OR mode <> 'async') ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", [host.uid]));
     if (!session) return send(res, 404, { error: 'No live room' });
 
     const act = p.slice('/api/control/'.length);
@@ -3344,6 +4122,10 @@ async function handleApi(req, res, url) {
       return send(res, out.ok ? 200 : 400, out);
     }
     if (act === 'extend') {
+      // An explicit ?s= can still point the deck at a drop even though the fallback lookups
+      // exclude them — and activeRound() would hand back one arbitrary record of the day.
+      // Moving the day's close is a session-level decision, not a per-record button.
+      if (isAsync(session)) return send(res, 400, { error: 'A&R Daily runs on the clock — nothing to extend' });
       const round = await activeRound(session.id);
       if (!round || round.status !== 'voting') return send(res, 400, { error: 'No round is taking votes' });
       const mins = url.searchParams.get('minutes'), secs = url.searchParams.get('seconds');
@@ -3821,6 +4603,10 @@ async function handleApi(req, res, url) {
       artist_email, artist_phone, roundId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    // A drop's records arrive as one approved batch from Drupal and are numbered at insert.
+    // Hand-adding here would either auto-open into a running window or land a pending round
+    // the lifecycle never picks up — and either way it breaks the day's idx sequence.
+    if (isAsync(session)) return bad(res, 'A&R Daily records come from the approved daily push, not the queue form', 409);
     // `roundId` = "this form is already a queued round" — the console sends it when the form
     // was auto-filled from a review-site push, which stages the record server-side. Without
     // it, pressing Add would queue a SECOND copy of the song already sitting on deck. Scoped
@@ -3909,6 +4695,7 @@ async function handleApi(req, res, url) {
     const { sessionId, roundId, minutes } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (refuseOnDrop(res, session)) return;
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     if (round.status !== 'listening') return bad(res, 'That round is not on deck');
@@ -3927,6 +4714,7 @@ async function handleApi(req, res, url) {
     const { sessionId, roundId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (refuseOnDrop(res, session)) return;
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     if (round.status !== 'listening') return bad(res, 'Only a round that has not started voting can go back to the queue');
@@ -3997,6 +4785,7 @@ async function handleApi(req, res, url) {
     const { sessionId, roundId, minutes } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (refuseOnDrop(res, session)) return;
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     // Don't open a new round while another is mid-flight (voting or awaiting tally).
@@ -4024,6 +4813,7 @@ async function handleApi(req, res, url) {
     const { sessionId, roundId, minutes, seconds } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (refuseOnDrop(res, session)) return;
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     const add = (minutes != null ? Number(minutes) * 60 : (Number(seconds) || 30)) * 1000;
@@ -4037,6 +4827,7 @@ async function handleApi(req, res, url) {
     const { sessionId, roundId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (refuseOnDrop(res, session)) return;
     await db.run("UPDATE rounds SET status = 'closed', closes_at = ? WHERE id = ? AND session_id = ?",
       [now(), roundId, sessionId]);
     await realtime.publish(sessionId, 'round');
@@ -4049,6 +4840,7 @@ async function handleApi(req, res, url) {
     const { sessionId, roundId, minutes } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (refuseOnDrop(res, session)) return;
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     if (round.status !== 'closed') return bad(res, 'Only a closed (not yet tallied) round can be reopened');
@@ -4104,6 +4896,7 @@ async function handleApi(req, res, url) {
     const { sessionId, roundId } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
+    if (refuseOnDrop(res, session)) return;
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     return send(res, 200, await ratifyAndPublish(round, session));
@@ -4114,8 +4907,12 @@ async function handleApi(req, res, url) {
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     await db.run("UPDATE sessions SET status = 'completed' WHERE id = ?", [sessionId]);
+    // Non-fatal: a bonus hiccup must never block the host ending the show.
+    let liveBonusPaid = 0;
+    try { liveBonusPaid = await awardLiveCompletion(session); }
+    catch (e) { console.error('[live-bonus] award failed:', e.message); }
     await realtime.publish(sessionId, 'status');
-    return send(res, 200, { ok: true });
+    return send(res, 200, { ok: true, liveBonusPaid });
   }
 
   // Set session lifecycle status: upcoming | live | completed | archived.
@@ -4134,6 +4931,11 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE sessions SET status = ?, scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?', [status, now(), sessionId]);
     } else {
       await db.run('UPDATE sessions SET status = ? WHERE id = ?', [status, sessionId]);
+    }
+    // Same award as /session/end — this is the other path a show reaches 'completed' by, and
+    // one implementation with two callers is the rule everywhere else in this file.
+    if (status === 'completed' && wasLive) {
+      try { await awardLiveCompletion(session); } catch (e) { console.error('[live-bonus] award failed:', e.message); }
     }
     // On go-live, the host chooses which channels notify registrants (notify:{email,sms,push})
     // from the confirm dialog. No notify object => notify nothing. Idempotent per
@@ -4370,7 +5172,10 @@ async function handleApi(req, res, url) {
     const firstName = dispName; // full display name (no first-word splitting)
     // Live session (most recent if more than one is somehow live). Unlisted sessions
     // never surface here — they're reachable only by direct link/QR.
-    const liveRow = await db.get("SELECT * FROM sessions WHERE status = 'live' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY created_at DESC LIMIT 1", []);
+    // `live` means the weekly BROADCAST. A drop is also status='live' for 21 hours a day, so
+    // without the mode filter it would win this ORDER BY on any Wednesday it was created
+    // after the show — and the live show would silently vanish from the homepage.
+    const liveRow = await db.get("SELECT * FROM sessions WHERE status = 'live' AND deleted_at IS NULL AND (mode IS NULL OR mode <> 'async') AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY created_at DESC LIMIT 1", []);
     let live = null;
     if (liveRow) {
       const arCount = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [liveRow.id])).c;
@@ -4381,8 +5186,22 @@ async function handleApi(req, res, url) {
         : (round.song_title + (round.song_artist ? ' — ' + round.song_artist : ''));
       live = { id: liveRow.id, name: liveRow.name, pollType: liveRow.poll_type, watchUrl: liveRow.watch_url || null, submitUrl: liveRow.submit_url || null, arCount: Number(arCount) || 0, nowPlaying };
     }
+    // Today's drop — A&R Daily. Its own key, never folded into `live`: the two coexist
+    // (a drop is open every day, a show runs on Wednesday) and the homepage renders the drop
+    // as the permanent hero with a live show stacking above it. No `nowPlaying` — every
+    // record of the day is open at once, so there is no such thing.
+    const dropRow = await db.get("SELECT * FROM sessions WHERE mode = 'async' AND status = 'live' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1", []);
+    let daily = null;
+    if (dropRow) {
+      const songs = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [dropRow.id])).c;
+      daily = { id: dropRow.id, name: dropRow.name, day: dropRow.drop_day,
+        songs: Number(songs) || 0,                       // VARIABLE — never assume 16
+        closesAt: dropRow.window_closes_at == null ? null : Number(dropRow.window_closes_at),
+        resultsAt: dropRow.results_at == null ? null : Number(dropRow.results_at),
+        submitUrl: dropRow.submit_url || null };
+    }
     // Next upcoming session: earliest future start, else most recently created upcoming.
-    const nextRow = await db.get("SELECT id, name, scheduled_at, watch_url, submit_url FROM sessions WHERE status = 'upcoming' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", []);
+    const nextRow = await db.get("SELECT id, name, scheduled_at, watch_url, submit_url FROM sessions WHERE status = 'upcoming' AND deleted_at IS NULL AND (mode IS NULL OR mode <> 'async') AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY (scheduled_at IS NULL), scheduled_at ASC, created_at DESC LIMIT 1", []);
     const next = nextRow ? { id: nextRow.id, name: nextRow.name, scheduledAt: nextRow.scheduled_at, watchUrl: nextRow.watch_url || null, submitUrl: nextRow.submit_url || null } : null;
     // Active series (else most recent) + its live-computed top 5.
     const serRow = (await db.get("SELECT id, title, status FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []))
@@ -4402,7 +5221,10 @@ async function handleApi(req, res, url) {
     // House submission link for the homepage's submit section when no room link applies
     // (single source of truth: the platform setting, falling back to the built-in).
     const houseSubmitUrl = (await db.get("SELECT v FROM settings WHERE k = 'house_submit_url'"))?.v || 'https://www.makinitmag.com/review';
-    return send(res, 200, { live, next, series, winners: [], recentARs, houseSubmitUrl });
+    // `daily` is anonymous and cacheable like the rest of this payload — no per-viewer field
+    // here (that would be a PII/seal leak on the one endpoint worth putting behind a CDN).
+    // "13 records left" is a client-side patch using the viewer's existing session token.
+    return send(res, 200, { live, daily, next, series, winners: [], recentARs, houseSubmitUrl });
   }
 
 
@@ -4922,6 +5744,31 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, ...out, remaining: Number(rem.c) || 0 });
   }
 
+  // ---- A&R Daily lifecycle: open at noon, close + tally at 9AM, publish at noon ----
+  // Its OWN path, deliberately not folded into /api/cron/artist-sms: that handler returns
+  // early whenever withinSmsWindow() is false, which would silently skip the drop lifecycle
+  // for 11.5 hours a day — including the 9:00 AM close.
+  if (p === '/api/cron/daily' && (method === 'GET' || method === 'POST')) {
+    const secret = process.env.CRON_SECRET || '';
+    if (!secret) return bad(res, 'Cron not configured (set CRON_SECRET)', 503);
+    const given = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+      || url.searchParams.get('token') || '';
+    const okTok = given.length === secret.length && given.length > 0
+      && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(secret));
+    if (!okTok) return bad(res, 'Bad token', 401);
+    return send(res, 200, { ok: true, ...(await runAsyncDropLifecycle()) });
+  }
+
+  // Same lifecycle, host-triggered: a manual "run it now" when a cron is late, and the way
+  // the suite drives it (e2e.test.js asserts /api/cron/* is 503 with no CRON_SECRET set, so
+  // the tests can't go through that door). One implementation, two callers — the advanceRoom
+  // discipline.
+  if (p === '/api/admin/daily/tick' && method === 'POST') {
+    const body = await readBody(req);
+    if (!(await platformAdmin(req))) return bad(res, 'Admin auth failed', 401);
+    return send(res, 200, { ok: true, ...(await runAsyncDropLifecycle({ ts: body.at })) });
+  }
+
   // ---- Asana post kit: the night's graphics + a tag-everyone caption, as one task. ----
   // Preview (also powers "Copy caption", which works with or without Asana configured).
   if (p === '/api/admin/session/post-kit' && method === 'GET') {
@@ -5338,3 +6185,13 @@ module.exports._drainArtistSms = drainArtistSms;
 // Exported for tests: minting a manage link is what a real sender does, and the scope
 // test needs a genuine token to prove it's rejected everywhere except the prefs routes.
 module.exports._mintNotifyLink = mintNotifyLink;
+// Exported for tests: A&R Daily's schedule is ET wall clock across a DST boundary, and the
+// per-A&R queue order has to be stable forever. Both are pure and asserted directly.
+module.exports._etEpoch = etEpoch;
+module.exports._etNextDay = etNextDay;
+module.exports._etDay = etDay;
+module.exports._asyncQueueOrder = asyncQueueOrder;
+module.exports._completionBonusPoints = completionBonusPoints;
+// Exported for tests: the scouting curve is the dial that decides whether "eye for talent"
+// is a real second lane or a garnish, so its shape is asserted rather than eyeballed.
+module.exports._scoutPointsFor = scoutPointsFor;

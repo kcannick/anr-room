@@ -1439,6 +1439,354 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const pushDone = await call('/api/ingest/submission', { title: 'Too Late', artist: 'Nobody' }, 'POST', { 'X-Ingest-Token': 'test-ingest-secret' });
   ok('a finished auto room is no longer a delivery target', pushDone.status === 200 && pushDone.d.autoRooms === 0, JSON.stringify(pushDone.d));
 
+  console.log('\n— A&R Daily: the approved daily batch from Drupal —');
+  const dDb = require('./db');
+  const DTOK = { 'X-Ingest-Token': 'test-ingest-secret' };
+  // The day is VARIABLE — 4 free + up to 12 paid — so every fixture here is deliberately
+  // NOT 16. A test that always used 16 would let a hardcoded 16 slip through.
+  const song = (n, over = {}) => ({ ref: 'node/' + n, url: 'https://makinitmag.com/node/' + n,
+    title: 'Record ' + n, artist: 'Artist ' + n, playUrl: 'https://cdn.makinitmag.com/' + n + '.mp3',
+    ask: 'Not mixed yet — how are the drums?', ...over });
+  const today = require('./server')._etDay();
+  // A drop must be tagged into a series or its points never reach the $500 board.
+  const serId = 'ser_daily_test';
+  await dDb.run("INSERT INTO series (id, title, status, created_at) VALUES (?,?,'active',?)", [serId, 'Daily Test Series', Date.now()]);
+
+  const dBad = await call('/api/ingest/daily', { day: today, songs: [song(1)] }, 'POST', { 'X-Ingest-Token': 'wrong' });
+  ok('daily push rejects a bad token', dBad.status === 401, 'got ' + dBad.status);
+  const dNoSongs = await call('/api/ingest/daily', { day: today, songs: [] }, 'POST', DTOK);
+  ok('daily push needs songs', dNoSongs.status === 400, 'got ' + dNoSongs.status);
+  const dTooMany = await call('/api/ingest/daily', { day: today, songs: Array.from({ length: 25 }, (_, i) => song(i)) }, 'POST', DTOK);
+  ok('daily push caps the batch size', dTooMany.status === 400, 'got ' + dTooMany.status);
+  const dFarDay = await call('/api/ingest/daily', { day: '2031-01-01', songs: [song(1)] }, 'POST', DTOK);
+  ok('daily push refuses a day far from today (typo guard)', dFarDay.status === 400, 'got ' + dFarDay.status);
+
+  // All-or-nothing: one bad row rejects the batch and creates NOTHING.
+  const beforeBad = (await dDb.get("SELECT COUNT(*) AS c FROM sessions WHERE mode = 'async'", [])).c;
+  const dNoTitle = await call('/api/ingest/daily', { day: today, songs: [song(1), { playUrl: 'https://x/y.mp3' }] }, 'POST', DTOK);
+  ok('a row with no title rejects the whole batch', dNoTitle.status === 400 && dNoTitle.d.rejected[0].index === 1, JSON.stringify(dNoTitle.d));
+  const dNoLink = await call('/api/ingest/daily', { day: today, songs: [song(1), { title: 'No link' }] }, 'POST', DTOK);
+  ok('a row with no play link rejects the batch (unratable for 21h)', dNoLink.status === 400 && dNoLink.d.rejected[0].field === 'playUrl', JSON.stringify(dNoLink.d));
+  const dJsUrl = await call('/api/ingest/daily', { day: today, songs: [song(1, { playUrl: 'javascript:alert(1)' })] }, 'POST', DTOK);
+  ok('a non-http play link is refused', dJsUrl.status === 400, JSON.stringify(dJsUrl.d));
+  const dDupRef = await call('/api/ingest/daily', { day: today, songs: [song(1), song(1)] }, 'POST', DTOK);
+  ok('a duplicate ref inside one batch is refused', dDupRef.status === 400, JSON.stringify(dDupRef.d));
+  const afterBad = (await dDb.get("SELECT COUNT(*) AS c FROM sessions WHERE mode = 'async'", [])).c;
+  ok('a rejected batch creates ZERO rows', Number(beforeBad) === Number(afterBad), `${beforeBad} -> ${afterBad}`);
+
+  // Happy path: a 5-record day (not 16).
+  const dOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
+    songs: [song(1), song(2), song(3, { email: 'not-an-email' }), song(4), song(5)] }, 'POST', DTOK);
+  ok('daily push creates the day', dOk.status === 200 && dOk.d.rounds === 5, JSON.stringify(dOk.d));
+  const DROP = dOk.d.sessionId;
+  const dSess = await dDb.get('SELECT * FROM sessions WHERE id = ?', [DROP]);
+  ok('the day is mode=async, status=upcoming, async_state=scheduled',
+    dSess.mode === 'async' && dSess.status === 'upcoming' && dSess.async_state === 'scheduled', JSON.stringify(dSess.mode + '/' + dSess.status + '/' + dSess.async_state));
+  ok('the day is tagged into a series (else its points reach no board)', dSess.series_id === serId);
+  ok('owner_uid is NULL so only a platform admin can touch it (the batch carries PII)', dSess.owner_uid == null);
+  const dRounds = await dDb.all('SELECT * FROM rounds WHERE session_id = ? ORDER BY idx', [DROP]);
+  ok('every record is pending until the clock opens the day', dRounds.every(r => r.status === 'pending'));
+  ok('idx is assigned at INSERT, 1..n in batch order', dRounds.map(r => r.idx).join() === '1,2,3,4,5', dRounds.map(r => r.idx).join());
+  ok('the play link is stored', dRounds[0].play_url === 'https://cdn.makinitmag.com/1.mp3');
+  ok("the artist's ask is stored (it drives the comment prompt and the host reads it on air)",
+    /how are the drums/.test(dRounds[0].artist_note || ''));
+  ok('the Drupal ref and deep link ride along', dRounds[0].ingest_ref === 'node/1' && /makinitmag\.com\/node\/1/.test(dRounds[0].ingest_url || ''));
+  ok('an unusable email nulls out without failing the row', dRounds[2].artist_email == null);
+  ok('and is reported as a warning so Drupal can flag it', (dOk.d.warnings || []).some(w => w.index === 2 && w.field === 'email'), JSON.stringify(dOk.d.warnings));
+  ok('the response reflects NO artist contact back out', !/@/.test(JSON.stringify(dOk.d)), JSON.stringify(dOk.d));
+
+  // Re-push while cold: REPLACE, never duplicate.
+  const dRe = await call('/api/ingest/daily', { day: today, seriesId: serId, songs: [song(9), song(8), song(7)] }, 'POST', DTOK);
+  ok('a re-push of the same cold day replaces it', dRe.status === 200 && dRe.d.replaced === true && dRe.d.sessionId === DROP, JSON.stringify(dRe.d));
+  const dRe2 = await dDb.all('SELECT idx, song_title FROM rounds WHERE session_id = ? ORDER BY idx', [DROP]);
+  ok('the replaced day has 3 records, not 8', dRe2.length === 3, JSON.stringify(dRe2.map(r => r.song_title)));
+  ok('and is renumbered 1..3', dRe2.map(r => r.idx).join() === '1,2,3');
+
+  // The global staging slot belongs to the live show and must not be clobbered by a batch.
+  const stagedAfter = await dDb.get("SELECT v FROM settings WHERE k = 'ingest_latest'", []);
+  ok('a daily batch never touches the live show staging slot', stagedAfter && !/Record 9/.test(stagedAfter.v), (stagedAfter || {}).v);
+
+  console.log('\n— A&R Daily: the drop is fenced off from every live-show control —');
+  // Each of these would act on ONE arbitrary record of a day that has many open at once.
+  const dAdmin = BOOTH;   // platform admin: owner_uid is NULL on a drop, so only admin can touch it
+  const anyRound = dRe2[0] && (await dDb.get('SELECT id FROM rounds WHERE session_id = ? LIMIT 1', [DROP])).id;
+  for (const [route, body] of [
+    ['/api/admin/round/open', { sessionId: DROP, roundId: anyRound }],
+    ['/api/admin/round/reopen', { sessionId: DROP, roundId: anyRound }],
+    ['/api/admin/round/start-voting', { sessionId: DROP, roundId: anyRound }],
+    ['/api/admin/round/unopen', { sessionId: DROP, roundId: anyRound }],
+    ['/api/admin/round/close', { sessionId: DROP, roundId: anyRound }],
+    ['/api/admin/round/extend', { sessionId: DROP, roundId: anyRound, seconds: 30 }],
+    ['/api/admin/round/ratify', { sessionId: DROP, roundId: anyRound }],
+  ]) {
+    const r = await call(route, body, 'POST', dAdmin);
+    ok(`${route} refuses a drop (409)`, r.status === 409, `got ${r.status} ${JSON.stringify(r.d)}`);
+  }
+  const dAdd = await call('/api/admin/round', { sessionId: DROP, song_title: 'Sneaky' }, 'POST', dAdmin);
+  ok('a record cannot be hand-added to a drop', dAdd.status === 409, 'got ' + dAdd.status);
+  const dAdv = await call('/api/admin/advance', { sessionId: DROP }, 'POST', dAdmin);
+  ok('Advance does nothing on a drop (it runs on the clock)', dAdv.status === 400 && /clock/i.test(JSON.stringify(dAdv.d)), JSON.stringify(dAdv.d));
+
+  // THE LANDMINE: a stray /review push must not delete a record out of a running day.
+  await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', ingest_auto = 1 WHERE id = ?", [DROP]);
+  await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [DROP]);
+  const beforeStray = (await dDb.get('SELECT COUNT(*) AS c FROM rounds WHERE session_id = ?', [DROP])).c;
+  const stray = await call('/api/ingest/submission', { title: 'Stray Push', artist: 'Nobody' }, 'POST', DTOK);
+  const afterStray = (await dDb.get('SELECT COUNT(*) AS c FROM rounds WHERE session_id = ?', [DROP])).c;
+  ok('a stray /review push does not touch a running drop', Number(beforeStray) === Number(afterStray), `${beforeStray} -> ${afterStray}`);
+  ok('and the drop is not counted as an auto-fill target', !/"autoRooms":[1-9]/.test(JSON.stringify(stray.d)) || Number(beforeStray) === Number(afterStray));
+
+  // The overlay would publish one record's running tally on a PUBLIC surface — a direct
+  // seal violation, since the room's average is what every A&R is still predicting.
+  const ovr = await fetch(base + '/api/overlay/state?s=' + DROP).then(r => r.json());
+  ok('the overlay shows no current record for a drop (seal)', ovr.current === null, JSON.stringify(ovr.current));
+  ok('the overlay shows no result for a drop either', ovr.result === null, JSON.stringify(ovr.result));
+  ok('the overlay still carries a leaderboard', Array.isArray(ovr.leaderboard));
+
+  // A drop is status='live' all day; without the mode filter it would win the homepage's
+  // ORDER BY and the weekly show would silently vanish.
+  const homeD = await fetch(base + '/api/home').then(r => r.json());
+  ok('the homepage carries the drop under its own key', homeD.daily && homeD.daily.id === DROP, JSON.stringify(homeD.daily));
+  ok('the drop reports its ACTUAL record count, not 16', homeD.daily.songs === 3, JSON.stringify(homeD.daily));
+  ok('the drop never shadows the live show on the homepage', !homeD.live || homeD.live.id !== DROP, JSON.stringify(homeD.live));
+
+  // Re-push once votes exist must refuse: those points are somebody's score.
+  await dDb.run("UPDATE sessions SET status = 'upcoming', async_state = 'scheduled' WHERE id = ?", [DROP]);
+  const pRow = await dDb.get('SELECT id FROM participants LIMIT 1', []);
+  await dDb.run('INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at) VALUES (?,?,?,?,?,?)',
+    ['v_drop_test', anyRound, pRow.id, 7, 6.5, Date.now()]);
+  const dHot = await call('/api/ingest/daily', { day: today, seriesId: serId, songs: [song(11)] }, 'POST', DTOK);
+  ok('a re-push is refused once anyone has voted', dHot.status === 409, JSON.stringify(dHot.d));
+  await dDb.run("DELETE FROM votes WHERE id = 'v_drop_test'", []);
+
+  // The escape hatch: soft-delete the botched day, push it again.
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), DROP]);
+  const dAgain = await call('/api/ingest/daily', { day: today, seriesId: serId, songs: [song(21), song(22), song(23), song(24)] }, 'POST', DTOK);
+  ok('soft-deleting a botched day frees it for a fresh push', dAgain.status === 200 && dAgain.d.sessionId !== DROP, JSON.stringify(dAgain.d));
+  ok('and a 4-record day is as valid as any other', dAgain.d.rounds === 4, JSON.stringify(dAgain.d));
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), dAgain.d.sessionId]);
+
+  console.log('\n— A&R Daily: playing the day —');
+  // A fresh 4-record day, opened the way the lifecycle cron will open it.
+  const pOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
+    songs: [song(31), song(32), song(33), song(34)] }, 'POST', DTOK);
+  const PDROP = pOk.d.sessionId;
+  await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ? WHERE id = ?", [Date.now() - 1000, PDROP]);
+  await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [PDROP]);
+
+  const dJoin = async (email, name) => {
+    const rq = await call('/api/join/request', { sessionId: PDROP, email });
+    const vr = await call('/api/join/verify', { sessionId: PDROP, email, code: rq.d.devCode, name });
+    return vr.d.token;
+  };
+  const dt1 = await dJoin('daily1@test.com', 'Dana');
+  const dt2 = await dJoin('daily2@test.com', 'Rio');
+  const DH1 = { 'X-Player-Token': dt1 }, DH2 = { 'X-Player-Token': dt2 };
+
+  const dState = (await call('/api/me/state', null, 'GET', DH1)).d;
+  ok('the daily surface reports mode=async', dState.mode === 'async', JSON.stringify(dState.mode));
+  ok('phase is queue with records left', dState.phase === 'queue', dState.phase);
+  ok('the whole day ships at once (no single active round)', dState.queue.length === 4, JSON.stringify(dState.queue.length));
+  ok('progress counts against the ACTUAL day size', dState.progress.total === 4 && dState.progress.voted === 0, JSON.stringify(dState.progress));
+  ok('each record carries its play link and the artist ask',
+    dState.queue.every(q => q.play_url && q.artist_note), JSON.stringify(dState.queue[0]));
+  // THE SEAL: no room average, no split, and no PER-RECORD vote counts (a count across a
+  // 21-hour window is a popularity signal, which is direction-adjacent).
+  const dJson = JSON.stringify(dState);
+  ok('the daily payload leaks no room_average', !/room_average/.test(dJson));
+  ok('the daily payload leaks no split', !/split/.test(dJson));
+  ok('the daily payload carries NO per-record vote counts', !dState.queue.some(q => 'votes' in q || 'count' in q), dJson.slice(0, 200));
+  ok('tiers are server-resolved epochs, not client maths', Array.isArray(dState.async.tiers) && dState.async.tiers[0].points === 100);
+
+  // Two A&Rs get different running orders; the same A&R gets the same one every time.
+  const dState2 = (await call('/api/me/state', null, 'GET', DH2)).d;
+  const walkA = dState.queue.map(q => q.id).join(), walkB = dState2.queue.map(q => q.id).join();
+  const dStateAgain = (await call('/api/me/state', null, 'GET', DH1)).d;
+  ok('the same A&R gets a stable order across requests (resume works)', dStateAgain.queue.map(q => q.id).join() === walkA);
+  ok('a different A&R walks a different order', walkA !== walkB, walkA + ' vs ' + walkB);
+
+  // The vote path: explicit roundId, scoped to the caller's own day.
+  const noId = await call('/api/vote', { taste: 7, predict: 6.5 }, 'POST', DH1);
+  ok('a daily vote with no roundId is refused', noId.status === 400, JSON.stringify(noId.d));
+  const foreign = await call('/api/vote', { roundId: anyRound, taste: 7, predict: 6.5 }, 'POST', DH1);
+  ok("a vote for another day's record is refused", foreign.status === 404, JSON.stringify(foreign.d));
+  const qIds = dState.queue.map(q => q.id);
+  const vOne = await call('/api/vote', { roundId: qIds[0], taste: 7, predict: 6.5 }, 'POST', DH1);
+  ok('a daily vote locks in', vOne.status === 200 && vOne.d.locked === true, JSON.stringify(vOne.d));
+  ok('the vote response carries live progress', vOne.d.progress.voted === 1 && vOne.d.progress.total === 4, JSON.stringify(vOne.d.progress));
+  ok('no bonus before the day is finished', vOne.d.bonus == null, JSON.stringify(vOne.d.bonus));
+  const vDup = await call('/api/vote', { roundId: qIds[0], taste: 3, predict: 3 }, 'POST', DH1);
+  ok('a record can only be rated once', vDup.status === 400, JSON.stringify(vDup.d));
+
+  // Finish the day -> the completion bonus.
+  for (const rid of qIds.slice(1)) await call('/api/vote', { roundId: rid, taste: 6, predict: 6.0 }, 'POST', DH1);
+  const bonusRows = await dDb.all("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [PDROP + ':%']);
+  ok('finishing the day pays exactly ONE completion bonus', bonusRows.length === 1, JSON.stringify(bonusRows));
+  ok('the bonus is tagged into the series so it reaches the $500 board', bonusRows[0].series_id === serId);
+  ok('milestone is a literal 1, never the tier (two racers must collide, not both pay)', Number(bonusRows[0].milestone) === 1);
+  const doneState = (await call('/api/me/state', null, 'GET', DH1)).d;
+  ok('phase flips to done when the day is finished', doneState.phase === 'done', doneState.phase);
+  ok('the earned bonus is reported back', doneState.progress.earned === Number(bonusRows[0].points), JSON.stringify(doneState.progress));
+
+  // Idempotency: a sweep must not pay twice.
+  const dSessRow = await dDb.get('SELECT * FROM sessions WHERE id = ?', [PDROP]);
+  const srv = require('./server');
+  const paidAgain = await dDb.all("SELECT COUNT(*) AS c FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [PDROP + ':%']);
+  ok('the bonus ledger still holds exactly one row after a re-read', Number(paidAgain[0].c) === 1);
+
+  // A partial day earns nothing.
+  await call('/api/vote', { roundId: qIds[0], taste: 5, predict: 5.0 }, 'POST', DH2);
+  const partial = await dDb.all("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid = ?",
+    [PDROP + ':' + (await dDb.get('SELECT user_id FROM participants WHERE session_id = ? AND email = ?', [PDROP, 'daily2@test.com'])).user_id]);
+  ok('an unfinished day pays no completion bonus', partial.length === 0, JSON.stringify(partial));
+
+  // Once the window closes the day is SEALED — rated, but results are not out until noon.
+  await dDb.run('UPDATE sessions SET window_closes_at = ? WHERE id = ?', [Date.now() - 1000, PDROP]);
+  const sealed = (await call('/api/me/state', null, 'GET', DH2)).d;
+  ok('after the close the day is sealed, not revealed', sealed.phase === 'sealed', sealed.phase);
+  ok('a sealed day still leaks no room average', !/room_average/.test(JSON.stringify(sealed)));
+  const dLateVote = await call('/api/vote', { roundId: qIds[1], taste: 4, predict: 4.0 }, 'POST', DH2);
+  ok('the closed window refuses a late vote', dLateVote.status === 400 && /time is up/i.test(JSON.stringify(dLateVote.d)), JSON.stringify(dLateVote.d));
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), PDROP]);
+
+  console.log('\n— A&R Daily: the lifecycle runs on the clock —');
+  // Explicit window overrides so real-time votes land inside it — /api/vote checks the
+  // wall clock, while the lifecycle takes an injected `at`. (The overrides exist for exactly
+  // this: a test must not have to wait for noon.)
+  const lOpens = Date.now() - 1000, lCloses = Date.now() + 3600000;
+  const lOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
+    opensAt: lOpens, closesAt: lCloses, resultsAt: lCloses + 10800000,
+    songs: [song(41), song(42), song(43)] }, 'POST', DTOK);
+  const LDROP = lOk.d.sessionId;
+  const tick = (at) => call('/api/admin/daily/tick', at != null ? { at } : {}, 'POST', BOOTH);
+  const lSess = () => dDb.get('SELECT * FROM sessions WHERE id = ?', [LDROP]);
+  const lRounds = () => dDb.all('SELECT status FROM rounds WHERE session_id = ?', [LDROP]);
+
+  const tEarly = await tick(lOpens - 86400000);
+  ok('a tick before the open does nothing', tEarly.d.opened === 0, JSON.stringify(tEarly.d));
+  ok('the day is still scheduled', (await lSess()).async_state === 'scheduled');
+
+  const opensAt = Number((await lSess()).window_opens_at);
+  const tOpen = await tick(opensAt + 1000);
+  ok('the open tick opens the day', tOpen.d.opened === 1, JSON.stringify(tOpen.d));
+  const dOpened = await lSess();
+  ok('the day flips to live/open', dOpened.status === 'live' && dOpened.async_state === 'open', dOpened.status + '/' + dOpened.async_state);
+  ok('EVERY record opens at once — there is no single active round', (await lRounds()).every(r => r.status === 'voting'));
+  const tOpenAgain = await tick(opensAt + 2000);
+  ok('a second open tick is a no-op (the claim is the lock)', tOpenAgain.d.opened === 0, JSON.stringify(tOpenAgain.d));
+
+  // Someone plays the whole day, so the tally has real votes to score.
+  const lRq = await call('/api/join/request', { sessionId: LDROP, email: 'life@test.com' });
+  const lVer = await call('/api/join/verify', { sessionId: LDROP, email: 'life@test.com', code: lRq.d.devCode, name: 'Lex' });
+  const LH = { 'X-Player-Token': lVer.d.token };
+  const lQ = (await call('/api/me/state', null, 'GET', LH)).d.queue;
+  for (const q of lQ) await call('/api/vote', { roundId: q.id, taste: 7, predict: 7.0 }, 'POST', LH);
+
+  const closesAt = Number((await lSess()).window_closes_at);
+  const tClose = await tick(closesAt + 1000);
+  ok('the close tick closes and tallies the whole day', tClose.d.closed === 1 && tClose.d.ratified === 3, JSON.stringify(tClose.d));
+  ok('every record is ratified', (await lRounds()).every(r => r.status === 'ratified'));
+  ok('the day reaches async_state=ratified', (await lSess()).async_state === 'ratified');
+  const scored = await dDb.all('SELECT points, room_average FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [LDROP]);
+  ok('the tally scored every vote', scored.length === 3 && scored.every(v => v.points != null), JSON.stringify(scored));
+
+  const tCloseAgain = await tick(closesAt + 2000);
+  ok('a second close tick does not re-tally (double-bumped points would be permanent)',
+    tCloseAgain.d.ratified === 0 && tCloseAgain.d.closed === 0, JSON.stringify(tCloseAgain.d));
+  const lifetimeAfter = await dDb.get('SELECT lifetime_points FROM users WHERE email = ?', ['life@test.com']);
+  const tCloseThird = await tick(closesAt + 3000);
+  const lifetimeAfter2 = await dDb.get('SELECT lifetime_points FROM users WHERE email = ?', ['life@test.com']);
+  ok('and lifetime points do not move on a repeat tick',
+    lifetimeAfter.lifetime_points === lifetimeAfter2.lifetime_points, `${lifetimeAfter.lifetime_points} -> ${lifetimeAfter2.lifetime_points}`);
+
+  // The cron door itself: locked when CRON_SECRET is unset (the suite runs without it).
+  const cronNo = await fetch(base + '/api/cron/daily').then(r => ({ s: r.status }));
+  ok('the daily cron is 503 until CRON_SECRET is configured', cronNo.s === 503, 'got ' + cronNo.s);
+  const tickAnon = await call('/api/admin/daily/tick', {}, 'POST', {});
+  ok('the manual tick is platform-admin only', tickAnon.status === 401, 'got ' + tickAnon.status);
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), LDROP]);
+
+  console.log('\n— eye for talent: scouting points —');
+  // The curve is the dial that decides whether scouting is a real second lane or a garnish.
+  // Context for the numbers: a month of A&R Daily is ~15,000 (6-record days) to ~45,000
+  // (full 16-record days, sharp) points, so five 7.0 records ≈ 2,500 ≈ 6-15% of a month.
+  ok('a record at the floor earns nothing', srv._scoutPointsFor(5.0) === 0);
+  ok('a weak record earns nothing (zero, never negative — or nobody refers anyone)', srv._scoutPointsFor(3.0) === 0);
+  ok('scouting scales with the score, not with volume', srv._scoutPointsFor(7.0) === 500 && srv._scoutPointsFor(6.0) === 250,
+    srv._scoutPointsFor(7.0) + '/' + srv._scoutPointsFor(6.0));
+  ok('a great find pays a lot more than a mediocre one', srv._scoutPointsFor(8.5) > 3 * srv._scoutPointsFor(5.5));
+
+  // End-to-end: a scout who is linked earns when their record tallies well.
+  const scoutEmail = 'scout@test.com';
+  const scRq = await call('/api/auth/request', { email: scoutEmail });
+  const scVer = await call('/api/auth/verify', { email: scoutEmail, code: scRq.d.devCode });
+  const SCOUT_UID = scVer.d.uid;
+  const sOpens = Date.now() - 1000, sCloses = Date.now() + 3600000;
+  const scOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
+    opensAt: sOpens, closesAt: sCloses, resultsAt: sCloses + 1000,
+    songs: [song(51, { scout: { uid: 'drupal-777', email: scoutEmail } }),
+            song(52, { scout: { uid: 'drupal-999', email: 'nobody@nowhere.test' } })] }, 'POST', DTOK);
+  const SDROP = scOk.d.sessionId;
+  ok('the scout ref is stored on the record', (await dDb.get('SELECT scout_drupal_uid FROM rounds WHERE session_id = ? AND idx = 1', [SDROP])).scout_drupal_uid === 'drupal-777');
+  ok('an UNMATCHED scout ref is still stored (Drupal reports off it and must not depend on us)',
+    (await dDb.get('SELECT scout_drupal_uid FROM rounds WHERE session_id = ? AND idx = 2', [SDROP])).scout_drupal_uid === 'drupal-999');
+  ok('the first email match links the two accounts permanently',
+    (await dDb.get('SELECT drupal_uid FROM users WHERE uid = ?', [SCOUT_UID])).drupal_uid === 'drupal-777');
+
+  await call('/api/admin/daily/tick', { at: sOpens + 1000 }, 'POST', BOOTH);
+  const scJoin = async (email, name) => {
+    const rq = await call('/api/join/request', { sessionId: SDROP, email });
+    const vr = await call('/api/join/verify', { sessionId: SDROP, email, code: rq.d.devCode, name });
+    return { 'X-Player-Token': vr.d.token };
+  };
+  const SH1 = await scJoin('sv1@test.com', 'Voter One');
+  const sQ = (await call('/api/me/state', null, 'GET', SH1)).d.queue;
+  for (const q of sQ) await call('/api/vote', { roundId: q.id, taste: 8, predict: 8.0 }, 'POST', SH1);
+  await call('/api/admin/daily/tick', { at: sCloses + 1000 }, 'POST', BOOTH);
+  const scEvents = await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND user_id = ?", [SCOUT_UID]);
+  ok('a linked scout earns once their record tallies', scEvents.length === 1, JSON.stringify(scEvents));
+  ok('and the award scales with the room average', Number(scEvents[0].points) === srv._scoutPointsFor(8.0), JSON.stringify(scEvents[0]));
+  ok('the scout award reaches the $500 board (series-tagged)', scEvents[0].series_id === serId);
+  const scUnlinked = await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND source_uid IN (SELECT id FROM rounds WHERE session_id = ? AND idx = 2)", [SDROP]);
+  ok('an unlinked scout earns nothing until the accounts match', scUnlinked.length === 0, JSON.stringify(scUnlinked));
+  await call('/api/admin/daily/tick', { at: sCloses + 5000 }, 'POST', BOOTH);
+  ok('a repeat tally never pays the scout twice',
+    (await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND user_id = ?", [SCOUT_UID])).length === 1);
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), SDROP]);
+
+  console.log('\n— live shows as bonus-point events —');
+  // Without this the weekly broadcast is decorative on the unified board: a month of daily
+  // play dwarfs a dozen live records.
+  const lbCs = await call('/api/session', { name: 'Bonus Night', seriesId: serId }, 'POST', BOOTH);
+  const LBSID = lbCs.d.sessionId, LBH = { 'X-Admin-Token': lbCs.d.adminToken };
+  await dDb.run('UPDATE sessions SET live_bonus = 300, series_id = ? WHERE id = ?', [serId, LBSID]);
+  const lbJoin = async (email, name) => {
+    const rq = await call('/api/join/request', { sessionId: LBSID, email });
+    const vr = await call('/api/join/verify', { sessionId: LBSID, email, code: rq.d.devCode, name });
+    return { 'X-Player-Token': vr.d.token };
+  };
+  const LB1 = await lbJoin('lb1@test.com', 'Full House'), LB2 = await lbJoin('lb2@test.com', 'Half In');
+  for (const t of [1, 2]) {
+    await call('/api/admin/round', { sessionId: LBSID, song_title: 'Bonus ' + t }, 'POST', LBH);
+    await startVoting(LBSID, LBH);
+    const cur = (await call('/api/admin/state?sessionId=' + LBSID, null, 'GET', LBH)).d.activeRound;
+    await call('/api/vote', { taste: 7, predict: 7 }, 'POST', LB1);
+    if (t === 1) await call('/api/vote', { taste: 6, predict: 7 }, 'POST', LB2);   // LB2 skips round 2
+    await call('/api/admin/round/ratify', { sessionId: LBSID, roundId: cur.id }, 'POST', LBH);
+  }
+  const lbEnd = await call('/api/admin/session/end', { sessionId: LBSID }, 'POST', LBH);
+  ok('ending the show pays the live completion bonus', lbEnd.d.liveBonusPaid === 1, JSON.stringify(lbEnd.d));
+  const lbRows = await dDb.all("SELECT * FROM point_events WHERE reason = 'live_complete' AND source_uid LIKE ?", [LBSID + ':%']);
+  ok('only the A&R who rated EVERY record is paid', lbRows.length === 1 && Number(lbRows[0].points) === 300, JSON.stringify(lbRows));
+  ok('the live bonus is series-tagged so it lands on the same board as daily play', lbRows[0].series_id === serId);
+  await call('/api/admin/session/end', { sessionId: LBSID }, 'POST', LBH);
+  ok('ending twice does not pay twice',
+    (await dDb.all("SELECT * FROM point_events WHERE reason = 'live_complete' AND source_uid LIKE ?", [LBSID + ':%'])).length === 1);
+  // A show with no bonus set is unaffected — every existing session keeps today's behaviour.
+  const lbNone = await call('/api/session', { name: 'No Bonus Night' }, 'POST', BOOTH);
+  const lbNoneEnd = await call('/api/admin/session/end', { sessionId: lbNone.d.sessionId }, 'POST', { 'X-Admin-Token': lbNone.d.adminToken });
+  ok('a show with no live_bonus pays nothing', lbNoneEnd.d.liveBonusPaid === 0, JSON.stringify(lbNoneEnd.d));
+
   console.log('\n— shareable report graphics (PNG endpoints) —');
   const img = async (path, headers = {}) => { const r = await fetch(base + path, { headers }); return { status: r.status, type: r.headers.get('content-type') || '' }; };
   const isPng = (x) => x.status === 200 && /image\/png/.test(x.type);
@@ -1727,6 +2075,80 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('EST: 10:29 PM ET sends', server._withinSmsWindow(Date.parse('2026-01-15T03:29:00Z')) === true);
   ok('EST: 10:30 PM ET holds', server._withinSmsWindow(Date.parse('2026-01-15T03:30:00Z')) === false);
   ok('EST: 11 PM ET (show wrap) holds', server._withinSmsWindow(Date.parse('2026-01-15T04:00:00Z')) === false);
+
+  console.log('\n— A&R Daily: ET day arithmetic across DST —');
+  // The drop's schedule is WALL CLOCK: 12PM ET open, 9AM ET close, 12PM ET publish. The
+  // window crosses the DST switch twice a year, so the rule that has to hold is "noon is
+  // noon" — and the DURATION is what flexes (20h in spring, 22h in fall), not the times.
+  // Deriving the close as open+21h would give an 8AM close in March and a 10AM close in
+  // November, which is the bug this helper exists to prevent.
+  const etWall = (ts) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
+    hour: 'numeric', minute: '2-digit', hour12: false }).format(new Date(ts));
+  const wallCases = [
+    ['2026-03-08', 12, '12:00', 'spring-forward day, noon'],
+    ['2026-03-08',  9, '09:00', 'spring-forward day, 9AM'],
+    ['2026-11-01', 12, '12:00', 'fall-back day, noon'],
+    ['2026-11-01',  9, '09:00', 'fall-back day, 9AM'],
+    ['2026-07-04', 12, '12:00', 'EDT, noon'],
+    ['2026-01-15', 12, '12:00', 'EST, noon'],
+  ];
+  for (const [day, hh, want, label] of wallCases) {
+    const got = etWall(server._etEpoch(day, hh));
+    ok(`etEpoch: ${label} -> ${want} ET`, got === want, `got ${got}`);
+  }
+  // The window length flexing is the CORRECT behaviour, not a defect — assert it so nobody
+  // "fixes" it into a fixed 21 hours.
+  const spanH = (d) => (server._etEpoch(server._etNextDay(d), 9) - server._etEpoch(d, 12)) / 3600000;
+  ok('window is 21h on an ordinary day', spanH('2026-07-04') === 21, `got ${spanH('2026-07-04')}`);
+  ok('window is 20h across spring-forward (an hour is lost)', spanH('2026-03-07') === 20, `got ${spanH('2026-03-07')}`);
+  ok('window is 22h across fall-back (an hour is gained)', spanH('2026-10-31') === 22, `got ${spanH('2026-10-31')}`);
+  ok('etNextDay crosses a month boundary', server._etNextDay('2026-02-28') === '2026-03-01');
+  ok('etNextDay crosses a year boundary', server._etNextDay('2026-12-31') === '2027-01-01');
+  ok('etNextDay crosses spring-forward', server._etNextDay('2026-03-07') === '2026-03-08');
+  ok('etNextDay crosses fall-back', server._etNextDay('2026-10-31') === '2026-11-01');
+  ok('etEpoch rejects a malformed day', server._etEpoch('nope', 12) === null);
+  ok('etNextDay rejects a malformed day', server._etNextDay('nope') === null);
+
+  console.log('\n— A&R Daily: completion-bonus tiers —');
+  // Anchored to the drop day's absolute epochs, NOT minutes-of-day. The window crosses
+  // midnight, so someone finishing at 2AM is 120 minutes into the ET clock — a
+  // minutes-of-day comparison would read that as "before 3PM" and pay 100 instead of 25.
+  const bSess = { drop_day: '2026-07-04' };
+  const at = (day, hh, mm = 0) => server._etEpoch(day, hh, mm);
+  ok('finish at 12:01 PM -> 100', server._completionBonusPoints(bSess, at('2026-07-04', 12, 1)) === 100);
+  ok('finish at 2:59 PM  -> 100', server._completionBonusPoints(bSess, at('2026-07-04', 14, 59)) === 100);
+  ok('finish at 3:00 PM  -> 75',  server._completionBonusPoints(bSess, at('2026-07-04', 15)) === 75);
+  ok('finish at 5:59 PM  -> 75',  server._completionBonusPoints(bSess, at('2026-07-04', 17, 59)) === 75);
+  ok('finish at 6:00 PM  -> 50',  server._completionBonusPoints(bSess, at('2026-07-04', 18)) === 50);
+  ok('finish at 8:59 PM  -> 50',  server._completionBonusPoints(bSess, at('2026-07-04', 20, 59)) === 50);
+  ok('finish at 9:00 PM  -> 25',  server._completionBonusPoints(bSess, at('2026-07-04', 21)) === 25);
+  ok('finish at 2:00 AM next day -> 25 (NOT 100 — the window crosses midnight)',
+    server._completionBonusPoints(bSess, at('2026-07-05', 2)) === 25);
+  ok('finish at 8:59 AM next day -> 25', server._completionBonusPoints(bSess, at('2026-07-05', 8, 59)) === 25);
+
+  console.log('\n— A&R Daily: the per-A&R queue order —');
+  // Deterministic and storage-free: the same A&R gets the same order on any device forever,
+  // two A&Rs get different orders, and every record appears exactly once. If this stops
+  // being stable, resume lands people on the wrong record.
+  const qRounds = Array.from({ length: 12 }, (_, i) => ({ id: 'r' + i, idx: i + 1 }));
+  const ordA1 = server._asyncQueueOrder('uidA', 'sess1', qRounds).map(r => r.id);
+  const ordA2 = server._asyncQueueOrder('uidA', 'sess1', qRounds).map(r => r.id);
+  const ordB = server._asyncQueueOrder('uidB', 'sess1', qRounds).map(r => r.id);
+  const ordA3 = server._asyncQueueOrder('uidA', 'sess2', qRounds).map(r => r.id);
+  ok('same A&R, same room -> identical order (resume works)', ordA1.join() === ordA2.join());
+  ok('different A&R -> different order (drop-off spreads across the day)', ordA1.join() !== ordB.join());
+  ok('same A&R, different day -> different order', ordA1.join() !== ordA3.join());
+  ok('every record appears exactly once', new Set(ordA1).size === 12 && ordA1.length === 12);
+  // Input order must not matter — the canonical sort is what makes it reproducible when the
+  // DB hands rows back in a different sequence.
+  const shuffledIn = qRounds.slice().reverse();
+  ok('order is independent of the row order the DB returned',
+    server._asyncQueueOrder('uidA', 'sess1', shuffledIn).map(r => r.id).join() === ordA1.join());
+  ok('a one-record day is returned as-is', server._asyncQueueOrder('u', 's', [{ id: 'x', idx: 1 }]).length === 1);
+  ok('an empty day does not throw', server._asyncQueueOrder('u', 's', []).length === 0);
+  // A 4-record day is as valid as a 16-record one — the day size is variable by design.
+  ok('a 4-record day shuffles', new Set(server._asyncQueueOrder('u', 's',
+    qRounds.slice(0, 4)).map(r => r.id)).size === 4);
 
   console.log('\n— artist email: carries the report + replay link, and NO pricing —');
   // The operator's explicit call: the report card goes out free to drive visibility, and the
