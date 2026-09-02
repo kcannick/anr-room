@@ -1734,7 +1734,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const lOpens = Date.now() - 1000, lCloses = Date.now() + 3600000;
   const lOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
     opensAt: lOpens, closesAt: lCloses, resultsAt: lCloses + 10800000,
-    songs: [song(41), song(42), song(43)] }, 'POST', DTOK);
+    songs: [song(41, { email: 'artist41@test.com' }), song(42, { email: 'artist42@test.com' }), song(43)] }, 'POST', DTOK);
   const LDROP = lOk.d.sessionId;
   const tick = (at) => call('/api/admin/daily/tick', at != null ? { at } : {}, 'POST', BOOTH);
   const lSess = () => dDb.get('SELECT * FROM sessions WHERE id = ?', [LDROP]);
@@ -1776,6 +1776,127 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const lifetimeAfter2 = await dDb.get('SELECT lifetime_points FROM users WHERE email = ?', ['life@test.com']);
   ok('and lifetime points do not move on a repeat tick',
     lifetimeAfter.lifetime_points === lifetimeAfter2.lifetime_points, `${lifetimeAfter.lifetime_points} -> ${lifetimeAfter2.lifetime_points}`);
+
+  console.log('\n— A&R Daily: the noon publish and the two independent emails —');
+  // Publish is deliberately the LAST transition and it happens at NOON, not at the 9AM
+  // close: status='completed' is what makes playerState's recap branch fire, so flipping
+  // it three hours early would reveal every room average while the day is still sealed.
+  const tBeforeNoon = await tick(closesAt + 4000);
+  ok('a tick before results_at does not publish', tBeforeNoon.d.published === 0, JSON.stringify(tBeforeNoon.d));
+  ok('the day is still sealed, not revealed', (await lSess()).async_state === 'ratified');
+  // (The lifecycle takes an injected `at`; playerState reads the real wall clock, so with a
+  // window that has not yet closed in real time this A&R reads as 'done' rather than
+  // 'sealed'. The assertion that matters either way is that nothing has been revealed.)
+  const sealedState = (await call('/api/me/state', null, 'GET', LH)).d;
+  ok('and the player has NOT been shown results before the publish',
+    sealedState.phase !== 'recap' && !sealedState.recap
+    && !/room_average/.test(JSON.stringify(sealedState)), sealedState.phase);
+
+  // Two more A&Rs with accounts but NO participation in this day: the audience is
+  // unconditional, only the personalised block is conditional.
+  const uidOf = async (email) => (await dDb.get('SELECT uid FROM users WHERE email = ?', [email])).uid;
+  const mkUser = async (email, name) => {
+    const rq = await call('/api/auth/request', { email });
+    await call('/api/auth/verify', { email, code: rq.d.devCode, name });
+    return (await dDb.get('SELECT uid FROM users WHERE email = ?', [email])).uid;
+  };
+  const uidIdle = await mkUser('digest-idle@test.com', 'Idle');
+  const uidOut = await mkUser('digest-out@test.com', 'OptedOut');
+  const uidNever = await mkUser('digest-never@test.com', 'NeverAsked');
+  await dDb.run('UPDATE users SET email_opt_out = 1 WHERE uid = ?', [uidOut]);
+  // digest_daily's catalog default is OFF and STAYS off (028): flipping it turns an opt-in
+  // list into a daily send to the whole base, which is a deliverability decision and belongs
+  // in its own one-line commit after a week on a manual list. So the audience is opt-in, and
+  // uidNever — who was never asked — proves it by getting nothing.
+  const optIn = async (uid) => dDb.run(
+    "INSERT INTO notify_prefs (uid, topic, channel, enabled, source, updated_at) VALUES (?, 'digest_daily', 'email', 1, 'test', ?)"
+    + ' ON CONFLICT (uid, topic, channel) DO UPDATE SET enabled = 1', [uid, Date.now()]);
+  await optIn(await uidOf('life@test.com'));
+  await optIn(uidIdle);
+  await optIn(uidOut);
+
+  const resultsAt = Number((await lSess()).results_at);
+  const tPub = await tick(resultsAt + 1000);
+  ok('the publish tick publishes the day', tPub.d.published === 1, JSON.stringify(tPub.d));
+  const pubbed = await lSess();
+  ok('the day flips to completed/published with a published_at',
+    pubbed.status === 'completed' && pubbed.async_state === 'published' && pubbed.published_at > 0,
+    pubbed.status + '/' + pubbed.async_state);
+
+  // 7a — the A&R digest. This is notifyAudience()'s FIRST production caller, and the
+  // assertion that its {sql, params} fragment really does compose into an INSERT...SELECT.
+  const bcRow = await dDb.get("SELECT * FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [LDROP]);
+  ok('publishing queues exactly one digest broadcast for the day', !!bcRow, JSON.stringify(bcRow));
+  const rcpts = await dDb.all('SELECT * FROM notify_recipients WHERE broadcast_id = ?', [bcRow.id]);
+  const uidPlayed = await uidOf('life@test.com');
+  ok('the A&R who played the day is on the list', rcpts.some(r => r.uid === uidPlayed), JSON.stringify(rcpts.length));
+  ok('so is an A&R who did NOT play — the audience is unconditional, only the block is not',
+    rcpts.some(r => r.uid === uidIdle), JSON.stringify(rcpts.length));
+  ok('email_opt_out is the global kill switch and outranks a topic opt-in',
+    !rcpts.some(r => r.uid === uidOut), JSON.stringify(rcpts.length));
+  ok('and digest_daily stays OPT-IN: someone who never chose gets nothing',
+    !rcpts.some(r => r.uid === uidNever), JSON.stringify(rcpts.length));
+  const rcptCount = rcpts.length;
+  const tPubAgain = await tick(resultsAt + 2000);
+  ok('a second publish tick does not publish again (the claim is the lock)', tPubAgain.d.published === 0, JSON.stringify(tPubAgain.d));
+  const rcpts2 = await dDb.all('SELECT * FROM notify_recipients WHERE broadcast_id = ?', [bcRow.id]);
+  ok('and it does not duplicate a single recipient row', rcpts2.length === rcptCount, rcptCount + ' -> ' + rcpts2.length);
+  const bcCount = await dDb.get("SELECT COUNT(*) AS c FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [LDROP]);
+  ok('nor a second broadcast', Number(bcCount.c) === 1, JSON.stringify(bcCount));
+
+  // The personalised block: exactly one row per record they rated, carrying every column
+  // the scorecard prints. Absent — not empty — for someone who did not play.
+  const partPlayed = await dDb.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [LDROP, 'life@test.com']);
+  const detail = await srv._buildRecap(partPlayed, { detail: true });
+  ok('the digest detail has one row per record they rated', detail.rounds.length === 3, JSON.stringify(detail.rounds.length));
+  ok('and each row carries rating, prediction, average, deviation and points',
+    detail.rounds.every(r => r.taste != null && r.predict != null && r.room_average != null && r.err != null && r.points != null),
+    JSON.stringify(detail.rounds[0]));
+  ok('the emoji/colour key is the STORED votes.tier, not a recomputation',
+    detail.rounds.every(r => ['bullseye', 'sharp', 'close', 'off', 'wayoff'].includes(r.tier)),
+    JSON.stringify(detail.rounds.map(r => r.tier)));
+  ok('the default recap is unchanged for its existing caller (no detail rows)',
+    (await srv._buildRecap(partPlayed)).rounds === undefined);
+
+  // 7b — the artist email is a SEPARATE product on a separate queue. Artists are not
+  // users: they exist only as rounds.artist_email, so they can never be in
+  // notify_recipients (PK is (broadcast_id, uid, channel)) and have no manage link.
+  // The hold is measured from published_at — when the results actually went out — rather
+  // than from the scheduled results_at, so a cron that runs late still leaves the operator a
+  // full hour of rejection window instead of silently having none.
+  await dDb.run("DELETE FROM artist_notices WHERE session_id = ?", [LDROP]);
+  const publishedAt = Number((await lSess()).published_at);
+  await tick(publishedAt + 1000);
+  const notices = await dDb.all('SELECT * FROM artist_notices WHERE session_id = ?', [LDROP]);
+  ok('the artist notices are HELD for an hour after publish — 029 has no unsend, and a cron'
+    + ' has no wrap-up moment where the host sees the comment count', notices.length === 0, JSON.stringify(notices.length));
+  await tick(publishedAt + 61 * 60000);
+  const notices2 = await dDb.all('SELECT * FROM artist_notices WHERE session_id = ?', [LDROP]);
+  ok('past the hold, the artist queue fills from the same helper the host button uses',
+    notices2.length > 0, JSON.stringify(notices2.length));
+  ok('the artist queue is keyed on the round, never on a uid',
+    notices2.every(n => n.round_id && !('uid' in n)), JSON.stringify(Object.keys(notices2[0] || {})));
+
+  // An A&R who is ALSO an artist on the day correctly gets BOTH. Assert it, so nobody
+  // later "fixes" it into a dedupe: they are two different mails about two different things.
+  const bothEmail = (await dDb.get('SELECT artist_email FROM rounds WHERE session_id = ? AND artist_email IS NOT NULL LIMIT 1', [LDROP]) || {}).artist_email;
+  if (bothEmail) {
+    const bothUid = await mkUser(bothEmail, 'Both Hats');
+    await optIn(bothUid);
+    await srv._enqueueDailyDigest(await lSess());
+    const gotBroadcast = await dDb.get('SELECT 1 AS x FROM notify_recipients WHERE broadcast_id = ? AND uid = ?', [bcRow.id, bothUid]);
+    const gotNotice = await dDb.get('SELECT 1 AS x FROM artist_notices WHERE session_id = ? AND dest = ?', [LDROP, bothEmail]);
+    ok('someone who is both an A&R and an artist gets BOTH mails, deliberately',
+      !!gotBroadcast && !!gotNotice, `broadcast=${!!gotBroadcast} notice=${!!gotNotice}`);
+  }
+
+  // And the day now reads as a recap for the player, with the scorecard attached.
+  const recapState = (await call('/api/me/state', null, 'GET', LH)).d;
+  ok('after the publish the player sees the recap', recapState.phase === 'recap', recapState.phase);
+  ok('the scorecard carries the round-by-round breakdown',
+    recapState.recap && recapState.recap.rounds && recapState.recap.rounds.length === 3, JSON.stringify(recapState.recap && recapState.recap.rounds && recapState.recap.rounds.length));
+  ok('and NOW the room average is allowed to exist, because the day is published',
+    recapState.recap.rounds.every(r => r.room_average != null), JSON.stringify(recapState.recap.rounds));
 
   // The cron door itself: locked when CRON_SECRET is unset (the suite runs without it).
   const cronNo = await fetch(base + '/api/cron/daily').then(r => ({ s: r.status }));

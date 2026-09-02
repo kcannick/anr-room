@@ -1028,11 +1028,18 @@ async function sweepCompletionBonuses(session) {
 // would silently produce a half-tallied day and a published-but-wrong leaderboard.
 const DROP_TICK_BUDGET_MS = 22000;   // of the 30s function ceiling
 
+// How long after the noon publish the artist notices are held. 029 made comments ship by
+// DEFAULT with the host rejecting the odd bad one — a model that works because a live show
+// has a wrap-up moment where the send panel prints "N comments about to go out". A cron has
+// no such moment, and there is no unsend. This hour is that checkpoint, restored.
+const ARTIST_NOTICE_DELAY_MIN = 60;
+
 async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null } = {}) {
   const t0 = Date.now();
   const left = () => budgetMs - (Date.now() - t0);
   const at = ts != null ? Number(ts) : now();
-  const out = { opened: 0, closed: 0, ratified: 0, sealed: 0, budgetHit: false };
+  const out = { opened: 0, closed: 0, ratified: 0, sealed: 0, published: 0,
+    digestSent: 0, digestFailed: 0, artistSent: 0, artistFailed: 0, artistSms: 0, budgetHit: false };
 
   const due = await db.all(
     `SELECT * FROM sessions
@@ -1102,8 +1109,128 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
         out.sealed++;
       }
     }
+
+    // ---- publish: ratified -> published, at results_at (noon) ----
+    const cur = await db.get('SELECT * FROM sessions WHERE id = ?', [s.id]);
+    if (cur && cur.async_state === 'ratified' && at >= Number(cur.results_at)) {
+      if (left() < 8000) { out.budgetHit = true; break; }
+      try {
+        const done = await publishDailyDrop(cur, { deadline: t0 + budgetMs });
+        if (done) out.published++;
+      } catch (e) { console.error('[daily] publish failed:', e.message); }
+    }
+
+  }
+
+  // ---- drain: the two fan-outs, in their own pass ----
+  // Deliberately OUTSIDE the state-machine loop above, because a published day has left that
+  // working set for good — that is what keeps the "what is due" probe selective forever. The
+  // queues outlive the transition, so they are drained by looking at the queues themselves.
+  //
+  // A&R digest first (~200ms a send, so 60+ per tick), then the artist reports (~3-6s each
+  // because they render report PNGs, but bounded at one per record). SMS obeys its own ET
+  // window and no-ops outside it. Throughput here is governed by tick COUNT, not tick length
+  // — which is why the cron is */5 and not hourly.
+  if (left() > 4000) {
+    const pubs = await db.all(
+      `SELECT * FROM sessions WHERE mode = 'async' AND async_state = 'published' AND deleted_at IS NULL
+        ORDER BY published_at DESC LIMIT 3`, []);
+    for (const s of pubs) {
+      if (left() < 4000) { out.budgetHit = true; break; }
+      const bc = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [s.id]);
+      if (bc) {
+        try {
+          const d = await drainDailyDigest({ sessionId: s.id, broadcastId: bc.id, limit: 60, deadline: t0 + budgetMs });
+          out.digestSent += d.sent; out.digestFailed += d.failed;
+        } catch (e) { console.error('[daily] digest drain failed:', e.message); }
+      }
+      // 029's reject-by-exception loses its human checkpoint under a cron: comments default
+      // to shared, an async day has no wrap-up moment where the host sees "N comments about
+      // to go out", and there is NO UNSEND. Holding the artist enqueue an hour past publish
+      // gives the operator a real rejection window with the count visible in the console.
+      const holdUntil = Number(s.published_at || 0) + ARTIST_NOTICE_DELAY_MIN * 60000;
+      if (at >= holdUntil && left() > 8000) {
+        try {
+          await enqueueArtistNotices(s.id);
+          const a = await drainArtistEmail({ sessionId: s.id, limit: 4, deadline: t0 + budgetMs });
+          out.artistSent += a.sent; out.artistFailed += a.failed;
+          const sms = await drainArtistSms({ sessionId: s.id, limit: 6 });
+          out.artistSms += sms.sent;
+        } catch (e) { console.error('[daily] artist drain failed:', e.message); }
+      }
+    }
   }
   return out;
+}
+
+// Publish the day: render and host the two shared cards, build the post kit caption, queue
+// the A&R digest, and flip the session to completed/published.
+//
+// The status flip to 'completed' is what makes playerState's recap branch fire — which is
+// why it happens at NOON and not at the 9AM close. Flipping three hours early would reveal
+// every room average while the results are still supposed to be sealed.
+//
+// THE CARDS ARE BEST-EFFORT; THE REVEAL IS NOT.
+//
+// The plan called for skipping the publish entirely when BLOB_READ_WRITE_TOKEN is unset, so
+// a day is never marked published without the Top 8 cards that form every digest's common
+// block. On reflection that trades a small harm for a much larger one: a publish that skips
+// does not retry into existence — it stalls, and every A&R sits on a sealed screen with no
+// results, indefinitely, because of an env var. Results are the thing they are waiting for
+// and the schedule is a promise.
+//
+// So the reveal always happens, and the graphics are attempted per-card with a failure
+// logged and the URL left null. The digest template already drops a missing card, and for
+// anyone who actually played, the substance of that mail is the round-by-round table, not
+// the graphics. The console's daily status surfaces the missing cards so a re-render is a
+// visible piece of work rather than a silent degradation.
+async function publishDailyDrop(session, { deadline = null } = {}) {
+  const sessionId = session.id;
+  // The claim. Vercel can double-invoke a scheduled run, and two publishers would queue two
+  // broadcasts. recap_jobs.claimed_at is the token; a claim older than 10 minutes is treated
+  // as abandoned so a crashed render cannot wedge the day forever.
+  const stale = now() - 10 * 60000;
+  await db.run(
+    'INSERT INTO recap_jobs (session_id, created_at, stage, claimed_at) VALUES (?,?,?,?) ON CONFLICT (session_id) DO NOTHING',
+    [sessionId, now(), 'daily', null]);
+  const claim = await db.run(
+    "UPDATE recap_jobs SET claimed_at = ?, stage = 'daily' WHERE session_id = ? AND (claimed_at IS NULL OR claimed_at < ?)",
+    [now(), sessionId, stale]);
+  if (!claim.changes) return false;                       // another invocation owns this publish
+
+  // Deterministic paths — uploadPng is allowOverwrite, so a re-run replaces rather than
+  // accumulating a new URL every time.
+  const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
+  let arsUrl = null, songsUrl = null, caption = null;
+  try {
+    const kit = await buildPostKit(session);
+    if (kit) {
+      caption = kit.caption;
+      for (const f of kit.files) {
+        if (f.kind === 'ars') arsUrl = await uploadPng(`daily/${day}/ars.png`, f.buf);
+        if (f.kind === 'songs') songsUrl = await uploadPng(`daily/${day}/songs.png`, f.buf);
+        if (deadline && Date.now() > deadline) break;
+      }
+    }
+  } catch (e) {
+    // Logged, not fatal — see the note above. The caption survives even when hosting does
+    // not, so the operator can still assemble the post by hand.
+    console.error('[daily] card render/upload failed:', e.message);
+  }
+  await db.run(
+    `UPDATE recap_jobs SET ars_url = ?, songs_url = ?, caption = ? WHERE session_id = ?`,
+    [arsUrl, songsUrl, caption, sessionId]);
+
+  try { await enqueueDailyDigest(session); }
+  catch (e) { console.error('[daily] digest enqueue failed:', e.message); }
+
+  // status='completed' is the LAST thing, so a failure above leaves the day unpublished and
+  // the next tick retries rather than stranding it half-revealed.
+  await db.run(
+    "UPDATE sessions SET async_state = 'published', status = 'completed', published_at = ? WHERE id = ? AND async_state = 'ratified'",
+    [now(), sessionId]);
+  await realtime.publish(sessionId, 'round');
+  return true;
 }
 
 // The A&R Team's daily surface. Returns the participant's whole queue — every record of the
@@ -2016,6 +2143,221 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
   </div>`;
 }
 
+// ===== A&R DAILY: THE DAILY DIGEST =====
+// Two INDEPENDENT emails go out at noon, and they stay independent on purpose.
+//
+// This one is for A&Rs: "here's how you did." The artist gets their own (026's Song Report,
+// unchanged in shape) saying "here's how your record did." Different products for different
+// people — and an artist who is also a registered A&R correctly receives both, which is a
+// fact to preserve rather than a duplicate to dedupe.
+//
+// It also keeps a structural fact clean rather than fighting it: ARTISTS ARE NOT USERS.
+// They exist only as rounds.artist_email with no uid, so they could never sit in
+// notify_recipients (PK is (broadcast_id, uid, channel)), have no notify_prefs row, and
+// cannot be given a signed manage link (np1.<uid>.<exp> is uid-scoped). Their footer and
+// their compliance basis are different. That is the real reason the two mails are separate.
+//
+// The CTA lands correctly for free: results publish at noon and today's drop opens at noon,
+// so "today's records are open" is true at send time. The recap email IS the acquisition
+// email — the best thing about the schedule.
+//
+// The five tier names are exactly what tierForError() (scoring.js) emits. One map here, no
+// second source of truth for what counts as "sharp".
+const TIER_LABEL = { bullseye: 'Bullseye', sharp: 'Sharp', close: 'Close', off: 'Off', wayoff: 'Way off' };
+const TIER_COLOR = { bullseye: '#4bb749', sharp: '#4bb749', close: '#f3f0fb', off: '#a9a2c9', wayoff: '#a9a2c9' };
+
+function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage, playUrl }) {
+  const imgs = [['Top 8 Songs', cards.songs], ['Top 8 A&Rs', cards.ars]].filter(([, u]) => !!u);
+  const common = imgs.map(([alt, u]) =>
+    `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="${escapeHtml(alt)}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
+  ).join('');
+
+  // The personalised half. Present for anyone who rated at least one record, ABSENT (not
+  // empty) for everyone else — the audience is unconditional, the block is not.
+  //
+  // THE SEAL IS SATISFIED: every row here is a ratified round on a published day, so
+  // room_average is already public. This is composed after the whole day has tallied and
+  // must never be moved anywhere earlier.
+  let arBlock = '';
+  if (recap && recap.rounds && recap.rounds.length) {
+    const rows = recap.rounds.map(r => {
+      const dev = (r.taste != null && r.room_average != null)
+        ? (Math.round((r.predict - r.room_average) * 10) / 10) : null;
+      const devTxt = dev == null ? '—' : (dev > 0 ? '+' + dev.toFixed(1) : dev.toFixed(1));
+      const col = TIER_COLOR[r.tier] || '#f3f0fb';
+      return `<tr>
+        <td style="padding:9px 6px 9px 0;border-top:1px solid #2e2750;font-size:13px">
+          <div style="color:#f3f0fb">${escapeHtml(r.song_title || '')}</div>
+          <div style="color:#8c84ad;font-size:11.5px">${escapeHtml(r.song_artist || '')}</div>
+        </td>
+        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#a9a2c9;text-align:center">${r.taste == null ? '—' : r.taste}</td>
+        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#a9a2c9;text-align:center">${r.predict == null ? '—' : Number(r.predict).toFixed(1)}</td>
+        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#f3f0fb;text-align:center">${r.room_average == null ? '—' : Number(r.room_average).toFixed(1)}</td>
+        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:12px;color:${col};text-align:center">${devTxt}</td>
+        <td style="padding:9px 0 9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:${col};text-align:right">${(Number(r.points) || 0) >= 0 ? '+' : ''}${Number(r.points) || 0}</td>
+      </tr>`;
+    }).join('');
+    const stat = (k, v, c) => `<td style="width:33%;padding:12px 6px;text-align:center;background:#171328;border:1px solid #2e2750;border-radius:12px">
+      <div style="font-family:'Space Mono',monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:#8c84ad">${k}</div>
+      <div style="font-family:'Space Mono',monospace;font-size:22px;font-weight:700;margin-top:4px;color:${c || '#f3f0fb'}">${v}</div></td>`;
+    arBlock = `
+      <div style="height:1px;background:#2e2750;margin:26px 0 20px"></div>
+      <div style="font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:#8c84ad;text-align:left">How you did</div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="margin:10px 0 4px"><tr>
+        ${stat('Points', recap.totalPoints == null ? '—' : recap.totalPoints, '#4bb749')}
+        ${stat('Grade', recap.grade || '—')}
+        ${stat('Rank', recap.rank ? '#' + recap.rank : '—', recap.rank === 1 ? '#f5c518' : null)}
+      </tr></table>
+      ${recap.bullseyes ? `<p style="font-size:13px;color:#a9a2c9;margin:10px 0 0;text-align:left">${recap.bullseyes} exact ${recap.bullseyes === 1 ? 'hit' : 'hits'} on the average.</p>` : ''}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;text-align:left">
+        <tr>
+          <th align="left" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Record</th>
+          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">You</th>
+          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Guess</th>
+          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Avg</th>
+          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Off by</th>
+          <th align="right" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Pts</th>
+        </tr>
+        ${rows}
+      </table>
+      ${recap.completionBonus ? `<table role="presentation" width="100%" style="margin-top:2px"><tr>
+        <td style="padding:11px 0 0;border-top:1px solid #2e2750;font-size:13.5px;font-weight:700;color:#f3f0fb">Completion bonus</td>
+        <td align="right" style="padding:11px 0 0;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:#f5c518">+${recap.completionBonus}</td>
+      </tr></table>` : ''}`;
+  }
+
+  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
+    <div style="max-width:400px;margin:0 auto;text-align:center">
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily${dayLabel ? ' · ' + escapeHtml(dayLabel) : ''}</div>
+      <h1 style="font-size:22px;margin:8px 0 4px">Yesterday's results${name ? ', ' + escapeHtml(dispName(name)) : ''}.</h1>
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">Here is how the records landed, and where the A&amp;Rs finished.</p>
+      ${common}
+      ${arBlock}
+      <div style="height:1px;background:#2e2750;margin:26px 0 18px"></div>
+      <a href="${playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px">Today's records are open</a>
+      <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
+      ${manage ? notifyFooterHtml(manage) : ''}
+    </div>
+  </div>`;
+}
+
+function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl }) {
+  const lines = [`A&R Daily${dayLabel ? ' — ' + dayLabel : ''}`, ''];
+  lines.push(`Yesterday's results${name ? ', ' + dispName(name) : ''}.`);
+  if (recap && recap.rounds && recap.rounds.length) {
+    lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Rank ${recap.rank ? '#' + recap.rank : '—'}`, '');
+    for (const r of recap.rounds) {
+      lines.push(`${r.song_title} — ${r.song_artist}: you ${r.taste}, guess ${r.predict == null ? '—' : Number(r.predict).toFixed(1)}, average ${r.room_average == null ? '—' : Number(r.room_average).toFixed(1)} → ${(Number(r.points) || 0) >= 0 ? '+' : ''}${Number(r.points) || 0} (${TIER_LABEL[r.tier] || ''})`);
+    }
+    if (recap.completionBonus) lines.push(`Completion bonus: +${recap.completionBonus}`);
+  }
+  lines.push('', `Today's records are open: ${playUrl}`);
+  if (manage) lines.push('', notifyFooterText(manage));
+  return lines.join('\n');
+}
+
+// Queue the digest. ONE broadcast row per day, made idempotent by uniq_broadcast_kind_ref
+// (kind='digest_daily', ref_id=<session id>) — a re-run of the publisher finds the existing
+// row rather than making a second and mailing everyone twice.
+//
+// This is notifyAudience()'s FIRST production caller. It returns a {sql, params} fragment
+// that ends mid-WHERE, so it composes by string append into an INSERT...SELECT — which
+// keeps the fan-out one set-based statement rather than a per-user loop.
+//
+// ⚠️ toPg() numbers '?' TEXTUALLY, so params bind by position in the FINAL string, not by
+// argument order. The broadcast id's '?' appears in the SELECT list, ahead of the audience
+// fragment's topic '?' in the FROM/JOIN — hence [bcId, ...a.params] and not the reverse.
+// Do not let a later edit move a '?' earlier without re-ordering this array.
+//
+// NO EXCLUSIONS. Every A&R on the list gets the mail; the personalised block simply renders
+// for those who played and is absent for those who didn't. Someone who missed a day is
+// exactly who a "today's records are open" CTA is for.
+async function enqueueDailyDigest(session) {
+  const a = notifyAudience('digest_daily', 'email');
+  if (!a) return { broadcastId: null, queued: 0 };
+  const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
+  const subject = `A&R Daily — ${etDayLabel(day) || 'yesterday'}'s results`;
+  // uniq_broadcast_kind_ref is a PARTIAL unique index, and a bare ON CONFLICT (kind, ref_id)
+  // does not match one without repeating its predicate — a dialect detail not worth encoding
+  // in the statement. Let the index throw and re-read instead: the index is the real guard,
+  // exactly as it is for two simultaneous daily pushes racing on uniq_session_drop_day.
+  let existing = await db.get(
+    "SELECT id FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [session.id]);
+  let bcId = existing ? existing.id : id(9);
+  if (!existing) {
+    try {
+      await db.run(
+        `INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [bcId, subject, `A&R Daily results for ${day}`, 'email', null, 'sending', now(), 'digest_daily', session.id]);
+    } catch (e) { /* another invocation won the index — fall through and adopt its row */ }
+    existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [session.id]);
+    if (!existing) return { broadcastId: null, queued: 0 };
+    bcId = existing.id;
+  }
+  await db.run(
+    `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
+       SELECT ?, u.uid, 'email', u.email
+       ${a.sql}
+     ON CONFLICT (broadcast_id, uid, channel) DO NOTHING`,
+    [bcId, ...a.params]);
+  const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
+  return { broadcastId: bcId, queued: Number(q) || 0 };
+}
+
+// Send a chunk of the digest.
+//
+// ⚠️ NO PER-RECIPIENT PNG. recap/process renders and uploads one card per recipient at
+// ~1-2s each, which is ~10 sends per 30s invocation and would never finish before the next
+// day's drop. The round-by-round breakdown is an HTML table — which reads better than a
+// 1080x1440 card at 16 rows anyway — so each send is one sendEmail() at ~200ms, 60-80 per
+// tick. This is the single most important efficiency decision in the daily outputs.
+async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline = null, base = null } = {}) {
+  const bc = await db.get('SELECT * FROM notify_broadcasts WHERE id = ?', [broadcastId]);
+  if (!bc) return { sent: 0, failed: 0, remaining: 0 };
+  const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+  const job = await db.get('SELECT * FROM recap_jobs WHERE session_id = ?', [sessionId]);
+  const day = session && session.drop_day;
+  const dayLabel = etDayLabel(day);
+  const playUrl = (base || publicBase()) + '/';
+  const rows = await db.all(
+    "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [broadcastId, limit]);
+  let sent = 0, failed = 0;
+  for (const r of rows) {
+    if (deadline && Date.now() > deadline) break;
+    // Claim before sending — the cron can double-invoke and there is no unsend.
+    const claim = await db.run(
+      "UPDATE notify_recipients SET status = 'sending' WHERE broadcast_id = ? AND uid = ? AND channel = ? AND status = 'pending'",
+      [broadcastId, r.uid, r.channel]);
+    if (!claim.changes) continue;
+    try {
+      // The personalised block only exists for A&Rs who actually played this day — which
+      // is a participants row in THIS session, not merely a users row.
+      const participant = await db.get(
+        'SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [sessionId, r.uid]);
+      const recap = participant ? await buildRecap(participant, { detail: true }) : null;
+      if (recap) {
+        const earned = await db.get(
+          "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [`${sessionId}:${r.uid}`]);
+        recap.completionBonus = earned ? Number(earned.points) : null;
+      }
+      const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
+      const manage = notifyManageUrl(base || publicBase(), r.uid);
+      const arg = { name: (participant && participant.name) || (u && u.name) || null, dayLabel,
+        cards: { ars: job && job.ars_url, songs: job && job.songs_url }, recap, manage, playUrl };
+      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily',
+        dailyDigestEmailHtml(arg), dailyDigestEmailText(arg));
+      if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); sent++; }
+      else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); failed++; }
+    } catch (e) {
+      await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(e.message || 'error').slice(0, 200), broadcastId, r.uid, r.channel]); failed++;
+    }
+  }
+  const remaining = Number((await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [broadcastId])).c) || 0;
+  if (!remaining) await db.run("UPDATE notify_broadcasts SET status = 'done' WHERE id = ?", [broadcastId]);
+  return { sent, failed, remaining };
+}
+
 // ===== POST-SHOW ARTIST NOTICES =====
 // Quiet hours (TCPA): artist SMS only sends 10AM-10:30PM ET. The show ends at 11PM, so a
 // text queued at wrap sits pending until the next morning — /api/cron/artist-sms drains
@@ -2426,6 +2768,65 @@ async function drainArtistSms({ sessionId = null, roundId = null, limit = 10 } =
   return { sent, failed, held: false };
 }
 
+// Enqueue one email + one SMS per eligible round that has contact info. Idempotent:
+// re-running after a retroactive contact edit enqueues only the newly-reachable rounds
+// (uniq_artist_notice + DO NOTHING), so nobody is double-mailed.
+//
+// ONE IMPLEMENTATION, TWO CALLERS — the advanceRoom discipline. The host presses a button
+// at wrap-up on a live show; A&R Daily's publisher calls it from the cron. Nothing about
+// the artist's mail changes between the two: it is the same template, the same queue and
+// the same 026 shape. Only the trigger differs.
+async function enqueueArtistNotices(sessionId) {
+  const rounds = await db.all(ARTIST_ELIGIBLE_SQL, [sessionId]);
+  let queuedEmail = 0, queuedSms = 0;
+  for (const r of rounds) {
+    const em = (r.artist_email || '').trim(), ph = (r.artist_phone || '').trim();
+    if (em) {
+      const ins = await db.run("INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at) VALUES (?,?,?, 'email', ?, 'pending', ?) ON CONFLICT (round_id, channel) DO NOTHING",
+        [id(12), sessionId, r.id, em, now()]);
+      if (ins && ins.changes) queuedEmail++;
+    }
+    if (ph) {
+      const ins = await db.run("INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at) VALUES (?,?,?, 'sms', ?, 'pending', ?) ON CONFLICT (round_id, channel) DO NOTHING",
+        [id(12), sessionId, r.id, ph, now()]);
+      if (ins && ins.changes) queuedSms++;
+    }
+  }
+  return { queuedEmail, queuedSms };
+}
+
+// The email half of the artist queue, with a CLAIM — the sibling of drainArtistSms.
+//
+// It had none: tolerable while a human clicked the button, a double-send bug the moment a
+// cron drives it, and there is no unsend. Two invocations of the same scheduled run would
+// both read a row as pending and mail the artist their report twice. The conditional
+// UPDATE makes exactly one win. Extracting it fixes that for the existing route too.
+async function drainArtistEmail({ sessionId = null, limit = 4, deadline = null } = {}) {
+  const rows = sessionId
+    ? await db.all("SELECT * FROM artist_notices WHERE session_id = ? AND status = 'pending' AND channel = 'email' ORDER BY created_at ASC LIMIT ?", [sessionId, limit])
+    : await db.all("SELECT * FROM artist_notices WHERE status = 'pending' AND channel = 'email' ORDER BY created_at ASC LIMIT ?", [limit]);
+  let sent = 0, failed = 0;
+  for (const row of rows) {
+    // Each of these renders and uploads 2-3 report PNGs at ~3-6s, so the budget is checked
+    // per item rather than per batch.
+    if (deadline && Date.now() > deadline) break;
+    const claim = await db.run("UPDATE artist_notices SET status = 'sending' WHERE id = ? AND status = 'pending'", [row.id]);
+    if (!claim.changes) continue;
+    try {
+      const session = await db.get('SELECT * FROM sessions WHERE id = ?', [row.session_id]);
+      const round = await db.get('SELECT * FROM rounds WHERE id = ?', [row.round_id]);
+      const out = await sendArtistReportEmail(round, session, row.dest);
+      if (out.ok) { await db.run("UPDATE artist_notices SET status = 'sent', report_urls = ?, sent_at = ?, error = NULL WHERE id = ?", [JSON.stringify(out.pages), now(), row.id]); sent++; }
+      else { await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(out.error || 'send failed').slice(0, 300), row.id]); failed++; }
+    } catch (e) {
+      // Unknown outcome parks as failed (visible in the panel) rather than back to pending:
+      // re-queuing a row we may already have sent is the one thing worse than not sending.
+      await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(e.message || 'error').slice(0, 300), row.id]); failed++;
+    }
+  }
+  return { sent, failed };
+}
+
 // ===== ASANA POST KIT =====
 // One task per show carrying the night's graphics + a caption that tags everyone, so the
 // social post is assembled by the time the operator sits down to make it.
@@ -2461,6 +2862,38 @@ async function postKitCaption(sessionId, ars, songs) {
   if (top) lines.push(`Top-rated record of the session: “${top.title}”${top.artist ? ' — ' + top.artist : ''} (${Number(top.score).toFixed(1)})`);
   lines.push('#TheARRoom @Makinit4indies');
   return lines.join('\n');
+}
+
+// The night's (or the day's) graphics + the caption, as bytes in memory. One implementation
+// so the Asana route and A&R Daily's publisher can never assemble different post kits.
+// Returns null when there is nothing worth posting.
+//
+// Manual posting is the answer here, plainly: the Meta Graph API needs an IG Business
+// account, App Review for instagram_content_publish and a 60-day token refresh cycle, which
+// is precisely the infrastructure this project does not want to babysit. The operator gets a
+// task with the PNGs attached and a paste-ready caption.
+async function buildPostKit(session) {
+  const sessionId = session.id;
+  const ars = await cardArsData({ sessionId });
+  const songs = session.poll_type === 'binary' ? [] : await cardSongsData(sessionId);
+  if (!ars.length && !songs.length) return null;
+  const files = [];
+  if (ars.length) files.push({ name: 'top8-ars.png', kind: 'ars', buf: await shareCards.renderPng('ars', { list: ars, session: session.name }) });
+  if (songs.length) files.push({ name: 'top8-songs.png', kind: 'songs', buf: await shareCards.renderPng('songs', { list: songs, session: session.name }) });
+  // The top record's report cards — highest room average of the session.
+  const topRound = await db.get(
+    `SELECT * FROM rounds WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
+       AND COALESCE(poll_type,'rating') <> 'binary' ORDER BY room_average DESC, idx ASC LIMIT 1`, [sessionId]);
+  if (topRound) {
+    const d = await songReportData(topRound, session);
+    if (d) {
+      const pageCount = d.votes >= 8 ? 3 : 2; // page 3 needs 8+ votes (same floor as the report)
+      for (let i = 1; i <= pageCount; i++) {
+        files.push({ name: `top-record-p${i}.png`, kind: 'report' + i, buf: await shareCards.renderPng('report' + i, i === 1 ? d : { ...d, sub: d.sub23 }) });
+      }
+    }
+  }
+  return { files, caption: await postKitCaption(sessionId, ars, songs), ars, songs };
 }
 
 async function adminState(session, opts = {}) {
@@ -2606,6 +3039,12 @@ function publicBaseFromReq(req) {
   const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'anr.makinitmag.com';
   return `${proto}://${host}`;
+}
+// Request-free flavour, for work driven by the cron rather than by a click. Every link in a
+// daily send rides this, including the signed manage/unsubscribe link, so PUBLIC_BASE_URL
+// is worth setting on any deployment that is not the production host.
+function publicBase() {
+  return (process.env.PUBLIC_BASE_URL || 'https://anr.makinitmag.com').replace(/\/+$/, '');
 }
 
 async function alreadyNotified(sessionId, participantId, channel) {
@@ -5759,29 +6198,15 @@ async function handleApi(req, res, url) {
     });
   }
 
-  // Enqueue one email + one SMS per eligible round that has contact info. Idempotent:
-  // re-running after a retroactive contact edit enqueues only the newly-reachable rounds
-  // (uniq_artist_notice + DO NOTHING), so nobody is double-mailed.
+  // Enqueue one email + one SMS per eligible round that has contact info.
+  // The implementation is enqueueArtistNotices() — shared with A&R Daily's publisher, so a
+  // drop's artists get exactly the mail a live show's artists get.
   if (p === '/api/admin/session/artist-notices/start' && method === 'POST') {
     const { sessionId } = await readBody(req);
     if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
     if (!process.env.BLOB_READ_WRITE_TOKEN) return bad(res, 'Image hosting not configured (set BLOB_READ_WRITE_TOKEN)', 409);
-    const rounds = await db.all(ARTIST_ELIGIBLE_SQL, [sessionId]);
-    let queuedEmail = 0, queuedSms = 0;
-    for (const r of rounds) {
-      const em = (r.artist_email || '').trim(), ph = (r.artist_phone || '').trim();
-      if (em) {
-        const ins = await db.run("INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at) VALUES (?,?,?, 'email', ?, 'pending', ?) ON CONFLICT (round_id, channel) DO NOTHING",
-          [id(12), sessionId, r.id, em, now()]);
-        if (ins && ins.changes) queuedEmail++;
-      }
-      if (ph) {
-        const ins = await db.run("INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at) VALUES (?,?,?, 'sms', ?, 'pending', ?) ON CONFLICT (round_id, channel) DO NOTHING",
-          [id(12), sessionId, r.id, ph, now()]);
-        if (ins && ins.changes) queuedSms++;
-      }
-    }
-    return send(res, 200, { ok: true, queuedEmail, queuedSms, smsHolds: !withinSmsWindow() });
+    const q = await enqueueArtistNotices(sessionId);
+    return send(res, 200, { ok: true, ...q, smsHolds: !withinSmsWindow() });
   }
 
   // Process a chunk. Email sends immediately (rendering + hosting the 3 report pages per
@@ -5793,20 +6218,8 @@ async function handleApi(req, res, url) {
     const session = await db.get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [sessionId]);
     if (!session) return bad(res, 'Room not found', 404);
     const n = Math.min(Math.max(parseInt(limit, 10) || 4, 1), 10);
-    const batch = await db.all(
-      "SELECT * FROM artist_notices WHERE session_id = ? AND status = 'pending' AND channel = 'email' ORDER BY created_at ASC LIMIT ?",
-      [sessionId, n]);
-    let sent = 0, failed = 0;
-    for (const row of batch) {
-      try {
-        const round = await db.get('SELECT * FROM rounds WHERE id = ?', [row.round_id]);
-        const out = await sendArtistReportEmail(round, session, row.dest);
-        if (out.ok) { await db.run("UPDATE artist_notices SET status = 'sent', report_urls = ?, sent_at = ?, error = NULL WHERE id = ?", [JSON.stringify(out.pages), now(), row.id]); sent++; }
-        else { await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(out.error || 'send failed').slice(0, 300), row.id]); failed++; }
-      } catch (e) {
-        await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(e.message || 'error').slice(0, 300), row.id]); failed++;
-      }
-    }
+    // drainArtistEmail() carries the pending->sending claim this route used to lack.
+    const { sent, failed } = await drainArtistEmail({ sessionId, limit: n });
     // SMS: only inside the window. Drained here when the host wraps during the day;
     // otherwise the cron gets them tomorrow morning.
     const smsOut = await drainArtistSms({ sessionId, limit: n });
@@ -5957,27 +6370,9 @@ async function handleApi(req, res, url) {
     const project = (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null;
     if (!project) return bad(res, 'Set the Asana project ID in the Platform panel first', 409);
     try {
-      const ars = await cardArsData({ sessionId });
-      const songs = session.poll_type === 'binary' ? [] : await cardSongsData(sessionId);
-      if (!ars.length && !songs.length) return bad(res, 'Nothing to post yet — no ranked A&Rs or rated songs', 404);
-      // Build the graphics in memory; Asana takes the bytes directly (no Blob hosting needed).
-      const files = [];
-      if (ars.length) files.push({ name: 'top8-ars.png', buf: await shareCards.renderPng('ars', { list: ars, session: session.name }) });
-      if (songs.length) files.push({ name: 'top8-songs.png', buf: await shareCards.renderPng('songs', { list: songs, session: session.name }) });
-      // The top record's 3 report cards — highest room average of the night.
-      const topRound = await db.get(
-        `SELECT * FROM rounds WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
-           AND COALESCE(poll_type,'rating') <> 'binary' ORDER BY room_average DESC, idx ASC LIMIT 1`, [sessionId]);
-      if (topRound) {
-        const d = await songReportData(topRound, session);
-        if (d) {
-          const pageCount = d.votes >= 8 ? 3 : 2; // page 3 needs 8+ votes (same floor as the report)
-          for (let i = 1; i <= pageCount; i++) {
-            files.push({ name: `top-record-p${i}.png`, buf: await shareCards.renderPng('report' + i, i === 1 ? d : { ...d, sub: d.sub23 }) });
-          }
-        }
-      }
-      const caption = await postKitCaption(sessionId, ars, songs);
+      const kit = await buildPostKit(session);
+      if (!kit) return bad(res, 'Nothing to post yet — no ranked A&Rs or rated songs', 404);
+      const { files, caption } = kit;
       const dateLabel = new Date(Number(session.scheduled_at || session.created_at) || Date.now())
         .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
       const task = await asanaFetch('/tasks', {
@@ -6357,3 +6752,6 @@ module.exports._completionBonusPoints = completionBonusPoints;
 // Exported for tests: the scouting curve is the dial that decides whether "eye for talent"
 // is a real second lane or a garnish, so its shape is asserted rather than eyeballed.
 module.exports._scoutPointsFor = scoutPointsFor;
+module.exports._buildRecap = buildRecap;
+module.exports._enqueueDailyDigest = enqueueDailyDigest;
+module.exports._dailyDigestEmailHtml = dailyDigestEmailHtml;
