@@ -260,6 +260,51 @@
       </div>
     </div>
 
+    <!-- BUILD THE NEXT DAY, a record at a time — the same job the live queue form does.
+         Its own card, always visible: stacking tomorrow's records and fixing today's broken
+         link are different jobs the operator does on the same screen. -->
+    <div class="card" id="dlBuild">
+      <div class="row" style="justify-content:space-between;align-items:baseline;gap:10px">
+        <h3 style="margin:0;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">
+          Build the next drop <span id="bDayLbl" class="muted" style="letter-spacing:0;text-transform:none"></span></h3>
+        <span class="pill" id="bCount"></span>
+      </div>
+      <div id="bQueue" style="margin-top:12px"></div>
+      <div class="stack" style="margin-top:14px">
+        <div class="row">
+          <div style="flex:2"><label>Record title <span class="muted">(required)</span></label>
+            <input id="bTitle" placeholder="e.g. Neon Skyline" maxlength="200"></div>
+          <div style="flex:2"><label>Artist</label>
+            <input id="bArtist" placeholder="e.g. The Verge" maxlength="200"></div>
+        </div>
+        <div><label>Play link <span class="muted">(required — full http(s) link)</span></label>
+          <input id="bUrl" placeholder="https://open.spotify.com/track/…"></div>
+        <div><label>From the artist <span class="muted">(what they want listened for)</span></label>
+          <input id="bNote" placeholder="e.g. This isn't mixed — recorded it last night." maxlength="500"></div>
+        <div class="row">
+          <div style="flex:2"><label>Artist email <span class="muted">(for their report)</span></label>
+            <input id="bEmail" placeholder="artist@email.com"></div>
+          <div style="flex:1"><label>Instagram</label>
+            <input id="bIg" placeholder="handle" maxlength="60"></div>
+        </div>
+        <div class="row">
+          <div style="flex:1"><label>Artist mobile <span class="muted">(optional)</span></label>
+            <input id="bPhone" placeholder="(555) 123-4567"></div>
+          <div style="flex:1"><label>Day <span class="muted">(blank = next open day)</span></label>
+            <input id="bDay" placeholder="YYYY-MM-DD" maxlength="10"></div>
+        </div>
+        <div class="row">
+          <button class="btn" id="bAdd">Add to the drop</button>
+          <button class="btn ghost sm" id="bClear" style="flex:0 0 auto">Clear</button>
+        </div>
+        <div class="err" id="bErr"></div>
+        <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0">
+          The day opens on its own at noon ET. Records can be added or removed right up until
+          then — once it opens, adding one would un-finish every A&amp;R who already completed it.
+        </p>
+      </div>
+    </div>
+
     <button class="btn ghost sm" id="btnDailyLogout" style="margin-top:6px;max-width:160px">Log out</button>
   </div>
 </div>
@@ -1752,6 +1797,7 @@ function renderDaily(){
     $('#dlNoneMsg').textContent = d.message || 'No records have been pushed. A&Rs would open the app to an empty day.';
     $('#dlState').textContent = 'No drop';
     $('#dlState').className = 'pill closed';
+    renderBuild();   // the builder is how they FIX this, so it stays on screen
     return;
   }
   $('#dlNone').classList.add('hide');
@@ -1843,7 +1889,83 @@ function renderDaily(){
     cardHtml += `<div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" onclick="dlCopyCaption()">Copy caption</button></div>`;
   }
   $('#dlCardBody').innerHTML = cardHtml;
+  renderBuild();
 }
+/* ---- Build the next drop, a record at a time ---- */
+function renderBuild(){
+  const b = (DL && DL.building) || null;
+  const q = b ? b.rounds : [];
+  $('#bDayLbl').textContent = b ? ('· ' + (b.dayLabel || b.day) + ' · opens ' + (b.opensLabel || 'noon ET')) : '';
+  $('#bCount').textContent = b ? (q.length + ' of ' + b.max) : 'Nothing staged yet';
+  $('#bCount').className = 'pill' + (b && q.length ? ' upcoming' : '');
+  if(!b || !q.length){
+    $('#bQueue').innerHTML = '<div class="empty" style="padding:10px 0">'
+      + 'Add the first record and the day is created around it.</div>';
+    return;
+  }
+  // The day is 4-16; say where they are rather than implying a target.
+  $('#bQueue').innerHTML = '<table class="dltable">'
+    + q.map(r => `<tr>
+        <td style="width:34px" class="num muted">${r.idx}</td>
+        <td><div class="dlttl">${esc(r.song_title)}</div><div class="dlart">${esc(r.song_artist || '')}</div></td>
+        <td><span class="dllink${r.play_url ? '' : ' bad'}">${esc(r.play_url || 'no link')}</span></td>
+        <td class="num">${r.hasEmail ? '<span class="muted" title="Artist gets their report">✉</span>' : '<span style="color:var(--gold)" title="No contact — this artist gets no report">⚠</span>'}</td>
+        <td class="num"><button class="btn ghost sm" onclick="dlEditBuilt('${r.id}')">Edit</button>
+          <button class="btn danger sm" onclick="bRemove('${r.id}')">Remove</button></td>
+      </tr>`).join('')
+    + '</table>';
+}
+
+// Editing a staged record reuses the same descriptive-only round/edit the mid-window fix
+// uses — there is one way to change a record's words, whatever state its day is in.
+window.dlEditBuilt = (roundId) => {
+  const b = DL && DL.building; if(!b) return;
+  const r = b.rounds.find(x => x.id === roundId); if(!r) return;
+  dlEditRound = Object.assign({}, r, { sessionId: b.id, reports: 0, votes: 0 });
+  $('#dlEditTitle').textContent = 'Record ' + r.idx + ' · ' + (r.song_title || '');
+  $('#dlEditUrl').value = r.play_url || '';
+  $('#dlEditNote').value = r.artist_note || '';
+  $('#dlEditErr').textContent = '';
+  $('#dlEditWarn').classList.add('hide');
+  $('#dlEditDrupal').classList.add('hide');
+  $('#dlEditModal').style.display = 'flex';
+};
+
+window.bRemove = async (roundId) => {
+  const b = DL && DL.building; if(!b) return;
+  $('#bErr').textContent = '';
+  try{ await api('/api/admin/round/delete', { sessionId: b.id, roundId }); await openDaily(); }
+  catch(e){ $('#bErr').textContent = e.message; }
+};
+
+$('#bClear').onclick = () => {
+  ['bTitle','bArtist','bUrl','bNote','bEmail','bIg','bPhone'].forEach(k => { $('#'+k).value = ''; });
+  $('#bErr').textContent = '';
+  $('#bTitle').focus();
+};
+
+$('#bAdd').onclick = async () => {
+  $('#bErr').textContent = '';
+  const body = {
+    title: $('#bTitle').value.trim(), artist: $('#bArtist').value.trim(),
+    playUrl: $('#bUrl').value.trim(), ask: $('#bNote').value.trim(),
+    email: $('#bEmail').value.trim(), phone: $('#bPhone').value.trim(),
+    instagram: $('#bIg').value.trim(),
+  };
+  const day = $('#bDay').value.trim(); if(day) body.day = day;
+  if(!body.title) return $('#bErr').textContent = 'Give the record a title';
+  if(!body.playUrl) return $('#bErr').textContent = 'A play link is required — a record nobody can hear is a dead record for the whole window';
+  $('#bAdd').disabled = true;
+  try{
+    await api('/api/admin/daily/round', body);
+    // Keep the day, clear the record: the next one is almost always for the same day.
+    ['bTitle','bArtist','bUrl','bNote','bEmail','bIg','bPhone'].forEach(k => { $('#'+k).value = ''; });
+    await openDaily();
+    $('#bTitle').focus();
+  }catch(e){ $('#bErr').textContent = e.message; }
+  $('#bAdd').disabled = false;
+};
+
 window.dlCopyCaption = async () => {
   try{ await navigator.clipboard.writeText((DL.cards && DL.cards.caption) || ''); alert('Caption copied.'); }
   catch(e){ alert('Could not copy — the caption is on the day’s recap job.'); }
@@ -1868,10 +1990,11 @@ window.dlEdit = (roundId) => {
 };
 $('#dlEditCancel').onclick = () => { $('#dlEditModal').style.display = 'none'; };
 $('#dlEditSave').onclick = async () => {
-  if(!dlEditRound || !DL.drop) return;
+  const editSid = dlEditRound && (dlEditRound.sessionId || (DL.drop && DL.drop.id));
+  if(!dlEditRound || !editSid) return;
   $('#dlEditErr').textContent = ''; $('#dlEditSave').disabled = true;
   try{
-    await api('/api/admin/round/edit', { sessionId: DL.drop.id, roundId: dlEditRound.id,
+    await api('/api/admin/round/edit', { sessionId: editSid, roundId: dlEditRound.id,
       song_title: dlEditRound.song_title, song_artist: dlEditRound.song_artist,
       play_url: $('#dlEditUrl').value.trim(), artist_note: $('#dlEditNote').value.trim() });
     $('#dlEditModal').style.display = 'none';

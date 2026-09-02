@@ -2551,6 +2551,21 @@ function normalizeDropSong(raw, i) {
   } };
 }
 
+// A drop MUST be tagged into a series or its points never reach the $500 board — the whole
+// unification premise, failing silently. Explicit -> the active series -> refuse. One rule,
+// shared by the batch push and the hand-built queue, so they can never disagree about what
+// a valid day is.
+async function resolveDropSeries(explicitId) {
+  const want = (explicitId || '').toString().trim() || null;
+  if (want) {
+    const ser = await db.get('SELECT id FROM series WHERE id = ?', [want]);
+    return ser ? { seriesId: ser.id } : { error: 'Unknown seriesId' };
+  }
+  const active = await db.get("SELECT id FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []);
+  if (active) return { seriesId: active.id };
+  return { error: 'No active series — a drop with no series tag earns nothing on the board', status: 409 };
+}
+
 // Stage a day. ONE IMPLEMENTATION, TWO CALLERS — the advanceRoom discipline, again.
 // Drupal pushes the approved set over /api/ingest/daily with its own secret; the operator
 // stages one by hand over /api/admin/daily/drop when Drupal is down, when a day needs
@@ -2592,17 +2607,9 @@ async function stageDailyDrop(res, body) {
     if (r.scoutUid) { try { await linkScout(r.scoutUid, r.scoutEmail); } catch (e) { console.error('[scout] link failed:', e.message); } }
   }
 
-  // Without a series tag the day's points never reach the $500 board — the entire
-  // unification premise, failing silently. Resolve explicit -> active series -> refuse.
-  let seriesId = (body.seriesId || '').toString().trim() || null;
-  if (seriesId) {
-    const ser = await db.get('SELECT id FROM series WHERE id = ?', [seriesId]);
-    if (!ser) return bad(res, 'Unknown seriesId');
-  } else {
-    const active = await db.get("SELECT id FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []);
-    seriesId = active ? active.id : null;
-  }
-  if (!seriesId) return bad(res, 'No active series — a drop with no series tag earns nothing on the board', 409);
+  const ser = await resolveDropSeries(body.seriesId);
+  if (ser.error) return bad(res, ser.error, ser.status || 400);
+  const seriesId = ser.seriesId;
 
   const existing = await db.get('SELECT * FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [day]);
   if (existing) {
@@ -2689,6 +2696,32 @@ async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, 
     }
   });
   return { sessionId: sid, day, rounds: songs.length, opensAt: wo, closesAt: wc, resultsAt: rp };
+}
+
+// Append one record to a day that has not opened yet. Deliberately the SAME insert as
+// createAsyncDrop's loop — if the two ever drift, a hand-built day and a pushed one stop
+// being the same kind of thing.
+//
+// idx is MAX+1 rather than a count, so deleting a record and adding another cannot hand out
+// a number that is already on the day.
+async function addDropRound(session, s) {
+  const ts = now();
+  const top = await db.get('SELECT COALESCE(MAX(idx), 0) AS n FROM rounds WHERE session_id = ?', [session.id]);
+  const idx = Number(top.n) + 1;
+  if (idx > DROP_MAX_SONGS) {
+    return { ok: false, error: `A day holds at most ${DROP_MAX_SONGS} records`, rounds: idx - 1 };
+  }
+  const rid = id(9);
+  await db.run(
+    `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
+       giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
+       artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, status, opens_at, closes_at, created_at)
+     VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+    [rid, session.id, idx, idx, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
+     s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid,
+     session.window_opens_at, session.window_closes_at, ts]);
+  const n = Number((await db.get('SELECT COUNT(*) AS c FROM rounds WHERE session_id = ?', [session.id])).c) || 0;
+  return { ok: true, created: false, sessionId: session.id, day: session.drop_day, roundId: rid, idx, rounds: n };
 }
 
 function asyncQueueOrder(seedKey, sessionId, rounds) {
@@ -5769,6 +5802,14 @@ async function handleApi(req, res, url) {
         await tx.run("UPDATE rounds SET idx = idx - 1 WHERE session_id = ? AND idx > ? AND status IN ('listening','voting','closed','ratified')",
           [sessionId, round.idx]);
       }
+      // A DROP numbers its records at insert rather than at open, so pulling one out of a
+      // day still being built leaves a hole the operator can see ("Record 1, 2, 4"). Close
+      // it too — but only for async, because a live room's pending rounds are an unnumbered
+      // queue ordered by queue_pos and renumbering them would mean nothing.
+      if (round.status === 'pending' && round.idx && isAsync(session)) {
+        await tx.run("UPDATE rounds SET idx = idx - 1, queue_pos = queue_pos - 1 WHERE session_id = ? AND idx > ? AND status = 'pending'",
+          [sessionId, round.idx]);
+      }
     });
     // An arm pointing at a round that no longer exists must not survive to tally the next one.
     if (session.advance_armed_round === roundId) await clearAdvanceArm(sessionId);
@@ -6824,6 +6865,79 @@ async function handleApi(req, res, url) {
     return stageDailyDrop(res, await readBody(req));
   }
 
+  // ---- Build tomorrow's drop a record at a time, the way the live queue is built. ----
+  // /daily/drop is a BATCH: it takes an approved set and replaces the day, which is right
+  // for a Drupal push and wrong for a person typing records in one by one. This adds ONE,
+  // creating the day on the first record so there is no separate "create the day" step.
+  //
+  // It shares normalizeDropSong and resolveDropSeries with the batch, so a hand-built day
+  // cannot end up in a shape the pushed one could not — same required fields, same series
+  // rule, same contact handling.
+  if (p === '/api/admin/daily/round' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+
+    // Which day. An explicit day wins; otherwise carry on with whatever is already being
+    // built, and start the next empty day when nothing is.
+    let day = (body.day || '').toString().trim();
+    if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad(res, 'day must be YYYY-MM-DD');
+    if (!day) {
+      const building = await db.get(
+        `SELECT drop_day FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
+           AND COALESCE(async_state,'scheduled') = 'scheduled'
+         ORDER BY window_opens_at ASC LIMIT 1`, []);
+      if (building) day = building.drop_day;
+      else {
+        const today = etDay();
+        const taken = await db.get("SELECT id FROM sessions WHERE drop_day = ? AND deleted_at IS NULL", [today]);
+        day = taken ? etNextDay(today) : today;
+      }
+    }
+    const dayTs = etEpoch(day, 12);
+    if (dayTs == null || Math.abs(dayTs - now()) > 3 * 86400000) return bad(res, 'day is too far from today');
+
+    const { rec, err } = normalizeDropSong(body, 0);
+    if (err) {
+      return bad(res, err.field === 'title' ? 'Give the record a title'
+        : 'A play link is required — a record nobody can hear is a dead record for the whole window');
+    }
+
+    const existing = await db.get('SELECT * FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [day]);
+
+    // ADDING TO A DAY THAT IS ALREADY OPEN IS REFUSED, and this is the reason: the
+    // completion bonus counts against a LIVE denominator, so a record added mid-window
+    // silently un-finishes everyone who already completed the day — including people
+    // already paid, who would now read 9/10. Deleting a zero-vote record is the supported
+    // direction; adding is not.
+    if (existing && (existing.async_state || 'scheduled') !== 'scheduled') {
+      return send(res, 409, { error: "That day is already open — adding a record now would un-finish every A&R who already completed it. Delete a record instead, or build the next day.",
+        sessionId: existing.id, day, state: existing.async_state });
+    }
+
+    if (!existing) {
+      const ser = await resolveDropSeries(body.seriesId);
+      if (ser.error) return bad(res, ser.error, ser.status || 400);
+      let out;
+      try {
+        out = await createAsyncDrop({ day, name: body.name, seriesId: ser.seriesId, songs: [rec],
+          opensAt: body.opensAt, closesAt: body.closesAt, resultsAt: body.resultsAt });
+      } catch (e) {
+        // Two admins starting the same day at once race on uniq_session_drop_day; the loser
+        // adopts the winner's day rather than erroring at a person who did nothing wrong.
+        if (!/unique|duplicate/i.test(e.message || '')) throw e;
+        const won = await db.get('SELECT * FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [day]);
+        if (!won) throw e;
+        const r2 = await addDropRound(won, rec);
+        return send(res, r2.ok ? 200 : 409, r2);
+      }
+      return send(res, 200, { ok: true, created: true, sessionId: out.sessionId, day,
+        rounds: 1, seriesId: ser.seriesId, opensAt: out.opensAt, closesAt: out.closesAt, resultsAt: out.resultsAt });
+    }
+
+    const added = await addDropRound(existing, rec);
+    return send(res, added.ok ? 200 : 409, added);
+  }
+
   // ---- The daily console's one status call. ----
   // Platform-admin only: a drop has no owner_uid (the batch carries 16 artists' contact
   // details, so canAdminSession admits only platform admins), and this readout carries the
@@ -6834,13 +6948,45 @@ async function handleApi(req, res, url) {
   if (p === '/api/admin/daily/status' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const wantDay = url.searchParams.get('day');
+    // The RUNNING day, not merely the latest one. Once the operator starts building
+    // tomorrow, tomorrow has the later window_opens_at and would otherwise displace today's
+    // open drop on the screen — exactly when they most need to see it.
     const session = wantDay
       ? await db.get("SELECT * FROM sessions WHERE mode = 'async' AND drop_day = ? AND deleted_at IS NULL", [wantDay])
-      : await db.get(`SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
-                       ORDER BY window_opens_at DESC LIMIT 1`, []);
+      : (await db.get(`SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
+                         AND COALESCE(async_state,'scheduled') <> 'scheduled'
+                       ORDER BY window_opens_at DESC LIMIT 1`, []))
+        || (await db.get(`SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
+                           ORDER BY window_opens_at ASC LIMIT 1`, []));
+
+    // The day being BUILT, alongside whatever is running. Its own key so the console can
+    // show both at once — fixing today's broken link and stacking tomorrow's records are
+    // different jobs and the operator does them on the same screen.
+    const nextRow = await db.get(
+      `SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
+         AND COALESCE(async_state,'scheduled') = 'scheduled'
+       ORDER BY window_opens_at ASC LIMIT 1`, []);
+    let building = null;
+    if (nextRow) {
+      const qr = await db.all(
+        `SELECT id, idx, song_title, song_artist, play_url, artist_note, artist_email, artist_phone
+           FROM rounds WHERE session_id = ? ORDER BY idx ASC`, [nextRow.id]);
+      building = {
+        id: nextRow.id, day: nextRow.drop_day, dayLabel: etDayLabel(nextRow.drop_day),
+        opensLabel: etClockLabel(nextRow.window_opens_at),
+        series_id: nextRow.series_id || null,
+        max: DROP_MAX_SONGS,
+        rounds: qr.map(r => ({ id: r.id, idx: r.idx, song_title: r.song_title,
+          song_artist: r.song_artist || '', play_url: r.play_url || '',
+          artist_note: r.artist_note || '',
+          hasEmail: !!(r.artist_email || '').trim(), hasPhone: !!(r.artist_phone || '').trim() })),
+      };
+    }
+
     // No drop is an INCIDENT, not an empty state — if Drupal has not pushed, the site is
     // back to the exact failure this whole build exists to fix. Say so plainly.
-    if (!session) return send(res, 200, { drop: null, message: 'No drop is staged. Nothing for A&Rs to do.' });
+    if (!session) return send(res, 200, { drop: null, building,
+      message: 'No drop is staged. Nothing for A&Rs to do.' });
 
     const day = session.drop_day;
     const rounds = await db.all(
@@ -6917,6 +7063,7 @@ async function handleApi(req, res, url) {
         minutes: ARTIST_NOTICE_DELAY_MIN },
       smsWindow: { open: withinSmsWindow(), label: nextSmsWindowLabel(),
         from: SMS_WINDOW_START_LABEL, to: SMS_WINDOW_END_LABEL },
+      building,
       blobConfigured: !!process.env.BLOB_READ_WRITE_TOKEN,
     });
   }

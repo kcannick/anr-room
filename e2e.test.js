@@ -2016,6 +2016,74 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a day with no drop reads as an incident, not an empty state',
     noDrop.drop === null && /nothing/i.test(noDrop.message || ''), JSON.stringify(noDrop));
 
+  console.log('\n— A&R Daily: building a drop by hand, a record at a time —');
+  // /daily/drop is a BATCH — right for an approved push from Drupal, wrong for a person
+  // typing records in one by one. This is the queue-builder path, and it shares the batch's
+  // validation so a hand-built day cannot end up in a shape the pushed one could not.
+  // today+2: within the builder's +/-3 day typo guard, and freed again by the hand-staged
+  // block above (uniq_session_drop_day is partial on deleted_at, so a soft delete releases
+  // the day).
+  const qbDay = srv._etNextDay(srv._etNextDay(today));
+  const qbAnon = await call('/api/admin/daily/round', { day: qbDay, title: 'X', playUrl: 'https://a.co/1' }, 'POST', {});
+  ok('adding a record by hand is platform-admin only', qbAnon.status === 403 || qbAnon.status === 401, 'got ' + qbAnon.status);
+
+  const qbNoTitle = await call('/api/admin/daily/round', { day: qbDay, playUrl: 'https://a.co/1' }, 'POST', BOOTH);
+  ok('a record with no title is refused', qbNoTitle.status === 400, JSON.stringify(qbNoTitle.d));
+  const qbNoLink = await call('/api/admin/daily/round', { day: qbDay, title: 'No link' }, 'POST', BOOTH);
+  ok('a record with no play link is refused — it would be dead for the whole window',
+    qbNoLink.status === 400, JSON.stringify(qbNoLink.d));
+  const qbBadLink = await call('/api/admin/daily/round', { day: qbDay, title: 'Bad', playUrl: 'javascript:alert(1)' }, 'POST', BOOTH);
+  ok('and a non-http link is refused here too', qbBadLink.status === 400, JSON.stringify(qbBadLink.d));
+
+  // The FIRST record creates the day around it — there is no separate "create the day" step.
+  const qb1 = await call('/api/admin/daily/round',
+    { day: qbDay, seriesId: serId, title: 'Neon Skyline', artist: 'The Verge',
+      playUrl: 'https://open.spotify.com/track/1', ask: 'Not mixed yet.', email: 'verge@test.com' }, 'POST', BOOTH);
+  ok('the first record creates the day around it', qb1.status === 200 && qb1.d.created === true, JSON.stringify(qb1.d));
+  const qbSess = await dDb.get('SELECT * FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [qbDay]);
+  ok('and it is a real async drop, scheduled and tagged into the series',
+    qbSess.mode === 'async' && qbSess.async_state === 'scheduled' && qbSess.series_id === serId,
+    JSON.stringify({ m: qbSess.mode, st: qbSess.async_state, ser: qbSess.series_id }));
+
+  const qb2 = await call('/api/admin/daily/round',
+    { day: qbDay, title: 'Long Way Down', artist: 'Sable', playUrl: 'https://open.spotify.com/track/2' }, 'POST', BOOTH);
+  const qb3 = await call('/api/admin/daily/round',
+    { day: qbDay, title: 'Basement Tape', artist: 'Wax Figure', playUrl: 'https://open.spotify.com/track/3' }, 'POST', BOOTH);
+  ok('each further record appends to the same day', qb3.status === 200 && qb3.d.created === false && qb3.d.rounds === 3, JSON.stringify(qb3.d));
+  ok('and they are numbered in the order they were typed', qb1.d.rounds === 1 && qb2.d.idx === 2 && qb3.d.idx === 3,
+    JSON.stringify([qb1.d.rounds, qb2.d.idx, qb3.d.idx]));
+
+  // Pulling one out while the day is still being built closes the numbering behind it, so
+  // the operator never sees "Record 1, 2, 4" — and the next add cannot reuse a number.
+  const qbDel = await call('/api/admin/round/delete', { sessionId: qbSess.id, roundId: qb2.d.roundId }, 'POST', BOOTH);
+  ok('a staged record can be pulled back out', qbDel.status === 200, JSON.stringify(qbDel.d));
+  const qbIdx = (await dDb.all('SELECT idx FROM rounds WHERE session_id = ? ORDER BY idx', [qbSess.id])).map(r => r.idx);
+  ok('and the numbering closes up behind it', JSON.stringify(qbIdx) === JSON.stringify([1, 2]), JSON.stringify(qbIdx));
+  const qb4 = await call('/api/admin/daily/round',
+    { day: qbDay, title: 'Cold Open', playUrl: 'https://open.spotify.com/track/4' }, 'POST', BOOTH);
+  ok('the next record does not reuse a number already on the day', qb4.d.idx === 3, JSON.stringify(qb4.d));
+
+  // The console reads the day being built separately from the day that is RUNNING — they
+  // are different jobs on the same screen.
+  const qbStat = (await call('/api/admin/daily/status', null, 'GET', BOOTH)).d;
+  ok('the status carries the day under construction on its own key',
+    qbStat.building && qbStat.building.day === qbDay && qbStat.building.rounds.length === 3,
+    JSON.stringify(qbStat.building && { d: qbStat.building.day, n: qbStat.building.rounds.length }));
+  ok('and it says whether each staged record can reach its artist, never the address itself',
+    qbStat.building.rounds.every(r => 'hasEmail' in r) && !/verge@test\.com/.test(JSON.stringify(qbStat.building)),
+    JSON.stringify(qbStat.building.rounds[0]));
+
+  // ONCE THE DAY OPENS, ADDING IS REFUSED. The completion bonus counts against a live
+  // denominator, so a record added mid-window silently un-finishes everyone who already
+  // completed the day — including people already paid.
+  await dDb.run("UPDATE sessions SET async_state = 'open', status = 'live' WHERE id = ?", [qbSess.id]);
+  const qbLate = await call('/api/admin/daily/round',
+    { day: qbDay, title: 'Late Add', playUrl: 'https://open.spotify.com/track/9' }, 'POST', BOOTH);
+  ok('adding to a day that is already open is refused', qbLate.status === 409, JSON.stringify(qbLate.d));
+  ok('and the refusal says why, in terms of the people it would affect',
+    /un-finish/i.test((qbLate.d && qbLate.d.error) || ''), JSON.stringify(qbLate.d));
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), qbSess.id]);
+
   console.log('\n— the front door: what the pitch is allowed to know —');
   // /api/home is the ONE endpoint worth putting behind a CDN, so everything the fdLanding
   // page needs has to be anonymous and identical for every viewer. Whether someone is a
