@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pick the hits — The A&amp;R Room</title>
+<meta name="description" content="Pick the top songs from this month's A&R Service Pack for a chance to win cash.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=3">
+<link rel="stylesheet" href="/ui.css?v=1">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(130% 60% at 50% 0%,#241a4d 0%,var(--bg) 55%);
+    background-attachment:fixed;color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;
+    min-height:100vh;padding:18px 16px calc(28px + env(safe-area-inset-bottom))}
+  .wrap{max-width:430px;margin:0 auto}
+  .mono{font-family:"Space Mono",ui-monospace,monospace}
+  .brandbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px}
+  .wordmark{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);text-decoration:none}
+  .step{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;color:var(--ink-faint)}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:18px;padding:20px}
+  .eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--ink-faint);font-weight:700}
+  h1{margin:12px 0 0;font-size:31px;line-height:1.1;font-weight:800;letter-spacing:-.03em}
+  h2{margin:0;font-size:21px;font-weight:700;letter-spacing:-.02em}
+  p{margin:10px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-dim)}
+  .center{text-align:center}
+  .muted{color:var(--ink-faint)}
+  .prize{font-family:"Space Mono",monospace;font-weight:700;font-size:52px;color:var(--gold);letter-spacing:-.03em;line-height:1;margin-top:20px}
+  .sponsor{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
+
+  .btn{display:flex;width:100%;justify-content:center;margin-top:16px;padding:15px 18px;font-size:16px;font-weight:800;border-radius:14px}
+  .btn.sm{padding:9px 13px;font-size:13px;width:auto;display:inline-flex;margin-top:0}
+
+  .rules{background:var(--inset);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-top:18px;text-align:left}
+  .rules .eyebrow{display:block;margin-bottom:9px}
+  .rules ol{margin:0;padding-left:17px}
+  .rules li{font-size:12.8px;line-height:1.5;color:var(--ink-dim);margin-bottom:6px}
+  .tiebreak{font-size:12.2px;line-height:1.45;color:var(--ink-faint);margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+
+  /* pick screen */
+  .stickyhead{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px;position:sticky;top:8px;z-index:3}
+  .counter{display:flex;align-items:baseline;justify-content:space-between}
+  .counter .n{font-family:"Space Mono",monospace;font-size:26px;font-weight:700}
+  .counter .n.full{color:var(--signal)}
+  .counter .lbl{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint)}
+  .bar{height:5px;background:var(--inset);border-radius:99px;margin-top:10px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .18s}
+  .bar i.full{background:var(--signal)}
+  input[type=text],input[type=email],input[type=tel]{width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);
+    font-family:inherit;font-size:16px;padding:12px 13px;border-radius:12px;outline:none}
+  input:focus{border-color:var(--accent)}
+  input::placeholder{color:#6f688f}
+  .search{margin-top:11px}
+
+  .list{max-height:58vh;overflow-y:auto;border:1px solid var(--line);border-radius:16px;background:var(--inset);-webkit-overflow-scrolling:touch}
+  .alpha{position:sticky;top:0;background:#0e0b1c;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;
+    color:var(--ink-faint);padding:7px 14px;border-bottom:1px solid var(--line)}
+  .song{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid #1a1530;cursor:pointer;user-select:none}
+  .song:last-child{border-bottom:0}
+  .song .box{width:22px;height:22px;border-radius:7px;border:1.5px solid var(--line);flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;color:transparent}
+  .song.on .box{background:var(--signal);border-color:var(--signal);color:var(--on-signal)}
+  .song .t{font-size:14.5px;font-weight:600;line-height:1.25}
+  .song .a{font-size:12.3px;color:var(--ink-faint);margin-top:2px}
+  .song.off{opacity:.38}
+  .empty{padding:22px 14px;text-align:center;font-size:13px;color:var(--ink-faint)}
+
+  /* order screen */
+  .ranks{border:1px solid var(--line);border-radius:16px;background:var(--inset);overflow:hidden;max-height:60vh;overflow-y:auto;margin-top:12px}
+  .rank{display:flex;align-items:center;gap:11px;padding:10px 12px;border-bottom:1px solid #1a1530}
+  .rank:last-child{border-bottom:0}
+  .rank .num{font-family:"Space Mono",monospace;font-size:14px;font-weight:700;color:var(--accent);width:22px;text-align:right;flex:none}
+  .rank .num.top{color:var(--gold)}
+  .rank .t{font-size:14px;font-weight:600;line-height:1.25;flex:1;min-width:0}
+  .rank .t span{display:block;font-size:12px;color:var(--ink-faint);font-weight:400;margin-top:1px}
+  .arrows{display:flex;flex-direction:column;gap:2px;flex:none}
+  .arrows button{background:transparent;border:1px solid var(--line);color:var(--ink-dim);border-radius:6px;
+    width:30px;height:22px;font-size:10px;line-height:1;cursor:pointer;padding:0}
+  .arrows button:disabled{opacity:.25}
+
+  /* form */
+  .field{margin-top:13px}
+  .field label{display:block;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}
+  .two{display:flex;gap:10px} .two .field{flex:1}
+  .check{display:flex;gap:11px;align-items:flex-start;margin-top:15px;cursor:pointer}
+  .check .box{width:21px;height:21px;border-radius:6px;border:1.5px solid var(--line);flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:12px;color:transparent}
+  .check.on .box{background:var(--accent);border-color:var(--accent);color:#fff}
+  .check .txt{font-size:12.6px;line-height:1.45;color:var(--ink-dim)}
+  .legal{font-size:11.4px;line-height:1.5;color:var(--ink-faint);margin-top:14px}
+  .legal.center{text-align:center}
+
+  .tick{width:66px;height:66px;border-radius:50%;background:rgba(75,183,73,.13);border:1.5px solid var(--signal);
+    display:flex;align-items:center;justify-content:center;font-size:31px;color:var(--signal);margin:0 auto 16px}
+  .recap{background:var(--inset);border:1px solid var(--line);border-radius:14px;padding:13px 15px;margin-top:16px;text-align:left}
+  .recap .row{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;color:var(--ink-dim)}
+  .recap .row b{color:var(--ink);font-family:"Space Mono",monospace;font-weight:700;text-align:right}
+
+  .board{border:1px solid var(--line);border-radius:14px;background:var(--inset);margin-top:14px;overflow:hidden}
+  .brow{display:flex;align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid #1a1530;font-size:13.5px}
+  .brow:last-child{border-bottom:0}
+  .brow.me{background:rgba(109,95,224,.14)}
+  .brow .r{font-family:"Space Mono",monospace;font-weight:700;color:var(--ink-faint);width:26px;flex:none}
+  .brow .r.win{color:var(--gold)}
+  .brow .nm{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .brow .sc{font-family:"Space Mono",monospace;flex:none;color:var(--ink-dim)}
+
+  /* sponsor slot — same treatment as play.html .ad-slot */
+  .ad-slot{margin-top:16px}
+  .ad-slot a,.ad-slot img{display:block;width:100%}
+  .ad-slot img{width:100%;height:auto;max-height:120px;object-fit:contain;border-radius:12px}
+  .ad-slot .tag{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#5d5580;text-align:center;margin-bottom:5px}
+
+  .err{background:rgba(255,93,108,.12);border:1px solid var(--hot);color:#ffd6da;border-radius:12px;padding:11px 13px;font-size:13.5px;margin-top:12px;line-height:1.45}
+  .code-in{letter-spacing:.5em;text-align:center;font-family:"Space Mono",monospace;font-size:23px}
+  .hide{display:none!important}
+  .spin{text-align:center;color:var(--ink-faint);font-size:14px;padding:60px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brandbar">
+    <a class="wordmark" href="/">The A&amp;R Room</a>
+    <span class="step" id="step"></span>
+  </div>
+  <div id="app"><div class="spin">Loading…</div></div>
+  <div class="ad-slot hide" id="ad"></div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// /sidebet — the A&R Wars prediction contest.
+//
+// Pick which songs from the month's service pack will actually get PLAYED at A&R
+// Wars, put them in order, then identify yourself. Set membership, not ratings.
+//
+// The form is LAST on purpose: by then they've done the work of picking, so it
+// reads as the cost of keeping it rather than a toll before they see anything.
+// Picks live in memory + localStorage until the OTP verifies — someone who bails
+// at the form leaves no half-entry in the table.
+//
+// Nothing on this page shows how many people picked what. That aggregate is the
+// tiebreak axis, so exposing it would make copying the crowd the winning move.
+// The server never sends it before settle either; this is belt and braces.
+// ─────────────────────────────────────────────────────────────────────────────
+const $ = (s) => document.querySelector(s);
+const app = $('#app');
+const LS_PICKS = 'anr_sidebet_picks';
+const LS_TOKEN = 'anr_auth_token';       // same key the rest of the app uses
+// Subscribe target for the confirmation screen. `?sub_confirmation=1` (a real query
+// string — as `&` with no `?` before it, YouTube reads it as part of the path and the
+// subscribe prompt never opens) makes YouTube show the subscribe dialog on arrival.
+const YT_URL = 'https://www.youtube.com/makinitmag/live?sub_confirmation=1';
+
+let PACK = null, SONGS = [], BANNER = null, ENTRY = null, RESULTS = null;
+let picks = [];                           // pack_song ids, in the entrant's order
+let screen = 'offer';
+let filter = '';
+let form = { first: '', last: '', email: '', phone: '', notify: true, sms: false };
+let codeSent = false, devCode = null, busy = false, err = '';
+
+const tok = () => localStorage.getItem(LS_TOKEN) || '';
+const authHeaders = () => (tok() ? { 'X-Auth-Token': tok() } : {});
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const need = () => (PACK ? PACK.picksRequired : 0);
+
+function fmtDate(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
+  }) + ' ET';
+}
+
+async function api(path, body, method = 'GET') {
+  const r = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: method === 'GET' ? undefined : JSON.stringify(body || {}),
+  });
+  const d = await r.json().catch(() => ({}));
+  return { status: r.status, d };
+}
+
+// ---------- load ----------
+async function load() {
+  const { d } = await api('/api/sidebet');
+  PACK = d.pack; SONGS = d.songs || []; BANNER = d.banner || null;
+  ENTRY = d.entry || null; RESULTS = d.results || null;
+  // A saved entry always wins over whatever is in localStorage — the server row is
+  // the entry that competes, and a stale draft on one device must never shadow it.
+  if (ENTRY && ENTRY.picks && ENTRY.picks.length) picks = ENTRY.picks.slice();
+  else {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_PICKS) || 'null');
+      if (saved && saved.packId === (PACK && PACK.id) && Array.isArray(saved.picks)) picks = saved.picks;
+    } catch (e) {}
+  }
+  // Drop anything no longer in the pack rather than failing validation later.
+  const valid = new Set(SONGS.map(s => s.id));
+  picks = picks.filter(id => valid.has(id));
+
+  if (!PACK) screen = 'none';
+  else if (ENTRY && !PACK.open) screen = 'done';
+  else if (ENTRY) screen = 'done';
+  else if (!PACK.open) screen = 'closed';
+  render();
+}
+
+function savePicks() {
+  try { localStorage.setItem(LS_PICKS, JSON.stringify({ packId: PACK.id, picks })); } catch (e) {}
+}
+
+function go(next) { screen = next; err = ''; window.scrollTo(0, 0); render(); }
+
+// ---------- sponsor banner ----------
+// Reuses the room's banner row and play.html's ad-slot treatment. No banner set =
+// no slot at all: the page says "courtesy of our sponsor", so an unrelated
+// advertiser under that line would be a false claim.
+function paintAd() {
+  const el = $('#ad');
+  if (!BANNER || !BANNER.image) { el.classList.add('hide'); el.innerHTML = ''; return; }
+  const img = `<img src="${esc(BANNER.image)}" alt="Sponsor">`;
+  el.innerHTML = `<div class="tag">Sponsor</div>` +
+    (BANNER.link ? `<a href="${esc(BANNER.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img);
+  el.classList.remove('hide');
+}
+
+// ---------- screens ----------
+function viewNone() {
+  return `<div class="panel center">
+    <span class="eyebrow">Side contest</span>
+    <h2 style="margin-top:10px">No contest running right now</h2>
+    <p>Check back when the next A&amp;R Service Pack drops.</p>
+    <a class="btn ghost" href="/">Back to The A&amp;R Room</a>
+  </div>`;
+}
+
+function viewOffer() {
+  const prize = PACK.prizeText || '';
+  return `<div class="panel center">
+    <span class="eyebrow">Side contest · A&amp;R Wars</span>
+    <h1>Pick the hits.${prize ? `<br>Win ${esc(prize)}.` : ''}</h1>
+    ${prize ? `<div class="prize">${esc(prize)}</div>` : ''}
+    ${PACK.sponsorText ? `<div class="sponsor">${esc(PACK.sponsorText)}</div>` : ''}
+    <p>Pick the top ${need()} songs from this month's A&amp;R Service Pack${prize ? ` for a chance to win ${esc(prize)} cash` : ''}.</p>
+    <button class="btn" id="go1">Pick my ${need()} songs</button>
+    <div class="rules">
+      <span class="eyebrow">How it works</span>
+      <ol>
+        <li>Check out this month's A&amp;R Service Pack.</li>
+        <li>Pick your top ${need()} songs.</li>
+        <li>Tune into the A&amp;R Wars tournament to see if your picks get played.</li>
+        <li>Person with the most right selections wins.</li>
+      </ol>
+      <div class="tiebreak">If two people get the same number right, order decides it. Free to enter, one entry per person.</div>
+      <div class="mono" style="font-size:11px;color:var(--ink-faint);margin-top:9px">Entries close ${esc(fmtDate(PACK.closesAt))}</div>
+    </div>
+  </div>`;
+}
+
+function viewPack() {
+  return `<div class="panel">
+    <span class="eyebrow">Before you pick</span>
+    <h2 style="margin-top:10px">Listen to this month's pack</h2>
+    <p>You're picking ${need()} songs out of the <b>${SONGS.length}</b> in ${esc(PACK.name)}.
+       Download it and listen, or go straight to the list if you already know it.</p>
+    ${PACK.downloadUrl
+      ? `<a class="btn accent" href="${esc(PACK.downloadUrl)}" target="_blank" rel="noopener noreferrer">Download the pack ↗</a>`
+      : ''}
+    <button class="btn ghost" id="go2">${PACK.downloadUrl ? "I've heard it — start picking" : 'Start picking'}</button>
+    ${PACK.downloadUrl ? `<div class="legal">The download opens in a new tab. This page stays open.</div>` : ''}
+  </div>`;
+}
+
+function viewPick() {
+  const n = picks.length, full = n >= need();
+  const q = filter.trim().toLowerCase();
+  // Alphabetical by title — the entrant is scanning a list they half-remember, so the
+  // order has to be the one they'd look something up in, not CSV row order.
+  const rows = SONGS
+    .filter(s => !q || s.title.toLowerCase().includes(q) || (s.artist || '').toLowerCase().includes(q))
+    .sort((a, b) => a.title.localeCompare(b.title));
+  let html = '', letter = '';
+  for (const s of rows) {
+    const L = (s.title[0] || '#').toUpperCase();
+    if (!q && L !== letter) { letter = L; html += `<div class="alpha">${esc(L)}</div>`; }
+    const on = picks.includes(s.id), off = !on && full;
+    html += `<div class="song ${on ? 'on' : ''} ${off ? 'off' : ''}" data-id="${esc(s.id)}">
+      <span class="box">✓</span><span><span class="t">${esc(s.title)}</span>${s.artist ? `<span class="a">${esc(s.artist)}</span>` : ''}</span></div>`;
+  }
+  if (!rows.length) html = `<div class="empty">Nothing in the pack matches that.</div>`;
+  return `
+    <div class="stickyhead">
+      <div class="counter">
+        <span><span class="n ${full ? 'full' : ''}">${n}</span><span class="lbl"> / ${need()} picked</span></span>
+        <span class="lbl">${full ? 'list complete' : `${need() - n} to go`}</span>
+      </div>
+      <div class="bar"><i class="${full ? 'full' : ''}" style="width:${Math.min(100, n / need() * 100)}%"></i></div>
+      <input class="search" type="text" id="q" placeholder="Filter by song or artist…" autocomplete="off" value="${esc(filter)}">
+    </div>
+    <div class="list" id="list">${html}</div>
+    <button class="btn" id="go3" ${full ? '' : 'disabled'}>${full ? 'Done — put them in order' : `Done — ${n} of ${need()}`}</button>
+    <button class="btn ghost" id="back2">Back</button>`;
+}
+
+function viewOrder() {
+  const byId = new Map(SONGS.map(s => [s.id, s]));
+  const rows = picks.map((id, i) => {
+    const s = byId.get(id) || { title: '?', artist: '' };
+    return `<div class="rank">
+      <span class="num ${i < 3 ? 'top' : ''}">${i + 1}</span>
+      <span class="t">${esc(s.title)}${s.artist ? `<span>${esc(s.artist)}</span>` : ''}</span>
+      <span class="arrows">
+        <button ${i === 0 ? 'disabled' : ''} data-mv="${i},-1" aria-label="Move up">▲</button>
+        <button ${i === picks.length - 1 ? 'disabled' : ''} data-mv="${i},1" aria-label="Move down">▼</button>
+      </span></div>`;
+  }).join('');
+  return `<div class="panel" style="padding:16px">
+      <h2>Put them in order</h2>
+      <p style="font-size:13.5px">Your best pick at the top. Order only matters if someone else picks the same ${need()} songs you did.</p>
+    </div>
+    <div class="ranks">${rows}</div>
+    <button class="btn" id="go4">${ENTRY ? 'Save my picks' : 'Lock in my picks'}</button>
+    <button class="btn ghost" id="back3">Back to the list</button>
+    <div class="legal center">You can change your picks until entries close on ${esc(fmtDate(PACK.closesAt))}.</div>`;
+}
+
+function viewForm() {
+  return `<div class="panel">
+    <span class="eyebrow">Almost in</span>
+    <h2 style="margin-top:9px">${PACK.prizeText ? `Where do we send the ${esc(PACK.prizeText)}?` : 'Tell us who you are'}</h2>
+    <p style="font-size:13.5px">We'll email you a 6-digit code to confirm it's you.</p>
+    <div class="two">
+      <div class="field"><label>First name</label><input type="text" id="fFirst" autocomplete="given-name" value="${esc(form.first)}"></div>
+      <div class="field"><label>Last name</label><input type="text" id="fLast" autocomplete="family-name" value="${esc(form.last)}"></div>
+    </div>
+    <div class="field"><label>Email</label><input type="email" id="fEmail" autocomplete="email" inputmode="email" value="${esc(form.email)}"></div>
+    <div class="field"><label>Mobile <span class="muted">(optional)</span></label><input type="tel" id="fPhone" autocomplete="tel" inputmode="tel" value="${esc(form.phone)}"></div>
+    <div class="check ${form.notify ? 'on' : ''}" id="ckNotify"><span class="box">✓</span>
+      <span class="txt">Email me when the A&amp;R Room goes live.</span></div>
+    <div class="check ${form.sms ? 'on' : ''}" id="ckSms"><span class="box">✓</span>
+      <span class="txt">Text me about A&amp;R Wars and the results. Msg &amp; data rates may apply, reply STOP to opt out.</span></div>
+    ${err ? `<div class="err">${esc(err)}</div>` : ''}
+    <button class="btn" id="go5" ${busy ? 'disabled' : ''}>${busy ? 'Sending…' : 'Send my code'}</button>
+    <button class="btn ghost" id="back4">Back</button>
+    <div class="legal">Free to enter, no purchase necessary. One entry per person.</div>
+  </div>`;
+}
+
+function viewCode() {
+  return `<div class="panel center">
+    <span class="eyebrow">Check your email</span>
+    <h2 style="margin-top:10px">Enter your code</h2>
+    <p style="font-size:13.5px">Sent to <b class="mono" style="font-size:13px">${esc(form.email)}</b></p>
+    ${devCode ? `<p class="mono" style="color:var(--gold)">DEV CODE: ${esc(devCode)}</p>` : ''}
+    <div class="field" style="margin-top:16px">
+      <input class="code-in" type="text" id="fCode" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code">
+    </div>
+    ${err ? `<div class="err">${esc(err)}</div>` : ''}
+    <button class="btn" id="go6" ${busy ? 'disabled' : ''}>${busy ? 'Confirming…' : 'Confirm my entry'}</button>
+    <button class="btn ghost" id="resend">Resend code</button>
+    <div class="legal">Already have an account? Same code, same box — your entry attaches to it.</div>
+  </div>`;
+}
+
+function viewDone() {
+  const byId = new Map(SONGS.map(s => [s.id, s]));
+  const top = picks.length ? byId.get(picks[0]) : null;
+  const scored = ENTRY && ENTRY.correct != null;
+  return `<div class="panel center">
+    <div class="tick">✓</div>
+    <span class="eyebrow">${scored ? 'Results are in' : "You're locked in"}</span>
+    <h2 style="margin-top:10px">${scored
+      ? `You got ${ENTRY.correct} of ${need()} right.`
+      : `Your ${need()} picks are in.`}</h2>
+    <p style="font-size:13.5px">${scored
+      ? (ENTRY.rank === 1 ? 'You won. We’ll be in touch.' : `You finished #${ENTRY.rank}.`)
+      : 'Tune into A&amp;R Wars to see how many you got right.'}</p>
+    <div class="recap">
+      ${ENTRY && ENTRY.entryNo ? `<div class="row"><span>Entry</span><b>#${String(ENTRY.entryNo).padStart(4, '0')}</b></div>` : ''}
+      ${top ? `<div class="row"><span>Your top pick</span><b style="font-size:12.5px">${esc(top.title)}</b></div>` : ''}
+      <div class="row"><span>${PACK.open ? 'Entries close' : 'Entries closed'}</span><b style="font-size:12.5px">${esc(fmtDate(PACK.closesAt))}</b></div>
+      <div class="row"><span>A&amp;R Wars</span><b style="font-size:12.5px">${esc(fmtDate(PACK.warsAt))}</b></div>
+    </div>
+    ${RESULTS && RESULTS.length ? viewBoard() : ''}
+    <a class="btn" style="background:#ff0000;color:#fff" href="${esc(YT_URL)}" target="_blank" rel="noopener noreferrer">Subscribe on YouTube ↗</a>
+    ${PACK.open ? `<button class="btn ghost" id="edit">Edit my picks</button>` : ''}
+    <div class="legal">A&amp;R Wars streams live. Subscribe so you don't miss it.</div>
+  </div>`;
+}
+
+function viewBoard() {
+  return `<div class="board">${RESULTS.map(r => `
+    <div class="brow ${ENTRY && ENTRY.rank === r.rank ? 'me' : ''}">
+      <span class="r ${r.rank === 1 ? 'win' : ''}">${r.rank}</span>
+      <span class="nm">${esc(r.name)}${r.location ? ` <span class="muted" style="font-weight:400">· ${esc(r.location)}</span>` : ''}</span>
+      <span class="sc">${r.correct}/${need()}</span>
+    </div>`).join('')}</div>`;
+}
+
+function viewClosed() {
+  return `<div class="panel center">
+    <span class="eyebrow">Entries closed</span>
+    <h2 style="margin-top:10px">${esc(PACK.name)}</h2>
+    <p>Picks closed ${esc(fmtDate(PACK.closesAt))}. Results after A&amp;R Wars on ${esc(fmtDate(PACK.warsAt))}.</p>
+    ${RESULTS && RESULTS.length ? viewBoard() : ''}
+    <a class="btn ghost" href="/">Back to The A&amp;R Room</a>
+  </div>`;
+}
+
+const STEPS = { pack: 'STEP 1 OF 4', pick: 'STEP 2 OF 4', order: 'STEP 3 OF 4', form: 'STEP 4 OF 4', code: 'STEP 4 OF 4' };
+
+function render() {
+  $('#step').textContent = STEPS[screen] || '';
+  app.innerHTML =
+    screen === 'none'   ? viewNone()   :
+    screen === 'offer'  ? viewOffer()  :
+    screen === 'pack'   ? viewPack()   :
+    screen === 'pick'   ? viewPick()   :
+    screen === 'order'  ? viewOrder()  :
+    screen === 'form'   ? viewForm()   :
+    screen === 'code'   ? viewCode()   :
+    screen === 'closed' ? viewClosed() : viewDone();
+  paintAd();
+  wire();
+}
+
+// ---------- interaction ----------
+function wire() {
+  const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
+
+  on('#go1', 'click', () => go('pack'));
+  on('#go2', 'click', () => go('pick'));
+  on('#back2', 'click', () => go('pack'));
+  on('#go3', 'click', () => { if (picks.length === need()) go('order'); });
+  on('#back3', 'click', () => go('pick'));
+  on('#edit', 'click', () => go('pick'));
+
+  // Pick list. The whole list re-renders on each tap, so scroll position is restored
+  // by hand — otherwise picking a song near the bottom throws you back to the top.
+  const list = $('#list');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const row = e.target.closest('.song');
+      if (!row) return;
+      const id = row.dataset.id, at = picks.indexOf(id);
+      if (at >= 0) picks.splice(at, 1);
+      else { if (picks.length >= need()) return; picks.push(id); }
+      savePicks();
+      const y = list.scrollTop;
+      render();
+      const l2 = $('#list'); if (l2) l2.scrollTop = y;
+    });
+  }
+  const q = $('#q');
+  if (q) {
+    q.addEventListener('input', () => {
+      filter = q.value;
+      const pos = q.selectionStart;
+      render();
+      const q2 = $('#q');
+      if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} }
+    });
+  }
+
+  // Order screen. Arrows only — drag inside a scroll container is unreliable on
+  // mobile Safari, and this list is the tiebreak, so it has to be exact.
+  const ranks = $('.ranks');
+  if (ranks) {
+    ranks.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-mv]');
+      if (!b) return;
+      const [i, d] = b.dataset.mv.split(',').map(Number), to = i + d;
+      if (to < 0 || to >= picks.length) return;
+      [picks[i], picks[to]] = [picks[to], picks[i]];
+      savePicks();
+      const y = ranks.scrollTop;
+      render();
+      const r2 = $('.ranks'); if (r2) r2.scrollTop = y;
+    });
+  }
+
+  // Lock in: an already-verified visitor skips the form entirely.
+  on('#go4', 'click', async () => {
+    if (tok()) { await submitEntry(); return; }
+    go('form');
+  });
+
+  on('#ckNotify', 'click', () => { form.notify = !form.notify; render(); });
+  on('#ckSms', 'click', () => { form.sms = !form.sms; render(); });
+  ['first', 'last', 'email', 'phone'].forEach(k => {
+    const el = $('#f' + k[0].toUpperCase() + k.slice(1));
+    if (el) el.addEventListener('input', () => { form[k] = el.value; });
+  });
+
+  on('#go5', 'click', requestCode);
+  on('#resend', 'click', requestCode);
+  on('#back4', 'click', () => go('order'));
+  on('#go6', 'click', verifyCode);
+  const fc = $('#fCode');
+  if (fc) { fc.focus(); fc.addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyCode(); }); }
+}
+
+async function requestCode() {
+  err = '';
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) { err = 'Enter a valid email address.'; render(); return; }
+  busy = true; render();
+  const { status, d } = await api('/api/auth/request', { email: form.email.trim() }, 'POST');
+  busy = false;
+  if (status !== 200) { err = d.error || 'Could not send the code.'; render(); return; }
+  devCode = d.devCode || null; codeSent = true;
+  go('code');
+}
+
+async function verifyCode() {
+  const code = ($('#fCode') || {}).value || '';
+  if (code.trim().length < 6) { err = 'Enter the 6-digit code.'; render(); return; }
+  busy = true; err = ''; render();
+  // The name goes in as one string: `users.name` is a single display-name column and
+  // the rest of the app reads it that way. Splitting it here would be a schema change
+  // for no gain — nothing else in the product ever needs the halves apart.
+  const name = [form.first.trim(), form.last.trim()].filter(Boolean).join(' ');
+  const { status, d } = await api('/api/auth/verify', {
+    email: form.email.trim(), code: code.trim(), name,
+    phone: form.sms ? form.phone.trim() : '',
+    notifyRooms: form.notify ? 1 : 0,
+  }, 'POST');
+  busy = false;
+  if (status !== 200 || !d.token) { err = d.error || 'That code did not work.'; render(); return; }
+  localStorage.setItem(LS_TOKEN, d.token);
+  await submitEntry();
+}
+
+async function submitEntry() {
+  busy = true; err = ''; render();
+  const { status, d } = await api('/api/sidebet/entry', { packId: PACK.id, picks }, 'POST');
+  busy = false;
+  if (status !== 200) {
+    err = d.error || 'Could not save your picks.';
+    // A rejected entry means the picks themselves are the problem (closed, changed
+    // pack) — send them back to the list rather than stranding them on a dead screen.
+    go(status === 401 ? 'form' : 'order');
+    return;
+  }
+  try { localStorage.removeItem(LS_PICKS); } catch (e) {}
+  await load();
+  go('done');
+}
+
+load();
+</script>
+</body>
+</html>

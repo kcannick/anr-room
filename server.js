@@ -27,6 +27,7 @@ const { sendSms, PROVIDER: SMS_PROVIDER } = require('./sms');
 const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy } = require('./scoring');
 const shareCards = require('./share-cards');
+const { consensusRanking, scoreEntry, rankEntries, validatePicks } = require('./sidebet');
 
 const PORT = process.env.PORT || 3000;
 const now = () => Date.now();
@@ -3170,6 +3171,24 @@ async function ratifyRound(round) {
   });
 }
 
+// Final standings for a settled pack. PII-safe by construction: display name, city and
+// the two score numbers only — never email or phone, because this rides the public
+// /api/sidebet response. Nothing here is readable before status='settled' (callers gate
+// on it): the standings are derived from pick counts, which stay sealed until then.
+const SIDEBET_RESULT_LIMIT = 25;
+async function sidebetResults(pack, limit = SIDEBET_RESULT_LIMIT) {
+  const rows = await db.all(
+    `SELECT se.rank, se.correct, se.distance, se.entry_no, u.name, u.location
+       FROM sidebet_entries se JOIN users u ON u.uid = se.user_id
+      WHERE se.pack_id = ? AND se.rank IS NOT NULL
+      ORDER BY se.rank ASC, se.entry_no ASC
+      LIMIT ?`, [pack.id, limit]);
+  return rows.map(r => ({
+    rank: Number(r.rank), correct: Number(r.correct), distance: Number(r.distance),
+    name: dispName(r.name), location: r.location || null,
+  }));
+}
+
 // ---------- routes ----------
 async function handleApi(req, res, url) {
   const p = url.pathname;
@@ -4359,6 +4378,335 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings });
   }
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // SIDEBET (033) — the A&R Wars prediction contest at /sidebet.
+  // ═════════════════════════════════════════════════════════════════════════
+  // Entrants predict WHICH songs from the monthly service pack get PLAYED at A&R
+  // Wars. Set membership, not ratings — nothing here reads votes, and no points are
+  // awarded. Identity is the existing email OTP (/api/auth/request + /api/auth/verify);
+  // an entrant becomes a users row with NO participants row, which is the point: the
+  // contest seeds the durable audience.
+  //
+  // SEALED: pick counts are never emitted before status='settled'. The tiebreak
+  // ranking is built from the entries themselves, so a live "340 people picked this"
+  // would make copying the crowd the dominant strategy. sidebetPublicPack() is the
+  // ONLY shape sent to a player, and it has no aggregate in it at all.
+
+  // Public read: the open pack, its songs, and (with an auth token) your own entry.
+  if (p === '/api/sidebet' && method === 'GET') {
+    const slug = (url.searchParams.get('pack') || '').trim();
+    // Resolution: the one OPEN pack wins. With none open, fall back to the most recent
+    // closed-or-settled one — otherwise an entrant who comes back after the show (which
+    // is exactly what the confirmation screen told them to do) lands on an empty page
+    // instead of their own result. An explicit slug reaches any pack by permalink.
+    const pack = slug
+      ? await db.get('SELECT * FROM packs WHERE slug = ?', [slug])
+      : (await db.get("SELECT * FROM packs WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", []))
+        || (await db.get("SELECT * FROM packs WHERE status IN ('closed','settled') ORDER BY COALESCE(settled_at, closes_at) DESC LIMIT 1", []));
+    if (!pack) return send(res, 200, { pack: null });
+    const songs = await db.all('SELECT id, title, artist, row_no FROM pack_songs WHERE pack_id = ? ORDER BY row_no', [pack.id]);
+    const out = {
+      pack: {
+        id: pack.id, name: pack.name, picksRequired: pack.picks_required,
+        downloadUrl: pack.download_url || null, prizeText: pack.prize_text || null,
+        sponsorText: pack.sponsor_text || null,
+        warsAt: Number(pack.wars_at), closesAt: Number(pack.closes_at),
+        status: pack.status, songCount: songs.length,
+        // Server clock, so a device with a wrong date can't think entries are still open.
+        nowMs: now(),
+        open: pack.status === 'open' && now() < Number(pack.closes_at),
+      },
+      banner: pack.banner_id ? await getBanner(pack.banner_id) : null,
+      songs: songs.map(s => ({ id: s.id, title: s.title, artist: s.artist || null })),
+      entry: null,
+    };
+    const user = await userFromAuth(req);
+    if (user) {
+      const e = await db.get('SELECT * FROM sidebet_entries WHERE pack_id = ? AND user_id = ?', [pack.id, user.uid]);
+      if (e) {
+        const picks = await db.all('SELECT pack_song_id FROM sidebet_picks WHERE entry_id = ? ORDER BY position', [e.id]);
+        out.entry = {
+          entryNo: e.entry_no, updatedAt: Number(e.updated_at),
+          picks: picks.map(x => x.pack_song_id),
+          correct: e.correct == null ? null : Number(e.correct),
+          rank: e.rank == null ? null : Number(e.rank),
+        };
+      }
+    }
+    // Results are readable only once settled — before that there is nothing to read
+    // (no song has been played) and pick counts are sealed.
+    if (pack.status === 'settled') out.results = await sidebetResults(pack);
+    return send(res, 200, out);
+  }
+
+  // Save / update an entry. Requires a verified account (X-Auth-Token) — the unique
+  // index on (pack_id, user_id) is what makes "one entry per person" real, so the
+  // identity behind it has to have been proven first.
+  if (p === '/api/sidebet/entry' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user) return bad(res, 'Verify your email first', 401);
+    if (user.blocked) return bad(res, 'This account has been suspended.', 403);
+    const body = await readBody(req);
+    const pack = body.packId
+      ? await db.get('SELECT * FROM packs WHERE id = ?', [body.packId])
+      : await db.get("SELECT * FROM packs WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", []);
+    if (!pack) return bad(res, 'No contest is open right now', 404);
+    if (pack.status !== 'open') return bad(res, 'Entries are closed');
+    // The cut-off is enforced HERE, not just in the UI: entries editable once songs
+    // are playing would let someone submit a list they already know the answer to.
+    if (now() >= Number(pack.closes_at)) return bad(res, 'Entries closed');
+
+    const songs = await db.all('SELECT id FROM pack_songs WHERE pack_id = ?', [pack.id]);
+    const valid = new Set(songs.map(s => s.id));
+    const check = validatePicks(body.picks, valid, Number(pack.picks_required));
+    if (!check.ok) return bad(res, check.error);
+
+    const t = now();
+    const existing = await db.get('SELECT * FROM sidebet_entries WHERE pack_id = ? AND user_id = ?', [pack.id, user.uid]);
+    const entryId = existing ? existing.id : id(12);
+    await db.tx(async (tx) => {
+      if (existing) {
+        // first_submitted_at is deliberately NOT touched: it is the record of when they
+        // first entered. The TIEBREAK reads updated_at — the list that actually
+        // competed — so an early throwaway entry rewritten at the deadline gets the
+        // late timestamp it earned.
+        await tx.run('UPDATE sidebet_entries SET updated_at = ? WHERE id = ?', [t, entryId]);
+        await tx.run('DELETE FROM sidebet_picks WHERE entry_id = ?', [entryId]);
+      } else {
+        const c = await tx.get('SELECT COUNT(*) AS n FROM sidebet_entries WHERE pack_id = ?', [pack.id]);
+        await tx.run('INSERT INTO sidebet_entries (id, pack_id, user_id, entry_no, first_submitted_at, updated_at, created_at) VALUES (?,?,?,?,?,?,?)',
+          [entryId, pack.id, user.uid, Number(c.n) + 1, t, t, t]);
+      }
+      for (let i = 0; i < body.picks.length; i++) {
+        await tx.run('INSERT INTO sidebet_picks (entry_id, pack_song_id, position) VALUES (?,?,?)',
+          [entryId, body.picks[i], i + 1]);
+      }
+    });
+    const e = await db.get('SELECT entry_no, updated_at FROM sidebet_entries WHERE id = ?', [entryId]);
+    return send(res, 200, { ok: true, entryNo: e.entry_no, updatedAt: Number(e.updated_at), edited: !!existing });
+  }
+
+  // ----- sidebet admin (platform admin only: a pack spans no single room) -----
+  if (p === '/api/admin/sidebet' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const packs = await db.all('SELECT * FROM packs ORDER BY created_at DESC', []);
+    const out = [];
+    for (const k of packs) {
+      const sc = await db.get('SELECT COUNT(*) AS n FROM pack_songs WHERE pack_id = ?', [k.id]);
+      const ec = await db.get('SELECT COUNT(*) AS n FROM sidebet_entries WHERE pack_id = ?', [k.id]);
+      out.push({
+        id: k.id, name: k.name, slug: k.slug || null, picksRequired: k.picks_required,
+        downloadUrl: k.download_url || null, prizeText: k.prize_text || null,
+        sponsorText: k.sponsor_text || null, bannerId: k.banner_id || null,
+        warsAt: Number(k.wars_at), closesAt: Number(k.closes_at),
+        sessionId: k.session_id || null, status: k.status,
+        settledAt: k.settled_at ? Number(k.settled_at) : null,
+        songs: Number(sc.n), entries: Number(ec.n),
+      });
+    }
+    // The create form needs the banner library and the room list; both are admin-scoped
+    // and small, so they ride this call rather than costing two more round trips.
+    const banners = await db.all('SELECT id, label, session_id FROM banners ORDER BY created_at DESC LIMIT 100', []);
+    const rooms = await db.all(
+      "SELECT id, name, status FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 50", []);
+    return send(res, 200, {
+      packs: out,
+      banners: banners.map(b => ({ id: b.id, label: b.label || 'Untitled banner', image: `/api/banner/image?id=${b.id}` })),
+      rooms: rooms.map(r => ({ id: r.id, name: r.name, status: r.status })),
+    });
+  }
+
+  if (p === '/api/admin/sidebet' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const b = await readBody(req);
+    const name = (b.name || '').toString().trim();
+    if (!name) return bad(res, 'Service pack title is required');
+    const picks = Math.max(1, Math.min(50, parseInt(b.picksRequired, 10) || 18));
+    const warsAt = Number(b.warsAt), closesAt = Number(b.closesAt);
+    if (!warsAt || !closesAt) return bad(res, 'Tournament date and cut-off are both required');
+    // Enforced server-side as well as in the form: entries that stay editable past the
+    // first song let someone submit a list they already know the answer to.
+    if (closesAt >= warsAt) return bad(res, 'The cut-off must be before the tournament starts');
+
+    const existing = b.id ? await db.get('SELECT * FROM packs WHERE id = ?', [b.id]) : null;
+    if (b.id && !existing) return bad(res, 'Unknown iteration', 404);
+    // Only one open pack at a time — /sidebet resolves to a single pack with no
+    // disambiguation, so a second open one would silently shadow the first.
+    if (b.status === 'open') {
+      const other = await db.get("SELECT id, name FROM packs WHERE status = 'open' AND id <> ?", [b.id || '']);
+      if (other) return bad(res, `"${other.name}" is already open. Close it first.`);
+    }
+    const fields = {
+      name,
+      slug: (b.slug || '').toString().trim() || null,
+      picks_required: picks,
+      download_url: (b.downloadUrl || '').toString().trim() || null,
+      prize_text: (b.prizeText || '').toString().trim() || null,
+      sponsor_text: (b.sponsorText || '').toString().trim() || null,
+      banner_id: (b.bannerId || '').toString().trim() || null,
+      wars_at: warsAt,
+      closes_at: closesAt,
+      session_id: (b.sessionId || '').toString().trim() || null,
+      status: ['draft', 'open', 'closed', 'settled'].includes(b.status) ? b.status : (existing ? existing.status : 'draft'),
+    };
+    if (existing) {
+      // picks_required can't move once entries exist — every stored entry is exactly
+      // the old length, so changing it would silently invalidate all of them.
+      const ec = await db.get('SELECT COUNT(*) AS n FROM sidebet_entries WHERE pack_id = ?', [existing.id]);
+      if (Number(ec.n) > 0 && picks !== Number(existing.picks_required)) {
+        return bad(res, `${ec.n} ${Number(ec.n) === 1 ? 'entry already exists' : 'entries already exist'} with ${existing.picks_required} picks — that number can no longer change.`);
+      }
+      const sets = Object.keys(fields).map(k => `${k} = ?`).join(', ');
+      await db.run(`UPDATE packs SET ${sets} WHERE id = ?`, [...Object.values(fields), existing.id]);
+      return send(res, 200, { ok: true, id: existing.id });
+    }
+    const pid = id(12);
+    const cols = ['id', ...Object.keys(fields), 'opens_at', 'created_at'];
+    const vals = [pid, ...Object.values(fields), now(), now()];
+    await db.run(`INSERT INTO packs (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, vals);
+    return send(res, 200, { ok: true, id: pid });
+  }
+
+  // Load the songs from a CSV. Row order becomes row_no and is LOAD-BEARING: it breaks
+  // ties in the consensus ranking, so it is fixed before any entry exists.
+  if (p === '/api/admin/sidebet/songs' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const b = await readBody(req);
+    const pack = await db.get('SELECT * FROM packs WHERE id = ?', [b.packId || '']);
+    if (!pack) return bad(res, 'Unknown iteration', 404);
+    // Every pick points at a pack_songs row, so replacing the list after entries exist
+    // would repoint or orphan all of them. Get the CSV right before opening.
+    const ec = await db.get('SELECT COUNT(*) AS n FROM sidebet_entries WHERE pack_id = ?', [pack.id]);
+    if (Number(ec.n) > 0) return bad(res, `${ec.n} ${Number(ec.n) === 1 ? 'entry' : 'entries'} already point at these songs — the list can no longer be replaced.`);
+
+    const rows = Array.isArray(b.songs) ? b.songs : [];
+    const clean = [], seen = new Set();
+    for (const r of rows) {
+      const title = (r && r.title || '').toString().trim().slice(0, 200);
+      const artist = (r && r.artist || '').toString().trim().slice(0, 200);
+      if (!title) return bad(res, `Row ${clean.length + 1} has no title`);
+      const k = (title + '|' + artist).toLowerCase();
+      if (seen.has(k)) return bad(res, `"${title}" appears twice`);
+      seen.add(k);
+      clean.push({ title, artist });
+    }
+    if (clean.length < Number(pack.picks_required)) {
+      return bad(res, `Only ${clean.length} songs — you can't pick ${pack.picks_required} out of ${clean.length}`);
+    }
+    const t = now();
+    await db.tx(async (tx) => {
+      await tx.run('DELETE FROM pack_songs WHERE pack_id = ?', [pack.id]);
+      for (let i = 0; i < clean.length; i++) {
+        await tx.run('INSERT INTO pack_songs (id, pack_id, row_no, title, artist, played, created_at) VALUES (?,?,?,?,?,0,?)',
+          [id(12), pack.id, i + 1, clean[i].title, clean[i].artist || null, t]);
+      }
+    });
+    return send(res, 200, { ok: true, songs: clean.length });
+  }
+
+  // The service-pack songs for whatever sidebet iteration is linked to THIS room, so the
+  // console can offer them when queuing a Versus matchup. Deliberately its own one-shot
+  // call rather than a field on /api/admin/state: state is polled every couple of seconds
+  // during a live show, and this list never changes mid-round.
+  if (p === '/api/admin/sidebet/room-songs' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId') || '';
+    const session = await canAdminSession(req, sessionId);
+    if (!session) return bad(res, 'Admin auth failed', 401);
+    const pack = await db.get(
+      "SELECT id, name FROM packs WHERE session_id = ? AND status <> 'settled' ORDER BY created_at DESC LIMIT 1", [sessionId]);
+    if (!pack) return send(res, 200, { pack: null, songs: [] });
+    const songs = await db.all('SELECT id, title, artist FROM pack_songs WHERE pack_id = ? ORDER BY title', [pack.id]);
+    return send(res, 200, {
+      pack: { id: pack.id, name: pack.name },
+      songs: songs.map(x => ({ id: x.id, title: x.title, artist: x.artist || null })),
+    });
+  }
+
+  // Settle checklist: every pack song, pre-ticked from the Versus rounds that played it.
+  if (p === '/api/admin/sidebet/checklist' && method === 'GET') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const pack = await db.get('SELECT * FROM packs WHERE id = ?', [url.searchParams.get('packId') || '']);
+    if (!pack) return bad(res, 'Unknown iteration', 404);
+    const songs = await db.all('SELECT id, title, artist, row_no, played FROM pack_songs WHERE pack_id = ? ORDER BY row_no', [pack.id]);
+    // Derived: a song is auto-marked when it was one side of a started Versus round.
+    // Every A&R Wars matchup is a two-song binary round, so the full set falls out with
+    // no extra host work. The host still confirms — a swapped song or a hand-typed
+    // matchup has to be fixable, and a title compare must never decide a cash prize.
+    const derived = new Set();
+    if (pack.session_id) {
+      const rs = await db.all(
+        "SELECT pack_song_a, pack_song_b FROM rounds WHERE session_id = ? AND status <> 'pending'", [pack.session_id]);
+      for (const r of rs) { if (r.pack_song_a) derived.add(r.pack_song_a); if (r.pack_song_b) derived.add(r.pack_song_b); }
+    }
+    return send(res, 200, {
+      picksRequired: Number(pack.picks_required),
+      status: pack.status,
+      sessionId: pack.session_id || null,
+      songs: songs.map(s => ({
+        id: s.id, title: s.title, artist: s.artist || null, rowNo: s.row_no,
+        // `played` once anything has been saved; otherwise the derived set is the seed.
+        played: Number(s.played) === 1 || (Number(s.played) === 0 && derived.has(s.id)),
+        derived: derived.has(s.id),
+      })),
+    });
+  }
+
+  // Settle: mark what was played, score every entry, publish. Re-runnable while closed.
+  if (p === '/api/admin/sidebet/settle' && method === 'POST') {
+    const user = await userFromAuth(req);
+    if (!user || user.role !== 'admin') return bad(res, 'Admin only', 403);
+    const b = await readBody(req);
+    const pack = await db.get('SELECT * FROM packs WHERE id = ?', [b.packId || '']);
+    if (!pack) return bad(res, 'Unknown iteration', 404);
+    const played = Array.isArray(b.played) ? [...new Set(b.played)] : [];
+    const need = Number(pack.picks_required);
+    // A miscount doesn't error on its own — it quietly crowns the wrong person. So the
+    // count is a hard gate rather than a warning.
+    if (played.length !== need) {
+      return bad(res, `${played.length} songs marked, ${need} required.`);
+    }
+    const songs = await db.all('SELECT id, row_no FROM pack_songs WHERE pack_id = ?', [pack.id]);
+    const byId = new Map(songs.map(s => [s.id, s]));
+    for (const sid of played) if (!byId.has(sid)) return bad(res, 'A marked song is not in this pack');
+
+    const truth = new Set(played);
+    const playedSongs = played.map(sid => ({ id: sid, row_no: byId.get(sid).row_no }));
+
+    // Consensus ranking: played songs ordered by how many entries picked them.
+    const counts = new Map();
+    const countRows = await db.all(
+      `SELECT sp.pack_song_id AS sid, COUNT(*) AS n
+         FROM sidebet_picks sp JOIN sidebet_entries se ON se.id = sp.entry_id
+        WHERE se.pack_id = ? GROUP BY sp.pack_song_id`, [pack.id]);
+    for (const r of countRows) counts.set(r.sid, Number(r.n));
+    const consensus = consensusRanking(playedSongs, counts);
+
+    const entries = await db.all('SELECT id, updated_at FROM sidebet_entries WHERE pack_id = ?', [pack.id]);
+    const scored = [];
+    for (const e of entries) {
+      const picks = await db.all('SELECT pack_song_id, position FROM sidebet_picks WHERE entry_id = ?', [e.id]);
+      const { correct, distance } = scoreEntry(picks, truth, consensus);
+      scored.push({ id: e.id, updated_at: Number(e.updated_at), correct, distance });
+    }
+    const ranked = rankEntries(scored);
+
+    await db.tx(async (tx) => {
+      await tx.run('UPDATE pack_songs SET played = 0 WHERE pack_id = ?', [pack.id]);
+      for (const sid of played) await tx.run('UPDATE pack_songs SET played = 1 WHERE id = ?', [sid]);
+      for (const r of ranked) {
+        await tx.run('UPDATE sidebet_entries SET correct = ?, distance = ?, rank = ? WHERE id = ?',
+          [r.correct, r.distance, r.rank, r.id]);
+      }
+      await tx.run("UPDATE packs SET status = 'settled', settled_at = ? WHERE id = ?", [now(), pack.id]);
+    });
+    const fresh = await db.get('SELECT * FROM packs WHERE id = ?', [pack.id]);
+    return send(res, 200, { ok: true, entries: ranked.length, results: await sidebetResults(fresh) });
+  }
+
   // ===== ANALYTICS DATA FEED (static-token gated; machine-readable) =====
   // A raw, PII-safe data pull across the most recent N shows — the per-session CSV/JSON
   // exports bundled into ONE call, PLUS a STABLE pseudonymous A&R id (`ar`) so cross-session
@@ -5212,7 +5560,7 @@ async function handleApi(req, res, url) {
 
   if (p === '/api/admin/round' && method === 'POST') {
     const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type,
-      artist_email, artist_phone, roundId } = await readBody(req);
+      artist_email, artist_phone, roundId, pack_song_a, pack_song_b } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     // A drop's records arrive as one approved batch from Drupal and are numbered at insert.
@@ -5235,6 +5583,25 @@ async function handleApi(req, res, url) {
       pt = (last && last.poll_type) || (session.poll_type === 'binary' ? 'binary' : 'rating');
     }
     const isBinary = pt === 'binary';
+    // Sidebet (033): a binary matchup queued FROM the service pack carries the two
+    // pack_song ids, which is what lets the played set derive at settle instead of the
+    // host re-ticking 18 boxes. Validated against the pack actually linked to THIS room
+    // — an id from another pack would silently mark the wrong song as played, and that
+    // decides a cash prize. A round is never rejected over this: an unrecognised id is
+    // dropped and the host confirms by hand, which the settle checklist already expects.
+    let packA = null, packB = null;
+    if (isBinary && (pack_song_a || pack_song_b)) {
+      const linked = await db.get("SELECT id FROM packs WHERE session_id = ? AND status <> 'settled' ORDER BY created_at DESC LIMIT 1", [sessionId]);
+      if (linked) {
+        const okSong = async (sid) => {
+          if (!sid) return null;
+          const r = await db.get('SELECT id FROM pack_songs WHERE id = ? AND pack_id = ?', [sid, linked.id]);
+          return r ? r.id : null;
+        };
+        packA = await okSong(pack_song_a);
+        packB = await okSong(pack_song_b);
+      }
+    }
     if (!song_title || !song_title.trim()) return bad(res, (isBinary ? 'Song A title required' : 'Song title required'));
     // Binary rounds need both sides; Song A reuses song_title/song_artist.
     if (isBinary && (!option_b_title || !option_b_title.trim())) return bad(res, 'Song B title required');
@@ -5246,19 +5613,20 @@ async function handleApi(req, res, url) {
       // the review site pushed. queue_pos is left alone so a reordered queue stays reordered.
       await db.run(
         `UPDATE rounds SET poll_type = ?, song_title = ?, song_artist = ?, song_note = ?, giveaway = ?,
-           option_b_title = ?, option_b_artist = ?, artist_email = ?, artist_phone = ? WHERE id = ?`,
+           option_b_title = ?, option_b_artist = ?, artist_email = ?, artist_phone = ?,
+           pack_song_a = ?, pack_song_b = ? WHERE id = ?`,
         [pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
          isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
-         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), rid]
+         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, rid]
       );
     } else {
       const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
       await db.run(
-        `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, status, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
+        `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, pack_song_a, pack_song_b, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
         [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
          isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
-         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), now()]
+         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, now()]
       );
     }
     // Straight to open unless a round is already in play — then it waits in the queue.
@@ -6787,6 +7155,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
+    if (url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html'); // A&R Wars prediction contest
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // Stable submit link for QR codes: /submit?s=<session> 302s to wherever that
     // session's submission link points RIGHT NOW (Nero, review site, anything).
