@@ -292,7 +292,7 @@ async function freshDb() {
   const applied32 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('032 idempotent (not duplicated)', applied32.filter(x => x === '032_round_ingest_stage').length === 1, JSON.stringify(applied32));
 
-  // ── 033: A&R Daily — the async drop ───────────────────────────────────────
+  // ── 034: A&R Daily — the async drop ───────────────────────────────────────
   // Every column is additive and nullable so a fresh DB and an upgraded one look identical
   // and no existing session changes behavior. The two assertions that actually matter are
   // at the bottom: the partial unique index has to REFUSE a second live drop for one ET day
@@ -304,29 +304,29 @@ async function freshDb() {
   const scols33 = (await db.all('PRAGMA table_info(sessions)', [])).map(c => c.name);
   for (const c of ['mode', 'drop_day', 'window_opens_at', 'window_closes_at', 'results_at',
                    'published_at', 'async_state', 'live_bonus']) {
-    ok(`033 creates sessions.${c}`, scols33.includes(c), JSON.stringify(scols33));
+    ok(`034 creates sessions.${c}`, scols33.includes(c), JSON.stringify(scols33));
   }
   const rcols33 = (await db.all('PRAGMA table_info(rounds)', [])).map(c => c.name);
   for (const c of ['play_url', 'artist_note', 'ingest_ref', 'ingest_url', 'scout_drupal_uid',
                    'tally_claimed_at']) {
-    ok(`033 creates rounds.${c}`, rcols33.includes(c), JSON.stringify(rcols33));
+    ok(`034 creates rounds.${c}`, rcols33.includes(c), JSON.stringify(rcols33));
   }
   // round_reports: an A&R telling us a record cannot be evaluated. The unique index is what
   // makes the console's count PEOPLE rather than clicks, which is what makes it a usable
   // threshold for pulling a record.
   const rrcols = (await db.all('PRAGMA table_info(round_reports)', [])).map(c => c.name);
   for (const c of ['id', 'round_id', 'session_id', 'participant_id', 'reason', 'body', 'created_at']) {
-    ok(`033 creates round_reports.${c}`, rrcols.includes(c), JSON.stringify(rrcols));
+    ok(`034 creates round_reports.${c}`, rrcols.includes(c), JSON.stringify(rrcols));
   }
   const ucols33 = (await db.all('PRAGMA table_info(users)', [])).map(c => c.name);
-  ok('033 creates users.drupal_uid', ucols33.includes('drupal_uid'), JSON.stringify(ucols33));
+  ok('034 creates users.drupal_uid', ucols33.includes('drupal_uid'), JSON.stringify(ucols33));
   const jcols33 = (await db.all('PRAGMA table_info(recap_jobs)', [])).map(c => c.name);
   for (const c of ['stage', 'claimed_at', 'caption']) {
-    ok(`033 creates recap_jobs.${c}`, jcols33.includes(c), JSON.stringify(jcols33));
+    ok(`034 creates recap_jobs.${c}`, jcols33.includes(c), JSON.stringify(jcols33));
   }
   const bcols33 = (await db.all('PRAGMA table_info(notify_broadcasts)', [])).map(c => c.name);
   for (const c of ['kind', 'ref_id']) {
-    ok(`033 creates notify_broadcasts.${c}`, bcols33.includes(c), JSON.stringify(bcols33));
+    ok(`034 creates notify_broadcasts.${c}`, bcols33.includes(c), JSON.stringify(bcols33));
   }
   // mode NULL = a live room, unchanged. If this ever gains a default, every historical
   // session silently becomes a drop.
@@ -337,7 +337,7 @@ async function freshDb() {
   for (const i of ['uniq_session_drop_day', 'idx_sessions_async_state', 'idx_rounds_ingest_ref',
                    'uniq_users_drupal_uid', 'uniq_broadcast_kind_ref',
                    'uniq_round_report', 'idx_round_report_session']) {
-    ok(`033 creates ${i}`, idx33.includes(i), JSON.stringify(idx33.filter(n => !/^sqlite_/.test(n))));
+    ok(`034 creates ${i}`, idx33.includes(i), JSON.stringify(idx33.filter(n => !/^sqlite_/.test(n))));
   }
 
   const mkDrop = (id, day, del = null) => db.run(
@@ -364,7 +364,7 @@ async function freshDb() {
 
   await db.init();
   const applied33 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
-  ok('033 idempotent (not duplicated)', applied33.filter(x => x === '033_async_drop').length === 1, JSON.stringify(applied33));
+  ok('034 idempotent (not duplicated)', applied33.filter(x => x === '034_async_drop').length === 1, JSON.stringify(applied33));
 
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);

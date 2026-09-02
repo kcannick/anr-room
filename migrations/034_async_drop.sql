@@ -1,4 +1,4 @@
--- 033_async_drop.sql
+-- 034_async_drop.sql
 -- A&R Daily: the async daily drop. Every day a set of records opens SIMULTANEOUSLY over one
 -- ~21-hour window (12:00PM ET -> 9:00AM ET next day), and each A&R walks their own queue at
 -- their own pace. This becomes the primary points engine; the weekly live show becomes a

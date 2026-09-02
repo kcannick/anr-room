@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 033; suite 1,123 green)
+## Current state (migrations through 034; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -291,7 +291,7 @@ live on anr.makinitmag.com.
   changes what every player is looking at. Console: a red 🗑 in the Rounds tab, offered only
   when `votes === 0`.
 
-- **A&R Daily — the async daily drop** (033, branch `claude/ar-async-review-mode-50b726`,
+- **A&R Daily — the async daily drop** (034, branch `claude/ar-async-review-mode-50b726`,
   **NOT YET PUSHED** — this section is honest against git, so re-read that word before
   treating any of it as live). This inverts the product: **the daily drop is the thing and
   the live show becomes a special event on top of it.** The bottleneck it fixes is
