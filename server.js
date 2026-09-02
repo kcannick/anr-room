@@ -6324,11 +6324,16 @@ async function handleApi(req, res, url) {
         WHERE r.status = 'ratified' AND r.room_average IS NOT NULL
           AND COALESCE(r.poll_type,'rating') <> 'binary'
         ORDER BY r.created_at DESC LIMIT 24`, []);
+    // THE ARTIST'S NAME IS NOT EMITTED (operator's call, 2026-09-02). A room average is
+    // already public on charts and the Top 8 cards, but those show records that did WELL —
+    // this pool is whatever ran most recently, so it puts real names against low scores on
+    // the most prominent page the project has. The title alone carries the demo.
+    // Dropped at the SOURCE rather than hidden in the markup: this payload is anonymous and
+    // CDN-cacheable, so a name merely hidden client-side is still one view-source away.
     const tryIt = tryRows
       .filter(r => Number(r.voters) >= 5)   // "3 A&Rs rated this" is not proof of anything
       .slice(0, 5)
-      .map(r => ({ title: r.song_title, artist: r.song_artist || '',
-        avg: Number(r.room_average), voters: Number(r.voters) || 0 }));
+      .map(r => ({ title: r.song_title, avg: Number(r.room_average), voters: Number(r.voters) || 0 }));
 
     // Everything here is anonymous and cacheable — no per-viewer field on the one endpoint
     // worth putting behind a CDN, which would be a PII/seal leak waiting to happen.

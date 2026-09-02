@@ -387,8 +387,11 @@ function renderTry(){
   const pts = scoreFor(err);
   const exact = err <= 0.05, close = err <= 0.5;
 
+  // Title only — the artist's name is deliberately not shown, and the server does not send
+  // it. This pool is whatever ran most recently rather than the records that did well, so
+  // naming the artist would put real people against low scores on the most public page here.
   let html = '<div style="font-weight:800;font-size:20px;letter-spacing:-.025em">' + esc(rec.title) + '</div>'
-    + '<div class="dim" style="font-size:14px;margin-top:2px">' + esc(rec.artist) + '</div>';
+    + '<div class="dim" style="font-size:13px;margin-top:3px">A record that already ran</div>';
 
   if(!tryRevealed){
     html += '<p class="dim" style="margin:16px 0 9px;font-size:13.5px;line-height:1.5">'

@@ -2101,6 +2101,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // live day's direction.
   ok('try-it offers only records that already have a settled average',
     (fdHome.tryIt || []).every(t => typeof t.avg === 'number' && t.voters >= 5), JSON.stringify(fdHome.tryIt));
+  // The artist's NAME is not emitted (operator's call). A room average is already public on
+  // charts and the Top 8 cards — but those show records that did WELL, whereas this pool is
+  // whatever ran most recently, so naming the artist would put real people against low
+  // scores on the most public page the project has. Dropped at the source, not hidden in the
+  // markup: this payload is CDN-cacheable, so a hidden name is one view-source away.
+  ok('and never names the artist behind them',
+    (fdHome.tryIt || []).every(t => !('artist' in t)), JSON.stringify(fdHome.tryIt));
   const fdOpenRound = await dDb.get("SELECT song_title FROM rounds WHERE status IN ('voting','listening','closed') LIMIT 1");
   if (fdOpenRound) {
     ok('and never a record that is still open for evaluation',
