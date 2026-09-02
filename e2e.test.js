@@ -1905,6 +1905,83 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the manual tick is platform-admin only', tickAnon.status === 401, 'got ' + tickAnon.status);
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), LDROP]);
 
+  console.log('\n— A&R Daily: the console —');
+  // The console opens on the day, so this one status call has to carry all of it.
+  const cOk = await call('/api/ingest/daily', { day: srv._etNextDay(today), seriesId: serId,
+    songs: [song(71, { email: 'a71@test.com', phone: '+15551230071' }), song(72), song(73), song(74)] }, 'POST', DTOK);
+  const CDROP = cOk.d.sessionId;
+  await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ? WHERE id = ?",
+    [Date.now() - 1000, Date.now() + 3600000, CDROP]);
+  await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [CDROP]);
+
+  const dStatAnon = await call('/api/admin/daily/status?day=' + srv._etNextDay(today), null, 'GET', {});
+  ok('the daily status is platform-admin only — a drop spans no host and carries artist PII',
+    dStatAnon.status === 403 || dStatAnon.status === 401, 'got ' + dStatAnon.status);
+  const dStat = (await call('/api/admin/daily/status?day=' + srv._etNextDay(today), null, 'GET', BOOTH)).d;
+  ok('the status resolves the day', dStat.drop && dStat.drop.day === srv._etNextDay(today), JSON.stringify(dStat.drop && dStat.drop.day));
+  ok('it carries every record with its play link', dStat.rounds.length === 4 && dStat.rounds.every(r => r.play_url), JSON.stringify(dStat.rounds.length));
+  ok('and the resolved series, because an untagged day never reaches the $500 board',
+    dStat.drop.series_id === serId, JSON.stringify(dStat.drop.series_id));
+  ok('the four queue tallies arrive in the same {sent,failed,pending} shape the notices panel uses',
+    ['digest', 'artistEmail', 'artistSms'].every(k => dStat.queues[k] && 'sent' in dStat.queues[k] && 'failed' in dStat.queues[k] && 'pending' in dStat.queues[k]),
+    JSON.stringify(dStat.queues));
+  ok('a status call never leaks an artist address — only whether one is on file',
+    !/a71@test\.com/.test(JSON.stringify(dStat)) && dStat.rounds.some(r => r.hasEmail === true), JSON.stringify(dStat.rounds[0]));
+
+  // FIXING A BROKEN PLAY LINK MID-WINDOW — the most operationally important thing here.
+  // A dead link at 12:05PM is a dead record for 21 hours and cannot round-trip through a CMS.
+  const dcRounds = (await call('/api/admin/rounds?sessionId=' + CDROP, null, 'GET', BOOTH)).d.rounds;
+  ok('/api/admin/rounds carries the repair kit: the link, the ask and the Drupal deep link',
+    dcRounds.every(r => 'play_url' in r && 'artist_note' in r && 'ingest_url' in r), JSON.stringify(Object.keys(dcRounds[0])));
+  ok('and the per-record report count, which is people not clicks',
+    dcRounds.every(r => 'reports' in r), JSON.stringify(Object.keys(dcRounds[0])));
+  const dcR = dcRounds[0];
+  const dcBadUrl = await call('/api/admin/round/edit',
+    { sessionId: CDROP, roundId: dcR.id, song_title: dcR.song_title, play_url: 'javascript:alert(1)' }, 'POST', BOOTH);
+  ok('a non-http play link is refused at the console too', dcBadUrl.status === 400, JSON.stringify(dcBadUrl.d));
+  const dcFixed = await call('/api/admin/round/edit',
+    { sessionId: CDROP, roundId: dcR.id, song_title: dcR.song_title, play_url: 'https://cdn.makinitmag.com/dcFixed.mp3' }, 'POST', BOOTH);
+  ok('a broken link can be dcFixed while the window is open', dcFixed.status === 200, JSON.stringify(dcFixed.d));
+  const afterFix = await dDb.get('SELECT play_url, room_average, status FROM rounds WHERE id = ?', [dcR.id]);
+  ok('and the fix reaches the record', afterFix.play_url === 'https://cdn.makinitmag.com/dcFixed.mp3', afterFix.play_url);
+  // The descriptive-only discipline: this route has never been able to write a score, and
+  // adding play_url must not have changed that.
+  const tryScore = await call('/api/admin/round/edit',
+    { sessionId: CDROP, roundId: dcR.id, song_title: dcR.song_title, room_average: 9, status: 'ratified', points: 999 }, 'POST', BOOTH);
+  const afterScore = await dDb.get('SELECT room_average, status FROM rounds WHERE id = ?', [dcR.id]);
+  ok('round/edit still cannot write a score or a status — descriptive fields only',
+    afterScore.room_average === afterFix.room_average && afterScore.status === afterFix.status,
+    JSON.stringify(afterScore) + ' vs ' + JSON.stringify(afterFix));
+  // And a player sees it, because that is the entire point of fixing it locally.
+  const fixRq = await call('/api/join/request', { sessionId: CDROP, email: 'fixwatch@test.com' });
+  const fixVer = await call('/api/join/verify', { sessionId: CDROP, email: 'fixwatch@test.com', code: fixRq.d.devCode, name: 'Watcher' });
+  const fixQ = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': fixVer.d.token })).d.queue;
+  ok('every A&R sees the repaired link on their next refresh',
+    fixQ.some(q => q.play_url === 'https://cdn.makinitmag.com/dcFixed.mp3'), JSON.stringify(fixQ.map(q => q.play_url)));
+
+  // Deleting a bad record works on an async VOTING round too, and closes the idx gap so the
+  // numbering stays coherent for everyone mid-walk.
+  const dcDelMe = dcRounds[3];
+  const delOk = await call('/api/admin/round/delete', { sessionId: CDROP, roundId: dcDelMe.id }, 'POST', BOOTH);
+  ok('a zero-vote record can be pulled out of a running day', delOk.status === 200, JSON.stringify(delOk.d));
+  const dcLeftIdx = (await dDb.all('SELECT idx FROM rounds WHERE session_id = ? ORDER BY idx ASC', [CDROP])).map(r => r.idx);
+  ok('and the numbering closes up behind it', JSON.stringify(dcLeftIdx) === JSON.stringify([1, 2, 3]), JSON.stringify(dcLeftIdx));
+  await call('/api/vote', { roundId: dcRounds[1].id, taste: 6, predict: 6.0 }, 'POST', { 'X-Player-Token': fixVer.d.token });
+  const delVoted = await call('/api/admin/round/delete', { sessionId: CDROP, roundId: dcRounds[1].id }, 'POST', BOOTH);
+  ok('a record somebody has already evaluated is refused — those points are a real score',
+    delVoted.status >= 400, JSON.stringify(delVoted.d));
+
+  // The manual publish door, for a cron that never fired.
+  const pubEarly = await call('/api/admin/daily/publish', { day: srv._etNextDay(today) }, 'POST', BOOTH);
+  ok('publishing a day that has not tallied is refused', pubEarly.status === 409, JSON.stringify(pubEarly.d));
+  const pubAnon = await call('/api/admin/daily/publish', { day: srv._etNextDay(today) }, 'POST', {});
+  ok('and the publish door is platform-admin only', pubAnon.status === 403 || pubAnon.status === 401, 'got ' + pubAnon.status);
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), CDROP]);
+
+  const noDrop = (await call('/api/admin/daily/status?day=2029-01-01', null, 'GET', BOOTH)).d;
+  ok('a day with no drop reads as an incident, not an empty state',
+    noDrop.drop === null && /nothing/i.test(noDrop.message || ''), JSON.stringify(noDrop));
+
   console.log('\n— eye for talent: scouting points —');
   // The curve is the dial that decides whether scouting is a real second lane or a garnish.
   // Context for the numbers: a month of A&R Daily is ~15,000 (6-record days) to ~45,000

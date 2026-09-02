@@ -4766,7 +4766,12 @@ async function handleApi(req, res, url) {
     const rounds = await db.all(
       `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.song_note, r.giveaway, r.poll_type,
               r.option_b_title, r.option_b_artist, r.room_average, r.split_a, r.artist_email, r.artist_phone,
+              r.play_url, r.artist_note, r.ingest_ref, r.ingest_url, r.scout_drupal_uid,
               (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
+              -- People, not clicks (uniq_round_report), which is what makes it a usable
+              -- threshold for "pull this record".
+              (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id) AS reports,
+              (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id AND rr.reason = 'not_playable') AS reports_broken,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id) AS comments,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'hidden') AS comments_hidden,
@@ -4788,7 +4793,16 @@ async function handleApi(req, res, url) {
       room_average: r.room_average != null ? Number(r.room_average) : null,
       split_a: r.split_a != null ? Number(r.split_a) : null,
       artist_email: r.artist_email || '', artist_phone: r.artist_phone || '',
+      // The console's mid-window repair kit: the link to fix, the artist's ask to read, and
+      // a deep link back to the submission in Drupal for the non-urgent corrections.
+      play_url: r.play_url || '', artist_note: r.artist_note || '',
+      ingest_ref: r.ingest_ref || null, ingest_url: r.ingest_url || null,
+      // The scout's DRUPAL uid is deliberately not emitted — the console shows who found a
+      // record by display name, and that lookup belongs on a profile surface, not here.
+      scouted: !!r.scout_drupal_uid,
       votes: Number(r.votes) || 0,
+      reports: Number(r.reports) || 0,
+      reports_broken: Number(r.reports_broken) || 0,
       comments: Number(r.comments) || 0,
       comments_shared: Number(r.comments_shared) || 0,
       comments_hidden: Number(r.comments_hidden) || 0,
@@ -5458,12 +5472,20 @@ async function handleApi(req, res, url) {
   // live from current data, so an edit is picked up by the next render automatically.
   if (p === '/api/admin/round/edit' && method === 'POST') {
     const { sessionId, roundId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist,
-      artist_email, artist_phone } = await readBody(req);
+      artist_email, artist_phone, play_url, artist_note } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
     if (!round) return bad(res, 'Round not found', 404);
     if (song_title !== undefined && !String(song_title).trim()) return bad(res, 'Song title can\'t be empty');
+    // play_url joins the DESCRIPTIVE allowlist — this route has never been able to touch
+    // votes, points or status and still cannot. It earns its place because of one scenario:
+    // a dead link at 12:05 PM is a dead record for the next 21 hours, nobody is watching the
+    // way a host watches a live show, and the fix cannot round-trip through a CMS. This is
+    // the single most operationally important thing the daily console does.
+    if (play_url !== undefined && String(play_url).trim() && !cleanPlayUrl(play_url)) {
+      return bad(res, 'That play link needs to be a full http(s) URL');
+    }
     const isBinary = (round.poll_type || session.poll_type) === 'binary';
     if (isBinary && option_b_title !== undefined && !String(option_b_title).trim()) return bad(res, 'Song B title can\'t be empty');
     if (artist_email !== undefined && String(artist_email).trim() && !cleanArtistEmail(artist_email)) {
@@ -5477,13 +5499,18 @@ async function handleApi(req, res, url) {
          option_b_title = CASE WHEN ? = 1 THEN COALESCE(NULLIF(?,''), option_b_title) ELSE option_b_title END,
          option_b_artist = CASE WHEN ? = 1 THEN ? ELSE option_b_artist END,
          artist_email = CASE WHEN ? = 1 THEN ? ELSE artist_email END,
-         artist_phone = CASE WHEN ? = 1 THEN ? ELSE artist_phone END
+         artist_phone = CASE WHEN ? = 1 THEN ? ELSE artist_phone END,
+         play_url = CASE WHEN ? = 1 THEN ? ELSE play_url END,
+         artist_note = CASE WHEN ? = 1 THEN ? ELSE artist_note END
        WHERE id = ?`,
       [(song_title || '').trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
        isBinary ? 1 : 0, (option_b_title || '').trim(),
        isBinary ? 1 : 0, (option_b_artist || '').trim(),
        artist_email !== undefined ? 1 : 0, cleanArtistEmail(artist_email),
        artist_phone !== undefined ? 1 : 0, cleanArtistPhone(artist_phone),
+       play_url !== undefined ? 1 : 0, cleanPlayUrl(play_url),
+       // 500 to match what the ingest already accepts for the same column.
+       artist_note !== undefined ? 1 : 0, (artist_note == null ? '' : String(artist_note)).trim().slice(0, 500) || null,
        roundId]
     );
     await realtime.publish(sessionId, 'round');
@@ -6339,6 +6366,125 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (!(await platformAdmin(req))) return bad(res, 'Admin auth failed', 401);
     return send(res, 200, { ok: true, ...(await runAsyncDropLifecycle({ ts: body.at })) });
+  }
+
+  // ---- The daily console's one status call. ----
+  // Platform-admin only: a drop has no owner_uid (the batch carries 16 artists' contact
+  // details, so canAdminSession admits only platform admins), and this readout carries the
+  // whole day's operational state.
+  //
+  // Bounded by the day's size and by a handful of indexed aggregates — nothing here scales
+  // with the number of A&Rs beyond one COUNT DISTINCT over the day's votes.
+  if (p === '/api/admin/daily/status' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const wantDay = url.searchParams.get('day');
+    const session = wantDay
+      ? await db.get("SELECT * FROM sessions WHERE mode = 'async' AND drop_day = ? AND deleted_at IS NULL", [wantDay])
+      : await db.get(`SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
+                       ORDER BY window_opens_at DESC LIMIT 1`, []);
+    // No drop is an INCIDENT, not an empty state — if Drupal has not pushed, the site is
+    // back to the exact failure this whole build exists to fix. Say so plainly.
+    if (!session) return send(res, 200, { drop: null, message: 'No drop is staged. Nothing for A&Rs to do.' });
+
+    const day = session.drop_day;
+    const rounds = await db.all(
+      `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.play_url, r.artist_note,
+              r.ingest_ref, r.ingest_url, r.room_average, r.artist_email, r.artist_phone,
+              (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
+              (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id) AS reports,
+              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared
+         FROM rounds r WHERE r.session_id = ? ORDER BY r.idx ASC`, [session.id]);
+    const live = rounds.filter(r => ['voting', 'closed', 'ratified'].includes(r.status));
+    const arsPlaying = Number((await db.get(
+      `SELECT COUNT(DISTINCT v.participant_id) AS c FROM votes v JOIN rounds r ON r.id = v.round_id
+        WHERE r.session_id = ?`, [session.id])).c) || 0;
+    const finished = Number((await db.get(
+      "SELECT COUNT(*) AS c FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?",
+      [session.id + ':%'])).c) || 0;
+    const job = await db.get('SELECT * FROM recap_jobs WHERE session_id = ?', [session.id]);
+    const bc = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [session.id]);
+
+    // The four queue tallies, in the SAME {sent, failed, pending} shape
+    // artist-notices/status already returns, so the console's panel component is reusable.
+    const tallyOf = async (sql, params) => {
+      const rows = await db.all(sql, params);
+      const g = (st) => Number((rows.find(r => r.status === st) || {}).c) || 0;
+      // 'sending' is a claimed row mid-flight; it is still owed, so it counts as pending.
+      return { sent: g('sent'), failed: g('failed'), pending: g('pending') + g('sending') };
+    };
+    const notices = await db.all(
+      'SELECT channel, status, COUNT(*) AS c FROM artist_notices WHERE session_id = ? GROUP BY channel, status', [session.id]);
+    const chan = (ch) => {
+      const g = (st) => Number((notices.find(r => r.channel === ch && r.status === st) || {}).c) || 0;
+      return { sent: g('sent'), failed: g('failed'), pending: g('pending') + g('sending') };
+    };
+    const digest = bc
+      ? await tallyOf('SELECT status, COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? GROUP BY status', [bc.id])
+      : { sent: 0, failed: 0, pending: 0 };
+
+    const holdUntil = session.published_at
+      ? Number(session.published_at) + ARTIST_NOTICE_DELAY_MIN * 60000 : null;
+    return send(res, 200, {
+      drop: {
+        id: session.id, day, dayLabel: etDayLabel(day), name: session.name,
+        status: session.status, async_state: session.async_state || 'scheduled',
+        opens_at: Number(session.window_opens_at) || null,
+        closes_at: Number(session.window_closes_at) || null,
+        results_at: Number(session.results_at) || null,
+        published_at: session.published_at ? Number(session.published_at) : null,
+        opensLabel: etClockLabel(session.window_opens_at),
+        closesLabel: etClockLabel(session.window_closes_at),
+        resultsLabel: etClockLabel(session.results_at),
+        // Untagged means the day's points never reach the $500 board — the whole
+        // unification premise, failing silently. The console paints this red.
+        series_id: session.series_id || null,
+        records: live.length, total: rounds.length,
+      },
+      rounds: rounds.map(r => ({
+        id: r.id, idx: r.idx, status: r.status,
+        song_title: r.song_title, song_artist: r.song_artist,
+        play_url: r.play_url || '', artist_note: r.artist_note || '',
+        ingest_ref: r.ingest_ref || null, ingest_url: r.ingest_url || null,
+        room_average: r.room_average != null ? Number(r.room_average) : null,
+        hasEmail: !!(r.artist_email || '').trim(), hasPhone: !!(r.artist_phone || '').trim(),
+        votes: Number(r.votes) || 0, reports: Number(r.reports) || 0,
+        comments_shared: Number(r.comments_shared) || 0,
+      })),
+      engagement: { ars: arsPlaying, finished },
+      // Comments ship by DEFAULT (029) and there is no unsend, so the count of what is
+      // about to go out belongs here, next to the hold that is the only chance to stop it.
+      comments: rounds.reduce((n, r) => n + (Number(r.comments_shared) || 0), 0),
+      cards: { ars: (job && job.ars_url) || null, songs: (job && job.songs_url) || null,
+        caption: (job && job.caption) || null, stage: (job && job.stage) || null },
+      queues: { digest, artistEmail: chan('email'), artistSms: chan('sms') },
+      artistHold: { until: holdUntil, held: !!(holdUntil && now() < holdUntil),
+        minutes: ARTIST_NOTICE_DELAY_MIN },
+      smsWindow: { open: withinSmsWindow(), label: nextSmsWindowLabel(),
+        from: SMS_WINDOW_START_LABEL, to: SMS_WINDOW_END_LABEL },
+      blobConfigured: !!process.env.BLOB_READ_WRITE_TOKEN,
+    });
+  }
+
+  // Run the publish + drain once by hand, for a cron that never fired. Same implementation
+  // the cron uses, so a manual run can never do something the scheduled one would not.
+  if (p === '/api/admin/daily/publish' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const { day } = await readBody(req);
+    const session = day
+      ? await db.get("SELECT * FROM sessions WHERE mode = 'async' AND drop_day = ? AND deleted_at IS NULL", [day])
+      : await db.get(`SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
+                       AND async_state IN ('ratified','published') ORDER BY window_opens_at DESC LIMIT 1`, []);
+    if (!session) return bad(res, 'No drop found for that day', 404);
+    if ((session.async_state || 'scheduled') === 'published') {
+      // Already out. Re-running is still useful — it drains whatever is left queued — but
+      // it must never re-publish or re-queue the digest.
+      return send(res, 200, { ok: true, alreadyPublished: true, ...(await runAsyncDropLifecycle()) });
+    }
+    if ((session.async_state || 'scheduled') !== 'ratified') {
+      return bad(res, `The day is ${session.async_state || 'scheduled'} — it has to finish tallying before it can publish`, 409);
+    }
+    const published = await publishDailyDrop(session);
+    return send(res, 200, { ok: true, published, ...(await runAsyncDropLifecycle()) });
   }
 
   // ---- Asana post kit: the night's graphics + a tag-everyone caption, as one task. ----

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/mark-color.png"><title>The A&R Room · Host</title>
-<link rel="stylesheet" href="/tokens.css?v=3">
+<link rel="stylesheet" href="/tokens.css?v=4">
 <link rel="stylesheet" href="/ui.css?v=1">
 <style>
   *{box-sizing:border-box}
@@ -133,6 +133,26 @@
   .gfx-lbl{font-size:12px;color:var(--ink-faint);letter-spacing:.04em;margin-right:2px}
   .sc-actions .spacer{flex:1}
   .grouplbl{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-faint);margin:14px 0 8px}
+  /* ---- A&R Daily console ---- */
+  .modeswitch{display:flex;gap:6px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:4px;width:max-content}
+  .modeswitch button{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    border:0;border-radius:9px;padding:9px 15px;cursor:pointer;background:transparent;color:var(--ink-dim)}
+  .modeswitch button.on{background:var(--accent);color:#fff;font-weight:700}
+  .dlstat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 10px;text-align:center;min-width:0}
+  .pill{white-space:nowrap}
+  .dlstat .k{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-faint)}
+  .dlstat .v{font-family:"Space Mono",monospace;font-size:21px;font-weight:700;margin-top:4px;overflow:hidden;text-overflow:ellipsis}
+  .dltable{width:100%;border-collapse:collapse;font-size:13.5px}
+  .dltable th{text-align:left;font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-faint);padding:0 6px 8px;font-weight:400}
+  .dltable td{padding:9px 6px;border-top:1px solid var(--line);vertical-align:middle}
+  .dltable td.num,.dltable th.num{text-align:right;font-family:"Space Mono",monospace}
+  .dltable tr.alarm{background:rgba(255,93,108,.06)}
+  .dlttl{font-weight:600}
+  .dlart{font-size:11.5px;color:var(--ink-dim)}
+  .dllink{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;max-width:200px;display:block}
+  .dllink.bad{color:var(--hot)}
   /* ---- admin users panel ---- */
   .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
   .urow+.urow{margin-top:8px}
@@ -178,6 +198,91 @@
 </div>
 
 <!-- SESSION PICKER -->
+<!-- ===== A&R DAILY — the screen the console OPENS on =====
+     The operator's attention goes to today's drop every day; the live-show tooling is used
+     once a week and moves behind the mode switch below. Nothing is deleted — the broadcast
+     just stops being the default mental model. This is a change to WHICH SCREEN BOOTS plus
+     grouping, not a rewrite, which is why it reuses the existing showScreen() toggle. -->
+<div id="daily" class="grid hide">
+  <div class="stack" style="grid-column:1/-1;max-width:900px;margin:30px auto 0;gap:14px">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div class="modeswitch">
+        <button class="on" id="mdDaily">A&amp;R Daily</button>
+        <button id="mdLive">Live show</button>
+        <button id="mdPlatform">Platform</button>
+      </div>
+      <div class="row" style="gap:8px;flex:0 0 auto">
+        <span id="dlState" class="pill"></span>
+        <button class="btn ghost sm" id="btnDailyRefresh">Refresh</button>
+      </div>
+    </div>
+
+    <div id="dlNone" class="card hide" style="border-color:var(--hot)">
+      <h3 style="margin:0 0 8px;color:var(--hot);font-size:13px;letter-spacing:.16em;text-transform:uppercase">Nothing is staged</h3>
+      <p style="margin:0 0 12px;font-size:14px;line-height:1.55" id="dlNoneMsg"></p>
+      <div class="row" style="gap:8px"><button class="btn ghost sm" id="btnDailyRefresh2">Check again</button></div>
+    </div>
+
+    <div id="dlBody" class="stack hide" style="gap:14px">
+      <div class="card">
+        <h3 id="dlDayHead" style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace"></h3>
+        <div class="row" style="gap:8px" id="dlStats"></div>
+        <p class="muted" id="dlSched" style="font-size:12px;line-height:1.55;margin:10px 0 0"></p>
+      </div>
+
+      <div id="dlHold" class="card hide" style="border-color:var(--gold);background:rgba(245,197,24,.06)">
+        <p style="margin:0;font-size:14px;line-height:1.55" id="dlHoldMsg"></p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The records</h3>
+        <div id="dlRounds"></div>
+        <p class="muted" style="font-size:11.5px;line-height:1.5;margin:10px 0 0">
+          A flag is one A&amp;R, not one click — nine flags is nine people telling you the record will not play.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Sending</h3>
+        <div id="dlQueues"></div>
+        <div class="row" style="gap:8px;margin-top:12px">
+          <button class="btn ghost sm" id="btnDailyTick">Run the lifecycle now</button>
+          <button class="btn ghost sm" id="btnDailyPublish">Publish the day</button>
+        </div>
+        <p class="muted" id="dlSendNote" style="font-size:11.5px;line-height:1.5;margin:9px 0 0"></p>
+        <div class="err" id="dlErr"></div>
+      </div>
+
+      <div class="card" id="dlCards">
+        <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The day's graphics</h3>
+        <div id="dlCardBody"></div>
+      </div>
+    </div>
+
+    <button class="btn ghost sm" id="btnDailyLogout" style="margin-top:6px;max-width:160px">Log out</button>
+  </div>
+</div>
+
+<!-- Fix a broken play link mid-window. THE most operationally important surface here: a dead
+     link at 12:05 PM is a dead record for 21 hours, nobody is watching the way a host watches
+     a live show, and the fix cannot round-trip through a CMS. Descriptive fields only. -->
+<div class="modal-scrim" id="dlEditModal">
+  <div class="modal-card sm stack">
+    <h3 style="margin:0" id="dlEditTitle">Fix the record</h3>
+    <div id="dlEditWarn" class="hide" style="background:rgba(255,93,108,.10);border:1px solid var(--hot);border-radius:11px;padding:11px 13px;font-size:13.5px;line-height:1.5"></div>
+    <div><label>Play link</label><input id="dlEditUrl" placeholder="https://…"></div>
+    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:-4px 0 0">Full http(s) link. Every A&amp;R sees the change on their next refresh.</p>
+    <div><label>From the artist</label><input id="dlEditNote" placeholder="What the artist wants listened for"></div>
+    <div class="err" id="dlEditErr"></div>
+    <div class="row" style="gap:8px">
+      <button class="btn" id="dlEditSave">Save</button>
+      <button class="btn ghost" id="dlEditCancel">Cancel</button>
+    </div>
+    <a id="dlEditDrupal" class="hide" target="_blank" rel="noopener" style="color:var(--signal);text-decoration:none;font-size:12.5px">Edit in Drupal ↗</a>
+  </div>
+</div>
+
 <div id="picker" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:640px;margin:40px auto 0">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -189,6 +294,7 @@
         <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
         <button class="btn ghost sm" id="btnHostDefaults">Defaults</button>
         <button class="btn ghost sm hide" id="btnManageSeries">Series</button>
+        <button class="btn ghost sm hide" id="btnBackToDaily">A&amp;R Daily</button>
         <button class="btn sm" id="btnNewFromPicker">+ New room</button>
       </div>
     </div>
@@ -1480,9 +1586,198 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','picker','create','console','series','users','platform','analytics','charts'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','daily','picker','create','console','series','users','platform','analytics','charts'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
+
+/* ===== A&R DAILY — the console's default screen =====
+   Everything here reads /api/admin/daily/status, which is PLATFORM-ADMIN only: a drop has no
+   owner_uid (the batch carries the artists' contact details), and this readout carries the
+   whole day's operational state. A host lands on their rooms as before. */
+let DL = null;                       // last daily status payload
+let dlEditRound = null;              // the record open in the fix dialog
+
+// Where the console lands after login. A&R Daily for the platform admin; the room picker
+// for a host, who has no drops to run.
+async function landing(){
+  if(!isAdmin()) return openPicker();
+  await loadSeriesCache();          // the drop's series is named, not printed as an id
+  return openDaily();
+}
+
+async function openDaily(){
+  showScreen('daily');
+  $('#dlErr').textContent = '';
+  try{
+    DL = await api('/api/admin/daily/status', null, 'GET');
+    renderDaily();
+  }catch(e){
+    $('#dlBody').classList.add('hide');
+    $('#dlNone').classList.remove('hide');
+    $('#dlNoneMsg').textContent = e.message;
+  }
+}
+$('#btnDailyRefresh').onclick = openDaily;
+$('#btnDailyRefresh2').onclick = openDaily;
+$('#mdDaily').onclick = openDaily;
+$('#mdLive').onclick = () => openPicker();
+$('#mdPlatform').onclick = () => { if(typeof openPlatform === 'function') openPlatform(); };
+$('#btnBackToDaily').onclick = openDaily;
+$('#btnDailyLogout').onclick = () => $('#btnLogout').onclick();
+
+function dlFmtWhen(label){ return label || '—'; }
+
+function renderDaily(){
+  const d = DL || {};
+  if(!d.drop){
+    // A MISSING DROP IS AN INCIDENT, not an empty state: if Drupal has not pushed, the site
+    // is back to exactly the failure this whole build exists to fix — someone opens the app
+    // and there is nothing to do. It reads as an alarm.
+    $('#dlBody').classList.add('hide');
+    $('#dlNone').classList.remove('hide');
+    $('#dlNoneMsg').textContent = d.message || 'No records have been pushed. A&Rs would open the app to an empty day.';
+    $('#dlState').textContent = 'No drop';
+    $('#dlState').className = 'pill closed';
+    return;
+  }
+  $('#dlNone').classList.add('hide');
+  $('#dlBody').classList.remove('hide');
+  const dr = d.drop;
+
+  const STATE_LABEL = { scheduled: 'Scheduled', open: 'Window open', closing: 'Tallying',
+    ratified: 'Tallied · results held', published: 'Published' };
+  $('#dlState').textContent = STATE_LABEL[dr.async_state] || dr.async_state;
+  $('#dlState').className = 'pill ' + (dr.async_state === 'open' ? 'live'
+    : dr.async_state === 'published' ? 'completed' : 'upcoming');
+
+  $('#dlDayHead').textContent = (dr.dayLabel || dr.day) + ' · the day';
+  const stat = (k, v, color) =>
+    `<div class="dlstat"><div class="k">${esc(k)}</div><div class="v"${color?` style="color:${color}"`:''}>${esc(String(v))}</div></div>`;
+  $('#dlStats').innerHTML =
+    stat('Records', dr.records)
+    + stat('A&Rs playing', (d.engagement && d.engagement.ars) || 0, 'var(--signal)')
+    + stat('Finished', (d.engagement && d.engagement.finished) || 0)
+    + stat(dr.async_state === 'open' ? 'Closes' : 'Results',
+        dr.async_state === 'open' ? dlFmtWhen(dr.closesLabel) : dlFmtWhen(dr.resultsLabel));
+
+  // series_id null means the day's points never reach the $500 board — the entire
+  // unification premise, failing silently. It gets said in red, not muted.
+  const ser = dr.series_id
+    ? esc(seriesTitleFor(dr.series_id) || 'Series ' + dr.series_id)
+    : '<b style="color:var(--hot)">Not tagged into a series — these points never reach the board</b>';
+  $('#dlSched').innerHTML = `Opens ${esc(dlFmtWhen(dr.opensLabel))} · tallies ${esc(dlFmtWhen(dr.closesLabel))}`
+    + ` · results and the next drop both land ${esc(dlFmtWhen(dr.resultsLabel))}. ${ser}.`
+    + ' <span class="muted">The clock runs this, not a button.</span>';
+
+  // The hold. Comments ship by DEFAULT (029) and there is no unsend; a cron has no wrap-up
+  // moment where the host sees the count, so it goes here, next to the only chance to stop it.
+  const hold = d.artistHold || {};
+  if(hold.held && d.comments){
+    const mins = Math.max(1, Math.round((hold.until - Date.now()) / 60000));
+    $('#dlHold').classList.remove('hide');
+    $('#dlHoldMsg').innerHTML = `<b>${d.comments} A&R comment${d.comments===1?'':'s'}</b> go to artists in `
+      + `<b>${mins} minute${mins===1?'':'s'}</b>. Reject anything that should not ship — after that there is no unsend.`;
+  } else $('#dlHold').classList.add('hide');
+
+  // the records
+  const rows = (d.rounds || []).map(r => {
+    const alarm = r.reports >= 3 || !r.play_url;
+    return `<tr${alarm?' class="alarm"':''}>
+      <td style="width:42%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')}</div></td>
+      <td><span class="dllink${r.play_url?'':' bad'}">${esc(r.play_url || 'no link')}</span></td>
+      <td class="num">${r.votes}</td>
+      <td class="num"${r.reports?' style="color:var(--hot);font-weight:700"':' class="num muted"'}>${r.reports}</td>
+      <td class="num"><button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
+    </tr>`;
+  }).join('');
+  $('#dlRounds').innerHTML = (d.rounds && d.rounds.length)
+    ? `<table class="dltable"><tr><th style="width:42%">Record</th><th>Play link</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
+    : '<div class="empty">No records on this day.</div>';
+
+  // the queues, in the {sent, failed, pending} shape the artist-notices panel already uses
+  const q = d.queues || {};
+  const qrow = (label, t, extra) => `<tr><td>${esc(label)}${extra||''}</td>`
+    + `<td class="num"${(t.sent?' style="color:var(--signal)"':' class="num muted"')}>${t.sent}</td>`
+    + `<td class="num"${(t.failed?' style="color:var(--hot)"':' class="num muted"')}>${t.failed}</td>`
+    + `<td class="num">${t.pending}</td></tr>`;
+  const smsPill = d.smsWindow && !d.smsWindow.open
+    ? ` <span class="pill" style="margin-left:6px">${esc(d.smsWindow.label||'')}</span>` : '';
+  $('#dlQueues').innerHTML = `<table class="dltable">
+    <tr><th style="width:44%">Queue</th><th class="num">Sent</th><th class="num">Failed</th><th class="num">Pending</th></tr>
+    ${qrow('A&R digest', q.digest || {sent:0,failed:0,pending:0})}
+    ${qrow('Artist reports', q.artistEmail || {sent:0,failed:0,pending:0})}
+    ${qrow('Artist texts', q.artistSms || {sent:0,failed:0,pending:0}, smsPill)}
+  </table>`;
+  $('#dlSendNote').textContent = dr.async_state === 'published'
+    ? 'The cron drains a chunk every five minutes. These numbers move on their own.'
+    : 'Nothing sends until the day publishes.';
+
+  // graphics
+  const c = d.cards || {};
+  let cardHtml = '';
+  if(c.ars || c.songs){
+    cardHtml += '<div class="row" style="gap:10px;align-items:flex-start">'
+      + (c.ars ? `<a href="${esc(c.ars)}" target="_blank" rel="noopener" style="flex:1"><img src="${esc(c.ars)}" style="width:100%;border-radius:12px;border:1px solid var(--line)"></a>` : '')
+      + (c.songs ? `<a href="${esc(c.songs)}" target="_blank" rel="noopener" style="flex:1"><img src="${esc(c.songs)}" style="width:100%;border-radius:12px;border:1px solid var(--line)"></a>` : '')
+      + '</div>';
+  } else if(dr.async_state === 'published'){
+    cardHtml += `<div class="empty" style="color:var(--gold)">The graphics did not render${d.blobConfigured?'':' — BLOB_READ_WRITE_TOKEN is not set'}. The day published anyway; the caption is still below.</div>`;
+  } else {
+    cardHtml += '<div class="empty">Rendered when the day publishes.</div>';
+  }
+  if(c.caption){
+    cardHtml += `<div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" onclick="dlCopyCaption()">Copy caption</button></div>`;
+  }
+  $('#dlCardBody').innerHTML = cardHtml;
+}
+window.dlCopyCaption = async () => {
+  try{ await navigator.clipboard.writeText((DL.cards && DL.cards.caption) || ''); alert('Caption copied.'); }
+  catch(e){ alert('Could not copy — the caption is on the day’s recap job.'); }
+};
+
+// Fix a broken play link mid-window.
+window.dlEdit = (roundId) => {
+  const r = (DL.rounds || []).find(x => x.id === roundId); if(!r) return;
+  dlEditRound = r;
+  $('#dlEditTitle').textContent = 'Record ' + r.idx + ' · ' + (r.song_title || '');
+  $('#dlEditUrl').value = r.play_url || '';
+  $('#dlEditNote').value = r.artist_note || '';
+  $('#dlEditErr').textContent = '';
+  const warn = $('#dlEditWarn');
+  if(r.reports){
+    warn.classList.remove('hide');
+    warn.innerHTML = `<b>${r.reports} A&R${r.reports===1?'':'s'}</b> reported this record. ${r.votes} vote${r.votes===1?'':'s'} so far.`;
+  } else warn.classList.add('hide');
+  const dp = $('#dlEditDrupal');
+  if(r.ingest_url){ dp.classList.remove('hide'); dp.href = r.ingest_url; } else dp.classList.add('hide');
+  $('#dlEditModal').style.display = 'flex';
+};
+$('#dlEditCancel').onclick = () => { $('#dlEditModal').style.display = 'none'; };
+$('#dlEditSave').onclick = async () => {
+  if(!dlEditRound || !DL.drop) return;
+  $('#dlEditErr').textContent = ''; $('#dlEditSave').disabled = true;
+  try{
+    await api('/api/admin/round/edit', { sessionId: DL.drop.id, roundId: dlEditRound.id,
+      song_title: dlEditRound.song_title, song_artist: dlEditRound.song_artist,
+      play_url: $('#dlEditUrl').value.trim(), artist_note: $('#dlEditNote').value.trim() });
+    $('#dlEditModal').style.display = 'none';
+    await openDaily();
+  }catch(e){ $('#dlEditErr').textContent = e.message; }
+  $('#dlEditSave').disabled = false;
+};
+
+$('#btnDailyTick').onclick = async () => {
+  $('#dlErr').textContent = ''; $('#btnDailyTick').disabled = true;
+  try{ await api('/api/admin/daily/tick', {}); await openDaily(); }
+  catch(e){ $('#dlErr').textContent = e.message; }
+  $('#btnDailyTick').disabled = false;
+};
+$('#btnDailyPublish').onclick = async () => {
+  $('#dlErr').textContent = ''; $('#btnDailyPublish').disabled = true;
+  try{ await api('/api/admin/daily/publish', { day: DL.drop && DL.drop.day }); await openDaily(); }
+  catch(e){ $('#dlErr').textContent = e.message; }
+  $('#btnDailyPublish').disabled = false;
+};
 
 // Login: request code
 $('#btnLoginCode').onclick=async()=>{
@@ -1509,7 +1804,7 @@ $('#btnLoginVerify').onclick=async()=>{
     localStorage.setItem('rt_auth_token',AUTHTOK);
     // reset login form
     $('#loginStep2').classList.add('hide');$('#loginStep1').classList.remove('hide');$('#loginCode').value='';$('#loginDev').classList.add('hide');
-    openPicker();
+    await landing();
     maybeShowHostIntro();
   }catch(e){$('#loginErr').textContent=e.message;}
 };
@@ -1611,6 +1906,7 @@ async function openPicker(){
   $('#btnPlatform').classList.toggle('hide',!isAdmin());
   $('#btnAnalytics').classList.toggle('hide',!isAdmin());
   $('#btnCharts').classList.toggle('hide',!isAdmin());
+  $('#btnBackToDaily').classList.toggle('hide',!isAdmin());
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
@@ -3722,8 +4018,11 @@ async function startup(){
     try{
       const me=await api('/api/auth/me',null,'GET');
       ME={uid:me.uid,email:me.email,role:me.role,name:me.name,perms:me.perms};
-      // If a session was already open on this device, reopen it; else show picker.
-      if(SID){boot();}else{openPicker();}
+      // If a session was already open on this device, reopen it; else land on the console's
+      // default screen. THE DEFAULT IS A&R DAILY for the platform admin — that is where the
+      // operator's attention goes every day, versus the live show once a week. A host has no
+      // drops (and /daily/status is platform-admin only), so they still land on their rooms.
+      if(SID){boot();}else{ await landing(); }
       maybeShowHostIntro();
       return;
     }catch(e){ // token invalid/expired

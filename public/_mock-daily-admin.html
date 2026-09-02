@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — The console opens on A&R Daily</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Token values mirrored from public/tokens.css so the mockup renders standalone. */
+  :root{
+    --bg:#0E0C1A; --panel:#171328; --panel-2:#1d1733; --line:#2e2750; --inset:#0a0814;
+    --ink:#EAE9F2; --ink-dim:#9793B4; --ink-faint:#8c84ad;
+    --signal:#4bb749; --signal-deep:#379235; --on-signal:#06210b;
+    --accent:#6d5fe0; --gold:#F5C518; --hot:#ff5d6c; --on-hot:#2a0a0e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;padding:30px 20px 90px}
+  .mocklabel{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);margin:56px 0 6px;text-align:center}
+  .mocklabel:first-of-type{margin-top:0}
+  .mocknote{font-size:13.5px;line-height:1.55;color:var(--ink-dim);text-align:center;max-width:680px;margin:0 auto 22px}
+  .mocknote b{color:var(--ink)}
+  .caption{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--signal);text-align:center;margin:10px 0 0}
+  .caption.warn{color:var(--gold)}
+  .caption.hot{color:var(--hot)}
+  .mono{font-family:"Space Mono",monospace}
+  .muted{color:var(--ink-dim)}
+  .cols{display:flex;gap:26px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+
+  .screen{width:760px;max-width:100%;background:var(--bg);border:1px solid var(--line);border-radius:18px;padding:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+  .card h3{margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:"Space Mono",monospace}
+  .pill{display:inline-block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;border-radius:999px;padding:4px 9px;border:1px solid var(--line);color:var(--ink-dim)}
+  .pill.live{color:var(--signal);border-color:var(--signal)}
+  .pill.warn{color:var(--gold);border-color:rgba(245,197,24,.5)}
+  .pill.hot{color:var(--hot);border-color:var(--hot)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border:1px solid transparent;
+    border-radius:12px;font-family:inherit;font-weight:700;background:var(--signal);color:var(--on-signal);padding:11px 16px;font-size:14.5px}
+  .btn.ghost{background:transparent;border-color:var(--line);color:var(--ink-dim);font-weight:600}
+  .btn.warn{background:transparent;border-color:var(--gold);color:var(--gold);font-weight:600}
+  .btn.hot{background:transparent;border-color:var(--hot);color:var(--hot);font-weight:600}
+  .btn.sm{padding:7px 11px;font-size:12.5px;border-radius:10px}
+  .btn.block{display:flex;width:100%}
+  .row{display:flex;gap:8px;align-items:center}
+  .hint{font-size:11.5px;line-height:1.5;color:var(--ink-faint);margin:9px 0 0}
+
+  /* mode switch — the live-show console moves behind this */
+  .modes{display:flex;gap:6px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:4px;width:max-content}
+  .modes button{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    border:0;border-radius:9px;padding:9px 15px;cursor:pointer;background:transparent;color:var(--ink-dim)}
+  .modes button.on{background:var(--accent);color:#fff;font-weight:700}
+
+  .stat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 10px;text-align:center}
+  .stat .k{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-faint)}
+  .stat .v{font-family:"Space Mono",monospace;font-size:21px;font-weight:700;margin-top:4px}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-faint);padding:0 6px 8px;font-weight:400}
+  td{padding:9px 6px;border-top:1px solid var(--line);vertical-align:middle}
+  td.num,th.num{text-align:right;font-family:"Space Mono",monospace}
+  .ttl{font-weight:600}
+  .art{font-size:11.5px;color:var(--ink-dim)}
+  .link{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px;display:block}
+  .link.bad{color:var(--hot)}
+  .a{color:var(--signal);text-decoration:none;font-size:12px}
+
+  .banner{border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.5;margin-bottom:14px}
+  .banner.hot{background:rgba(255,93,108,.10);border:1px solid var(--hot)}
+  .banner.warn{background:rgba(245,197,24,.08);border:1px solid var(--gold)}
+  .banner b{color:var(--ink)}
+
+  input[type=text]{width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);
+    font-family:"Space Mono",monospace;font-size:12.5px;padding:10px 11px;border-radius:10px;outline:none}
+  input[type=text]:focus{border-color:var(--accent)}
+  label{display:block;font-size:11.5px;font-weight:600;margin:0 0 5px;color:var(--ink-dim)}
+</style>
+</head>
+<body>
+
+<div class="mocklabel">The console opens here</div>
+<p class="mocknote">
+  The operator's attention goes to <b>today's drop</b>, every day. The live-show tooling — the deck card,
+  the buzzer, the Stream Deck key, advance/arm, overlay controls, extend/reopen/unopen — is used
+  <b>once a week</b> and moves behind the mode switch. Nothing is deleted; the broadcast just stops being
+  the default mental model. This is a change to <b>which screen boots</b>, plus grouping.
+</p>
+
+<div class="cols"><div class="screen">
+
+  <div class="row" style="justify-content:space-between;margin-bottom:16px">
+    <div class="modes">
+      <button class="on">A&amp;R Daily</button>
+      <button>Live show</button>
+      <button>Platform</button>
+    </div>
+    <span class="pill live">Window open</span>
+  </div>
+
+  <div class="card">
+    <h3>Mon, Sep 1 · the day</h3>
+    <div class="row" style="gap:8px">
+      <div class="stat"><div class="k">Records</div><div class="v">7</div></div>
+      <div class="stat"><div class="k">A&amp;Rs playing</div><div class="v" style="color:var(--signal)">214</div></div>
+      <div class="stat"><div class="k">Finished</div><div class="v">96</div></div>
+      <div class="stat"><div class="k">Closes</div><div class="v" style="font-size:15px">9:00 AM</div></div>
+    </div>
+    <p class="hint">
+      Opened 12:00 PM ET · tallies at 9:00 AM ET · results and tomorrow's drop both land at 12:00 PM ET.
+      Series 3. <span class="muted">The clock runs this, not a button.</span>
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>The records</h3>
+    <table>
+      <tr><th style="width:40%">Record</th><th>Play link</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>
+      <tr>
+        <td><div class="ttl">Neon Skyline</div><div class="art">The Verge</div></td>
+        <td><span class="link">open.spotify.com/track/1a2…</span></td>
+        <td class="num">198</td><td class="num muted">0</td>
+        <td class="num"><button class="btn ghost sm">Edit</button></td>
+      </tr>
+      <tr>
+        <td><div class="ttl">Long Way Down</div><div class="art">Sable</div></td>
+        <td><span class="link">soundcloud.com/sable/long-w…</span></td>
+        <td class="num">201</td><td class="num muted">0</td>
+        <td class="num"><button class="btn ghost sm">Edit</button></td>
+      </tr>
+      <tr style="background:rgba(255,93,108,.06)">
+        <td><div class="ttl">Southbound</div><div class="art">The Ninth</div></td>
+        <td><span class="link bad">cdn.example.com/southbound.mp3</span></td>
+        <td class="num">12</td>
+        <td class="num" style="color:var(--hot);font-weight:700">9</td>
+        <td class="num"><button class="btn hot sm">Fix link</button></td>
+      </tr>
+      <tr>
+        <td><div class="ttl">Cold Open</div><div class="art">Marisol Vega</div></td>
+        <td><span class="link">open.spotify.com/track/9f0…</span></td>
+        <td class="num">187</td><td class="num muted">1</td>
+        <td class="num"><button class="btn ghost sm">Edit</button></td>
+      </tr>
+    </table>
+    <p class="hint">
+      A flag is <b>one A&amp;R, not one click</b> — so nine flags is nine people telling you the record will not play.
+      Flag counts are the threshold for pulling a record; vote counts are how you see it happening.
+    </p>
+  </div>
+  <p class="caption hot">↑ Nine A&amp;Rs reported it and the votes stalled at 12. That is the alarm.</p>
+
+</div></div>
+
+
+<div class="mocklabel">Fixing a broken link mid-window</div>
+<p class="mocknote">
+  <b>The single most operationally important surface here.</b> A dead link at 12:05 PM is a dead record for the
+  next 21 hours — nobody is watching the way a host watches a live show, and the fix <b>cannot round-trip
+  through a CMS</b>. So the console fixes it immediately and Drupal is where non-urgent corrections are made
+  and re-pushed. Descriptive fields only: this dialog has never been able to touch votes, points or status.
+</p>
+
+<div class="cols"><div class="screen" style="width:460px">
+  <div class="card" style="margin:0">
+    <h3>Record 6 · Southbound</h3>
+    <div class="banner hot" style="margin-bottom:14px">
+      <b>9 A&amp;Rs</b> reported this record. 12 votes against 198 on the rest of the day.
+    </div>
+    <label>Play link</label>
+    <input type="text" value="https://cdn.example.com/southbound.mp3">
+    <p class="hint" style="margin-bottom:12px">Must be a full http(s) link. Every A&amp;R sees the change on their next refresh.</p>
+    <label>From the artist</label>
+    <input type="text" value="Been sitting on this since 2023. Finally letting people hear it.">
+    <div class="row" style="margin-top:14px">
+      <button class="btn" style="flex:1">Save</button>
+      <button class="btn ghost sm">Cancel</button>
+    </div>
+    <div class="row" style="margin-top:12px;justify-content:space-between">
+      <a class="a" href="#">Edit in Drupal ↗</a>
+      <span class="mono" style="font-size:10.5px;color:var(--ink-faint)">node/8841</span>
+    </div>
+  </div>
+</div></div>
+<p class="caption">↑ The urgent fix is local. The deep link is for everything that is not urgent.</p>
+
+
+<div class="mocklabel">After the tally, before the send</div>
+<p class="mocknote">
+  Comments ship <b>by default</b> (029) and there is <b>no unsend</b>. A live show has a wrap-up moment where
+  the host sees "N comments about to go out"; a cron has none. So the artist notices are held one hour past
+  the publish, and the count sits right next to the hold — the only place it is actionable.
+</p>
+
+<div class="cols"><div class="screen" style="width:620px">
+
+  <div class="banner warn">
+    <b>34 A&amp;R comments</b> go to artists in <b>41 minutes</b>. Reject anything that should not ship — after that there is no unsend.
+    <div style="margin-top:10px"><button class="btn warn sm">Review the comments</button></div>
+  </div>
+
+  <div class="card">
+    <h3>Sending</h3>
+    <table>
+      <tr><th style="width:44%">Queue</th><th class="num">Sent</th><th class="num">Failed</th><th class="num">Pending</th></tr>
+      <tr><td>A&amp;R digest</td><td class="num" style="color:var(--signal)">1,204</td><td class="num muted">2</td><td class="num">318</td></tr>
+      <tr><td>Artist reports</td><td class="num muted">0</td><td class="num muted">0</td><td class="num">7</td></tr>
+      <tr><td>Artist texts <span class="pill" style="margin-left:6px">holds until 10 AM ET</span></td><td class="num muted">0</td><td class="num muted">0</td><td class="num">5</td></tr>
+    </table>
+    <p class="hint">The cron drains a chunk every five minutes. These numbers move on their own.</p>
+  </div>
+
+  <div class="card">
+    <h3>The day's graphics</h3>
+    <div class="row" style="gap:10px;align-items:flex-start">
+      <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;height:96px;display:flex;align-items:center;justify-content:center">
+        <span class="mono muted" style="font-size:11px">Top 8 A&amp;Rs</span></div>
+      <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;height:96px;display:flex;align-items:center;justify-content:center">
+        <span class="mono muted" style="font-size:11px">Top 8 Records</span></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn ghost sm">Copy caption</button>
+      <button class="btn ghost sm">Send to Asana</button>
+    </div>
+    <p class="hint">Posting is manual, plainly: the Meta Graph API wants an IG Business account, App Review
+      and a 60-day token cycle — precisely the infrastructure this project does not babysit.</p>
+  </div>
+
+  <div class="card" style="margin:0">
+    <h3>If a cron misses</h3>
+    <div class="row"><button class="btn ghost sm">Run the lifecycle now</button><button class="btn ghost sm">Publish the day</button></div>
+    <p class="hint">Same implementation the scheduled run uses, so a manual press can never do
+      something the cron would not.</p>
+  </div>
+
+</div></div>
+
+
+<div class="mocklabel">No drop staged</div>
+<p class="mocknote">
+  <b>A missing drop is an incident, not an empty state.</b> If Drupal has not pushed, the site is back to
+  exactly the failure this build exists to fix — an A&amp;R opens the app and there is nothing to do. It
+  reads as an alarm, not as a shrug.
+</p>
+
+<div class="cols"><div class="screen" style="width:560px">
+  <div class="card" style="margin:0;border-color:var(--hot)">
+    <h3 style="color:var(--hot)">Nothing is staged for tomorrow</h3>
+    <p style="margin:0 0 12px;font-size:14px;line-height:1.55">
+      No records have been pushed for <b>Tue, Sep 2</b>. If this is still true at noon, A&amp;Rs open the app
+      to an empty day.
+    </p>
+    <div class="row"><button class="btn hot sm">Open the review queue ↗</button><button class="btn ghost sm">Check again</button></div>
+  </div>
+</div></div>
+<p class="caption hot">↑ Red, because the whole product promise is that there is always something to do.</p>
+
+</body>
+</html>
