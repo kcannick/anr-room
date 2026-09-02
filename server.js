@@ -2551,6 +2551,106 @@ function normalizeDropSong(raw, i) {
   } };
 }
 
+// Stage a day. ONE IMPLEMENTATION, TWO CALLERS — the advanceRoom discipline, again.
+// Drupal pushes the approved set over /api/ingest/daily with its own secret; the operator
+// stages one by hand over /api/admin/daily/drop when Drupal is down, when a day needs
+// rebuilding, or to try the whole thing on a preview deployment. Identical validation and
+// identical idempotency both ways: a hand-staged day must not be able to do anything the
+// pushed one cannot, or the two paths start disagreeing about what a valid day is.
+//
+// Callers do their own auth and then hand the parsed body straight here.
+async function stageDailyDrop(res, body) {
+  const day = (body.day || etDay()).toString().trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad(res, 'day must be YYYY-MM-DD');
+  // ±2 days of ET today: catches a typo that would otherwise create a drop in 2027 and sit
+  // invisible until it opened.
+  const dayTs = etEpoch(day, 12);
+  if (dayTs == null || Math.abs(dayTs - now()) > 3 * 86400000) return bad(res, 'day is too far from today');
+
+  const songs = Array.isArray(body.songs) ? body.songs : null;
+  if (!songs || !songs.length) return bad(res, 'songs[] required');
+  if (songs.length > DROP_MAX_SONGS) return bad(res, `too many songs (max ${DROP_MAX_SONGS})`);
+
+  // ALL-OR-NOTHING. A silently-short day is worse than an error the operator can act on.
+  const recs = [], rejected = [], warnings = [], seenRef = new Set();
+  songs.forEach((raw, i) => {
+    const { rec, err } = normalizeDropSong(raw, i);
+    if (err) return rejected.push(err);
+    if (rec.ref && seenRef.has(rec.ref)) return rejected.push({ index: i, field: 'ref', reason: 'duplicate in batch' });
+    if (rec.ref) seenRef.add(rec.ref);
+    if (raw.email && !rec.email) warnings.push({ index: i, field: 'email', reason: 'unusable' });
+    if (raw.phone && !rec.phone) warnings.push({ index: i, field: 'phone', reason: 'unusable' });
+    recs.push(rec);
+  });
+  if (rejected.length) return send(res, 400, { error: 'Batch rejected', rejected });
+
+  // Link each scout's Makin' It identity to their A&R Team account while we still have the
+  // email. Best-effort and non-fatal: scout_drupal_uid is stored on the round REGARDLESS,
+  // because Drupal's own ambassador and promo reporting reads it and must not depend on us
+  // having resolved the person. An unlinked scout simply earns no points yet.
+  for (const r of recs) {
+    if (r.scoutUid) { try { await linkScout(r.scoutUid, r.scoutEmail); } catch (e) { console.error('[scout] link failed:', e.message); } }
+  }
+
+  // Without a series tag the day's points never reach the $500 board — the entire
+  // unification premise, failing silently. Resolve explicit -> active series -> refuse.
+  let seriesId = (body.seriesId || '').toString().trim() || null;
+  if (seriesId) {
+    const ser = await db.get('SELECT id FROM series WHERE id = ?', [seriesId]);
+    if (!ser) return bad(res, 'Unknown seriesId');
+  } else {
+    const active = await db.get("SELECT id FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []);
+    seriesId = active ? active.id : null;
+  }
+  if (!seriesId) return bad(res, 'No active series — a drop with no series tag earns nothing on the board', 409);
+
+  const existing = await db.get('SELECT * FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [day]);
+  if (existing) {
+    const voted = (await db.get(
+      'SELECT COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [existing.id])).c;
+    const started = existing.status !== 'upcoming' || (existing.async_state && existing.async_state !== 'scheduled');
+    if (Number(voted) > 0 || started) {
+      return send(res, 409, { error: "Today's drop is already in play", sessionId: existing.id, votes: Number(voted) });
+    }
+    // Cold and unplayed: replace the record set in place (newest push wins, the same rule
+    // 031/032 apply to a single staged record — here applied to the batch).
+    await db.tx(async (tx) => {
+      await tx.run('DELETE FROM rounds WHERE session_id = ?', [existing.id]);
+      let i = 0;
+      for (const s of recs) {
+        i++;
+        await tx.run(
+          `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
+             giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
+             artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, status, opens_at, closes_at, created_at)
+           VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+          [id(9), existing.id, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
+           s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid,
+           existing.window_opens_at, existing.window_closes_at, now()]);
+      }
+      if (seriesId && !existing.series_id) await tx.run('UPDATE sessions SET series_id = ? WHERE id = ?', [seriesId, existing.id]);
+    });
+    // Echo titles only — never the emails or phones back out (they came in over this wire,
+    // that doesn't make them safe to reflect).
+    return send(res, 200, { ok: true, replaced: true, sessionId: existing.id, day,
+      rounds: recs.length, seriesId: seriesId || existing.series_id || null, warnings });
+  }
+
+  let out;
+  try {
+    out = await createAsyncDrop({ day, name: body.name, seriesId, songs: recs,
+      opensAt: body.opensAt, closesAt: body.closesAt, resultsAt: body.resultsAt });
+  } catch (e) {
+    // The partial unique index on drop_day is the REAL guard: two simultaneous pushes race
+    // on the constraint, not on the SELECT above, and the loser lands here.
+    if (/unique|duplicate/i.test(e.message || '')) {
+      return send(res, 409, { error: "A drop already exists for that day" });
+    }
+    throw e;
+  }
+  return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings });
+}
+
 // Build one day of A&R Daily from the approved batch Drupal pushes.
 //
 // The day is VARIABLE in size — 4 random free records plus up to 12 paid — so nothing here
@@ -4277,8 +4377,14 @@ async function handleApi(req, res, url) {
   // Its own secret because the blast radius differs — /submission stages one row a host can
   // ignore, this creates a room and every artist's contact details.
   if (p === '/api/ingest/daily' && method === 'POST') {
-    const token = process.env.DAILY_INGEST_TOKEN || process.env.INGEST_TOKEN || '';
-    if (!token) return send(res, 503, { error: 'Daily ingest not configured' });
+    // DAILY_INGEST_TOKEN ONLY — deliberately NOT falling back to INGEST_TOKEN. The fallback
+    // read as convenient and quietly destroyed the whole reason this has its own secret:
+    // INGEST_TOKEN guards a push that stages ONE row a host can ignore, while this one
+    // creates a live room carrying up to sixteen artists' email addresses and phone numbers.
+    // Sharing the secret means the lower-value integration's blast radius becomes this one's.
+    // Unset ⇒ 503, and the day simply cannot be pushed until it is configured.
+    const token = process.env.DAILY_INGEST_TOKEN || '';
+    if (!token) return send(res, 503, { error: 'Daily ingest not configured (set DAILY_INGEST_TOKEN)' });
     const given = (req.headers['x-ingest-token'] || '').toString();
     // Length pre-check then constant-time compare (timingSafeEqual throws on a length
     // mismatch). The older `given !== token` above is a timing oracle — not propagated here.
@@ -4286,96 +4392,7 @@ async function handleApi(req, res, url) {
       && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(token));
     if (!okTok) return send(res, 401, { error: 'Bad token' });
 
-    const body = await readBody(req);
-    const day = (body.day || etDay()).toString().trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return bad(res, 'day must be YYYY-MM-DD');
-    // ±2 days of ET today: catches a typo that would otherwise create a drop in 2027 and sit
-    // invisible until it opened.
-    const dayTs = etEpoch(day, 12);
-    if (dayTs == null || Math.abs(dayTs - now()) > 3 * 86400000) return bad(res, 'day is too far from today');
-
-    const songs = Array.isArray(body.songs) ? body.songs : null;
-    if (!songs || !songs.length) return bad(res, 'songs[] required');
-    if (songs.length > DROP_MAX_SONGS) return bad(res, `too many songs (max ${DROP_MAX_SONGS})`);
-
-    // ALL-OR-NOTHING. A silently-short day is worse than an error the operator can act on.
-    const recs = [], rejected = [], warnings = [], seenRef = new Set();
-    songs.forEach((raw, i) => {
-      const { rec, err } = normalizeDropSong(raw, i);
-      if (err) return rejected.push(err);
-      if (rec.ref && seenRef.has(rec.ref)) return rejected.push({ index: i, field: 'ref', reason: 'duplicate in batch' });
-      if (rec.ref) seenRef.add(rec.ref);
-      if (raw.email && !rec.email) warnings.push({ index: i, field: 'email', reason: 'unusable' });
-      if (raw.phone && !rec.phone) warnings.push({ index: i, field: 'phone', reason: 'unusable' });
-      recs.push(rec);
-    });
-    if (rejected.length) return send(res, 400, { error: 'Batch rejected', rejected });
-
-    // Link each scout's Makin' It identity to their A&R Team account while we still have the
-    // email. Best-effort and non-fatal: scout_drupal_uid is stored on the round REGARDLESS,
-    // because Drupal's own ambassador and promo reporting reads it and must not depend on us
-    // having resolved the person. An unlinked scout simply earns no points yet.
-    for (const r of recs) {
-      if (r.scoutUid) { try { await linkScout(r.scoutUid, r.scoutEmail); } catch (e) { console.error('[scout] link failed:', e.message); } }
-    }
-
-    // Without a series tag the day's points never reach the $500 board — the entire
-    // unification premise, failing silently. Resolve explicit -> active series -> refuse.
-    let seriesId = (body.seriesId || '').toString().trim() || null;
-    if (seriesId) {
-      const ser = await db.get('SELECT id FROM series WHERE id = ?', [seriesId]);
-      if (!ser) return bad(res, 'Unknown seriesId');
-    } else {
-      const active = await db.get("SELECT id FROM series WHERE status = 'active' ORDER BY created_at DESC LIMIT 1", []);
-      seriesId = active ? active.id : null;
-    }
-    if (!seriesId) return bad(res, 'No active series — a drop with no series tag earns nothing on the board', 409);
-
-    const existing = await db.get('SELECT * FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [day]);
-    if (existing) {
-      const voted = (await db.get(
-        'SELECT COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [existing.id])).c;
-      const started = existing.status !== 'upcoming' || (existing.async_state && existing.async_state !== 'scheduled');
-      if (Number(voted) > 0 || started) {
-        return send(res, 409, { error: "Today's drop is already in play", sessionId: existing.id, votes: Number(voted) });
-      }
-      // Cold and unplayed: replace the record set in place (newest push wins, the same rule
-      // 031/032 apply to a single staged record — here applied to the batch).
-      await db.tx(async (tx) => {
-        await tx.run('DELETE FROM rounds WHERE session_id = ?', [existing.id]);
-        let i = 0;
-        for (const s of recs) {
-          i++;
-          await tx.run(
-            `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
-               giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-               artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, status, opens_at, closes_at, created_at)
-             VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
-            [id(9), existing.id, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
-             s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid,
-             existing.window_opens_at, existing.window_closes_at, now()]);
-        }
-        if (seriesId && !existing.series_id) await tx.run('UPDATE sessions SET series_id = ? WHERE id = ?', [seriesId, existing.id]);
-      });
-      // Echo titles only — never the emails or phones back out (they came in over this wire,
-      // that doesn't make them safe to reflect).
-      return send(res, 200, { ok: true, replaced: true, sessionId: existing.id, day,
-        rounds: recs.length, seriesId: seriesId || existing.series_id || null, warnings });
-    }
-
-    let out;
-    try {
-      out = await createAsyncDrop({ day, name: body.name, seriesId, songs: recs,
-        opensAt: body.opensAt, closesAt: body.closesAt, resultsAt: body.resultsAt });
-    } catch (e) {
-      // The partial unique index on drop_day is the REAL guard: two simultaneous pushes race
-      // on the constraint, not on the SELECT above, and the loser lands here.
-      if (/unique|duplicate/i.test(e.message || '')) {
-        return send(res, 409, { error: "A drop already exists for that day" });
-      }
-      throw e;
-    }
-    return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings });
+    return stageDailyDrop(res, await readBody(req));
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -6734,6 +6751,19 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (!(await platformAdmin(req))) return bad(res, 'Admin auth failed', 401);
     return send(res, 200, { ok: true, ...(await runAsyncDropLifecycle({ ts: body.at })) });
+  }
+
+  // Stage a day BY HAND — the same builder Drupal's push uses, behind the admin login
+  // instead of a shared secret. It exists because "a missing drop is an incident, not an
+  // empty state": if Drupal is down at 11:50 AM, the operator needs a way to put a day up
+  // that does not involve waiting for someone else's CMS. It is also the only way to try
+  // the whole thing on a deployment where DAILY_INGEST_TOKEN is not set.
+  //
+  // Platform-admin only, for the same reason /api/ingest/daily has its own secret: the
+  // payload carries every artist's contact details, and a drop has no owner_uid.
+  if (p === '/api/admin/daily/drop' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    return stageDailyDrop(res, await readBody(req));
   }
 
   // ---- The daily console's one status call. ----

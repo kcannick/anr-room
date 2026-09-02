@@ -6,6 +6,10 @@ process.env.PORT = '3999';
 process.env.ADMIN_EMAIL = 'admin@test.com';
 process.env.ABLY_API_KEY = '';   // realtime off in tests (the .env loader must not pull a real key)
 process.env.INGEST_TOKEN = 'test-ingest-secret';
+// A SEPARATE secret, deliberately: /ingest/submission stages one ignorable row, while
+// /ingest/daily creates a live room carrying every artist's contact details. The daily
+// route does NOT fall back to INGEST_TOKEN — see the note on its token check.
+process.env.DAILY_INGEST_TOKEN = 'test-daily-secret';
 process.env.ANALYTICS_TOKEN = 'test-analytics-secret';
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
@@ -1445,7 +1449,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
 
   console.log('\n— A&R Daily: the approved daily batch from Drupal —');
   const dDb = require('./db');
-  const DTOK = { 'X-Ingest-Token': 'test-ingest-secret' };
+  const DTOK = { 'X-Ingest-Token': 'test-daily-secret' };
   // The day is VARIABLE — 4 free + up to 12 paid — so every fixture here is deliberately
   // NOT 16. A test that always used 16 would let a hardcoded 16 slip through.
   const song = (n, over = {}) => ({ ref: 'node/' + n, url: 'https://makinitmag.com/node/' + n,
@@ -1458,6 +1462,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
 
   const dBad = await call('/api/ingest/daily', { day: today, songs: [song(1)] }, 'POST', { 'X-Ingest-Token': 'wrong' });
   ok('daily push rejects a bad token', dBad.status === 401, 'got ' + dBad.status);
+  // THE SECRETS ARE SEPARATE, and this is the assertion that keeps them that way. The daily
+  // route used to fall back to INGEST_TOKEN, which reads as convenient and quietly hands the
+  // review-site integration's shared secret the power to create a room carrying sixteen
+  // artists' contact details. If someone re-adds the fallback, this goes red.
+  const dCross = await call('/api/ingest/daily', { day: today, songs: [song(1)] }, 'POST',
+    { 'X-Ingest-Token': 'test-ingest-secret' });
+  ok('the review-site token cannot push a DAY — different blast radius, different secret',
+    dCross.status === 401, 'got ' + dCross.status);
   const dNoSongs = await call('/api/ingest/daily', { day: today, songs: [] }, 'POST', DTOK);
   ok('daily push needs songs', dNoSongs.status === 400, 'got ' + dNoSongs.status);
   const dTooMany = await call('/api/ingest/daily', { day: today, songs: Array.from({ length: 25 }, (_, i) => song(i)) }, 'POST', DTOK);
@@ -1977,6 +1989,28 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const pubAnon = await call('/api/admin/daily/publish', { day: srv._etNextDay(today) }, 'POST', {});
   ok('and the publish door is platform-admin only', pubAnon.status === 403 || pubAnon.status === 401, 'got ' + pubAnon.status);
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), CDROP]);
+
+  // Staging a day BY HAND. Same builder as Drupal's push, behind the admin login instead of
+  // a shared secret — because a missing drop is an incident, and "wait for someone else's
+  // CMS to come back" is not an answer at 11:50 AM.
+  const handDay = srv._etNextDay(srv._etNextDay(today));
+  const handAnon = await call('/api/admin/daily/drop', { day: handDay, songs: [song(81)] }, 'POST', {});
+  ok('staging a day by hand is platform-admin only', handAnon.status === 403 || handAnon.status === 401, 'got ' + handAnon.status);
+  const handBad = await call('/api/admin/daily/drop',
+    { day: handDay, seriesId: serId, songs: [song(81), { title: 'No link' }] }, 'POST', BOOTH);
+  ok('and it runs the SAME all-or-nothing validation as the push',
+    handBad.status === 400 && handBad.d.rejected[0].field === 'playUrl', JSON.stringify(handBad.d));
+  const handOk = await call('/api/admin/daily/drop',
+    { day: handDay, seriesId: serId, songs: [song(81), song(82), song(83)] }, 'POST', BOOTH);
+  ok('a platform admin can stage a day with no ingest token in sight',
+    handOk.status === 200 && handOk.d.rounds === 3, JSON.stringify(handOk.d));
+  const handSess = await dDb.get("SELECT * FROM sessions WHERE drop_day = ? AND deleted_at IS NULL", [handDay]);
+  ok('the hand-staged day is a real async drop, tagged into the series',
+    handSess.mode === 'async' && handSess.series_id === serId && handSess.async_state === 'scheduled',
+    JSON.stringify({ mode: handSess.mode, series: handSess.series_id, state: handSess.async_state }));
+  ok('and it echoes no artist contact back out',
+    !/@/.test(JSON.stringify(handOk.d)), JSON.stringify(handOk.d));
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), handSess.id]);
 
   const noDrop = (await call('/api/admin/daily/status?day=2029-01-01', null, 'GET', BOOTH)).d;
   ok('a day with no drop reads as an incident, not an empty state',
