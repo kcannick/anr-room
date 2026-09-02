@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap">
+  <style>
+    :root{
+      --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --inset:#0A0814;
+      --ink:#EAE9F2; --dim:#9793B4;
+      --signal:#4BB749; --contest:#6D5FE0; --prize:#F5C518; --deadline:#FF5D6C;
+    }
+    body{margin:0;background:transparent;color:var(--ink);
+      font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;
+      -webkit-font-smoothing:antialiased}
+    a{color:var(--signal);text-decoration:none} a:hover{color:#6ACD68}
+    .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+    .tp{flex:1;min-width:0;height:44px;border:1px solid var(--line);background:var(--inset);
+      border-radius:10px;display:flex;align-items:center;justify-content:center;
+      font-family:"Space Mono",monospace;font-size:15px;color:var(--dim);cursor:pointer;
+      transition:transform .12s ease,background .12s ease}
+    .tp:hover{border-color:var(--dim)}
+    .tp.on{background:var(--signal);border-color:var(--signal);color:var(--ground);font-weight:700;transform:translateY(-3px)}
+    input[type=range]{width:100%;accent-color:var(--signal);height:30px}
+  </style>
+</helmet>
+
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px;box-sizing:border-box">
+
+  <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+    <span style="display:block;width:3px;height:13px;background:var(--contest);transform:skewX(-13deg);flex:none"></span>
+    <span class="mono" style="font-size:10.5px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">Try one right now</span>
+  </div>
+
+  <div style="font-weight:800;font-size:19px;letter-spacing:-0.03em;margin-bottom:16px;text-wrap:pretty">
+    Can you predict the hits and the misses?
+  </div>
+
+  <div style="font-weight:800;font-size:20px;letter-spacing:-0.025em">{{ rec.title }}</div>
+  <div style="font-size:14px;color:var(--dim);margin-top:2px">{{ rec.artist }}</div>
+
+  <sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+    <div>
+      <p style="margin:16px 0 9px;font-size:13.5px;line-height:1.5;color:var(--dim)">
+        <b style="color:var(--ink);font-weight:700">1.</b> Rate it 0 to 9 — your honest take.
+      </p>
+      <div style="display:flex;gap:5px;margin-bottom:5px">
+        <sc-for list="{{ pipsTop }}" as="p" hint-placeholder-count="5">
+          <div class="{{ p.cls }}" onClick="{{ p.pick }}">{{ p.n }}</div>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:5px">
+        <sc-for list="{{ pipsBot }}" as="p" hint-placeholder-count="5">
+          <div class="{{ p.cls }}" onClick="{{ p.pick }}">{{ p.n }}</div>
+        </sc-for>
+      </div>
+
+      <p style="margin:20px 0 2px;font-size:13.5px;line-height:1.5;color:var(--dim)">
+        <b style="color:var(--ink);font-weight:700">2.</b> Now the real test — what did the people average it at?
+      </p>
+      <div class="mono" style="font-size:34px;font-weight:700;text-align:center;color:var(--signal);margin:8px 0 2px">{{ guess }}</div>
+      <input type="range" min="0" max="9" step="0.1" value="{{ guess }}" onInput="{{ onGuess }}">
+
+      <button onClick="{{ check }}" style="{{ checkStyle }}">Check my read</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ revealed }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:13px 8px;text-align:center">
+          <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">You said</div>
+          <div class="mono" style="font-size:23px;font-weight:700;margin-top:4px">{{ guess }}</div>
+        </div>
+        <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:13px 8px;text-align:center">
+          <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">They said</div>
+          <div class="mono" style="font-size:23px;font-weight:700;margin-top:4px;color:var(--signal)">{{ rec.avg }}</div>
+        </div>
+        <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:13px 8px;text-align:center">
+          <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">Points</div>
+          <div class="mono" style="{{ ptsStyle }}">{{ pts }}</div>
+        </div>
+      </div>
+
+      <div style="font-weight:800;font-size:19px;letter-spacing:-0.02em;margin-top:16px;text-wrap:pretty">{{ verdict }}</div>
+      <p style="margin:7px 0 0;font-size:13.5px;line-height:1.55;color:var(--dim);text-wrap:pretty">{{ blurb }}</p>
+
+      <p class="mono" style="margin:14px 0 0;font-size:11px;line-height:1.6;color:var(--dim)">
+        {{ rec.voters }} A&amp;RS RATED THIS ONE
+      </p>
+
+      <button onClick="{{ again }}" style="width:100%;background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:11px;padding:12px;font-family:inherit;font-weight:600;font-size:13.5px;cursor:pointer;margin-top:16px">
+        Try another
+      </button>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":420,"height":480}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { n: 0, taste: null, guess: 4.5, revealed: false };
+  }
+
+  deck() {
+    // Records that already ran, so the average is a settled fact rather than a claim.
+    return [
+      { title: 'Long Way Down', artist: 'Sable',      avg: '6.1', voters: 214 },
+      { title: 'Basement Tape', artist: 'Wax Figure', avg: '3.0', voters: 198 },
+      { title: 'Cold Open',     artist: 'Marisol Vega', avg: '7.2', voters: 231 }
+    ];
+  }
+
+  // The real scoring curve: 100 * e^(-error/2), +25 for an exact tenth, -10 past 5.0 off.
+  // Using the actual formula matters — a stranger's first number should be the number
+  // they would really have earned.
+  score(err) {
+    var p = 100 * Math.exp(-err * 0.5);
+    if (err <= 0.05) p += 25;
+    if (err > 5.0) p -= 10;
+    return Math.round(p);
+  }
+
+  renderVals() {
+    const rec = this.deck()[this.state.n % this.deck().length];
+    const guess = this.state.guess;
+    const err = Math.abs(guess - parseFloat(rec.avg));
+    const pts = this.score(err);
+    const exact = err <= 0.05;
+    const close = err <= 0.5;
+
+    const pip = (n) => ({
+      n: n,
+      cls: this.state.taste === n ? 'tp on' : 'tp',
+      pick: () => this.setState({ taste: n })
+    });
+
+    const canCheck = this.state.taste !== null;
+
+    return {
+      rec: rec,
+      guess: guess.toFixed(1),
+      pts: '+' + pts,
+      open: !this.state.revealed,
+      revealed: this.state.revealed,
+      pipsTop: [0, 1, 2, 3, 4].map(pip),
+      pipsBot: [5, 6, 7, 8, 9].map(pip),
+
+      ptsStyle: 'font-size:23px;font-weight:700;margin-top:4px;color:'
+        + (exact ? 'var(--prize)' : (close ? 'var(--signal)' : 'var(--ink)')),
+
+      verdict: exact ? 'Bullseye.' : (close ? 'You know the market.' : (err <= 1.5 ? 'Close.' : 'Not this time.')),
+      blurb: exact
+        ? 'Dead on the average. That is the maximum score on a record — 125 points.'
+        : (close
+            ? 'You put your own taste aside and called what everyone else would do. That is the whole skill.'
+            : (err <= 1.5
+                ? 'Off by ' + err.toFixed(1) + '. Respectable, and it moves fast once you have a few days in.'
+                : 'Off by ' + err.toFixed(1) + '. Liking a record and knowing how it lands are two different things.')),
+
+      onGuess: (e) => this.setState({ guess: parseFloat(e.target.value) }),
+
+      checkStyle: 'width:100%;box-sizing:border-box;border:0;border-radius:12px;padding:15px;'
+        + 'font-family:inherit;font-weight:800;font-size:15px;margin-top:16px;'
+        + 'background:var(--signal);color:var(--ground);'
+        + (canCheck ? 'cursor:pointer' : 'opacity:.35;cursor:default'),
+      check: () => { if (canCheck) this.setState({ revealed: true }); },
+
+      again: () => this.setState({ n: this.state.n + 1, taste: null, guess: 4.5, revealed: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

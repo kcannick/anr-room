@@ -1,0 +1,115 @@
+{
+  "pages": [
+    {
+      "id": "front-door",
+      "name": "Front door"
+    },
+    {
+      "id": "member-app",
+      "name": "Member app"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Landing.dc.html",
+      "page": "front-door",
+      "x": 0,
+      "y": 0,
+      "w": 1120,
+      "h": 2420,
+      "title": "Landing \u2014 desktop"
+    },
+    {
+      "file": "LandingPhone.dc.html",
+      "page": "front-door",
+      "x": 1220,
+      "y": 0,
+      "w": 390,
+      "h": 2740,
+      "title": "Landing \u2014 phone"
+    },
+    {
+      "file": "TryIt.dc.html",
+      "page": "front-door",
+      "x": 1720,
+      "y": 0,
+      "w": 420,
+      "h": 490,
+      "title": "Try one (shared)"
+    },
+    {
+      "file": "Main.dc.html",
+      "page": "member-app",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 800,
+      "title": "Home \u2014 today's task"
+    },
+    {
+      "file": "Daily.dc.html",
+      "page": "member-app",
+      "x": 480,
+      "y": 0,
+      "w": 390,
+      "h": 1000,
+      "title": "A&R Daily \u2014 the walk"
+    },
+    {
+      "file": "Results.dc.html",
+      "page": "member-app",
+      "x": 960,
+      "y": 0,
+      "w": 390,
+      "h": 880,
+      "title": "Yesterday's results"
+    },
+    {
+      "file": "Proof.dc.html",
+      "page": "front-door",
+      "x": 1720,
+      "y": 540,
+      "w": 900,
+      "h": 660,
+      "title": "Board + joiners (shared)"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "pitch-order",
+      "page": "front-door",
+      "x": 0,
+      "y": -230,
+      "w": 520,
+      "text": "The front door in four beats:\n\n1. The hook, your words \u2014 got a good ear, join and prove it.\n2. What you actually do \u2014 rate to decide who gets promoted; predict to earn points and a shot at the $500.\n3. TRY ONE. A stranger plays a real record and finds out how close they were, before signing up for anything.\n4. The real question \u2014 knowing good music vs knowing the market.\n\nOne action, repeated three times: Join the A&R Team."
+    },
+    {
+      "id": "try-note",
+      "page": "front-door",
+      "x": 1720,
+      "y": -230,
+      "w": 460,
+      "text": "Two shared components, mounted into BOTH landing artboards \u2014 edit here and both update.\n\nTry one runs the REAL scoring curve, so a stranger's first number is what they would actually have earned; the three records already ran, so the average is a settled fact.\n\nThe board is YESTERDAY'S, not the cumulative series board. 12,480 tells a stranger they are months behind; 784 tells them they could have done that \u2014 and 'everyone starts over at noon' is the line that turns a hierarchy into an invitation.\n\nNeeds a `daily.board` field on /api/home. Not new logic: the overlay's default scope and cardArsData(sessionId) already rank participants within one session.\n\nNo 'past champions' block \u2014 winners[] is still hardcoded empty on the server."
+    },
+    {
+      "id": "day-size",
+      "page": "member-app",
+      "x": 0,
+      "y": -190,
+      "w": 470,
+      "text": "The day is VARIABLE \u2014 4 drawn at random from the free pool plus UP TO 12 paid, so 4 to 16 records. It only reaches 16 when the paid queue is full or backlogged.\n\nNothing anywhere hardcodes a count. Every artboard with a day on it carries a 'records' tweak \u2014 drag it from 4 to 16 and the hero number, the queue rail, the 'Record n of N' line, the completion screen and the landing page all follow.\n\nServer side matches: the completion-bonus denominator is a live COUNT of the day's rounds, so deleting a record shrinks the day rather than stranding anyone one short."
+    },
+    {
+      "id": "seal",
+      "page": "member-app",
+      "x": 960,
+      "y": -190,
+      "w": 390,
+      "text": "Nothing on this screen exists before the 9:00 AM tally. During the window there is no average, no split and no per-record vote count anywhere in the payload \u2014 a count across 21 hours is a popularity signal, which is direction-adjacent."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "front-door"
+  }
+}

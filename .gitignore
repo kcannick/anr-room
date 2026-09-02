@@ -8,3 +8,7 @@ node_modules/
 
 # Office temp/lock files
 ~$*
+
+# Design-canvas build output: 2.3MB of editor payload, regenerable from the
+# .dc.html sources with the design skill helper. Sources are tracked; this is not.
+daily-member-app.html

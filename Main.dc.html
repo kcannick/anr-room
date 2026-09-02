@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap">
+  <style>
+    :root{
+      --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --inset:#0A0814;
+      --ink:#EAE9F2; --dim:#9793B4;
+      --signal:#4BB749; --contest:#6D5FE0; --prize:#F5C518; --deadline:#FF5D6C;
+    }
+    body{margin:0;background:var(--ground);color:var(--ink);
+      font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;
+      -webkit-font-smoothing:antialiased}
+    a{color:var(--signal);text-decoration:none} a:hover{color:#6ACD68}
+    .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+  </style>
+</helmet>
+
+<div style="width:390px;min-height:800px;background:var(--ground);padding:22px 20px 26px;box-sizing:border-box;display:flex;flex-direction:column;gap:22px">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:32px;height:32px;background:var(--signal);transform:skewX(-13deg);display:flex;align-items:center;justify-content:center;flex:none">
+        <span style="transform:skewX(13deg);font-weight:900;font-size:11px;letter-spacing:-0.02em;color:var(--ground)">A&amp;R</span>
+      </div>
+      <span style="font-weight:800;font-size:12px;letter-spacing:0.18em;text-transform:uppercase">The A&amp;R Team</span>
+    </div>
+    <div class="mono" style="font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:5px 11px">
+      <span style="color:var(--ink);font-weight:700">#12</span> · 4,180
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="display:block;width:3px;height:13px;background:var(--signal);transform:skewX(-13deg);flex:none"></span>
+      <span class="mono" style="font-size:10.5px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">A&amp;R Daily · Mon Sep 1</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span class="mono" style="font-size:74px;font-weight:700;line-height:0.82;color:var(--signal)">{{ records }}</span>
+      <span style="font-weight:800;font-size:29px;line-height:1.02;letter-spacing:-0.035em;text-wrap:pretty">records<br>are open.</span>
+    </div>
+    <p style="margin:0;font-size:14.5px;line-height:1.5;color:var(--dim);max-width:31ch;text-wrap:pretty">
+      Rate every one before 9:00 AM. You have not started today.
+    </p>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,rgba(109,95,224,0.16),rgba(109,95,224,0.05));border:1px solid rgba(109,95,224,0.45);border-radius:12px;padding:11px 13px">
+    <span style="display:block;width:8px;height:8px;border-radius:50%;background:var(--contest);flex:none"></span>
+    <span style="font-size:13.5px">Finish today for <b class="mono" style="color:var(--contest);font-weight:700">+100</b></span>
+    <span class="mono" style="margin-left:auto;font-size:10.5px;color:var(--dim);white-space:nowrap">until 3:00 PM ET</span>
+  </div>
+
+  <button style="width:100%;background:var(--signal);color:var(--ground);border:0;border-radius:13px;padding:18px;font-family:inherit;font-weight:800;font-size:17px;letter-spacing:-0.01em;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px">
+    Start rating
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"></path><path d="m12 5 7 7-7 7"></path></svg>
+  </button>
+
+  <div style="height:1px;background:var(--line);transform:skewX(-13deg)"></div>
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="display:block;width:3px;height:11px;background:var(--contest);transform:skewX(-13deg);flex:none"></span>
+      <span class="mono" style="font-size:10.5px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">Yesterday</span>
+    </div>
+    <div style="display:flex;gap:10px">
+      <div style="flex:1;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px 12px;text-align:center">
+        <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">Points</div>
+        <div class="mono" style="font-size:25px;font-weight:700;margin-top:5px;color:var(--signal)">642</div>
+      </div>
+      <div style="flex:1;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px 12px;text-align:center">
+        <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">Grade</div>
+        <div class="mono" style="font-size:25px;font-weight:700;margin-top:5px">A−</div>
+      </div>
+      <div style="flex:1;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px 12px;text-align:center">
+        <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">Rank</div>
+        <div class="mono" style="font-size:25px;font-weight:700;margin-top:5px">#9</div>
+      </div>
+    </div>
+    <button style="width:100%;background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:12px;padding:13px;font-family:inherit;font-weight:600;font-size:14px;cursor:pointer">
+      See yesterday's results
+    </button>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="display:block;width:3px;height:11px;background:var(--prize);transform:skewX(-13deg);flex:none"></span>
+      <span class="mono" style="font-size:10.5px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">The series</span>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+        <span style="font-weight:800;font-size:16px;letter-spacing:-0.02em">Series 3</span>
+        <span class="mono" style="font-size:15px;font-weight:700;color:var(--prize)">$500</span>
+      </div>
+      <p style="margin:8px 0 0;font-size:13px;line-height:1.5;color:var(--dim)">
+        You are <b style="color:var(--ink);font-weight:700">#12</b> of 214. Sixth place is 240 points away.
+      </p>
+      <div style="display:flex;gap:3px;margin-top:13px">
+        <span style="flex:6;height:4px;border-radius:2px;background:var(--signal)"></span>
+        <span style="flex:4;height:4px;border-radius:2px;background:var(--inset);border:1px solid var(--line)"></span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:center;gap:9px;padding-top:8px">
+    <span class="mono" style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">A Makin' It property</span>
+    <img src="makinit-logo.png" alt="Makin' It" style="height:13px;width:auto;opacity:.75">
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:auto;padding-top:6px">
+    <span class="mono" style="flex:1;text-align:center;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--signal);border-top:2px solid var(--signal);padding-top:10px">Today</span>
+    <span class="mono" style="flex:1;text-align:center;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--dim);border-top:1px solid var(--line);padding-top:10px">Board</span>
+    <span class="mono" style="flex:1;text-align:center;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--dim);border-top:1px solid var(--line);padding-top:10px">Scout</span>
+    <span class="mono" style="flex:1;text-align:center;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--dim);border-top:1px solid var(--line);padding-top:10px">You</span>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"records":{"editor":"int","default":7,"min":4,"max":16,"section":"Day"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    // 4 free + up to 12 paid. The hero number IS the day's count — never a fixed 16.
+    return { records: Math.max(4, Math.min(16, Number(this.props.records) || 7)) };
+  }
+}
+</script>
+</body>
+</html>

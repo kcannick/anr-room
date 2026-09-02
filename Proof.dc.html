@@ -1,0 +1,144 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap">
+  <style>
+    :root{
+      --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --inset:#0A0814;
+      --ink:#EAE9F2; --dim:#9793B4;
+      --signal:#4BB749; --contest:#6D5FE0; --prize:#F5C518; --deadline:#FF5D6C;
+    }
+    body{margin:0;background:transparent;color:var(--ink);
+      font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;
+      -webkit-font-smoothing:antialiased}
+    a{color:var(--signal);text-decoration:none} a:hover{color:#6ACD68}
+    .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+    .av{width:32px;height:32px;border-radius:50%;background:var(--inset);border:1px solid var(--line);
+      display:flex;align-items:center;justify-content:center;flex:none;
+      font-family:"Space Mono",monospace;font-size:11px;color:var(--dim)}
+  </style>
+</helmet>
+
+<div style="display:flex;flex-direction:column;gap:26px">
+
+  <div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="display:block;width:4px;height:13px;background:var(--prize);transform:skewX(-13deg);flex:none"></span>
+      <span class="mono" style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">Yesterday's top A&amp;Rs</span>
+      <span class="mono" style="margin-left:auto;font-size:11px;color:var(--dim);letter-spacing:0.1em">SUN AUG 31</span>
+    </div>
+
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
+      <sc-for list="{{ board }}" as="r" hint-placeholder-count="8">
+        <div style="{{ r.rowStyle }}">
+          <span class="mono" style="{{ r.rankStyle }}">{{ r.rank }}</span>
+          <span class="av">{{ r.initials }}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14.5px;font-weight:700;letter-spacing:-0.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</div>
+            <div style="font-size:11.5px;color:var(--dim);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.sub }}</div>
+          </div>
+          <span class="mono" style="{{ r.ptsStyle }}">{{ r.points }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <p style="margin:12px 2px 0;font-size:13px;color:var(--dim);line-height:1.55">
+      <b style="color:var(--ink);font-weight:700">Everyone starts over at noon.</b>
+      Daily points stack across Series 3 toward the
+      <b class="mono" style="color:var(--prize);font-weight:700">$500</b>.
+    </p>
+  </div>
+
+  <div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="display:block;width:4px;height:13px;background:var(--signal);transform:skewX(-13deg);flex:none"></span>
+      <span class="mono" style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">Just joined the team</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:9px">
+      <sc-for list="{{ joiners }}" as="a" hint-placeholder-count="6">
+        <div style="display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 14px 6px 6px">
+          <span class="av">{{ a.initials }}</span>
+          <div>
+            <div style="font-size:13px;font-weight:700;letter-spacing:-0.01em">{{ a.name }}</div>
+            <div style="font-size:10.5px;color:var(--dim)">{{ a.sub }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":900,"height":620}}'>
+class Component extends DCLogic {
+  initials(name) {
+    return (name || '').split(/\s+/).filter(Boolean).slice(0, 2)
+      .map((w) => w[0].toUpperCase()).join('');
+  }
+
+  renderVals() {
+    // A DAILY board, not the cumulative series board. A stranger reading 12,480 concludes
+    // they are three months behind; reading 784 concludes they could have done that. The
+    // board resets at noon, which is also the truth about the product.
+    //
+    // The query already exists in two places — the overlay's default scope and
+    // cardArsData(sessionId) both rank participants by total_points within ONE session —
+    // so this needs a `daily.board` field on /api/home, not new logic. recentARs is
+    // already returned as {id, name, category, location, photoUrl}. Display name and
+    // points only: the PII rule keeps email and phone off every public surface, and this
+    // is the most public surface there is.
+    const board = [
+      { rank: 1, name: 'Andre Whitfield', category: 'Producer',   location: 'Atlanta, GA',     points: 784 },
+      { rank: 2, name: 'Simone Adeyemi',  category: 'DJ',         location: 'Brooklyn, NY',    points: 751 },
+      { rank: 3, name: 'Marcus Bell',     category: 'A&R',        location: 'Houston, TX',     points: 728 },
+      { rank: 4, name: 'Tasha Nguyen',    category: 'Manager',    location: 'Los Angeles, CA', points: 706 },
+      { rank: 5, name: 'Devon Clarke',    category: 'Artist',     location: 'Detroit, MI',     points: 689 },
+      { rank: 6, name: 'Priya Raman',     category: 'Journalist', location: 'Chicago, IL',     points: 671 },
+      { rank: 7, name: 'Kelsey Moore',    category: 'Promoter',   location: 'Miami, FL',       points: 655 },
+      { rank: 8, name: 'Ibrahim Diallo',  category: 'Producer',   location: 'Newark, NJ',      points: 640 }
+    ];
+    const joiners = [
+      { name: 'Renee Baptiste', category: 'DJ',       location: 'New Orleans, LA' },
+      { name: 'Cole Amari',     category: 'Producer', location: 'Philadelphia, PA' },
+      { name: 'Jada Foster',    category: 'Artist',   location: 'Oakland, CA' },
+      { name: 'Ty Okonkwo',     category: 'Manager',  location: 'Toronto, ON' },
+      { name: 'Mina Solberg',   category: 'A&R',      location: 'Nashville, TN' },
+      { name: 'Rico Vasquez',   category: 'Promoter', location: 'Phoenix, AZ' }
+    ];
+
+    return {
+      board: board.map((r, i) => {
+        // Prize gold is money and FIRST PLACE only — never decoration. Everyone below #1
+        // reads as ink, or the rule stops meaning anything.
+        const first = r.rank === 1;
+        return {
+          rank: r.rank,
+          name: r.name,
+          initials: this.initials(r.name),
+          sub: [r.category, r.location].filter(Boolean).join(' · '),
+          points: r.points.toLocaleString('en-US'),
+          rowStyle: 'display:flex;align-items:center;gap:12px;padding:12px 15px;'
+            + (i ? 'border-top:1px solid var(--line);' : '')
+            + (first ? 'background:rgba(245,197,24,0.05);' : ''),
+          rankStyle: 'width:20px;text-align:center;font-size:13px;font-weight:700;flex:none;color:'
+            + (first ? 'var(--prize)' : 'var(--dim)'),
+          ptsStyle: 'font-size:14px;font-weight:700;flex:none;color:'
+            + (first ? 'var(--prize)' : 'var(--ink)')
+        };
+      }),
+      joiners: joiners.map((a) => ({
+        name: a.name,
+        initials: this.initials(a.name),
+        sub: [a.category, a.location].filter(Boolean).join(' · ')
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

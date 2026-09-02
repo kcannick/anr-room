@@ -1,0 +1,162 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap">
+  <style>
+    :root{
+      --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --inset:#0A0814;
+      --ink:#EAE9F2; --dim:#9793B4;
+      --signal:#4BB749; --contest:#6D5FE0; --prize:#F5C518; --deadline:#FF5D6C;
+    }
+    body{margin:0;background:var(--ground);color:var(--ink);
+      font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;
+      -webkit-font-smoothing:antialiased}
+    a{color:var(--signal);text-decoration:none} a:hover{color:#6ACD68}
+    .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+  </style>
+</helmet>
+
+<div style="width:1120px;background:var(--ground);box-sizing:border-box">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:22px 56px;border-bottom:1px solid var(--line)">
+    <div style="display:flex;align-items:center;gap:11px">
+      <div style="width:32px;height:32px;background:var(--signal);transform:skewX(-13deg);display:flex;align-items:center;justify-content:center;flex:none">
+        <span style="transform:skewX(13deg);font-weight:900;font-size:11px;letter-spacing:-0.02em;color:var(--ground)">A&amp;R</span>
+      </div>
+      <span style="font-weight:800;font-size:12.5px;letter-spacing:0.18em;text-transform:uppercase">The A&amp;R Team</span>
+      <span style="display:block;width:1px;height:22px;background:var(--line);transform:skewX(-13deg);margin:0 6px;flex:none"></span>
+      <img src="makinit-logo.png" alt="Makin' It" style="height:15px;width:auto;flex:none;opacity:.9">
+    </div>
+    <a href="#join" style="background:var(--signal);color:var(--ground);border-radius:10px;padding:11px 20px;font-weight:800;font-size:13.5px">Join the team</a>
+  </div>
+
+  <div style="padding:74px 56px 60px;display:flex;gap:56px;align-items:flex-start">
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <span style="display:block;width:4px;height:15px;background:var(--signal);transform:skewX(-13deg);flex:none"></span>
+        <span class="mono" style="font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--signal)">The A&amp;R Team</span>
+      </div>
+      <h1 style="margin:0;font-weight:900;font-size:64px;line-height:0.95;letter-spacing:-0.045em;text-wrap:balance">
+        Fans pick the hits.<br><span style="color:var(--signal)">But a true A&amp;R<br>can predict them.</span>
+      </h1>
+      <p style="margin:26px 0 0;font-size:19px;line-height:1.5;color:var(--dim);max-width:44ch;text-wrap:pretty">
+        Rate records and help decide who gets booked to perform, radio play, magazine features, and promo budgets. Predict how the people will rate them to score points and a shot at <b class="mono" style="color:var(--prize);font-weight:700">$500</b>.
+      </p>
+      <div style="display:flex;align-items:center;gap:18px;margin-top:34px">
+        <a href="#join" style="background:var(--signal);color:var(--ground);border-radius:13px;padding:19px 34px;font-weight:800;font-size:18px;display:inline-flex;align-items:center;gap:10px">
+          Join the A&amp;R Team
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"></path><path d="m12 5 7 7-7 7"></path></svg>
+        </a>
+        <span class="mono" style="font-size:12px;color:var(--dim);letter-spacing:0.05em">FREE TO JOIN</span>
+      </div>
+    </div>
+    <div style="width:420px;flex:none;display:flex;flex-direction:column;gap:14px">
+      <dc-import name="TryIt" hint-size="420px,470px"></dc-import>
+      <a href="#join" style="display:flex;align-items:center;justify-content:center;gap:9px;background:var(--signal);color:var(--ground);border-radius:12px;padding:15px;font-weight:800;font-size:16px">
+        Join the A&amp;R Team
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"></path><path d="m12 5 7 7-7 7"></path></svg>
+      </a>
+    </div>
+  </div>
+
+  <div style="height:1px;background:var(--line);transform:skewX(-13deg);margin:0 56px"></div>
+
+  <div style="padding:66px 56px">
+    <p style="margin:0;font-weight:800;font-size:38px;line-height:1.18;letter-spacing:-0.035em;max-width:22ch;text-wrap:pretty">
+      This isn't just about knowing good music. It's about knowing the market.
+    </p>
+    <div style="display:flex;gap:20px;margin-top:34px">
+      <div style="flex:1;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px">
+        <p style="margin:0;font-size:21px;line-height:1.35;font-weight:600;letter-spacing:-0.02em;text-wrap:pretty">
+          Are you locked in to what the people want?
+        </p>
+      </div>
+      <div style="flex:1;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px">
+        <p style="margin:0;font-size:21px;line-height:1.35;font-weight:600;letter-spacing:-0.02em;text-wrap:pretty">
+          Can you spot a hit you don't personally like?
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 56px 66px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:26px">
+      <span style="display:block;width:4px;height:13px;background:var(--contest);transform:skewX(-13deg);flex:none"></span>
+      <span class="mono" style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">How it works</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:20px">
+      <sc-for list="{{ steps }}" as="s" hint-placeholder-count="3">
+        <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px">
+          <div class="mono" style="font-size:12px;font-weight:700;color:var(--contest);letter-spacing:0.1em">{{ s.n }}</div>
+          <div style="font-weight:800;font-size:20px;letter-spacing:-0.025em;margin-top:12px">{{ s.head }}</div>
+          <p style="margin:9px 0 0;font-size:15px;line-height:1.5;color:var(--dim);text-wrap:pretty">{{ s.body }}</p>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="padding:0 56px 66px">
+    <div style="background:linear-gradient(180deg,var(--panel),#1C1733);border:1px solid var(--line);border-radius:18px;padding:30px 34px;display:flex;align-items:center;gap:40px;margin-bottom:40px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="display:block;width:9px;height:9px;border-radius:50%;background:var(--signal);flex:none"></span>
+          <span class="mono" style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--signal)">Open right now</span>
+        </div>
+        <div style="font-weight:900;font-size:32px;letter-spacing:-0.035em;margin-top:11px"><span class="mono">{{ records }}</span> records are waiting.</div>
+        <p style="margin:9px 0 0;font-size:16px;line-height:1.5;color:var(--dim);max-width:46ch">
+          A new set drops every day at noon. Rate them on your own time — at work, on the train, at 2 in the morning.
+        </p>
+      </div>
+      <div style="flex:none;background:var(--inset);border:1px solid var(--line);border-radius:14px;padding:18px 26px;text-align:center">
+        <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">On the team</div>
+        <div class="mono" style="font-size:31px;font-weight:700;margin-top:6px">214</div>
+      </div>
+    </div>
+    <dc-import name="Proof" hint-size="100%,660px"></dc-import>
+  </div>
+
+  <div id="join" style="padding:0 56px 86px;text-align:center">
+    <div style="font-weight:900;font-size:56px;line-height:1.0;letter-spacing:-0.04em;text-wrap:balance">Got a good ear?<br>Prove it.</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:18px;margin-top:30px">
+      <a href="#join" style="background:var(--signal);color:var(--ground);border-radius:13px;padding:20px 40px;font-weight:800;font-size:19px;display:inline-flex;align-items:center;gap:10px">
+        Join the A&amp;R Team
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"></path><path d="m12 5 7 7-7 7"></path></svg>
+      </a>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:13px;margin-top:40px;padding-top:34px;border-top:1px solid var(--line)">
+      <span class="mono" style="font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:var(--dim)">A Makin' It property</span>
+      <img src="makinit-logo.png" alt="Makin' It" style="height:24px;width:auto">
+      <span class="mono" style="font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--dim)">Free to join</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"records":{"editor":"int","default":7,"min":4,"max":16,"section":"Day"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    // The day is VARIABLE: 4 drawn at random from the free pool plus up to 12 paid. Never
+    // written as a fixed number anywhere — drag the tweak from 4 to 16 and the page follows.
+    const records = Math.max(4, Math.min(16, Number(this.props.records) || 7));
+    return {
+      records: records,
+      steps: [
+        { n: '01', head: 'Listen',
+          body: "A handful of records land every day at noon. Real submissions from independent artists, most of them unreleased." },
+        { n: '02', head: 'Rate it',
+          body: 'Score it 0 to 9 on your own taste. That part is easy.' },
+        { n: '03', head: 'Predict the average',
+          body: 'Now call what everyone else will land on. The closer you get, the more you score — and points stack across the series toward the $500.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

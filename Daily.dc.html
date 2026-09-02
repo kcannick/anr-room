@@ -1,0 +1,403 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap">
+  <style>
+    :root{
+      --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --inset:#0A0814;
+      --ink:#EAE9F2; --dim:#9793B4;
+      --signal:#4BB749; --contest:#6D5FE0; --prize:#F5C518; --deadline:#FF5D6C;
+    }
+    body{margin:0;background:var(--ground);color:var(--ink);
+      font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;
+      -webkit-font-smoothing:antialiased}
+    a{color:var(--signal);text-decoration:none} a:hover{color:#6ACD68}
+    .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+    /* The dial is a hit target first: 44px floor, per-pip. */
+    .pip{flex:1;min-width:0;height:46px;border:1px solid var(--line);background:var(--inset);
+      border-radius:11px;display:flex;align-items:center;justify-content:center;
+      font-family:"Space Mono",monospace;font-size:16px;color:var(--dim);cursor:pointer;
+      transition:transform .12s ease,background .12s ease}
+    .pip:hover{border-color:var(--dim)}
+    .pip.on{background:var(--signal);border-color:var(--signal);color:var(--ground);font-weight:700;transform:translateY(-3px)}
+    input[type=range]{width:100%;accent-color:var(--signal);height:30px}
+    textarea{width:100%;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);
+      color:var(--ink);font-family:inherit;font-size:14.5px;line-height:1.5;padding:12px 13px;
+      border-radius:11px;outline:none;resize:none;min-height:84px}
+    textarea:focus{border-color:var(--contest)}
+    textarea::placeholder{color:#615C82}
+  </style>
+</helmet>
+
+<div style="width:390px;min-height:900px;background:var(--ground);padding:20px 20px 26px;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);display:flex;align-items:center;justify-content:center;flex:none">
+        <span style="transform:skewX(13deg);font-weight:900;font-size:10.5px;letter-spacing:-0.02em;color:var(--ground)">A&amp;R</span>
+      </div>
+      <span style="font-weight:800;font-size:11px;letter-spacing:0.18em;text-transform:uppercase">A&amp;R Daily</span>
+    </div>
+    <div class="mono" style="font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:5px 11px">
+      <span style="color:var(--ink);font-weight:700">#12</span> · 4,180
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,rgba(109,95,224,0.16),rgba(109,95,224,0.05));border:1px solid rgba(109,95,224,0.45);border-radius:12px;padding:10px 13px">
+    <span style="display:block;width:8px;height:8px;border-radius:50%;background:var(--contest);flex:none"></span>
+    <span style="font-size:13px">Finish today for <b class="mono" style="color:var(--contest);font-weight:700">+100</b></span>
+    <span class="mono" style="margin-left:auto;font-size:10.5px;color:var(--dim);white-space:nowrap">until 3:00 PM ET</span>
+  </div>
+
+  <sc-if value="{{ done }}" hint-placeholder-val="{{ false }}">
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 20px;text-align:center;display:flex;flex-direction:column;gap:4px">
+      <span class="mono" style="font-size:10.5px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">A&amp;R Daily · Mon Sep 1</span>
+      <div style="font-weight:800;font-size:23px;letter-spacing:-0.03em;margin-top:6px">All {{ total }} records evaluated</div>
+      <div class="mono" style="font-size:62px;font-weight:700;line-height:1.05;color:var(--prize);margin-top:12px">+100</div>
+      <div style="font-size:13.5px;color:var(--dim)">Finished before 3:00 PM ET</div>
+      <div style="height:1px;background:var(--line);transform:skewX(-13deg);margin:20px 0 16px"></div>
+      <div style="display:flex;flex-direction:column;gap:0;text-align:left">
+        <div style="display:flex;justify-content:space-between;padding:9px 0;font-size:13.5px;border-bottom:1px solid var(--line)">
+          <span>Before 3:00 PM ET</span><span class="mono" style="color:var(--prize)">+100</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0;font-size:13.5px;color:var(--dim);border-bottom:1px solid var(--line)">
+          <span>Before 6:00 PM ET</span><span class="mono">+75</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0;font-size:13.5px;color:var(--dim);border-bottom:1px solid var(--line)">
+          <span>Before 9:00 PM ET</span><span class="mono">+50</span></div>
+        <div style="display:flex;justify-content:space-between;padding:9px 0;font-size:13.5px;color:var(--dim)">
+          <span>Any time before 9:00 AM</span><span class="mono">+25</span></div>
+      </div>
+      <div style="background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:18px;text-align:left">
+        <div style="font-weight:800;font-size:14px;letter-spacing:-0.01em">Next up</div>
+        <p style="margin:6px 0 0;font-size:13px;line-height:1.55;color:var(--dim)">
+          Results land at 12:00 PM ET tomorrow, and so does the next drop. You are #12 this month.
+        </p>
+      </div>
+      <button onClick="{{ restart }}" style="width:100%;background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:12px;padding:13px;font-family:inherit;font-weight:600;font-size:14px;cursor:pointer;margin-top:16px">
+        Review my evaluations
+      </button>
+      <p class="mono" style="margin:16px 0 0;font-size:11px;line-height:1.6;color:var(--dim);letter-spacing:0.02em">
+        EVERYTHING TALLIES AT 9:00 AM ET
+      </p>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ walking }}" hint-placeholder-val="{{ true }}">
+  <div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:0">
+
+    <div style="display:flex;align-items:center;gap:10px">
+      <button onClick="{{ prev }}" style="width:34px;height:34px;flex:none;background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
+      </button>
+      <div style="flex:1;min-width:0">
+        <div class="mono" style="font-size:10.5px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim)">Record {{ pos }} / {{ total }}</div>
+        <div style="display:flex;gap:3px;margin-top:8px">
+          <sc-for list="{{ segs }}" as="seg" hint-placeholder-count="7">
+            <button onClick="{{ seg.go }}" style="{{ seg.style }}"></button>
+          </sc-for>
+        </div>
+      </div>
+      <button onClick="{{ next }}" style="width:34px;height:34px;flex:none;background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+      </button>
+    </div>
+
+    <div style="font-weight:800;font-size:23px;letter-spacing:-0.03em;margin-top:15px;text-wrap:pretty">{{ cur.title }}</div>
+    <div style="font-size:14px;color:var(--dim);margin-top:3px">{{ cur.artist }}</div>
+
+    <div style="margin-top:16px">
+      <button onClick="{{ play }}" style="{{ playStyle }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 4 14 8-14 8V4z"></path></svg>
+        {{ playLabel }}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.75"><path d="M7 17 17 7"></path><path d="M9 7h8v8"></path></svg>
+      </button>
+      <sc-if value="{{ notPlayed }}" hint-placeholder-val="{{ true }}">
+        <div style="font-size:11.5px;color:var(--dim);text-align:center;margin-top:7px">Opens in a new tab. This page stays right here.</div>
+      </sc-if>
+      <sc-if value="{{ played }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:9px;align-items:center;background:rgba(75,183,73,0.10);border:1px solid #2F7A2E;border-radius:11px;padding:10px 12px;margin-top:10px;font-size:13px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--signal)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M20 6 9 17l-5-5"></path></svg>
+          Heard it. Score it below.
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ notReported }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;justify-content:center;margin-top:11px">
+          <button onClick="{{ report }}" style="background:none;border:0;padding:4px;font-family:inherit;font-size:12px;color:var(--dim);cursor:pointer;text-decoration:underline;text-underline-offset:3px">Report this track</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ reporting }}" hint-placeholder-val="{{ false }}">
+        <div style="background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:11px">
+          <div style="font-weight:800;font-size:13.5px">What is wrong with it?</div>
+          <div style="display:flex;gap:8px;margin-top:11px">
+            <button onClick="{{ reportBroken }}" style="flex:1;background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px 8px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">Won't play</button>
+            <button onClick="{{ reportOther }}" style="flex:1;background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px 8px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">Something else</button>
+          </div>
+          <button onClick="{{ cancelReport }}" style="width:100%;background:none;border:0;padding:9px 0 0;font-family:inherit;font-size:12px;color:var(--dim);cursor:pointer">Never mind</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ reported }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:9px;align-items:center;background:rgba(245,197,24,0.08);border:1px solid var(--prize);border-radius:11px;padding:10px 12px;margin-top:11px;font-size:13px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--prize)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M20 6 9 17l-5-5"></path></svg>
+          Reported. Skip it — it won't count against your day.
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="border-left:3px solid var(--signal);background:rgba(75,183,73,0.06);border-radius:0 11px 11px 0;padding:11px 13px;margin-top:16px">
+      <span class="mono" style="display:block;font-size:9.5px;letter-spacing:0.18em;text-transform:uppercase;color:var(--signal);margin-bottom:5px">From the artist</span>
+      <span style="font-size:14px;line-height:1.5">{{ cur.note }}</span>
+    </div>
+
+    <sc-if value="{{ locked }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <div style="display:flex;gap:10px;margin-top:18px">
+          <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center">
+            <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">You rated</div>
+            <div class="mono" style="font-size:24px;font-weight:700;margin-top:4px">{{ taste }}</div>
+          </div>
+          <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center">
+            <div class="mono" style="font-size:9.5px;letter-spacing:0.15em;text-transform:uppercase;color:var(--dim)">You predicted</div>
+            <div class="mono" style="font-size:24px;font-weight:700;margin-top:4px;color:var(--signal)">{{ predict }}</div>
+          </div>
+        </div>
+
+        <div style="background:linear-gradient(180deg,var(--panel),#1C1733);border:1px solid var(--contest);border-radius:14px;padding:15px;margin-top:16px">
+          <div style="font-weight:800;font-size:14.5px;letter-spacing:-0.01em">Send the artist a note</div>
+          <p style="margin:6px 0 11px;font-size:12.5px;line-height:1.5;color:var(--dim)">
+            What did you hear? They get it with your name on it.
+          </p>
+          <textarea placeholder="Optional. Your name goes to the artist with it."></textarea>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px">
+            <span class="mono" style="font-size:11px;color:var(--dim)">0 / 280</span>
+            <button style="background:var(--signal);color:var(--ground);border:0;border-radius:11px;padding:10px 16px;font-family:inherit;font-weight:700;font-size:13.5px;cursor:pointer">Send to artist</button>
+          </div>
+        </div>
+
+        <sc-if value="{{ hasLinks }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;gap:9px;margin-top:14px">
+            <sc-if value="{{ cur.instagram }}" hint-placeholder-val="{{ true }}">
+              <a href="{{ igUrl }}" target="_blank" rel="noopener" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:11px;padding:12px 8px;font-weight:700;font-size:13px;text-decoration:none">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="3" y="3" width="18" height="18" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17.5" cy="6.5" r="1"></circle></svg>
+                Follow
+              </a>
+            </sc-if>
+            <sc-if value="{{ cur.profileUrl }}" hint-placeholder-val="{{ true }}">
+              <a href="{{ cur.profileUrl }}" target="_blank" rel="noopener" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:11px;padding:12px 8px;font-weight:700;font-size:13px;text-decoration:none">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="8" r="3.6"></circle><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"></path></svg>
+                Artist profile
+              </a>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <button onClick="{{ next }}" style="width:100%;background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:15px;font-family:inherit;font-weight:700;font-size:15px;cursor:pointer;margin-top:11px;display:flex;align-items:center;justify-content:center;gap:8px">
+          {{ nextLabel }}
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"></path><path d="m12 5 7 7-7 7"></path></svg>
+        </button>
+
+        <div style="display:flex;align-items:center;gap:8px;margin-top:16px;justify-content:center">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          <span class="mono" style="font-size:10.5px;letter-spacing:0.06em;color:var(--dim);text-align:center">NO RESULTS UNTIL 9:00 AM ET</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ rating }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="display:flex;align-items:center;gap:9px;margin-top:20px">
+          <span style="width:21px;height:21px;border-radius:50%;background:var(--contest);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none">1</span>
+          <span style="font-weight:800;font-size:15px;letter-spacing:-0.01em">Rate it</span>
+        </div>
+        <p style="margin:7px 0 11px;font-size:12.5px;line-height:1.5;color:var(--dim)">Your honest take, 0 to 9.</p>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <sc-for list="{{ pipsTop }}" as="p" hint-placeholder-count="5">
+            <div class="{{ p.cls }}" onClick="{{ p.pick }}">{{ p.n }}</div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:6px">
+          <sc-for list="{{ pipsBot }}" as="p" hint-placeholder-count="5">
+            <div class="{{ p.cls }}" onClick="{{ p.pick }}">{{ p.n }}</div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:9px;margin-top:22px">
+          <span style="width:21px;height:21px;border-radius:50%;background:var(--contest);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none">2</span>
+          <span style="font-weight:800;font-size:15px;letter-spacing:-0.01em">Predict the Average</span>
+        </div>
+        <p style="margin:7px 0 4px;font-size:12.5px;line-height:1.5;color:var(--dim)">
+          What will every other A&amp;R average it at? The closer you land, the more you score.
+          <b style="color:var(--ink);font-weight:700">Evaluations are final.</b>
+        </p>
+        <div class="mono" style="font-size:36px;font-weight:700;text-align:center;color:var(--signal);margin:8px 0 2px">{{ predict }}</div>
+        <input type="range" min="0" max="9" step="0.1" value="{{ predict }}" onInput="{{ onPredict }}">
+
+        <button onClick="{{ lock }}" style="{{ lockStyle }}">Lock it in</button>
+      </div>
+    </sc-if>
+
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#4BB749","section":"Theme"},"records":{"editor":"int","default":7,"min":4,"max":16,"section":"Day"}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { i: 0, played: {}, taste: {}, predict: {}, locked: {}, finished: false,
+      reporting: false, reported: {} };
+  }
+
+  // The day is VARIABLE in size (4 drawn from the free pool + up to 12 paid), so the walk is
+  // built from a count rather than a fixed list. `topic` is what the artist's ask is ABOUT —
+  // it is what the comment prompt echoes back, which is the difference between a comment box
+  // and an answer worth the artist reading.
+  deck() {
+    const seed = [
+      { title: 'Neon Skyline', artist: 'The Verge', host: 'Spotify', instagram: 'theverge', profileUrl: 'https://makinitmag.com/artist/the-verge',
+        note: "Hey, this isn't mixed. Just recorded it on Bandlab last night." },
+      { title: 'Long Way Down', artist: 'Sable', host: 'SoundCloud', instagram: 'sablemusic', profileUrl: 'https://makinitmag.com/artist/sable',
+        note: "I've been working on this for 7 months. We've mixed it 5 times. I think this is the one." },
+      { title: 'Basement Tape', artist: 'Wax Figure', host: 'Audiomack', instagram: 'waxfigure',
+        note: 'Recorded in my basement on one mic. No plugins, nothing cleaned up.' },
+      { title: 'Cold Open', artist: 'Marisol Vega', host: 'Spotify', instagram: 'marisolvega', profileUrl: 'https://makinitmag.com/artist/marisol-vega',
+        note: 'Third single off the project. This one is finished and mastered.' },
+      { title: 'Paper Walls', artist: 'Dree', host: 'Apple Music', instagram: 'dreeofficial', profileUrl: 'https://makinitmag.com/artist/dree',
+        note: 'Scratch vocal on the second verse, everything else is final.' },
+      { title: 'Southbound', artist: 'The Ninth', host: 'Spotify', instagram: 'theninth',
+        note: 'Been sitting on this since 2023. Finally letting people hear it.' },
+      { title: 'Understudy', artist: 'Halo Court', host: 'Bandcamp', instagram: 'halocourt', profileUrl: 'https://makinitmag.com/artist/halo-court',
+        note: 'First thing I ever put out. Be honest.' }
+    ];
+    const n = Math.max(4, Math.min(16, Number(this.props.records) || 7));
+    const out = [];
+    for (let k = 0; k < n; k++) out.push(Object.assign({}, seed[k % seed.length], { id: 'r' + k }));
+    return out;
+  }
+
+  goTo(i) { this.setState({ i: i, finished: false }); }
+
+  advance() {
+    const recs = this.deck(), n = recs.length;
+    for (let k = 1; k <= n; k++) {
+      const j = (this.state.i + k) % n;
+      // A reported record counts as dealt with. Otherwise reporting an unplayable track
+      // honestly would strand the A&R one short of their completion bonus forever — which
+      // teaches people to stay quiet about dead links, the opposite of what this is for.
+      if (!this.state.locked[recs[j].id] && !this.state.reported[recs[j].id]) return this.setState({ i: j, reporting: false });
+    }
+    // Only when nothing is left unrated. A completion screen with unrated records is a lie
+    // that costs someone a bonus, so this wraps back rather than finishing early.
+    this.setState({ finished: true, reporting: false });
+  }
+
+  renderVals() {
+    const accent = this.props.accent || '#4BB749';
+    const recs = this.deck();
+    const i = Math.min(this.state.i, recs.length - 1);
+    const cur = recs[i];
+    const id = cur.id;
+    const isLocked = !!this.state.locked[id];
+    const isReported = !!this.state.reported[id];
+    const played = !!this.state.played[id];
+    const taste = this.state.taste[id];
+    const predict = this.state.predict[id] != null ? this.state.predict[id] : 4.5;
+    const votedCount = recs.filter((r) => this.state.locked[r.id] || this.state.reported[r.id]).length;
+    const canLock = taste != null && this.state.predict[id] != null;
+
+    const segStyle = (r, idx) => {
+      const base = 'flex:1;min-width:0;height:5px;border-radius:3px;padding:0;cursor:pointer;border:1px solid ';
+      if (idx === i) return base + accent + ';background:' + accent + ';box-shadow:0 0 0 2px rgba(109,95,224,.28)';
+      if (this.state.locked[r.id]) return base + accent + ';background:' + accent;
+      if (this.state.reported[r.id]) return base + 'var(--prize);background:transparent';
+      return base + 'var(--line);background:var(--inset)';
+    };
+
+    const pip = (n) => ({
+      n: n,
+      cls: taste === n ? 'pip on' : 'pip',
+      pick: () => {
+        const t = Object.assign({}, this.state.taste); t[id] = n;
+        this.setState({ taste: t });
+      }
+    });
+
+    return {
+      cur: cur,
+      pos: i + 1,
+      total: recs.length,
+      taste: taste == null ? '—' : taste,
+      predict: predict.toFixed(1),
+      played: played,
+      notPlayed: !played,
+      locked: isLocked,
+      rating: !isLocked && !isReported,
+      reported: isReported,
+      notReported: !isReported && !this.state.reporting,
+      reporting: this.state.reporting,
+      done: this.state.finished,
+      walking: !this.state.finished,
+      nextLabel: votedCount >= recs.length ? 'See my day' : 'Next record',
+
+      segs: recs.map((r, idx) => ({ style: segStyle(r, idx), go: () => this.goTo(idx) })),
+      pipsTop: [0, 1, 2, 3, 4].map(pip),
+      pipsBot: [5, 6, 7, 8, 9].map(pip),
+
+      // The play link never navigates the page away: on a phone the hand-off to Spotify
+      // leaves this alive, so returning is the app switcher with the dial as you left it.
+      playLabel: played ? 'Play again' : ('Play on ' + cur.host),
+      playStyle: 'width:100%;box-sizing:border-box;border-radius:12px;padding:15px 18px;'
+        + 'font-family:inherit;font-size:15.5px;font-weight:' + (played ? '600' : '800') + ';'
+        + 'cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;'
+        + (played
+            ? 'background:transparent;border:1px solid var(--line);color:var(--dim)'
+            : 'background:' + accent + ';border:0;color:var(--ground)'),
+      play: () => {
+        const p = Object.assign({}, this.state.played); p[id] = true;
+        this.setState({ played: p });
+      },
+
+      onPredict: (e) => {
+        const p = Object.assign({}, this.state.predict);
+        p[id] = parseFloat(e.target.value);
+        this.setState({ predict: p });
+      },
+
+      lockStyle: 'width:100%;box-sizing:border-box;border:0;border-radius:12px;padding:16px;'
+        + 'font-family:inherit;font-weight:800;font-size:15.5px;margin-top:18px;'
+        + (canLock
+            ? 'background:' + accent + ';color:var(--ground);cursor:pointer'
+            : 'background:' + accent + ';color:var(--ground);opacity:.35;cursor:default'),
+      lock: () => {
+        if (!canLock) return;
+        const l = Object.assign({}, this.state.locked); l[id] = true;
+        this.setState({ locked: l });
+      },
+
+      // A dead "Follow" button is worse than no button, so each renders only when its own
+      // link exists — and the row disappears entirely when neither does.
+      igUrl: cur.instagram ? ('https://instagram.com/' + cur.instagram) : null,
+      hasLinks: !!(cur.instagram || cur.profileUrl),
+
+      report: () => this.setState({ reporting: true }),
+      cancelReport: () => this.setState({ reporting: false }),
+      // POSTs /api/report-round with reason 'not_playable' | 'other'. One report per A&R
+      // per record, so the console's count is people rather than clicks.
+      reportBroken: () => { const r = Object.assign({}, this.state.reported); r[id] = 'not_playable'; this.setState({ reported: r, reporting: false }); },
+      reportOther: () => { const r = Object.assign({}, this.state.reported); r[id] = 'other'; this.setState({ reported: r, reporting: false }); },
+
+      next: () => this.advance(),
+      prev: () => this.goTo((i - 1 + recs.length) % recs.length),
+      restart: () => this.setState({ finished: false, i: 0 })
+    };
+  }
+}
+</script>
+</body>
+</html>
