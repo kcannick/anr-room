@@ -38,11 +38,15 @@ drop lifecycle for eleven and a half hours a day — including the 9:00 AM close
 Drupal assembles and approves the day and pushes the approved set as one batch to
 `POST /api/ingest/daily` with an `x-ingest-token` header.
 
-**Without it the endpoint returns 503 and no drop is ever created.**
+**Without it the endpoint returns 503**, so Drupal cannot push a day. You can still stage one
+by hand from the console (`POST /api/admin/daily/drop`, platform-admin only, same validation) —
+which is also how you try the whole thing on a preview deployment, and what you reach for at
+11:50 AM when Drupal is down.
 
 It is a **separate secret** from `INGEST_TOKEN` because the blast radius is different: the
 single-submission push stages one ignorable row, while this one creates a live day carrying up
-to sixteen artists' email addresses and phone numbers.
+to sixteen artists' email addresses and phone numbers. There is deliberately **no fallback** to
+`INGEST_TOKEN` — sharing the secret would hand the lower-value integration this one's reach.
 
 Generate one:
 
