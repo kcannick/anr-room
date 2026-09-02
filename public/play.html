@@ -730,41 +730,13 @@
   </div>
 </div>
 
+<script src="/auth.js?v=1"></script>
 <script>
-const $=s=>document.querySelector(s);
-// Session id comes STRICTLY from the URL. We do NOT fall back to a stored session —
-// that was the source of "Session A link opened Session B": a stale value winning over
-// the actual link. No ?s= => no session (handled in boot).
-const SID=new URLSearchParams(location.search).get('s');
-// Player tokens are PER SESSION. A single global token meant a token from session A
-// would authenticate you into session A even when you opened a session B link (the
-// token resolves to one participant/session server-side). Scope the key by session id.
-// GA4 engagement events (no-op when analytics is disabled or gtag hasn't loaded).
-function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params||{}); }catch(e){} }
-function tokenKey(sid){ return 'rt_token_'+(sid||''); }
-function getToken(){ return SID ? localStorage.getItem(tokenKey(SID)) : null; }
-function setToken(t){ if(SID)localStorage.setItem(tokenKey(SID),t); }
-function clearToken(){ if(SID)localStorage.removeItem(tokenKey(SID)); }
-// One-time migration: an older build stored a single global 'rt_token' tied to whatever
-// session was last joined. If we're on that same session, preserve it under the new key;
-// otherwise drop it so it can't leak across sessions.
-(function migrateLegacyToken(){
-  const legacy=localStorage.getItem('rt_token'), legacySid=localStorage.getItem('rt_sid');
-  if(legacy){
-    if(SID && legacySid===SID && !localStorage.getItem(tokenKey(SID))) localStorage.setItem(tokenKey(SID),legacy);
-    localStorage.removeItem('rt_token'); localStorage.removeItem('rt_sid');
-  }
-})();
-const api=async(path,body,method='POST')=>{
-  const h={'Content-Type':'application/json'};
-  const tok=getToken(); if(tok)h['X-Player-Token']=tok;
-  const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
-  const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(d.error||'Something went wrong'); return d;
-};
-// Incoming referral code from the share link (?ref=CODE). Persist per-session so it
-// survives the email->code step. Cleared once we've joined.
-const INCOMING_REF=(new URLSearchParams(location.search).get('ref')||'').trim().toUpperCase();
-if(INCOMING_REF)localStorage.setItem('rt_ref_'+(SID||''),INCOMING_REF);
+// The join/auth plumbing — per-session tokens, the api()/apiRaw() wrappers, the three
+// join calls, the one-tap account register — now lives in /auth.js so A&R Daily can
+// share it rather than carry a second copy that has to stay bug-for-bug identical.
+// These aliases keep the names this file has always used.
+const {$, SID, track, getToken, clearToken, api, apiRaw, tryAccountRegister} = window.ANRAuth;
 let myRefCode=null; // this player's own code, filled from state after join
 
 // ---- sound engine (WebAudio; no asset files). Synthesizes a buzzer, a chime, and a
@@ -932,38 +904,10 @@ function showStep(step){
 }
 
 function show(id){['account','email','code','wait','listening','vote','locked','results','ended'].forEach(s=>$('#screen-'+s).classList.toggle('hide',s!==id));}
-// Logged-in one-tap register (no OTP) — offered when there's an account token but no
-// participant token for this session yet.
-async function tryAccountRegister(info){
-  const at=localStorage.getItem('rt_auth_token');
-  let me=null; try{ me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':at}}).then(r=>r.ok?r.json():null); }catch(e){}
-  if(!me||!me.uid){ show('email'); return; }
-  const live=info&&info.status==='live';
-  $('#acctEyebrow').textContent=live?'Enter this evaluation session':'Claim your A&R profile';
-  $('#acctHi').textContent=(info&&info.name)||'Evaluation session';
-  $('#acctSub').textContent=live
-    ? 'Enter as an A&R and join the live evaluation.'
-    : 'Continue to claim your A&R profile. We’ll notify you when this evaluation session opens.';
-  $('#btnAcctJoin').textContent=live?'Enter the evaluation':'Claim my A&R profile';
-  show('account');
-}
-$('#btnAcctJoin').onclick=async()=>{
-  $('#acctErr').textContent=''; $('#btnAcctJoin').disabled=true;
-  try{
-    const r=await fetch('/api/join/account',{method:'POST',headers:{'Content-Type':'application/json','X-Auth-Token':localStorage.getItem('rt_auth_token')},body:JSON.stringify({sessionId:SID,accessCode:$('#acctCode').value.trim(),notifyRooms:$('#acctNotifyRooms').checked})});
-    const d=await r.json();
-    if(r.status===403&&d.error==='access_code_required'){
-      $('#acctCodeRow').classList.remove('hide');
-      $('#acctErr').textContent=d.message||'This room is invite-only — enter the room code.';
-      $('#acctCode').focus(); $('#btnAcctJoin').disabled=false;
-      return;
-    }
-    if(!r.ok)throw new Error(d.error||"We couldn't complete your registration.");
-    track('session_register',{method:'account'});
-    setToken(d.token); startPolling();
-  }catch(e){ $('#acctErr').textContent=e.message; $('#btnAcctJoin').disabled=false; }
-};
-$('#btnAcctOther').onclick=()=>{ if(history.length>1)history.back(); else location.href='/'; };
+// Hand /auth.js this page's screen switcher and its post-join entry point, then let it
+// bind the three join handlers against the static markup above.
+window.ANRAuth.configure({show, onJoined:()=>startPolling()});
+window.ANRAuth.bindJoinHandlers();
 
 // build rating pips 0-9 (NPS-style: no center default; 0-4 lower half, 5-9 upper half)
 (function(){
@@ -998,81 +942,6 @@ $('#split').oninput=e=>{
 };
 $('#btnPickNext').onclick=()=>{ if(chosenPick===null)return; showStepBinary(2); };
 $('#btnSplitBack').onclick=()=>{ showStepBinary(1); };
-
-// ---- join flow ----
-$('#btnRequest').onclick=async()=>{
-  const email=$('#email').value.trim();$('#emailErr').textContent='';
-  if(!email)return $('#emailErr').textContent='Enter your email';
-  $('#btnRequest').disabled=true;
-  try{
-    const out=await apiRaw('/api/join/request',{sessionId:SID,email,accessCode:$('#roomCode').value.trim()});
-    if(out.status===403&&out.data.error==='access_code_required'){
-      // Invite-only room: surface the code field and let them retry.
-      $('#roomCodeRow').classList.remove('hide');
-      $('#emailErr').textContent=out.data.message||'This room is invite-only — enter the room code.';
-      $('#roomCode').focus();
-      $('#btnRequest').disabled=false;
-      return;
-    }
-    if(out.status!==200)throw new Error(out.data.error||'Something went wrong');
-    const d=out.data;
-    $('#emailEcho').textContent=email;localStorage.setItem('rt_email',email);
-    if(d.devCode){$('#devCodeBox').classList.remove('hide');$('#devCodeBox').textContent='Dev mode — your code is '+d.devCode;}
-    else $('#devCodeBox').classList.add('hide');
-    applyPrefill(d.prefill);
-    show('code');
-  }catch(e){$('#emailErr').textContent=e.message;}
-  $('#btnRequest').disabled=false;
-};
-// Returning-player prefill: name is filled; the phone is shown MASKED (we never receive
-// the real number here). Having a number on file means they're already opted in to SMS,
-// so the masked hint doubles as the opt-in indicator. phonePrefilled => "stored number
-// on file, field left as the mask" so verify can tell the server to keep it.
-let phonePrefilled=false;
-function applyPrefill(pf){
-  phonePrefilled=false;
-  const nameEl=$('#name'), phoneEl=$('#phone');
-  if(!pf){ if(phoneEl){phoneEl.value='';phoneEl.placeholder='(555) 123-4567';} return; }
-  if(nameEl&&pf.name)nameEl.value=pf.name;
-  if(phoneEl){
-    if(pf.hasPhone){
-      phoneEl.value='';
-      phoneEl.placeholder=pf.phoneHint+' (on file — tap to change)';
-      phonePrefilled=true;
-    }else{ phoneEl.value='';phoneEl.placeholder='(555) 123-4567'; }
-  }
-}
-$('#btnBack').onclick=()=>{show('email');};
-$('#btnVerify').onclick=async()=>{
-  $('#codeErr').textContent='';
-  const code=$('#code').value.trim(),name=$('#name').value.trim();
-  if(!code)return $('#codeErr').textContent='Enter your access code';
-  if(!name)return $('#codeErr').textContent='Enter your name';
-  const phone=$('#phone')?$('#phone').value.trim():'';
-  // If a returning user has a number on file and left the field untouched (still the
-  // mask), tell the server to keep it (and keep them opted in). A newly typed number is
-  // sent and replaces it. No stored number + empty field => no phone => no SMS consent.
-  const keepPhone = phonePrefilled && phone.length===0;
-  const ref=localStorage.getItem('rt_ref_'+SID)||'';
-  $('#btnVerify').disabled=true;
-  try{
-    const d=await api('/api/join/verify',{sessionId:SID,email:localStorage.getItem('rt_email'),code,name,phone,keepPhone,ref,notifyRooms:$('#notifyRooms').checked});
-    track('session_register',{method:'otp'});
-    setToken(d.token);
-    localStorage.removeItem('rt_ref_'+SID);
-    startPolling();
-  }catch(e){$('#codeErr').textContent=e.message;}
-  $('#btnVerify').disabled=false;
-};
-// Raw fetch that returns {status,data} without throwing — lets us intercept the 428
-// check-in gate distinctly from real errors.
-async function apiRaw(path,body){
-  const h={'Content-Type':'application/json'};
-  const tok=getToken(); if(tok)h['X-Player-Token']=tok;
-  const r=await fetch(path,{method:'POST',headers:h,body:JSON.stringify(body||{})});
-  const d=await r.json().catch(()=>({}));
-  return {status:r.status,data:d};
-}
 
 let pendingVote=null; // the vote payload held while we run check-in
 async function lockVote(payload, btnId){
