@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 031; suite 889 green)
+## Current state (migrations through 033; suite 1,123 green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -154,7 +154,8 @@ live on anr.makinitmag.com.
   resend) plus `smsWindow` so the dialog never hardcodes the hours.
   **Operator setup: docs/post-show-setup.md** (env vars, the Hobby-cron deploy trap, Asana).
 - **Optional round comments** (027): after locking in, an A&R may leave ONE short note
-  (≤280 chars) on a rating round. Own table `round_comments`, never a column on `votes`
+  (≤500 chars — raised from 280 on 2026-09-02, operator's call: a tweet's length was too
+  short to say what they heard AND why, which is the half the artist can use) on a rating round. Own table `round_comments`, never a column on `votes`
   (that table is read by every board sum and ratify recompute). SEALED like the split.
   **REJECT-BY-EXCEPTION as of 029** (operator's call — 027 originally shipped approve-in):
   comments default to `status='shared'` and ride the artist's report email attributed by
@@ -290,6 +291,91 @@ live on anr.makinitmag.com.
   changes what every player is looking at. Console: a red 🗑 in the Rounds tab, offered only
   when `votes === 0`.
 
+- **A&R Daily — the async daily drop** (033, branch `claude/ar-async-review-mode-50b726`,
+  **NOT YET PUSHED** — this section is honest against git, so re-read that word before
+  treating any of it as live). This inverts the product: **the daily drop is the thing and
+  the live show becomes a special event on top of it.** The bottleneck it fixes is
+  post-authentication — someone converts and then has nothing to do until Wednesday, nobody
+  can play at work, and artist slots are capped at whatever fits 7–11PM ET.
+  **The day is 4–16 records, never a fixed 16** (4 drawn from the free pool + up to 12 paid).
+  Nothing hardcodes a count, on either side of the wire.
+  - **A drop is a `sessions` row**, not a new entity — `SERIES_POINTS_SRC`, `buildRecap`,
+    `cardArsData`/`cardSongsData`, `ARTIST_ELIGIBLE_SQL` and the post kit are all session-keyed,
+    so a separate table would mean re-plumbing all of it. `sessions.mode` is a new ORTHOGONAL
+    axis, not a fifth `status` (nullable ⇒ every existing row keeps today's behaviour with zero
+    backfill — the `visibility`/`ingest_auto` precedent). `sessions.async_state` earns its own
+    column because the 9AM→noon gap (tallied but not published) cannot be expressed in `status`,
+    and flipping to `completed` at 9AM would trip `playerState`'s recap branch and reveal every
+    room average three hours early. It is also the cron's claim token.
+  - **The window is absolute epochs, never a duration.** `clampMinutes` pins live windows to
+    2–60 minutes; and `opens_at + 21h` would give an 8AM close in spring and a 10AM close in
+    autumn. Both ends resolve from ET wall clock (`etEpoch`, two-pass so a DST guess converges).
+  - **Per-A&R queue order is a seeded shuffle** (SHA-256 counter mode → unbiased Fisher–Yates),
+    a pure function of (uid, session): nothing stored, resume is free, no cursor to go stale,
+    and drop-off spreads across the whole day instead of starving whatever sits last.
+    **`votes` IS the cursor** — the server returns every record with a `voted` flag.
+  - **The seal is STRICTER here than on a live show: omit keys, don't null them.** A
+    `room_average: null` is itself a tell once one record tallies. And **no per-record vote
+    counts**: across a 21-hour window with everything open at once, "record 7 has 180
+    evaluations" is a popularity signal, which is the direction-adjacent inference the rule
+    forbids. Only the session-level participant count ships.
+  - **Completion bonus** = a `point_events` row (100/75/50/25 by tier), never a multiplier on
+    `votes.points` (which would make "max 125" untrue everywhere and multiply NEGATIVE rounds
+    into a penalty). `source_uid` is the composite `${session}:${uid}` — a bare uid pays once
+    ever, a bare session id pays once per day across all users — and `milestone` is a literal 1,
+    never the tier, or two racers with different tiers defeat the index and pay twice. **Tier
+    comes from when they FINISHED** (max of last vote and last report), not `now()`, so a 9AM
+    sweep cannot pay 25 to someone who finished at 2PM.
+  - **Report a record** (`round_reports`, `UNIQUE (round_id, participant_id)` so the count is
+    PEOPLE not clicks). A reported record counts as HANDLED for the bonus — otherwise reporting
+    a dead link honestly strands the reporter one short, which teaches everyone to stay quiet.
+    **Capped at 3/day, floored at `min(3, total-1)`** (operator, 2026-09-02): there is no day
+    size on which you can report your way to a bonus without rating at least one record.
+  - **`/daily` is its own page** (`public/daily.html`), not a branch inside play.html, with the
+    join plumbing extracted to **`public/auth.js`** as a pure refactor first. Built to the
+    approved design canvas (Archivo 800/900 + Space Mono, the 13° device, gold = money and
+    first place only). **No live count, join ticker, giveaway, host message, chime, countdown,
+    banner, embedded player or Ably** — a live session is a notification with a link.
+    Three mechanisms were ported deliberately: the composer is ONE appendChild-moved node so a
+    half-typed note survives the reveal; `cmtPruneDrafts` keeps a SET of the whole day (guarded
+    on empty, built as strings) instead of play.html's single key; and the reset edge guards on
+    the round id and nothing else, or a background refetch wipes a half-set dial. Draft keys are
+    now session-scoped (`anr_cmt_<sid>_<rid>`) because the flat namespace meant whichever
+    surface pruned last destroyed the other's drafts.
+  - **Noon publish → two INDEPENDENT emails.** The A&R digest (common Top 8 block + a
+    personalised round-by-round table for anyone who played) is `notifyAudience()`'s first
+    production caller — its `{sql, params}` fragment composes into one set-based
+    `INSERT…SELECT`, and `toPg()` numbers `?` TEXTUALLY so the params bind by position in the
+    final string. **No per-recipient PNG** (that is ~10 sends per invocation and would never
+    finish); the table is HTML. The artist's Song Report is unchanged from 026 in shape —
+    only the trigger becomes automatic — and stays separate because **artists are not users**:
+    no uid, so no `notify_recipients` row, no `notify_prefs`, no signed manage link. Someone
+    who is both gets both, deliberately. Artist notices are **held one hour** past publish
+    (`ARTIST_NOTICE_DELAY_MIN`) because 029's reject-by-exception loses its human checkpoint
+    under a cron and there is no unsend.
+  - **`digest_daily` stays default OFF.** Flipping it turns an opt-in list into a daily send to
+    the whole registered base — a deliverability decision disguised as a one-literal change.
+    Run a week on a manual list first, then flip as its own commit.
+  - **Every queue claims its rows.** `drainArtistEmail` is extracted out of the route WITH the
+    `pending→sending` claim it never had (fine when a human clicks, a double-send bug under a
+    cron), and the publish claims on `recap_jobs.claimed_at` with a 10-minute staleness escape.
+  - **Cards are best-effort; the reveal is not.** The plan said skip the publish entirely
+    without `BLOB_READ_WRITE_TOKEN`; that stalls the reveal indefinitely on an env var, which
+    is worse than a graphic-less email. The day always publishes and the failure is logged.
+  - **Console opens on A&R Daily**; the live-show tooling moves behind a mode switch (a change
+    to which screen boots, not a rewrite). `round/edit` gains `play_url` + `artist_note` on its
+    DESCRIPTIVE-only allowlist — **fixing a dead link mid-window is the most operationally
+    important thing here**, and it cannot round-trip through a CMS. A missing drop renders as an
+    incident, not an empty state.
+  - Setup: **docs/daily-setup.md**. Needs Vercel **Pro** (a `*/5` cron fails a Hobby deploy),
+    `DAILY_INGEST_TOKEN` (separate from `INGEST_TOKEN` — different blast radius), `CRON_SECRET`,
+    and `PUBLIC_BASE_URL` on anything that is not the production host.
+  - **Still open:** `sessions.live_bonus` has no value set (~300 makes one live show ≈ three
+    perfect async days; without it the broadcast is decorative on the unified board), the
+    scouting-points curve, and Nero retirement (`#btnNeroPull` + the scrape helper are still
+    in admin.html — the plan calls for removing them as the first piece of the subtraction
+    pass, deliberately not done here since it touches the live console).
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count
@@ -300,13 +386,11 @@ live on anr.makinitmag.com.
    This is the largest remaining build; not started.
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
-3. **Digest senders** — the daily/weekly update emails. The subscription layer, the
-   audience helper (`notifyAudience(topic, channel)`) and the prefs UI all shipped with
-   028; **nothing sends**. Needs the content (reuse `cardArsData` / `cardSongsData` /
-   `homeSeriesBoard`), a chunked-queue drain like `recap_emails`, and a cron entry —
-   note a second cron alongside the hourly artist job still requires Vercel **Pro**.
-   Operator's note: recaps draw from the previous day's show. Web push is a third channel
-   on the same table, still gated behind the PWA shell.
+3. **Digest senders** — the DAILY one shipped with A&R Daily (033): `digest_daily` now has a
+   real sender, a chunked drain and a `*/5` cron, and is `notifyAudience()`'s first production
+   caller. **`digest_weekly` still has nothing behind it** — same shape, no sender. Its default
+   is OFF and should stay off until there is one. Web push is a third channel on the same
+   table, still gated behind the PWA shell.
 4. **PWA install + iOS web push** — DEFERRED behind a branding / site facelift pass (which
    gates the install prompt work).
 5. **Parked ideas:** host→series default (new rooms auto-tag into the host's active series);
