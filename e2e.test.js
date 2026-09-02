@@ -172,8 +172,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('comment on an unknown round rejected', cBadRound.status === 404, 'got ' + cBadRound.status);
   const cNoAuth = await call('/api/comment', { roundId: RID, body: 'x' }, 'POST');
   ok('comment without auth rejected', cNoAuth.status === 401, 'got ' + cNoAuth.status);
-  const cLong = await call('/api/comment', { roundId: RID, body: 'z'.repeat(400) }, 'POST', { 'X-Player-Token': t3 });
-  ok('over-length comment truncated to 280, not rejected', cLong.status === 200 && cLong.d.body.length === 280, 'len ' + (cLong.d.body || '').length);
+  const cLong = await call('/api/comment', { roundId: RID, body: 'z'.repeat(700) }, 'POST', { 'X-Player-Token': t3 });
+  ok('over-length comment truncated to 500, not rejected', cLong.status === 200 && cLong.d.body.length === 500, 'len ' + (cLong.d.body || '').length);
+  // 500 is the raised cap (was 280). A 400-char comment is now WITHIN it, which is the
+  // point of the change — assert that rather than only asserting the ceiling.
+  const cMid = await call('/api/comment', { roundId: RID, body: 'y'.repeat(400) }, 'POST', { 'X-Player-Token': t3 });
+  ok('a 400-char comment is kept whole under the raised cap', cMid.status === 200 && cMid.d.body.length === 400, 'len ' + (cMid.d.body || '').length);
 
   // Host moderation is REJECT-BY-EXCEPTION (029): comments ship by default and the host
   // pulls the bad ones. There is no 'pending' — a status that gates sends but nothing
@@ -1648,6 +1652,80 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const dLateVote = await call('/api/vote', { roundId: qIds[1], taste: 4, predict: 4.0 }, 'POST', DH2);
   ok('the closed window refuses a late vote', dLateVote.status === 400 && /time is up/i.test(JSON.stringify(dLateVote.d)), JSON.stringify(dLateVote.d));
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), PDROP]);
+
+  console.log('\n— A&R Daily: reporting a record that cannot be evaluated —');
+  // A dead link across a 21-hour window with nobody watching is only visible if the A&Rs
+  // say so, so filing a report has to be free. It marks the record HANDLED for that A&R:
+  // if it still counted against them, reporting honestly would cost them their completion
+  // bonus, which teaches everyone to stay quiet about dead links instead.
+  const rOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
+    songs: [song(61), song(62), song(63), song(64), song(65)] }, 'POST', DTOK);
+  const RDROP = rOk.d.sessionId;
+  await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ? WHERE id = ?",
+    [Date.now() - 1000, Date.now() + 3600000, RDROP]);
+  await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [RDROP]);
+  const rJoin = async (email, name) => {
+    const rq = await call('/api/join/request', { sessionId: RDROP, email });
+    const vr = await call('/api/join/verify', { sessionId: RDROP, email, code: rq.d.devCode, name });
+    return { 'X-Player-Token': vr.d.token };
+  };
+  const RH1 = await rJoin('rep1@test.com', 'Rae');
+  const RH2 = await rJoin('rep2@test.com', 'Kit');
+  const rQ = (await call('/api/me/state', null, 'GET', RH1)).d.queue.map(q => q.id);
+
+  const rBad = await call('/api/report-round', { roundId: rQ[0], reason: 'because' }, 'POST', RH1);
+  ok('a report with an unknown reason is refused', rBad.status === 400, JSON.stringify(rBad.d));
+  const rForeign = await call('/api/report-round', { roundId: anyRound, reason: 'not_playable' }, 'POST', RH1);
+  ok("a report on another day's record is refused", rForeign.status === 404, JSON.stringify(rForeign.d));
+
+  const rep1 = await call('/api/report-round', { roundId: rQ[0], reason: 'not_playable' }, 'POST', RH1);
+  ok('a report is accepted', rep1.status === 200 && rep1.d.ok === true, JSON.stringify(rep1.d));
+  ok('the report count is people, not clicks', rep1.d.reports === 1, JSON.stringify(rep1.d));
+  const rep1Again = await call('/api/report-round', { roundId: rQ[0], reason: 'other', body: 'wrong song' }, 'POST', RH1);
+  ok('re-reporting the same record edits rather than adding', rep1Again.status === 200 && rep1Again.d.reports === 1, JSON.stringify(rep1Again.d));
+  const rep2 = await call('/api/report-round', { roundId: rQ[0], reason: 'not_playable' }, 'POST', RH2);
+  ok('a second A&R reporting the same record makes it two', rep2.d.reports === 2, JSON.stringify(rep2.d));
+
+  const rState = (await call('/api/me/state', null, 'GET', RH1)).d;
+  ok('the reporter sees their own report on the record',
+    rState.queue.find(q => q.id === rQ[0]).myReport === 'other', JSON.stringify(rState.queue.find(q => q.id === rQ[0])));
+  // THE SEAL AGAIN: their OWN report ships, but a per-record report COUNT is the same
+  // popularity signal a vote count is, so it must never reach a player payload.
+  ok('no other A&R report is visible on the record',
+    rState.queue.every(q => !('reports' in q) && !('report_count' in q)), JSON.stringify(rState.queue[0]));
+  ok('a report advances the day for the reporter',
+    rState.progress.handled === 1 && rState.progress.voted === 0, JSON.stringify(rState.progress));
+
+  // THE CAP. Five records => min(3, 5-1) = 3. Report three and the fourth is refused, so
+  // there is no day size on which you can report your way to a completion bonus.
+  ok('the cap and the remaining count reach the client',
+    rState.progress.reportCap === 3 && rState.progress.reportsLeft === 2, JSON.stringify(rState.progress));
+  await call('/api/report-round', { roundId: rQ[1], reason: 'not_playable' }, 'POST', RH1);
+  await call('/api/report-round', { roundId: rQ[2], reason: 'not_playable' }, 'POST', RH1);
+  const rOver = await call('/api/report-round', { roundId: rQ[3], reason: 'not_playable' }, 'POST', RH1);
+  ok('the fourth report in a day is refused', rOver.status === 400 && /report 3/.test(JSON.stringify(rOver.d)), JSON.stringify(rOver.d));
+  const rEditAtCap = await call('/api/report-round', { roundId: rQ[1], reason: 'other' }, 'POST', RH1);
+  ok('editing an existing report still works at the cap', rEditAtCap.status === 200, JSON.stringify(rEditAtCap.d));
+  const capped = (await call('/api/me/state', null, 'GET', RH1)).d;
+  ok('reports never exceed the cap',
+    capped.progress.reported === 3 && capped.progress.reportsLeft === 0, JSON.stringify(capped.progress));
+
+  // Three reported + two rated = a finished day, and it pays. This is the whole point of
+  // crediting a report: an honest reporter is not left one short forever.
+  await call('/api/vote', { roundId: rQ[3], taste: 6, predict: 6.0 }, 'POST', RH1);
+  const rLast = await call('/api/vote', { roundId: rQ[4], taste: 5, predict: 5.0 }, 'POST', RH1);
+  ok('the day reads as finished with reports counted',
+    rLast.d.progress.handled === 5 && rLast.d.progress.total === 5, JSON.stringify(rLast.d.progress));
+  ok('a day finished partly by reporting still pays the completion bonus', rLast.d.bonus > 0, JSON.stringify(rLast.d.bonus));
+  const rBonusRows = await dDb.all("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [RDROP + ':%']);
+  ok('and it pays exactly once', rBonusRows.length === 1, JSON.stringify(rBonusRows));
+
+  // A report can itself be the last act of the day, so /api/report-round evaluates the
+  // bonus too rather than waiting for a vote that is never going to come.
+  for (const rid of rQ.slice(0, 4)) await call('/api/vote', { roundId: rid, taste: 4, predict: 4.0 }, 'POST', RH2);
+  const rFinish = await call('/api/report-round', { roundId: rQ[4], reason: 'not_playable' }, 'POST', RH2);
+  ok('finishing the day ON a report pays the bonus from the report route', rFinish.d.bonus > 0, JSON.stringify(rFinish.d));
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), RDROP]);
 
   console.log('\n— A&R Daily: the lifecycle runs on the clock —');
   // Explicit window overrides so real-time votes land inside it — /api/vote checks the

@@ -107,10 +107,13 @@ function distanceYards(lat1, lng1, lat2, lng2) {
 }
 const DEFAULT_GEO_RADIUS = 200; // generous default (yards) — venue GPS is imprecise indoors
 
-// Optional round comments cap out at a tweet's length — short enough to stay quotable in
-// the artist's email and on a report page, and short enough that the host's approval
-// queue stays skimmable after a 12-round show.
-const COMMENT_MAX = 280;
+// Optional round comments. Raised from 280 to 500 (operator's call, 2026-09-02): A&Rs
+// reported a tweet's length was too short to say what they heard AND why, which is the
+// half the artist can actually use. 500 is about two more sentences — still short enough
+// to stay quotable on a report page, to read a hundred of them in one artist email, and
+// to keep the host's reject-by-exception scan fast. No migration: the column is TEXT.
+// Shipped to the client in the player state so no surface carries a second copy.
+const COMMENT_MAX = 500;
 
 // ---------- tiny helpers ----------
 function send(res, status, data, headers = {}) {
@@ -724,12 +727,15 @@ async function advanceRoom(session, { minutes = null } = {}) {
 // when the session has ended. Poll type is PER-ROUND now, so a recap can span both
 // mechanics — everything is reported on ONE unified Accuracy % axis (+ an absolute
 // grade banded off it), with the A/B rounds also broken out into a separate card.
-async function buildRecap(participant) {
+// `detail` adds a round-by-round breakdown for the daily scorecard and the A&R digest.
+// It is OFF by default so the polled live payload stays byte-identical for its only
+// existing caller, and it costs no extra query — every column is already in `mine`.
+async function buildRecap(participant, { detail = false } = {}) {
   const sessionId = participant.session_id;
   // Each ratified round the player voted in, WITH its poll_type + the fields the
   // Versus card needs (their pick/split + the round's actual split).
   const mine = await db.all(
-    `SELECT v.points, v.err, v.rank, v.tier, v.pick, v.predict_split,
+    `SELECT v.points, v.err, v.rank, v.tier, v.pick, v.predict_split, v.taste, v.predict,
             r.idx, r.poll_type, r.song_title, r.song_artist, r.option_b_title, r.option_b_artist,
             r.room_average, r.split_a
        FROM votes v JOIN rounds r ON r.id = v.round_id
@@ -776,7 +782,7 @@ async function buildRecap(participant) {
     actual_split_a: m.split_a != null ? Number(m.split_a) : null, err: m.err,
   }));
 
-  return {
+  const out = {
     name: participant.name,
     accuracy,                                    // unified 0..100, 2dp (null if no rounds)
     grade,                                       // absolute letter (null if no rounds)
@@ -788,24 +794,94 @@ async function buildRecap(participant) {
     best: best ? { idx: best.idx, song_title: best.song_title, points: best.points } : null,
     versusRounds,
   };
+  // The round-by-round breakdown. THE SEAL IS SATISFIED HERE and nowhere earlier: every
+  // row is a RATIFIED round, so room_average already exists and is already public. Nothing
+  // in this block may ever be moved to a pre-ratify code path.
+  //
+  // votes.tier IS the emoji/colour key — tierForError() (scoring.js) emits exactly five
+  // values, so the renderer maps five names and there is no second source of truth for
+  // what counts as "sharp".
+  if (detail) {
+    out.rounds = ratingRows.map(m => ({
+      idx: m.idx, song_title: m.song_title, song_artist: m.song_artist,
+      taste: m.taste, predict: m.predict == null ? null : Number(m.predict),
+      room_average: m.room_average == null ? null : Number(m.room_average),
+      err: m.err == null ? null : Number(m.err),
+      points: Number(m.points) || 0, tier: m.tier,
+    }));
+  }
+  return out;
 }
 
 // How far through the day this A&R is. The denominator is LIVE (whatever the day currently
 // holds) rather than a stored 16 — the day is variable in size, and deleting a zero-vote
 // record must shrink it rather than make completion unreachable for everyone at n-1.
-async function asyncProgress(participant, session) {
+//
+// A REPORTED RECORD COUNTS AS HANDLED. If it stayed in the numerator's way, reporting an
+// unplayable track honestly would strand the reporter one short of their bonus — which
+// teaches people to say nothing about dead links, the exact opposite of why the button
+// exists. The obvious abuse (report everything, collect the bonus for nothing) is closed by
+// the cap in /api/report-round, not here.
+//
+// Two indexed COUNTs plus one NOT EXISTS, all bounded by the day's size — constant work per
+// call, nothing that scales with the row count.
+async function asyncHandled(participant, session) {
   const total = Number((await db.get(
     "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')",
     [session.id])).c) || 0;
-  const voted = Number((await db.get(
-    `SELECT COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id
-      WHERE v.participant_id = ? AND r.session_id = ?`, [participant.id, session.id])).c) || 0;
-  return { progress: { voted, total, eligible: total >= ASYNC_MIN_FOR_BONUS } };
+  const v = await db.get(
+    `SELECT COUNT(*) AS c, MAX(v.locked_at) AS last FROM votes v JOIN rounds r ON r.id = v.round_id
+      WHERE v.participant_id = ? AND r.session_id = ?`, [participant.id, session.id]);
+  // Two different counts, deliberately.
+  //   reportsTotal  — every report this A&R filed today. This is what the CAP counts, because
+  //                   a report is console noise whether or not it also earned them a skip.
+  //   reported      — reports on records they did NOT rate. Only these advance the day, since
+  //                   the two sets can overlap (nothing stops an A&R rating a track and then
+  //                   reporting that the link later went dead) and that must not double-count.
+  const rp = await db.get(
+    `SELECT COUNT(*) AS c, MAX(rr.created_at) AS last FROM round_reports rr
+       JOIN rounds r ON r.id = rr.round_id
+      WHERE rr.participant_id = ? AND r.session_id = ?
+        AND r.status IN ('voting','closed','ratified')`,
+    [participant.id, session.id]);
+  const rpFree = await db.get(
+    `SELECT COUNT(*) AS c FROM round_reports rr
+       JOIN rounds r ON r.id = rr.round_id
+      WHERE rr.participant_id = ? AND r.session_id = ?
+        AND r.status IN ('voting','closed','ratified')
+        AND NOT EXISTS (SELECT 1 FROM votes v2 WHERE v2.round_id = rr.round_id AND v2.participant_id = rr.participant_id)`,
+    [participant.id, session.id]);
+  const voted = Number(v.c) || 0;
+  const reported = Number(rpFree.c) || 0;
+  return {
+    total, voted, reported, reportsTotal: Number(rp.c) || 0, handled: voted + reported,
+    // The instant they actually finished the day, which is the LATER of their last rating and
+    // their last report. Used for the completion tier — see maybeAwardCompletionBonus.
+    last: Math.max(Number(v.last) || 0, Number(rp.last) || 0) || null,
+  };
 }
+
+async function asyncProgress(participant, session) {
+  const h = await asyncHandled(participant, session);
+  return { progress: { voted: h.voted, reported: h.reported, handled: h.handled, total: h.total,
+    eligible: h.total >= ASYNC_MIN_FOR_BONUS, reportsLeft: reportsLeftFor(h) } };
+}
+
+// Per-A&R per-day ceiling on reports (operator's call, 2026-09-02). Three is a shade under
+// a fifth of a full 16-record day, and comfortably above the real dead-link rate — enough
+// that an honest reporter is never punished, small enough that reporting is not a route to
+// the bonus. Console surfaces per-A&R report counts so a serial reporter is visible.
+//
+// The floor is what actually closes the loophole on a SHORT day: min(cap, total - 1) means
+// there is no day size on which you can report your way to a completion bonus without
+// rating at least one record.
+const DROP_REPORT_CAP = 3;
+function reportCapFor(total) { return Math.min(DROP_REPORT_CAP, Math.max(0, Number(total) - 1)); }
+function reportsLeftFor(h) { return Math.max(0, reportCapFor(h.total) - h.reportsTotal); }
 
 // Pay the completion bonus for finishing the day. Idempotent by construction.
 //
-// THE TIER COMES FROM THE A&R'S LAST VOTE, not from now(). Inline (at their final vote) those
+// THE TIER COMES FROM WHEN THEY FINISHED, not from now(). Inline (at their final action) those
 // are the same instant; in a sweep they are not, and a 9AM sweep must never pay 25 to someone
 // who actually finished at 2PM. One rule, both callers.
 //
@@ -815,15 +891,10 @@ async function asyncProgress(participant, session) {
 // that computed different tiers would differ in milestone, defeat the index, and pay twice.
 async function maybeAwardCompletionBonus(participant, session, atTs = null) {
   if (!participant.user_id) return null;   // the bonus ledger is user-level
-  const total = Number((await db.get(
-    "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')",
-    [session.id])).c) || 0;
-  if (total < ASYNC_MIN_FOR_BONUS) return null;
-  const mine = await db.get(
-    `SELECT COUNT(*) AS c, MAX(v.locked_at) AS last FROM votes v JOIN rounds r ON r.id = v.round_id
-      WHERE v.participant_id = ? AND r.session_id = ?`, [participant.id, session.id]);
-  if (Number(mine.c) < total) return null;
-  const pts = completionBonusPoints(session, atTs != null ? atTs : (Number(mine.last) || now()));
+  const h = await asyncHandled(participant, session);
+  if (h.total < ASYNC_MIN_FOR_BONUS) return null;
+  if (h.handled < h.total) return null;
+  const pts = completionBonusPoints(session, atTs != null ? atTs : (h.last || now()));
   const ins = await db.run(
     `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
      VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
@@ -1069,17 +1140,25 @@ async function asyncPlayerState(participant, session, count) {
     `SELECT c.round_id, c.body FROM round_comments c JOIN rounds r ON r.id = c.round_id
       WHERE r.session_id = ? AND c.participant_id = ?`, [session.id, participant.id]);
   const cmtBy = new Map(comments.map(c => [c.round_id, c.body]));
+  const reports = await db.all(
+    `SELECT rr.round_id, rr.reason FROM round_reports rr JOIN rounds r ON r.id = rr.round_id
+      WHERE r.session_id = ? AND rr.participant_id = ?`, [session.id, participant.id]);
+  const repBy = new Map(reports.map(r => [r.round_id, r.reason]));
 
   // The A&R's own running order. Pure function of (uid, session) — nothing stored, so resume
   // is free and there is no cursor to go stale when a record is deleted or a second tab votes.
   const ordered = asyncQueueOrder(participant.user_id || participant.id, session.id, rows);
   const voted = mine.length;
+  // A reported record is DEALT WITH for this A&R. See asyncHandled — if it stayed in the way,
+  // an honest report on a dead link would cost the reporter their completion bonus.
+  const handled = rows.reduce((n, r) => n + (byRound.has(r.id) || repBy.has(r.id) ? 1 : 0), 0);
+  const reportsTotal = rows.reduce((n, r) => n + (repBy.has(r.id) ? 1 : 0), 0);
 
   let phase;
   if (session.status === 'completed' || (session.async_state === 'published' && ts >= results)) phase = 'recap';
   else if (ts < opens || session.async_state === 'scheduled') phase = 'waiting';
   else if (ts >= closes) phase = 'sealed';       // rated, tallying or tallied — results at noon
-  else phase = voted >= total && total > 0 ? 'done' : 'queue';
+  else phase = handled >= total && total > 0 ? 'done' : 'queue';
 
   // Before the day opens the queue ships EMPTY — titles and pre-release links are a reveal,
   // and there is no reason for them to exist client-side three hours early.
@@ -1095,6 +1174,10 @@ async function asyncPlayerState(participant, session, count) {
       voted: !!v };
     if (v) item.myVote = { taste: v.taste, predict: v.predict };
     if (cmtBy.has(r.id)) item.myComment = cmtBy.get(r.id);
+    // Their own report, so a revisit shows the record as dealt with rather than unrated.
+    // Note this is the CALLER's report only — a per-record report COUNT would be exactly
+    // the popularity signal the seal note above rules out.
+    if (repBy.has(r.id)) item.myReport = repBy.get(r.id);
     return item;   // note: no room_average, no counts, no other votes. See the seal note above.
   });
 
@@ -1102,35 +1185,58 @@ async function asyncPlayerState(participant, session, count) {
   // derive the tier from its own clock: a timezone bug would promise money the server won't
   // pay, on a cash-prize board.
   const day = session.drop_day;
+  // Every label is a bare wall-clock string so a caller can put its own word in front of
+  // it ("until 3:00 PM ET", "Before 3:00 PM ET"). The last tier used to read "before the
+  // window closes", which rendered as "Before before the window closes".
   const tiers = [
     { at: etEpoch(day, 15), points: 100, label: '3:00 PM ET' },
     { at: etEpoch(day, 18), points: 75, label: '6:00 PM ET' },
     { at: etEpoch(day, 21), points: 50, label: '9:00 PM ET' },
-    { at: closes, points: 25, label: 'before the window closes' },
+    { at: closes, points: 25, label: etClockLabel(closes) },
   ];
   const nextTier = tiers.find(t => t.at != null && ts < t.at) || null;
   const earned = await db.get(
     "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?",
     [`${session.id}:${participant.user_id || ''}`]);
 
-  return {
+  const out = {
     session: { id: session.id, name: session.name, status: session.status, poll_type: 'rating', mode: 'async' },
     mode: 'async',
-    async: { day, opens_at: opens, closes_at: closes, results_at: results, tiers },
+    // Every LABEL here is server-rendered for the same reason the tiers are: the surface
+    // must never turn an epoch into ET wall-clock with the browser's own timezone.
+    async: { day, opens_at: opens, closes_at: closes, results_at: results, tiers,
+      dayLabel: etDayLabel(day), opensLabel: etClockLabel(opens),
+      closesLabel: etClockLabel(closes), resultsLabel: etClockLabel(results),
+      closesWhen: etWhenLabel(closes, day), resultsWhen: etWhenLabel(results, day) },
     phase,
-    progress: { voted, total,
+    progress: { voted, total, handled, reported: reportsTotal,
       // A short day still pays; only a 1-2 record day (a mis-push or a dry pool) does not.
       eligible: total >= ASYNC_MIN_FOR_BONUS,
+      reportsLeft: Math.max(0, reportCapFor(total) - reportsTotal),
+      reportCap: reportCapFor(total),
       earned: earned ? Number(earned.points) : null,
       nextTierAt: nextTier ? nextTier.at : null,
       nextTierPoints: nextTier ? nextTier.points : null,
       nextTierLabel: nextTier ? nextTier.label : null },
+    // The comment cap lives on the server (COMMENT_MAX). Shipping it means the surface never
+    // carries a second copy that can drift from what the server actually enforces.
+    commentMax: COMMENT_MAX,
     queue,
     me: { name: participant.name, email: participant.email, total_points: participant.total_points },
     myTotalPoints: participant.total_points,
     refCode: participant.ref_code || null,
     participants: count,
   };
+
+  // The scorecard. Only ever built in 'recap', which is only reachable once the day has
+  // published — so this is the one place room_average is allowed to exist in a player
+  // payload, and the seal is why it is gated on the phase rather than on the data.
+  if (phase === 'recap') {
+    out.recap = await buildRecap(participant, { detail: true });
+    out.recap.completionBonus = earned ? Number(earned.points) : null;
+    out.rank = out.recap.rank;
+  }
+  return out;
 }
 
 async function playerState(participant) {
@@ -1984,6 +2090,32 @@ function etNextDay(day, n = 1) {
 // chartDay() already renders the ET 'YYYY-MM-DD' (en-CA). Alias rather than write a second
 // formatter — two of them that can disagree about what day it is would be a nasty bug.
 const etDay = (ts = Date.now()) => chartDay(ts);
+
+// Human labels, rendered SERVER-side and shipped as strings. The player surface never
+// converts an epoch to ET wall clock itself: a browser in Lagos would print a different
+// deadline than the one the server actually pays out on, and this is a cash-prize board.
+function etDayLabel(day) {
+  const ts = etEpoch(day, 12);
+  if (ts == null) return null;
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
+    weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(ts));
+}
+function etClockLabel(ts) {
+  if (!ts) return null;
+  const s = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
+    hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(Number(ts)));
+  return s + ' ET';
+}
+// "at 12:00 PM ET tomorrow" — a complete phrase, because whether an instant is today or
+// tomorrow is a question about the ET calendar and the browser must not be the one asked.
+function etWhenLabel(ts, fromDay) {
+  if (!ts) return null;
+  const clock = etClockLabel(ts);
+  const d = etDay(Number(ts));
+  if (!fromDay || d === fromDay) return 'at ' + clock;
+  if (d === etNextDay(fromDay)) return 'at ' + clock + ' tomorrow';
+  return 'on ' + etDayLabel(d) + ' at ' + clock;
+}
 
 // ===== A&R DAILY — the async drop =====
 // The daily schedule, as ET minutes-of-day. Defaults, not hardcodes: the drop builder takes
@@ -3508,12 +3640,16 @@ async function handleApi(req, res, url) {
   // + lightweight join context only.
   if (p === '/api/session/info' && method === 'GET') {
     const sessionId = url.searchParams.get('s') || url.searchParams.get('sessionId');
-    const session = sessionId ? await db.get('SELECT id, name, status, deleted_at, watch_url, lobby_message, banner_id FROM sessions WHERE id = ?', [sessionId]) : null;
+    const session = sessionId ? await db.get('SELECT id, name, status, deleted_at, watch_url, lobby_message, banner_id, mode FROM sessions WHERE id = ?', [sessionId]) : null;
     if (!session || session.deleted_at) return bad(res, 'Room not found', 404);
     const out = {
       id: session.id,
       name: session.name,
       status: session.status,
+      // The surface a link belongs on, decided BEFORE the first state request — play.html
+      // and daily.html are different products, and each sends the other's links home.
+      // (It also lets a page pick its polling strategy at boot rather than after.)
+      mode: session.mode === 'async' ? 'async' : 'live',
       closed: session.status === 'completed' || session.status === 'archived',
       watchUrl: session.watch_url || null,
       lobbyMessage: session.lobby_message || null,
@@ -3974,6 +4110,22 @@ async function handleApi(req, res, url) {
       [roundId, participant.session_id]);
     if (!round) return bad(res, 'Round not found', 404);
     const note = (rawBody == null ? '' : String(rawBody)).trim().slice(0, 280) || null;
+    const session = await db.get('SELECT * FROM sessions WHERE id = ?', [participant.session_id]);
+
+    // THE CAP. A reported record counts as handled for the completion bonus (see
+    // asyncHandled), so without a ceiling "report everything, collect the bonus" is the
+    // dominant strategy. Counted per A&R per day and checked BEFORE the upsert, but a
+    // re-report of a record they have already reported is an edit, not a new one — it must
+    // not be refused just because they are at the cap.
+    const already = await db.get(
+      'SELECT id FROM round_reports WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
+    if (!already && isAsync(session)) {
+      const h = await asyncHandled(participant, session);
+      if (reportsLeftFor(h) <= 0) {
+        return bad(res, `You can report ${reportCapFor(h.total)} ${reportCapFor(h.total) === 1 ? 'record' : 'records'} a day. Rate the rest to finish your day.`);
+      }
+    }
+
     // One report each, so the console's count is PEOPLE, not clicks — which is what makes
     // it a usable threshold for "pull this record".
     await db.run(
@@ -3982,7 +4134,14 @@ async function handleApi(req, res, url) {
        DO UPDATE SET reason = excluded.reason, body = excluded.body, created_at = excluded.created_at`,
       [id(9), round.id, round.session_id, participant.id, reason, note, now()]);
     const c = (await db.get('SELECT COUNT(*) AS c FROM round_reports WHERE round_id = ?', [round.id])).c;
-    return send(res, 200, { ok: true, reports: Number(c) || 0 });
+    const out = { ok: true, reports: Number(c) || 0 };
+    if (isAsync(session)) {
+      // A report can be the last thing standing between an A&R and a finished day, so the
+      // bonus is evaluated here too — same helper, same idempotency, same tier rule.
+      out.bonus = await maybeAwardCompletionBonus(participant, session);
+      Object.assign(out, await asyncProgress(participant, session));
+    }
+    return send(res, 200, out);
   }
 
   if (p === '/api/comment' && method === 'POST') {
@@ -6081,6 +6240,9 @@ const server = http.createServer(async (req, res) => {
     // page (preserves existing QR/share links of the form /?s=<id>). /play is explicit.
     if (url.pathname === '/') return serveStatic(res, url.searchParams.get('s') ? 'play.html' : 'home.html');
     if (url.pathname === '/play') return serveStatic(res, 'play.html');
+    // A&R Daily — the async queue walk. Its own page, deliberately: play.html narrates a
+    // live show, and this one exists to be the opposite of that.
+    if (url.pathname === '/daily') return serveStatic(res, 'daily.html');
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');

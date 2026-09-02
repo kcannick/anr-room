@@ -593,9 +593,9 @@
     </div>
     <p class="c-help" id="cmtHelp">One or two lines. What landed, what didn't.</p>
     <div id="cmtEdit">
-      <textarea id="cmtText" maxlength="280" rows="4" placeholder="The hook is undeniable but the mix buries the vocal…"></textarea>
+      <textarea id="cmtText" maxlength="500" rows="4" placeholder="The hook is undeniable but the mix buries the vocal…"></textarea>
       <div class="c-foot">
-        <span class="count" id="cmtCount">0 / 280</span>
+        <span class="count" id="cmtCount">0 / 500</span>
         <button class="btn cmt-btn" id="cmtSave" disabled>Save</button>
       </div>
       <div class="err" id="cmtErr"></div>
@@ -1494,16 +1494,26 @@ function render(st){
 // no deadline to miss. Rating rounds only — a Versus round has two songs, so "the record"
 // is ambiguous and the artist workflow skips them anyway.
 let cmtRound=null, cmtSaved='', cmtEditing=false, cmtBusy=false, cmtPhase=null;
-const cmtKey=r=>'anr_cmt_'+r;
+// Draft keys are SESSION-SCOPED. They used to be a bare 'anr_cmt_<roundId>' in one flat
+// namespace shared with every other surface — which was harmless while this was the only
+// page that wrote them, and became a real bug the moment A&R Daily did: whichever page
+// pruned last destroyed the other's unsent drafts. Each surface now only ever deletes
+// inside its own 'anr_cmt_<sessionId>_' prefix.
+const CMT_PREFIX='anr_cmt_'+(SID||'')+'_';
+const cmtKey=r=>CMT_PREFIX+r;
 function cmtDraftGet(r){ try{return localStorage.getItem(cmtKey(r))||''}catch(e){return ''} }
 function cmtDraftSet(r,v){ try{ v?localStorage.setItem(cmtKey(r),v):localStorage.removeItem(cmtKey(r)); }catch(e){} }
 // Drop drafts from earlier rounds — the composer only ever binds to the current one, so
-// they're unreachable and would otherwise accumulate in localStorage forever.
+// they're unreachable and would otherwise accumulate in localStorage forever. Scoped to
+// THIS session's prefix and nothing else. Pre-prefix keys written by an older build are
+// deliberately left alone rather than matched by a heuristic: round ids are base64url and
+// can contain '_', so there is no reliable way to tell an old key from another session's,
+// and the old code already pruned itself down to a single key per device.
 function cmtPruneDrafts(keep){
   try{
     for(let i=localStorage.length-1;i>=0;i--){
       const k=localStorage.key(i);
-      if(k&&k.indexOf('anr_cmt_')===0&&k!==cmtKey(keep))localStorage.removeItem(k);
+      if(k&&k.indexOf(CMT_PREFIX)===0&&k!==cmtKey(keep))localStorage.removeItem(k);
     }
   }catch(e){}
 }
@@ -1534,7 +1544,7 @@ function cmtPaint(){
     : (cmtPhase==='results' && v)
       ? "Your draft is still here — the reveal doesn't cut you off."
       : "One or two lines. What landed, what didn't.";
-  $('#cmtCount').textContent = (dirty&&v?'Draft saved · ':'') + raw.length + ' / 280';
+  $('#cmtCount').textContent = (dirty&&v?'Draft saved · ':'') + raw.length + ' / 500';
   $('#cmtCount').classList.toggle('near', raw.length>240);
   $('#cmtSave').disabled = cmtBusy || !dirty;
   box.classList.toggle('dirty', !!v && dirty);
@@ -1876,6 +1886,9 @@ $('#btnShare')&&($('#btnShare').onclick=async()=>{
   let sessInfo=null;
   try{
     sessInfo=await fetch('/api/session/info?s='+encodeURIComponent(SID)).then(r=>r.ok?r.json():Promise.reject(r.status));
+    // An A&R Daily link belongs on /daily. This page narrates a live show — a phase
+    // machine, a timer, a stream embed — none of which a drop has.
+    if(sessInfo&&sessInfo.mode==='async'){location.replace('/daily?s='+encodeURIComponent(SID));return;}
     if(sessInfo&&sessInfo.name)$('#sessName').textContent=sessInfo.name;
     // Banner from the FIRST paint — the join/login screens run the same ad slot,
     // so the banner is always showing. The in-room poll takes over after join.

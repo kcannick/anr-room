@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script async src="/analytics.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/png" href="/mark-color.png"><title>A&R Daily</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* ============================================================================
+   A&R DAILY — the queue walk.
+   Its own page, not a branch inside play.html. play.html is organised around a
+   phase machine, nine screens and a lastPhase edge detector that exist to
+   narrate a live show; this surface is a daily casual game for someone with
+   five spare minutes, and everything that synchronises a crowd to a moment is
+   deliberately absent: no live count, no join ticker, no host message, no
+   giveaway, no chime, no countdown clock, no banner, no embedded player.
+   A live session is announced by notification with a link that opens the
+   stream — the room_live topic (028) already carries exactly that.
+   Built to the approved design canvas: Archivo 800/900 for display, Space Mono
+   for every number and label, the 13 degree device, and the colour rules —
+   green means go/scoring, purple means contest, and gold is money and first
+   place ONLY (so the bonus number is gold and nothing else on the card is).
+   ============================================================================ */
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;
+  -webkit-font-smoothing:antialiased; min-height:100dvh;
+}
+.wrap{max-width:430px;margin:0 auto;padding:20px 20px calc(28px + env(safe-area-inset-bottom));
+  min-height:100dvh;display:flex;flex-direction:column;gap:16px}
+.hide{display:none !important}
+.mono{font-family:"Space Mono",ui-monospace,"SF Mono",Menlo,monospace}
+.dim{color:var(--ink-dim)} .faint{color:var(--ink-faint)}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em}
+a{color:var(--signal);text-decoration:none}
+
+/* the 13 degree device: the mark, section ticks, and the rule */
+.skew{transform:skewX(-13deg)}
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;
+  display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;letter-spacing:-.02em;color:var(--bg)}
+.tick{display:block;width:3px;height:12px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.tick.contest{background:var(--accent)} .tick.prize{background:var(--gold)}
+.rule{height:1px;background:var(--line);transform:skewX(-13deg)}
+
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wordmark{font-weight:800;font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+.standing{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);
+  border:1px solid var(--line);border-radius:var(--r-pill);padding:5px 11px;white-space:nowrap}
+.standing b{color:var(--ink);font-weight:700}
+
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--ink-dim)}
+.section-head{display:flex;align-items:center;gap:9px}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.center{display:flex;flex-direction:column;justify-content:center;flex:1}
+.note{background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:11px 13px;font-size:13px;color:var(--ink-dim)}
+.err{color:var(--hot);font-size:13.5px;min-height:1em}
+
+label{display:block;font-size:12.5px;font-weight:600;margin:0 0 6px}
+input:not([type=checkbox]):not([type=range]),textarea{
+  width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);
+  font-family:inherit;font-size:15px;padding:12px 13px;border-radius:var(--r-md);outline:none}
+input:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:none;line-height:1.5;min-height:88px;font-size:14.5px}
+::placeholder{color:#615C82}
+input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34em;text-align:center}
+.pref-row{display:flex;align-items:flex-start;gap:11px;cursor:pointer;background:var(--inset);
+  border:1px solid var(--line);border-radius:var(--r-md);padding:12px 13px;font-size:13.5px}
+.pref-row>input[type=checkbox]{width:17px;height:17px;flex:0 0 auto;margin:1px 0 0;accent-color:var(--signal)}
+.pref-row b{display:block;font-weight:700}
+.pref-row small{display:block;font-size:11.5px;color:var(--ink-faint);margin-top:2px;line-height:1.45}
+
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;cursor:pointer;
+  border:0;border-radius:13px;padding:16px;font-family:inherit;font-weight:800;font-size:15.5px;
+  letter-spacing:-.01em;background:var(--signal);color:var(--bg)}
+.btn:hover{filter:brightness(1.07)} .btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.35;cursor:default;filter:none;transform:none}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.btn.outline{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:700}
+.btn.sm{padding:10px 16px;font-size:13.5px;border-radius:11px;width:auto}
+.linkbtn{background:none;border:0;padding:4px;font-family:inherit;font-size:12px;
+  color:var(--ink-dim);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+/* ---- the tier bar. Purple because it is a contest, coarse because it is not a clock.
+   No seconds, no ticking, no red escalation — a countdown re-creates exactly the
+   pressure async exists to remove. And every string in it is SERVER-rendered: the
+   tier is never computed from the browser clock, because a timezone bug there would
+   promise money the server will not pay, on a cash-prize board. ---- */
+.tierbar{display:flex;align-items:center;gap:10px;font-size:13px;
+  background:linear-gradient(180deg,rgba(109,95,224,.16),rgba(109,95,224,.05));
+  border:1px solid rgba(109,95,224,.45);border-radius:var(--r-md);padding:10px 13px}
+.tierbar .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.tierbar b{font-family:"Space Mono",monospace;color:var(--accent);font-weight:700}
+.tierbar .until{font-family:"Space Mono",monospace;margin-left:auto;font-size:10.5px;
+  color:var(--ink-dim);white-space:nowrap}
+
+/* ---- progress rail. The segments ARE the navigation. Nothing here knows how many
+   records a day holds: the day is 4-16 and flex does the arithmetic. ---- */
+.rail{display:flex;gap:3px;margin-top:8px}
+.seg{flex:1;min-width:0;height:5px;border-radius:3px;padding:0;cursor:pointer;
+  border:1px solid var(--line);background:var(--inset)}
+.seg.done{border-color:var(--signal);background:var(--signal)}
+.seg.reported{border-color:var(--gold);background:transparent}
+.seg.now{border-color:var(--accent);background:var(--accent);box-shadow:0 0 0 2px rgba(109,95,224,.28)}
+.navbtn{width:34px;height:34px;flex:none;background:transparent;border:1px solid var(--line);
+  color:var(--ink-dim);border-radius:10px;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;padding:0}
+.navbtn[disabled]{opacity:.3;cursor:default}
+
+/* ---- the dial. 46px pips: a hit target first. ---- */
+.pips{display:flex;gap:6px}
+.pip{flex:1;min-width:0;height:46px;border:1px solid var(--line);background:var(--inset);
+  border-radius:11px;display:flex;align-items:center;justify-content:center;
+  font-family:"Space Mono",monospace;font-size:16px;color:var(--ink-dim);cursor:pointer;
+  transition:transform .12s ease,background .12s ease}
+.pip.on{background:var(--signal);border-color:var(--signal);color:var(--bg);font-weight:700;transform:translateY(-3px)}
+input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;background:none;border:0}
+.stepnum{width:21px;height:21px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;
+  font-weight:800;display:flex;align-items:center;justify-content:center;flex:none}
+.steprow{display:flex;align-items:center;gap:9px}
+
+.fromartist{border-left:3px solid var(--signal);background:rgba(75,183,73,.06);
+  border-radius:0 11px 11px 0;padding:11px 13px}
+.heard{display:flex;gap:9px;align-items:center;background:rgba(75,183,73,.10);
+  border:1px solid var(--signal-deep);border-radius:11px;padding:10px 12px;font-size:13px}
+.flagged{display:flex;gap:9px;align-items:center;background:rgba(245,197,24,.08);
+  border:1px solid var(--gold);border-radius:11px;padding:10px 12px;font-size:13px}
+.myvote{display:flex;gap:10px}
+.myvote>div{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:12px 8px;text-align:center}
+.composer{background:linear-gradient(180deg,var(--panel),#1C1733);border:1px solid var(--accent);
+  border-radius:14px;padding:15px}
+.sealed-note{display:flex;align-items:center;gap:8px;justify-content:center}
+.stats{display:flex;gap:10px}
+.stat{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:14px 10px;text-align:center}
+.stat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--ink-dim)}
+.stat .v{font-family:"Space Mono",monospace;font-size:25px;font-weight:700;margin-top:5px}
+.endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
+.endorse img{height:13px;width:auto;opacity:.75}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="mark"><span>A&amp;R</span></div>
+      <span class="wordmark">A&amp;R Daily</span>
+    </div>
+    <div class="standing hide mono" id="standing"></div>
+  </div>
+
+  <!-- the join screens are injected here by /auth.js -->
+  <div id="authHost"></div>
+
+  <!-- WAITING: the day is built but has not opened. Never a dead end — it says when. -->
+  <section id="screen-waiting" class="center stack hide">
+    <div class="panel stack" style="text-align:center">
+      <div class="eyebrow" id="waitDay">A&amp;R Daily</div>
+      <h2 style="font-size:25px;margin:4px 0 0">Today's records open at noon.</h2>
+      <p class="dim" style="font-size:14px;line-height:1.55;margin:0" id="waitSub"></p>
+      <div class="rule" style="margin:4px 0"></div>
+      <p class="dim" style="font-size:13px;line-height:1.55;margin:0">
+        Yesterday's results land at the same time. Nothing to do until then.</p>
+    </div>
+  </section>
+
+  <!-- THE QUEUE WALK -->
+  <section id="screen-queue" class="stack hide">
+    <div class="tierbar hide" id="tierBar">
+      <span class="dot"></span>
+      <span>Finish today for <b id="tierPts"></b></span>
+      <span class="until" id="tierUntil"></span>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="navbtn" id="btnPrev" aria-label="Previous record">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <div style="flex:1;min-width:0">
+          <div class="eyebrow" id="qPos"></div>
+          <div class="rail" id="rail"></div>
+        </div>
+        <button class="navbtn" id="btnNextTop" aria-label="Next record">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+      </div>
+
+      <h2 style="font-size:23px;margin-top:15px;text-wrap:pretty" id="qTitle"></h2>
+      <div class="dim" style="font-size:14px;margin-top:3px" id="qArtist"></div>
+
+      <!-- The play link is the whole screen. target=_blank so the page never navigates
+           away: on iOS the hand-off to Spotify leaves this alive, and coming back is the
+           app switcher with the dial exactly where it was left. -->
+      <div style="margin-top:16px">
+        <a id="qPlay" class="btn" target="_blank" rel="noopener">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 4 14 8-14 8V4z"/></svg>
+          <span id="qPlayLabel">Play the record</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.75"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg>
+        </a>
+        <div class="note hide" id="qNoLink" style="text-align:center">
+          This record has no working link. Report it and move on — it will not count against your day.
+        </div>
+        <div class="dim" id="qPlayHint" style="font-size:11.5px;text-align:center;margin-top:7px">
+          Opens in a new tab. This page stays right here.</div>
+        <div class="heard hide" id="qHeard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--signal)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M20 6 9 17l-5-5"/></svg>
+          Heard it. Score it below.
+        </div>
+
+        <div style="display:flex;justify-content:center;margin-top:11px" id="qReportRow">
+          <button class="linkbtn" id="btnReport">Report this record</button>
+        </div>
+        <div class="hide" id="qReportBox" style="background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:14px;margin-top:11px">
+          <div style="font-weight:800;font-size:13.5px">What is wrong with it?</div>
+          <div style="display:flex;gap:8px;margin-top:11px">
+            <button class="btn outline sm" id="btnRepBroken" style="flex:1">Won't play</button>
+            <button class="btn outline sm" id="btnRepOther" style="flex:1">Something else</button>
+          </div>
+          <button class="linkbtn" id="btnRepCancel" style="width:100%;margin-top:9px">Never mind</button>
+          <div class="err" id="repErr" style="font-size:12.5px"></div>
+        </div>
+        <div class="flagged hide" id="qFlagged">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M20 6 9 17l-5-5"/></svg>
+          Reported. It will not count against your day.
+        </div>
+      </div>
+
+      <!-- The artist's note is CONTEXT, not a question: "this isn't mixed, I recorded it
+           on Bandlab last night" tells the A&R how to hear the record. -->
+      <div class="fromartist hide" id="qNoteBox" style="margin-top:16px">
+        <span class="eyebrow" style="display:block;color:var(--signal);font-size:9.5px;letter-spacing:.18em;margin-bottom:5px">From the artist</span>
+        <span style="font-size:14px;line-height:1.5" id="qNote"></span>
+      </div>
+
+      <!-- RATE + PREDICT -->
+      <div id="qRate">
+        <div class="steprow" style="margin-top:20px">
+          <span class="stepnum">1</span><span style="font-weight:800;font-size:15px;letter-spacing:-.01em">Rate it</span>
+        </div>
+        <p class="dim" style="margin:7px 0 11px;font-size:12.5px;line-height:1.5">Your honest take, 0 to 9.</p>
+        <div class="pips" id="pipsTop" style="margin-bottom:6px"></div>
+        <div class="pips" id="pipsBot"></div>
+
+        <div class="steprow" style="margin-top:22px">
+          <span class="stepnum">2</span><span style="font-weight:800;font-size:15px;letter-spacing:-.01em">Predict the Average</span>
+        </div>
+        <p class="dim" style="margin:7px 0 4px;font-size:12.5px;line-height:1.5">
+          What will every other A&amp;R average it at? The closer you land, the more you score.
+          <b style="color:var(--ink);font-weight:700">Evaluations are final.</b></p>
+        <div class="mono" id="predVal" style="font-size:36px;font-weight:700;text-align:center;color:var(--signal);margin:8px 0 2px">4.5</div>
+        <input type="range" id="pred" min="0" max="9" step="0.1" value="4.5">
+        <button class="btn" id="btnLock" style="margin-top:18px" disabled>Lock it in</button>
+        <div class="err" id="voteErr" style="font-size:13px;margin-top:8px"></div>
+      </div>
+
+      <!-- LOCKED: their own answers, then the composer, then advance. -->
+      <div id="qLocked" class="hide">
+        <div class="myvote" style="margin-top:18px">
+          <div><div class="stat-k mono eyebrow" style="font-size:9.5px;letter-spacing:.15em">You rated</div>
+            <div class="mono" id="myTaste" style="font-size:24px;font-weight:700;margin-top:4px"></div></div>
+          <div><div class="stat-k mono eyebrow" style="font-size:9.5px;letter-spacing:.15em">You predicted</div>
+            <div class="mono" id="myPredict" style="font-size:24px;font-weight:700;margin-top:4px;color:var(--signal)"></div></div>
+        </div>
+
+        <!-- #cmtSlot is where the ONE composer node gets moved to. See cmtMoveTo(). -->
+        <div id="cmtSlotLocked" style="margin-top:16px"></div>
+
+        <div style="display:flex;gap:9px;margin-top:14px" id="qLinks"></div>
+
+        <button class="btn outline" id="btnNext" style="margin-top:11px">
+          <span id="btnNextLabel">Next record</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+
+        <div class="sealed-note" style="margin-top:16px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          <span class="mono" id="sealNote" style="font-size:10.5px;letter-spacing:.06em;color:var(--ink-dim)"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DONE: the day is finished. Deliberately not a dead end — "nothing to do" now
+       arrives every day, just much later, so this screen has to answer what happens next. -->
+  <section id="screen-done" class="stack hide">
+    <div class="panel" style="text-align:center">
+      <div class="eyebrow" id="doneDay"></div>
+      <h2 style="font-size:23px;margin-top:6px" id="doneHead"></h2>
+      <div class="mono hide" id="doneBonus" style="font-size:62px;font-weight:700;line-height:1.05;color:var(--gold);margin-top:12px"></div>
+      <div class="dim" id="doneBonusSub" style="font-size:13.5px"></div>
+      <div class="rule" style="margin:20px 0 16px"></div>
+      <div id="doneTiers" style="text-align:left"></div>
+      <div class="note" id="doneNext" style="text-align:left;margin-top:18px"></div>
+      <button class="btn ghost" id="btnReview" style="margin-top:16px">Review my evaluations</button>
+    </div>
+  </section>
+
+  <!-- SEALED: rated, tallying, results not out. -->
+  <section id="screen-sealed" class="center stack hide">
+    <div class="panel stack" style="text-align:center">
+      <div class="eyebrow" id="sealedDay"></div>
+      <h2 style="font-size:24px;margin:4px 0 0">The window is closed.</h2>
+      <p class="dim" style="font-size:14px;line-height:1.55;margin:0" id="sealedSub"></p>
+      <button class="btn ghost" id="btnSealedReview">Review my evaluations</button>
+    </div>
+  </section>
+
+  <!-- RECAP: results published. -->
+  <section id="screen-recap" class="stack hide">
+    <div>
+      <h1 style="font-weight:900;font-size:31px;line-height:1.02;letter-spacing:-.04em">How close you got.</h1>
+      <p class="dim" style="margin:9px 0 0;font-size:14px;line-height:1.5" id="recapSub"></p>
+    </div>
+    <div class="stats" id="recapStats"></div>
+    <div>
+      <div class="section-head" style="margin-bottom:12px"><span class="tick"></span>
+        <span class="eyebrow">Record by record</span></div>
+      <div id="recapRows"></div>
+    </div>
+    <!-- Home, not /daily: today's drop is a DIFFERENT session id, and this page only knows
+         yesterday's. The homepage already resolves whichever drop is open. -->
+    <a class="btn" id="btnRecapNext" href="/">Today's records are open</a>
+  </section>
+
+  <div class="endorse">
+    <span class="mono" style="font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)">A Makin' It property</span>
+  </div>
+</div>
+
+<!-- THE COMPOSER LIVES OUTSIDE EVERY SCREEN.
+     It is ONE DOM node that gets appendChild-moved into whichever slot is on screen
+     (play.html:589/1697 is the precedent), so the textarea's value, caret, focus and
+     scroll position all survive a screen transition. Re-rendering it as markup would
+     eat half-typed work at exactly the moment someone is mid-sentence, which is the
+     fastest way to teach people not to bother writing one. -->
+<div id="cmtBox" class="composer hide">
+  <div style="font-weight:800;font-size:14.5px;letter-spacing:-.01em">Send the artist a note</div>
+  <p class="dim" style="margin:6px 0 11px;font-size:12.5px;line-height:1.5" id="cmtPrompt">
+    What did you hear? They get it with your name on it.</p>
+  <textarea id="cmtText" rows="4" placeholder="Optional. Your name goes to the artist with it."></textarea>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px">
+    <span class="mono" id="cmtCount" style="font-size:11px;color:var(--ink-dim)"></span>
+    <button class="btn sm" id="cmtSave">Send to artist</button>
+  </div>
+  <div class="err" id="cmtErr" style="font-size:12.5px;margin-top:6px"></div>
+</div>
+
+<script src="/auth.js?v=1"></script>
+<script>
+const {$, SID, track, getToken, clearToken, api, apiRaw, tryAccountRegister} = window.ANRAuth;
+
+let ST = null;                 // the last player state
+let qRounds = [];              // the day, in THIS A&R's order
+let qIndex = 0;                // where they are in it
+let qRoundId = null;           // the record the inputs are currently bound to
+let chosenTaste = null, predict = 4.5, predictTouched = false;
+let played = Object.create(null);   // per-record "I opened the link" — session-scoped only
+let COMMENT_MAX = 500;         // replaced from the server payload; never a second source of truth
+let reviewing = false;         // they asked to walk a finished day again; see startReview()
+
+function show(id){
+  ['account','email','code','waiting','queue','done','sealed','recap']
+    .forEach(s => { const el = $('#screen-'+s); if(el) el.classList.toggle('hide', s !== id); });
+}
+
+/* ---------------------------------------------------------------------------
+   DRAFTS. A half-written comment is authored prose, so it gets a localStorage
+   mirror where an unsent draft outranks the server copy. A half-set DIAL does
+   NOT get one: an unsubmitted rating is one navigation away from being
+   submitted against the wrong record.
+   --------------------------------------------------------------------------- */
+// Draft keys are SESSION-SCOPED ('anr_cmt_<sessionId>_<roundId>'). A flat shared namespace
+// meant whichever surface pruned last destroyed the other's unsent drafts — a live show
+// wiping the day's, or the day wiping a live show's. Each surface deletes only inside its
+// own prefix now.
+const CMT_PREFIX = 'anr_cmt_' + (SID || '') + '_';
+const cmtKey = r => CMT_PREFIX + r;
+function cmtDraftGet(r){ try{ return localStorage.getItem(cmtKey(r)) || ''; }catch(e){ return ''; } }
+function cmtDraftSet(r,v){ try{ v ? localStorage.setItem(cmtKey(r),v) : localStorage.removeItem(cmtKey(r)); }catch(e){} }
+
+// Prune drafts for records that are no longer in the day, so they don't accumulate forever.
+//
+// play.html's version keeps exactly ONE key — correct for a live show with one round in
+// play, and catastrophic here, where it would destroy the other fifteen drafts on the first
+// advance. Three details are load-bearing:
+//   * `keep` is a SET of every record in the day, not the current one
+//   * it returns early on an empty set — running before the day has loaded would otherwise
+//     wipe every draft this session has
+//   * the set is built from STRINGS, because the sliced key is a string and a
+//     number/string mismatch would match nothing and therefore delete everything
+function cmtPruneDrafts(){
+  const keep = new Set(qRounds.map(r => String(r.id)));
+  if(!keep.size) return;
+  try{
+    for(let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(CMT_PREFIX) === 0 && !keep.has(k.slice(CMT_PREFIX.length))) localStorage.removeItem(k);
+    }
+  }catch(e){}
+}
+
+// Move the ONE composer node into a slot. Never re-created, never re-rendered.
+function cmtMoveTo(slotId){
+  const box = $('#cmtBox'), slot = $('#'+slotId);
+  if(!box || !slot) return;
+  if(box.parentNode !== slot) slot.appendChild(box);
+}
+
+function cmtBind(round){
+  const box = $('#cmtBox'), ta = $('#cmtText');
+  box.classList.remove('hide');
+  ta.maxLength = COMMENT_MAX;
+  const draft = cmtDraftGet(round.id);
+  // An unsent draft beats the saved copy — it is the newer thing they wrote.
+  ta.value = draft || round.myComment || '';
+  // The prompt ECHOES the artist's ask when there is one. "They asked about the mix. What
+  // did you hear?" is an answer to a question; the generic version is just a comment box.
+  $('#cmtPrompt').textContent = round.artist_note
+    ? 'They told you how this record was made. What did you hear?'
+    : 'What did you hear? They get it with your name on it.';
+  $('#cmtErr').textContent = '';
+  cmtPaintCount();
+}
+function cmtPaintCount(){
+  const ta = $('#cmtText');
+  const dirty = qRoundId != null && cmtDraftGet(qRoundId) && cmtDraftGet(qRoundId) !== (currentRound()||{}).myComment;
+  $('#cmtCount').textContent = (dirty && ta.value ? 'Draft saved · ' : '') + ta.value.length + ' / ' + COMMENT_MAX;
+}
+$('#cmtText').oninput = () => { if(qRoundId != null) cmtDraftSet(qRoundId, $('#cmtText').value); cmtPaintCount(); };
+$('#cmtSave').onclick = async () => {
+  const r = currentRound(); if(!r) return;
+  const body = $('#cmtText').value.trim();
+  $('#cmtErr').textContent = ''; $('#cmtSave').disabled = true;
+  try{
+    const d = await api('/api/comment', { roundId: r.id, body });
+    r.myComment = d.body || '';
+    cmtDraftSet(r.id, '');                 // saved: the mirror has nothing left to protect
+    $('#cmtSave').textContent = 'Sent';
+    setTimeout(() => { $('#cmtSave').textContent = 'Send to artist'; }, 1600);
+    cmtPaintCount();
+  }catch(e){ $('#cmtErr').textContent = e.message; }
+  $('#cmtSave').disabled = false;
+};
+
+/* --------------------------------------------------------------------------- */
+
+function currentRound(){ return qRounds[qIndex] || null; }
+
+// The play link is artist-supplied, so the protocol is validated HERE before it is ever
+// written to an href — `javascript:` is XSS regardless of what the server promises.
+function safeHttpUrl(u){
+  if(!u) return null;
+  try{ const p = new URL(u, location.href); return (p.protocol === 'http:' || p.protocol === 'https:') ? p.href : null; }
+  catch(e){ return null; }
+}
+
+// Build the 0-9 dial once. The click handler scopes to THIS dial's container rather than
+// document.querySelectorAll('.pip') — there is one dial on this page and it stays that way.
+(function buildPips(){
+  for(let n = 0; n <= 9; n++){
+    const el = document.createElement('div');
+    el.className = 'pip'; el.textContent = n; el.dataset.n = n;
+    el.onclick = () => {
+      chosenTaste = n;
+      $('#screen-queue').querySelectorAll('.pip').forEach(p => p.classList.toggle('on', +p.dataset.n === n));
+      maybeEnableLock();
+    };
+    (n <= 4 ? $('#pipsTop') : $('#pipsBot')).appendChild(el);
+  }
+})();
+$('#pred').oninput = e => {
+  predict = parseFloat(e.target.value); predictTouched = true;
+  $('#predVal').textContent = predict.toFixed(1); maybeEnableLock();
+};
+function maybeEnableLock(){ $('#btnLock').disabled = !(chosenTaste !== null && predictTouched); }
+
+// THE RESET EDGE. This is the ONLY thing that clears the inputs, and it fires only when the
+// bound record actually changes. If a render reset unconditionally, a background refetch
+// would wipe a half-set dial mid-thought — the same class of bug the 030 buzzer comment
+// warns about. qPaint() below must therefore stay idempotent.
+function resetVoteInputs(){
+  chosenTaste = null; predict = 4.5; predictTouched = false;
+  $('#screen-queue').querySelectorAll('.pip').forEach(p => p.classList.remove('on'));
+  $('#pred').value = 4.5; $('#predVal').textContent = '4.5';
+  $('#voteErr').textContent = '';
+  maybeEnableLock();
+}
+
+function qShow(i){
+  if(!qRounds.length) return;
+  qIndex = Math.max(0, Math.min(i, qRounds.length - 1));
+  const r = currentRound();
+  if(r.id !== qRoundId){          // <- the guard. Round id and nothing else.
+    qRoundId = r.id;
+    resetVoteInputs();
+    $('#qReportBox').classList.add('hide');
+    cmtBind(r);
+  }
+  qPaint();
+}
+
+function qPaint(){
+  const r = currentRound(); if(!r) return;
+  const total = qRounds.length;
+  const locked = !!r.voted, reported = !!r.myReport;
+
+  $('#qPos').textContent = 'Record ' + (qIndex + 1) + ' / ' + total;
+  $('#qTitle').textContent = r.song_title || 'Untitled';
+  $('#qArtist').textContent = r.song_artist || '';
+
+  // rail: the segments are the navigation control
+  const rail = $('#rail');
+  rail.textContent = '';
+  qRounds.forEach((x, i) => {
+    const b = document.createElement('button');
+    b.className = 'seg' + (i === qIndex ? ' now' : (x.voted ? ' done' : (x.myReport ? ' reported' : '')));
+    b.setAttribute('aria-label', 'Record ' + (i + 1));
+    b.onclick = () => qShow(i);
+    rail.appendChild(b);
+  });
+  $('#btnPrev').disabled = total < 2;
+  $('#btnNextTop').disabled = total < 2;
+
+  // play link. Once opened it demotes to a ghost, which IS the "you've heard it" signal
+  // and keeps one primary per view — so the green primary becomes the advance button.
+  const href = safeHttpUrl(r.play_url);
+  const a = $('#qPlay'), heard = !!played[r.id];
+  if(href){
+    a.classList.remove('hide'); $('#qNoLink').classList.add('hide');
+    a.href = href;
+    a.className = 'btn' + (heard || locked ? ' ghost' : '');
+    $('#qPlayLabel').textContent = heard || locked ? 'Play again' : 'Play the record';
+    $('#qPlayHint').classList.toggle('hide', heard || locked);
+    $('#qHeard').classList.toggle('hide', !(heard && !locked));
+  }else{
+    a.classList.add('hide'); a.removeAttribute('href');
+    $('#qNoLink').classList.remove('hide');
+    $('#qPlayHint').classList.add('hide'); $('#qHeard').classList.add('hide');
+  }
+
+  // report
+  const reportsLeft = (ST && ST.progress && ST.progress.reportsLeft) || 0;
+  $('#qFlagged').classList.toggle('hide', !reported);
+  $('#qReportRow').classList.toggle('hide', reported || locked || reportsLeft <= 0);
+
+  // the artist's note, above the rating, as what they want listened for
+  $('#qNoteBox').classList.toggle('hide', !r.artist_note);
+  if(r.artist_note) $('#qNote').textContent = r.artist_note;
+
+  $('#qRate').classList.toggle('hide', locked || reported);
+  $('#qLocked').classList.toggle('hide', !locked);
+
+  if(locked){
+    $('#myTaste').textContent = r.myVote ? r.myVote.taste : '—';
+    $('#myPredict').textContent = r.myVote ? Number(r.myVote.predict).toFixed(1) : '—';
+    cmtMoveTo('cmtSlotLocked');
+    // Public promotional links only, and each renders only when its own link exists —
+    // a dead Follow button is worse than no button. They sit AFTER the lock, deliberately:
+    // a follower count seen before rating is outside signal, and once the vote is immutable
+    // it cannot bias anything.
+    const links = $('#qLinks'); links.textContent = '';
+    const add = (href2, label, svg) => {
+      const el = document.createElement('a');
+      el.className = 'btn outline'; el.target = '_blank'; el.rel = 'noopener'; el.href = href2;
+      el.style.flex = '1'; el.style.padding = '12px 8px'; el.style.fontSize = '13px';
+      el.innerHTML = svg; el.appendChild(document.createTextNode(label));
+      links.appendChild(el);
+    };
+    const ig = r.artist_instagram ? safeHttpUrl('https://instagram.com/' + String(r.artist_instagram).replace(/^@/, '')) : null;
+    if(ig) add(ig, 'Follow', '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>');
+    const prof = safeHttpUrl(r.artist_profile_url);
+    if(prof) add(prof, 'Artist profile', '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>');
+    links.classList.toggle('hide', !links.childElementCount);
+
+    const left = qRounds.filter(x => !x.voted && !x.myReport).length;
+    $('#btnNextLabel').textContent = left ? 'Next record' : 'See my day';
+    $('#sealNote').textContent = ST && ST.async && ST.async.closesLabel
+      ? ('NO RESULTS UNTIL ' + ST.async.closesLabel.toUpperCase())
+      : 'NO RESULTS UNTIL THE WINDOW CLOSES';
+  }
+}
+
+// Advance to the next record that is neither rated nor reported, WRAPPING rather than
+// finishing early. A completion screen with three unrated records is a lie that costs
+// someone a bonus, so "done" is only ever reached when nothing is left.
+function qAdvance(){
+  const n = qRounds.length;
+  for(let k = 1; k <= n; k++){
+    const j = (qIndex + k) % n;
+    if(!qRounds[j].voted && !qRounds[j].myReport) return qShow(j);
+  }
+  reviewing = false;   // "See my day" is also the way OUT of review mode
+  render();            // nothing left — let the state decide, which flips to 'done'
+}
+$('#btnNext').onclick = qAdvance;
+$('#btnNextTop').onclick = () => qShow((qIndex + 1) % qRounds.length);
+$('#btnPrev').onclick = () => qShow((qIndex - 1 + qRounds.length) % qRounds.length);
+
+// LOCK IN. No confirm dialog (there would be sixteen of them) and NO AUTO-ADVANCE: it
+// would scroll straight past the composer and quietly kill the note feature.
+$('#btnLock').onclick = async () => {
+  const r = currentRound(); if(!r || chosenTaste === null || !predictTouched) return;
+  $('#btnLock').disabled = true; $('#voteErr').textContent = '';
+  const out = await apiRaw('/api/vote', { roundId: r.id, taste: chosenTaste, predict });
+  if(out.status >= 200 && out.status < 300){
+    track('vote_locked', { poll_type: 'rating', mode: 'async' });
+    // Patch locally rather than waiting on a refetch — the composer is about to appear
+    // and it must not flicker through an unlocked state on the way.
+    r.voted = true; r.myVote = { taste: chosenTaste, predict };
+    if(out.data.progress) ST.progress = Object.assign({}, ST.progress, out.data.progress);
+    if(out.data.bonus) ST.progress.earned = out.data.bonus;
+    qPaint();
+    refresh();
+    return;
+  }
+  $('#voteErr').textContent = (out.data && out.data.error) || 'Something went wrong';
+  $('#btnLock').disabled = false;
+};
+
+// REPORT. A reported record counts as handled for the completion bonus, so it is capped
+// server-side; the button simply disappears once there are none left.
+$('#btnReport').onclick = () => { $('#qReportBox').classList.remove('hide'); $('#qReportRow').classList.add('hide'); $('#repErr').textContent = ''; };
+$('#btnRepCancel').onclick = () => { $('#qReportBox').classList.add('hide'); $('#qReportRow').classList.remove('hide'); };
+async function sendReport(reason){
+  const r = currentRound(); if(!r) return;
+  $('#repErr').textContent = '';
+  const out = await apiRaw('/api/report-round', { roundId: r.id, reason });
+  if(out.status >= 200 && out.status < 300){
+    r.myReport = reason;
+    if(out.data.progress) ST.progress = Object.assign({}, ST.progress, out.data.progress);
+    $('#qReportBox').classList.add('hide');
+    qPaint();
+    refresh();
+    return;
+  }
+  $('#repErr').textContent = (out.data && out.data.error) || 'Something went wrong';
+}
+$('#btnRepBroken').onclick = () => sendReport('not_playable');
+$('#btnRepOther').onclick = () => sendReport('other');
+$('#qPlay').onclick = () => { const r = currentRound(); if(r){ played[r.id] = true; setTimeout(qPaint, 0); } };
+
+// Going back over the day is a deliberate state, not a transient screen swap: without the
+// flag the next background refresh would yank them back to the summary mid-read.
+function startReview(){ if(!qRounds.length) return; reviewing = true; qShow(0); show('queue'); }
+$('#btnReview').onclick = startReview;
+$('#btnSealedReview').onclick = startReview;
+
+/* ---- rendering the whole surface from a state payload ---- */
+function render(){
+  const st = ST; if(!st) return;
+  const pr = st.progress || {}, as = st.async || {};
+
+  // Standing stays on screen, because this is still a competition. Points only during the
+  // walk: a RANK would mean a board scan on every poll, and buildRecap already computes
+  // one for free once the day publishes — so the rank appears on the scorecard instead.
+  const sd = $('#standing');
+  if(st.myTotalPoints != null){
+    sd.classList.remove('hide');
+    sd.innerHTML = (st.rank ? '<b>#' + st.rank + '</b> · ' : '')
+      + Number(st.myTotalPoints).toLocaleString() + ' PTS';
+  }else sd.classList.add('hide');
+
+  // the tier bar. Every string here came from the server.
+  const tb = $('#tierBar');
+  if(pr.eligible && pr.nextTierPoints && !pr.earned){
+    tb.classList.remove('hide');
+    $('#tierPts').textContent = '+' + pr.nextTierPoints;
+    $('#tierUntil').textContent = pr.nextTierLabel ? ('until ' + pr.nextTierLabel) : '';
+  }else tb.classList.add('hide');
+
+  if(st.phase === 'waiting'){
+    $('#waitDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
+    $('#waitSub').textContent = as.opensLabel
+      ? ('Today’s records open at ' + as.opensLabel + '. Rate every one before the window closes and you earn a completion bonus on top of what you score.')
+      : 'Today’s records are not open yet.';
+    show('waiting'); return;
+  }
+
+  qRounds = Array.isArray(st.queue) ? st.queue : [];
+  cmtPruneDrafts();
+
+  if(st.phase === 'recap'){ renderRecap(st); show('recap'); return; }
+
+  // Review mode outranks the summary screens, so a poll landing mid-read does not snatch
+  // the page back. Only 'See my day' (or a phase change to recap) leaves it.
+  if(reviewing && (st.phase === 'done' || st.phase === 'sealed') && qRounds.length){
+    qShow(qRounds.some(r => r.id === qRoundId) ? qRounds.findIndex(r => r.id === qRoundId) : 0);
+    show('queue'); return;
+  }
+
+  if(st.phase === 'sealed'){
+    $('#sealedDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
+    $('#sealedSub').textContent = as.resultsWhen
+      ? ('Everything is being tallied. Results land ' + as.resultsWhen + ', and so does the next drop.')
+      : 'Everything is being tallied. Results and the next drop land together.';
+    show('sealed'); return;
+  }
+
+  if(st.phase === 'done'){ renderDone(st); show('done'); return; }
+
+  // queue: land on the first unhandled record, unless they are already reading one
+  if(!qRoundId || !qRounds.some(r => r.id === qRoundId)){
+    const first = qRounds.findIndex(r => !r.voted && !r.myReport);
+    qShow(first >= 0 ? first : 0);
+  }else{
+    qShow(qRounds.findIndex(r => r.id === qRoundId));
+  }
+  show('queue');
+}
+
+function renderDone(st){
+  const pr = st.progress || {}, as = st.async || {};
+  $('#doneDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
+  $('#doneHead').textContent = 'All ' + pr.total + ' record' + (pr.total === 1 ? '' : 's') + ' evaluated';
+  // Gold, and gold ONLY here: this number is money the A&R has actually been paid.
+  const b = $('#doneBonus');
+  if(pr.earned){ b.classList.remove('hide'); b.textContent = '+' + pr.earned;
+    $('#doneBonusSub').textContent = 'Completion bonus'; }
+  else{ b.classList.add('hide');
+    $('#doneBonusSub').textContent = pr.eligible ? '' : 'Too few records today for a completion bonus.'; }
+
+  const tiers = $('#doneTiers'); tiers.textContent = '';
+  (as.tiers || []).forEach((t, i, arr) => {
+    const row = document.createElement('div');
+    const earnedThis = pr.earned === t.points;
+    row.style.cssText = 'display:flex;justify-content:space-between;padding:9px 0;font-size:13.5px'
+      + (i < arr.length - 1 ? ';border-bottom:1px solid var(--line)' : '')
+      + (earnedThis ? '' : ';color:var(--ink-dim)');
+    const l = document.createElement('span'); l.textContent = t.label ? ('Before ' + t.label) : 'Before the window closes';
+    const v = document.createElement('span'); v.className = 'mono'; v.textContent = '+' + t.points;
+    if(earnedThis) v.style.color = 'var(--gold)';
+    row.appendChild(l); row.appendChild(v); tiers.appendChild(row);
+  });
+
+  $('#doneNext').textContent = as.resultsWhen
+    ? ('Results land ' + as.resultsWhen + ', and so does the next drop.')
+    : 'Results and the next drop land together.';
+}
+
+function renderRecap(st){
+  const rc = st.recap || {};
+  $('#recapSub').textContent = (rc.totalRounds != null ? rc.totalRounds : (st.queue || []).length)
+    + ' records. Here is where you landed.';
+  const stats = $('#recapStats'); stats.textContent = '';
+  const stat = (k, v, color) => {
+    const d = document.createElement('div'); d.className = 'stat';
+    const kk = document.createElement('div'); kk.className = 'k'; kk.textContent = k;
+    const vv = document.createElement('div'); vv.className = 'v'; vv.textContent = v;
+    if(color) vv.style.color = color;
+    d.appendChild(kk); d.appendChild(vv); stats.appendChild(d);
+  };
+  stat('Points', rc.totalPoints != null ? rc.totalPoints : '—', 'var(--signal)');
+  stat('Grade', rc.grade || '—');
+  // Rank 1 is the one place a rank goes gold — first place, per the colour rule.
+  stat('Rank', rc.rank ? ('#' + rc.rank) : '—', rc.rank === 1 ? 'var(--gold)' : null);
+
+  const rows = $('#recapRows'); rows.textContent = '';
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex;gap:10px;padding:0 2px 8px';
+  [['Record', 'flex:1'], ['You', 'width:30px;text-align:center'], ['Guess', 'width:34px;text-align:center'],
+   ['Avg', 'width:34px;text-align:center'], ['Pts', 'width:42px;text-align:right']].forEach(([t, css]) => {
+    const s = document.createElement('span'); s.className = 'mono';
+    s.style.cssText = css + ';font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)';
+    s.textContent = t; head.appendChild(s);
+  });
+  rows.appendChild(head);
+  (rc.rounds || []).forEach(r => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;align-items:center;padding:11px 2px;border-top:1px solid var(--line)';
+    const left = document.createElement('div'); left.style.cssText = 'flex:1;min-width:0';
+    const t = document.createElement('div');
+    t.style.cssText = 'font-size:14px;font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    t.textContent = r.song_title || '';
+    const a = document.createElement('div');
+    a.style.cssText = 'font-size:11.5px;color:var(--ink-dim);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    a.textContent = r.song_artist || '';
+    left.appendChild(t); left.appendChild(a); row.appendChild(left);
+    const cell = (v, css, bold) => {
+      const s = document.createElement('span'); s.className = 'mono';
+      s.style.cssText = css + ';font-size:13.5px' + (bold ? ';font-weight:700' : ';color:var(--ink-dim)');
+      s.textContent = v; row.appendChild(s);
+    };
+    cell(r.taste != null ? r.taste : '—', 'width:30px;text-align:center');
+    cell(r.predict != null ? Number(r.predict).toFixed(1) : '—', 'width:34px;text-align:center');
+    cell(r.room_average != null ? Number(r.room_average).toFixed(1) : '—', 'width:34px;text-align:center', true);
+    const pts = document.createElement('span'); pts.className = 'mono';
+    const p = Number(r.points) || 0;
+    pts.style.cssText = 'width:42px;text-align:right;font-size:13.5px;font-weight:700;color:'
+      + (r.tier === 'bullseye' ? 'var(--signal)' : (p < 50 ? 'var(--ink-dim)' : 'var(--ink)'));
+    pts.textContent = (p >= 0 ? '+' : '') + p;
+    row.appendChild(pts);
+    rows.appendChild(row);
+  });
+  if(rc.completionBonus){
+    const foot = document.createElement('div');
+    foot.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:13px 2px 0;border-top:1px solid var(--line);margin-top:2px';
+    const l = document.createElement('span'); l.style.cssText = 'font-weight:800;font-size:14px';
+    l.textContent = 'Completion bonus';
+    const v = document.createElement('span'); v.className = 'mono';
+    v.style.cssText = 'font-size:15px;font-weight:700;color:var(--gold)';
+    v.textContent = '+' + rc.completionBonus;
+    foot.appendChild(l); foot.appendChild(v); rows.appendChild(foot);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   POLLING. Deliberately NO Ably: a realtime connection per user per day is a paid
+   connection that delivers nothing an async participant needs — nothing on a drop
+   changes on a two-second timescale. A five-minute safety net, a throttled
+   refresh when the tab comes back, and a refresh after each write.
+   --------------------------------------------------------------------------- */
+const POLL_MS = 5 * 60 * 1000;
+let polling = false, lastFetch = 0;
+async function refresh(){
+  try{
+    const d = await api('/api/me/state', null, 'GET');
+    lastFetch = Date.now();
+    ST = d;
+    if(d.commentMax) COMMENT_MAX = d.commentMax;
+    if(d.mode !== 'async'){ location.replace('/play?s=' + encodeURIComponent(SID)); return; }
+    render();
+  }catch(e){
+    // An auth failure means the token is dead; anything else is transient and the
+    // next tick will pick it up.
+    if(/auth/i.test(e.message)){ clearToken(); location.reload(); }
+  }
+}
+function startPolling(){
+  if(polling) return; polling = true;
+  refresh();
+  setInterval(refresh, POLL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible' && Date.now() - lastFetch > 30000) refresh();
+  });
+}
+
+window.ANRAuth.configure({
+  show,
+  onJoined: () => startPolling(),
+  accountCopy: (info) => ({
+    eyebrow: 'A&R Daily',
+    title: (info && info.name) || 'Today’s records',
+    sub: 'Rate today’s records, predict what everyone else will average them at, and score on how close you land.',
+    cta: 'Start rating',
+  }),
+});
+window.ANRAuth.renderAuthScreens('#authHost');
+window.ANRAuth.bindJoinHandlers();
+
+// boot
+(async function(){
+  if(!SID){ location.replace('/'); return; }
+  let info = null;
+  try{
+    info = await fetch('/api/session/info?s=' + encodeURIComponent(SID)).then(r => r.ok ? r.json() : Promise.reject(r.status));
+    // A live-show link opened here belongs on the broadcast page, and vice versa — the
+    // two surfaces are different products, so send them where they were going.
+    if(info && info.mode !== 'async'){ location.replace('/play?s=' + encodeURIComponent(SID)); return; }
+  }catch(e){
+    if(e === 404){ location.replace('/'); return; }
+  }
+  if(getToken()) startPolling();
+  else if(localStorage.getItem('rt_auth_token')) await tryAccountRegister(info);
+  else show('email');
+})();
+</script>
+</body>
+</html>

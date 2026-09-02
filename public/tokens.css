@@ -1,13 +1,17 @@
 /* ============================================================
-   The A&R Room — design tokens (single source of truth)
+   The A&R Team — design tokens (single source of truth)
+   (The app is The A&R Team; A&R Room is the weekly broadcast.)
    Generated from the Design System unification (docs/design-system/).
    Every surface links this BEFORE its own <style>. New code uses
    the canonical names; the legacy aliases exist only so shipped
    CSS keeps working — don't reach for them in new work.
    ============================================================ */
 :root{
-  /* Foundation */
-  --bg:#0d0b16;
+  /* Foundation. --bg, --ink and --ink-dim moved a hair to the brand system's exact
+     values (#0E0C1A / #EAE9F2 / #9793B4) so every surface grounds identically — they
+     were the only three tokens that drifted; signal, accent, gold, hot, panel and line
+     already matched the brand exactly. */
+  --bg:#0E0C1A;
   --panel:#171328;
   --panel-2:#1d1733;
   --line:#2e2750;
@@ -15,8 +19,8 @@
 
   /* Ink. --ink-faint was #6f688f (≈3.3:1 on panel — under WCAG AA for the small
      hint text it's used on); lifted to the overlay dialect's value, ≈4.5:1. */
-  --ink:#f3f0fb;
-  --ink-dim:#a9a2c9;
+  --ink:#EAE9F2;
+  --ink-dim:#9793B4;
   --ink-faint:#8c84ad;
 
   /* Signal — THE green */
@@ -26,7 +30,12 @@
 
   /* Accents */
   --accent:#6d5fe0;           /* THE purple */
-  --gold:#f5c518;             /* THE warm accent (host/system attention, rank #1) */
+  /* Gold means MONEY AND FIRST PLACE, and nothing else: the $500, the $150, rank 1,
+     a winner reveal, a bonus a player is actually paid. It used to be documented as
+     "the warm accent (host/system attention)", which is exactly the usage that erodes
+     it — once gold is also "look here", it stops reading as the prize. New surfaces
+     hold the strict rule; existing gold usages get audited in the brand pass. */
+  --gold:#F5C518;
   --hot:#ff5d6c;
   --on-hot:#2a0a0e;
 
