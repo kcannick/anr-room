@@ -1619,7 +1619,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const walkA = dState.queue.map(q => q.id).join(), walkB = dState2.queue.map(q => q.id).join();
   const dStateAgain = (await call('/api/me/state', null, 'GET', DH1)).d;
   ok('the same A&R gets a stable order across requests (resume works)', dStateAgain.queue.map(q => q.id).join() === walkA);
-  ok('a different A&R walks a different order', walkA !== walkB, walkA + ' vs ' + walkB);
+  // The per-A&R ordering is asserted DETERMINISTICALLY below, against the pure function with
+  // fixed seeds. Asserting it here on two live participants was flaky by construction: on a
+  // 4-record day there are only 24 permutations, so two random participant ids collide about
+  // 4% of the time — and a suite whose invariant is "0 failed" cannot afford a test that
+  // fails one run in twenty-five for a reason that is not a bug.
+  const fakeRounds = Array.from({ length: 8 }, (_, i) => ({ id: 'r' + i, idx: i + 1 }));
+  const orderFor = (uid) => require('./server')._asyncQueueOrder(uid, 'sess-fixed', fakeRounds).map(r => r.id).join(',');
+  const walks = new Set(['userA', 'userB', 'userC', 'userD'].map(orderFor));
+  ok('a different A&R walks a different order', walks.size > 1, JSON.stringify([...walks]));
+  ok('and the same A&R walks the same one every time (resume is free, nothing is stored)',
+    orderFor('userA') === orderFor('userA') && walkA === dStateAgain.queue.map(q => q.id).join());
 
   // The vote path: explicit roundId, scoped to the caller's own day.
   const noId = await call('/api/vote', { taste: 7, predict: 6.5 }, 'POST', DH1);
@@ -2012,9 +2022,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
     !/@/.test(JSON.stringify(handOk.d)), JSON.stringify(handOk.d));
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), handSess.id]);
 
-  const noDrop = (await call('/api/admin/daily/status?day=2029-01-01', null, 'GET', BOOTH)).d;
+  // NO drop at all is an incident — Drupal has not pushed and A&Rs open the app to nothing.
+  const noDrop = (await call('/api/admin/daily/status', null, 'GET', BOOTH)).d;
   ok('a day with no drop reads as an incident, not an empty state',
     noDrop.drop === null && /nothing/i.test(noDrop.message || ''), JSON.stringify(noDrop));
+
+  // An explicitly PICKED day that has no drop is a different fact and must not wear the same
+  // alarm: nothing is wrong with the show, the operator chose a day that was never built.
+  const pickedGone = (await call('/api/admin/daily/status?day=2029-01-01', null, 'GET', BOOTH)).d;
+  ok('but a picked day with no drop says so instead of raising the alarm',
+    pickedGone.drop === null && !/nothing/i.test(pickedGone.message || '')
+      && /pick another day/i.test(pickedGone.message || ''), JSON.stringify(pickedGone));
 
   console.log('\n— A&R Daily: building a drop by hand, a record at a time —');
   // /daily/drop is a BATCH — right for an approved push from Drupal, wrong for a person
@@ -2072,6 +2090,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and it says whether each staged record can reach its artist, never the address itself',
     qbStat.building.rounds.every(r => 'hasEmail' in r) && !/verge@test\.com/.test(JSON.stringify(qbStat.building)),
     JSON.stringify(qbStat.building.rounds[0]));
+
+  // The day picker's data source. Without it the console can only ever show the RUNNING day,
+  // so the moment today's drop opens, yesterday's send numbers become unreachable in the UI.
+  ok('the status carries a list of recent days for the picker',
+    Array.isArray(qbStat.days) && qbStat.days.some(x => x.day === qbDay && x.state === 'scheduled'),
+    JSON.stringify(qbStat.days));
+  const pickOne = (await call('/api/admin/daily/status?day=' + qbDay, null, 'GET', BOOTH)).d;
+  ok('and picking a day off that list returns THAT day, not the running one',
+    pickOne.drop && pickOne.drop.day === qbDay && pickOne.day === qbDay,
+    JSON.stringify(pickOne.drop && pickOne.drop.day));
 
   // ONCE THE DAY OPENS, ADDING IS REFUSED. The completion bonus counts against a live
   // denominator, so a record added mid-window silently un-finishes everyone who already

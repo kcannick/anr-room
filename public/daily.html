@@ -131,10 +131,20 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 
 .fromartist{border-left:3px solid var(--signal);background:rgba(75,183,73,.06);
   border-radius:0 11px 11px 0;padding:11px 13px}
+/* margin-top, because both things above this can disappear: the "opens in a new tab" hint
+   and the "plays right here" hint are both hidden once the record has been heard, which
+   left this badge sitting flush against the player (or the button) with no gap at all. */
 .heard{display:flex;gap:9px;align-items:center;background:rgba(75,183,73,.10);
-  border:1px solid var(--signal-deep);border-radius:11px;padding:10px 12px;font-size:13px}
+  border:1px solid var(--signal-deep);border-radius:11px;padding:10px 12px;font-size:13px;
+  margin-top:11px}
 .flagged{display:flex;gap:9px;align-items:center;background:rgba(245,197,24,.08);
   border:1px solid var(--gold);border-radius:11px;padding:10px 12px;font-size:13px}
+/* The inline player. NATIVE controls deliberately: a hand-rolled transport is a pile of
+   bugs and an accessibility regression, and every browser already ships one with keyboard
+   support and a working scrub bar. color-scheme makes it render its dark variant so it sits
+   in this UI instead of glowing white in the middle of it. */
+#qAudio{width:100%;height:44px;display:block;color-scheme:dark;border-radius:11px;
+  background:var(--inset)}
 .myvote{display:flex;gap:10px}
 .myvote>div{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);
   padding:12px 8px;text-align:center}
@@ -211,8 +221,33 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
           <span id="qPlayLabel">Play the record</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.75"><path d="M7 17 17 7"/><path d="M9 7h8v8"/></svg>
         </a>
+
+        <!-- AN AUDIO FILE PLAYS HERE, IN PLACE. Everything else still opens out.
+             This is the one embedded player on the surface (operator's call, 2026-09-04,
+             narrowing the earlier "no embedded player, even for an MP3" rule), and it is
+             narrow on purpose: a streaming link CANNOT be embedded, so opening out is the
+             only option there — while for a bare audio file, opening out is the WORST
+             option. It hands the A&R a blank browser tab with a naked control bar, or, when
+             the host sends Content-Disposition: attachment, silently downloads the file and
+             plays nothing at all.
+             Playing in place also lets the page SEE a failure. A new tab cannot report back;
+             an <audio> element fires `error`, so a dead file stops being a link that looks
+             fine and starts being something the A&R is told about and can report.
+             ONE node, never re-created: its src is assigned only on the guarded round
+             change, so a background refetch cannot restart playback mid-listen — the same
+             rule the dial and the comment composer live by. -->
+        <div class="hide" id="qAudioWrap">
+          <audio id="qAudio" preload="none" controls></audio>
+          <div class="dim" id="qAudioHint" style="font-size:11.5px;text-align:center;margin-top:7px">
+            Plays right here. Nothing leaves this page.</div>
+        </div>
+
         <div class="note hide" id="qNoLink" style="text-align:center">
           This record has no working link. Report it and move on — it will not count against your day.
+        </div>
+        <div class="flagged hide" id="qAudioErr" style="margin-top:11px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+          This file will not play. Report it and move on — it will not count against your day.
         </div>
         <div class="dim" id="qPlayHint" style="font-size:11.5px;text-align:center;margin-top:7px">
           Opens in a new tab. This page stays right here.</div>
@@ -468,6 +503,19 @@ function safeHttpUrl(u){
   catch(e){ return null; }
 }
 
+// Is this a bare audio FILE rather than a page that plays one?
+// Read from the PATHNAME, never the whole string: a signed CDN link arrives as
+// ".../song.mp3?X-Amz-Signature=…", and testing the raw URL would miss every one of them.
+// Extension-based and therefore imperfect — a host serving audio from an extensionless path
+// falls through to opening out, which is the old behaviour and still works. The failure
+// direction is the safe one.
+const AUDIO_EXT = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|weba)$/i;
+function isAudioUrl(href){
+  if(!href) return false;
+  try{ return AUDIO_EXT.test(new URL(href, location.href).pathname); }
+  catch(e){ return false; }
+}
+
 // Build the 0-9 dial once. The click handler scopes to THIS dial's container rather than
 // document.querySelectorAll('.pip') — there is one dial on this page and it stays that way.
 (function buildPips(){
@@ -500,6 +548,47 @@ function resetVoteInputs(){
   maybeEnableLock();
 }
 
+/* ---------------------------------------------------------------------------
+   THE INLINE PLAYER.
+   One <audio> node for the whole walk, exactly like the comment composer is one
+   textarea. Its src is set HERE — from the guarded round change and nowhere else
+   — so qPaint() stays idempotent and a background refetch can never yank a
+   record back to 0:00 while someone is halfway through listening to it.
+   Advancing pauses the outgoing record first: without that, record 3 keeps
+   playing over record 4's card.
+   --------------------------------------------------------------------------- */
+let audioErrored = false;
+function bindAudio(r){
+  const el = $('#qAudio');
+  const href = safeHttpUrl(r.play_url);
+  audioErrored = false;
+  try{ el.pause(); }catch(e){}
+  if(href && isAudioUrl(href)){
+    el.src = href;
+    el.load();                    // resets state; preload="none" means it fetches nothing yet
+  }else{
+    el.removeAttribute('src');
+    try{ el.load(); }catch(e){}   // stop any buffering from the record we just left
+  }
+}
+// 'playing', NOT 'play'. `play` fires on the INTENT to play, which a browser emits even for
+// a file it is about to fail on — so listening to it put "Heard it. Score it below." directly
+// above "This file will not play." `playing` only fires once audio is actually coming out.
+$('#qAudio').addEventListener('playing', () => {
+  const r = currentRound(); if(!r) return;
+  played[r.id] = true; qPaint();
+});
+// A new tab cannot tell the page that a file is dead. This can — so a broken record stops
+// being a link that merely looks fine, and the A&R is pointed at the report button.
+$('#qAudio').addEventListener('error', () => {
+  if(!$('#qAudio').getAttribute('src')) return;   // a cleared src is not a failure
+  audioErrored = true;
+  // Belt and braces with the 'playing' switch above: whatever else happened, a record whose
+  // file failed has not been heard, and must not be credited as if it had.
+  const r = currentRound(); if(r) delete played[r.id];
+  qPaint();
+});
+
 function qShow(i){
   if(!qRounds.length) return;
   qIndex = Math.max(0, Math.min(i, qRounds.length - 1));
@@ -509,6 +598,7 @@ function qShow(i){
     resetVoteInputs();
     $('#qReportBox').classList.add('hide');
     cmtBind(r);
+    bindAudio(r);                 // only on a REAL round change — see bindAudio()
   }
   qPaint();
 }
@@ -539,7 +629,20 @@ function qPaint(){
   // and keeps one primary per view — so the green primary becomes the advance button.
   const href = safeHttpUrl(r.play_url);
   const a = $('#qPlay'), heard = !!played[r.id];
-  if(href){
+  const inline = !!href && isAudioUrl(href);
+  $('#qAudioWrap').classList.toggle('hide', !inline);
+  $('#qAudioErr').classList.toggle('hide', !(inline && audioErrored));
+  if(inline){
+    // The player carries its own affordance, so there is no button to demote and no green
+    // primary competing with Lock it in. The src was set in bindAudio(); nothing here
+    // touches it, which is what keeps this function safe to call on every repaint.
+    a.classList.add('hide'); a.removeAttribute('href');
+    $('#qNoLink').classList.add('hide');
+    $('#qPlayHint').classList.add('hide');
+    $('#qAudioHint').classList.toggle('hide', heard || locked || audioErrored);
+    // Never "Heard it" on a record whose file failed — the two together read as nonsense.
+    $('#qHeard').classList.toggle('hide', !(heard && !locked && !audioErrored));
+  }else if(href){
     a.classList.remove('hide'); $('#qNoLink').classList.add('hide');
     a.href = href;
     a.className = 'btn' + (heard || locked ? ' ghost' : '');
@@ -554,6 +657,13 @@ function qPaint(){
 
   // report
   const reportsLeft = (ST && ST.progress && ST.progress.reportsLeft) || 0;
+  // Don't tell someone to report a dead file when they have no reports left — the button
+  // they'd be pointed at is not on screen.
+  if(inline && audioErrored){
+    $('#qAudioErr').lastChild.textContent = reportsLeft > 0 && !reported && !locked
+      ? ' This file will not play. Report it and move on — it will not count against your day.'
+      : ' This file will not play. Skip it and come back if it starts working.';
+  }
   $('#qFlagged').classList.toggle('hide', !reported);
   $('#qReportRow').classList.toggle('hide', reported || locked || reportsLeft <= 0);
 
