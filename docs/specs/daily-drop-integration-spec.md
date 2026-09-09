@@ -1,9 +1,9 @@
 # Integration spec — makinitmag.com → A&R Daily
 
 **Audience:** the session building the submission system on makinitmag.com (Drupal).
-**Status of the other side:** built and tested, on branch `claude/ar-async-review-mode-50b726`,
-**not yet pushed to origin**. Everything below is what the code does today; every field name,
-limit and status code was read out of `server.js`, not out of a plan.
+**Status of the other side:** **LIVE on anr.makinitmag.com** as of 2026-09-09, including the
+§12 results callback and §13 reference tracks. Everything below is what the deployed code does;
+every field name, limit and status code was read out of `server.js`, not out of a plan.
 
 **What you are integrating with:** A&R Daily — a set of 4–16 records opens at 12:00 PM ET, A&Rs
 rate each one 0–9 and predict the average, the window closes 9:00 AM ET the next day, and
