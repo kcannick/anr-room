@@ -366,6 +366,23 @@ async function freshDb() {
   const applied33 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('034 idempotent (not duplicated)', applied33.filter(x => x === '034_async_drop').length === 1, JSON.stringify(applied33));
 
+  // ── 035: reference tracks + the results callback ──────────────────────────
+  // Both nullable and defaulting to "off": every existing round is an ordinary submission
+  // and every existing day has never been pushed. If is_reference ever gains a default,
+  // every historical record silently leaves the charts.
+  const rcols35 = (await db.all('PRAGMA table_info(rounds)', [])).map(c => c.name);
+  ok('035 creates rounds.is_reference', rcols35.includes('is_reference'), JSON.stringify(rcols35));
+  const ir = (await db.all('PRAGMA table_info(rounds)', [])).find(c => c.name === 'is_reference');
+  ok('is_reference defaults to NULL (absent = an ordinary submission)', ir && ir.dflt_value == null, JSON.stringify(ir));
+  const scols35 = (await db.all('PRAGMA table_info(sessions)', [])).map(c => c.name);
+  for (const c of ['results_pushed_at', 'results_attempts', 'results_status']) {
+    ok(`035 creates sessions.${c}`, scols35.includes(c), JSON.stringify(scols35));
+  }
+  await db.init();
+  const applied35 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('035 idempotent (not duplicated)',
+    applied35.filter(x => x === '035_reference_track_and_results_callback').length === 1, JSON.stringify(applied35));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

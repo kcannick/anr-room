@@ -1,0 +1,55 @@
+-- 035_reference_track_and_results_callback.sql
+-- Two unrelated additions that share a migration only because they landed together.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- rounds.is_reference — a REFERENCE TRACK.
+--
+-- A known record from a major artist, dropped into a day by hand so A&Rs have something
+-- familiar to rate. It is fully votable and fully scored — the whole point is that people
+-- rate it, predict the average, and earn points — but it is NOT a submission under review,
+-- so it must not appear anywhere that ranks or reports on submissions:
+--   * the HOT 100 and every other chart scope
+--   * the Top 8 Songs share card (and therefore the daily Instagram carousel)
+--   * the artist Song Report queue (there is no artist to email)
+-- It is NOT excluded from anything that scores: the room average is computed normally,
+-- votes earn points normally, and it counts toward the completion-bonus denominator like
+-- any other record of the day.
+--
+-- WHY A FLAG AND NOT "no artist_email": absence of contact already skips the report, but it
+-- says nothing about the charts, and a real submission whose artist typo'd their address
+-- would be wrongly excluded from ranking. The two facts are different, so they get different
+-- columns.
+--
+-- NULL/0 = an ordinary record. Every existing row is therefore untouched, zero backfill.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- sessions.results_pushed_at / results_attempts / results_status — the results callback.
+--
+-- At publish (noon ET) the app POSTs the day's per-record outcome to makinitmag.com so the
+-- artist status page can say "reviewed by 23 A&Rs" instead of promising a report. Fired at
+-- PUBLISH, deliberately not at the 9AM tally: the day is scored at 9 but results do not
+-- reach A&Rs until noon, and handing averages to another system in that window would put
+-- the day's results on a public page three hours before the people who did the rating see
+-- them — the same seal that hides vote direction during the window.
+--
+-- Three columns because "did it go" is genuinely three questions:
+--   results_pushed_at — when it stopped needing attention (delivered, or terminally refused)
+--   results_attempts  — how many tries; the cron gives up at RESULTS_MAX_ATTEMPTS rather
+--                       than hammering a host that is down all day
+--   results_status    — 'sent' | 'unknown_day' (their 404: terminal, retrying cannot fix it)
+--                       | 'failed' (gave up). NULL = never attempted.
+-- A single timestamp cannot distinguish "delivered" from "gave up", and the operator needs
+-- to know which.
+--
+-- The callback is skipped entirely when RESULTS_CALLBACK_URL / _TOKEN are unset, so a
+-- preview deployment can never post into production Drupal.
+--
+-- All additive and nullable; nothing scales with row count; safe on the boot path.
+
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS is_reference INTEGER
+--->
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS results_pushed_at BIGINT
+--->
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS results_attempts INTEGER
+--->
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS results_status TEXT

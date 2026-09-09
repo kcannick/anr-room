@@ -2531,6 +2531,174 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('EST: 10:30 PM ET holds', server._withinSmsWindow(Date.parse('2026-01-15T03:30:00Z')) === false);
   ok('EST: 11 PM ET (show wrap) holds', server._withinSmsWindow(Date.parse('2026-01-15T04:00:00Z')) === false);
 
+  console.log('\n— A&R Daily: the reference track —');
+  // A known record from a major artist, dropped in so A&Rs have something familiar to rate.
+  // Fully votable and fully SCORED — that is the whole point — but never a submission under
+  // review, so it must not chart, must not reach the Top 8 card, and must not queue an
+  // artist report. The three exclusions are three separate queries; assert all three.
+  // Yesterday: reliably free, and comfortably inside the builder's +/-3 day typo guard at
+  // any hour (today+3 at noon can exceed it late in the evening).
+  const refDay = srv._etDay(Date.now() - 86400000);
+  const refA = await call('/api/admin/daily/round',
+    { day: refDay, title: 'Real Submission', artist: 'Indie Act', playUrl: 'https://a.co/real.mp3',
+      email: 'indie@example.com', ref: 'entry/1' }, 'POST', BOOTH);
+  ok('a hand-built day starts with an ordinary record', refA.status === 200, JSON.stringify(refA.d));
+  const refSid = refA.d.sessionId;
+  const refB = await call('/api/admin/daily/round',
+    { day: refDay, title: 'Famous Record', artist: 'Major Artist', playUrl: 'https://a.co/famous.mp3',
+      isReference: true }, 'POST', BOOTH);
+  ok('a reference track can be added by hand', refB.status === 200, JSON.stringify(refB.d));
+
+  const refRows = await dDb.all('SELECT song_title, is_reference FROM rounds WHERE session_id = ? ORDER BY idx', [refSid]);
+  ok('the flag is persisted, and only on the reference track',
+    refRows.length === 2 && !Number(refRows[0].is_reference) && Number(refRows[1].is_reference) === 1,
+    JSON.stringify(refRows));
+
+  // Score BOTH records identically, so any difference downstream is the flag and nothing else.
+  await dDb.run("UPDATE sessions SET status='live', async_state='open' WHERE id = ?", [refSid]);
+  await dDb.run("UPDATE rounds SET status='ratified', room_average = 8.0 WHERE session_id = ?", [refSid]);
+  const refPar = await dDb.get('SELECT id FROM participants LIMIT 1', []);
+  for (const r of await dDb.all('SELECT id FROM rounds WHERE session_id = ?', [refSid])) {
+    await dDb.run('INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at) VALUES (?,?,?,?,?,?)',
+      ['v_ref_' + r.id, r.id, refPar.id, 8, 8.0, Date.now()]);
+  }
+
+  const refAll = await dDb.get('SELECT COUNT(*) AS c FROM rounds WHERE session_id = ?', [refSid]);
+  ok('the day itself still holds both records', Number(refAll.c) === 2, JSON.stringify(refAll));
+
+  // 1. The Top 8 Songs card (and therefore the daily Instagram carousel).
+  const refTop8 = await dDb.all(
+    `SELECT song_title FROM rounds WHERE session_id = ? AND status = 'ratified'
+       AND room_average IS NOT NULL AND COALESCE(is_reference,0) = 0`, [refSid]);
+  ok('the Top 8 card excludes the reference track',
+    refTop8.length === 1 && refTop8[0].song_title === 'Real Submission', JSON.stringify(refTop8));
+
+  // 2. The charts — HOT 100 and every other record scope.
+  const refChart = await call('/api/admin/charts?scope=all&mode=records&minVotes=0&limit=200', null, 'GET', BOOTH);
+  const charted = (refChart.d && (refChart.d.rows || refChart.d.chart || refChart.d.records) || []).map(r => r.title);
+  ok('the chart returned rows at all (else the exclusion below proves nothing)',
+    charted.length > 0, JSON.stringify(Object.keys(refChart.d || {})));
+  ok('the reference track never charts', !charted.includes('Famous Record'), JSON.stringify(charted.slice(0, 8)));
+  ok('but the real submission from the same day does', charted.includes('Real Submission'), JSON.stringify(charted.slice(0, 8)));
+
+  // 3. The artist report queue — there is no artist to email.
+  const refElig = await dDb.all(
+    `SELECT song_title FROM rounds r WHERE r.session_id = ? AND r.status = 'ratified'
+       AND r.room_average IS NOT NULL AND COALESCE(r.poll_type,'rating') <> 'binary'
+       AND COALESCE(r.is_reference,0) = 0
+       AND EXISTS (SELECT 1 FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL)`, [refSid]);
+  ok('the artist report queue skips the reference track',
+    refElig.length === 1 && refElig[0].song_title === 'Real Submission', JSON.stringify(refElig));
+
+  // A hand-added reference track must SURVIVE a later Drupal re-push — the batch owns what it
+  // pushed, not what the operator added. A non-reference hand-add is still cleared, or a
+  // record typed in while Drupal was down would duplicate when the real day arrives.
+  await dDb.run("UPDATE sessions SET status='upcoming', async_state='scheduled' WHERE id = ?", [refSid]);
+  await dDb.run('DELETE FROM votes WHERE id LIKE ?', ['v_ref_%']);
+  await dDb.run("UPDATE rounds SET status='pending', room_average=NULL WHERE session_id = ?", [refSid]);
+  const refPush = await call('/api/ingest/daily',
+    { day: refDay, seriesId: serId, songs: [song(31), song(32)] }, 'POST', DTOK);
+  ok('a re-push of that day succeeds', refPush.status === 200 && refPush.d.replaced === true, JSON.stringify(refPush.d));
+  const afterPush = await dDb.all('SELECT song_title, idx, is_reference FROM rounds WHERE session_id = ? ORDER BY idx', [refSid]);
+  ok('the re-push replaces the pushed records', afterPush.filter(r => !Number(r.is_reference)).length === 2, JSON.stringify(afterPush));
+  ok('and the reference track survives it', afterPush.some(r => Number(r.is_reference) === 1 && r.song_title === 'Famous Record'), JSON.stringify(afterPush));
+  ok('idx stays 1..n with no collision and no hole',
+    afterPush.map(r => Number(r.idx)).join() === '1,2,3', afterPush.map(r => r.idx).join());
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), refSid]);
+
+  console.log('\n— A&R Daily: the results callback to makinitmag —');
+  // Fires at PUBLISH (noon), not at the 9AM tally: the day is scored at 9 but results do not
+  // reach A&Rs until noon, and handing averages to another system in that window would put
+  // the day's results on a public page three hours before the people who rated see them.
+  const srvRes = require('./server');
+  const cbDb = require('./db');
+
+  // Unset env => never attempted. A preview deployment must not post into production Drupal.
+  delete process.env.RESULTS_CALLBACK_URL; delete process.env.RESULTS_CALLBACK_TOKEN;
+  const cbSid = 'cb_sess_1';
+  await cbDb.run(
+    `INSERT INTO sessions (id,name,admin_token,status,default_minutes,created_at,mode,drop_day,async_state,published_at)
+     VALUES (?,?,'t','completed',5,?, 'async','2026-09-05','published',?)`, [cbSid, 'CB day', Date.now(), Date.now()]);
+  const mkRound = async (rid, ref, avg, idx, ref_flag) => cbDb.run(
+    `INSERT INTO rounds (id,session_id,idx,queue_pos,poll_type,song_title,status,room_average,ingest_ref,is_reference,created_at)
+     VALUES (?,?,?,?, 'rating', ?, 'ratified', ?, ?, ?, ?)`,
+    [rid, cbSid, idx, idx, 'T' + idx, avg, ref, ref_flag || 0, Date.now()]);
+  await mkRound('cbr1', 'entry/1', 6.4, 1);      // rated
+  await mkRound('cbr2', 'entry/2', null, 2);     // reported -> not_playable
+  await mkRound('cbr3', 'entry/3', null, 3);     // untouched -> unrated
+  await mkRound('cbr4', null,      7.1, 4);      // hand-added, NO ref -> omitted entirely
+  const cbPar = await cbDb.get('SELECT id FROM participants LIMIT 1', []);
+  await cbDb.run('INSERT INTO votes (id,round_id,participant_id,taste,predict,locked_at) VALUES (?,?,?,?,?,?)',
+    ['cbv1', 'cbr1', cbPar.id, 6, 6.4, Date.now()]);
+  await cbDb.run('INSERT INTO round_reports (id,round_id,session_id,participant_id,reason,created_at) VALUES (?,?,?,?,?,?)',
+    ['cbrep1', 'cbr2', cbSid, cbPar.id, 'not_playable', Date.now()]);
+
+  const cbDay = () => cbDb.get('SELECT * FROM sessions WHERE id = ?', [cbSid]);
+  ok('with no callback env configured the day is left alone',
+    (await srvRes._pushDayResults(await cbDay())) === null);
+  ok('and nothing is recorded against it', (await cbDay()).results_status == null);
+
+  // The payload the other side will receive.
+  const cbRecs = await srvRes._buildDayResults(await cbDay());
+  ok('records with no ref are omitted (nothing to match them to)',
+    cbRecs.length === 3 && !cbRecs.some(r => r.ref == null), JSON.stringify(cbRecs));
+  const byRef = Object.fromEntries(cbRecs.map(r => [r.ref, r]));
+  ok('a record with a room average is "rated", with the average to one decimal',
+    byRef['entry/1'].status === 'rated' && byRef['entry/1'].average === 6.4 && byRef['entry/1'].ratings === 1,
+    JSON.stringify(byRef['entry/1']));
+  ok('no average + a not_playable report is "not_playable"',
+    byRef['entry/2'].status === 'not_playable' && byRef['entry/2'].reports === 1, JSON.stringify(byRef['entry/2']));
+  ok('no average and no report is "unrated"',
+    byRef['entry/3'].status === 'unrated' && byRef['entry/3'].reports === 0, JSON.stringify(byRef['entry/3']));
+  ok('an average is sent ONLY on a rated record',
+    !('average' in byRef['entry/2']) && !('average' in byRef['entry/3']), JSON.stringify(cbRecs));
+
+  // Now with a live endpoint. A one-shot server stands in for makinitmag.
+  const http = require('http');
+  let cbHits = [], cbReply = { code: 200, body: '{"ok":true,"updated":3}' };
+  const cbSrv = http.createServer((rq, rs) => {
+    let b = ''; rq.on('data', c => b += c);
+    rq.on('end', () => {
+      cbHits.push({ key: rq.headers['x-anr-key'], body: JSON.parse(b || '{}') });
+      rs.writeHead(cbReply.code, { 'Content-Type': 'application/json' }); rs.end(cbReply.body);
+    });
+  });
+  await new Promise(r => cbSrv.listen(3997, r));
+  process.env.RESULTS_CALLBACK_URL = 'http://localhost:3997/api/anr-meeting/results';
+  process.env.RESULTS_CALLBACK_TOKEN = 'cb-secret';
+
+  ok('a 200 settles the day as sent', (await srvRes._pushDayResults(await cbDay())) === 'sent');
+  const cbAfter = await cbDay();
+  ok('results_status records it', cbAfter.results_status === 'sent', cbAfter.results_status);
+  ok('and results_pushed_at is stamped', Number(cbAfter.results_pushed_at) > 0);
+  ok('the secret rides in X-ANR-Key', cbHits[0] && cbHits[0].key === 'cb-secret', JSON.stringify(cbHits[0] && cbHits[0].key));
+  ok('the payload carries day, sessionId and the records',
+    cbHits[0].body.day === '2026-09-05' && cbHits[0].body.sessionId === cbSid && cbHits[0].body.records.length === 3,
+    JSON.stringify(cbHits[0].body).slice(0, 160));
+  ok('a settled day is never pushed twice', (await srvRes._pushDayResults(await cbDay())) === null && cbHits.length === 1);
+
+  // A 404 means the day is unknown on their side — terminal, because retrying cannot fix it.
+  await cbDb.run("UPDATE sessions SET results_status = NULL, results_attempts = 0 WHERE id = ?", [cbSid]);
+  cbReply = { code: 404, body: '{"error":"unknown day"}' };
+  ok('their 404 is terminal, not retried forever', (await srvRes._pushDayResults(await cbDay())) === 'unknown_day');
+  ok('and it is recorded as unknown_day', (await cbDay()).results_status === 'unknown_day');
+
+  // A 500 is worth another tick, and the attempt count is what eventually stops it.
+  await cbDb.run("UPDATE sessions SET results_status = NULL, results_attempts = 0 WHERE id = ?", [cbSid]);
+  cbReply = { code: 500, body: '{"error":"boom"}' };
+  ok('a 5xx asks for a retry rather than settling', (await srvRes._pushDayResults(await cbDay())) === 'retry');
+  ok('the attempt is counted', Number((await cbDay()).results_attempts) === 1);
+  ok('and the day is NOT settled, so the next tick tries again', (await cbDay()).results_status == null);
+  await cbDb.run("UPDATE sessions SET results_attempts = 23 WHERE id = ?", [cbSid]);   // one short of the cap
+  ok('the last allowed attempt gives up rather than retrying forever',
+    (await srvRes._pushDayResults(await cbDay())) === 'failed');
+  ok('and says so, so the operator can tell "gave up" from "delivered"',
+    (await cbDay()).results_status === 'failed');
+
+  await new Promise(r => cbSrv.close(r));
+  delete process.env.RESULTS_CALLBACK_URL; delete process.env.RESULTS_CALLBACK_TOKEN;
+  await cbDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), cbSid]);
+
   console.log('\n— A&R Daily: ET day arithmetic across DST —');
   // The drop's schedule is WALL CLOCK: 12PM ET open, 9AM ET close, 12PM ET publish. The
   // window crosses the DST switch twice a year, so the rule that has to hold is "noon is

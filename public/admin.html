@@ -213,6 +213,11 @@
         <button id="mdPlatform">Platform</button>
       </div>
       <div class="row" style="gap:8px;flex:0 0 auto">
+        <!-- The day picker. The screen defaults to the RUNNING day, which is right every day
+             until the moment you need yesterday's send numbers — at which point today's drop
+             has already displaced it and there was no way back. -->
+        <select id="dlDaySel" title="Which day to show"
+          style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;max-width:230px"></select>
         <span id="dlState" class="pill"></span>
         <button class="btn ghost sm" id="btnDailyRefresh">Refresh</button>
       </div>
@@ -287,6 +292,13 @@
           <div style="flex:1"><label>Instagram</label>
             <input id="bIg" placeholder="handle" maxlength="60"></div>
         </div>
+        <label class="pref-row" for="bRef" style="margin-top:8px">
+          <input type="checkbox" id="bRef">
+          <div><b>Reference track</b>
+            <small>A known record, not a submission. A&amp;Rs rate it and score it normally, but it
+            never charts, never reaches the Top 8, and queues no artist report. Survives a
+            re-push from the review site.</small></div>
+        </label>
         <div class="row">
           <div style="flex:1"><label>Artist mobile <span class="muted">(optional)</span></label>
             <input id="bPhone" placeholder="(555) 123-4567"></div>
@@ -1764,20 +1776,42 @@ async function landing(){
   return openDaily();
 }
 
+// Which day the screen is showing. '' means "whatever is running" — the default, and what
+// every caller gets, because openDaily is wired straight to onclick handlers that would
+// otherwise pass a click event as the day.
+let dlDay = '';
 async function openDaily(){
   showScreen('daily');
   $('#dlErr').textContent = '';
   try{
-    DL = await api('/api/admin/daily/status', null, 'GET');
+    DL = await api('/api/admin/daily/status' + (dlDay ? '?day=' + encodeURIComponent(dlDay) : ''), null, 'GET');
     renderDaily();
   }catch(e){
     $('#dlBody').classList.add('hide');
     $('#dlNone').classList.remove('hide');
     $('#dlNoneMsg').textContent = e.message;
+    renderDayPicker();
   }
+}
+
+// The picker is rendered from the payload's own list, so a day that has just been deleted
+// stops being offered on the next refresh rather than lingering as a dead option.
+const DAY_STATE_SHORT = { scheduled: 'building', open: 'open', closing: 'tallying',
+  ratified: 'held', published: 'published' };
+function renderDayPicker(){
+  const sel = $('#dlDaySel'); if(!sel) return;
+  const days = (DL && DL.days) || [];
+  // Keep an explicitly-picked day selectable even if it has no drop, or choosing it would
+  // bounce the select straight back to "running day" and read as the click not working.
+  const known = days.some(d => d.day === dlDay);
+  sel.innerHTML = '<option value="">Running day</option>'
+    + days.map(d => `<option value="${esc(d.day)}">${esc(d.label || d.day)} · ${esc(DAY_STATE_SHORT[d.state] || d.state)}</option>`).join('')
+    + (dlDay && !known ? `<option value="${esc(dlDay)}">${esc(dlDay)} · none</option>` : '');
+  sel.value = dlDay;
 }
 $('#btnDailyRefresh').onclick = openDaily;
 $('#btnDailyRefresh2').onclick = openDaily;
+$('#dlDaySel').onchange = () => { dlDay = $('#dlDaySel').value; openDaily(); };
 $('#mdDaily').onclick = openDaily;
 $('#mdLive').onclick = () => openPicker();
 $('#mdPlatform').onclick = () => { if(typeof openPlatform === 'function') openPlatform(); };
@@ -1797,12 +1831,14 @@ function renderDaily(){
     $('#dlNoneMsg').textContent = d.message || 'No records have been pushed. A&Rs would open the app to an empty day.';
     $('#dlState').textContent = 'No drop';
     $('#dlState').className = 'pill closed';
+    renderDayPicker();
     renderBuild();   // the builder is how they FIX this, so it stays on screen
     return;
   }
   $('#dlNone').classList.add('hide');
   $('#dlBody').classList.remove('hide');
   const dr = d.drop;
+  renderDayPicker();
 
   const STATE_LABEL = { scheduled: 'Scheduled', open: 'Window open', closing: 'Tallying',
     ratified: 'Tallied · results held', published: 'Published' };
@@ -1940,6 +1976,7 @@ window.bRemove = async (roundId) => {
 
 $('#bClear').onclick = () => {
   ['bTitle','bArtist','bUrl','bNote','bEmail','bIg','bPhone'].forEach(k => { $('#'+k).value = ''; });
+  $('#bRef').checked = false;
   $('#bErr').textContent = '';
   $('#bTitle').focus();
 };
@@ -1951,6 +1988,7 @@ $('#bAdd').onclick = async () => {
     playUrl: $('#bUrl').value.trim(), ask: $('#bNote').value.trim(),
     email: $('#bEmail').value.trim(), phone: $('#bPhone').value.trim(),
     instagram: $('#bIg').value.trim(),
+    isReference: $('#bRef').checked,
   };
   const day = $('#bDay').value.trim(); if(day) body.day = day;
   if(!body.title) return $('#bErr').textContent = 'Give the record a title';
@@ -1960,6 +1998,7 @@ $('#bAdd').onclick = async () => {
     await api('/api/admin/daily/round', body);
     // Keep the day, clear the record: the next one is almost always for the same day.
     ['bTitle','bArtist','bUrl','bNote','bEmail','bIg','bPhone'].forEach(k => { $('#'+k).value = ''; });
+    $('#bRef').checked = false;
     await openDaily();
     $('#bTitle').focus();
   }catch(e){ $('#bErr').textContent = e.message; }

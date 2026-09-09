@@ -1161,7 +1161,117 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       }
     }
   }
+
+  // ---- results callback: published days that have not settled with makinitmag yet ----
+  // Its own probe for the same reason the queues have one: a published day has left the
+  // state-machine working set for good. Bounded and index-light — the set is days published
+  // in the last couple of hours that have not yet answered.
+  if (left() > 3000 && process.env.RESULTS_CALLBACK_URL && process.env.RESULTS_CALLBACK_TOKEN) {
+    try {
+      const owed = await db.all(
+        `SELECT * FROM sessions
+          WHERE mode = 'async' AND deleted_at IS NULL AND published_at IS NOT NULL
+            AND results_status IS NULL AND COALESCE(results_attempts, 0) < ?
+          ORDER BY published_at DESC LIMIT 3`, [RESULTS_MAX_ATTEMPTS]);
+      for (const s2 of owed) {
+        if (left() < 3000) { out.budgetHit = true; break; }
+        const r = await pushDayResults(s2);
+        if (r === 'sent') out.resultsSent = (out.resultsSent || 0) + 1;
+        else if (r) out.resultsPending = (out.resultsPending || 0) + 1;
+      }
+    } catch (e) { console.error('[daily] results callback pass failed:', e.message); }
+  }
   return out;
+}
+
+// ═══ RESULTS CALLBACK — app -> makinitmag.com ════════════════════════════════════════════
+// At publish we tell the submission system what happened to each record, so the artist's
+// status page can say "reviewed by 23 A&Rs" instead of promising a report, and so a record
+// that sat behind a dead link is not counted as reviewed.
+//
+// FIRED AT PUBLISH (noon), NOT AT THE 9AM TALLY — the other side offered either. The day is
+// scored at 9 but results do not reach A&Rs until noon, and handing room averages to another
+// system in that window would put the day's results on a public page three hours before the
+// people who did the rating see them. Same seal that hides vote direction during the window.
+//
+// Records with no ingest_ref are omitted: they were hand-added here and there is nothing on
+// the other side to match them to.
+const RESULTS_MAX_ATTEMPTS = 24;          // */5 cron => roughly two hours of retrying
+
+async function buildDayResults(session) {
+  const rows = await db.all(
+    `SELECT r.ingest_ref, r.room_average, r.is_reference,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS ratings,
+            (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id AND rr.reason = 'not_playable') AS reports
+       FROM rounds r
+      WHERE r.session_id = ? AND r.ingest_ref IS NOT NULL AND r.ingest_ref <> ''
+      ORDER BY r.idx ASC`, [session.id]);
+  return rows.map(r => {
+    const ratings = Number(r.ratings) || 0;
+    const reports = Number(r.reports) || 0;
+    const rated = r.room_average != null;
+    // Derived, and the derivation is in the spec so neither side has to guess. A record can
+    // be BOTH rated and reported (the link died partway through the day) — rated wins, and
+    // the report count rides along because it is worth showing.
+    const status = rated ? 'rated' : (reports > 0 ? 'not_playable' : 'unrated');
+    const out = { ref: r.ingest_ref, status, ratings, reports };
+    if (rated) out.average = Math.round(Number(r.room_average) * 10) / 10;
+    return out;
+  });
+}
+
+// Returns 'sent' | 'unknown_day' | 'retry' | 'failed' | null (not configured / nothing to do).
+async function pushDayResults(session) {
+  const url = process.env.RESULTS_CALLBACK_URL || '';
+  const token = process.env.RESULTS_CALLBACK_TOKEN || '';
+  // Unset => never attempted, and the day publishes exactly as it does without this. A
+  // preview deployment must not be able to post into production Drupal.
+  if (!url || !token) return null;
+  if (session.results_status) return null;                      // already settled either way
+  const attempts = Number(session.results_attempts) || 0;
+  if (attempts >= RESULTS_MAX_ATTEMPTS) return null;
+
+  const records = await buildDayResults(session);
+  const body = JSON.stringify({
+    day: session.drop_day, sessionId: session.id,
+    publishedAt: session.published_at == null ? null : Number(session.published_at),
+    records,
+  });
+
+  const settle = async (status) => {
+    await db.run('UPDATE sessions SET results_status = ?, results_pushed_at = ?, results_attempts = ? WHERE id = ?',
+      [status, now(), attempts + 1, session.id]);
+    return status;
+  };
+
+  try {
+    // Bounded: the publish already happened, and a slow host must not eat the tick's budget.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 10000);
+    let res;
+    try {
+      res = await fetch(url, { method: 'POST', signal: ac.signal,
+        headers: { 'Content-Type': 'application/json', 'X-ANR-Key': token }, body });
+    } finally { clearTimeout(timer); }
+
+    if (res.ok) return settle('sent');
+    // Their 404 means the day is unknown on their side — terminal, because retrying cannot
+    // make it known. Everything else is worth another tick.
+    if (res.status === 404) {
+      console.error(`[results] ${session.drop_day}: day unknown to makinitmag (404)`);
+      return settle('unknown_day');
+    }
+    throw new Error(`HTTP ${res.status}`);
+  } catch (e) {
+    const next = attempts + 1;
+    if (next >= RESULTS_MAX_ATTEMPTS) {
+      console.error(`[results] ${session.drop_day}: giving up after ${next} attempts — ${e.message}`);
+      return settle('failed');
+    }
+    await db.run('UPDATE sessions SET results_attempts = ? WHERE id = ?', [next, session.id]);
+    console.error(`[results] ${session.drop_day}: attempt ${next} failed (${e.message}); will retry`);
+    return 'retry';
+  }
 }
 
 // Publish the day: render and host the two shared cards, build the post kit caption, queue
@@ -1731,8 +1841,11 @@ async function cardArsData({ sessionId, seriesId }, limit = 8) {
 // split, not a 0–9 average — see the parked Versus-infographic idea). IG parsed from the note.
 async function cardSongsData(sessionId, limit = 8) {
   const rows = await db.all(
+    // is_reference excluded: a major-artist record dropped in for A&Rs to rate is not a
+    // submission under review, and printing it on the Top 8 would credit it as one.
     `SELECT song_title, song_artist, song_note, room_average FROM rounds
       WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
+        AND COALESCE(is_reference, 0) = 0
       ORDER BY room_average DESC, idx ASC LIMIT ?`, [sessionId, limit]);
   return rows.map(r => {
     const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
@@ -1804,6 +1917,7 @@ async function chartRecords(sessions, { minVotes, dedupe }) {
        LEFT JOIN votes v ON v.round_id = r.id AND v.taste IS NOT NULL
       WHERE r.session_id IN (${ph}) AND r.status = 'ratified'
         AND r.poll_type <> 'binary' AND r.room_average IS NOT NULL
+        AND COALESCE(r.is_reference, 0) = 0
       GROUP BY r.id, r.idx, r.song_title, r.song_artist, r.song_note, r.room_average,
                r.session_id, s.name, s.scheduled_at, s.created_at`, ids);
   const all = rows.map(r => {
@@ -2548,6 +2662,10 @@ function normalizeDropSong(raw, i) {
     playUrl,
     scoutUid: clip(raw.scout && raw.scout.uid, 60) || null,
     scoutEmail: cleanArtistEmail(raw.scout && raw.scout.email),
+    // A REFERENCE TRACK: a known record dropped in for A&Rs to rate. Fully votable and
+    // scored; excluded from every chart, the Top 8 card and the artist report queue. Set
+    // from the console only — Drupal pushes submissions, and a submission is never one.
+    isReference: raw.isReference === true || raw.isReference === 1 ? 1 : 0,
   } };
 }
 
@@ -2622,19 +2740,23 @@ async function stageDailyDrop(res, body) {
     // Cold and unplayed: replace the record set in place (newest push wins, the same rule
     // 031/032 apply to a single staged record — here applied to the batch).
     await db.tx(async (tx) => {
-      await tx.run('DELETE FROM rounds WHERE session_id = ?', [existing.id]);
+      await tx.run('DELETE FROM rounds WHERE session_id = ? AND COALESCE(is_reference, 0) = 0', [existing.id]);
       let i = 0;
       for (const s of recs) {
         i++;
         await tx.run(
           `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
              giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-             artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, status, opens_at, closes_at, created_at)
-           VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+             artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, status, opens_at, closes_at, created_at)
+           VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
           [id(9), existing.id, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
-           s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid,
+           s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0,
            existing.window_opens_at, existing.window_closes_at, now()]);
       }
+      const kept = await tx.all(
+        "SELECT id FROM rounds WHERE session_id = ? AND COALESCE(is_reference,0) = 1 ORDER BY idx ASC", [existing.id]);
+      let k = recs.length;
+      for (const r of kept) { k++; await tx.run('UPDATE rounds SET idx = ?, queue_pos = ? WHERE id = ?', [k, k, r.id]); }
       if (seriesId && !existing.series_id) await tx.run('UPDATE sessions SET series_id = ? WHERE id = ?', [seriesId, existing.id]);
     });
     // Echo titles only — never the emails or phones back out (they came in over this wire,
@@ -2689,10 +2811,10 @@ async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, 
       await tx.run(
         `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
            giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-           artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, status, opens_at, closes_at, created_at)
-         VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+           artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, status, opens_at, closes_at, created_at)
+         VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
         [id(9), sid, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
-         s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, wo, wc, ts]);
+         s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, wo, wc, ts]);
     }
   });
   return { sessionId: sid, day, rounds: songs.length, opensAt: wo, closesAt: wc, resultsAt: rp };
@@ -2715,10 +2837,10 @@ async function addDropRound(session, s) {
   await db.run(
     `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
        giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-       artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, status, opens_at, closes_at, created_at)
-     VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+       artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, status, opens_at, closes_at, created_at)
+     VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
     [rid, session.id, idx, idx, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
-     s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid,
+     s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0,
      session.window_opens_at, session.window_closes_at, ts]);
   const n = Number((await db.get('SELECT COUNT(*) AS c FROM rounds WHERE session_id = ?', [session.id])).c) || 0;
   return { ok: true, created: false, sessionId: session.id, day: session.drop_day, roundId: rid, idx, rounds: n };
@@ -2823,6 +2945,7 @@ const ARTIST_ELIGIBLE_SQL = `
   SELECT r.* FROM rounds r
    WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
      AND COALESCE(r.poll_type,'rating') <> 'binary'
+     AND COALESCE(r.is_reference, 0) = 0
      AND EXISTS (SELECT 1 FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL)
    ORDER BY r.idx ASC`;
 
@@ -6988,10 +7111,26 @@ async function handleApi(req, res, url) {
       };
     }
 
+    // Every drop the picker can offer. Bounded to a fortnight because this is a "go back and
+    // check yesterday's sends" control, not an archive browser — and it must stay a cheap
+    // read on a screen the operator refreshes all day.
+    const recent = await db.all(
+      `SELECT drop_day, async_state, window_opens_at FROM sessions
+        WHERE mode = 'async' AND deleted_at IS NULL
+        ORDER BY window_opens_at DESC LIMIT 14`, []);
+    const days = recent.map(r => ({ day: r.drop_day, label: etDayLabel(r.drop_day),
+      state: r.async_state || 'scheduled' }));
+
     // No drop is an INCIDENT, not an empty state — if Drupal has not pushed, the site is
     // back to the exact failure this whole build exists to fix. Say so plainly.
-    if (!session) return send(res, 200, { drop: null, building,
-      message: 'No drop is staged. Nothing for A&Rs to do.' });
+    //
+    // An EXPLICITLY PICKED day that no longer exists is a different fact and must not wear
+    // the same alarm: nothing is wrong with the show, the operator just chose a day that was
+    // deleted or never built. Same shape, honest message.
+    if (!session) return send(res, 200, { drop: null, building, days, day: wantDay || null,
+      message: wantDay
+        ? `No drop for ${etDayLabel(wantDay) || wantDay}. Pick another day.`
+        : 'No drop is staged. Nothing for A&Rs to do.' });
 
     const day = session.drop_day;
     const rounds = await db.all(
@@ -7032,6 +7171,7 @@ async function handleApi(req, res, url) {
     const holdUntil = session.published_at
       ? Number(session.published_at) + ARTIST_NOTICE_DELAY_MIN * 60000 : null;
     return send(res, 200, {
+      days, day,
       drop: {
         id: session.id, day, dayLabel: etDayLabel(day), name: session.name,
         status: session.status, async_state: session.async_state || 'scheduled',
@@ -7515,3 +7655,7 @@ module.exports._scoutPointsFor = scoutPointsFor;
 module.exports._buildRecap = buildRecap;
 module.exports._enqueueDailyDigest = enqueueDailyDigest;
 module.exports._dailyDigestEmailHtml = dailyDigestEmailHtml;
+// Exported for tests: the results callback is an OUTBOUND integration with retry semantics,
+// and both halves (what we send, and when we stop trying) are asserted directly.
+module.exports._buildDayResults = buildDayResults;
+module.exports._pushDayResults = pushDayResults;
