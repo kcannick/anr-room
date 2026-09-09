@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 034; suite green)
+## Current state (migrations through 035; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -337,9 +337,13 @@ live on anr.makinitmag.com.
   docs/specs/sidebet-contest-spec.md. Mockups: `public/_mock-sidebet.html` (player) and
   `public/_mock-sidebet-admin.html` (console).
 
-- **A&R Daily — the async daily drop** (034, branch `claude/ar-async-review-mode-50b726`,
-  **NOT YET PUSHED** — this section is honest against git, so re-read that word before
-  treating any of it as live). This inverts the product: **the daily drop is the thing and
+- **A&R Daily — the async daily drop** (034 + 035). **SHIPPED and live** — pushed to origin
+  2026-09-09 and running daily. (This line read "NOT YET PUSHED" for several days after the
+  work actually went out, which is the exact failure the warning at the top of this section
+  is about: the claim went stale in the direction that made the file *understate* what was
+  live, and a session read it and planned against a deploy that had already happened.
+  Re-check against `git log origin/main` before trusting any status word here.)
+  This inverts the product: **the daily drop is the thing and
   the live show becomes a special event on top of it.** The bottleneck it fixes is
   post-authentication — someone converts and then has nothing to do until Wednesday, nobody
   can play at work, and artist slots are capped at whatever fits 7–11PM ET.
@@ -416,6 +420,31 @@ live on anr.makinitmag.com.
   - Setup: **docs/daily-setup.md**. Needs Vercel **Pro** (a `*/5` cron fails a Hobby deploy),
     `DAILY_INGEST_TOKEN` (separate from `INGEST_TOKEN` — different blast radius), `CRON_SECRET`,
     and `PUBLIC_BASE_URL` on anything that is not the production host.
+  - **Reference tracks** (035): the operator can hand-add a known record from a major artist
+    so A&Rs have something familiar to rate. Fully votable and SCORED; excluded from the
+    charts, the Top 8 card and the artist report queue — three separate queries, three
+    predicates. A flag, not "has no artist_email": absence of contact already skips the
+    report but says nothing about the charts, and a real submission whose artist typo'd
+    their address would then vanish from the HOT 100 for the wrong reason. It also SURVIVES
+    a Drupal re-push (which replaces the day's records wholesale), with survivors renumbered
+    after the batch so idx stays 1..n; a NON-reference hand-add is still cleared, or a record
+    typed in while Drupal was down would duplicate when the real day lands.
+  - **Results callback** (035): at publish the app POSTs each record's outcome to
+    makinitmag (`rated | not_playable | unrated`, plus rating and report counts) so the
+    artist status page can confirm a review rather than promise one. **Fires at PUBLISH, not
+    at the 9AM tally** — the other side asked for 9AM; the day is scored at 9 but results do
+    not reach A&Rs until noon, and handing averages over in that window would put them on a
+    public page three hours before the people who rated see them. Retried from its own probe
+    (a published day has left the lifecycle's working set), their 404 terminal, gives up at
+    24 attempts recorded as `failed` rather than `sent`. Dormant without
+    `RESULTS_CALLBACK_URL` / `_TOKEN`, so a preview deploy cannot post into production
+    Drupal. Wire contract: **docs/specs/daily-drop-integration-spec.md**.
+  - **The digest headline was the "no results" bug** (2026-09-09). A&Rs reported emails with
+    no results while another replied with their rounds quoted underneath — both true at once.
+    The personalised block was correctly absent for anyone who did not play, but the HEADLINE
+    was unconditional, so a non-player got "Yesterday's results, <their name>." over the Top 8
+    and nothing of their own. Fixed: personalise the greeting only when there is something
+    personal beneath it, and say plainly why there isn't when there is not.
   - **Still open:** `sessions.live_bonus` has no value set (~300 makes one live show ≈ three
     perfect async days; without it the broadcast is decorative on the unified board), the
     scouting-points curve, and Nero retirement (`#btnNeroPull` + the scrape helper are still
