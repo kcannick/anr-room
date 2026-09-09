@@ -177,14 +177,31 @@
             <input type="checkbox" id="nRoomEmail">
             <span><b>A room goes live</b><small>The show is starting now — public and invite-only rooms</small></span>
           </label>
-          <label class="pref-row" for="nDaily">
-            <input type="checkbox" id="nDaily">
-            <span><b>Daily update</b><small>Top records, top A&amp;Rs, and what's next</small></span>
-          </label>
-          <label class="pref-row" for="nWeekly">
-            <input type="checkbox" id="nWeekly">
-            <span><b>Weekly update</b><small>The week's top records and the A&amp;R board</small></span>
-          </label>
+          <!-- ONE CHOICE, not two switches. Daily and weekly are the same mail at two
+               cadences, so as independent checkboxes "both on" was a reachable state that
+               meant eight emails a week nobody deliberately asked for. A radio makes the
+               only real question — how often — the only question asked. -->
+          <div class="pref-row" style="display:block">
+            <b>Updates</b>
+            <small style="display:block;margin-bottom:8px">How often we email you about the records and the board</small>
+            <label class="pref-row" for="nDigestNone" style="border:0;padding:6px 0">
+              <input type="radio" name="ndigest" id="nDigestNone">
+              <span><b>None</b><small>No update emails</small></span>
+            </label>
+            <label class="pref-row" for="nDigestWeekly" style="border:0;padding:6px 0">
+              <input type="radio" name="ndigest" id="nDigestWeekly">
+              <span><b>Weekly</b><small>Wednesdays — the week's top records, the A&amp;R board, and tonight's live review</small></span>
+            </label>
+            <label class="pref-row" for="nDigestDaily" style="border:0;padding:6px 0">
+              <input type="radio" name="ndigest" id="nDigestDaily">
+              <span><b>Daily Digest</b><small>Every day — yesterday's scores and the new drop</small></span>
+            </label>
+          </div>
+          <!-- The digest IS how a person's own round-by-round results reach them: there is one
+               send path (notifyAudience('digest_daily','email')) and no separate scorecard mail.
+               So "None" really does mean no results either, and saying otherwise would be a
+               promise the server does not keep. -->
+          <p class="hint" style="margin:2px 2px 0">Your own round-by-round results ride on the daily update.</p>
         </div>
         <label class="pref-row danger" for="nEmailOff" style="margin-top:14px">
           <input type="checkbox" id="nEmailOff">
@@ -365,8 +382,11 @@ function renderNotify(d){
   const get=(k,ch)=>!!(t[k]&&t[k].channels&&t[k].channels[ch]);
   $('#nRoomSms').checked=get('room_live','sms');
   $('#nRoomEmail').checked=get('room_live','email');
-  $('#nDaily').checked=get('digest_daily','email');
-  $('#nWeekly').checked=get('digest_weekly','email');
+  // Daily wins if a legacy row somehow has both — the next save normalises it to one.
+  const digest=get('digest_daily','email')?'daily':(get('digest_weekly','email')?'weekly':'none');
+  $('#nDigestDaily').checked=digest==='daily';
+  $('#nDigestWeekly').checked=digest==='weekly';
+  $('#nDigestNone').checked=digest==='none';
   $('#nSmsMaster').checked=!!d.smsConsent;
   $('#nEmailOff').checked=!!d.emailOptOut;
   $('#nEmail').textContent=d.email||'';
@@ -391,8 +411,8 @@ $('#btnSaveNotify').onclick=async()=>{
       emailOptOut:$('#nEmailOff').checked,
       topics:{
         room_live:{email:$('#nRoomEmail').checked,sms:$('#nRoomSms').checked},
-        digest_daily:{email:$('#nDaily').checked},
-        digest_weekly:{email:$('#nWeekly').checked},
+        digest_daily:{email:$('#nDigestDaily').checked},
+        digest_weekly:{email:$('#nDigestWeekly').checked},
       },
     };
     // Only send the phone when it actually changed — otherwise every save would restamp
