@@ -2606,6 +2606,36 @@ async function startVoting(sessionId, headers, minutes = 5) {
     afterPush.map(r => Number(r.idx)).join() === '1,2,3', afterPush.map(r => r.idx).join());
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), refSid]);
 
+  console.log('\n— A&R Daily: the digest never promises results it does not have —');
+  // The complaint that produced this test: A&Rs reported "emails with no results". The
+  // personalised block was correctly ABSENT for anyone who did not play — but the headline
+  // was unconditional, so a non-player was greeted with "Yesterday's results, <their name>."
+  // and then given the Top 8 and nothing of their own. A headline claiming a block that was
+  // never owed reads as a bug even though the data was right.
+  const dgArg = { dayLabel: 'Thu, Sep 3', cards: {}, manage: null, playUrl: 'https://x/' };
+  const dgRecap = { totalPoints: 543, grade: 'A+', rank: 1, bullseyes: 0, completionBonus: 25,
+    rounds: [{ song_title: 'A Record', song_artist: 'An Artist', taste: 7, predict: 6.6,
+               room_average: 6.7, points: 95, tier: 'sharp' }] };
+
+  const dgPlayed = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: dgRecap });
+  ok('someone who played is greeted by name', /Yesterday's results, Kelby/.test(dgPlayed));
+  ok('and their round-by-round table is there', /A Record/.test(dgPlayed) && /How you did/.test(dgPlayed));
+
+  const dgIdle = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: null });
+  ok('someone who did NOT play is not greeted as though they have results',
+    !/Yesterday's results, Kelby/.test(dgIdle), dgIdle.slice(0, 300));
+  ok('the headline still names the day', /Yesterday's results\./.test(dgIdle));
+  ok('and it says plainly why there is nothing of their own',
+    /didn't rate yesterday's records/.test(dgIdle), dgIdle.slice(0, 400));
+  ok('no personal block is rendered for them', !/How you did/.test(dgIdle));
+  ok('but they still get the day and the way back in',
+    /Today's records are open/.test(dgIdle));
+
+  // An empty rounds array is the same fact as no recap at all, and used to slip through.
+  const dgEmpty = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: { rounds: [] } });
+  ok('a recap with zero rounds counts as not having played',
+    !/Yesterday's results, Kelby/.test(dgEmpty) && !/How you did/.test(dgEmpty));
+
   console.log('\n— A&R Daily: the results callback to makinitmag —');
   // Fires at PUBLISH (noon), not at the 9AM tally: the day is scored at 9 but results do not
   // reach A&Rs until noon, and handing averages to another system in that window would put

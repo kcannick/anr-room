@@ -2293,8 +2293,18 @@ function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage
   // THE SEAL IS SATISFIED: every row here is a ratified round on a published day, so
   // room_average is already public. This is composed after the whole day has tallied and
   // must never be moved anywhere earlier.
+  // THE HEADLINE MUST NOT PROMISE WHAT THE BODY CANNOT DELIVER.
+  //
+  // The audience for this mail is unconditional and the personalised block is not — which is
+  // right — but the headline was unconditional too, so an A&R who did not play was greeted
+  // with "Yesterday's results, <their name>." followed by the Top 8 and nothing of their own.
+  // That is precisely the "emails with no results" complaint: not a missing block, a headline
+  // claiming a block that was never owed. Personalise the greeting only when there is
+  // something personal under it, and say plainly why there isn't when there is not.
+  const played = !!(recap && recap.rounds && recap.rounds.length);
+
   let arBlock = '';
-  if (recap && recap.rounds && recap.rounds.length) {
+  if (played) {
     const rows = recap.rounds.map(r => {
       const dev = (r.taste != null && r.room_average != null)
         ? (Math.round((r.predict - r.room_average) * 10) / 10) : null;
@@ -2344,8 +2354,12 @@ function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage
   return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
     <div style="max-width:400px;margin:0 auto;text-align:center">
       <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily${dayLabel ? ' · ' + escapeHtml(dayLabel) : ''}</div>
-      <h1 style="font-size:22px;margin:8px 0 4px">Yesterday's results${name ? ', ' + escapeHtml(dispName(name)) : ''}.</h1>
-      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">Here is how the records landed, and where the A&amp;Rs finished.</p>
+      <h1 style="font-size:22px;margin:8px 0 4px">${played
+        ? `Yesterday's results${name ? ', ' + escapeHtml(dispName(name)) : ''}.`
+        : `Yesterday's results.`}</h1>
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">${played
+        ? 'Here is how the records landed, and where the A&amp;Rs finished.'
+        : "Here is how the records landed. You didn't rate yesterday's records, so there is nothing of your own below."}</p>
       ${common}
       ${arBlock}
       <div style="height:1px;background:#2e2750;margin:26px 0 18px"></div>
@@ -2358,8 +2372,12 @@ function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage
 
 function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl }) {
   const lines = [`A&R Daily${dayLabel ? ' — ' + dayLabel : ''}`, ''];
-  lines.push(`Yesterday's results${name ? ', ' + dispName(name) : ''}.`);
-  if (recap && recap.rounds && recap.rounds.length) {
+  const played = !!(recap && recap.rounds && recap.rounds.length);
+  lines.push(played
+    ? `Yesterday's results${name ? ', ' + dispName(name) : ''}.`
+    : `Yesterday's results.`);
+  if (!played) lines.push('', "You didn't rate yesterday's records, so there is nothing of your own below.");
+  if (played) {
     lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Rank ${recap.rank ? '#' + recap.rank : '—'}`, '');
     for (const r of recap.rounds) {
       lines.push(`${r.song_title} — ${r.song_artist}: you ${r.taste}, guess ${r.predict == null ? '—' : Number(r.predict).toFixed(1)}, average ${r.room_average == null ? '—' : Number(r.room_average).toFixed(1)} → ${(Number(r.points) || 0) >= 0 ? '+' : ''}${Number(r.points) || 0} (${TIER_LABEL[r.tier] || ''})`);
