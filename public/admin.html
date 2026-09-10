@@ -153,6 +153,8 @@
   .dllink{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap;max-width:200px;display:block}
   .dllink.bad{color:var(--hot)}
+  a.dllink{color:var(--accent);text-decoration:none}
+  a.dllink:hover{text-decoration:underline}
   /* ---- admin users panel ---- */
   .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
   .urow+.urow{margin-top:8px}
@@ -241,7 +243,18 @@
       </div>
 
       <div class="card">
-        <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The records</h3>
+        <div class="row" style="justify-content:space-between;align-items:center;margin:0 0 12px;gap:8px;flex-wrap:wrap">
+          <h3 style="margin:0;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The records</h3>
+          <!-- The live countdown show plays yesterday's drop from the lowest score up to #1,
+               so the table can be ordered by score in either direction. Scores only exist
+               once the day has tallied; before that every record sorts as unscored. -->
+          <select id="dlSort" title="Order the records"
+            style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;max-width:230px">
+            <option value="idx">Order: as dropped</option>
+            <option value="score_desc">Order: score, highest first</option>
+            <option value="score_asc">Order: countdown, lowest first</option>
+          </select>
+        </div>
         <div id="dlRounds"></div>
         <p class="muted" style="font-size:11.5px;line-height:1.5;margin:10px 0 0">
           A flag is one A&amp;R, not one click — nine flags is nine people telling you the record will not play.
@@ -1875,20 +1888,7 @@ function renderDaily(){
       + `<b>${mins} minute${mins===1?'':'s'}</b>. Reject anything that should not ship — after that there is no unsend.`;
   } else $('#dlHold').classList.add('hide');
 
-  // the records
-  const rows = (d.rounds || []).map(r => {
-    const alarm = r.reports >= 3 || !r.play_url;
-    return `<tr${alarm?' class="alarm"':''}>
-      <td style="width:42%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')}</div></td>
-      <td><span class="dllink${r.play_url?'':' bad'}">${esc(r.play_url || 'no link')}</span></td>
-      <td class="num">${r.votes}</td>
-      <td class="num"${r.reports?' style="color:var(--hot);font-weight:700"':' class="num muted"'}>${r.reports}</td>
-      <td class="num"><button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
-    </tr>`;
-  }).join('');
-  $('#dlRounds').innerHTML = (d.rounds && d.rounds.length)
-    ? `<table class="dltable"><tr><th style="width:42%">Record</th><th>Play link</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
-    : '<div class="empty">No records on this day.</div>';
+  renderDlRecords();
 
   // the queues, in the {sent, failed, pending} shape the artist-notices panel already uses
   const q = d.queues || {};
@@ -1926,6 +1926,58 @@ function renderDaily(){
   }
   $('#dlCardBody').innerHTML = cardHtml;
   renderBuild();
+}
+/* ---- The records table: sortable, with a live play link ---- */
+// The order is remembered per device: the countdown show runs off this table for an hour,
+// and a refresh must not silently put it back in drop order.
+let dlSort = 'idx';
+try { dlSort = localStorage.getItem('anr_dl_sort') || 'idx'; } catch(e) {}
+if(!['idx','score_desc','score_asc'].includes(dlSort)) dlSort = 'idx';
+$('#dlSort').value = dlSort;
+$('#dlSort').onchange = () => {
+  dlSort = $('#dlSort').value;
+  try { localStorage.setItem('anr_dl_sort', dlSort); } catch(e) {}
+  renderDlRecords();
+};
+// Scored records rank by room average; ties break on evaluations (more people behind the
+// number) and then drop order. An unscored record (no tally yet, or nobody rated it) has
+// no place on a countdown and sits at the end whichever way the list runs.
+function dlSortedRounds(){
+  const rows = ((DL && DL.rounds) || []).slice();
+  if(dlSort === 'idx') return rows.map(r => Object.assign({}, r, { rank: null }));
+  const scored = rows.filter(r => r.room_average != null), unscored = rows.filter(r => r.room_average == null);
+  scored.sort((a, b) => (b.room_average - a.room_average) || (b.votes - a.votes) || (a.idx - b.idx));
+  scored.forEach((r, i) => r.rank = i + 1);
+  unscored.forEach(r => r.rank = null);
+  if(dlSort === 'score_asc') scored.reverse();
+  return scored.concat(unscored);
+}
+// A play link is only ever rendered as a link when it is http(s): the server's cleanPlayUrl
+// already refuses anything else, but the console should not trust a column it did not write.
+function dlPlayLink(url){
+  if(!url) return '<span class="dllink bad">no link</span>';
+  if(!/^https?:\/\//i.test(url)) return `<span class="dllink">${esc(url)}</span>`;
+  return `<a class="dllink" href="${esc(url)}" target="_blank" rel="noopener" title="${esc(url)}">${esc(url)}</a>`;
+}
+function renderDlRecords(){
+  const rounds = dlSortedRounds();
+  const bySc = dlSort !== 'idx';
+  const rows = rounds.map(r => {
+    const alarm = r.reports >= 3 || !r.play_url;
+    const score = r.room_average != null ? (+r.room_average).toFixed(1) : '—';
+    return `<tr${alarm?' class="alarm"':''}>
+      <td class="num muted" style="width:34px">${bySc ? (r.rank != null ? '#' + r.rank : '—') : r.idx}</td>
+      <td style="width:38%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')}</div></td>
+      <td>${dlPlayLink(r.play_url)}</td>
+      <td class="num" style="color:var(--signal);font-weight:700">${score}</td>
+      <td class="num">${r.votes}</td>
+      <td class="num"${r.reports?' style="color:var(--hot);font-weight:700"':' class="num muted"'}>${r.reports}</td>
+      <td class="num"><button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
+    </tr>`;
+  }).join('');
+  $('#dlRounds').innerHTML = rounds.length
+    ? `<table class="dltable"><tr><th class="num">${bySc ? 'Rank' : '#'}</th><th style="width:38%">Record</th><th>Play link</th><th class="num">Score</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
+    : '<div class="empty">No records on this day.</div>';
 }
 /* ---- Build the next drop, a record at a time ---- */
 function renderBuild(){

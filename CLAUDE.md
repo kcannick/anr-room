@@ -416,7 +416,11 @@ live on anr.makinitmag.com.
     to which screen boots, not a rewrite). `round/edit` gains `play_url` + `artist_note` on its
     DESCRIPTIVE-only allowlist — **fixing a dead link mid-window is the most operationally
     important thing here**, and it cannot round-trip through a CMS. A missing drop renders as an
-    incident, not an empty state.
+    incident, not an empty state. **The records table shows each record's score and sorts
+    three ways** (drop order · score highest first · countdown lowest first, remembered per
+    device) with the play link as a real link — this is how the live countdown show of the
+    previous day's drop is run off the console. Ties rank by votes then drop order; an
+    unscored record has no rank and sits last.
   - Setup: **docs/daily-setup.md**. Needs Vercel **Pro** (a `*/5` cron fails a Hobby deploy),
     `DAILY_INGEST_TOKEN` (separate from `INGEST_TOKEN` — different blast radius), `CRON_SECRET`,
     and `PUBLIC_BASE_URL` on anything that is not the production host.
