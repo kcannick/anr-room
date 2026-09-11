@@ -383,6 +383,17 @@ async function freshDb() {
   ok('035 idempotent (not duplicated)',
     applied35.filter(x => x === '035_reference_track_and_results_callback').length === 1, JSON.stringify(applied35));
 
+  // ── 036: The A&R Meeting Recap graphics on recap_jobs ─────────────────────
+  // Nullable and unbackfilled: a day published before this simply has no recap graphics
+  // until Publish the day is pressed again.
+  const jcols36 = (await db.all('PRAGMA table_info(recap_jobs)', [])).map(c => c.name);
+  for (const c of ['recap_cover_url', 'recap_thumb_url', 'recap_caption']) {
+    ok(`036 creates recap_jobs.${c}`, jcols36.includes(c), JSON.stringify(jcols36));
+  }
+  await db.init();
+  const applied36 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('036 idempotent (not duplicated)', applied36.filter(x => x === '036_recap_graphics').length === 1, JSON.stringify(applied36));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

@@ -455,6 +455,26 @@ live on anr.makinitmag.com.
     in admin.html — the plan calls for removing them as the first piece of the subtraction
     pass, deliberately not done here since it touches the live console).
 
+- **The A&R Meeting Recap graphics** (036): the daily noon live stream (count down yesterday's
+  records, reveal the Top 8 A&Rs, close on the top artists) gets an Instagram Live cover
+  (9:16, 1080×1920) and a YouTube thumbnail (16:9, 1920×1080) plus a caption, rendered by the
+  daily publish alongside the Top 8 cards and hosted at `daily/<day>/recap-{cover,thumb}.png`
+  (`recap_jobs.recap_cover_url / recap_thumb_url / recap_caption`). The DATE is the hero
+  field (MM.DD.YY of `results_at` — the day the stream AIRS, not `drop_day`) because it is
+  what tells thirty near-identical videos apart. The names panel fills itself: the day's
+  artists (IG handle where we have one, else the artist name; reference tracks never print)
+  and the Top 8 A&Rs — **artists in DROP order, A&Rs ALPHABETISED, never ranked**, because
+  the stream is the reveal and the cover goes up before it. Built to the brand
+  (`anr-brand` skill: Archivo + Space Mono, green-only accent, the 13° block/rule/tick/cut)
+  in Satori — the first cards on Archivo (`assets/fonts/archivo-v25-latin-{800,900}.ttf`;
+  the older DM Sans cards are untouched). Console: the daily screen's graphics card shows
+  both with download names, and falls back to a live admin-only render
+  (`/api/card/recap-cover|recap-thumb?s=`) when Blob is unset or before publish, so there
+  is always a cover; **Copy recap caption** reads the stored text or builds it live
+  (`/api/admin/daily/recap-caption`). Same best-effort contract as the Top 8 cards: the
+  caption is built first and kept when hosting fails. The Chrome-rendered original lives
+  untracked in the main checkout at `public/graphics/` (a local design tool, not app code).
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count

@@ -1781,6 +1781,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const LH = { 'X-Player-Token': lVer.d.token };
   const lQ = (await call('/api/me/state', null, 'GET', LH)).d.queue;
   for (const q of lQ) await call('/api/vote', { roundId: q.id, taste: 7, predict: 7.0 }, 'POST', LH);
+  // Two more A&Rs who rate ONE record each — they finish well behind Lex on points, which
+  // is exactly what the recap cover must not show.
+  for (const [em, nm] of [['zed@test.com', 'Zed'], ['amber@test.com', 'amber']]) {
+    const rq = await call('/api/join/request', { sessionId: LDROP, email: em });
+    const vr = await call('/api/join/verify', { sessionId: LDROP, email: em, code: rq.d.devCode, name: nm });
+    await call('/api/vote', { roundId: lQ[0].id, taste: 5, predict: 5.0 }, 'POST', { 'X-Player-Token': vr.d.token });
+  }
 
   const closesAt = Number((await lSess()).window_closes_at);
   const tClose = await tick(closesAt + 1000);
@@ -1788,7 +1795,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('every record is ratified', (await lRounds()).every(r => r.status === 'ratified'));
   ok('the day reaches async_state=ratified', (await lSess()).async_state === 'ratified');
   const scored = await dDb.all('SELECT points, room_average FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [LDROP]);
-  ok('the tally scored every vote', scored.length === 3 && scored.every(v => v.points != null), JSON.stringify(scored));
+  ok('the tally scored every vote', scored.length === 5 && scored.every(v => v.points != null), JSON.stringify(scored));
 
   const tCloseAgain = await tick(closesAt + 2000);
   ok('a second close tick does not re-tally (double-bumped points would be permanent)',
@@ -1844,6 +1851,47 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the day flips to completed/published with a published_at',
     pubbed.status === 'completed' && pubbed.async_state === 'published' && pubbed.published_at > 0,
     pubbed.status + '/' + pubbed.async_state);
+
+  console.log('\n— The A&R Meeting Recap: the noon stream\'s cover, thumbnail and caption —');
+  // Rendered and stored by the same publish as the Top 8 cards, on the same best-effort
+  // contract: no Blob token here, so the hosted URLs are null and the day published anyway —
+  // but the caption is built first and kept.
+  const rjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
+  ok('the publish stores the recap caption even with no Blob token',
+    !!rjob && /The A&R Meeting Recap/.test(rjob.recap_caption || ''), JSON.stringify(rjob && rjob.recap_caption));
+  ok('and leaves the hosted recap URLs null rather than failing the publish',
+    rjob.recap_cover_url == null && rjob.recap_thumb_url == null, JSON.stringify([rjob.recap_cover_url, rjob.recap_thumb_url]));
+  const rd = await srv._recapGraphicsData(pubbed);
+  ok('artists print in DROP order — the countdown is the reveal',
+    JSON.stringify(rd.artists) === JSON.stringify(['Artist 41', 'Artist 42', 'Artist 43']), JSON.stringify(rd.artists));
+  ok('A&Rs print ALPHABETISED, not by points (Lex leads the board; amber leads the list)',
+    JSON.stringify(rd.ars) === JSON.stringify(['amber', 'Lex', 'Zed']), JSON.stringify(rd.ars));
+  ok('the date is the day the stream AIRS (results_at), as MM.DD.YY',
+    /^\d\d\.\d\d\.\d\d$/.test(rd.date) && rd.date === srv._recapDateLabel(pubbed.results_at), rd.date);
+  ok('the stored caption carries the date, every artist and every A&R',
+    rjob.recap_caption.includes(rd.date) && rd.artists.every(a => rjob.recap_caption.includes(a))
+      && rd.ars.every(a => rjob.recap_caption.includes(a)) && /makinitmag\.com\/Review/.test(rjob.recap_caption),
+    rjob.recap_caption);
+  ok('and the caption is the operator\'s wording, not a slogan', /count down every song/.test(rjob.recap_caption));
+  // A reference track is a known record, not an artist on the show.
+  await dDb.run(`INSERT INTO rounds (id, session_id, idx, status, song_title, song_artist, is_reference, created_at)
+                 VALUES ('lref', ?, 99, 'ratified', 'A Hit', 'Famous Artist', 1, ?)`, [LDROP, Date.now()]);
+  const rdRef = await srv._recapGraphicsData(pubbed);
+  ok('a reference track never prints as an artist', !rdRef.artists.includes('Famous Artist'), JSON.stringify(rdRef.artists));
+  await dDb.run("DELETE FROM rounds WHERE id = 'lref'");
+  // The live render routes, for a console with no Blob — and for posting the cover early.
+  const pngDims = (buf) => buf.readUInt32BE(16) + 'x' + buf.readUInt32BE(20);
+  const rcov = await fetch(base + '/api/card/recap-cover?s=' + LDROP, { headers: BOOTH });
+  const rcovBuf = Buffer.from(await rcov.arrayBuffer());
+  ok('the recap cover renders as a 1080x1920 PNG', rcov.status === 200 && rcov.headers.get('content-type') === 'image/png' && pngDims(rcovBuf) === '1080x1920',
+    rcov.status + ' ' + pngDims(rcovBuf));
+  const rth = await fetch(base + '/api/card/recap-thumb?s=' + LDROP, { headers: BOOTH });
+  const rthBuf = Buffer.from(await rth.arrayBuffer());
+  ok('the recap thumbnail renders as a 1920x1080 PNG', rth.status === 200 && pngDims(rthBuf) === '1920x1080', rth.status + ' ' + pngDims(rthBuf));
+  const rcovAnon = await fetch(base + '/api/card/recap-cover?s=' + LDROP);
+  ok('the recap render is platform-admin only (it names the A&Rs before the stream does)', rcovAnon.status === 403 || rcovAnon.status === 401, 'got ' + rcovAnon.status);
+  const rcapTxt = await fetch(base + "/api/admin/daily/recap-caption?s=" + LDROP, { headers: BOOTH });
+  ok('the caption preview is the same text the publish stored', rcapTxt.status === 200 && (await rcapTxt.text()) === rjob.recap_caption);
 
   // 7a — the A&R digest. This is notifyAudience()'s FIRST production caller, and the
   // assertion that its {sql, params} fragment really does compose into an INSERT...SELECT.

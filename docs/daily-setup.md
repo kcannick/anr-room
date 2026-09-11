@@ -70,7 +70,8 @@ one. Without it, `/api/cron/daily` returns 503 and **the day never opens** — A
 
 ## 4. `BLOB_READ_WRITE_TOKEN`
 
-Hosts the Top 8 graphics that ride the daily results email.
+Hosts the Top 8 graphics that ride the daily results email, and the A&R Meeting Recap cover
+and thumbnail for the noon stream (those also render live in the console without it).
 
 If it is missing, the day **still publishes and results still reveal** — that is deliberate, a
 stalled reveal is worse than a graphic-less email — but the digest goes out without its

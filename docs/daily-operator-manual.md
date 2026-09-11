@@ -84,6 +84,19 @@ carousel. If they show amber ("did not render"), the day still published on purp
 reveal is worse than a graphic-less email. Fix the cause and press **Publish the day** to
 re-render.
 
+Below them, **The A&R Meeting Recap**: the noon stream's Instagram Live cover (9:16) and
+YouTube thumbnail (16:9), with the stream date large, and the day's artists and A&Rs filled
+in. Click either to open it full size; the download name carries the date. **Copy recap
+caption** gives the stream's caption with the same names.
+
+- Artists are in drop order and A&Rs are alphabetical. Nothing on the cover is ranked — the
+  stream is the reveal, and the cover goes up before it.
+- Artists print by Instagram handle when the submission had one, otherwise by name, so a
+  name instead of a handle means nobody gave us the handle.
+- They are hosted at publish like the Top 8 cards. Before publish, or if hosting failed, the
+  console renders them live instead, so there is always a cover to post. Before the day
+  tallies the A&Rs column is empty lines.
+
 ### Build the next drop
 Always visible, because stacking tomorrow and fixing today are different jobs on the same
 screen. Add records one at a time; the day is created around the first one.
@@ -145,8 +158,8 @@ pressing it twice on a large day is normal and correct.
 within five minutes.
 
 ### Publish the day
-Publishes the currently tallied day: renders the two graphics, builds the caption, queues the
-A&R digest, and flips the day to published — **which is the moment results are revealed to
+Publishes the currently tallied day: renders the Top 8 graphics and the Meeting Recap cover and
+thumbnail, builds both captions, queues the A&R digest, and flips the day to published — **which is the moment results are revealed to
 everyone**. Then it runs a lifecycle tick.
 
 - Refuses if the day has not finished tallying ("the day is `closing` …"). Press **Run the

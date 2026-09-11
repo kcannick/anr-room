@@ -1274,6 +1274,60 @@ async function pushDayResults(session) {
   }
 }
 
+// ===== THE A&R MEETING RECAP — the daily noon stream's graphics + caption =====
+// The operator goes live at noon and counts down the previous day's records, reveals the Top
+// 8 A&Rs, then closes on the top artists. The stream needs an Instagram Live cover (9:16), a
+// YouTube thumbnail (16:9) and a caption, all carrying the stream DATE — the one field that
+// tells thirty near-identical videos apart — and the day's artists and A&Rs by handle.
+//
+// NOTHING HERE IS IN RANK ORDER. The stream IS the reveal: artists print in drop order and
+// the Top 8 A&Rs alphabetised, so a cover posted an hour before the stream gives away who is
+// on it, never where they placed. The Top 8 card (ranked) stays the post-stream graphic.
+//
+// The date is the day the stream AIRS — results_at (noon ET after the window closes), not
+// drop_day (when the records opened) — because the video is labelled by when it happened.
+function recapDateLabel(ts) {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
+    month: '2-digit', day: '2-digit', year: '2-digit' }).formatToParts(new Date(Number(ts)));
+  const g = (t) => (p.find(x => x.type === t) || {}).value || '';
+  return `${g('month')}.${g('day')}.${g('year')}`;
+}
+async function recapGraphicsData(session) {
+  const rows = await db.all(
+    // Reference tracks are known records, not artists on the show — they never print.
+    `SELECT song_title, song_artist, artist_instagram FROM rounds
+      WHERE session_id = ? AND COALESCE(is_reference, 0) = 0 ORDER BY idx ASC`, [session.id]);
+  const artists = [];
+  for (const r of rows) {
+    const ig = igClean(r.artist_instagram);
+    const label = ig ? '@' + ig : (r.song_artist || r.song_title || '').trim();
+    // One artist with three records on the day prints once.
+    if (label && !artists.some(a => a.toLowerCase() === label.toLowerCase())) artists.push(label);
+  }
+  const ars = (await cardArsData({ sessionId: session.id }))
+    .map(a => (a.ig ? '@' + a.ig : (a.name || '').trim()))
+    .filter(Boolean)
+    .sort((a, b) => a.replace(/^@/, '').localeCompare(b.replace(/^@/, ''), 'en', { sensitivity: 'base' }));
+  const airs = Number(session.results_at) || etEpoch(etNextDay(session.drop_day), 12) || now();
+  return { date: recapDateLabel(airs), artists, ars };
+}
+// The stream caption: plain and direct (operator's copy voice), with the same lists as the
+// graphics. Handles where we have them, names where we do not, so the operator can see who
+// still needs tagging.
+function recapCaption(d) {
+  const lines = [
+    `${shareCards.RECAP_TITLE} — ${d.date}`,
+    `${shareCards.RECAP_TIME} ET`,
+    '',
+    "Today we count down every song from yesterday's A&R Meeting, reveal the Top 8 A&Rs, and go over the top artists. Rate the songs with us in the comments.",
+  ];
+  if (d.artists.length) lines.push('', "Artists in today's recap:", ...d.artists);
+  if (d.ars.length) lines.push('', 'A&Rs on the board:', ...d.ars);
+  lines.push('', `Submit music: ${shareCards.RECAP_CTA[0].url}`, `Become an A&R: ${shareCards.RECAP_CTA[1].url}`,
+    '', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+  return lines.join('\n');
+}
+
 // Publish the day: render and host the two shared cards, build the post kit caption, queue
 // the A&R digest, and flip the session to completed/published.
 //
@@ -1328,9 +1382,23 @@ async function publishDailyDrop(session, { deadline = null } = {}) {
     // not, so the operator can still assemble the post by hand.
     console.error('[daily] card render/upload failed:', e.message);
   }
+  // The A&R Meeting Recap cover + thumbnail + caption, same contract: the caption is built
+  // first and kept even when the render or the upload fails.
+  let recapCover = null, recapThumb = null, recapText = null;
+  try {
+    const rd = await recapGraphicsData(session);
+    recapText = recapCaption(rd);
+    if (!deadline || Date.now() < deadline) {
+      recapCover = await uploadPng(`daily/${day}/recap-cover.png`, await shareCards.renderPng('recapCover', rd));
+      recapThumb = await uploadPng(`daily/${day}/recap-thumb.png`, await shareCards.renderPng('recapThumb', rd));
+    }
+  } catch (e) {
+    console.error('[daily] recap graphics failed:', e.message);
+  }
   await db.run(
-    `UPDATE recap_jobs SET ars_url = ?, songs_url = ?, caption = ? WHERE session_id = ?`,
-    [arsUrl, songsUrl, caption, sessionId]);
+    `UPDATE recap_jobs SET ars_url = ?, songs_url = ?, caption = ?,
+            recap_cover_url = ?, recap_thumb_url = ?, recap_caption = ? WHERE session_id = ?`,
+    [arsUrl, songsUrl, caption, recapCover, recapThumb, recapText, sessionId]);
 
   try { await enqueueDailyDigest(session); }
   catch (e) { console.error('[daily] digest enqueue failed:', e.message); }
@@ -6699,6 +6767,16 @@ async function handleApi(req, res, url) {
         if (page === 3 && d.votes < 8) return bad(res, 'The segments page requires at least 8 eligible evaluations', 409);
         return sendPng(await shareCards.renderPng('report' + page, page === 1 ? d : { ...d, sub: d.sub23 }), 'private, no-store');
       }
+      // The A&R Meeting Recap cover (9:16) / thumbnail (16:9) for a daily drop, rendered
+      // live off the day's records and board. Platform-admin: it names the day's A&Rs before
+      // the stream reveals them, and a drop spans no room owner. ?s=<sessionId>.
+      if (kind === 'recap-cover' || kind === 'recap-thumb') {
+        if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+        const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
+        if (!session) return bad(res, 'Drop not found', 404);
+        const rd = await recapGraphicsData(session);
+        return sendPng(await shareCards.renderPng(kind === 'recap-cover' ? 'recapCover' : 'recapThumb', rd), 'private, no-store');
+      }
       // Chart carousel (admin): slide 0 is the cover, 1..N are the list slides. Same query
       // params as /api/admin/charts, plus &per= (rows per slide) and &slide=.
       if (kind === 'chart') {
@@ -7220,7 +7298,12 @@ async function handleApi(req, res, url) {
       // about to go out belongs here, next to the hold that is the only chance to stop it.
       comments: rounds.reduce((n, r) => n + (Number(r.comments_shared) || 0), 0),
       cards: { ars: (job && job.ars_url) || null, songs: (job && job.songs_url) || null,
-        caption: (job && job.caption) || null, stage: (job && job.stage) || null },
+        caption: (job && job.caption) || null, stage: (job && job.stage) || null,
+        // The A&R Meeting Recap: hosted at publish; the console falls back to a live render
+        // off /api/card/recap-* (admin-only) when these are null, so a missing Blob token
+        // never leaves the stream without a cover.
+        recapCover: (job && job.recap_cover_url) || null, recapThumb: (job && job.recap_thumb_url) || null,
+        recapCaption: (job && job.recap_caption) || null },
       queues: { digest, artistEmail: chan('email'), artistSms: chan('sms') },
       artistHold: { until: holdUntil, held: !!(holdUntil && now() < holdUntil),
         minutes: ARTIST_NOTICE_DELAY_MIN },
@@ -7229,6 +7312,17 @@ async function handleApi(req, res, url) {
       building,
       blobConfigured: !!process.env.BLOB_READ_WRITE_TOKEN,
     });
+  }
+
+  // The A&R Meeting Recap caption for a drop, as text — the same builder the publish stores,
+  // so the console can offer it before noon (the cover is posted ahead of the stream).
+  if (p === '/api/admin/daily/recap-caption' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const sid = url.searchParams.get('s');
+    const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
+    if (!session) return bad(res, 'Drop not found', 404);
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
+    return res.end(recapCaption(await recapGraphicsData(session)));
   }
 
   // Run the publish + drain once by hand, for a cron that never fired. Same implementation
@@ -7677,3 +7771,6 @@ module.exports._dailyDigestEmailHtml = dailyDigestEmailHtml;
 // and both halves (what we send, and when we stop trying) are asserted directly.
 module.exports._buildDayResults = buildDayResults;
 module.exports._pushDayResults = pushDayResults;
+module.exports._recapGraphicsData = recapGraphicsData;
+module.exports._recapCaption = recapCaption;
+module.exports._recapDateLabel = recapDateLabel;

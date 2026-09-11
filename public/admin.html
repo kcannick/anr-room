@@ -1911,21 +1911,53 @@ function renderDaily(){
   // graphics
   const c = d.cards || {};
   let cardHtml = '';
+  const fig = (url, name, label) => `<figure style="flex:1;margin:0;min-width:0"><a href="${esc(url)}" target="_blank" rel="noopener" download="${esc(name)}"><img src="${esc(url)}" alt="${esc(label)}" style="width:100%;border-radius:12px;border:1px solid var(--line);display:block"></a><figcaption class="muted" style="font-size:11px;margin-top:4px">${esc(label)}</figcaption></figure>`;
   if(c.ars || c.songs){
     cardHtml += '<div class="row" style="gap:10px;align-items:flex-start">'
-      + (c.ars ? `<a href="${esc(c.ars)}" target="_blank" rel="noopener" style="flex:1"><img src="${esc(c.ars)}" style="width:100%;border-radius:12px;border:1px solid var(--line)"></a>` : '')
-      + (c.songs ? `<a href="${esc(c.songs)}" target="_blank" rel="noopener" style="flex:1"><img src="${esc(c.songs)}" style="width:100%;border-radius:12px;border:1px solid var(--line)"></a>` : '')
+      + (c.ars ? fig(c.ars, 'top8-ars.png', 'Top 8 A&Rs') : '')
+      + (c.songs ? fig(c.songs, 'top8-songs.png', 'Top 8 Records') : '')
       + '</div>';
   } else if(dr.async_state === 'published'){
-    cardHtml += `<div class="empty" style="color:var(--gold)">The graphics did not render${d.blobConfigured?'':' — BLOB_READ_WRITE_TOKEN is not set'}. The day published anyway; the caption is still below.</div>`;
+    cardHtml += `<div class="empty" style="color:var(--gold)">The Top 8 graphics did not render${d.blobConfigured?'':' — BLOB_READ_WRITE_TOKEN is not set'}. The day published anyway; the caption is still below.</div>`;
   } else {
     cardHtml += '<div class="empty">Rendered when the day publishes.</div>';
   }
   if(c.caption){
     cardHtml += `<div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" onclick="dlCopyCaption()">Copy caption</button></div>`;
   }
+  // The A&R Meeting Recap — the noon stream's Instagram Live cover (9:16) and YouTube
+  // thumbnail (16:9), dated for the day the stream airs, with the day's artists and A&Rs
+  // filled in (drop order / alphabetical — never ranked; the stream is the reveal). Hosted
+  // at publish; before that, or if hosting failed, the console renders them live off
+  // /api/card/recap-* so there is always a cover to download.
+  const dateTag = (dr.dayLabel || dr.day || '').replace(/[^A-Za-z0-9]+/g,'-');
+  const recapCover = c.recapCover || dlRecapUrl('recap-cover'), recapThumb = c.recapThumb || dlRecapUrl('recap-thumb');
+  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The A&R Meeting Recap</h4>
+    <div class="row" style="gap:10px;align-items:flex-start">
+      ${fig(recapCover, 'meeting-recap-' + dateTag + '-1080x1920.png', 'Instagram Live cover · 9:16')}
+      ${fig(recapThumb, 'meeting-recap-' + dateTag + '-1920x1080.png', 'YouTube thumbnail · 16:9')}
+    </div>
+    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">${c.recapCover ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed' + (d.blobConfigured ? '' : ' — BLOB_READ_WRITE_TOKEN is not set') + '; these are rendered live instead.' : 'Rendered live from the day so far. The A&Rs column fills in once the day tallies.')}
+      Artists print in drop order and A&Rs alphabetically — nothing on the cover is ranked.</p>
+    <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost sm" onclick="dlCopyRecapCaption()">Copy recap caption</button></div>`;
   $('#dlCardBody').innerHTML = cardHtml;
   renderBuild();
+}
+// The live-render fallback carries the admin credential as a header, which an <img> cannot
+// send, so it is fetched and shown as an object URL. Same pattern as the chart carousel.
+const dlRecapCache = {};
+function dlRecapUrl(kind){
+  const sid = DL && DL.drop && DL.drop.id; if(!sid) return '';
+  const key = kind + ':' + sid;
+  if(dlRecapCache[key]) return dlRecapCache[key];
+  dlRecapCache[key] = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+  fetch('/api/card/' + kind + '?s=' + encodeURIComponent(sid), { headers: chAuthHeaders() })
+    .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
+    .then(b => { dlRecapCache[key] = URL.createObjectURL(b);
+      document.querySelectorAll('#dlCardBody img[alt^="' + (kind === 'recap-cover' ? 'Instagram' : 'YouTube') + '"]').forEach(img => {
+        img.src = dlRecapCache[key]; img.closest('a').href = dlRecapCache[key]; }); })
+    .catch(() => { delete dlRecapCache[key]; });
+  return dlRecapCache[key];
 }
 /* ---- The records table: sortable, with a live play link ---- */
 // The order is remembered per device: the countdown show runs off this table for an hour,
@@ -2060,6 +2092,18 @@ $('#bAdd').onclick = async () => {
 window.dlCopyCaption = async () => {
   try{ await navigator.clipboard.writeText((DL.cards && DL.cards.caption) || ''); alert('Caption copied.'); }
   catch(e){ alert('Could not copy — the caption is on the day’s recap job.'); }
+};
+// The recap caption is stored at publish; before that it is built here from the same status
+// payload so the operator can post the cover early. Same lists, same order rule.
+window.dlCopyRecapCaption = async () => {
+  const c = DL.cards || {};
+  let text = c.recapCaption;
+  if(!text){
+    try{ text = await (await fetch('/api/admin/daily/recap-caption?s=' + encodeURIComponent(DL.drop.id), { headers: chAuthHeaders() })).text(); }
+    catch(e){ text = ''; }
+  }
+  try{ await navigator.clipboard.writeText(text || ''); alert('Recap caption copied.'); }
+  catch(e){ alert('Could not copy the recap caption.'); }
 };
 
 // Fix a broken play link mid-window.

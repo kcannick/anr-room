@@ -37,7 +37,7 @@ const C = {
   signal: '#4bb749', accent: '#6d5fe0', gold: '#f5c518', hot: '#ff5d6c',
   line: '#2e2750', panel: 'rgba(23,19,40,0.66)', avBg: '#2c2352',
 };
-const MONO = 'Space Mono', SANS = 'DM Sans';
+const MONO = 'Space Mono', SANS = 'DM Sans', DISPLAY = 'Archivo';
 
 // ---- fonts (loaded once) ----
 let _fonts = null;
@@ -52,6 +52,11 @@ function fonts() {
     f('dm-sans-v17-latin-900.ttf', SANS, 900),
     f('space-mono-v17-latin-regular.ttf', MONO, 400),
     f('space-mono-v17-latin-700.ttf', MONO, 700),
+    // Archivo is the brand's display face (anr-brand skill). The older cards were built on
+    // DM Sans before the brand system existed and stay that way; the recap graphics are
+    // the first cards built to the brand, so they carry it. Static weights only.
+    f('archivo-v25-latin-800.ttf', DISPLAY, 800),
+    f('archivo-v25-latin-900.ttf', DISPLAY, 900),
   ];
   return _fonts;
 }
@@ -393,6 +398,197 @@ function bodyChartList(d) {
 }
 
 // ---- element builders per type ----
+
+// ============ The A&R Meeting Recap — daily stream graphics ============
+// Two formats off ONE data shape { date, artists[], ars[] }:
+//   'recapCover'  1080×1920 (9:16) — the Instagram Live cover
+//   'recapThumb'  1920×1080 (16:9) — the YouTube thumbnail
+// Built to the brand (anr-brand skill): Archivo display + Space Mono data, signal green as
+// the ONLY accent (a live stream = green; nothing here is head-to-head or money), and the
+// 13° device as the block, the rule, the tick bullets and a cut on one edge of the names
+// panel. Copy is the operator's, verbatim. The approved look is the Chrome-rendered
+// public/graphics/meeting-recap.html in the main checkout; this is that design in Satori so
+// it renders on the serverless publish path with no headless browser.
+//
+// The names panel takes the day's ARTISTS in drop order and the Top 8 A&Rs ALPHABETISED:
+// the stream is a countdown that reveals the ranking, so nothing on the cover may be in
+// rank order. Empty lists render as ruled blank lines so the panel reads as intentional.
+const RECAP_SIZES = { recapCover: [1080, 1920], recapThumb: [1920, 1080] };
+const RECAP = {
+  bg: '#0e0c1a', panel: '#171328', line: '#2e2750', fg: '#eae9f2', dim: '#9793b4',
+  green: '#4bb749', greenInk: '#06210b',
+};
+const RECAP_TITLE = 'The A&R Meeting Recap';
+const RECAP_TIME = 'Daily at Noon';
+const RECAP_CTA = [
+  { label: 'Submit Music', url: 'makinitmag.com/Review' },
+  { label: 'Become an A&R', url: JOIN_URL },
+];
+const SKEW = -13, TAN13 = Math.tan(13 * Math.PI / 180);
+
+let _logo = null;
+function logoDataUri() {
+  if (!_logo) _logo = 'data:image/png;base64,' + fs.readFileSync(path.join(__dirname, 'assets', 'makinit-logo-white.png')).toString('base64');
+  return _logo;
+}
+// The mark: a skewed green square holding "A&R", the glyphs un-skewed inside it.
+function arBlock(size, fontSize) {
+  return h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: size, height: size, background: RECAP.green, borderRadius: Math.round(size * 0.075),
+    transform: `skewX(${SKEW}deg)` },
+    text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize,
+      letterSpacing: -Math.round(fontSize * 0.05), color: RECAP.greenInk, lineHeight: 1 }, 'A&R'));
+}
+function tick(w, hgt, mr) {
+  return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, flexShrink: 0, marginRight: mr }, '');
+}
+function recapTitle(lines, fontSize) {
+  // "A&R" is the mark, so it takes the green; every other word stays ink.
+  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize, lineHeight: 0.88, textTransform: 'uppercase',
+    letterSpacing: -Math.round(fontSize * 0.04), ...NOWRAP };
+  return col({}, lines.map(words => row({ alignItems: 'flex-end' }, words.map((w, i) =>
+    text({ ...st, color: w === 'A&R' ? RECAP.green : RECAP.fg, marginLeft: i ? Math.round(fontSize * 0.18) : 0 }, w)))));
+}
+function recapRule(w, hgt, mt, mb) {
+  return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, marginTop: mt, marginBottom: mb, marginLeft: 4 }, '');
+}
+function recapDate(date, fontSize) {
+  return text({ fontFamily: MONO, fontWeight: 700, fontSize, lineHeight: 1, letterSpacing: -Math.round(fontSize * 0.02), color: RECAP.fg, ...NOWRAP }, date);
+}
+function recapTime(fontSize, mt) {
+  return text({ fontFamily: MONO, fontWeight: 700, fontSize, color: RECAP.green, textTransform: 'uppercase', letterSpacing: Math.round(fontSize * 0.18), lineHeight: 1, marginTop: mt, ...NOWRAP }, RECAP_TIME);
+}
+function recapCta(c, { tickW, tickH, tickMr, labelSize, labelW, urlSize, urlMl }) {
+  return row({}, [
+    tick(tickW, tickH, tickMr),
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: labelSize, letterSpacing: -Math.round(labelSize * 0.03), lineHeight: 1, color: RECAP.fg, ...(labelW ? { width: labelW } : {}), ...NOWRAP }, c.label),
+    text({ fontFamily: MONO, fontWeight: 400, fontSize: urlSize, lineHeight: 1, color: RECAP.dim, marginLeft: urlMl || 0, ...NOWRAP }, c.url),
+  ]);
+}
+
+// One ruled column of names, at an EXPLICIT width — Satori sizes a flex column with
+// nowrap children to its content, so two flex-basis:0 columns simply overlap. Rows shrink to
+// fit the count (a 16-record day and a 4-record day share one panel), never below a floor,
+// and a name never wraps — it clips. `insetRight(i)` shortens a row from the right so the
+// column can sit under the panel's slanted edge (only its lowest rows lose width).
+function namesColumn({ label, names, rows: n, width, height, capSize, rowH, insetRight }) {
+  const capH = capSize + Math.round(capSize * 0.6);
+  const fontSize = Math.round(rowH * 0.66);
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const pr = insetRight ? insetRight(capH + (i + 1) * rowH) : 0;
+    const maxChars = Math.max(6, Math.floor((width - pr) / (fontSize * 0.5)));
+    rows.push(h({ display: 'flex', alignItems: 'flex-end', width: width - pr, height: rowH, paddingBottom: Math.round(rowH * 0.12),
+      borderBottom: `2px solid ${RECAP.line}`, flexShrink: 0, overflow: 'hidden' },
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize, lineHeight: 1, letterSpacing: -Math.round(fontSize * 0.02), color: RECAP.fg, ...NOWRAP }, clip(names[i] || '', maxChars))));
+  }
+  return col({ width, height, flexShrink: 0, overflow: 'hidden' }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: capSize, textTransform: 'uppercase', letterSpacing: Math.round(capSize * 0.22), color: RECAP.dim, opacity: 0.75, height: capH, ...NOWRAP }, label || ''),
+    ...rows,
+  ]);
+}
+
+// The names panel: panel colour on ink with the 13° cut on its RIGHT edge, leaning the way
+// the block does. Satori has no clip-path polygon, so the cut is a skewed rectangle inside an
+// overflow-hidden box — the box squares off the left edge, the skew leans the right one.
+// Returns the panel plus `insetRight(yBottom)`: how much a row ending at that height (from
+// the panel's top, padding included) must give up on the right to stay on the panel.
+function cutPanel({ left, top, width, height, padT, padR, padB, padL }, buildCols) {
+  const off = Math.ceil(height * TAN13);
+  const insetRight = (yb) => Math.max(0, Math.ceil(off * ((padT + yb) / height)) + 4);
+  const bg = h({ position: 'absolute', top: 0, left: -off - 40, width: width + 40, height, background: RECAP.panel,
+    transform: `skewX(${SKEW}deg)`, transformOrigin: 'top left' }, '');
+  const innerW = width - padL - padR;
+  return h({ position: 'absolute', left, top, width, height, overflow: 'hidden', display: 'flex' }, [
+    bg,
+    h({ position: 'absolute', left: 0, top: 0, width, height, display: 'flex', flexDirection: 'row',
+      padding: `${padT}px ${padR}px ${padB}px ${padL}px` }, buildCols({ innerW, insetRight })),
+  ]);
+}
+const gapBox = (w) => h({ width: w, flexShrink: 0 }, '');
+// One row height for every column on a panel, from the longest column: rows shrink to fit
+// the count (a 16-record day and a 4-record day share one panel), never below a floor.
+function rowHeight({ height, capSize, rows, maxRow, minRow }) {
+  const capH = capSize + Math.round(capSize * 0.6);
+  return Math.max(minRow, Math.min(maxRow, Math.floor((height - capH) / rows)));
+}
+
+function elementRecapCover(d) {
+  const W0 = 1080, H0 = 1920;
+  const artists = d.artists || [], ars = d.ars || [];
+  const panel = { left: 80, top: 1470, width: 920, height: 410, padT: 26, padR: 30, padB: 22, padL: 50 };
+  const gap = 30;
+  // Up to 8 artists is one column beside the A&Rs. A bigger day splits the artists across
+  // two columns (drop order, top to bottom then across) so rows stay readable.
+  const split = artists.length > 8;
+  const half = split ? Math.ceil(artists.length / 2) : artists.length;
+  const rows = Math.max(7, half, ars.length);
+  const colOpts = { height: panel.height - panel.padT - panel.padB, capSize: 20, rows };
+  colOpts.rowH = rowHeight({ ...colOpts, maxRow: 40, minRow: 24 });
+  const buildCols = ({ innerW, insetRight }) => {
+    const nCols = split ? 3 : 2;
+    const colW = Math.floor((innerW - gap * (nCols - 1)) / nCols);
+    const cols = split
+      ? [namesColumn({ label: 'Artists', names: artists.slice(0, half), width: colW, ...colOpts }), gapBox(gap),
+         namesColumn({ label: '', names: artists.slice(half), width: colW, ...colOpts })]
+      : [namesColumn({ label: 'Artists', names: artists, width: colW, ...colOpts })];
+    cols.push(gapBox(gap));
+    cols.push(namesColumn({ label: 'A&Rs', names: ars, width: colW, insetRight, ...colOpts }));
+    return cols;
+  };
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
+    // head — under IG Live's top chrome (~220px)
+    h({ position: 'absolute', left: 80, right: 80, top: 250, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, [
+      arBlock(190, 78),
+      { type: 'img', props: { src: logoDataUri(), style: { height: 44, opacity: 0.94 } } },
+    ]),
+    // mid — title + date in the middle third, clear of both IG strips
+    h({ position: 'absolute', left: 80, right: 80, top: 600, display: 'flex', flexDirection: 'column' }, [
+      recapTitle([['The', 'A&R'], ['Meeting'], ['Recap']], 136),
+      recapRule(260, 12, 36, 34),
+      recapDate(d.date, 196),
+      recapTime(34, 22),
+    ]),
+    h({ position: 'absolute', left: 80, right: 80, top: 1330, display: 'flex', flexDirection: 'column', gap: 22 },
+      RECAP_CTA.map(c => recapCta(c, { tickW: 14, tickH: 34, tickMr: 22, labelSize: 46, labelW: 440, urlSize: 30 }))),
+    cutPanel(panel, buildCols),
+  ]);
+}
+
+function elementRecapThumb(d) {
+  const W0 = 1920, H0 = 1080;
+  const artists = d.artists || [], ars = d.ars || [];
+  // Right of the title, above the CTA row; the bottom-right (x>1500, y>880) stays clear for
+  // YouTube's duration badge.
+  const panel = { left: 1260, top: 80, width: 590, height: 780, padT: 30, padR: 30, padB: 26, padL: 34 };
+  const gap = 30;
+  const rows = Math.max(6, artists.length, ars.length);
+  const colOpts = { height: panel.height - panel.padT - panel.padB, capSize: 19, rows };
+  colOpts.rowH = rowHeight({ ...colOpts, maxRow: 52, minRow: 24 });
+  const buildCols = ({ innerW, insetRight }) => {
+    const colW = Math.floor((innerW - gap) / 2);
+    return [
+      namesColumn({ label: 'Artists', names: artists, width: colW, ...colOpts }), gapBox(gap),
+      namesColumn({ label: 'A&Rs', names: ars, width: colW, insetRight, ...colOpts }),
+    ];
+  };
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
+    h({ position: 'absolute', left: 90, top: 80, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 40 }, [
+      arBlock(120, 50),
+      { type: 'img', props: { src: logoDataUri(), style: { height: 38, opacity: 0.94 } } },
+    ]),
+    h({ position: 'absolute', left: 90, top: 250, width: 1140, display: 'flex', flexDirection: 'column' }, [
+      recapTitle([['The', 'A&R', 'Meeting'], ['Recap']], 118),
+      recapRule(220, 11, 30, 26),
+      recapDate(d.date, 220),
+      recapTime(30, 16),
+    ]),
+    h({ position: 'absolute', left: 90, top: 905, display: 'flex', flexDirection: 'row', gap: 70 },
+      RECAP_CTA.map(c => recapCta(c, { tickW: 12, tickH: 30, tickMr: 18, labelSize: 38, urlSize: 26, urlMl: 18 }))),
+    cutPanel(panel, buildCols),
+  ]);
+}
+
 function element(type, data = {}) {
   const showNumbers = !!data.showNumbers;
   if (type === 'score') return frame({ title: 'A&R Record', sub: data.session || null, body: bodyScore(data) });
@@ -404,17 +600,22 @@ function element(type, data = {}) {
   if (type === 'report3') return frame({ pill: 'report', titleSize: 60, title: 'Who connected', sub: data.sub, body: bodyReport3(data) });
   if (type === 'chartCover') return frame({ title: null, sub: null, body: bodyChartCover(data) });
   if (type === 'chartList') return frame({ titleSize: 66, title: clip(data.title, 18), sub: data.sub, body: bodyChartList(data) });
+  if (type === 'recapCover') return elementRecapCover(data);
+  if (type === 'recapThumb') return elementRecapThumb(data);
   throw new Error('unknown card type: ' + type);
 }
 
 // ---- render to PNG ----
 let _satori = null, _Resvg = null;
+// Every card is 3:4 except the recap graphics, which carry their own size.
+function sizeOf(type) { return RECAP_SIZES[type] || [W, H]; }
 async function renderPng(type, data) {
   if (!_satori) { const m = require('satori'); _satori = m.default || m; }
   if (!_Resvg) { _Resvg = require('@resvg/resvg-js').Resvg; }
-  const svg = await _satori(element(type, data), { width: W, height: H, fonts: fonts() });
-  const png = new _Resvg(svg, { fitTo: { mode: 'width', value: W } }).render().asPng();
+  const [w, hgt] = sizeOf(type);
+  const svg = await _satori(element(type, data), { width: w, height: hgt, fonts: fonts() });
+  const png = new _Resvg(svg, { fitTo: { mode: 'width', value: w } }).render().asPng();
   return png;
 }
 
-module.exports = { renderPng, element, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL };
+module.exports = { renderPng, element, sizeOf, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA };
