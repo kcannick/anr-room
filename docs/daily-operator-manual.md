@@ -108,6 +108,13 @@ screen. Add records one at a time; the day is created around the first one.
 - **Day** is blank by default, meaning "the next day being built". Only fill it to work on a
   specific date (`YYYY-MM-DD`, within 3 days of today).
 - **Edit** / **Remove** work on any staged record right up until noon.
+- **Pushed for the wrong day?** If the noon lock-in on the review site is pressed after 12:00,
+  the push is dated tomorrow and today has no drop. Renaming the session or changing its
+  scheduled start does nothing — a drop runs off its own day and window. A day that has not
+  opened can be moved: `POST /api/admin/daily/move` with `{ "fromDay": "YYYY-MM-DD",
+  "toDay": "YYYY-MM-DD" }` (platform admin). The open, close and results times move with it,
+  and if the new day's noon has already passed the drop opens right away. A day that is
+  already open never moves. (A console button for this is the next step.)
 - A typical day is 4 free records plus up to 12 paid. The hard ceiling is 24; the counter shows
   where you are, not a target.
 

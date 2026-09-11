@@ -421,6 +421,15 @@ live on anr.makinitmag.com.
     device) with the play link as a real link — this is how the live countdown show of the
     previous day's drop is run off the console. Ties rank by votes then drop order; an
     unscored record has no rank and sits last.
+  - **A cold drop can be MOVED to another day** (`/api/admin/daily/move`, 2026-09-11): the
+    review-site noon lock-in pressed at 12:01 pushes a day dated TOMORROW, and nothing on the
+    console could fix it — a drop runs off `drop_day` + `window_opens_at/closes_at/results_at`,
+    which the session-config screen never writes (it writes `scheduled_at` + name, which a drop
+    never reads). The move rewrites the window and the rounds with it, restores
+    `status='upcoming'`, and opens the drop in the same request when the target day's noon has
+    passed (`openAsyncDrop()`, the lifecycle's open step extracted so ONE drop can open without
+    running the tick over every day). Refused once `async_state <> 'scheduled'` or any vote
+    exists, and when the target day already has a drop. **No console button yet** (mockup first).
   - Setup: **docs/daily-setup.md**. Needs Vercel **Pro** (a `*/5` cron fails a Hobby deploy),
     `DAILY_INGEST_TOKEN` (separate from `INGEST_TOKEN` — different blast radius), `CRON_SECRET`,
     and `PUBLIC_BASE_URL` on anything that is not the production host.

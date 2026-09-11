@@ -1035,6 +1035,20 @@ const DROP_TICK_BUDGET_MS = 22000;   // of the 30s function ceiling
 // no such moment, and there is no unsend. This hour is that checkpoint, restored.
 const ARTIST_NOTICE_DELAY_MIN = 60;
 
+// The open step on its own: claim, then flip every record in one statement. Shared by the
+// lifecycle tick and by /api/admin/daily/move, which opens a drop the moment it lands on a
+// day whose noon has passed — without running the whole lifecycle over every other day.
+// Returns false when another invocation claimed it first.
+async function openAsyncDrop(s) {
+  const claim = await db.run(
+    "UPDATE sessions SET async_state = 'open', status = 'live' WHERE id = ? AND COALESCE(async_state,'scheduled') = 'scheduled'",
+    [s.id]);
+  if (!claim.changes) return false;
+  await db.run("UPDATE rounds SET status = 'voting' WHERE session_id = ? AND status = 'pending'", [s.id]);
+  await realtime.publish(s.id, 'round');
+  return true;
+}
+
 async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null } = {}) {
   const t0 = Date.now();
   const left = () => budgetMs - (Date.now() - t0);
@@ -1054,13 +1068,7 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
 
     // ---- open: scheduled -> open (claim, then flip every record in one statement) ----
     if (state === 'scheduled' && at >= Number(s.window_opens_at)) {
-      const claim = await db.run(
-        "UPDATE sessions SET async_state = 'open', status = 'live' WHERE id = ? AND COALESCE(async_state,'scheduled') = 'scheduled'",
-        [s.id]);
-      if (!claim.changes) continue;                       // another invocation won
-      await db.run("UPDATE rounds SET status = 'voting' WHERE session_id = ? AND status = 'pending'", [s.id]);
-      await realtime.publish(s.id, 'round');
-      out.opened++;
+      if (await openAsyncDrop(s)) out.opened++;            // false: another invocation won
       continue;                                            // nothing else is due for this day yet
     }
 
@@ -2875,11 +2883,21 @@ async function stageDailyDrop(res, body) {
 //
 // Rounds are created 'pending'; the lifecycle cron flips them all to 'voting' in one statement
 // at the open. Ingest stays dumb and the open stays atomic.
-async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, resultsAt }) {
-  const wo = opensAt != null ? Number(opensAt) : etEpoch(day, DROP_OPEN_MIN / 60, DROP_OPEN_MIN % 60);
+// A day's default window: opens at noon, closes 9 AM next day, publishes noon next day.
+function dropWindowFor(day) {
   const nextDay = etNextDay(day);
-  const wc = closesAt != null ? Number(closesAt) : etEpoch(nextDay, DROP_CLOSE_MIN / 60, DROP_CLOSE_MIN % 60);
-  const rp = resultsAt != null ? Number(resultsAt) : etEpoch(nextDay, DROP_PUBLISH_MIN / 60, DROP_PUBLISH_MIN % 60);
+  return {
+    opensAt: etEpoch(day, DROP_OPEN_MIN / 60, DROP_OPEN_MIN % 60),
+    closesAt: etEpoch(nextDay, DROP_CLOSE_MIN / 60, DROP_CLOSE_MIN % 60),
+    resultsAt: etEpoch(nextDay, DROP_PUBLISH_MIN / 60, DROP_PUBLISH_MIN % 60),
+  };
+}
+
+async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, resultsAt }) {
+  const dflt = dropWindowFor(day);
+  const wo = opensAt != null ? Number(opensAt) : dflt.opensAt;
+  const wc = closesAt != null ? Number(closesAt) : dflt.closesAt;
+  const rp = resultsAt != null ? Number(resultsAt) : dflt.resultsAt;
   const sid = id(9), ts = now();
   await db.tx(async (tx) => {
     await tx.run(
@@ -7160,6 +7178,76 @@ async function handleApi(req, res, url) {
 
     const added = await addDropRound(existing, rec);
     return send(res, added.ok ? 200 : 409, added);
+  }
+
+  // ---- Move a drop that has not opened yet to another day. ----
+  // The case this exists for: the review site's noon lock-in is pressed at 12:01, so the
+  // push is dated TOMORROW and today has no drop — and nothing on the console could fix it.
+  // A drop runs off drop_day and its window (window_opens_at / window_closes_at /
+  // results_at); the session-config screen only writes scheduled_at and the name, which a
+  // drop never reads, so renaming it or moving its "scheduled start" changed nothing about
+  // when the cron would open it. This moves the whole window, and the records with it.
+  //
+  // Only a COLD day moves. Once a drop is open its deadline has been shown to A&Rs and the
+  // completion-bonus tiers are anchored to it — the same reason a re-push cannot replace a
+  // started day. A day that already has a drop is refused too (uniq_session_drop_day is the
+  // real guard; the pre-check is the readable error).
+  //
+  // When the new day's noon has already passed, the drop is opened in the same request, so
+  // "move it to today" means open now — not on the next five-minute tick. `at` overrides the
+  // clock for the suite, exactly as /daily/tick accepts it.
+  if (p === '/api/admin/daily/move' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const toDay = (body.toDay || '').toString().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(toDay)) return bad(res, 'toDay must be YYYY-MM-DD');
+    const dayTs = etEpoch(toDay, 12);
+    if (dayTs == null || Math.abs(dayTs - now()) > 3 * 86400000) return bad(res, 'toDay is too far from today');
+
+    const fromDay = (body.fromDay || '').toString().trim();
+    const session = body.sessionId
+      ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [body.sessionId])
+      : (fromDay ? await db.get("SELECT * FROM sessions WHERE mode = 'async' AND drop_day = ? AND deleted_at IS NULL", [fromDay]) : null);
+    if (!session) return bad(res, 'No such drop', 404);
+    if (session.drop_day === toDay) return send(res, 200, { ok: true, moved: false, opened: false, sessionId: session.id, day: toDay });
+
+    if ((session.async_state || 'scheduled') !== 'scheduled') {
+      return send(res, 409, { error: 'That day is already open — its deadline has been shown to A&Rs and cannot move',
+        sessionId: session.id, day: session.drop_day, state: session.async_state });
+    }
+    const voted = (await db.get(
+      'SELECT COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [session.id])).c;
+    if (Number(voted) > 0) return send(res, 409, { error: 'That day has been evaluated and cannot move', sessionId: session.id, votes: Number(voted) });
+    const taken = await db.get('SELECT id FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [toDay]);
+    if (taken) return send(res, 409, { error: `A drop already exists for ${toDay}`, sessionId: taken.id, day: toDay });
+
+    const win = dropWindowFor(toDay);
+    // The operator's own name stays; only the untouched default follows the day.
+    const name = session.name === `A&R Daily — ${session.drop_day}` ? `A&R Daily — ${toDay}` : session.name;
+    try {
+      await db.tx(async (tx) => {
+        // status back to 'upcoming': a cold drop is upcoming by definition, and the open
+        // step flips it to live. This undoes a stray "go live" pressed on the live-show side.
+        await tx.run(
+          `UPDATE sessions SET drop_day = ?, name = ?, window_opens_at = ?, window_closes_at = ?, results_at = ?,
+             scheduled_at = ?, status = 'upcoming' WHERE id = ?`,
+          [toDay, name, win.opensAt, win.closesAt, win.resultsAt, win.opensAt, session.id]);
+        await tx.run('UPDATE rounds SET opens_at = ?, closes_at = ? WHERE session_id = ?', [win.opensAt, win.closesAt, session.id]);
+      });
+    } catch (e) {
+      if (/unique|duplicate/i.test(e.message || '')) return send(res, 409, { error: `A drop already exists for ${toDay}`, day: toDay });
+      throw e;
+    }
+
+    const at = body.at != null ? Number(body.at) : now();
+    let opened = false;
+    if (at >= win.opensAt) {
+      const fresh = await db.get('SELECT * FROM sessions WHERE id = ?', [session.id]);
+      opened = await openAsyncDrop(fresh);
+    }
+    return send(res, 200, { ok: true, moved: true, opened, sessionId: session.id, day: toDay, from: session.drop_day,
+      opensAt: win.opensAt, closesAt: win.closesAt, resultsAt: win.resultsAt,
+      opensLabel: etClockLabel(win.opensAt), closesLabel: etWhenLabel(win.closesAt, toDay), resultsLabel: etWhenLabel(win.resultsAt, toDay) });
   }
 
   // ---- The daily console's one status call. ----

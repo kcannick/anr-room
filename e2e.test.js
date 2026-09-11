@@ -2068,6 +2068,62 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify({ mode: handSess.mode, series: handSess.series_id, state: handSess.async_state }));
   ok('and it echoes no artist contact back out',
     !/@/.test(JSON.stringify(handOk.d)), JSON.stringify(handOk.d));
+  // MOVING a cold day. The case: the review site's noon lock-in pressed at 12:01 pushes a
+  // day dated TOMORROW, and nothing on the console could fix it — a drop runs off its
+  // window, not scheduled_at, so renaming it or moving its "scheduled start" did nothing.
+  // This moves the window, and the records with it. (The day handDay -> mvTo is free: the
+  // CDROP day above was just soft-deleted, and uniq_session_drop_day is partial on deleted_at.)
+  const mvTo = srv._etNextDay(today);
+  const mvAnon = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: mvTo }, 'POST', {});
+  ok('moving a drop is platform-admin only', mvAnon.status === 403 || mvAnon.status === 401, 'got ' + mvAnon.status);
+  const mvFar = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: '2030-01-01' }, 'POST', BOOTH);
+  ok('a far-off day is refused, the same typo guard as the builders', mvFar.status === 400, JSON.stringify(mvFar.d));
+  const mvNone = await call('/api/admin/daily/move', { fromDay: '2029-01-01', toDay: mvTo }, 'POST', BOOTH);
+  ok('a day that was never built cannot be moved', mvNone.status === 404, JSON.stringify(mvNone.d));
+  const mvOk = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: mvTo }, 'POST', BOOTH);
+  ok('a cold drop moves to another day', mvOk.status === 200 && mvOk.d.moved === true && mvOk.d.day === mvTo
+    && mvOk.d.from === handDay, JSON.stringify(mvOk.d));
+  const mvSess = await dDb.get('SELECT * FROM sessions WHERE id = ?', [handSess.id]);
+  const mvNext = srv._etNextDay(mvTo);
+  ok('the whole window moves with it — open, close, results, scheduled start and the default name',
+    mvSess.drop_day === mvTo
+      && Number(mvSess.window_opens_at) === srv._etEpoch(mvTo, 12)
+      && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 9)
+      && Number(mvSess.results_at) === srv._etEpoch(mvNext, 12)
+      && Number(mvSess.scheduled_at) === Number(mvSess.window_opens_at)
+      && mvSess.name === 'A&R Daily — ' + mvTo,
+    JSON.stringify({ day: mvSess.drop_day, name: mvSess.name, o: mvSess.window_opens_at, c: mvSess.window_closes_at, r: mvSess.results_at }));
+  const mvRounds = await dDb.all('SELECT opens_at, closes_at FROM rounds WHERE session_id = ?', [handSess.id]);
+  ok('and every record carries the new window',
+    mvRounds.length === 3 && mvRounds.every(r => Number(r.opens_at) === Number(mvSess.window_opens_at)
+      && Number(r.closes_at) === Number(mvSess.window_closes_at)), JSON.stringify(mvRounds));
+  ok('moving to a day whose noon has not come does not open it', mvOk.d.opened === false && mvSess.async_state === 'scheduled',
+    JSON.stringify({ opened: mvOk.d.opened, state: mvSess.async_state }));
+  ok('the reply carries no artist contact', !/@/.test(JSON.stringify(mvOk.d)), JSON.stringify(mvOk.d));
+  const mvSame = await call('/api/admin/daily/move', { fromDay: mvTo, toDay: mvTo }, 'POST', BOOTH);
+  ok('moving a day onto itself is a no-op, not an error', mvSame.status === 200 && mvSame.d.moved === false, JSON.stringify(mvSame.d));
+
+  // Onto a day that already has a drop: refused, and nothing changes.
+  const mvOther = await call('/api/admin/daily/drop', { day: handDay, seriesId: serId, songs: [song(84)] }, 'POST', BOOTH);
+  const mvClash = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: handDay }, 'POST', BOOTH);
+  ok('a day that already has a drop is refused', mvClash.status === 409 && mvClash.d.sessionId === mvOther.d.sessionId, JSON.stringify(mvClash.d));
+  ok('and the refused move changed nothing', (await dDb.get('SELECT drop_day FROM sessions WHERE id = ?', [handSess.id])).drop_day === mvTo);
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), mvOther.d.sessionId]);
+
+  // Onto a day whose noon HAS passed: it opens in the same request — "move it to today" means
+  // open now, not on the next five-minute tick. Only THIS drop opens; the lifecycle is not run
+  // over every other day.
+  const mvNow = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: handDay, at: srv._etEpoch(handDay, 12) + 1000 }, 'POST', BOOTH);
+  const mvLive = await dDb.get('SELECT * FROM sessions WHERE id = ?', [handSess.id]);
+  const mvVoting = (await dDb.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'voting'", [handSess.id])).c;
+  ok('a move onto a day past its noon opens the drop at once',
+    mvNow.status === 200 && mvNow.d.opened === true && mvLive.async_state === 'open' && mvLive.status === 'live' && Number(mvVoting) === 3,
+    JSON.stringify({ d: mvNow.d, state: mvLive.async_state, status: mvLive.status, voting: mvVoting }));
+  const mvOpen = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: mvTo }, 'POST', BOOTH);
+  ok('an open day never moves — A&Rs have been told its deadline', mvOpen.status === 409, JSON.stringify(mvOpen.d));
+  ok('and the status reads the moved day as the running one',
+    ((await call('/api/admin/daily/status', null, 'GET', BOOTH)).d.drop || {}).day === handDay);
+
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), handSess.id]);
 
   // NO drop at all is an incident — Drupal has not pushed and A&Rs open the app to nothing.
