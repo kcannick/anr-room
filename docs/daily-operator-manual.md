@@ -93,9 +93,11 @@ caption** gives the stream's caption with the same names.
   stream is the reveal, and the cover goes up before it.
 - Artists print by Instagram handle when the submission had one, otherwise by name, so a
   name instead of a handle means nobody gave us the handle.
+- Names are set like credits on a poster: small, muted, sized so the longest name fits. A
+  name is never cut short unless it would not fit even at the smallest size.
 - They are hosted at publish like the Top 8 cards. Before publish, or if hosting failed, the
   console renders them live instead, so there is always a cover to post. Before the day
-  tallies the A&Rs column is empty lines.
+  tallies the A&Rs column is empty.
 
 ### Build the next drop
 Always visible, because stacking tomorrow and fixing today are different jobs on the same

@@ -466,76 +466,76 @@ function recapCta(c, { tickW, tickH, tickMr, labelSize, labelW, urlSize, urlMl }
   ]);
 }
 
-// One ruled column of names, at an EXPLICIT width — Satori sizes a flex column with
-// nowrap children to its content, so two flex-basis:0 columns simply overlap. Rows shrink to
-// fit the count (a 16-record day and a 4-record day share one panel), never below a floor,
-// and a name never wraps — it clips. `insetRight(i)` shortens a row from the right so the
-// column can sit under the panel's slanted edge (only its lowest rows lose width).
-function namesColumn({ label, names, rows: n, width, height, capSize, rowH, insetRight }) {
-  const capH = capSize + Math.round(capSize * 0.6);
-  const fontSize = Math.round(rowH * 0.66);
-  const rows = [];
-  for (let i = 0; i < n; i++) {
-    const pr = insetRight ? insetRight(capH + (i + 1) * rowH) : 0;
-    const maxChars = Math.max(6, Math.floor((width - pr) / (fontSize * 0.5)));
-    rows.push(h({ display: 'flex', alignItems: 'flex-end', width: width - pr, height: rowH, paddingBottom: Math.round(rowH * 0.12),
-      borderBottom: `2px solid ${RECAP.line}`, flexShrink: 0, overflow: 'hidden' },
-      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize, lineHeight: 1, letterSpacing: -Math.round(fontSize * 0.02), color: RECAP.fg, ...NOWRAP }, clip(names[i] || '', maxChars))));
-  }
-  return col({ width, height, flexShrink: 0, overflow: 'hidden' }, [
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: capSize, textTransform: 'uppercase', letterSpacing: Math.round(capSize * 0.22), color: RECAP.dim, opacity: 0.75, height: capH, ...NOWRAP }, label || ''),
-    ...rows,
-  ]);
-}
-
-// The names panel: panel colour on ink with the 13° cut on its RIGHT edge, leaning the way
-// the block does. Satori has no clip-path polygon, so the cut is a skewed rectangle inside an
-// overflow-hidden box — the box squares off the left edge, the skew leans the right one.
-// Returns the panel plus `insetRight(yBottom)`: how much a row ending at that height (from
-// the panel's top, padding included) must give up on the right to stay on the panel.
-function cutPanel({ left, top, width, height, padT, padR, padB, padL }, buildCols) {
-  const off = Math.ceil(height * TAN13);
-  const insetRight = (yb) => Math.max(0, Math.ceil(off * ((padT + yb) / height)) + 4);
+// The credits panel. Think movie-poster credits: big enough to read when you go looking,
+// small enough never to compete with the title or the date. Space Mono regular (a name here
+// is a catalog string, not a headline), muted ink, no rules. ONE font size for the whole
+// block, fitted so the LONGEST name fits its column — a handle is never clipped unless it
+// would not fit even at the floor size. The panel's height fits the count, so a four-record
+// day gets a small block and a sixteen-record day a taller one, and the 13° cut on its right
+// edge (Satori has no clip-path polygon, so it is a skewed rectangle inside an overflow-
+// hidden box) only ever costs the lowest rows of the last column a little width.
+//
+// `groups` are the columns, left to right: [{ label, names }]. Equal widths.
+const CREDITS_INK = '#b9b5d2';
+const MONO_EM = 0.6;   // Space Mono advance width, in em
+function creditsPanel({ left, top, bottom, width, padT, padR, padB, padL, gap, capSize, minRows, fs: [lo, hi], groups }) {
+  const n = groups.length;
+  const colW = Math.floor((width - padL - padR - gap * (n - 1)) / n);
+  const rows = Math.max(minRows, ...groups.map(g => g.names.length));
+  const capH = capSize + Math.round(capSize * 0.7);
+  // Geometry for a candidate size; the inset only touches the LAST column.
+  const geo = (fs) => {
+    const rowH = Math.round(fs * 1.55);
+    const height = padT + capH + rows * rowH + padB;
+    const off = Math.ceil(height * TAN13);
+    const inset = (ci, i) => ci === n - 1 ? Math.ceil(off * ((padT + capH + (i + 1) * rowH) / height)) + 4 : 0;
+    return { fs, rowH, height, off, inset };
+  };
+  // Two passes: size for the longest name at the largest geometry, then settle.
+  let g = geo(hi);
+  let fit = hi;
+  groups.forEach((grp, ci) => grp.names.forEach((nm, i) => {
+    const avail = colW - g.inset(ci, i);
+    fit = Math.min(fit, avail / (MONO_EM * Math.max(1, String(nm).length)));
+  }));
+  g = geo(Math.max(lo, Math.min(hi, Math.floor(fit))));
+  const { fs, rowH, height, off, inset } = g;
+  const y = top != null ? top : bottom - height;
   const bg = h({ position: 'absolute', top: 0, left: -off - 40, width: width + 40, height, background: RECAP.panel,
     transform: `skewX(${SKEW}deg)`, transformOrigin: 'top left' }, '');
-  const innerW = width - padL - padR;
-  return h({ position: 'absolute', left, top, width, height, overflow: 'hidden', display: 'flex' }, [
+  const cols = [];
+  groups.forEach((grp, ci) => {
+    if (ci) cols.push(h({ width: gap, flexShrink: 0 }, ''));
+    const lines = [];
+    for (let i = 0; i < rows; i++) {
+      const avail = colW - inset(ci, i);
+      const maxChars = Math.max(4, Math.floor(avail / (MONO_EM * fs)));
+      lines.push(h({ display: 'flex', alignItems: 'center', width: avail, height: rowH, flexShrink: 0, overflow: 'hidden' },
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: fs, lineHeight: 1, color: CREDITS_INK, ...NOWRAP }, clip(grp.names[i] || '', maxChars))));
+    }
+    cols.push(col({ width: colW, height: height - padT - padB, flexShrink: 0, overflow: 'hidden' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: capSize, textTransform: 'uppercase', letterSpacing: Math.round(capSize * 0.22),
+        color: RECAP.dim, opacity: 0.75, height: capH, ...NOWRAP }, grp.label || ''),
+      ...lines,
+    ]));
+  });
+  return h({ position: 'absolute', left, top: y, width, height, overflow: 'hidden', display: 'flex' }, [
     bg,
     h({ position: 'absolute', left: 0, top: 0, width, height, display: 'flex', flexDirection: 'row',
-      padding: `${padT}px ${padR}px ${padB}px ${padL}px` }, buildCols({ innerW, insetRight })),
+      padding: `${padT}px ${padR}px ${padB}px ${padL}px` }, cols),
   ]);
-}
-const gapBox = (w) => h({ width: w, flexShrink: 0 }, '');
-// One row height for every column on a panel, from the longest column: rows shrink to fit
-// the count (a 16-record day and a 4-record day share one panel), never below a floor.
-function rowHeight({ height, capSize, rows, maxRow, minRow }) {
-  const capH = capSize + Math.round(capSize * 0.6);
-  return Math.max(minRow, Math.min(maxRow, Math.floor((height - capH) / rows)));
 }
 
 function elementRecapCover(d) {
   const W0 = 1080, H0 = 1920;
   const artists = d.artists || [], ars = d.ars || [];
-  const panel = { left: 80, top: 1470, width: 920, height: 410, padT: 26, padR: 30, padB: 22, padL: 50 };
-  const gap = 30;
   // Up to 8 artists is one column beside the A&Rs. A bigger day splits the artists across
-  // two columns (drop order, top to bottom then across) so rows stay readable.
+  // two columns (drop order, top to bottom then across) so the block stays short.
   const split = artists.length > 8;
-  const half = split ? Math.ceil(artists.length / 2) : artists.length;
-  const rows = Math.max(7, half, ars.length);
-  const colOpts = { height: panel.height - panel.padT - panel.padB, capSize: 20, rows };
-  colOpts.rowH = rowHeight({ ...colOpts, maxRow: 40, minRow: 24 });
-  const buildCols = ({ innerW, insetRight }) => {
-    const nCols = split ? 3 : 2;
-    const colW = Math.floor((innerW - gap * (nCols - 1)) / nCols);
-    const cols = split
-      ? [namesColumn({ label: 'Artists', names: artists.slice(0, half), width: colW, ...colOpts }), gapBox(gap),
-         namesColumn({ label: '', names: artists.slice(half), width: colW, ...colOpts })]
-      : [namesColumn({ label: 'Artists', names: artists, width: colW, ...colOpts })];
-    cols.push(gapBox(gap));
-    cols.push(namesColumn({ label: 'A&Rs', names: ars, width: colW, insetRight, ...colOpts }));
-    return cols;
-  };
+  const half = Math.ceil(artists.length / 2);
+  const groups = split
+    ? [{ label: 'Artists', names: artists.slice(0, half) }, { label: '', names: artists.slice(half) }, { label: 'A&Rs', names: ars }]
+    : [{ label: 'Artists', names: artists }, { label: 'A&Rs', names: ars }];
   return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
     // head — under IG Live's top chrome (~220px)
     h({ position: 'absolute', left: 80, right: 80, top: 250, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, [
@@ -551,27 +551,16 @@ function elementRecapCover(d) {
     ]),
     h({ position: 'absolute', left: 80, right: 80, top: 1330, display: 'flex', flexDirection: 'column', gap: 22 },
       RECAP_CTA.map(c => recapCta(c, { tickW: 14, tickH: 34, tickMr: 22, labelSize: 46, labelW: 440, urlSize: 30 }))),
-    cutPanel(panel, buildCols),
+    // credits — bottom-anchored, so a short day leaves ground rather than an empty field
+    creditsPanel({ left: 80, bottom: 1880, width: 920, padT: 26, padR: 30, padB: 26, padL: 50, gap: 30,
+      capSize: 19, minRows: 4, fs: [17, 24], groups }),
   ]);
 }
 
 function elementRecapThumb(d) {
   const W0 = 1920, H0 = 1080;
   const artists = d.artists || [], ars = d.ars || [];
-  // Right of the title, above the CTA row; the bottom-right (x>1500, y>880) stays clear for
-  // YouTube's duration badge.
-  const panel = { left: 1260, top: 80, width: 590, height: 780, padT: 30, padR: 30, padB: 26, padL: 34 };
-  const gap = 30;
-  const rows = Math.max(6, artists.length, ars.length);
-  const colOpts = { height: panel.height - panel.padT - panel.padB, capSize: 19, rows };
-  colOpts.rowH = rowHeight({ ...colOpts, maxRow: 52, minRow: 24 });
-  const buildCols = ({ innerW, insetRight }) => {
-    const colW = Math.floor((innerW - gap) / 2);
-    return [
-      namesColumn({ label: 'Artists', names: artists, width: colW, ...colOpts }), gapBox(gap),
-      namesColumn({ label: 'A&Rs', names: ars, width: colW, insetRight, ...colOpts }),
-    ];
-  };
+  const groups = [{ label: 'Artists', names: artists }, { label: 'A&Rs', names: ars }];
   return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
     h({ position: 'absolute', left: 90, top: 80, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 40 }, [
       arBlock(120, 50),
@@ -585,7 +574,10 @@ function elementRecapThumb(d) {
     ]),
     h({ position: 'absolute', left: 90, top: 905, display: 'flex', flexDirection: 'row', gap: 70 },
       RECAP_CTA.map(c => recapCta(c, { tickW: 12, tickH: 30, tickMr: 18, labelSize: 38, urlSize: 26, urlMl: 18 }))),
-    cutPanel(panel, buildCols),
+    // credits — top-right, right of the title; the bottom-right (x>1500, y>880) stays clear
+    // for YouTube's duration badge.
+    creditsPanel({ left: 1250, top: 80, width: 600, padT: 28, padR: 30, padB: 28, padL: 34, gap: 30,
+      capSize: 18, minRows: 4, fs: [18, 26], groups }),
   ]);
 }
 
