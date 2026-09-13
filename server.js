@@ -104,6 +104,26 @@ function cleanSupportCents(v) {
   return cents;
 }
 
+// The daily ingest secret, checked the same way on every route that carries it.
+// DAILY_INGEST_TOKEN ONLY — deliberately NOT falling back to INGEST_TOKEN. That fallback
+// read as convenient and quietly destroyed the whole reason this has its own secret:
+// INGEST_TOKEN guards a push that stages ONE row a host can ignore, while this one creates
+// a live room carrying up to sixteen artists' email addresses and phone numbers. Sharing the
+// secret means the lower-value integration's blast radius becomes this one's.
+// Unset ⇒ 503, and nothing can be pushed until it is configured. Writes the refusal itself;
+// returns true only when the caller may proceed.
+function dailyIngestAuth(req, res) {
+  const token = process.env.DAILY_INGEST_TOKEN || '';
+  if (!token) { send(res, 503, { error: 'Daily ingest not configured (set DAILY_INGEST_TOKEN)' }); return false; }
+  const given = (req.headers['x-ingest-token'] || '').toString();
+  // Length pre-check then constant-time compare (timingSafeEqual throws on a length
+  // mismatch). A plain `given !== token` is a timing oracle.
+  const okTok = given.length === token.length && given.length > 0
+    && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(token));
+  if (!okTok) { send(res, 401, { error: 'Bad token' }); return false; }
+  return true;
+}
+
 // Short, human-shareable referral code (no ambiguous chars). Used in ?ref= links.
 function refCode() {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/O/0/1/L
@@ -4680,16 +4700,37 @@ async function handleApi(req, res, url) {
     // creates a live room carrying up to sixteen artists' email addresses and phone numbers.
     // Sharing the secret means the lower-value integration's blast radius becomes this one's.
     // Unset ⇒ 503, and the day simply cannot be pushed until it is configured.
-    const token = process.env.DAILY_INGEST_TOKEN || '';
-    if (!token) return send(res, 503, { error: 'Daily ingest not configured (set DAILY_INGEST_TOKEN)' });
-    const given = (req.headers['x-ingest-token'] || '').toString();
-    // Length pre-check then constant-time compare (timingSafeEqual throws on a length
-    // mismatch). The older `given !== token` above is a timing oracle — not propagated here.
-    const okTok = given.length === token.length && given.length > 0
-      && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(token));
-    if (!okTok) return send(res, 401, { error: 'Bad token' });
-
+    if (!dailyIngestAuth(req, res)) return;
     return stageDailyDrop(res, await readBody(req));
+  }
+
+  // ----- A&R DAILY: support levels for records ALREADY pushed -----
+  // `amount` joined the push (037) after weeks of drops had run, so every record pushed
+  // before it reads "—" on the console. This takes {ref, amount} pairs and writes them onto
+  // the matching rounds by ingest_ref — the same `entry/<id>` key a re-push updates by. It
+  // touches support_cents and nothing else (a played day's votes, points and averages are
+  // untouchable here by construction), and it is safe to re-run: the same pairs land the
+  // same values. Per-row reporting rather than all-or-nothing, because a backfill is a
+  // correction, not a day: one bad row should not hold up the other forty.
+  // Same secret as the push — this is Drupal talking to the app, server-to-server.
+  if (p === '/api/ingest/daily/support' && method === 'POST') {
+    if (!dailyIngestAuth(req, res)) return;
+    const body = await readBody(req);
+    const songs = Array.isArray(body.songs) ? body.songs : null;
+    if (!songs || !songs.length) return bad(res, 'songs[] required');
+    if (songs.length > 500) return bad(res, 'too many songs (max 500)');
+    const rejected = [], unknown = [];
+    let updated = 0, rounds = 0;
+    for (let i = 0; i < songs.length; i++) {
+      const raw = songs[i] || {};
+      const ref = (raw.ref == null ? '' : String(raw.ref)).trim().slice(0, 100);
+      if (!ref) { rejected.push({ index: i, field: 'ref', reason: 'required' }); continue; }
+      const cents = cleanSupportCents(raw.amount);
+      if (cents == null) { rejected.push({ index: i, field: 'amount', reason: 'unusable' }); continue; }
+      const r = await db.run('UPDATE rounds SET support_cents = ? WHERE ingest_ref = ?', [cents, ref]);
+      if (r.changes) { updated++; rounds += Number(r.changes) || 0; } else unknown.push(ref);
+    }
+    return send(res, 200, { ok: true, updated, rounds, unknown, rejected });
   }
 
   // ═════════════════════════════════════════════════════════════════════════

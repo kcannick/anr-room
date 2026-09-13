@@ -156,6 +156,24 @@ guard, so two simultaneous pushes race on the constraint and the loser gets the 
 
 ---
 
+### Support backfill — amounts for records already pushed
+
+```
+POST https://anr.makinitmag.com/api/ingest/daily/support
+X-Ingest-Token: <DAILY_INGEST_TOKEN>
+{ "songs": [ { "ref": "entry/9182", "amount": 25 }, { "ref": "entry/9183", "amount": 0 } ] }
+```
+
+Writes `amount` onto every round whose `ref` matches, whatever state its day is in — this
+exists because `amount` joined the push after weeks of drops had run. It touches the support
+level and nothing else, is safe to re-run, and reports per row rather than all-or-nothing:
+
+```
+200 { "ok": true, "updated": 2, "rounds": 2, "unknown": ["entry/1"], "rejected": [{"index":3,"field":"amount","reason":"unusable"}] }
+```
+
+`unknown` are refs the app has never seen (never pushed, or hand-built). Max 500 per call.
+
 ## 3. Scouting attribution — what you must build
 
 A&Rs recruit artists. The referral is the **Drupal uid**, and **Drupal issues the link**, because

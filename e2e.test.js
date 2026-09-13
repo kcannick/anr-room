@@ -1522,6 +1522,24 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and is reported as a warning so Drupal can flag it', (dOk.d.warnings || []).some(w => w.index === 2 && w.field === 'email'), JSON.stringify(dOk.d.warnings));
   ok('the response reflects NO artist contact back out', !/@/.test(JSON.stringify(dOk.d)), JSON.stringify(dOk.d));
 
+  // SUPPORT BACKFILL: amounts for records already pushed, keyed by ref. Per-row reporting.
+  const supBf = await call('/api/ingest/daily/support',
+    { songs: [{ ref: 'node/3', amount: 15 }, { ref: 'node/999', amount: 5 }, { ref: 'node/4', amount: 'x' }, { amount: 1 }] }, 'POST', DTOK);
+  ok('a support backfill writes the amount onto the record by ref',
+    supBf.status === 200 && supBf.d.updated === 1
+      && (await dDb.get('SELECT support_cents FROM rounds WHERE id = ?', [dRounds[2].id])).support_cents === 1500, JSON.stringify(supBf.d));
+  ok('unknown refs and unusable rows are reported, not fatal',
+    supBf.d.unknown.join() === 'node/999' && supBf.d.rejected.length === 2, JSON.stringify(supBf.d));
+  ok('a backfill touches nothing else on the record',
+    (await dDb.get('SELECT play_url, artist_note FROM rounds WHERE id = ?', [dRounds[2].id])).play_url === dRounds[2].play_url);
+  ok('re-running the same backfill is a no-op in effect',
+    (await call('/api/ingest/daily/support', { songs: [{ ref: 'node/3', amount: 15 }] }, 'POST', DTOK)).d.updated === 1
+      && (await dDb.get('SELECT support_cents FROM rounds WHERE id = ?', [dRounds[2].id])).support_cents === 1500);
+  const supBadTok = await call('/api/ingest/daily/support', { songs: [{ ref: 'node/3', amount: 1 }] }, 'POST', { 'X-Ingest-Token': 'wrong' });
+  ok('the backfill needs the daily token', supBadTok.status === 401, String(supBadTok.status));
+  const supEmpty = await call('/api/ingest/daily/support', { songs: [] }, 'POST', DTOK);
+  ok('an empty backfill is refused', supEmpty.status === 400, String(supEmpty.status));
+
   // Re-push while cold: REPLACE, never duplicate.
   const dRe = await call('/api/ingest/daily', { day: today, seriesId: serId, songs: [song(9), song(8), song(7)] }, 'POST', DTOK);
   ok('a re-push of the same cold day replaces it', dRe.status === 200 && dRe.d.replaced === true && dRe.d.sessionId === DROP, JSON.stringify(dRe.d));

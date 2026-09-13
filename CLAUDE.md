@@ -497,8 +497,11 @@ live on anr.makinitmag.com.
   board, and the player payload never carries it (tested). Console: a Support column on
   the records table and the builder queue, a gold row + "Top supporter" pill, an
   "Order: support, highest first" sort, and a Support ($) field on the builder form and
-  the edit dialog. Drupal has to start sending `amount` (spec §14, prompt "What changed");
-  until it does every row reads "—".
+  the edit dialog. Drupal sends `amount` on the push (spec §14; `mim_anr_meeting.push.inc`),
+  and `POST /api/ingest/daily/support` (same token) takes `{ref, amount}` pairs to backfill
+  records pushed before the field existed — per-row reporting, re-runnable, touches
+  support_cents only. Run from live Drupal with `terminus drush mim.live -- php-eval` (the
+  token stays on the server). One-off on 2026-09-13.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
