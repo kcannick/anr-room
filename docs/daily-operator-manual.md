@@ -66,8 +66,20 @@ minutes."* Comments ship **by default** with the artist's report, carrying the A
 job is to reject the bad one, not approve the good ones. See §4.
 
 ### The records
-One row per record: title/artist, play link, votes, **flags**, and an Edit / **Fix link** button.
-Rows turn red when a record has no play link or three or more flags.
+One row per record: title/artist, **support**, play link, votes, **flags**, and an Edit /
+**Fix link** button. Rows turn red when a record has no play link or three or more flags.
+
+**Support is what the artist paid to submit.** `Free` is a free submission; a dollar amount is
+a paid one. The **gold row with the "Top supporter" mark is the record that paid the most** on
+this day (two records that paid the same most are both marked). A dash means no amount was sent
+for that record — a push from before the field existed, or a hand-built record with the field
+left blank — and the console will not guess that it was free. Use this on the recap: free
+records get the first minute, paid records play in full, the top supporter gets its moment.
+"Order: support, highest first" sorts the table paid-first.
+
+Support comes from the review site's push (the `amount` field). It can be corrected on any
+record from **Edit**, and set on a hand-built record in the builder form. It is never shown to
+A&Rs or artists and never affects a score.
 
 **A flag is one A&R, not one click.** Three flags means three different people are telling you
 that record will not play. That is the number worth checking every day.
@@ -107,6 +119,8 @@ screen. Add records one at a time; the day is created around the first one.
   record for the whole 21-hour window.
 - **Artist email** is what earns that artist their free report. The ⚠ in the list means no
   contact on file — that artist gets nothing.
+- **Support ($)** is what the artist paid: `0` for a free submission, the amount for a paid one.
+  Leave it blank if you do not know — blank shows as a dash, not as free.
 - **Day** is blank by default, meaning "the next day being built". Only fill it to work on a
   specific date (`YYYY-MM-DD`, within 3 days of today).
 - **Edit** / **Remove** work on any staged record right up until noon.

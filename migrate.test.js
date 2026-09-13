@@ -394,6 +394,17 @@ async function freshDb() {
   const applied36 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('036 idempotent (not duplicated)', applied36.filter(x => x === '036_recap_graphics').length === 1, JSON.stringify(applied36));
 
+  // ── 037: the support level on rounds ──────────────────────────────────────
+  // Nullable, no default: NULL means "not reported" and must stay distinct from 0 (free).
+  // A default of 0 would relabel every historical record as a free submission.
+  const rcols37 = (await db.all('PRAGMA table_info(rounds)', [])).map(c => c.name);
+  ok('037 creates rounds.support_cents', rcols37.includes('support_cents'), JSON.stringify(rcols37));
+  const sc = (await db.all('PRAGMA table_info(rounds)', [])).find(c => c.name === 'support_cents');
+  ok('support_cents defaults to NULL (absent = not reported, never free)', sc && sc.dflt_value == null, JSON.stringify(sc));
+  await db.init();
+  const applied37 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('037 idempotent (not duplicated)', applied37.filter(x => x === '037_round_support').length === 1, JSON.stringify(applied37));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

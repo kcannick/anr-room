@@ -114,21 +114,24 @@
   <div class="card">
     <h3>The records</h3>
     <table>
-      <tr><th style="width:40%">Record</th><th>Play link</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>
+      <tr><th style="width:34%">Record</th><th>Support</th><th>Play link</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>
       <tr>
         <td><div class="ttl">Neon Skyline</div><div class="art">The Verge</div></td>
+        <td><span class="mono" style="color:var(--signal);font-weight:700">$25</span></td>
         <td><span class="link">open.spotify.com/track/1a2…</span></td>
         <td class="num">198</td><td class="num muted">0</td>
         <td class="num"><button class="btn ghost sm">Edit</button></td>
       </tr>
-      <tr>
+      <tr style="background:rgba(245,197,24,.07);box-shadow:inset 3px 0 0 var(--gold)">
         <td><div class="ttl">Long Way Down</div><div class="art">Sable</div></td>
+        <td><span class="mono" style="color:var(--gold);font-weight:700">$100</span> <span class="pill warn" style="margin-left:6px">Top supporter</span></td>
         <td><span class="link">soundcloud.com/sable/long-w…</span></td>
         <td class="num">201</td><td class="num muted">0</td>
         <td class="num"><button class="btn ghost sm">Edit</button></td>
       </tr>
       <tr style="background:rgba(255,93,108,.06)">
         <td><div class="ttl">Southbound</div><div class="art">The Ninth</div></td>
+        <td><span class="mono muted">Free</span></td>
         <td><span class="link bad">cdn.example.com/southbound.mp3</span></td>
         <td class="num">12</td>
         <td class="num" style="color:var(--hot);font-weight:700">9</td>
@@ -136,6 +139,7 @@
       </tr>
       <tr>
         <td><div class="ttl">Cold Open</div><div class="art">Marisol Vega</div></td>
+        <td><span class="mono" style="color:var(--ink-faint)" title="No amount was sent">—</span></td>
         <td><span class="link">open.spotify.com/track/9f0…</span></td>
         <td class="num">187</td><td class="num muted">1</td>
         <td class="num"><button class="btn ghost sm">Edit</button></td>
@@ -144,6 +148,8 @@
     <p class="hint">
       A flag is <b>one A&amp;R, not one click</b> — so nine flags is nine people telling you the record will not play.
       Flag counts are the threshold for pulling a record; vote counts are how you see it happening.
+      Support is what the artist paid to submit: <b>Free</b>, or the amount. The gold row is the day's
+      <b>top supporter</b> — the record that paid the most. A dash means no amount was sent for that record.
     </p>
   </div>
   <p class="caption hot">↑ Nine A&amp;Rs reported it and the votes stalled at 12. That is the alarm.</p>

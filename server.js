@@ -89,6 +89,21 @@ function cleanArtistPhone(v) {
   return s.slice(0, 40);
 }
 
+// Support level — what the artist paid to submit — as whole cents. 0 = a free submission,
+// NULL = not reported (a blank field, or garbage). Accepts a number or a string like "25",
+// "$25.00" or "1,000". Drupal owns pricing and selection; this is the one number that crosses
+// the wire, and only so the console can show which records were paid for and which paid the
+// most. Nothing scores off it and no public surface emits it.
+function cleanSupportCents(v) {
+  if (v == null) return null;
+  const s = String(v).trim().replace(/^\$/, '').replace(/,/g, '');
+  if (s === '') return null;
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  const cents = Math.round(Number(s) * 100);
+  if (!Number.isFinite(cents) || cents < 0 || cents > 10000000) return null;   // $100,000 sanity ceiling
+  return cents;
+}
+
 // Short, human-shareable referral code (no ambiguous chars). Used in ?ref= links.
 function refCode() {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/O/0/1/L
@@ -2760,6 +2775,11 @@ function normalizeDropSong(raw, i) {
     // scored; excluded from every chart, the Top 8 card and the artist report queue. Set
     // from the console only — Drupal pushes submissions, and a submission is never one.
     isReference: raw.isReference === true || raw.isReference === 1 ? 1 : 0,
+    // SUPPORT LEVEL: what the artist paid, in dollars on the wire ("amount": 25 / "25.50" /
+    // "$25"), cents in the column. 0 is a free submission; absent or unusable is NULL, which
+    // the console prints as "—" rather than pretending to know. Unusable is a warning at the
+    // caller, not a rejection — a mistyped amount must not kill the whole day.
+    supportCents: cleanSupportCents(raw.amount),
   } };
 }
 
@@ -2807,6 +2827,9 @@ async function stageDailyDrop(res, body) {
     if (rec.ref) seenRef.add(rec.ref);
     if (raw.email && !rec.email) warnings.push({ index: i, field: 'email', reason: 'unusable' });
     if (raw.phone && !rec.phone) warnings.push({ index: i, field: 'phone', reason: 'unusable' });
+    if (raw.amount != null && String(raw.amount).trim() !== '' && rec.supportCents == null) {
+      warnings.push({ index: i, field: 'amount', reason: 'unusable' });
+    }
     recs.push(rec);
   });
   if (rejected.length) return send(res, 400, { error: 'Batch rejected', rejected });
@@ -2841,10 +2864,10 @@ async function stageDailyDrop(res, body) {
         await tx.run(
           `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
              giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-             artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, status, opens_at, closes_at, created_at)
-           VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+             artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, status, opens_at, closes_at, created_at)
+           VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
           [id(9), existing.id, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
-           s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0,
+           s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, s.supportCents,
            existing.window_opens_at, existing.window_closes_at, now()]);
       }
       const kept = await tx.all(
@@ -2915,10 +2938,10 @@ async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, 
       await tx.run(
         `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
            giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-           artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, status, opens_at, closes_at, created_at)
-         VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+           artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, status, opens_at, closes_at, created_at)
+         VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
         [id(9), sid, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
-         s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, wo, wc, ts]);
+         s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, s.supportCents, wo, wc, ts]);
     }
   });
   return { sessionId: sid, day, rounds: songs.length, opensAt: wo, closesAt: wc, resultsAt: rp };
@@ -2941,13 +2964,25 @@ async function addDropRound(session, s) {
   await db.run(
     `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
        giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-       artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, status, opens_at, closes_at, created_at)
-     VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+       artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, status, opens_at, closes_at, created_at)
+     VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
     [rid, session.id, idx, idx, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
-     s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0,
+     s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, s.supportCents,
      session.window_opens_at, session.window_closes_at, ts]);
   const n = Number((await db.get('SELECT COUNT(*) AS c FROM rounds WHERE session_id = ?', [session.id])).c) || 0;
   return { ok: true, created: false, sessionId: session.id, day: session.drop_day, roundId: rid, idx, rounds: n };
+}
+
+// Support level, read off a round row: cents as a number, or null when never reported.
+const supportCentsOf = (r) => (r.support_cents == null ? null : Number(r.support_cents));
+// The day's TOP SUPPORTER is the record (or records — ties all carry it) at the highest paid
+// amount. Computed from the rows at read time, never stored: a corrected amount moves the
+// mark on the next refresh, and there is no second source of truth to drift. null when
+// nothing on the day was paid for, so a day of free records has no top supporter rather than
+// crowning a $0 one.
+function topSupportCents(rows) {
+  const top = (rows || []).reduce((m, r) => Math.max(m, supportCentsOf(r) || 0), 0);
+  return top > 0 ? top : null;
 }
 
 function asyncQueueOrder(seedKey, sessionId, rounds) {
@@ -4630,8 +4665,10 @@ async function handleApi(req, res, url) {
   // ----- A&R DAILY: the approved daily batch from Drupal -----
   // The operator reviews and approves the day's records on a Drupal page (4 drawn at random
   // from the free pool + up to 12 paid, weighted by amount — ALL of that maths lives there),
-  // then pushes the approved set here as ONE batch. No pool table, no amount/tier fields and
-  // no selection logic in this repo; a shadow copy is how the two systems stop agreeing.
+  // then pushes the approved set here as ONE batch. No pool table and no selection logic in
+  // this repo; a shadow copy is how the two systems stop agreeing. The one number that does
+  // cross is each record's `amount` (what the artist paid — the support level), stored as
+  // rounds.support_cents purely so the console can tell paid from free on the recap.
   //
   // No CORS and no OPTIONS: this is server-to-server from PHP, not a browser button.
   // Its own secret because the blast radius differs — /submission stages one row a host can
@@ -6125,7 +6162,7 @@ async function handleApi(req, res, url) {
   // live from current data, so an edit is picked up by the next render automatically.
   if (p === '/api/admin/round/edit' && method === 'POST') {
     const { sessionId, roundId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist,
-      artist_email, artist_phone, play_url, artist_note } = await readBody(req);
+      artist_email, artist_phone, play_url, artist_note, amount } = await readBody(req);
     const session = await canAdminSession(req, sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
     const round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [roundId, sessionId]);
@@ -6144,6 +6181,11 @@ async function handleApi(req, res, url) {
     if (artist_email !== undefined && String(artist_email).trim() && !cleanArtistEmail(artist_email)) {
       return bad(res, 'That artist email doesn\'t look like an address');
     }
+    // Support level (what the artist paid) joins the descriptive allowlist for the hand-built
+    // day and for correcting a push. Dollars in, cents stored; blank clears to "not reported".
+    if (amount !== undefined && amount != null && String(amount).trim() !== '' && cleanSupportCents(amount) == null) {
+      return bad(res, 'Support needs to be a dollar amount, like 25 or 25.50 (0 for a free submission)');
+    }
     // Contact fields are PATCH-style (only written when the caller sends them), so an
     // older client that doesn't know about them can't blank them out.
     await db.run(
@@ -6154,7 +6196,8 @@ async function handleApi(req, res, url) {
          artist_email = CASE WHEN ? = 1 THEN ? ELSE artist_email END,
          artist_phone = CASE WHEN ? = 1 THEN ? ELSE artist_phone END,
          play_url = CASE WHEN ? = 1 THEN ? ELSE play_url END,
-         artist_note = CASE WHEN ? = 1 THEN ? ELSE artist_note END
+         artist_note = CASE WHEN ? = 1 THEN ? ELSE artist_note END,
+         support_cents = CASE WHEN ? = 1 THEN ? ELSE support_cents END
        WHERE id = ?`,
       [(song_title || '').trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
        isBinary ? 1 : 0, (option_b_title || '').trim(),
@@ -6164,6 +6207,7 @@ async function handleApi(req, res, url) {
        play_url !== undefined ? 1 : 0, cleanPlayUrl(play_url),
        // 500 to match what the ingest already accepts for the same column.
        artist_note !== undefined ? 1 : 0, (artist_note == null ? '' : String(artist_note)).trim().slice(0, 500) || null,
+       amount !== undefined ? 1 : 0, cleanSupportCents(amount),
        roundId]
     );
     await realtime.publish(sessionId, 'round');
@@ -7281,16 +7325,19 @@ async function handleApi(req, res, url) {
     let building = null;
     if (nextRow) {
       const qr = await db.all(
-        `SELECT id, idx, song_title, song_artist, play_url, artist_note, artist_email, artist_phone
+        `SELECT id, idx, song_title, song_artist, play_url, artist_note, artist_email, artist_phone, support_cents
            FROM rounds WHERE session_id = ? ORDER BY idx ASC`, [nextRow.id]);
+      const qTop = topSupportCents(qr);
       building = {
         id: nextRow.id, day: nextRow.drop_day, dayLabel: etDayLabel(nextRow.drop_day),
         opensLabel: etClockLabel(nextRow.window_opens_at),
         series_id: nextRow.series_id || null,
         max: DROP_MAX_SONGS,
+        top_support_cents: qTop,
         rounds: qr.map(r => ({ id: r.id, idx: r.idx, song_title: r.song_title,
           song_artist: r.song_artist || '', play_url: r.play_url || '',
           artist_note: r.artist_note || '',
+          support_cents: supportCentsOf(r), top_supporter: qTop != null && supportCentsOf(r) === qTop,
           hasEmail: !!(r.artist_email || '').trim(), hasPhone: !!(r.artist_phone || '').trim() })),
       };
     }
@@ -7319,12 +7366,13 @@ async function handleApi(req, res, url) {
     const day = session.drop_day;
     const rounds = await db.all(
       `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.play_url, r.artist_note,
-              r.ingest_ref, r.ingest_url, r.room_average, r.artist_email, r.artist_phone,
+              r.ingest_ref, r.ingest_url, r.room_average, r.artist_email, r.artist_phone, r.support_cents,
               (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
               (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id) AS reports,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared
          FROM rounds r WHERE r.session_id = ? ORDER BY r.idx ASC`, [session.id]);
     const live = rounds.filter(r => ['voting', 'closed', 'ratified'].includes(r.status));
+    const topCents = topSupportCents(rounds);
     const arsPlaying = Number((await db.get(
       `SELECT COUNT(DISTINCT v.participant_id) AS c FROM votes v JOIN rounds r ON r.id = v.round_id
         WHERE r.session_id = ?`, [session.id])).c) || 0;
@@ -7370,6 +7418,8 @@ async function handleApi(req, res, url) {
         // unification premise, failing silently. The console paints this red.
         series_id: session.series_id || null,
         records: live.length, total: rounds.length,
+        // The day's highest support amount, or null when nothing on the day was paid for.
+        top_support_cents: topCents,
       },
       rounds: rounds.map(r => ({
         id: r.id, idx: r.idx, status: r.status,
@@ -7378,6 +7428,9 @@ async function handleApi(req, res, url) {
         ingest_ref: r.ingest_ref || null, ingest_url: r.ingest_url || null,
         room_average: r.room_average != null ? Number(r.room_average) : null,
         hasEmail: !!(r.artist_email || '').trim(), hasPhone: !!(r.artist_phone || '').trim(),
+        // Support level: 0 = free, > 0 = paid (cents), null = not reported. top_supporter
+        // marks the record(s) at the day's highest amount so the console can set them apart.
+        support_cents: supportCentsOf(r), top_supporter: topCents != null && supportCentsOf(r) === topCents,
         votes: Number(r.votes) || 0, reports: Number(r.reports) || 0,
         comments_shared: Number(r.comments_shared) || 0,
       })),

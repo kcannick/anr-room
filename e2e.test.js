@@ -1492,7 +1492,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
 
   // Happy path: a 5-record day (not 16).
   const dOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
-    songs: [song(1), song(2), song(3, { email: 'not-an-email' }), song(4), song(5)] }, 'POST', DTOK);
+    songs: [song(1, { amount: 25 }), song(2, { amount: '$100.00' }), song(3, { email: 'not-an-email' }),
+            song(4, { amount: 0 }), song(5, { amount: 'a lot' })] }, 'POST', DTOK);
   ok('daily push creates the day', dOk.status === 200 && dOk.d.rounds === 5, JSON.stringify(dOk.d));
   const DROP = dOk.d.sessionId;
   const dSess = await dDb.get('SELECT * FROM sessions WHERE id = ?', [DROP]);
@@ -1508,6 +1509,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
     /how are the drums/.test(dRounds[0].artist_note || ''));
   ok('the Drupal ref and deep link ride along', dRounds[0].ingest_ref === 'node/1' && /makinitmag\.com\/node\/1/.test(dRounds[0].ingest_url || ''));
   ok('an unusable email nulls out without failing the row', dRounds[2].artist_email == null);
+  // SUPPORT LEVEL — what the artist paid. Dollars on the wire, cents in the column.
+  ok('the support level is stored in cents (25 -> 2500, "$100.00" -> 10000)',
+    dRounds[0].support_cents === 2500 && dRounds[1].support_cents === 10000, JSON.stringify(dRounds.map(r => r.support_cents)));
+  ok('a free submission (amount 0) is stored as 0, not NULL — free is a fact, not an absence',
+    dRounds[3].support_cents === 0, String(dRounds[3].support_cents));
+  ok('a record pushed with NO amount is NULL (not reported), never assumed free',
+    dRounds[2].support_cents == null, String(dRounds[2].support_cents));
+  ok('an unusable amount nulls out without failing the row', dRounds[4].support_cents == null, String(dRounds[4].support_cents));
+  ok('and is reported as a warning so Drupal can flag it',
+    (dOk.d.warnings || []).some(w => w.index === 4 && w.field === 'amount'), JSON.stringify(dOk.d.warnings));
   ok('and is reported as a warning so Drupal can flag it', (dOk.d.warnings || []).some(w => w.index === 2 && w.field === 'email'), JSON.stringify(dOk.d.warnings));
   ok('the response reflects NO artist contact back out', !/@/.test(JSON.stringify(dOk.d)), JSON.stringify(dOk.d));
 
@@ -1978,7 +1989,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   console.log('\n— A&R Daily: the console —');
   // The console opens on the day, so this one status call has to carry all of it.
   const cOk = await call('/api/ingest/daily', { day: srv._etNextDay(today), seriesId: serId,
-    songs: [song(71, { email: 'a71@test.com', phone: '+15551230071' }), song(72), song(73), song(74)] }, 'POST', DTOK);
+    songs: [song(71, { email: 'a71@test.com', phone: '+15551230071', amount: 10 }), song(72, { amount: 0 }),
+            song(73, { amount: 50 }), song(74)] }, 'POST', DTOK);
   const CDROP = cOk.d.sessionId;
   await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ? WHERE id = ?",
     [Date.now() - 1000, Date.now() + 3600000, CDROP]);
@@ -1997,6 +2009,32 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify(dStat.queues));
   ok('a status call never leaks an artist address — only whether one is on file',
     !/a71@test\.com/.test(JSON.stringify(dStat)) && dStat.rounds.some(r => r.hasEmail === true), JSON.stringify(dStat.rounds[0]));
+  // The support level rides the status so the recap can play free records short, paid ones
+  // in full, and single out whoever paid the most.
+  const supOf = (i) => dStat.rounds.find(r => r.idx === i);
+  ok('the status carries each record\'s support level: paid in cents, free as 0, unreported as null',
+    supOf(1).support_cents === 1000 && supOf(2).support_cents === 0 && supOf(3).support_cents === 5000 && supOf(4).support_cents === null,
+    JSON.stringify(dStat.rounds.map(r => r.support_cents)));
+  ok('exactly the highest-paying record is marked top_supporter',
+    supOf(3).top_supporter === true && dStat.rounds.filter(r => r.top_supporter).length === 1,
+    JSON.stringify(dStat.rounds.map(r => [r.idx, r.top_supporter])));
+  ok('and the day carries the top amount', dStat.drop.top_support_cents === 5000, String(dStat.drop.top_support_cents));
+  // Two artists who paid the same most BOTH carry the mark — hiding one would be a lie.
+  await dDb.run('UPDATE rounds SET support_cents = 5000 WHERE session_id = ? AND idx = 1', [CDROP]);
+  const dStatTie = (await call('/api/admin/daily/status?day=' + srv._etNextDay(today), null, 'GET', BOOTH)).d;
+  ok('a tie at the top marks every record at that amount',
+    dStatTie.rounds.filter(r => r.top_supporter).map(r => r.idx).sort().join() === '1,3',
+    JSON.stringify(dStatTie.rounds.map(r => [r.idx, r.top_supporter])));
+  await dDb.run('UPDATE rounds SET support_cents = 1000 WHERE session_id = ? AND idx = 1', [CDROP]);
+  // A day where nothing was paid for has NO top supporter, rather than crowning a $0 one.
+  const freeDay = (await call('/api/ingest/daily', { day: today, seriesId: serId,
+    songs: [song(75, { amount: 0 }), song(76)] }, 'POST', DTOK)).d;
+  const freeStat = (await call('/api/admin/daily/status?day=' + today, null, 'GET', BOOTH)).d;
+  ok('a day with no paid record has no top supporter',
+    freeStat.drop && freeStat.drop.top_support_cents === null && freeStat.rounds.every(r => r.top_supporter === false),
+    JSON.stringify({ top: freeStat.drop && freeStat.drop.top_support_cents, rounds: freeStat.rounds.map(r => r.top_supporter) }));
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), freeDay.sessionId]);   // free the day again
+
 
   // FIXING A BROKEN PLAY LINK MID-WINDOW — the most operationally important thing here.
   // A dead link at 12:05PM is a dead record for 21 hours and cannot round-trip through a CMS.
@@ -2014,6 +2052,20 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a broken link can be dcFixed while the window is open', dcFixed.status === 200, JSON.stringify(dcFixed.d));
   const afterFix = await dDb.get('SELECT play_url, room_average, status FROM rounds WHERE id = ?', [dcR.id]);
   ok('and the fix reaches the record', afterFix.play_url === 'https://cdn.makinitmag.com/dcFixed.mp3', afterFix.play_url);
+  // The support level can be corrected the same way — dollars in, cents stored, blank clears.
+  const supBad = await call('/api/admin/round/edit',
+    { sessionId: CDROP, roundId: dcR.id, song_title: dcR.song_title, amount: 'twenty' }, 'POST', BOOTH);
+  ok('a support amount that is not money is refused', supBad.status === 400, JSON.stringify(supBad.d));
+  await call('/api/admin/round/edit', { sessionId: CDROP, roundId: dcR.id, song_title: dcR.song_title, amount: '25.50' }, 'POST', BOOTH);
+  ok('a corrected support amount lands in cents',
+    (await dDb.get('SELECT support_cents FROM rounds WHERE id = ?', [dcR.id])).support_cents === 2550);
+  await call('/api/admin/round/edit', { sessionId: CDROP, roundId: dcR.id, song_title: dcR.song_title, play_url: afterFix.play_url }, 'POST', BOOTH);
+  ok('an edit that does not mention the amount leaves it alone (PATCH-style, like contact)',
+    (await dDb.get('SELECT support_cents FROM rounds WHERE id = ?', [dcR.id])).support_cents === 2550);
+  await call('/api/admin/round/edit', { sessionId: CDROP, roundId: dcR.id, song_title: dcR.song_title, amount: '' }, 'POST', BOOTH);
+  ok('a blank amount clears it back to not-reported',
+    (await dDb.get('SELECT support_cents FROM rounds WHERE id = ?', [dcR.id])).support_cents == null);
+  await dDb.run('UPDATE rounds SET support_cents = 1000 WHERE id = ?', [dcR.id]);
   // The descriptive-only discipline: this route has never been able to write a score, and
   // adding play_url must not have changed that.
   const tryScore = await call('/api/admin/round/edit',
@@ -2028,6 +2080,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const fixQ = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': fixVer.d.token })).d.queue;
   ok('every A&R sees the repaired link on their next refresh',
     fixQ.some(q => q.play_url === 'https://cdn.makinitmag.com/dcFixed.mp3'), JSON.stringify(fixQ.map(q => q.play_url)));
+  const fixState = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': fixVer.d.token })).d;
+  ok('nothing on the player carries a support level — an artist\'s payment is not the room\'s business',
+    !/support_cents|top_supporter/.test(JSON.stringify(fixState)));
 
   // Deleting a bad record works on an async VOTING round too, and closes the idx gap so the
   // numbering stays coherent for everyone mid-walk.
@@ -2168,7 +2223,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify({ m: qbSess.mode, st: qbSess.async_state, ser: qbSess.series_id }));
 
   const qb2 = await call('/api/admin/daily/round',
-    { day: qbDay, title: 'Long Way Down', artist: 'Sable', playUrl: 'https://open.spotify.com/track/2' }, 'POST', BOOTH);
+    { day: qbDay, title: 'Long Way Down', artist: 'Sable', playUrl: 'https://open.spotify.com/track/2', amount: '40' }, 'POST', BOOTH);
+  ok('a hand-built record carries its support level (dollars typed, cents stored)',
+    (await dDb.get('SELECT support_cents FROM rounds WHERE id = ?', [qb2.d.roundId])).support_cents === 4000);
   const qb3 = await call('/api/admin/daily/round',
     { day: qbDay, title: 'Basement Tape', artist: 'Wax Figure', playUrl: 'https://open.spotify.com/track/3' }, 'POST', BOOTH);
   ok('each further record appends to the same day', qb3.status === 200 && qb3.d.created === false && qb3.d.rounds === 3, JSON.stringify(qb3.d));
@@ -2188,6 +2245,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The console reads the day being built separately from the day that is RUNNING — they
   // are different jobs on the same screen.
   const qbStat = (await call('/api/admin/daily/status', null, 'GET', BOOTH)).d;
+  ok('the building queue prints the support level too',
+    qbStat.building && qbStat.building.rounds.every(r => 'support_cents' in r && 'top_supporter' in r),
+    JSON.stringify(qbStat.building && qbStat.building.rounds.map(r => r.support_cents)));
   ok('the status carries the day under construction on its own key',
     qbStat.building && qbStat.building.day === qbDay && qbStat.building.rounds.length === 3,
     JSON.stringify(qbStat.building && { d: qbStat.building.day, n: qbStat.building.rounds.length }));

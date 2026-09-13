@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 035; suite green)
+## Current state (migrations through 037; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -483,6 +483,22 @@ live on anr.makinitmag.com.
   (`/api/admin/daily/recap-caption`). Same best-effort contract as the Top 8 cards: the
   caption is built first and kept when hosting fails. The Chrome-rendered original lives
   untracked in the main checkout at `public/graphics/` (a local design tool, not app code).
+
+- **Support level on the daily console** (037): `rounds.support_cents` — what the artist paid
+  to submit (0 = free, > 0 = paid, NULL = not reported). It arrives as `amount` (dollars) on
+  the daily push song object, the hand-built round, and `round/edit` (PATCH-style; blank
+  clears). **This is the one exception to "no amounts cross the wire"** (integration spec
+  §1/§14), and it exists for exactly one job: on the live recap the operator plays free
+  records for a minute, paid records in full, and singles out the day's **top supporter**.
+  Top supporter is NOT stored — `/api/admin/daily/status` computes it at read time as the
+  record(s) at the day's highest amount (ties all carry it; a day with nothing paid has
+  none, so a $0 record is never crowned). NULL is printed as "—", never as Free: the
+  console must not guess. Admin-only display — it scores nothing, ranks nothing on any
+  board, and the player payload never carries it (tested). Console: a Support column on
+  the records table and the builder queue, a gold row + "Top supporter" pill, an
+  "Order: support, highest first" sort, and a Support ($) field on the builder form and
+  the edit dialog. Drupal has to start sending `amount` (spec §14, prompt "What changed");
+  until it does every row reads "—".
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed

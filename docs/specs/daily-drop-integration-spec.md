@@ -103,6 +103,7 @@ the lower-value integration this one's blast radius.
 | `url` | no | 500, http(s) | Deep link back to the submission node. **PRIVATE — platform-admin only.** See §5. |
 | `scout.uid` | no | 60 | The referring A&R's **Drupal uid**. See §3. |
 | `scout.email` | no | 200 | The referring A&R's email, used once to link accounts. See §3. |
+| `amount` | no | ≥ 0, ≤ 100000 | **The support level — what the artist paid to submit, in dollars.** `0` for a free submission; the pay-what-you-want amount for a paid one (`25`, `"25.50"` and `"$25"` all work). Stored in cents. **Omit it only when you genuinely do not know**: absent prints as "—" on the console, never as free. Unusable → nulls out with a `warnings[]` entry, never fatal. Drives the recap: free records play for a minute, paid ones in full, and the day's highest amount is marked **top supporter**. Not scored, not ranked, never shown to A&Rs or artists. |
 
 Unknown fields are ignored. Field names are accepted in both camelCase and snake_case where
 noted; prefer camelCase.
@@ -469,8 +470,15 @@ rules; 409 handled; public profiles at `makinitmag.com/@username` with `profileU
 guest submitters; MP3s public, inline, `.mp3` on the pathname, no expiry, undeletable once
 submitted; DSP links pass through and the MP3 wins when both exist; `scout` as `{uid, email}` on
 referred records only; `ref` = `entry/<id>`, stable across re-pushes; `url` private and
-`profileUrl` public; no amounts, lane or weight sent. Note capped at 320 chars — inside our 500,
-so nothing to change.
+`profileUrl` public. Note capped at 320 chars — inside our 500, so nothing to change.
+
+**Changed 2026-09-12 — one number now crosses: `amount`.** The original agreement was "no
+amounts, lane or weight sent", and the lane/weight half of that stands. But the operator runs
+the live recap off the console and plays free records for a minute and paid records in full,
+with a special mention for whoever paid the most — so the console has to know. Send `amount`
+(dollars) on every record: `0` for a free submission, the paid amount otherwise. It is stored
+as `rounds.support_cents`, printed on the admin screen only, and used for nothing else. Until
+you send it, every record shows "—" (not reported) and no top supporter is marked.
 
 **On us (this repo):** done.
 - §12 callback built (migration 035), with the retry semantics above and 1,266 tests green.

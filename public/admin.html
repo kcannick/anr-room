@@ -147,7 +147,16 @@
     color:var(--ink-faint);padding:0 6px 8px;font-weight:400}
   .dltable td{padding:9px 6px;border-top:1px solid var(--line);vertical-align:middle}
   .dltable td.num,.dltable th.num{text-align:right;font-family:"Space Mono",monospace}
+  /* The day's top supporter: gold tint + a gold edge. Declared BEFORE .alarm so a broken
+     link still paints red — the gold edge survives either way. */
+  .dltable tr.top{background:rgba(245,197,24,.07);box-shadow:inset 3px 0 0 var(--gold)}
   .dltable tr.alarm{background:rgba(255,93,108,.06)}
+  .dlsup{font-family:"Space Mono",monospace;font-size:12px;white-space:nowrap}
+  .dlsup.free{color:var(--ink-dim)}
+  .dlsup.paid{color:var(--signal);font-weight:700}
+  .dlsup.top{color:var(--gold);font-weight:700}
+  .dlsup.none{color:var(--ink-faint)}
+  .pill.top{color:var(--gold);border-color:var(--gold);background:rgba(245,197,24,.10);margin-left:6px;vertical-align:middle}
   .dlttl{font-weight:600}
   .dlart{font-size:11.5px;color:var(--ink-dim)}
   .dllink{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);overflow:hidden;
@@ -253,11 +262,14 @@
             <option value="idx">Order: as dropped</option>
             <option value="score_desc">Order: score, highest first</option>
             <option value="score_asc">Order: countdown, lowest first</option>
+            <option value="support_desc">Order: support, highest first</option>
           </select>
         </div>
         <div id="dlRounds"></div>
         <p class="muted" style="font-size:11.5px;line-height:1.5;margin:10px 0 0">
           A flag is one A&amp;R, not one click — nine flags is nine people telling you the record will not play.
+          Support is what the artist paid to submit: <b>Free</b>, or the amount. The gold row is the day's
+          <b>top supporter</b> — the record that paid the most. A dash means no amount was sent for that record.
         </p>
       </div>
 
@@ -315,6 +327,8 @@
         <div class="row">
           <div style="flex:1"><label>Artist mobile <span class="muted">(optional)</span></label>
             <input id="bPhone" placeholder="(555) 123-4567"></div>
+          <div style="flex:1"><label>Support ($) <span class="muted">(0 = free · blank = not reported)</span></label>
+            <input id="bAmount" placeholder="e.g. 25" inputmode="decimal" maxlength="12"></div>
           <div style="flex:1"><label>Day <span class="muted">(blank = next open day)</span></label>
             <input id="bDay" placeholder="YYYY-MM-DD" maxlength="10"></div>
         </div>
@@ -344,6 +358,8 @@
     <div><label>Play link</label><input id="dlEditUrl" placeholder="https://…"></div>
     <p class="muted" style="font-size:11.5px;line-height:1.5;margin:-4px 0 0">Full http(s) link. Every A&amp;R sees the change on their next refresh.</p>
     <div><label>From the artist</label><input id="dlEditNote" placeholder="What the artist wants listened for"></div>
+    <div><label>Support ($) <span class="muted">(what the artist paid · 0 = free · blank = not reported)</span></label>
+      <input id="dlEditAmount" placeholder="e.g. 25" inputmode="decimal" maxlength="12"></div>
     <div class="err" id="dlEditErr"></div>
     <div class="row" style="gap:8px">
       <button class="btn" id="dlEditSave">Save</button>
@@ -1964,7 +1980,7 @@ function dlRecapUrl(kind){
 // and a refresh must not silently put it back in drop order.
 let dlSort = 'idx';
 try { dlSort = localStorage.getItem('anr_dl_sort') || 'idx'; } catch(e) {}
-if(!['idx','score_desc','score_asc'].includes(dlSort)) dlSort = 'idx';
+if(!['idx','score_desc','score_asc','support_desc'].includes(dlSort)) dlSort = 'idx';
 $('#dlSort').value = dlSort;
 $('#dlSort').onchange = () => {
   dlSort = $('#dlSort').value;
@@ -1977,6 +1993,12 @@ $('#dlSort').onchange = () => {
 function dlSortedRounds(){
   const rows = ((DL && DL.rounds) || []).slice();
   if(dlSort === 'idx') return rows.map(r => Object.assign({}, r, { rank: null }));
+  // By support: paid records first, highest amount at the top, then free, then the ones no
+  // amount was sent for. Ties keep drop order. No rank column — it is money, not a placing.
+  if(dlSort === 'support_desc'){
+    const sup = r => (r.support_cents == null ? -1 : r.support_cents);
+    return rows.sort((a, b) => (sup(b) - sup(a)) || (a.idx - b.idx)).map(r => Object.assign({}, r, { rank: null }));
+  }
   const scored = rows.filter(r => r.room_average != null), unscored = rows.filter(r => r.room_average == null);
   scored.sort((a, b) => (b.room_average - a.room_average) || (b.votes - a.votes) || (a.idx - b.idx));
   scored.forEach((r, i) => r.rank = i + 1);
@@ -1991,15 +2013,27 @@ function dlPlayLink(url){
   if(!/^https?:\/\//i.test(url)) return `<span class="dllink">${esc(url)}</span>`;
   return `<a class="dllink" href="${esc(url)}" target="_blank" rel="noopener" title="${esc(url)}">${esc(url)}</a>`;
 }
+// The support level as the operator reads it on the recap: Free, or the dollar amount, and
+// the top supporter marked. null (no amount sent — a legacy row, or a push from before the
+// field existed) is a dash, never "Free": the console must not guess a record was free.
+function dlMoney(cents){ return '$' + (cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2)); }
+function dlSupport(r){
+  if(r.support_cents == null) return '<span class="dlsup none" title="No amount was sent for this record">—</span>';
+  if(r.support_cents === 0) return '<span class="dlsup free">Free</span>';
+  return `<span class="dlsup ${r.top_supporter ? 'top' : 'paid'}">${esc(dlMoney(r.support_cents))}</span>`
+    + (r.top_supporter ? '<span class="pill top" title="Paid the most of anyone on this day">Top supporter</span>' : '');
+}
 function renderDlRecords(){
   const rounds = dlSortedRounds();
-  const bySc = dlSort !== 'idx';
+  const bySc = dlSort === 'score_desc' || dlSort === 'score_asc';
   const rows = rounds.map(r => {
     const alarm = r.reports >= 3 || !r.play_url;
     const score = r.room_average != null ? (+r.room_average).toFixed(1) : '—';
-    return `<tr${alarm?' class="alarm"':''}>
+    const cls = [alarm ? 'alarm' : '', r.top_supporter ? 'top' : ''].filter(Boolean).join(' ');
+    return `<tr${cls?` class="${cls}"`:''}>
       <td class="num muted" style="width:34px">${bySc ? (r.rank != null ? '#' + r.rank : '—') : r.idx}</td>
-      <td style="width:38%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')}</div></td>
+      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')}</div></td>
+      <td>${dlSupport(r)}</td>
       <td>${dlPlayLink(r.play_url)}</td>
       <td class="num" style="color:var(--signal);font-weight:700">${score}</td>
       <td class="num">${r.votes}</td>
@@ -2008,7 +2042,7 @@ function renderDlRecords(){
     </tr>`;
   }).join('');
   $('#dlRounds').innerHTML = rounds.length
-    ? `<table class="dltable"><tr><th class="num">${bySc ? 'Rank' : '#'}</th><th style="width:38%">Record</th><th>Play link</th><th class="num">Score</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
+    ? `<table class="dltable"><tr><th class="num">${bySc ? 'Rank' : '#'}</th><th style="width:32%">Record</th><th>Support</th><th>Play link</th><th class="num">Score</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
     : '<div class="empty">No records on this day.</div>';
 }
 /* ---- Build the next drop, a record at a time ---- */
@@ -2025,9 +2059,10 @@ function renderBuild(){
   }
   // The day is 4-16; say where they are rather than implying a target.
   $('#bQueue').innerHTML = '<table class="dltable">'
-    + q.map(r => `<tr>
+    + q.map(r => `<tr${r.top_supporter ? ' class="top"' : ''}>
         <td style="width:34px" class="num muted">${r.idx}</td>
         <td><div class="dlttl">${esc(r.song_title)}</div><div class="dlart">${esc(r.song_artist || '')}</div></td>
+        <td>${dlSupport(r)}</td>
         <td><span class="dllink${r.play_url ? '' : ' bad'}">${esc(r.play_url || 'no link')}</span></td>
         <td class="num">${r.hasEmail ? '<span class="muted" title="Artist gets their report">✉</span>' : '<span style="color:var(--gold)" title="No contact — this artist gets no report">⚠</span>'}</td>
         <td class="num"><button class="btn ghost sm" onclick="dlEditBuilt('${r.id}')">Edit</button>
@@ -2045,6 +2080,7 @@ window.dlEditBuilt = (roundId) => {
   $('#dlEditTitle').textContent = 'Record ' + r.idx + ' · ' + (r.song_title || '');
   $('#dlEditUrl').value = r.play_url || '';
   $('#dlEditNote').value = r.artist_note || '';
+  $('#dlEditAmount').value = r.support_cents == null ? '' : String(r.support_cents / 100);
   $('#dlEditErr').textContent = '';
   $('#dlEditWarn').classList.add('hide');
   $('#dlEditDrupal').classList.add('hide');
@@ -2059,7 +2095,7 @@ window.bRemove = async (roundId) => {
 };
 
 $('#bClear').onclick = () => {
-  ['bTitle','bArtist','bUrl','bNote','bEmail','bIg','bPhone'].forEach(k => { $('#'+k).value = ''; });
+  ['bTitle','bArtist','bUrl','bNote','bEmail','bIg','bPhone','bAmount'].forEach(k => { $('#'+k).value = ''; });
   $('#bRef').checked = false;
   $('#bErr').textContent = '';
   $('#bTitle').focus();
@@ -2075,13 +2111,19 @@ $('#bAdd').onclick = async () => {
     isReference: $('#bRef').checked,
   };
   const day = $('#bDay').value.trim(); if(day) body.day = day;
+  // Dollars on the wire, same field the review-site push uses. Blank = not reported.
+  const amt = $('#bAmount').value.trim();
+  if(amt !== ''){
+    if(!/^\$?\d+(\.\d{1,2})?$/.test(amt)) return $('#bErr').textContent = 'Support needs to be a dollar amount, like 25 or 25.50 (0 for a free submission)';
+    body.amount = amt;
+  }
   if(!body.title) return $('#bErr').textContent = 'Give the record a title';
   if(!body.playUrl) return $('#bErr').textContent = 'A play link is required — a record nobody can hear is a dead record for the whole window';
   $('#bAdd').disabled = true;
   try{
     await api('/api/admin/daily/round', body);
     // Keep the day, clear the record: the next one is almost always for the same day.
-    ['bTitle','bArtist','bUrl','bNote','bEmail','bIg','bPhone'].forEach(k => { $('#'+k).value = ''; });
+    ['bTitle','bArtist','bUrl','bNote','bEmail','bIg','bPhone','bAmount'].forEach(k => { $('#'+k).value = ''; });
     $('#bRef').checked = false;
     await openDaily();
     $('#bTitle').focus();
@@ -2113,6 +2155,7 @@ window.dlEdit = (roundId) => {
   $('#dlEditTitle').textContent = 'Record ' + r.idx + ' · ' + (r.song_title || '');
   $('#dlEditUrl').value = r.play_url || '';
   $('#dlEditNote').value = r.artist_note || '';
+  $('#dlEditAmount').value = r.support_cents == null ? '' : String(r.support_cents / 100);
   $('#dlEditErr').textContent = '';
   const warn = $('#dlEditWarn');
   if(r.reports){
@@ -2131,7 +2174,8 @@ $('#dlEditSave').onclick = async () => {
   try{
     await api('/api/admin/round/edit', { sessionId: editSid, roundId: dlEditRound.id,
       song_title: dlEditRound.song_title, song_artist: dlEditRound.song_artist,
-      play_url: $('#dlEditUrl').value.trim(), artist_note: $('#dlEditNote').value.trim() });
+      play_url: $('#dlEditUrl').value.trim(), artist_note: $('#dlEditNote').value.trim(),
+      amount: $('#dlEditAmount').value.trim() });
     $('#dlEditModal').style.display = 'none';
     await openDaily();
   }catch(e){ $('#dlEditErr').textContent = e.message; }

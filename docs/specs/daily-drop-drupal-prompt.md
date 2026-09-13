@@ -101,6 +101,12 @@ have an explicit status than infer it — we will add one.
   count always rides along, because a record can be both rated and reported when a link dies
   partway through the day.
 - **Reference tracks now exist** (see above).
+- **Send `amount` on every record (2026-09-12).** The support level — what the artist paid, in
+  dollars: `0` for a free submission, the pay-what-you-want figure for a paid one. This reverses
+  the earlier "no amounts" line for one field only: the operator plays free records for a minute
+  and paid ones in full on the live recap, and the console marks the day's top supporter. It is
+  admin-only display on our side; it does not score, rank, or reach A&Rs. Omit it only when you
+  genuinely do not know the amount — absent prints as "not reported", never as free.
 
 ## Acceptance criteria — run these before calling it done
 
@@ -122,6 +128,9 @@ opens, and ask the operator to soft-delete it afterwards (that frees the date im
 10. Scouting: submit through `?a=<uid>`, close the browser, return without the link, submit
     again — both should carry the same `scout.uid`.
 11. Scouting negative case: a submission referred by a **non-A&R** account carries no `scout`.
+12. Push a paid record with `amount: 25`, a free one with `amount: 0`, and one with
+    `amount: "lots"` → `200`, a `warnings[]` entry for the third, and the operator's console
+    shows `$25`, `Free` and `—` on those rows with the `$25` row marked top supporter.
 
 ## What we still owe you
 

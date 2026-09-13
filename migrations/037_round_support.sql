@@ -1,0 +1,21 @@
+-- 037_round_support.sql
+-- rounds.support_cents — the SUPPORT LEVEL: what the artist paid to submit, in whole cents.
+--
+--   0    = a free submission
+--   > 0  = a paid submission (pay-what-you-want, $10 and up)
+--   NULL = not reported — a row from before this column, or a hand-built record where the
+--          operator left the field blank. The console prints NULL as "—", never as free.
+--
+-- Drupal owns pricing, the free pool and the day's selection (integration spec §1), and none
+-- of that moves here. This is the ONE number that now crosses the wire, and it crosses for a
+-- single reason: on the live recap the operator plays free records for a minute and paid
+-- records in full, and gives the day's top supporter a special mention — so the console has
+-- to say which is which. Nothing scores off it, nothing ranks off it on any board, and no
+-- public surface emits it (an artist's payment is between them and the magazine).
+--
+-- "Top supporter" is NOT a column. It is the record(s) at the day's highest amount, computed
+-- at read time in /api/admin/daily/status, so a corrected amount moves the mark on the next
+-- refresh and two artists who paid the same most both carry it.
+--
+-- Additive and nullable; zero backfill; nothing scales with row count; safe on the boot path.
+ALTER TABLE rounds ADD COLUMN IF NOT EXISTS support_cents INTEGER
