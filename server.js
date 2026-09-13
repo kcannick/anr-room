@@ -4719,6 +4719,10 @@ async function handleApi(req, res, url) {
     const songs = Array.isArray(body.songs) ? body.songs : null;
     if (!songs || !songs.length) return bad(res, 'songs[] required');
     if (songs.length > 500) return bad(res, 'too many songs (max 500)');
+    // Optional: pin the write to ONE day's session, so a ref can only land on the round it
+    // was pushed as. Belt and braces — an entry is pushed once — but a backfill file is
+    // organised by day and carries the sessionId the push returned, so use it.
+    const sessionId = (body.sessionId == null ? '' : String(body.sessionId)).trim() || null;
     const rejected = [], unknown = [];
     let updated = 0, rounds = 0;
     for (let i = 0; i < songs.length; i++) {
@@ -4727,7 +4731,9 @@ async function handleApi(req, res, url) {
       if (!ref) { rejected.push({ index: i, field: 'ref', reason: 'required' }); continue; }
       const cents = cleanSupportCents(raw.amount);
       if (cents == null) { rejected.push({ index: i, field: 'amount', reason: 'unusable' }); continue; }
-      const r = await db.run('UPDATE rounds SET support_cents = ? WHERE ingest_ref = ?', [cents, ref]);
+      const r = sessionId
+        ? await db.run('UPDATE rounds SET support_cents = ? WHERE ingest_ref = ? AND session_id = ?', [cents, ref, sessionId])
+        : await db.run('UPDATE rounds SET support_cents = ? WHERE ingest_ref = ?', [cents, ref]);
       if (r.changes) { updated++; rounds += Number(r.changes) || 0; } else unknown.push(ref);
     }
     return send(res, 200, { ok: true, updated, rounds, unknown, rejected });

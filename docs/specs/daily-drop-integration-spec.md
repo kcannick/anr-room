@@ -161,8 +161,11 @@ guard, so two simultaneous pushes race on the constraint and the loser gets the 
 ```
 POST https://anr.makinitmag.com/api/ingest/daily/support
 X-Ingest-Token: <DAILY_INGEST_TOKEN>
-{ "songs": [ { "ref": "entry/9182", "amount": 25 }, { "ref": "entry/9183", "amount": 0 } ] }
+{ "sessionId": "e7iOi_Su2dnf", "songs": [ { "ref": "entry/9182", "amount": 25 }, { "ref": "entry/9183", "amount": 0 } ] }
 ```
+
+`sessionId` is optional and pins the write to that day's session (the id the push returned);
+without it a ref matches wherever it was pushed.
 
 Writes `amount` onto every round whose `ref` matches, whatever state its day is in — this
 exists because `amount` joined the push after weeks of drops had run. It touches the support

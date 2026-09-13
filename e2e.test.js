@@ -1537,6 +1537,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && (await dDb.get('SELECT support_cents FROM rounds WHERE id = ?', [dRounds[2].id])).support_cents === 1500);
   const supBadTok = await call('/api/ingest/daily/support', { songs: [{ ref: 'node/3', amount: 1 }] }, 'POST', { 'X-Ingest-Token': 'wrong' });
   ok('the backfill needs the daily token', supBadTok.status === 401, String(supBadTok.status));
+  const supWrongDay = await call('/api/ingest/daily/support', { sessionId: 'not-this-day', songs: [{ ref: 'node/3', amount: 99 }] }, 'POST', DTOK);
+  ok('a backfill pinned to a session touches nothing on another day',
+    supWrongDay.d.updated === 0 && supWrongDay.d.unknown.join() === 'node/3'
+      && (await dDb.get('SELECT support_cents FROM rounds WHERE id = ?', [dRounds[2].id])).support_cents === 1500, JSON.stringify(supWrongDay.d));
+  ok('and pinned to the right session it writes',
+    (await call('/api/ingest/daily/support', { sessionId: DROP, songs: [{ ref: 'node/3', amount: 15 }] }, 'POST', DTOK)).d.updated === 1);
   const supEmpty = await call('/api/ingest/daily/support', { songs: [] }, 'POST', DTOK);
   ok('an empty backfill is refused', supEmpty.status === 400, String(supEmpty.status));
 
