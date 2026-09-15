@@ -179,7 +179,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
   <section id="screen-waiting" class="center stack hide">
     <div class="panel stack" style="text-align:center">
       <div class="eyebrow" id="waitDay">A&amp;R Daily</div>
-      <h2 style="font-size:25px;margin:4px 0 0">Today's records open at noon.</h2>
+      <h2 style="font-size:25px;margin:4px 0 0" id="waitHead">Today's records open at noon.</h2>
       <p class="dim" style="font-size:14px;line-height:1.55;margin:0" id="waitSub"></p>
       <div class="rule" style="margin:4px 0"></div>
       <p class="dim" style="font-size:13px;line-height:1.55;margin:0">
@@ -794,6 +794,7 @@ function render(){
 
   if(st.phase === 'waiting'){
     $('#waitDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
+    $('#waitHead').textContent = "Today's records open at " + (as.opensLabel || 'noon') + '.';
     $('#waitSub').textContent = as.opensLabel
       ? ('Today’s records open at ' + as.opensLabel + '. Rate every one before the window closes and you earn a completion bonus on top of what you score.')
       : 'Today’s records are not open yet.';

@@ -925,6 +925,26 @@
         <div id="plAsanaStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
         <p class="muted" style="font-size:11px;margin:8px 0 0">The project ID is the long number in your Asana project URL. The access token is an environment variable (<b>ASANA_TOKEN</b>) — it never lives in the database.</p>
       </div>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <label>A&amp;R Daily schedule <span class="muted">(Eastern Time. Applies to every drop that has not opened yet.)</span></label>
+        <div class="row" style="margin-top:8px">
+          <div><label>Records open at</label><input id="dsOpen" type="time" step="300"></div>
+          <div><label>Rating closes at</label><input id="dsClose" type="time" step="300"></div>
+          <div><label>Results publish at</label><input id="dsResults" type="time" step="300"></div>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. Results never publish before the close. Set them equal to publish as soon as the day is tallied.</p>
+        <label style="margin-top:10px">Completion bonus <span class="muted">(for rating every record in the day)</span></label>
+        <table class="data-table" style="margin-top:6px">
+          <tbody>
+            <tr><td>Within <input id="dsT1H" type="number" min="1" step="1" style="width:64px;display:inline-block"> hours of the open</td><td><input id="dsT1P" type="number" min="0" max="1000" style="width:80px;display:inline-block"> pts</td></tr>
+            <tr><td>Within <input id="dsT2H" type="number" min="1" step="1" style="width:64px;display:inline-block"> hours</td><td><input id="dsT2P" type="number" min="0" max="1000" style="width:80px;display:inline-block"> pts</td></tr>
+            <tr><td>Within <input id="dsT3H" type="number" min="1" step="1" style="width:64px;display:inline-block"> hours</td><td><input id="dsT3P" type="number" min="0" max="1000" style="width:80px;display:inline-block"> pts</td></tr>
+            <tr><td>Any time before the close</td><td><input id="dsFinal" type="number" min="0" max="1000" style="width:80px;display:inline-block"> pts</td></tr>
+          </tbody>
+        </table>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">Leave a step's hours blank to drop that step. Steps must increase and stay inside the window.</p>
+        <div id="dsSummary" style="font-size:12px;margin-top:8px;font-weight:600"></div>
+      </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
       <div class="muted" id="plStatus" style="font-size:12px;margin-top:6px"></div>
     </div>
@@ -2578,6 +2598,7 @@ async function openPlatform(){
     $('#plReviveGame').value=d.settings.reviveZoneGame||'';
     plReviveStatus(d.settings);
     $('#plAsanaProject').value=d.settings.asanaProject||'';
+    dsFill(d.dailySchedule);
     plAsanaStatus(d);
     $('#plSmsProvider').textContent=d.smsProvider||'none';
     api('/api/admin/notify/audience',null,'GET').then(a=>{
@@ -2695,6 +2716,24 @@ $('#nbSend')&&($('#nbSend').onclick=async()=>{
   }catch(e){$('#nbErr').textContent=e.message+' — reopen Platform and it can be resumed by support.';}
   $('#nbSend').disabled=false;
 });
+// ---- A&R Daily schedule fields (times as ET minutes-of-day on the wire) ----
+const dsMin=v=>{const m=/^(\d{1,2}):(\d{2})/.exec(v||'');return m?(+m[1])*60+(+m[2]):null;};
+const dsTime=n=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
+function dsFill(sc){
+  if(!sc)return;
+  $('#dsOpen').value=dsTime(sc.openMin);$('#dsClose').value=dsTime(sc.closeMin);$('#dsResults').value=dsTime(sc.resultsMin);
+  for(let i=1;i<=3;i++){const t=(sc.tiers||[])[i-1];$('#dsT'+i+'H').value=t?t.hours:'';$('#dsT'+i+'P').value=t?t.points:'';}
+  $('#dsFinal').value=sc.finalPoints;
+  $('#dsSummary').textContent='Opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · results '+sc.resultsLabel+' · bonus '+(sc.tierLabels||[]).join(', ');
+}
+function dsRead(){
+  const tiers=[];
+  for(let i=1;i<=3;i++){const h=parseFloat($('#dsT'+i+'H').value),p=parseInt($('#dsT'+i+'P').value,10);
+    if(Number.isFinite(h)&&h>0)tiers.push({hours:h,points:Number.isFinite(p)?p:0});}
+  const f=parseInt($('#dsFinal').value,10);
+  return {openMin:dsMin($('#dsOpen').value),closeMin:dsMin($('#dsClose').value),resultsMin:dsMin($('#dsResults').value),
+    tiers,finalPoints:Number.isFinite(f)?f:undefined};
+}
 $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=true;
   try{
@@ -2702,10 +2741,11 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
       reviveDeliveryUrl:$('#plReviveUrl').value.trim(),
       reviveZoneLobby:$('#plReviveLobby').value.trim(),
       reviveZoneGame:$('#plReviveGame').value.trim(),
-      asanaProject:$('#plAsanaProject').value.trim()});
+      asanaProject:$('#plAsanaProject').value.trim(),
+      dailySchedule:dsRead()});
     plReviveStatus({reviveDeliveryUrl:$('#plReviveUrl').value.trim(),reviveZoneLobby:$('#plReviveLobby').value.trim(),reviveZoneGame:$('#plReviveGame').value.trim()});
     // Re-read: the server normalizes the project id, and only it knows if the token is set.
-    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';plAsanaStatus(d);}catch(e){}
+    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';plAsanaStatus(d);dsFill(d.dailySchedule);}catch(e){}
     $('#plStatus').textContent='Saved ✓';setTimeout(()=>$('#plStatus').textContent='',2000);
   }catch(e){$('#plStatus').textContent=e.message;}
   $('#plSaveSettings').disabled=false;

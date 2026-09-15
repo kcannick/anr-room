@@ -2154,6 +2154,31 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify({ mode: handSess.mode, series: handSess.series_id, state: handSess.async_state }));
   ok('and it echoes no artist contact back out',
     !/@/.test(JSON.stringify(handOk.d)), JSON.stringify(handOk.d));
+  // THE SCHEDULE IS A SETTING, and saving it re-stamps every day that has not opened.
+  const schedAnon = await call('/api/admin/settings', { dailySchedule: { openMin: 13 * 60 } }, 'POST', {});
+  ok('the schedule is platform-admin only', schedAnon.status === 403 || schedAnon.status === 401, 'got ' + schedAnon.status);
+  const schedBad = await call('/api/admin/settings', { dailySchedule: { tiers: [{ hours: 40, points: 5 }] } }, 'POST', BOOTH);
+  ok('a bad schedule is refused as a whole', schedBad.status === 400, JSON.stringify(schedBad.d));
+  const schedOk = await call('/api/admin/settings',
+    { dailySchedule: { openMin: 13 * 60, closeMin: 10 * 60, resultsMin: 11 * 60, tiers: [{ hours: 3, points: 90 }], finalPoints: 10 } }, 'POST', BOOTH);
+  ok('a platform admin can change the schedule, and the cold day was re-stamped', schedOk.status === 200 && schedOk.d.restamped >= 1, JSON.stringify(schedOk.d));
+  const schedView = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
+  ok('the panel reads the saved schedule back with labels',
+    schedView.openMin === 13 * 60 && schedView.windowHours === 21 && schedView.tiers.length === 1 && schedView.finalPoints === 10
+      && /1:00 PM ET/.test(schedView.opensLabel) && /next day/.test(schedView.closesLabel), JSON.stringify(schedView));
+  const handRe = await dDb.get('SELECT * FROM sessions WHERE id = ?', [handSess.id]);
+  ok('the cold day now runs on the new schedule',
+    Number(handRe.window_opens_at) === srv._etEpoch(handDay, 13) && Number(handRe.window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 10)
+      && Number(handRe.results_at) === srv._etEpoch(srv._etNextDay(handDay), 11),
+    JSON.stringify({ o: handRe.window_opens_at, c: handRe.window_closes_at, r: handRe.results_at }));
+  const handReR = await dDb.get('SELECT opens_at, closes_at FROM rounds WHERE session_id = ? LIMIT 1', [handSess.id]);
+  ok('and so do its records', Number(handReR.opens_at) === Number(handRe.window_opens_at) && Number(handReR.closes_at) === Number(handRe.window_closes_at));
+  const schedReset = await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
+  const schedBack = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
+  ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 12 * 60 && schedBack.closeMin === 12 * 60
+    && schedBack.tiers.length === 3 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 12),
+    JSON.stringify(schedBack));
+
   // MOVING a cold day. The case: the review site's noon lock-in pressed at 12:01 pushes a
   // day dated TOMORROW, and nothing on the console could fix it — a drop runs off its
   // window, not scheduled_at, so renaming it or moving its "scheduled start" did nothing.
@@ -2174,7 +2199,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the whole window moves with it — open, close, results, scheduled start and the default name',
     mvSess.drop_day === mvTo
       && Number(mvSess.window_opens_at) === srv._etEpoch(mvTo, 12)
-      && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 9)
+      && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 12)
       && Number(mvSess.results_at) === srv._etEpoch(mvNext, 12)
       && Number(mvSess.scheduled_at) === Number(mvSess.window_opens_at)
       && mvSess.name === 'A&R Daily — ' + mvTo,
@@ -2962,21 +2987,42 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('etNextDay rejects a malformed day', server._etNextDay('nope') === null);
 
   console.log('\n— A&R Daily: completion-bonus tiers —');
-  // Anchored to the drop day's absolute epochs, NOT minutes-of-day. The window crosses
-  // midnight, so someone finishing at 2AM is 120 minutes into the ET clock — a
-  // minutes-of-day comparison would read that as "before 3PM" and pay 100 instead of 25.
-  const bSess = { drop_day: '2026-07-04' };
+  // HOURS AFTER THE OPEN, anchored to the day's own window_opens_at — not ET minutes-of-day.
+  // The window crosses midnight, so someone finishing at 2AM is 120 minutes into the ET clock
+  // and a minutes-of-day comparison would pay the top tier for the slowest finish.
+  // Defaults (2026-09-15): 100 within 6h, 75 within 12h, 50 within 18h, 25 before the close.
   const at = (day, hh, mm = 0) => server._etEpoch(day, hh, mm);
+  const bSess = { drop_day: '2026-07-04', window_opens_at: at('2026-07-04', 12), window_closes_at: at('2026-07-05', 12) };
   ok('finish at 12:01 PM -> 100', server._completionBonusPoints(bSess, at('2026-07-04', 12, 1)) === 100);
-  ok('finish at 2:59 PM  -> 100', server._completionBonusPoints(bSess, at('2026-07-04', 14, 59)) === 100);
-  ok('finish at 3:00 PM  -> 75',  server._completionBonusPoints(bSess, at('2026-07-04', 15)) === 75);
-  ok('finish at 5:59 PM  -> 75',  server._completionBonusPoints(bSess, at('2026-07-04', 17, 59)) === 75);
-  ok('finish at 6:00 PM  -> 50',  server._completionBonusPoints(bSess, at('2026-07-04', 18)) === 50);
-  ok('finish at 8:59 PM  -> 50',  server._completionBonusPoints(bSess, at('2026-07-04', 20, 59)) === 50);
-  ok('finish at 9:00 PM  -> 25',  server._completionBonusPoints(bSess, at('2026-07-04', 21)) === 25);
-  ok('finish at 2:00 AM next day -> 25 (NOT 100 — the window crosses midnight)',
-    server._completionBonusPoints(bSess, at('2026-07-05', 2)) === 25);
-  ok('finish at 8:59 AM next day -> 25', server._completionBonusPoints(bSess, at('2026-07-05', 8, 59)) === 25);
+  ok('finish at 5:59 PM  -> 100', server._completionBonusPoints(bSess, at('2026-07-04', 17, 59)) === 100);
+  ok('finish at 6:00 PM  -> 75',  server._completionBonusPoints(bSess, at('2026-07-04', 18)) === 75);
+  ok('finish at 11:59 PM -> 75',  server._completionBonusPoints(bSess, at('2026-07-04', 23, 59)) === 75);
+  ok('finish at 12:00 AM next day -> 50 (NOT 100 — the window crosses midnight)', server._completionBonusPoints(bSess, at('2026-07-05', 0)) === 50);
+  ok('finish at 5:59 AM next day -> 50', server._completionBonusPoints(bSess, at('2026-07-05', 5, 59)) === 50);
+  ok('finish at 6:00 AM next day -> 25', server._completionBonusPoints(bSess, at('2026-07-05', 6)) === 25);
+  ok('finish at 11:59 AM next day -> 25', server._completionBonusPoints(bSess, at('2026-07-05', 11, 59)) === 25);
+  ok('a day with only a drop_day still resolves its open from the schedule',
+    server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-04', 17, 59)) === 100);
+  // The steps follow a custom schedule: a 3-hour step at 90, then 10 before the close.
+  const cSched = server._parseDailySchedule({ openMin: 13 * 60, closeMin: 10 * 60, resultsMin: 11 * 60, tiers: [{ hours: 3, points: 90 }], finalPoints: 10 }).cfg;
+  const cSess = { drop_day: '2026-07-04', window_opens_at: at('2026-07-04', 13), window_closes_at: at('2026-07-05', 10) };
+  ok('a custom step pays its own points', server._completionBonusPoints(cSess, at('2026-07-04', 15, 59), cSched) === 90
+    && server._completionBonusPoints(cSess, at('2026-07-04', 16), cSched) === 10);
+
+  console.log('\n— A&R Daily: the schedule —');
+  const D = server._DAILY_SCHEDULE_DEFAULTS;
+  const dw = server._dropWindowFor('2026-07-04', D);
+  ok('default window: opens noon, closes noon next day, results noon next day',
+    dw.opensAt === at('2026-07-04', 12) && dw.closesAt === at('2026-07-05', 12) && dw.resultsAt === at('2026-07-05', 12), JSON.stringify(dw));
+  const sameDay = server._dropWindowFor('2026-07-04', { ...D, openMin: 9 * 60, closeMin: 21 * 60, resultsMin: 20 * 60 });
+  ok('a close later than the open is the same day, and results never publish before the close',
+    sameDay.closesAt === at('2026-07-04', 21) && sameDay.resultsAt === at('2026-07-04', 21), JSON.stringify(sameDay));
+  const bad1 = (() => { try { server._parseDailySchedule({ tiers: [{ hours: 30, points: 100 }] }); return null; } catch (e) { return e.message; } })();
+  ok('a bonus step past the close is refused', /inside the 24-hour window/.test(bad1 || ''), bad1);
+  const bad2 = (() => { try { server._parseDailySchedule({ tiers: [{ hours: 6, points: 100 }, { hours: 6, points: 75 }] }); return null; } catch (e) { return e.message; } })();
+  ok('steps must increase', /must increase/.test(bad2 || ''), bad2);
+  const bad3 = (() => { try { server._parseDailySchedule({ openMin: 12 * 60, closeMin: 12 * 60 + 30 }); return null; } catch (e) { return e.message; } })();
+  ok('a window under an hour is refused', /at least one hour/.test(bad3 || ''), bad3);
 
   console.log('\n— A&R Daily: the per-A&R queue order —');
   // Deterministic and storage-free: the same A&R gets the same order on any device forever,

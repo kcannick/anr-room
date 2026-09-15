@@ -16,11 +16,14 @@ for the days that are not normal.
 |---|---|---|
 | Any time before noon | Tomorrow's records are staged (Drupal push, or you build them by hand) | Drupal / you |
 | **12:00 PM** | The day opens. Every record goes live at once. A&Rs rate and predict | The cron |
-| 12:00 PM → 9:00 AM | The 21-hour window. A&Rs play whenever they want | — |
-| **9:00 AM** next day | Rating closes. The day tallies (may take several cron ticks) | The cron |
-| 9:00 AM → 12:00 PM | Results are **held**. Tallied but sealed — nobody sees an average yet | — |
-| **12:00 PM** next day | Results publish, graphics render, the A&R digest queues — and the next day opens in the same minute | The cron |
+| 12:00 PM → 12:00 PM | The 24-hour window. A&Rs play whenever they want | — |
+| **12:00 PM** next day | Rating closes. The day tallies (may take a cron tick or two), then results publish, graphics render, the A&R digest queues — and the next day opens in the same minute | The cron |
 | **1:00 PM** (publish + 1 hour) | Artist reports and artist texts start going out | The cron |
+
+These times are settings, not code: **Platform → System settings → A&R Daily schedule**
+(open, close, results, and the completion-bonus steps). Saving applies to every drop that has
+not opened yet; a day already open keeps the window it started with. A closing time at or
+before the opening time means the next day. Results never publish before the close.
 
 That last coincidence is deliberate: the results email *is* the "come back and play" email.
 
@@ -200,8 +203,8 @@ cause.
 
 - **Rating a record** scores on accuracy, exactly as in the live show (max 125 with a bullseye).
 - **Completion bonus**, for handling every record in the day, tiered by when they finished:
-  **100** before 3 PM · **75** before 6 PM · **50** before 9 PM · **25** after that. Paid once
-  per person per day. Days with fewer than 3 records pay no bonus.
+  **100** within 6 hours of the open · **75** within 12 · **50** within 18 · **25** any time
+  before the close (the steps are settings, see section 1). Paid once per person per day. Days with fewer than 3 records pay no bonus.
 - **A flagged record counts as handled**, so reporting a dead link honestly never costs someone
   their bonus. Flags are capped at 3 per A&R per day (and always at least one below the day's
   size), so nobody can flag their way to the bonus.

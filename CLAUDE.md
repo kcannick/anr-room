@@ -421,6 +421,15 @@ live on anr.makinitmag.com.
     device) with the play link as a real link — this is how the live countdown show of the
     previous day's drop is run off the console. Ties rank by votes then drop order; an
     unscored record has no rank and sits last.
+  - **The schedule is a SETTING** (2026-09-15): `DAILY_SCHEDULE_DEFAULTS` (open 12:00 PM ET,
+    close 12:00 PM ET next day = 24h, results = close i.e. as soon as tallied; bonus 100/75/50
+    within 6/12/18 HOURS OF THE OPEN, 25 before close) overridden by `settings` rows
+    `daily_open_min / daily_close_min / daily_results_min / daily_bonus_tiers`, read via
+    `dailySchedule()` (30s per-instance cache). Platform panel → System settings. Saving
+    RE-STAMPS every cold drop's window (a cold day is nothing but its window); an open day
+    keeps the window it started with, but bonus steps are computed live off `window_opens_at`
+    + hours, so a mid-day tier change does apply to finishes after the save. Close at or before
+    open = next day; results clamp to ≥ close.
   - **A cold drop can be MOVED to another day** (`/api/admin/daily/move`, 2026-09-11): the
     review-site noon lock-in pressed at 12:01 pushes a day dated TOMORROW, and nothing on the
     console could fix it — a drop runs off `drop_day` + `window_opens_at/closes_at/results_at`,

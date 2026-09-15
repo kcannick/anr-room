@@ -930,7 +930,7 @@ async function maybeAwardCompletionBonus(participant, session, atTs = null) {
   const h = await asyncHandled(participant, session);
   if (h.total < ASYNC_MIN_FOR_BONUS) return null;
   if (h.handled < h.total) return null;
-  const pts = completionBonusPoints(session, atTs != null ? atTs : (h.last || now()));
+  const pts = completionBonusPoints(session, atTs != null ? atTs : (h.last || now()), await dailySchedule());
   const ins = await db.run(
     `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
      VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
@@ -1537,12 +1537,7 @@ async function asyncPlayerState(participant, session, count) {
   // Every label is a bare wall-clock string so a caller can put its own word in front of
   // it ("until 3:00 PM ET", "Before 3:00 PM ET"). The last tier used to read "before the
   // window closes", which rendered as "Before before the window closes".
-  const tiers = [
-    { at: etEpoch(day, 15), points: 100, label: '3:00 PM ET' },
-    { at: etEpoch(day, 18), points: 75, label: '6:00 PM ET' },
-    { at: etEpoch(day, 21), points: 50, label: '9:00 PM ET' },
-    { at: closes, points: 25, label: etClockLabel(closes) },
-  ];
+  const tiers = completionTiers(session, await dailySchedule());
   const nextTier = tiers.find(t => t.at != null && ts < t.at) || null;
   const earned = await db.get(
     "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?",
@@ -2706,9 +2701,116 @@ function etWhenLabel(ts, fromDay) {
 // ===== A&R DAILY — the async drop =====
 // The daily schedule, as ET minutes-of-day. Defaults, not hardcodes: the drop builder takes
 // explicit overrides so a test can run a 60-second window instead of waiting for noon.
-const DROP_OPEN_MIN = 12 * 60;      // 12:00 PM ET — the day's records open
-const DROP_CLOSE_MIN = 9 * 60;      // 9:00 AM ET next day — rating closes, everything ratifies
-const DROP_PUBLISH_MIN = 12 * 60;   // 12:00 PM ET next day — results publish
+// ===== A&R DAILY — the schedule, TUNABLE from the platform panel =====
+// Defaults (operator, 2026-09-15): records open at 12:00 PM ET, rating closes 12:00 PM ET the
+// next day (a 24-hour window), results publish as soon as the day is tallied after the close.
+// Completion bonus: 100 for finishing every record within 6 hours of the open, 75 within 12,
+// 50 within 18, 25 any time before the close. The tiers are HOURS AFTER THE OPEN, not ET
+// clock times, so they follow the open when it moves.
+//
+// Overrides live in `settings` (daily_open_min / daily_close_min / daily_results_min as ET
+// minutes-of-day, daily_bonus_tiers as JSON) and are read through dailySchedule(), cached
+// per instance for 30s. A closing time at or before the opening time means the NEXT day.
+// Results never publish before the close: results_at is clamped to closes_at.
+const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
+  openMin: 12 * 60, closeMin: 12 * 60, resultsMin: 12 * 60,
+  tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 12, points: 75 }, { hours: 18, points: 50 }]),
+  finalPoints: 25,
+});
+const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_results_min', 'daily_bonus_tiers'];
+
+// Validate + normalize a schedule. Throws a readable message; returns { cfg, windowHours }.
+// null/undefined input means "back to the defaults".
+function parseDailySchedule(inp) {
+  const D = DAILY_SCHEDULE_DEFAULTS;
+  if (inp == null) return { cfg: null, windowHours: null };
+  const min = (v, name) => {
+    const n = Number(v == null || v === '' ? NaN : v);
+    if (!Number.isInteger(n) || n < 0 || n > 1439) throw new Error(`${name} must be a time of day (0–1439 minutes)`);
+    return n;
+  };
+  const cfg = {
+    openMin: min(inp.openMin ?? D.openMin, 'openMin'),
+    closeMin: min(inp.closeMin ?? D.closeMin, 'closeMin'),
+    resultsMin: min(inp.resultsMin ?? D.resultsMin, 'resultsMin'),
+  };
+  const windowHours = ((cfg.closeMin > cfg.openMin ? cfg.closeMin : cfg.closeMin + 1440) - cfg.openMin) / 60;
+  if (windowHours < 1) throw new Error('The window must be at least one hour');
+  const rawTiers = inp.tiers === undefined ? D.tiers : inp.tiers;
+  if (!Array.isArray(rawTiers) || rawTiers.length > 4) throw new Error('tiers must be a list of at most 4 steps');
+  const pts = (v, name) => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 1000) throw new Error(`${name} must be whole points, 0–1000`);
+    return n;
+  };
+  const tiers = []; let last = 0;
+  rawTiers.forEach((t, i) => {
+    const hours = Number(t && t.hours);
+    if (!Number.isFinite(hours) || hours <= last || hours >= windowHours) {
+      throw new Error(`Bonus step ${i + 1}: hours must increase and stay inside the ${windowHours}-hour window`);
+    }
+    tiers.push({ hours, points: pts(t.points, `Bonus step ${i + 1} points`) });
+    last = hours;
+  });
+  cfg.tiers = tiers;
+  cfg.finalPoints = pts(inp.finalPoints ?? D.finalPoints, 'The before-close bonus');
+  return { cfg, windowHours };
+}
+
+let _dailySched = { at: 0, cfg: null };
+async function dailySchedule() {
+  if (_dailySched.cfg && Date.now() - _dailySched.at < 30000) return _dailySched.cfg;
+  const D = DAILY_SCHEDULE_DEFAULTS;
+  let cfg = { ...D, tiers: D.tiers.map(t => ({ ...t })) };
+  try {
+    const rows = await db.all(`SELECT k, v FROM settings WHERE k IN (${DAILY_SCHEDULE_KEYS.map(() => '?').join(',')})`, DAILY_SCHEDULE_KEYS);
+    const m = Object.fromEntries(rows.map(r => [r.k, r.v]));
+    let tiers = D.tiers, finalPoints = D.finalPoints;
+    if (m.daily_bonus_tiers) { const j = JSON.parse(m.daily_bonus_tiers); tiers = j.tiers; finalPoints = j.finalPoints; }
+    const parsed = parseDailySchedule({ openMin: m.daily_open_min ?? D.openMin, closeMin: m.daily_close_min ?? D.closeMin,
+      resultsMin: m.daily_results_min ?? D.resultsMin, tiers, finalPoints });
+    if (parsed.cfg) cfg = parsed.cfg;
+  } catch (e) { console.error('[daily] schedule setting unreadable, using defaults:', e.message); }
+  _dailySched = { at: Date.now(), cfg };
+  return cfg;
+}
+
+// A day's window under a schedule: opens on `day`, closes the same day when the close is
+// later than the open and the NEXT day otherwise, publishes on the close day and never
+// before the close.
+function dropWindowFor(day, sched = DAILY_SCHEDULE_DEFAULTS) {
+  const hm = (n) => [Math.floor(n / 60), n % 60];
+  const closeDay = sched.closeMin > sched.openMin ? day : etNextDay(day);
+  const opensAt = etEpoch(day, ...hm(sched.openMin));
+  const closesAt = etEpoch(closeDay, ...hm(sched.closeMin));
+  let resultsAt = etEpoch(closeDay, ...hm(sched.resultsMin));
+  if (resultsAt != null && closesAt != null && resultsAt < closesAt) resultsAt = closesAt;
+  return { opensAt, closesAt, resultsAt };
+}
+
+// The bonus steps for ONE day as resolved epochs + labels, for the player surface. Steps that
+// would fall past the close are dropped; the before-close step is always last.
+function completionTiers(session, sched = DAILY_SCHEDULE_DEFAULTS) {
+  const opens = Number(session.window_opens_at) || 0, closes = Number(session.window_closes_at) || 0;
+  const day = session.drop_day;
+  const lab = (t) => etClockLabel(t) + (day && etDay(t) !== day ? ' tomorrow' : '');
+  const tiers = sched.tiers.map(t => ({ at: opens + t.hours * 3600000, points: t.points }))
+    .filter(t => !closes || t.at < closes).map(t => ({ ...t, label: lab(t.at) }));
+  tiers.push({ at: closes || null, points: sched.finalPoints, label: closes ? lab(closes) : null });
+  return tiers;
+}
+
+// What the platform panel shows: the schedule plus human labels for a sample day.
+function dailyScheduleView(sched) {
+  const day = etDay();
+  const w = dropWindowFor(day, sched);
+  const windowHours = ((sched.closeMin > sched.openMin ? sched.closeMin : sched.closeMin + 1440) - sched.openMin) / 60;
+  const lab = (t) => etClockLabel(t) + (etDay(t) !== day ? ' next day' : '');
+  const tiers = completionTiers({ drop_day: day, window_opens_at: w.opensAt, window_closes_at: w.closesAt }, sched);
+  return { ...sched, windowHours, defaults: DAILY_SCHEDULE_DEFAULTS,
+    opensLabel: lab(w.opensAt), closesLabel: lab(w.closesAt), resultsLabel: lab(w.resultsAt),
+    tierLabels: tiers.map(t => `${t.points} before ${t.label.replace(' tomorrow', ' next day')}`) };
+}
 // A day is 4 random free records plus UP TO 12 paid, so its size is VARIABLE (4-16) and only
 // reaches 16 when the paid queue is full or backlogged. This is a sanity ceiling on a bad
 // push, not the expected count — nothing may treat 16 as given.
@@ -2737,13 +2839,14 @@ function refuseOnDrop(res, session) {
 // the window crosses midnight, so an A&R who finishes at 2:00 AM is 120 minutes into the ET
 // clock and a minutes-of-day comparison would read that as "before 3PM" and pay 100 instead
 // of 25. Callers pass the A&R's LAST VOTE time, not now() — see maybeAwardCompletionBonus.
-function completionBonusPoints(session, ts) {
-  const d = session && session.drop_day;
-  if (!d) return 25;
-  if (ts < etEpoch(d, 15)) return 100;
-  if (ts < etEpoch(d, 18)) return 75;
-  if (ts < etEpoch(d, 21)) return 50;
-  return 25;   // any time before the close; the close itself is the vote guard's job
+// Steps are HOURS AFTER THE OPEN (see DAILY_SCHEDULE_DEFAULTS), anchored to the day's own
+// window_opens_at, so they move with the schedule and never depend on the ET clock.
+function completionBonusPoints(session, ts, sched = DAILY_SCHEDULE_DEFAULTS) {
+  let opens = Number(session && session.window_opens_at) || null;
+  if (!opens && session && session.drop_day) opens = etEpoch(session.drop_day, Math.floor(sched.openMin / 60), sched.openMin % 60);
+  if (!opens) return sched.finalPoints;
+  for (const t of sched.tiers) if (ts < opens + t.hours * 3600000) return t.points;
+  return sched.finalPoints;   // any time before the close; the close itself is the vote guard's job
 }
 
 // The play link IS the product on an async day — the A&R listens here, not on a stream.
@@ -2935,18 +3038,8 @@ async function stageDailyDrop(res, body) {
 //
 // Rounds are created 'pending'; the lifecycle cron flips them all to 'voting' in one statement
 // at the open. Ingest stays dumb and the open stays atomic.
-// A day's default window: opens at noon, closes 9 AM next day, publishes noon next day.
-function dropWindowFor(day) {
-  const nextDay = etNextDay(day);
-  return {
-    opensAt: etEpoch(day, DROP_OPEN_MIN / 60, DROP_OPEN_MIN % 60),
-    closesAt: etEpoch(nextDay, DROP_CLOSE_MIN / 60, DROP_CLOSE_MIN % 60),
-    resultsAt: etEpoch(nextDay, DROP_PUBLISH_MIN / 60, DROP_PUBLISH_MIN % 60),
-  };
-}
-
 async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, resultsAt }) {
-  const dflt = dropWindowFor(day);
+  const dflt = dropWindowFor(day, await dailySchedule());
   const wo = opensAt != null ? Number(opensAt) : dflt.opensAt;
   const wc = closesAt != null ? Number(closesAt) : dflt.closesAt;
   const rp = resultsAt != null ? Number(resultsAt) : dflt.resultsAt;
@@ -5841,6 +5934,7 @@ async function handleApi(req, res, url) {
         reviveZoneLobby: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_lobby'"))?.v || null,
         reviveZoneGame: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_game'"))?.v || null,
         asanaProject: (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null },
+      dailySchedule: dailyScheduleView(await dailySchedule()),
       smsProvider: (process.env.SMS_PROVIDER || 'none'),
       // The PAT itself is an env var and never leaves the server — only whether it's set.
       asanaToken: !!process.env.ASANA_TOKEN,
@@ -5866,8 +5960,38 @@ async function handleApi(req, res, url) {
     if ('reviveZoneGame' in body) await setOrClear('revive_zone_game', String(parseInt(body.reviveZoneGame, 10) || '') || null);
     // Asana project gid for the post kit (digits; the PAT itself is ASANA_TOKEN in env).
     if ('asanaProject' in body) await setOrClear('asana_project', (body.asanaProject || '').toString().trim().replace(/\D/g, '').slice(0, 30) || null);
+    // A&R Daily schedule. Saved values are validated as a whole; null puts the defaults back.
+    // Every drop that has NOT opened is re-stamped to the new window here, because a cold day
+    // is nothing but its window — otherwise "the schedule changed" would only be true from
+    // the day after tomorrow, and the operator would be looking at a console that disagrees
+    // with the settings they just saved.
+    let restamped = 0;
+    if ('dailySchedule' in body) {
+      let parsed;
+      try { parsed = parseDailySchedule(body.dailySchedule); } catch (e) { return bad(res, e.message); }
+      if (!parsed.cfg) { for (const k of DAILY_SCHEDULE_KEYS) await db.run('DELETE FROM settings WHERE k = ?', [k]); }
+      else {
+        const c = parsed.cfg;
+        await setOrClear('daily_open_min', String(c.openMin));
+        await setOrClear('daily_close_min', String(c.closeMin));
+        await setOrClear('daily_results_min', String(c.resultsMin));
+        await setOrClear('daily_bonus_tiers', JSON.stringify({ tiers: c.tiers, finalPoints: c.finalPoints }));
+      }
+      _dailySched.at = 0;
+      const sched = await dailySchedule();
+      const cold = await db.all(
+        `SELECT id, drop_day FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
+           AND COALESCE(async_state, 'scheduled') = 'scheduled' AND drop_day IS NOT NULL`, []);
+      for (const d of cold) {
+        const w = dropWindowFor(d.drop_day, sched);
+        await db.run('UPDATE sessions SET window_opens_at = ?, window_closes_at = ?, results_at = ?, scheduled_at = ? WHERE id = ?',
+          [w.opensAt, w.closesAt, w.resultsAt, w.opensAt, d.id]);
+        await db.run('UPDATE rounds SET opens_at = ?, closes_at = ? WHERE session_id = ?', [w.opensAt, w.closesAt, d.id]);
+        restamped++;
+      }
+    }
     _reviveCfg.at = 0; // bust the poll-path cache so changes apply within a poll
-    return send(res, 200, { ok: true });
+    return send(res, 200, { ok: true, restamped });
   }
 
   // Results for ONE past round — powers the Rounds tab's click-to-expand.
@@ -7330,7 +7454,7 @@ async function handleApi(req, res, url) {
     const taken = await db.get('SELECT id FROM sessions WHERE drop_day = ? AND deleted_at IS NULL', [toDay]);
     if (taken) return send(res, 409, { error: `A drop already exists for ${toDay}`, sessionId: taken.id, day: toDay });
 
-    const win = dropWindowFor(toDay);
+    const win = dropWindowFor(toDay, await dailySchedule());
     // The operator's own name stays; only the untouched default follows the day.
     const name = session.name === `A&R Daily — ${session.drop_day}` ? `A&R Daily — ${toDay}` : session.name;
     try {
@@ -7967,6 +8091,9 @@ module.exports._etNextDay = etNextDay;
 module.exports._etDay = etDay;
 module.exports._asyncQueueOrder = asyncQueueOrder;
 module.exports._completionBonusPoints = completionBonusPoints;
+module.exports._dropWindowFor = dropWindowFor;
+module.exports._DAILY_SCHEDULE_DEFAULTS = DAILY_SCHEDULE_DEFAULTS;
+module.exports._parseDailySchedule = parseDailySchedule;
 // Exported for tests: the scouting curve is the dial that decides whether "eye for talent"
 // is a real second lane or a garnish, so its shape is asserted rather than eyeballed.
 module.exports._scoutPointsFor = scoutPointsFor;
