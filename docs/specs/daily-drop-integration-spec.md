@@ -7,7 +7,7 @@ every field name, limit and status code was read out of `server.js`, not out of 
 
 **What you are integrating with:** A&R Daily — a set of 4–16 records opens at 12:00 PM ET, A&Rs
 rate each one 0–9 and predict the average, the window closes 12:00 PM ET the next day (24
-hours), and results publish as soon as the day is tallied after the close. The exact times are
+hours), and results publish at 3:00 PM ET that day. The exact times are
 operator settings; the results callback and every timestamp we send reflect whatever is set. The app has no idea how submissions are collected, priced, or
 chosen. **That is entirely yours.**
 

@@ -1068,7 +1068,7 @@ const DROP_TICK_BUDGET_MS = 22000;   // of the 30s function ceiling
 // DEFAULT with the host rejecting the odd bad one — a model that works because a live show
 // has a wrap-up moment where the send panel prints "N comments about to go out". A cron has
 // no such moment, and there is no unsend. This hour is that checkpoint, restored.
-const ARTIST_NOTICE_DELAY_MIN = 60;
+// (The hold length is now `artistDelayMin` in dailySchedule(); default 0.)
 
 // The open step on its own: claim, then flip every record in one statement. Shared by the
 // lifecycle tick and by /api/admin/daily/move, which opens a drop the moment it lands on a
@@ -1192,7 +1192,7 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       // to shared, an async day has no wrap-up moment where the host sees "N comments about
       // to go out", and there is NO UNSEND. Holding the artist enqueue an hour past publish
       // gives the operator a real rejection window with the count visible in the console.
-      const holdUntil = Number(s.published_at || 0) + ARTIST_NOTICE_DELAY_MIN * 60000;
+      const holdUntil = Number(s.published_at || 0) + (await dailySchedule()).artistDelayMin * 60000;
       if (at >= holdUntil && left() > 8000) {
         try {
           await enqueueArtistNotices(s.id);
@@ -2703,7 +2703,11 @@ function etWhenLabel(ts, fromDay) {
 // explicit overrides so a test can run a 60-second window instead of waiting for noon.
 // ===== A&R DAILY — the schedule, TUNABLE from the platform panel =====
 // Defaults (operator, 2026-09-15): records open at 12:00 PM ET, rating closes 12:00 PM ET the
-// next day (a 24-hour window), results publish as soon as the day is tallied after the close.
+// next day (a 24-hour window), results publish at 3:00 PM ET — the operator runs a livestream
+// reveal between the close and the publish, off the console's post-tally scores — and the
+// Daily Blast (A&R digest) and the artist results emails both go at publish (artistDelayMin 0;
+// the reveal window is the comment-rejection checkpoint 029 needs, so the old 1-hour hold is
+// off by default but stays tunable).
 // Completion bonus: 100 for finishing every record within 6 hours of the open, 75 within 12,
 // 50 within 18, 25 any time before the close. The tiers are HOURS AFTER THE OPEN, not ET
 // clock times, so they follow the open when it moves.
@@ -2713,11 +2717,12 @@ function etWhenLabel(ts, fromDay) {
 // per instance for 30s. A closing time at or before the opening time means the NEXT day.
 // Results never publish before the close: results_at is clamped to closes_at.
 const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
-  openMin: 12 * 60, closeMin: 12 * 60, resultsMin: 12 * 60,
+  openMin: 12 * 60, closeMin: 12 * 60, resultsMin: 15 * 60,
   tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 12, points: 75 }, { hours: 18, points: 50 }]),
   finalPoints: 25,
+  artistDelayMin: 0,   // minutes after publish before artist reports/texts queue
 });
-const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_results_min', 'daily_bonus_tiers'];
+const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_results_min', 'daily_bonus_tiers', 'daily_artist_delay_min'];
 
 // Validate + normalize a schedule. Throws a readable message; returns { cfg, windowHours }.
 // null/undefined input means "back to the defaults".
@@ -2754,6 +2759,9 @@ function parseDailySchedule(inp) {
   });
   cfg.tiers = tiers;
   cfg.finalPoints = pts(inp.finalPoints ?? D.finalPoints, 'The before-close bonus');
+  const delay = Number(inp.artistDelayMin ?? D.artistDelayMin);
+  if (!Number.isInteger(delay) || delay < 0 || delay > 24 * 60) throw new Error('The artist report hold must be whole minutes, 0–1440');
+  cfg.artistDelayMin = delay;
   return { cfg, windowHours };
 }
 
@@ -2768,7 +2776,8 @@ async function dailySchedule() {
     let tiers = D.tiers, finalPoints = D.finalPoints;
     if (m.daily_bonus_tiers) { const j = JSON.parse(m.daily_bonus_tiers); tiers = j.tiers; finalPoints = j.finalPoints; }
     const parsed = parseDailySchedule({ openMin: m.daily_open_min ?? D.openMin, closeMin: m.daily_close_min ?? D.closeMin,
-      resultsMin: m.daily_results_min ?? D.resultsMin, tiers, finalPoints });
+      resultsMin: m.daily_results_min ?? D.resultsMin, tiers, finalPoints,
+      artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin });
     if (parsed.cfg) cfg = parsed.cfg;
   } catch (e) { console.error('[daily] schedule setting unreadable, using defaults:', e.message); }
   _dailySched = { at: Date.now(), cfg };
@@ -5976,6 +5985,7 @@ async function handleApi(req, res, url) {
         await setOrClear('daily_close_min', String(c.closeMin));
         await setOrClear('daily_results_min', String(c.resultsMin));
         await setOrClear('daily_bonus_tiers', JSON.stringify({ tiers: c.tiers, finalPoints: c.finalPoints }));
+        await setOrClear('daily_artist_delay_min', String(c.artistDelayMin));
       }
       _dailySched.at = 0;
       const sched = await dailySchedule();
@@ -5987,6 +5997,21 @@ async function handleApi(req, res, url) {
         await db.run('UPDATE sessions SET window_opens_at = ?, window_closes_at = ?, results_at = ?, scheduled_at = ? WHERE id = ?',
           [w.opensAt, w.closesAt, w.resultsAt, w.opensAt, d.id]);
         await db.run('UPDATE rounds SET opens_at = ?, closes_at = ? WHERE session_id = ?', [w.opensAt, w.closesAt, d.id]);
+        restamped++;
+      }
+      // A day that has CLOSED but not published follows the new results time too: nothing
+      // has been revealed yet, so moving the publish is safe in both directions (an earlier
+      // time simply publishes on the next tick). Only results_at moves — the window is history.
+      const sealed = await db.all(
+        `SELECT id, drop_day, window_closes_at FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
+           AND async_state IN ('open','closing','ratified') AND drop_day IS NOT NULL`, []);
+      for (const d of sealed) {
+        const w = dropWindowFor(d.drop_day, sched);
+        const closes = Number(d.window_closes_at) || w.closesAt;
+        const hm = [Math.floor(sched.resultsMin / 60), sched.resultsMin % 60];
+        let r = etEpoch(etDay(closes), ...hm);
+        if (r < closes) r = closes;
+        await db.run('UPDATE sessions SET results_at = ? WHERE id = ?', [r, d.id]);
         restamped++;
       }
     }
@@ -7589,8 +7614,9 @@ async function handleApi(req, res, url) {
       ? await tallyOf('SELECT status, COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? GROUP BY status', [bc.id])
       : { sent: 0, failed: 0, pending: 0 };
 
+    const artistDelayMin = (await dailySchedule()).artistDelayMin;
     const holdUntil = session.published_at
-      ? Number(session.published_at) + ARTIST_NOTICE_DELAY_MIN * 60000 : null;
+      ? Number(session.published_at) + artistDelayMin * 60000 : null;
     return send(res, 200, {
       days, day,
       drop: {
@@ -7636,7 +7662,7 @@ async function handleApi(req, res, url) {
         recapCaption: (job && job.recap_caption) || null },
       queues: { digest, artistEmail: chan('email'), artistSms: chan('sms') },
       artistHold: { until: holdUntil, held: !!(holdUntil && now() < holdUntil),
-        minutes: ARTIST_NOTICE_DELAY_MIN },
+        minutes: artistDelayMin },
       smsWindow: { open: withinSmsWindow(), label: nextSmsWindowLabel(),
         from: SMS_WINDOW_START_LABEL, to: SMS_WINDOW_END_LABEL },
       building,

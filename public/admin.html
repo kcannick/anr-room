@@ -943,6 +943,7 @@
           </tbody>
         </table>
         <p class="muted" style="font-size:11px;margin:8px 0 0">Leave a step's hours blank to drop that step. Steps must increase and stay inside the window.</p>
+        <label style="margin-top:10px">Artist reports go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(0 = with the results; a hold is your window to reject comments)</span></label>
         <div id="dsSummary" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
@@ -2723,7 +2724,7 @@ function dsFill(sc){
   if(!sc)return;
   $('#dsOpen').value=dsTime(sc.openMin);$('#dsClose').value=dsTime(sc.closeMin);$('#dsResults').value=dsTime(sc.resultsMin);
   for(let i=1;i<=3;i++){const t=(sc.tiers||[])[i-1];$('#dsT'+i+'H').value=t?t.hours:'';$('#dsT'+i+'P').value=t?t.points:'';}
-  $('#dsFinal').value=sc.finalPoints;
+  $('#dsFinal').value=sc.finalPoints;$('#dsDelay').value=sc.artistDelayMin;
   $('#dsSummary').textContent='Opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · results '+sc.resultsLabel+' · bonus '+(sc.tierLabels||[]).join(', ');
 }
 function dsRead(){
@@ -2732,7 +2733,8 @@ function dsRead(){
     if(Number.isFinite(h)&&h>0)tiers.push({hours:h,points:Number.isFinite(p)?p:0});}
   const f=parseInt($('#dsFinal').value,10);
   return {openMin:dsMin($('#dsOpen').value),closeMin:dsMin($('#dsClose').value),resultsMin:dsMin($('#dsResults').value),
-    tiers,finalPoints:Number.isFinite(f)?f:undefined};
+    tiers,finalPoints:Number.isFinite(f)?f:undefined,
+    artistDelayMin:(v=>Number.isFinite(v)?v:undefined)(parseInt($('#dsDelay').value,10))};
 }
 $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=true;

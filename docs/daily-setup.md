@@ -2,8 +2,9 @@
 
 A&R Daily runs on a clock, not on a button. Every day a set of records (4 to 16 — four drawn
 at random from the free pool plus up to twelve paid) opens at **12:00 PM ET**, closes at
-**12:00 PM ET** the next day, tallies, and publishes results right after — which is
-also when the next day's records open. (All of these are settings on the platform panel;
+**12:00 PM ET** the next day, tallies, and publishes results at **3:00 PM ET** — the next
+day's records open at noon, and the operator streams the reveal between the close and the
+publish. (All of these are settings on the platform panel;
 those are the defaults.) That coincidence is deliberate: the results email *is*
 the "come back and play" email.
 

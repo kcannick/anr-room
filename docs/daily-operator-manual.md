@@ -17,11 +17,13 @@ for the days that are not normal.
 | Any time before noon | Tomorrow's records are staged (Drupal push, or you build them by hand) | Drupal / you |
 | **12:00 PM** | The day opens. Every record goes live at once. A&Rs rate and predict | The cron |
 | 12:00 PM → 12:00 PM | The 24-hour window. A&Rs play whenever they want | — |
-| **12:00 PM** next day | Rating closes. The day tallies (may take a cron tick or two), then results publish, graphics render, the A&R digest queues — and the next day opens in the same minute | The cron |
-| **1:00 PM** (publish + 1 hour) | Artist reports and artist texts start going out | The cron |
+| **12:00 PM** next day | Rating closes. The day tallies (may take a cron tick or two). The next day opens in the same minute | The cron |
+| 12:00 PM → 3:00 PM | Results are **held**. The console shows every score; this is the livestream reveal window, and the time to reject any comment | You |
+| **3:00 PM** | Results publish, graphics render, the Daily Blast (A&R digest) queues, and artist reports and texts go out | The cron |
 
 These times are settings, not code: **Platform → System settings → A&R Daily schedule**
-(open, close, results, and the completion-bonus steps). Saving applies to every drop that has
+(open, close, results, the completion-bonus steps, and how long artist reports wait after
+the results — 0 by default). Saving applies to every drop that has
 not opened yet; a day already open keeps the window it started with. A closing time at or
 before the opening time means the next day. Results never publish before the close.
 
