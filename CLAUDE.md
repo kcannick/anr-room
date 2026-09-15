@@ -423,8 +423,8 @@ live on anr.makinitmag.com.
     unscored record has no rank and sits last.
   - **The schedule is a SETTING** (2026-09-15): `DAILY_SCHEDULE_DEFAULTS` (open 12:00 PM ET,
     close 12:00 PM ET next day = 24h, results 3:00 PM ET (a livestream reveal runs noon→3 off
-    the console's post-tally scores), artist reports with the results (`artistDelayMin` 0, the
-    old 1-hour hold is now that setting); bonus 100/75/50
+    the console's post-tally scores), artist reports an hour after (`artistDelayMin` 60, the
+    1-hour hold is now that setting); bonus 100/75/50
     within 6/12/18 HOURS OF THE OPEN, 25 before close) overridden by `settings` rows
     `daily_open_min / daily_close_min / daily_results_min / daily_bonus_tiers`, read via
     `dailySchedule()` (30s per-instance cache). Platform panel → System settings. Saving

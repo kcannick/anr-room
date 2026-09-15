@@ -1068,7 +1068,7 @@ const DROP_TICK_BUDGET_MS = 22000;   // of the 30s function ceiling
 // DEFAULT with the host rejecting the odd bad one — a model that works because a live show
 // has a wrap-up moment where the send panel prints "N comments about to go out". A cron has
 // no such moment, and there is no unsend. This hour is that checkpoint, restored.
-// (The hold length is now `artistDelayMin` in dailySchedule(); default 0.)
+// (The hold length is now `artistDelayMin` in dailySchedule(); default 60.)
 
 // The open step on its own: claim, then flip every record in one statement. Shared by the
 // lifecycle tick and by /api/admin/daily/move, which opens a drop the moment it lands on a
@@ -2705,9 +2705,9 @@ function etWhenLabel(ts, fromDay) {
 // Defaults (operator, 2026-09-15): records open at 12:00 PM ET, rating closes 12:00 PM ET the
 // next day (a 24-hour window), results publish at 3:00 PM ET — the operator runs a livestream
 // reveal between the close and the publish, off the console's post-tally scores — and the
-// Daily Blast (A&R digest) and the artist results emails both go at publish (artistDelayMin 0;
-// the reveal window is the comment-rejection checkpoint 029 needs, so the old 1-hour hold is
-// off by default but stays tunable).
+// Daily Blast (A&R digest) goes at publish and the artist results emails an hour later
+// (artistDelayMin 60, operator's call 2026-09-15) — the hold is the comment-rejection
+// checkpoint 029 needs, and it is tunable.
 // Completion bonus: 100 for finishing every record within 6 hours of the open, 75 within 12,
 // 50 within 18, 25 any time before the close. The tiers are HOURS AFTER THE OPEN, not ET
 // clock times, so they follow the open when it moves.
@@ -2720,7 +2720,7 @@ const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
   openMin: 12 * 60, closeMin: 12 * 60, resultsMin: 15 * 60,
   tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 12, points: 75 }, { hours: 18, points: 50 }]),
   finalPoints: 25,
-  artistDelayMin: 0,   // minutes after publish before artist reports/texts queue
+  artistDelayMin: 60,  // minutes after publish before artist reports/texts queue
 });
 const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_results_min', 'daily_bonus_tiers', 'daily_artist_delay_min'];
 

@@ -19,11 +19,12 @@ for the days that are not normal.
 | 12:00 PM → 12:00 PM | The 24-hour window. A&Rs play whenever they want | — |
 | **12:00 PM** next day | Rating closes. The day tallies (may take a cron tick or two). The next day opens in the same minute | The cron |
 | 12:00 PM → 3:00 PM | Results are **held**. The console shows every score; this is the livestream reveal window, and the time to reject any comment | You |
-| **3:00 PM** | Results publish, graphics render, the Daily Blast (A&R digest) queues, and artist reports and texts go out | The cron |
+| **3:00 PM** | Results publish, graphics render, the Daily Blast (A&R digest) queues | The cron |
+| **4:00 PM** (publish + 1 hour) | Artist reports and texts go out | The cron |
 
 These times are settings, not code: **Platform → System settings → A&R Daily schedule**
 (open, close, results, the completion-bonus steps, and how long artist reports wait after
-the results — 0 by default). Saving applies to every drop that has
+the results — 60 minutes by default). Saving applies to every drop that has
 not opened yet; a day already open keeps the window it started with. A closing time at or
 before the opening time means the next day. Results never publish before the close.
 

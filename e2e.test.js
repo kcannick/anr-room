@@ -1971,14 +1971,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // full hour of rejection window instead of silently having none.
   await dDb.run("DELETE FROM artist_notices WHERE session_id = ?", [LDROP]);
   const publishedAt = Number((await lSess()).published_at);
-  // The hold is a SETTING (default 0 since 2026-09-15: the operator's reveal stream between
-  // the close and the publish is the rejection window). Set an hour for this assertion.
-  await call('/api/admin/settings', { dailySchedule: { artistDelayMin: 60 } }, 'POST', BOOTH);
+  // The hold is a SETTING (default 60 minutes).
   await tick(publishedAt + 1000);
   const notices = await dDb.all('SELECT * FROM artist_notices WHERE session_id = ?', [LDROP]);
   ok('with a hold set, the artist notices wait after publish — 029 has no unsend, and a cron'
     + ' has no wrap-up moment where the host sees the comment count', notices.length === 0, JSON.stringify(notices.length));
-  await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
   await tick(publishedAt + 61 * 60000);
   const notices2 = await dDb.all('SELECT * FROM artist_notices WHERE session_id = ?', [LDROP]);
   ok('past the hold, the artist queue fills from the same helper the host button uses',
@@ -2180,7 +2177,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const schedReset = await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
   const schedBack = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
   ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 12 * 60 && schedBack.closeMin === 12 * 60
-    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 0 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 12),
+    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 60 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 12),
     JSON.stringify(schedBack));
 
   // MOVING a cold day. The case: the review site's noon lock-in pressed at 12:01 pushes a
@@ -3018,7 +3015,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const dw = server._dropWindowFor('2026-07-04', D);
   ok('default window: opens noon, closes noon next day, results 3 PM next day',
     dw.opensAt === at('2026-07-04', 12) && dw.closesAt === at('2026-07-05', 12) && dw.resultsAt === at('2026-07-05', 15), JSON.stringify(dw));
-  ok('artist reports go with the results by default', D.artistDelayMin === 0);
+  ok('artist reports hold an hour after the results by default', D.artistDelayMin === 60);
   const sameDay = server._dropWindowFor('2026-07-04', { ...D, openMin: 9 * 60, closeMin: 21 * 60, resultsMin: 20 * 60 });
   ok('a close later than the open is the same day, and results never publish before the close',
     sameDay.closesAt === at('2026-07-04', 21) && sameDay.resultsAt === at('2026-07-04', 21), JSON.stringify(sameDay));
