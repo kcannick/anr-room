@@ -100,6 +100,7 @@ the lower-value integration this one's blast radius.
 | `phone` | no | 7–15 digits | Same — nulls out rather than failing the row. |
 | `note` | no | 500 | **The artist's own CONTEXT, not a question.** See §4. Also accepted as `ask`. |
 | `ref` | no | 100 | Your node/submission id. **Must be unique within the batch** or the batch is rejected. Stored for audit and for update-by-ref. |
+| | | | **The same song may appear only once per day.** Two records whose title and artist match once case and punctuation are stripped (a free submission and a paid one of the same record, say) reject the batch with `"reason": "same song as index N"`. Drop one before pushing — the free-pool draw should skip a song already in the paid set. |
 | `url` | no | 500, http(s) | Deep link back to the submission node. **PRIVATE — platform-admin only.** See §5. |
 | `scout.uid` | no | 60 | The referring A&R's **Drupal uid**. See §3. |
 | `scout.email` | no | 200 | The referring A&R's email, used once to link accounts. See §3. |

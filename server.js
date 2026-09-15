@@ -2839,12 +2839,21 @@ async function stageDailyDrop(res, body) {
   if (songs.length > DROP_MAX_SONGS) return bad(res, `too many songs (max ${DROP_MAX_SONGS})`);
 
   // ALL-OR-NOTHING. A silently-short day is worse than an error the operator can act on.
-  const recs = [], rejected = [], warnings = [], seenRef = new Set();
+  const recs = [], rejected = [], warnings = [], seenRef = new Set(), seenSong = new Map();
   songs.forEach((raw, i) => {
     const { rec, err } = normalizeDropSong(raw, i);
     if (err) return rejected.push(err);
     if (rec.ref && seenRef.has(rec.ref)) return rejected.push({ index: i, field: 'ref', reason: 'duplicate in batch' });
     if (rec.ref) seenRef.add(rec.ref);
+    // THE SAME SONG TWICE is a different mistake from the same ref twice, and the one that
+    // actually happened (2026-09-11): a free submission and a paid one of the same record,
+    // two refs, titles differing by a colon versus a dash. Both were rated, both were
+    // reported to the artist, and the day carried 7 songs in 8 slots. Matched the way the
+    // charts match a replay — case and punctuation stripped — and rejected like a
+    // duplicate ref: this is the approval screen's mistake to fix, not one to half-stage.
+    const key = dropSongKey(rec);
+    if (seenSong.has(key)) return rejected.push({ index: i, field: 'title', reason: `same song as index ${seenSong.get(key)}` });
+    seenSong.set(key, i);
     if (raw.email && !rec.email) warnings.push({ index: i, field: 'email', reason: 'unusable' });
     if (raw.phone && !rec.phone) warnings.push({ index: i, field: 'phone', reason: 'unusable' });
     if (raw.amount != null && String(raw.amount).trim() !== '' && rec.supportCents == null) {
@@ -2973,8 +2982,17 @@ async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, 
 //
 // idx is MAX+1 rather than a count, so deleting a record and adding another cannot hand out
 // a number that is already on the day.
+// One key for "the same song": title + artist, case and punctuation stripped — chartKey,
+// so a duplicate is caught by exactly the rule the charts would later use to merge it.
+const dropSongKey = (s) => chartKey(s.title) + '|' + chartKey(s.artist);
+
 async function addDropRound(session, s) {
   const ts = now();
+  const onDay = await db.all('SELECT idx, song_title, song_artist FROM rounds WHERE session_id = ?', [session.id]);
+  const twin = onDay.find(r => dropSongKey({ title: r.song_title, artist: r.song_artist }) === dropSongKey(s));
+  if (twin) {
+    return { ok: false, error: `That song is already on this day as record ${twin.idx}`, duplicateOf: Number(twin.idx), rounds: onDay.length };
+  }
   const top = await db.get('SELECT COALESCE(MAX(idx), 0) AS n FROM rounds WHERE session_id = ?', [session.id]);
   const idx = Number(top.n) + 1;
   if (idx > DROP_MAX_SONGS) {

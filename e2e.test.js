@@ -2137,6 +2137,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
     { day: handDay, seriesId: serId, songs: [song(81), { title: 'No link' }] }, 'POST', BOOTH);
   ok('and it runs the SAME all-or-nothing validation as the push',
     handBad.status === 400 && handBad.d.rejected[0].field === 'playUrl', JSON.stringify(handBad.d));
+  // THE SAME SONG TWICE (2026-09-11): a free and a paid submission of one record, two refs,
+  // titles differing by a colon versus a dash. Matched like the charts match a replay.
+  const handTwin = await call('/api/admin/daily/drop',
+    { day: handDay, seriesId: serId, songs: [song(81), song(82, { title: 'Record 81 - ', artist: 'ARTIST 81' })] }, 'POST', BOOTH);
+  ok('the same song under two refs rejects the batch, punctuation and case aside',
+    handTwin.status === 400 && handTwin.d.rejected[0].index === 1 && /same song as index 0/.test(handTwin.d.rejected[0].reason),
+    JSON.stringify(handTwin.d));
   const handOk = await call('/api/admin/daily/drop',
     { day: handDay, seriesId: serId, songs: [song(81), song(82), song(83)] }, 'POST', BOOTH);
   ok('a platform admin can stage a day with no ingest token in sight',
@@ -2246,6 +2253,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
     qbSess.mode === 'async' && qbSess.async_state === 'scheduled' && qbSess.series_id === serId,
     JSON.stringify({ m: qbSess.mode, st: qbSess.async_state, ser: qbSess.series_id }));
 
+  const qbTwin = await call('/api/admin/daily/round',
+    { day: qbDay, title: 'Neon Skyline!', artist: 'the verge', playUrl: 'https://open.spotify.com/track/1b' }, 'POST', BOOTH);
+  ok('a record already on the day refuses a second copy, punctuation and case aside',
+    qbTwin.status === 409 && qbTwin.d.duplicateOf === 1, JSON.stringify(qbTwin.d));
   const qb2 = await call('/api/admin/daily/round',
     { day: qbDay, title: 'Long Way Down', artist: 'Sable', playUrl: 'https://open.spotify.com/track/2', amount: '40' }, 'POST', BOOTH);
   ok('a hand-built record carries its support level (dollars typed, cents stored)',
