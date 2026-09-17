@@ -220,6 +220,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div class="modeswitch">
         <button class="on" id="mdDaily">A&amp;R Daily</button>
+        <button id="mdWeekly">Weekly</button>
         <button id="mdLive">Live show</button>
         <button id="mdPlatform">Platform</button>
       </div>
@@ -381,6 +382,104 @@
       <button class="btn ghost" id="dlEditCancel">Cancel</button>
     </div>
     <a id="dlEditDrupal" class="hide" target="_blank" rel="noopener" style="color:var(--signal);text-decoration:none;font-size:12.5px">Edit in Drupal ↗</a>
+  </div>
+</div>
+
+<!-- ===== THE WEEKLY REPORT — the screen the Wednesday show is read off =====
+     Same window every week: drops from Wednesday through Tuesday. Two ranked lists, because
+     both #1s pay out — the top record's artist is seeded into the Artist Tournament and the
+     top A&R takes a seat in A&R Wars. The tables are the daily ones (same .dltable, same
+     support marks) so the host reads the same shapes on air seven days a week. -->
+<div id="weekly" class="grid hide">
+  <div class="stack" style="grid-column:1/-1;max-width:980px;margin:30px auto 0;gap:14px">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div class="modeswitch">
+        <button id="wkDaily">A&amp;R Daily</button>
+        <button class="on" id="wkWeekly">Weekly</button>
+        <button id="wkLive">Live show</button>
+        <button id="wkPlatform">Platform</button>
+      </div>
+      <div class="row" style="gap:8px;flex:0 0 auto">
+        <select id="wkWeekSel" title="Which week to read"
+          style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;max-width:260px"></select>
+        <span id="wkState" class="pill"></span>
+        <button class="btn ghost sm" id="btnWeeklyRefresh">Refresh</button>
+      </div>
+    </div>
+
+    <div id="wkNone" class="card hide" style="border-color:var(--hot)">
+      <h3 style="margin:0 0 8px;color:var(--hot);font-size:13px;letter-spacing:.16em;text-transform:uppercase">Nothing to read</h3>
+      <p id="wkNoneMsg" style="margin:0;font-size:14px;line-height:1.55"></p>
+    </div>
+
+    <div id="wkBody" class="stack hide" style="gap:14px">
+      <div class="card">
+        <h3 id="wkHead" style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace"></h3>
+        <div class="row" style="gap:8px" id="wkStats"></div>
+        <p class="muted" id="wkNote" style="font-size:12px;line-height:1.55;margin:10px 0 0"></p>
+      </div>
+
+      <!-- Not published yet = not final. The seats come off these lists, so a week still
+           settling has to say which days are missing rather than look finished. -->
+      <div id="wkPending" class="card hide" style="border-color:var(--gold);background:rgba(245,197,24,.06)">
+        <p style="margin:0;font-size:14px;line-height:1.55" id="wkPendingMsg"></p>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center;margin:0 0 4px;gap:8px;flex-wrap:wrap">
+          <h3 style="margin:0;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Top 8 Records of the week</h3>
+          <div class="row" style="gap:8px">
+            <select id="wkSongOrder" title="Order the records"
+              style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:7px 9px;border-radius:9px">
+              <option value="top">Order: #1 first</option>
+              <option value="countdown">Order: countdown to #1</option>
+            </select>
+            <button class="btn ghost sm" id="btnWkSongsAll">Show the whole week</button>
+          </div>
+        </div>
+        <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 10px">
+          <b style="color:var(--gold)">#1 is seeded into the Artist Tournament.</b>
+          Ranked on the room average across every drop in the window; ties break on the number of
+          ratings behind the score, then the earlier drop. Reference tracks never chart.
+        </p>
+        <div id="wkSongs"></div>
+        <div class="row" style="gap:8px;margin-top:12px">
+          <button class="btn ghost sm" id="btnWkCopySongs">Copy the read sheet</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center;margin:0 0 4px;gap:8px;flex-wrap:wrap">
+          <h3 style="margin:0;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Top 8 A&amp;Rs of the week</h3>
+          <div class="row" style="gap:8px">
+            <select id="wkArOrder" title="Order the A&Rs"
+              style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:7px 9px;border-radius:9px">
+              <option value="top">Order: #1 first</option>
+              <option value="countdown">Order: countdown to #1</option>
+            </select>
+            <button class="btn ghost sm" id="btnWkArsAll">Show everyone who played</button>
+          </div>
+        </div>
+        <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 10px">
+          <b style="color:var(--gold)">#1 takes a seat in A&amp;R Wars.</b>
+          Only points earned on this week's drops — rating points plus the completion bonus those
+          drops paid. Referral bonuses are series points with no week attached and are left out.
+          Qualified A&amp;Rs only: complete profile, not blocked, the same rule the $500 board uses.
+        </p>
+        <div id="wkArs"></div>
+        <div class="row" style="gap:8px;margin-top:12px">
+          <button class="btn ghost sm" id="btnWkCopyArs">Copy the read sheet</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The week's drops</h3>
+        <div id="wkDrops"></div>
+      </div>
+
+      <div class="err" id="wkErr"></div>
+    </div>
   </div>
 </div>
 
@@ -1822,7 +1921,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','daily','picker','create','console','series','users','platform','analytics','charts','sidebet'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','daily','weekly','picker','create','console','series','users','platform','analytics','charts','sidebet'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -2084,6 +2183,189 @@ function renderDlRecords(){
     ? `<table class="dltable"><tr><th class="num">${bySc ? 'Rank' : '#'}</th><th style="width:32%">Record</th><th>Support</th><th>Play link</th><th class="num">Score</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
     : '<div class="empty">No records on this day.</div>';
 }
+/* ===== THE WEEKLY REPORT — the Wednesday show's read sheet =====
+   One window (Wed → Tue) and two ranked lists, off /api/admin/weekly/status. The tables are
+   deliberately the daily ones — same .dltable, same support marks — because the host reads
+   the same shapes on air every day and a different layout on show night is a new thing to
+   learn at 7PM. Nothing here computes a ranking client-side: the server owns the order, so
+   the screen, a future card and any export can never disagree about who came first. */
+let WK = null;              // last weekly payload
+let wkWeek = '';            // '' means "the last complete week" — what the show reads
+let wkSongsAll = false, wkArsAll = false;
+let wkSongOrder = 'top', wkArOrder = 'top';
+
+async function openWeekly(){
+  showScreen('weekly');
+  $('#wkErr').textContent = '';
+  try{
+    WK = await api('/api/admin/weekly/status' + (wkWeek ? '?week=' + encodeURIComponent(wkWeek) : ''), null, 'GET');
+    renderWeekly();
+  }catch(e){
+    WK = null;
+    $('#wkBody').classList.add('hide');
+    $('#wkNone').classList.remove('hide');
+    $('#wkNoneMsg').textContent = e.message;
+  }
+}
+$('#mdWeekly').onclick = () => openWeekly();
+$('#wkWeekly').onclick = () => openWeekly();
+$('#wkDaily').onclick = () => openDaily();
+$('#wkLive').onclick = () => openPicker();
+$('#wkPlatform').onclick = () => { if(typeof openPlatform === 'function') openPlatform(); };
+$('#btnWeeklyRefresh').onclick = () => openWeekly();
+$('#wkWeekSel').onchange = () => { wkWeek = $('#wkWeekSel').value; openWeekly(); };
+$('#wkSongOrder').onchange = () => { wkSongOrder = $('#wkSongOrder').value; renderWkSongs(); };
+$('#wkArOrder').onchange = () => { wkArOrder = $('#wkArOrder').value; renderWkArs(); };
+$('#btnWkSongsAll').onclick = () => { wkSongsAll = !wkSongsAll; renderWkSongs(); };
+$('#btnWkArsAll').onclick = () => { wkArsAll = !wkArsAll; renderWkArs(); };
+
+const wkIg = (h) => h
+  ? `<a class="dllink" href="https://instagram.com/${esc(h)}" target="_blank" rel="noopener">@${esc(h)}</a>`
+  : '<span class="dllink">—</span>';
+
+function renderWeekly(){
+  const w = WK || {};
+  $('#wkNone').classList.add('hide');
+  $('#wkBody').classList.remove('hide');
+
+  const sel = $('#wkWeekSel');
+  sel.innerHTML = (w.weeks || []).map(x =>
+    `<option value="${esc(x.start)}">${esc(x.label)}${x.current ? ' · in progress' : ''}</option>`).join('');
+  sel.value = w.week.start;
+
+  // Settled = every drop in the window has published. The seats are handed out off these
+  // lists, so "final" and "readable" must never look like the same state.
+  $('#wkState').textContent = w.settled ? 'Final' : (w.drops && w.drops.length ? 'Still settling' : 'Empty week');
+  $('#wkState').className = 'pill ' + (w.settled ? 'completed' : w.drops && w.drops.length ? 'upcoming' : 'closed');
+
+  $('#wkHead').textContent = w.week.label + ' · the week';
+  const t = w.totals || { drops: 0, records: 0, ars: 0, ratings: 0, support_cents: 0 };
+  const stat = (k, v, color) =>
+    `<div class="dlstat"><div class="k">${esc(k)}</div><div class="v"${color?` style="color:${color}"`:''}>${esc(String(v))}</div></div>`;
+  $('#wkStats').innerHTML =
+    stat('Drops', t.drops)
+    + stat('Records scored', t.records, 'var(--signal)')
+    + stat('A&Rs scoring', t.ars)
+    + stat('Ratings cast', t.ratings)
+    + stat('Support', t.support_cents ? dlMoney(t.support_cents) : '—',
+        t.support_cents ? 'var(--gold)' : null);
+  $('#wkNote').textContent = 'Wednesday through Tuesday, by the day each record dropped. '
+    + "Tuesday's drop publishes at 3PM Wednesday — before the show, after this week closes.";
+
+  if(w.pending && w.pending.length){
+    $('#wkPending').classList.remove('hide');
+    $('#wkPendingMsg').innerHTML = `<b>${w.pending.length} drop${w.pending.length===1?'':'s'} in this week ${w.pending.length===1?'has':'have'} not published</b> `
+      + `(${esc(w.pending.join(', '))}). Both lists can still move. Do not hand out a seat off a week that is still settling.`;
+  } else $('#wkPending').classList.add('hide');
+
+  renderWkSongs();
+  renderWkArs();
+
+  const drops = w.drops || [];
+  const STATE = { scheduled: 'Scheduled', open: 'Open', closing: 'Processing',
+    ratified: 'Closed', published: 'Published' };
+  $('#wkDrops').innerHTML = drops.length
+    ? `<table class="dltable"><tr><th>Day</th><th>State</th><th class="num">Records scored</th></tr>`
+      + drops.map(d => `<tr><td>${esc(d.dayLabel || d.day)}</td>`
+          + `<td>${esc(STATE[d.state] || d.state)}</td><td class="num">${d.records || 0}</td></tr>`).join('')
+      + '</table>'
+    : '<div class="empty">No drops landed in this week.</div>';
+}
+
+function renderWkSongs(){
+  const w = WK || {};
+  const src = wkSongsAll ? (w.songsAll || []) : (w.songs || []);
+  const rows = wkSongOrder === 'countdown' ? src.slice().reverse() : src;
+  $('#btnWkSongsAll').textContent = wkSongsAll ? 'Back to the Top 8' : 'Show the whole week';
+  if(!rows.length){ $('#wkSongs').innerHTML = '<div class="empty">Nothing scored in this week yet.</div>'; return; }
+  $('#wkSongs').innerHTML = `<table class="dltable">
+    <tr><th class="num">Rank</th><th style="width:28%">Record</th><th>Instagram</th><th>Day</th>
+        <th>Support</th><th>Play link</th><th class="num">Score</th><th class="num">Ratings</th></tr>`
+    + rows.map(r => `<tr${r.rank === 1 ? ' class="top"' : ''}>
+        <td class="num" style="width:44px${r.rank === 1 ? ';color:var(--gold);font-weight:700' : ''}">#${r.rank}</td>
+        <td><div class="dlttl">${esc(r.title)}</div><div class="dlart">${esc(r.artist)}</div></td>
+        <td>${wkIg(r.ig)}</td>
+        <td class="muted" style="font-size:11.5px;white-space:nowrap">${esc(r.weekday || '')} ${esc((r.dayLabel || '').replace(/^\w+,?\s*/, ''))}${r.plays > 1 ? `<div style="color:var(--gold)">also ${esc(r.alsoOn.join(', '))}</div>` : ''}</td>
+        <td>${dlSupport(r)}</td>
+        <td>${dlPlayLink(r.play_url)}</td>
+        <td class="num" style="color:var(--signal);font-weight:700">${(+r.score).toFixed(1)}</td>
+        <td class="num">${r.votes}</td>
+      </tr>`).join('')
+    + '</table>'
+    + (wkSongsAll ? '' : (() => {
+        const board = (w.songsAll || []).length, scored = (w.totals && w.totals.records) || board;
+        return `<p class="muted" style="font-size:11.5px;margin:10px 0 0">${board} record${board===1?'':'s'} on the board this week`
+          + (scored > board ? ` (${scored} scored — a record pushed on more than one day charts once, at its best showing)` : '')
+          + '. The gold row is #1 — that artist is seeded into the Artist Tournament.</p>';
+      })());
+}
+
+function renderWkArs(){
+  const w = WK || {};
+  const src = wkArsAll ? (w.arsAll || []) : (w.ars || []);
+  const rows = wkArOrder === 'countdown' ? src.slice().reverse() : src;
+  $('#btnWkArsAll').textContent = wkArsAll ? 'Back to the Top 8' : 'Show everyone who played';
+  if(!rows.length){ $('#wkArs').innerHTML = '<div class="empty">No A&R scored points in this week.</div>'; return; }
+  const dropCount = (w.drops || []).length;
+  $('#wkArs').innerHTML = `<table class="dltable">
+    <tr><th class="num">Place</th><th style="width:26%">A&R</th><th>Instagram</th><th class="num">Points</th>
+        <th class="num">Rounds</th><th class="num">Bullseyes</th><th class="num">Days</th><th>Read</th></tr>`
+    + rows.map(r => {
+        // The one line the host says out loud about this A&R. Bullseyes first when there are
+        // any — an exact hit on the room average is the thing worth naming on air.
+        const bits = [];
+        if(r.bullseyes) bits.push(r.bullseyes + ' exact ' + (r.bullseyes === 1 ? 'hit' : 'hits') + ' on the average');
+        if(r.strong > r.bullseyes) bits.push((r.strong - r.bullseyes) + ' more sharp');
+        bits.push(r.rounds + ' round' + (r.rounds === 1 ? '' : 's') + ' reviewed');
+        // "Finished" is every record on the day, which is what the completion bonus pays for
+        // — a different thing from having shown up, so it is said separately or not at all.
+        if(r.finished) bits.push(r.finished >= dropCount && dropCount
+          ? 'finished every drop' : 'finished ' + r.finished + ' of ' + r.days);
+        return `<tr${r.rank === 1 ? ' class="top"' : ''}>
+        <td class="num" style="width:50px${r.rank === 1 ? ';color:var(--gold);font-weight:700' : ''}">#${r.rank}</td>
+        <td><div class="dlttl">${esc(r.name)}</div><div class="dlart">${esc([r.category, r.location].filter(Boolean).join(' · '))}</div></td>
+        <td>${wkIg(r.ig)}</td>
+        <td class="num" style="color:var(--signal);font-weight:700">${r.points}</td>
+        <td class="num">${r.rounds}</td>
+        <td class="num"${r.bullseyes ? ' style="color:var(--gold);font-weight:700"' : ''}>${r.bullseyes}</td>
+        <td class="num">${r.days}</td>
+        <td class="muted" style="font-size:11.5px">${esc(bits.join(' · '))}</td>
+      </tr>`;
+      }).join('')
+    + '</table>'
+    + (wkArsAll ? '' : `<p class="muted" style="font-size:11.5px;margin:10px 0 0">${(w.arsAll||[]).length} A&Rs scored this week. The gold row is #1 — that seat in A&R Wars is theirs.</p>`);
+}
+
+// The read sheet: the same rows as plain text, in the order on screen, for the host's
+// script. Copied rather than rendered so it can go straight into a doc or a teleprompter.
+function wkCopy(text){
+  navigator.clipboard.writeText(text).then(() => alert('Copied.'), () => alert('Could not copy.'));
+}
+$('#btnWkCopySongs').onclick = () => {
+  if(!WK) return;
+  const src = wkSongsAll ? (WK.songsAll || []) : (WK.songs || []);
+  const rows = wkSongOrder === 'countdown' ? src.slice().reverse() : src;
+  const money = c => c == null ? 'support not reported' : c === 0 ? 'free submission' : dlMoney(c);
+  wkCopy('TOP RECORDS — ' + WK.week.label + '\n\n' + rows.map(r =>
+    `#${r.rank}  ${r.title} — ${r.artist || 'unknown artist'}\n`
+    + `     IG: ${r.ig ? '@' + r.ig : '—'}   Score: ${(+r.score).toFixed(1)} (${r.votes} ratings)   ${money(r.support_cents)}${r.top_supporter ? ' · TOP SUPPORTER' : ''}\n`
+    + `     ${r.dayLabel || r.day}${r.plays > 1 ? ' (also ' + r.alsoOn.join(', ') + ')' : ''}\n`
+    + `     ${r.play_url || 'no play link'}`).join('\n\n')
+    + '\n\n#1 is seeded into the Artist Tournament.');
+};
+$('#btnWkCopyArs').onclick = () => {
+  if(!WK) return;
+  const src = wkArsAll ? (WK.arsAll || []) : (WK.ars || []);
+  const rows = wkArOrder === 'countdown' ? src.slice().reverse() : src;
+  const dropCount = (WK.drops || []).length;
+  wkCopy('TOP A&RS — ' + WK.week.label + '\n\n' + rows.map(r =>
+    `#${r.rank}  ${r.name}${r.ig ? '  (@' + r.ig + ')' : ''}\n`
+    + `     ${r.points} points · ${r.rounds} rounds reviewed · ${r.bullseyes} bullseye${r.bullseyes === 1 ? '' : 's'}`
+    + ` · played ${r.days}${dropCount ? ' of ' + dropCount : ''} day${r.days === 1 ? '' : 's'}`
+    + (r.category || r.location ? '\n     ' + [r.category, r.location].filter(Boolean).join(' · ') : '')).join('\n\n')
+    + '\n\n#1 takes a seat in A&R Wars.');
+};
+
 /* ---- Build the next drop, a record at a time ---- */
 function renderBuild(){
   const b = (DL && DL.building) || null;

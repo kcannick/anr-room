@@ -3082,6 +3082,267 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a 4-record day shuffles', new Set(server._asyncQueueOrder('u', 's',
     qRounds.slice(0, 4)).map(r => r.id)).size === 4);
 
+  console.log('\n— The weekly report: Wednesday through Tuesday —');
+  // The window is the whole feature. A week that starts on the wrong day puts a record in
+  // the wrong report and hands a tournament seat to the wrong artist, so the day arithmetic
+  // is asserted on its own before any data touches it.
+  ok('a Wednesday is its own week start', server._weekStartFor('2026-09-16') === '2026-09-16',
+    server._weekStartFor('2026-09-16'));
+  ok('a Tuesday closes the week that opened the Wednesday before',
+    server._weekStartFor('2026-09-15') === '2026-09-09', server._weekStartFor('2026-09-15'));
+  ok('any day inside the week resolves to the same Wednesday',
+    server._weekStartFor('2026-09-18') === '2026-09-16' && server._weekStartFor('2026-09-20') === '2026-09-16');
+  const wWin = server._weekWindow('2026-09-11');
+  ok('the window runs Wed → Tue, seven days', wWin.start === '2026-09-09' && wWin.end === '2026-09-15',
+    JSON.stringify(wWin));
+  ok('and carries the label the screen reads', wWin.label === 'Wed, Sep 9 – Tue, Sep 15', wWin.label);
+  // The weeks that cross a DST switch are still seven ET days — the same "noon is noon"
+  // rule the drop schedule lives by.
+  ok('a spring-forward week still ends on its Tuesday',
+    server._weekWindow('2026-03-08').start === '2026-03-04' && server._weekWindow('2026-03-08').end === '2026-03-10',
+    JSON.stringify(server._weekWindow('2026-03-08')));
+  ok('a fall-back week still ends on its Tuesday',
+    server._weekWindow('2026-11-01').start === '2026-10-28' && server._weekWindow('2026-11-01').end === '2026-11-03',
+    JSON.stringify(server._weekWindow('2026-11-01')));
+  ok('a malformed day resolves to no week', server._weekWindow('nope') === null);
+  // The show is on Wednesday and reads the week that JUST ENDED — never the one that opened
+  // at noon the same day, which is four hours old and has nothing in it.
+  ok('on show day the default week is the one that closed yesterday',
+    server._lastCompleteWeekStart('2026-09-16') === '2026-09-09', server._lastCompleteWeekStart('2026-09-16'));
+  ok('mid-week the default is still the last COMPLETE week, not the one in progress',
+    server._lastCompleteWeekStart('2026-09-18') === '2026-09-09', server._lastCompleteWeekStart('2026-09-18'));
+
+  // A week of drops, built directly so the ranking inputs are exact. Wed Apr 1 → Tue Apr 7
+  // 2026, with a drop on either side of the fence that must not appear.
+  const wkNow = Date.now();
+  const wkSess = async (day, state = 'published') => {
+    const sid = 'wk_' + day.replace(/-/g, '');
+    await dDb.run(`INSERT INTO sessions (id, name, admin_token, status, mode, drop_day, async_state,
+                     series_id, window_opens_at, created_at)
+                   VALUES (?,?,?,?,'async',?,?,?,?,?)`,
+      [sid, 'Drop ' + day, 'tok_' + sid, 'completed', day, state, serId, server._etEpoch(day, 12), wkNow]);
+    return sid;
+  };
+  let wkIdx = 0;
+  const wkRound = async (sid, over = {}) => {
+    const rid = 'wkr_' + (++wkIdx);
+    await dDb.run(`INSERT INTO rounds (id, session_id, idx, queue_pos, song_title, song_artist,
+                     artist_instagram, song_note, play_url, support_cents, status, poll_type,
+                     room_average, is_reference, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [rid, sid, wkIdx, wkIdx, over.title || 'WK ' + wkIdx, over.artist || 'WKArtist ' + wkIdx,
+       over.ig === undefined ? 'wkhandle' + wkIdx : over.ig, over.note || null,
+       over.play_url === undefined ? 'https://cdn.makinitmag.com/wk' + wkIdx + '.mp3' : over.play_url,
+       over.support === undefined ? null : over.support,
+       over.status || 'ratified', over.poll_type || 'rating',
+       over.avg === undefined ? 5 : over.avg, over.reference ? 1 : 0, wkNow]);
+    return rid;
+  };
+  // Votes carry the points and the tier; both lists read off the same rows the scorer wrote.
+  const wkVote = async (rid, pid, points, tier) =>
+    dDb.run(`INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at, points, tier)
+             VALUES (?,?,?,?,?,?,?,?)`,
+      ['wkv_' + rid + '_' + pid, rid, pid, 5, 5, wkNow, points, tier]);
+  const wkAr = async (key, over = {}) => {
+    const uid = 'wku_' + key;
+    await dDb.run(`INSERT INTO users (uid, email, name, instagram, primary_category, location,
+                     profile_complete, blocked, first_seen, last_seen)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [uid, key + '@wk.test', over.name || ('A&R ' + key), over.ig === undefined ? 'ig_' + key : over.ig,
+       over.category || 'Producer', over.location || 'Atlanta',
+       over.complete === undefined ? 1 : over.complete, over.blocked ? 1 : 0, wkNow, wkNow]);
+    return uid;
+  };
+  const wkPart = async (sid, uid) => {
+    const pid = 'wkp_' + sid + '_' + uid;
+    await dDb.run(`INSERT INTO participants (id, session_id, user_id, email, name, token, verified, created_at)
+                   VALUES (?,?,?,?,?,?,1,?)`, [pid, sid, uid, uid + '@wk.test', uid, 'tk_' + pid, wkNow]);
+    return pid;
+  };
+
+  const wkWed = await wkSess('2026-04-01'), wkSat = await wkSess('2026-04-04'), wkTue = await wkSess('2026-04-07');
+  const wkBefore = await wkSess('2026-03-31'), wkAfter = await wkSess('2026-04-08');
+  // Wednesday: the week's #1 (8.8), a record that ties it on score but with fewer ratings,
+  // and the week's top supporter sitting mid-table — money is not a placing.
+  const wkR1 = await wkRound(wkWed, { title: 'Neon Skyline', artist: 'The Verge', ig: 'thevergemusic', avg: 8.8, support: 5000 });
+  const wkR2 = await wkRound(wkWed, { title: 'Tie On Score', artist: 'Fewer Voters', avg: 8.8, support: 0 });
+  const wkR3 = await wkRound(wkWed, { title: 'Paid The Most', artist: 'Big Spender', avg: 6.1, support: 25000 });
+  // Saturday: a reference track and a Verzuz round, neither of which may ever chart, plus a
+  // record whose IG only exists in the legacy note.
+  const wkR4 = await wkRound(wkSat, { title: 'Major Label Cut', artist: 'Famous', avg: 9.9, reference: true });
+  const wkR5 = await wkRound(wkSat, { title: 'A vs B', artist: 'Verzuz', avg: 9.5, poll_type: 'binary' });
+  const wkR6 = await wkRound(wkSat, { title: 'Legacy Handle', artist: 'Old Row', ig: null, note: 'IG: @legacyhandle', avg: 7.2, support: 1000 });
+  // Tuesday: an unratified record (still open) never charts, and one with no link at all.
+  const wkR7 = await wkRound(wkTue, { title: 'Still Open', artist: 'Not Yet', avg: 9.7, status: 'voting' });
+  const wkR8 = await wkRound(wkTue, { title: 'No Link', artist: 'Broken', play_url: '', avg: 7.9, support: 0 });
+  // The same record pushed on two days in one week is a push mistake, not two records — and
+  // the same title twice in a Top 8 read on air reads as the count being broken.
+  const wkR9 = await wkRound(wkSat, { title: 'Neon Skyline', artist: 'The Verge', avg: 7.0, support: 0 });
+  // Either side of the fence — the Tuesday BEFORE and the Wednesday AFTER. Both score higher
+  // than anything in the week, so if the window leaks they take #1 and this goes red.
+  const wkOut1 = await wkRound(wkBefore, { title: 'Last Week', artist: 'Previously', avg: 9.6 });
+  const wkOut2 = await wkRound(wkAfter, { title: 'Next Week', artist: 'Later', avg: 9.4 });
+  // More ratings behind the same score wins the tie.
+  const wkVoters = [];
+  for (const k of ['a', 'b', 'c', 'd', 'e']) wkVoters.push(await wkAr(k));
+  const wkIncomplete = await wkAr('incomplete', { complete: 0 });
+  const wkBlocked = await wkAr('blocked', { blocked: 1 });
+  const wkParts = {};
+  for (const sid of [wkWed, wkSat, wkTue, wkBefore, wkAfter]) {
+    wkParts[sid] = {};
+    for (const uid of [...wkVoters, wkIncomplete, wkBlocked]) wkParts[sid][uid] = await wkPart(sid, uid);
+  }
+  // R1 gets four ratings, R2 two — same 8.8, so R1 is #1.
+  for (const uid of wkVoters.slice(0, 4)) await wkVote(wkR1, wkParts[wkWed][uid], 10, 'sharp');
+  for (const uid of wkVoters.slice(0, 2)) await wkVote(wkR2, wkParts[wkWed][uid], 10, 'close');
+  for (const uid of wkVoters.slice(0, 3)) await wkVote(wkR3, wkParts[wkWed][uid], 5, 'off');
+  for (const uid of wkVoters.slice(0, 3)) await wkVote(wkR6, wkParts[wkSat][uid], 5, 'close');
+  await wkVote(wkR8, wkParts[wkTue][wkVoters[0]], 5, 'close');
+  // The board: 'a' leads on vote points, 'b' has the bullseyes, 'e' is carried over the line
+  // by the completion bonus alone — the point of counting it.
+  await wkVote(wkR6, wkParts[wkSat][wkVoters[3]], 50, 'bullseye');
+  await wkVote(wkR1, wkParts[wkWed][wkVoters[4]], 20, 'bullseye');
+  await wkVote(wkR3, wkParts[wkWed][wkVoters[4]], 20, 'bullseye');
+  // Points from OUTSIDE the week must never reach this board.
+  await wkVote(wkOut1, wkParts[wkBefore][wkVoters[0]], 9999, 'bullseye');
+  await wkVote(wkOut2, wkParts[wkAfter][wkVoters[0]], 9999, 'bullseye');
+  // The excluded A&Rs score plenty — they are kept out by the profile rule, not by silence.
+  await wkVote(wkR1, wkParts[wkWed][wkIncomplete], 500, 'bullseye');
+  await wkVote(wkR1, wkParts[wkWed][wkBlocked], 500, 'bullseye');
+  // The completion bonus is the one bonus a day owns; a referral milestone is series points
+  // with no week attached and must stay out.
+  await dDb.run(`INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
+                 VALUES (?,?,?,?,?,?,?,?)`,
+    ['wkpe1', wkVoters[4], 100, serId, 'async_complete', wkWed + ':' + wkVoters[4], 1, wkNow]);
+  await dDb.run(`INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
+                 VALUES (?,?,?,?,?,?,?,?)`,
+    ['wkpe2', wkVoters[0], 4000, serId, 'referral_milestone', 'wk_ref_' + wkVoters[0], 10, wkNow]);
+  // A completion bonus from the drop the day AFTER the window closes.
+  await dDb.run(`INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
+                 VALUES (?,?,?,?,?,?,?,?)`,
+    ['wkpe3', wkVoters[0], 7000, serId, 'async_complete', wkAfter + ':' + wkVoters[0], 1, wkNow]);
+
+  const wkAnon = await call('/api/admin/weekly/status?week=2026-04-01', null, 'GET', {});
+  ok('the weekly report is platform-admin only — it spans every host and carries artist handles',
+    wkAnon.status === 403 || wkAnon.status === 401, 'got ' + wkAnon.status);
+  const WKR = (await call('/api/admin/weekly/status?week=2026-04-03', null, 'GET', BOOTH)).d;
+  ok('a day inside the week resolves to its Wednesday',
+    WKR.week.start === '2026-04-01' && WKR.week.end === '2026-04-07', JSON.stringify(WKR.week));
+  ok('only the drops inside the window are in the week',
+    WKR.drops.length === 3 && WKR.drops.map(d => d.day).join() === '2026-04-01,2026-04-04,2026-04-07',
+    JSON.stringify(WKR.drops.map(d => d.day)));
+  ok('the records from the weeks either side never appear',
+    !WKR.songsAll.some(r => ['Last Week', 'Next Week'].includes(r.title)),
+    JSON.stringify(WKR.songsAll.map(r => r.title)));
+  ok('#1 is the week\'s highest room average', WKR.songs[0].title === 'Neon Skyline',
+    JSON.stringify(WKR.songs.map(r => [r.rank, r.title, r.score])));
+  ok('a tie on score breaks on the number of ratings behind it, not the day',
+    WKR.songs[1].title === 'Tie On Score', JSON.stringify(WKR.songs.map(r => r.title)));
+  ok('a reference track never charts — it is not a submission and #1 buys a tournament seat',
+    !WKR.songsAll.some(r => r.title === 'Major Label Cut'));
+  ok('a Verzuz round never charts — a split is not an average',
+    !WKR.songsAll.some(r => r.title === 'A vs B'));
+  ok('a record still taking votes never charts', !WKR.songsAll.some(r => r.title === 'Still Open'));
+  ok('each drop carries what actually ran that day, not what survived the dedupe',
+    WKR.drops.find(d => d.day === '2026-04-01').records === 3
+    && WKR.drops.find(d => d.day === '2026-04-04').records === 2
+    && WKR.drops.find(d => d.day === '2026-04-07').records === 1,
+    JSON.stringify(WKR.drops.map(d => [d.day, d.records])));
+  ok('every charting record carries what the host reads out',
+    WKR.songs.every(r => 'title' in r && 'artist' in r && 'ig' in r && 'score' in r
+      && 'play_url' in r && 'support_cents' in r && 'votes' in r),
+    JSON.stringify(Object.keys(WKR.songs[0])));
+  ok('the Instagram handle comes off the record\'s own column',
+    WKR.songs.find(r => r.title === 'Neon Skyline').ig === 'thevergemusic');
+  ok('and falls back to the legacy note for rows that predate the column',
+    WKR.songsAll.find(r => r.title === 'Legacy Handle').ig === 'legacyhandle');
+  ok('a record with no play link says so rather than inventing one',
+    WKR.songsAll.find(r => r.title === 'No Link').play_url === '');
+  // Support is money, not a placing: the top supporter is marked wherever it ranks.
+  ok('the top supporter is the week\'s highest amount, not the day\'s',
+    WKR.top_support_cents === 25000 && WKR.songsAll.filter(r => r.top_supporter).length === 1
+    && WKR.songsAll.find(r => r.top_supporter).title === 'Paid The Most',
+    JSON.stringify([WKR.top_support_cents, WKR.songsAll.filter(r => r.top_supporter).map(r => r.title)]));
+  ok('a free submission reads 0 and an unreported one reads null — never the same thing',
+    WKR.songsAll.find(r => r.title === 'Tie On Score').support_cents === 0
+    && WKR.songsAll.find(r => r.title === 'Legacy Handle').support_cents === 1000,
+    JSON.stringify(WKR.songsAll.map(r => [r.title, r.support_cents])));
+  ok('the week totals count the whole window, not the top 8',
+    WKR.totals.drops === 3 && WKR.totals.charting === WKR.songsAll.length,
+    JSON.stringify(WKR.totals));
+  // The repeat charts ONCE, at its BEST showing, and says where else it played rather than
+  // vanishing — a silently dropped row reads as "this is everything" when it isn't.
+  const wkDup = WKR.songsAll.filter(r => r.title === 'Neon Skyline');
+  ok('a record pushed twice in one week charts once, at its better showing',
+    wkDup.length === 1 && wkDup[0].score === 8.8, JSON.stringify(wkDup.map(r => [r.score, r.plays])));
+  ok('and the repeat stays visible instead of disappearing',
+    wkDup[0].plays === 2 && wkDup[0].alsoOn.length === 1, JSON.stringify(wkDup[0].alsoOn));
+  ok('the total still counts every scored record, deduped or not',
+    WKR.totals.records === WKR.totals.charting + 1, JSON.stringify(WKR.totals));
+
+  // ---- the A&R board ----
+  const wkBy = (k) => WKR.arsAll.find(a => a.id === 'wku_' + k);
+  ok('the board only counts points earned on this week\'s drops',
+    wkBy('a').points === 10 + 10 + 5 + 5 + 5, JSON.stringify(WKR.arsAll.map(a => [a.id, a.points])));
+  ok('a referral milestone is series points with no week attached and stays out',
+    wkBy('a').bonusPoints === 0, JSON.stringify(wkBy('a')));
+  ok('a completion bonus from a drop OUTSIDE the window stays out too', wkBy('a').points === 35,
+    JSON.stringify(wkBy('a')));
+  ok('the completion bonus from a drop INSIDE the window counts',
+    wkBy('e').bonusPoints === 100 && wkBy('e').points === 20 + 20 + 100, JSON.stringify(wkBy('e')));
+  ok('#1 is whoever earned the most in the window', WKR.ars[0].id === 'wku_e',
+    JSON.stringify(WKR.ars.map(a => [a.rank, a.id, a.points])));
+  ok('bullseyes are counted, because that is what gets said on air',
+    wkBy('e').bullseyes === 2 && wkBy('d').bullseyes === 1 && wkBy('a').bullseyes === 0,
+    JSON.stringify(WKR.arsAll.map(a => [a.id, a.bullseyes])));
+  ok('so are the rounds they reviewed and the days they showed up for',
+    wkBy('a').rounds === 5 && wkBy('a').days === 3, JSON.stringify(wkBy('a')));
+  ok('an A&R without a complete profile is not on a board that hands out a seat',
+    !WKR.arsAll.some(a => a.id === 'wku_incomplete'), JSON.stringify(WKR.arsAll.map(a => a.id)));
+  ok('neither is a blocked one', !WKR.arsAll.some(a => a.id === 'wku_blocked'));
+  ok('each A&R carries their handle and the line the host reads',
+    WKR.ars.every(a => 'ig' in a && 'category' in a && 'location' in a && 'strong' in a && 'finished' in a),
+    JSON.stringify(Object.keys(WKR.ars[0])));
+  ok('a week whose drops have all published reports itself final',
+    WKR.settled === true && WKR.pending.length === 0, JSON.stringify(WKR.pending));
+
+  // A week still settling must not look finished — the seats come off these lists.
+  await dDb.run("UPDATE sessions SET async_state = 'ratified' WHERE id = ?", [wkTue]);
+  const WKR2 = (await call('/api/admin/weekly/status?week=2026-04-01', null, 'GET', BOOTH)).d;
+  ok('a week with an unpublished drop is NOT final, and names the day',
+    WKR2.settled === false && WKR2.pending.length === 1, JSON.stringify(WKR2.pending));
+  await dDb.run("UPDATE sessions SET async_state = 'published' WHERE id = ?", [wkTue]);
+
+  // The Top 8 is a cut of the ranking, never a different ranking.
+  const WKR8 = (await call('/api/admin/weekly/status?week=2026-04-01&limit=2', null, 'GET', BOOTH)).d;
+  ok('the limit cuts the list without reordering it',
+    WKR8.songs.length === 2 && WKR8.songs[0].title === WKR.songs[0].title
+    && WKR8.songsAll.length === WKR.songsAll.length,
+    JSON.stringify(WKR8.songs.map(r => r.title)));
+  ok('ranks are the ranking\'s, not the cut\'s', WKR8.songs.map(r => r.rank).join() === '1,2');
+  // A week nobody dropped into is empty, not an error — the operator can page back past the
+  // start of the programme without hitting a wall.
+  const WKEmpty = (await call('/api/admin/weekly/status?week=2019-01-02', null, 'GET', BOOTH)).d;
+  ok('a week with no drops answers empty rather than failing',
+    WKEmpty.drops.length === 0 && WKEmpty.songs.length === 0 && WKEmpty.ars.length === 0
+    && WKEmpty.settled === false, JSON.stringify(WKEmpty.week));
+  // A soft-deleted drop leaves the week, exactly as it leaves every other list.
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), wkWed]);
+  const WKR3 = (await call('/api/admin/weekly/status?week=2026-04-01', null, 'GET', BOOTH)).d;
+  ok('a soft-deleted drop takes its records out of the week',
+    WKR3.drops.length === 2 && !WKR3.songsAll.some(r => ['Tie On Score', 'Paid The Most'].includes(r.title)),
+    JSON.stringify(WKR3.songsAll.map(r => r.title)));
+  // The repeat is the surviving copy now, on its own merits — deleting the better day must
+  // not leave a record charting at a score no drop in the week actually produced.
+  ok('and leaves a repeated record charting at the showing that is still in the week',
+    WKR3.songsAll.filter(r => r.title === 'Neon Skyline').length === 1
+    && WKR3.songsAll.find(r => r.title === 'Neon Skyline').score === 7
+    && WKR3.songsAll.find(r => r.title === 'Neon Skyline').plays === 1,
+    JSON.stringify(WKR3.songsAll.filter(r => r.title === 'Neon Skyline')));
+  for (const sid of [wkSat, wkTue, wkBefore, wkAfter]) {
+    await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), sid]);
+  }
+
   console.log('\n— artist email: carries the report + replay link, and NO pricing —');
   // The operator's explicit call: the report card goes out free to drive visibility, and the
   // email must never mention price or an upsell. That's a product decision a future copy

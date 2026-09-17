@@ -526,6 +526,31 @@ live on anr.makinitmag.com.
   support_cents only. Run from live Drupal with `terminus drush mim.live -- php-eval` (the
   token stays on the server). One-off on 2026-09-13.
 
+- **The weekly report** (no migration, 2026-09-16) — the screen the Wednesday show is read off.
+  `/api/admin/weekly/status` (platform-admin; it spans every host and carries artist handles and
+  what they paid) over a **Wed → Tue window keyed on `drop_day`** — the day a record OPENED, not
+  when it published, so the Tuesday drop's 3PM-Wednesday publish still lands inside the week the
+  7PM show reads. The screen defaults to the **last COMPLETE week**, never the one that opened at
+  noon the same day. `weekStartFor` / `weekWindow` / `lastCompleteWeekStart` in server.js are the
+  only date logic; they anchor on ET noon like every other day helper, so a DST week is still
+  seven ET days. Console: `#weekly` in admin.html, reached from the mode switch, reusing the
+  daily `.dltable` — the host reads the same shapes on air seven days a week.
+  **Top 8 Records**: title, artist, Instagram, day, support, play link, score, ratings. Ranked on
+  room average; ties break on ratings, then the earlier drop. Reference tracks and Verzuz rounds
+  never chart (same rule as `cardSongsData`). A record pushed on **two days charts once**, at its
+  best showing, with `plays` / `alsoOn` keeping the repeat visible — the same title twice in a
+  Top 8 read on air looks like the count is broken. **#1 is seeded into the Artist Tournament.**
+  **Top 8 A&Rs**: points, rounds reviewed, bullseyes, days played, plus the one line the host says
+  out loud. Points are **only what the window paid** — vote points on the week's rounds plus the
+  completion bonus those drops paid (`point_events.source_uid` is `'<sessionId>:<uid>'`, the only
+  bonus a day owns). **Referral milestones stay out**: series points with no week attached, and
+  the seat must be won on the week's listening. Qualified A&Rs only (complete profile, not
+  blocked), the $500 board's rule. **#1 takes a seat in A&R Wars.**
+  A week whose drops have not all published reports `settled: false` and names the missing days —
+  **do not hand out a seat off a week that is still settling.** "Copy the read sheet" on each
+  table gives the same rows as plain text for the host's script. No cards, no cron, no send: this
+  is a read-only screen, and every query is admin-triggered (CLAUDE.md #1 rule).
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count

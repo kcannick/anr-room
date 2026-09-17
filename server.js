@@ -3125,6 +3125,196 @@ function topSupportCents(rows) {
   return top > 0 ? top : null;
 }
 
+// ===== THE WEEK — Wednesday through Tuesday =====
+// The weekly live show reads back the week of drops that has just ended. A "week" here is
+// keyed on drop_day (the day a record OPENED), not on when it published: the Tuesday drop
+// publishes at 3PM Wednesday, hours before the Wednesday show, so the window the operator
+// reads on air is Wed → Tue by the day records dropped. Everything below is admin-triggered
+// and scales with the week's rounds — it must never become reachable from a boot or poll
+// path (CLAUDE.md #1 rule).
+const WEEK_START_DOW = 3;               // 3 = Wednesday, in JS getDay() terms
+const ET_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// The weekday of an ET calendar day, read off the ET-noon instant so a DST day can never
+// answer with the day either side of itself.
+function etWeekday(day) {
+  const ts = etEpoch(day, 12);
+  if (ts == null) return null;
+  const s = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' })
+    .format(new Date(ts));
+  const i = ET_DOW.indexOf(s);
+  return i < 0 ? null : i;
+}
+// The Wednesday on or before `day`. Any day inside a week resolves to the same window, so
+// the operator can hand this a Friday and still get that Friday's week.
+function weekStartFor(day) {
+  const dow = etWeekday(day);
+  if (dow == null) return null;
+  return etNextDay(day, -((dow - WEEK_START_DOW + 7) % 7));
+}
+function weekWindow(day) {
+  const start = weekStartFor(day);
+  if (!start) return null;
+  const end = etNextDay(start, 6);
+  return { start, end, startLabel: etDayLabel(start), endLabel: etDayLabel(end),
+    label: etDayLabel(start) + ' – ' + etDayLabel(end) };
+}
+// The week the screen OPENS on: the last one that has fully ended. On Wednesday — show day —
+// that is the seven drops the show is about, not the week that started at noon the same day.
+function lastCompleteWeekStart(today = etDay()) {
+  const cur = weekStartFor(today);
+  return cur ? etNextDay(cur, -7) : null;
+}
+
+// One week's report: the records ranked across every drop in the window, and the A&Rs ranked
+// on the points those drops paid. Both #1s carry a tournament seat, which is why both lists
+// are computed from the same window in one place rather than eyeballed off seven daily screens.
+async function weeklyReportData(day, opts = {}) {
+  const win = weekWindow(day);
+  if (!win) return null;
+  const limit = Math.max(1, Math.min(50, opts.limit || 8));
+  const minVotes = Math.max(0, opts.minVotes || 0);
+
+  const sessions = await db.all(
+    `SELECT id, drop_day, series_id, async_state, window_opens_at, results_at, published_at
+       FROM sessions
+      WHERE mode = 'async' AND deleted_at IS NULL AND drop_day BETWEEN ? AND ?
+      ORDER BY drop_day ASC`, [win.start, win.end]);
+  const ids = sessions.map(s => s.id);
+  const drops = sessions.map(s => ({
+    id: s.id, day: s.drop_day, dayLabel: etDayLabel(s.drop_day),
+    weekday: ET_DOW[etWeekday(s.drop_day)] || null,
+    state: s.async_state || 'scheduled', series_id: s.series_id || null,
+  }));
+  const base = {
+    week: { start: win.start, end: win.end, label: win.label,
+      startLabel: win.startLabel, endLabel: win.endLabel },
+    drops, limit, minVotes, generatedAt: now(),
+    // A week whose last drops have not published yet is READABLE but not final — the screen
+    // has to say so, because the #1 seats are handed out off these two lists.
+    settled: drops.length > 0 && drops.every(d => d.state === 'published'),
+    pending: drops.filter(d => d.state !== 'published').map(d => d.dayLabel || d.day),
+  };
+  if (!ids.length) return Object.assign(base, { songs: [], ars: [], totals: null, top_support_cents: null });
+  const ph = ids.map(() => '?').join(',');
+
+  // ---- the records ----
+  // Ratified rating rounds only, reference tracks excluded (a major-label record dropped in
+  // for A&Rs to rate is not a submission, and #1 here buys a tournament seat). Same rule as
+  // cardSongsData and the charts.
+  const rows = await db.all(
+    `SELECT r.id, r.idx, r.session_id, r.song_title, r.song_artist, r.artist_instagram,
+            r.song_note, r.play_url, r.room_average, r.support_cents,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS votes
+       FROM rounds r
+      WHERE r.session_id IN (${ph}) AND r.status = 'ratified'
+        AND r.room_average IS NOT NULL AND r.poll_type <> 'binary'
+        AND COALESCE(r.is_reference, 0) = 0
+      ORDER BY r.idx ASC`, ids);
+  const dayOf = new Map(sessions.map(s => [s.id, s.drop_day]));
+  // The week's top supporter, not the day's: this list spans seven drops, and the mark has
+  // to mean "paid the most of anyone this week" or it means nothing on a weekly table.
+  const topCents = topSupportCents(rows);
+  const all = rows.map(r => {
+    // IG comes off the column the review site pushes; the note parse is the legacy fallback
+    // for rows that predate it (same expression cardSongsData uses).
+    const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+    const d = dayOf.get(r.session_id);
+    return {
+      id: r.id, idx: r.idx, sessionId: r.session_id, day: d, dayLabel: etDayLabel(d),
+      weekday: ET_DOW[etWeekday(d)] || null,
+      title: r.song_title || '—', artist: r.song_artist || '',
+      ig: igClean(r.artist_instagram) || (m ? igClean(m[1]) : null),
+      play_url: r.play_url || '',
+      score: Number(r.room_average), votes: Number(r.votes) || 0,
+      support_cents: supportCentsOf(r),
+      top_supporter: topCents != null && supportCentsOf(r) === topCents,
+    };
+  });
+  // Ties: more voters wins (a bigger room agreeing is the stronger result), then the earlier
+  // drop — first to hit the number.
+  const rank = (a, b) => b.score - a.score || b.votes - a.votes
+    || (a.day < b.day ? -1 : a.day > b.day ? 1 : 0) || a.idx - b.idx;
+  let eligible = all.filter(r => r.votes >= minVotes).sort(rank);
+  const under = all.filter(r => r.votes < minVotes).sort(rank);
+  // The same record on two days in one week is a push mistake, not two records — and the
+  // Top 8 is read on air, where the same title twice reads as the count being broken. It
+  // charts ONCE at its best showing, with `plays` keeping the repeat visible rather than
+  // quietly disappearing. Same loose title+artist match the charts use.
+  const best = new Map();
+  for (const r of eligible) {
+    const k = chartKey(r.title) + '|' + chartKey(r.artist);
+    const prev = best.get(k);
+    if (prev) { prev.plays++; prev.alsoOn.push(r.dayLabel); continue; }
+    r.plays = 1; r.alsoOn = [];
+    best.set(k, r);
+  }
+  eligible = [...best.values()];   // already ranked — Map preserves insertion order
+  eligible.forEach((r, i) => { r.rank = i + 1; });
+  under.forEach(r => { r.rank = null; });
+
+  // ---- the A&Rs ----
+  // Points EARNED IN THE WINDOW: vote points off the week's rounds plus the completion bonus
+  // those same drops paid. Referral milestones are deliberately out — they are series points
+  // with no week attached, and a seat in A&R Wars must be won on the week's listening.
+  // Qualified A&Rs only (complete profile, not blocked), matching the $500 board's rule.
+  const voteRows = await db.all(
+    `SELECT u.uid, u.name, u.instagram, u.primary_category, u.location,
+            SUM(v.points) AS pts, COUNT(v.id) AS rounds,
+            SUM(CASE WHEN v.tier = 'bullseye' THEN 1 ELSE 0 END) AS bullseyes,
+            SUM(CASE WHEN v.tier IN ('bullseye','sharp') THEN 1 ELSE 0 END) AS strong,
+            COUNT(DISTINCT r.session_id) AS days
+       FROM votes v
+       JOIN participants p ON v.participant_id = p.id
+       JOIN rounds r ON r.id = v.round_id
+       JOIN users u ON p.user_id = u.uid
+      WHERE r.session_id IN (${ph}) AND v.points IS NOT NULL
+        AND u.profile_complete = 1 AND u.blocked = 0
+      GROUP BY u.uid, u.name, u.instagram, u.primary_category, u.location`, ids);
+  // The completion bonus lives in point_events keyed '<sessionId>:<uid>' — the only bonus
+  // that belongs to a specific drop, so it is the only one a week can honestly claim.
+  const bonusRows = await db.all(
+    `SELECT user_id, SUM(points) AS pts, COUNT(*) AS days FROM point_events
+      WHERE reason = 'async_complete' AND (${ids.map(() => 'source_uid LIKE ?').join(' OR ')})
+      GROUP BY user_id`, ids.map(i => i + ':%'));
+  const bonusBy = new Map(bonusRows.map(b => [b.user_id, { pts: Number(b.pts) || 0, days: Number(b.days) || 0 }]));
+  const ars = voteRows.map(r => {
+    const b = bonusBy.get(r.uid) || { pts: 0, days: 0 };
+    const votePts = Number(r.pts) || 0;
+    const rounds = Number(r.rounds) || 0;
+    return {
+      id: r.uid, name: r.name || 'A&R', ig: igClean(r.instagram),
+      category: r.primary_category || null, location: r.location || null,
+      points: votePts + b.pts, votePoints: votePts, bonusPoints: b.pts,
+      rounds, bullseyes: Number(r.bullseyes) || 0, strong: Number(r.strong) || 0,
+      days: Number(r.days) || 0, finished: b.days,
+      avg: rounds ? Math.round((votePts / rounds) * 10) / 10 : 0,
+    };
+  }).sort((a, b) => b.points - a.points || b.bullseyes - a.bullseyes || b.rounds - a.rounds
+    || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  ars.forEach((a, i) => { a.rank = i + 1; });
+
+  // Per-day counts come off the PRE-dedupe list: the drops card answers "what ran that day",
+  // which a record charting under another day would silently understate.
+  const perDay = new Map();
+  for (const r of all) perDay.set(r.sessionId, (perDay.get(r.sessionId) || 0) + 1);
+  for (const d of drops) d.records = perDay.get(d.id) || 0;
+
+  const totalVotes = all.reduce((n, r) => n + r.votes, 0);
+  return Object.assign(base, {
+    top_support_cents: topCents,
+    songs: eligible.slice(0, limit),
+    songsAll: eligible,
+    songsUnder: under,
+    ars: ars.slice(0, limit),
+    arsAll: ars,
+    totals: {
+      drops: drops.length, records: all.length, charting: eligible.length,
+      ars: ars.length, ratings: totalVotes,
+      support_cents: all.reduce((n, r) => n + (r.support_cents || 0), 0),
+    },
+  });
+}
+
 function asyncQueueOrder(seedKey, sessionId, rounds) {
   const arr = (rounds || []).slice().sort((a, b) =>
     (Number(a.idx) - Number(b.idx)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -7670,6 +7860,48 @@ async function handleApi(req, res, url) {
     });
   }
 
+  // ===== THE WEEKLY REPORT — what the Wednesday show reads on air =====
+  // One window (Wed → Tue), two ranked lists, one call. Platform-admin only for the same
+  // reason the daily status is: it spans every host's drops and carries the artists'
+  // Instagram handles and what they paid.
+  if (p === '/api/admin/weekly/status' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const wantWeek = (url.searchParams.get('week') || '').trim();
+    // Any day inside a week resolves to that week, so a picked Friday still lands on its
+    // Wednesday. With nothing asked for, the screen opens on the last COMPLETE week — the
+    // one the show is about.
+    const anchor = weekWindow(wantWeek) ? wantWeek : lastCompleteWeekStart();
+    const limit = parseInt(url.searchParams.get('limit'), 10);
+    const minVotes = parseInt(url.searchParams.get('minVotes'), 10);
+    const data = await weeklyReportData(anchor, {
+      limit: Number.isFinite(limit) ? limit : 8,
+      minVotes: Number.isFinite(minVotes) ? minVotes : 0,
+    });
+    if (!data) return bad(res, 'That is not a day I can resolve to a week', 400);
+
+    // The picker is built from the weeks that actually have drops, newest first — a week
+    // with nothing in it is not a week the operator can read on air. The week in progress
+    // is offered too (marked), because they preview it before the show.
+    const recent = await db.all(
+      `SELECT DISTINCT drop_day FROM sessions
+        WHERE mode = 'async' AND deleted_at IS NULL
+        ORDER BY drop_day DESC LIMIT 120`, []);
+    const seen = new Set(), weeks = [];
+    const liveStart = weekStartFor(etDay());
+    for (const r of recent) {
+      const st = weekStartFor(r.drop_day);
+      if (!st || seen.has(st)) continue;
+      seen.add(st);
+      const w = weekWindow(st);
+      weeks.push({ start: st, label: w.label, current: st === liveStart });
+      if (weeks.length >= 12) break;
+    }
+    if (!seen.has(data.week.start)) {
+      weeks.unshift({ start: data.week.start, label: data.week.label, current: data.week.start === liveStart });
+    }
+    return send(res, 200, Object.assign({ weeks }, data));
+  }
+
   // The A&R Meeting Recap caption for a drop, as text — the same builder the publish stores,
   // so the console can offer it before noon (the cover is posted ahead of the stream).
   if (p === '/api/admin/daily/recap-caption' && method === 'GET') {
@@ -8208,6 +8440,10 @@ module.exports._mintNotifyLink = mintNotifyLink;
 // per-A&R queue order has to be stable forever. Both are pure and asserted directly.
 module.exports._etEpoch = etEpoch;
 module.exports._etNextDay = etNextDay;
+module.exports._weekWindow = weekWindow;
+module.exports._weekStartFor = weekStartFor;
+module.exports._lastCompleteWeekStart = lastCompleteWeekStart;
+module.exports._weeklyReportData = weeklyReportData;
 module.exports._etDay = etDay;
 module.exports._asyncQueueOrder = asyncQueueOrder;
 module.exports._completionBonusPoints = completionBonusPoints;
