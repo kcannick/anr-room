@@ -134,6 +134,20 @@ against an endpoint that never received anything.
 `failed` and `sent` are deliberately different words: a single timestamp cannot tell "delivered"
 from "gave up", and you need to know which.
 
+**You do not have to read the database for this.** The daily console has a **Submission system**
+card: it prints whether the two vars are set, which host it is posting to, and every published
+day with its result and how many records were in it. A wrong URL is invisible on every other
+screen — the day publishes, the A&Rs get their email, and nothing says the artists' status pages
+were never updated — so this card is the only place that failure shows.
+
+**After fixing the URL or the token, send the backlog.** The cron will not catch up on its own,
+by design: its probe only looks at days with `results_status` still NULL and under the attempt
+cap, so days that gave up (or that aged past the cap while the URL was wrong) stay stuck. The
+card's **Send the backlog** button re-sends every published day that was not delivered, oldest
+first, ten per press — press it again while it says there are days left. Each row also has its
+own Send / Re-send button for one day. Their endpoint is idempotent, so re-sending a day they
+already have is safe.
+
 Wire contract, for whoever is building the other end:
 **docs/specs/daily-drop-integration-spec.md** §12, and the build prompt in
 `docs/specs/daily-drop-drupal-prompt.md`.

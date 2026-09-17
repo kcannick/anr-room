@@ -2950,8 +2950,40 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and says so, so the operator can tell "gave up" from "delivered"',
     (await cbDay()).results_status === 'failed');
 
+  // ---- The console readout, and the backlog re-send. ----
+  // The bug that made these necessary: a wrong RESULTS_CALLBACK_URL is invisible everywhere
+  // else — the day publishes, the A&Rs get their email, and no screen says the submission
+  // system was never told. And once the URL is fixed, the cron's own probe will NOT catch up:
+  // it only looks at days with results_status IS NULL and under the attempt cap.
+  const cbState = await call('/api/admin/daily/results', null, 'GET', BOOTH);
+  ok('the readout says whether the callback is configured at all',
+    cbState.status === 200 && cbState.d.configured === true, JSON.stringify(cbState.d).slice(0, 120));
+  ok('and prints the destination host without the token',
+    cbState.d.endpoint === 'http://localhost:3997' && !JSON.stringify(cbState.d).includes('cb-secret'));
+  const cbRow = (cbState.d.days || []).find(x => x.sessionId === cbSid);
+  ok('the day is listed with its result and record count',
+    cbRow && cbRow.status === 'failed' && cbRow.records === 3, JSON.stringify(cbRow));
+  ok('a day that gave up counts as still owed', cbState.d.owed >= 1);
+  ok('the readout is admin-only', (await call('/api/admin/daily/results', null, 'GET')).status === 403);
+
+  cbReply = { code: 200, body: '{"ok":true,"updated":3}' };
+  const hitsBefore = cbHits.length;
+  const cbRe = await call('/api/admin/daily/results/resend', { days: ['2026-09-05'] }, 'POST', BOOTH);
+  ok('a named day re-sends even though it was settled',
+    cbRe.status === 200 && cbRe.d.sent === 1 && cbRe.d.results[0].status === 'sent', JSON.stringify(cbRe.d));
+  ok('and it really went over the wire', cbHits.length === hitsBefore + 1);
+  ok('the day is settled as sent afterwards', (await cbDay()).results_status === 'sent');
+  ok('a day nobody published is refused rather than silently skipped',
+    (await call('/api/admin/daily/results/resend', { days: ['1999-01-01'] }, 'POST', BOOTH)).status === 404);
+  ok('the re-send is admin-only', (await call('/api/admin/daily/results/resend', { days: ['2026-09-05'] })).status === 403);
+
   await new Promise(r => cbSrv.close(r));
   delete process.env.RESULTS_CALLBACK_URL; delete process.env.RESULTS_CALLBACK_TOKEN;
+  // Unconfigured, the re-send says so instead of marking days as settled against nothing.
+  const cbOff = await call('/api/admin/daily/results/resend', { limit: 1 }, 'POST', BOOTH);
+  ok('with no callback configured the re-send refuses', cbOff.status === 503, JSON.stringify(cbOff.d));
+  ok('and a published day is still listed as never sent',
+    ((await call('/api/admin/daily/results', null, 'GET', BOOTH)).d.configured) === false);
   await cbDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), cbSid]);
 
   console.log('\n— A&R Daily: ET day arithmetic across DST —');

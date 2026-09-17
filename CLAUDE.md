@@ -463,6 +463,18 @@ live on anr.makinitmag.com.
     24 attempts recorded as `failed` rather than `sent`. Dormant without
     `RESULTS_CALLBACK_URL` / `_TOKEN`, so a preview deploy cannot post into production
     Drupal. Wire contract: **docs/specs/daily-drop-integration-spec.md**.
+    **Console readout + backlog re-send** (2026-09-16): dormant and MISCONFIGURED look
+    identical from every screen — the day publishes, the A&Rs get their email, and nothing
+    says the artists' status pages were never updated, which is how it ran wrong for weeks.
+    The daily console's **Submission system** card (`GET /api/admin/daily/results`) prints
+    configured / endpoint HOST (never the token) and every published day's result;
+    `POST /api/admin/daily/results/resend` sends the backlog. The cron cannot do that
+    catch-up: its probe is `results_status IS NULL` under the attempt cap, so a settled
+    `failed`/`unknown_day` — or a day that aged past the cap while the URL was wrong — is
+    invisible to it forever. The resend route is therefore the ONE place that clears a
+    settled marker, safe only because their endpoint is idempotent. Bounded at 10 days a
+    press (each is a 10s-timeout POST inside a request), oldest first; refuses 503 rather
+    than settling days against an unset URL.
   - **The digest headline was the "no results" bug** (2026-09-09). A&Rs reported emails with
     no results while another replied with their rounds quoted underneath — both true at once.
     The personalised block was correctly absent for anyone who did not play, but the HEADLINE

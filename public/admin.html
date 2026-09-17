@@ -290,6 +290,21 @@
       </div>
     </div>
 
+    <!-- Did the submission system actually get told? The callback is silent when its env
+         vars are unset or wrong, so a broken one looks exactly like a working one from
+         every other screen: the day publishes, the A&Rs get their email, and nobody is
+         told the artists' status pages were never updated. This is that readout, plus the
+         only way to re-send a backlog — the cron will not, by design. -->
+    <div class="card" id="dlResults">
+      <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Submission system</h3>
+      <div id="dlResBody"><div class="empty">Loading…</div></div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn ghost sm" id="btnResRefresh">Refresh</button>
+        <button class="btn ghost sm" id="btnResBacklog">Send the backlog</button>
+      </div>
+      <div class="err" id="dlResErr"></div>
+    </div>
+
     <!-- BUILD THE NEXT DAY, a record at a time — the same job the live queue form does.
          Its own card, always visible: stacking tomorrow's records and fixing today's broken
          link are different jobs the operator does on the same screen. -->
@@ -1842,6 +1857,9 @@ async function openDaily(){
     $('#dlNoneMsg').textContent = e.message;
     renderDayPicker();
   }
+  // Every published day, not just the one on screen — and deliberately not awaited into the
+  // status render, so a slow or failing readout never holds up the day the operator came for.
+  loadResultsState();
 }
 
 // The picker is rendered from the payload's own list, so a day that has just been deleted
@@ -2201,6 +2219,69 @@ $('#dlEditSave').onclick = async () => {
     await openDaily();
   }catch(e){ $('#dlEditErr').textContent = e.message; }
   $('#dlEditSave').disabled = false;
+};
+
+// ---- The results callback to makinitmag: state, and the backlog re-send. ----
+// Kept out of /daily/status deliberately: status is the day the operator is running, and
+// this is every published day at once. One press = one bounded batch (each day is a POST
+// with a 10s timeout), so the button reports what is left and can simply be pressed again.
+let DLRES = null;
+const RES_STATUS_LABEL = { sent: 'delivered', unknown_day: 'they do not know that day',
+  failed: 'gave up', retry: 'will retry' };
+async function loadResultsState(){
+  $('#dlResErr').textContent = '';
+  try{
+    DLRES = await api('/api/admin/daily/results', null, 'GET');
+    renderResultsState();
+  }catch(e){ $('#dlResBody').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+function renderResultsState(){
+  const d = DLRES || {};
+  const days = d.days || [];
+  let html = '';
+  if(!d.configured){
+    html += '<div class="empty" style="color:var(--hot)">The callback is not configured — RESULTS_CALLBACK_URL and RESULTS_CALLBACK_TOKEN are not both set, so no day has been sent. Nothing else on this screen would tell you.</div>';
+  } else {
+    html += '<p class="muted" style="font-size:12px;margin:0 0 10px">Sending to <b>' + esc(d.endpoint || '—') + '</b>. '
+      + (d.owed ? '<span style="color:var(--gold)">' + d.owed + ' published day' + (d.owed===1?'':'s') + ' still not delivered.</span>'
+                : 'Every published day has been delivered.') + '</p>';
+  }
+  if(!days.length){ html += '<div class="empty">No day has published yet.</div>'; }
+  else {
+    html += '<table class="dltable"><tr><th style="width:34%">Day</th><th class="num">Records</th><th>Result</th><th class="num">Tries</th><th></th></tr>'
+      + days.map(x => {
+          const okd = x.status === 'sent';
+          const label = x.status ? (RES_STATUS_LABEL[x.status] || x.status) : 'never sent';
+          return '<tr><td>' + esc(x.day) + '</td><td class="num">' + x.records + '</td>'
+            + '<td style="color:' + (okd ? 'var(--signal)' : 'var(--gold)') + '">' + esc(label) + '</td>'
+            + '<td class="num">' + x.attempts + '</td>'
+            + '<td class="num"><button class="btn ghost sm" onclick="dlResendDay(\'' + esc(x.day) + '\')">'
+            + (okd ? 'Re-send' : 'Send') + '</button></td></tr>';
+        }).join('')
+      + '</table>';
+  }
+  $('#dlResBody').innerHTML = html;
+  $('#btnResBacklog').disabled = !d.configured || !d.owed;
+}
+async function resendResults(body, label){
+  $('#dlResErr').textContent = '';
+  $('#btnResBacklog').disabled = true; $('#btnResRefresh').disabled = true;
+  try{
+    const r = await api('/api/admin/daily/results/resend', body);
+    const failed = (r.results || []).filter(x => x.status !== 'sent');
+    alert(label + '\n\nDelivered: ' + r.sent + ' of ' + r.attempted
+      + (failed.length ? '\nNot delivered: ' + failed.map(x => x.day + ' (' + x.status + ')').join(', ') : '')
+      + (r.remaining ? '\n\n' + r.remaining + ' day' + (r.remaining===1?'':'s') + ' left — press again.' : ''));
+  }catch(e){ $('#dlResErr').textContent = e.message; }
+  $('#btnResRefresh').disabled = false;
+  await loadResultsState();
+}
+window.dlResendDay = (day) => resendResults({ days: [day] }, 'Results for ' + day);
+$('#btnResRefresh').onclick = loadResultsState;
+$('#btnResBacklog').onclick = () => {
+  const owed = (DLRES && DLRES.owed) || 0;
+  if(!confirm('Send results for the ' + owed + ' published day' + (owed===1?'':'s') + " that makinitmag was never told about?\n\nOldest first, ten at a time.")) return;
+  resendResults({ limit: 10 }, 'Backlog sent');
 };
 
 $('#btnDailyTick').onclick = async () => {

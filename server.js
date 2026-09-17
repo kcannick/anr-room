@@ -7703,6 +7703,100 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, published, ...(await runAsyncDropLifecycle()) });
   }
 
+  // ---- The results callback: did makinitmag actually get the day, and re-send the ones it did not. ----
+  // The callback is silent by design when RESULTS_CALLBACK_URL / _TOKEN are unset, which
+  // also means a misconfigured URL looks EXACTLY like a working one from the console: the
+  // day publishes, the A&Rs get their email, and nothing on any screen says the submission
+  // system was never told. That is the failure this readout exists to make visible.
+  //
+  // Read-only, and it carries no contact details — just each published day, what its push
+  // did, and whether the two env vars exist (never the token itself).
+  if (p === '/api/admin/daily/results' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 60, 1), 200);
+    const rows = await db.all(
+      `SELECT s.id, s.drop_day, s.published_at, s.results_status, s.results_attempts, s.results_pushed_at,
+              (SELECT COUNT(*) FROM rounds r WHERE r.session_id = s.id AND r.ingest_ref IS NOT NULL AND r.ingest_ref <> '') AS records
+         FROM sessions s
+        WHERE s.mode = 'async' AND s.deleted_at IS NULL AND s.published_at IS NOT NULL
+        ORDER BY s.published_at DESC LIMIT ?`, [limit]);
+    const days = rows.map(r => ({
+      sessionId: r.id, day: r.drop_day,
+      publishedAt: r.published_at == null ? null : Number(r.published_at),
+      status: r.results_status || null,
+      attempts: Number(r.results_attempts) || 0,
+      pushedAt: r.results_pushed_at == null ? null : Number(r.results_pushed_at),
+      records: Number(r.records) || 0,
+    }));
+    return send(res, 200, {
+      ok: true,
+      configured: !!(process.env.RESULTS_CALLBACK_URL && process.env.RESULTS_CALLBACK_TOKEN),
+      // The host only — enough to tell "pointed at the right site" from "pointed at a
+      // preview", without printing the token or the full path into a browser console.
+      endpoint: (() => { try { return new URL(process.env.RESULTS_CALLBACK_URL || '').origin; } catch { return null; } })(),
+      maxAttempts: RESULTS_MAX_ATTEMPTS,
+      owed: days.filter(d => d.status !== 'sent').length,
+      days,
+    });
+  }
+
+  // ---- Re-send the results for days that never reached makinitmag. ----
+  // The cron's own probe cannot do this: it looks only at days with results_status IS NULL
+  // and under the attempt cap, which is right for "a host was down for ten minutes" and
+  // useless for the case that actually happened — the URL was wrong for weeks, so every day
+  // in the backlog is settled as 'failed'/'unknown_day' or was never attempted and has since
+  // aged past the cap. Clearing the marker is the whole point of this route, so it is the
+  // ONE place that may overwrite a settled result. Their endpoint is idempotent (it answers
+  // 200 {ok,updated:N}), so re-sending a day they already have costs nothing.
+  //
+  // Oldest first, so a partial run leaves the backlog in a sensible place, and bounded per
+  // request: each day is one 10s-timeout POST and this runs inside a request, not a cron.
+  if (p === '/api/admin/daily/results/resend' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    if (!(process.env.RESULTS_CALLBACK_URL && process.env.RESULTS_CALLBACK_TOKEN)) {
+      return bad(res, 'The results callback is not configured — set RESULTS_CALLBACK_URL and RESULTS_CALLBACK_TOKEN', 503);
+    }
+    const body = await readBody(req);
+    const days = Array.isArray(body.days) ? body.days.map(d => String(d).trim()).filter(Boolean) : [];
+    const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 25);
+    // A day already delivered is skipped unless asked for by name or with includeSent — the
+    // backlog run is for what did NOT arrive.
+    const includeSent = days.length > 0 || body.includeSent === true;
+
+    let rows;
+    if (days.length) {
+      rows = await db.all(
+        `SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL AND published_at IS NOT NULL
+            AND drop_day IN (${days.map(() => '?').join(',')}) ORDER BY published_at ASC`, days);
+      const found = new Set(rows.map(r => r.drop_day));
+      const missing = days.filter(d => !found.has(d));
+      if (missing.length) return bad(res, `No published drop for ${missing.join(', ')}`, 404);
+    } else {
+      rows = await db.all(
+        `SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL AND published_at IS NOT NULL
+            ${includeSent ? '' : "AND COALESCE(results_status, '') <> 'sent'"}
+          ORDER BY published_at ASC`, []);
+    }
+    const remaining = Math.max(rows.length - limit, 0);
+    const out = [];
+    for (const row of rows.slice(0, limit)) {
+      // Clear the marker so pushDayResults will act: it refuses a settled day, and the
+      // attempt count on a long-dead day is at the cap.
+      await db.run('UPDATE sessions SET results_status = NULL, results_attempts = 0 WHERE id = ?', [row.id]);
+      const fresh = await db.get('SELECT * FROM sessions WHERE id = ?', [row.id]);
+      let status;
+      try { status = await pushDayResults(fresh); }
+      catch (e) { status = 'error'; console.error(`[results] resend ${row.drop_day} threw: ${e.message}`); }
+      const recs = await buildDayResults(fresh);
+      out.push({ day: row.drop_day, sessionId: row.id, status: status || 'skipped', records: recs.length });
+    }
+    return send(res, 200, {
+      ok: true, attempted: out.length, remaining,
+      sent: out.filter(d => d.status === 'sent').length,
+      results: out,
+    });
+  }
+
   // ---- Asana post kit: the night's graphics + a tag-everyone caption, as one task. ----
   // Preview (also powers "Copy caption", which works with or without Asana configured).
   if (p === '/api/admin/session/post-kit' && method === 'GET') {
