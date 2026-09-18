@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/png" href="/mark-color.png"><title>The A&R Room · Host</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/brand/mark/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/brand/mark/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/brand/mark/apple-touch-icon-180.png">
+<meta name="theme-color" content="#0E0C1A"><title>The A&R Room · Host</title>
 <link rel="stylesheet" href="/tokens.css?v=4">
 <link rel="stylesheet" href="/ui.css?v=1">
 <style>
@@ -629,7 +632,7 @@
             <div><label>Artist email</label><input id="rAEmail" type="email" placeholder="for their report card"></div>
             <div><label>Artist phone</label><input id="rAPhone" placeholder="optional"></div>
           </div>
-          <div class="muted" style="font-size:11px;margin-top:4px">Used only for the post-session Official Room Report and “your record was evaluated” text. Never shown publicly.</div>
+          <div class="muted" style="font-size:11px;margin-top:4px">Used only for the artist’s Track Report email and the “your record has been rated” text. Never shown publicly.</div>
         </div>
         <div><label>Note for A&amp;Rs</label><textarea id="rNote" placeholder="optional — anything you want them to see"></textarea></div>
         <!-- Content pulls live right above the action button — grab, glance, play. -->
@@ -664,7 +667,7 @@
         <div class="feed" id="feed"><div class="empty">No evaluations yet.</div></div>
         <div id="reviewBox" class="hide"></div>
       </div>
-      <!-- Round history: every song played, with scores + per-round Song Reports -->
+      <!-- Round history: every song played, with scores + per-round Track Reports -->
       <div id="paneRounds" class="hide">
         <div id="roundsList"><div class="empty">Loading…</div></div>
       </div>
@@ -1231,6 +1234,7 @@
 
       <div class="row" style="margin-bottom:12px">
         <button class="btn sm" id="chCsv">⬇ Export CSV</button>
+        <button class="btn ghost sm" id="chContacts" style="display:none">📇 Export contacts</button>
         <button class="btn ghost sm" id="chBuild">🖼 Build carousel</button>
         <button class="btn ghost sm" id="chCaption">📋 Copy caption</button>
       </div>
@@ -1601,7 +1605,7 @@ function setTab(pane,manual){
   if(pane==='paneRounds')loadRounds(); // lazy: fetched on open, not on the 2s poll
 }
 document.querySelectorAll('.tabbar .tab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pane,true)));
-// Round history — every song played this room, newest first, with a Song Report
+// Round history — every song played this room, newest first, with a Track Report
 // button on each ratified rating round (the paid artist product works after the
 // show, not just on the freshest round).
 let ROUNDS_CACHE=[]; // last /api/admin/rounds payload — feeds the inline edit form
@@ -1633,7 +1637,7 @@ async function loadRounds(){
       // Row controls are icon-only: the song title is the thing worth horizontal space,
       // and each extra labelled button squeezed it down toward an ellipsis.
       const report=(!isVs&&r.status==='ratified'&&r.votes>0)
-        ?`<button class="btn ghost sm" style="padding:6px 9px" onclick="event.stopPropagation();dlSongReport('${r.id}',this)" title="Song Report (3-page artist analytics)">📊</button>`:'';
+        ?`<button class="btn ghost sm" style="padding:6px 9px" onclick="event.stopPropagation();dlSongReport('${r.id}',this)" title="Track Report (the artist\u2019s report pages)">📊</button>`:'';
       // Every played round is editable — descriptive fields only (the server refuses to
       // touch scores). This is how contact gets added retroactively, after the show.
       const edit=`<button class="btn ghost sm" style="padding:6px 9px" onclick="event.stopPropagation();toggleRoundEdit('${r.id}')" title="Edit song details + artist contact">✎</button>`;
@@ -1969,8 +1973,10 @@ async function openDaily(){
 
 // The picker is rendered from the payload's own list, so a day that has just been deleted
 // stops being offered on the next refresh rather than lingering as a dead option.
-const DAY_STATE_SHORT = { scheduled: 'building', open: 'open', closing: 'tallying',
-  ratified: 'held', published: 'published' };
+// The same five names the pill uses, lowercased — the picker and the pill must never
+// call one state two different things.
+const DAY_STATE_SHORT = { scheduled: 'scheduled', open: 'open', closing: 'processing',
+  ratified: 'closed', published: 'published' };
 function renderDayPicker(){
   const sel = $('#dlDaySel'); if(!sel) return;
   const days = (DL && DL.days) || [];
@@ -2013,8 +2019,13 @@ function renderDaily(){
   const dr = d.drop;
   renderDayPicker();
 
-  const STATE_LABEL = { scheduled: 'Scheduled', open: 'Window open', closing: 'Tallying',
-    ratified: 'Tallied · results held', published: 'Published' };
+  // The day's five states, named for WHAT IS TRUE, not for what the machine is doing:
+  // Scheduled (staged) → Open (A&Rs are rating) → Processing (rating is over, votes are
+  // being scored) → Closed (scored, not yet announced) → Published (terminal, results are
+  // out). The DB values behind them are untouched — async_state is a claim token the cron
+  // and the tests key off, and renaming it would be a migration, not a label change.
+  const STATE_LABEL = { scheduled: 'Scheduled', open: 'Open', closing: 'Processing',
+    ratified: 'Closed', published: 'Published' };
   $('#dlState').textContent = STATE_LABEL[dr.async_state] || dr.async_state;
   $('#dlState').className = 'pill ' + (dr.async_state === 'open' ? 'live'
     : dr.async_state === 'published' ? 'completed' : 'upcoming');
@@ -2100,7 +2111,41 @@ function renderDaily(){
     <p class="muted" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">${c.recapCover ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed' + (d.blobConfigured ? '' : ' — BLOB_READ_WRITE_TOKEN is not set') + '; these are rendered live instead.' : 'Rendered live from the day so far. The A&Rs column fills in once the day tallies.')}
       Artists print in drop order and A&Rs alphabetically — nothing on the cover is ranked.</p>
     <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost sm" onclick="dlCopyRecapCaption()">Copy recap caption</button></div>`;
+  // The results carousels — posted after the 2PM reveal stream. Slide 1 is the top record /
+  // top A&R, then the rest ranked, then the call to action; a big day gets more list slides.
+  // Hosted at the 3PM publish; before that, or if hosting failed, every slide renders live off
+  // /api/card/results (admin-only) so the set can always be downloaded.
+  const rs = c.results || {};
+  const slideFigs = (set, urls, count, label) => {
+    const n = urls ? urls.length : (count || 0);
+    if(!n) return '<div class="empty">Nothing to show yet.</div>';
+    let out = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">';
+    for(let i = 1; i <= n; i++) out += fig(urls ? urls[i-1] : dlResultsUrl(set, i), 'results-' + set + '-' + dateTag + '-' + i + '.png', label + ' · ' + i + ' / ' + n);
+    return out + '</div>';
+  };
+  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Results carousels</h4>
+    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">Post after the reveal stream. Slide 1 is the top record or top A&R, then the rest ranked, then the call to action. ${rs.song ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed; rendered live instead.' : 'Rendered live from the day so far; the ranking is final once the day tallies.')}</p>
+    <div class="muted" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:8px 0 4px">Top Track</div>${slideFigs('song', rs.song, rs.songCount, 'Top Track')}
+    <div class="row" style="gap:8px;margin:8px 0 12px"><button class="btn ghost sm" onclick="dlCopyResultsCaption('song')">Copy Top Track caption</button></div>
+    <div class="muted" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:8px 0 4px">Top A&R</div>${slideFigs('ar', rs.ar, rs.arCount, 'Top A&R')}
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="dlCopyResultsCaption('ar')">Copy Top A&R caption</button></div>`;
+  // The winner posts (039) — one portrait post per winner, posted as a collab post with them.
+  // Hosted at the 3PM publish; before that (or if hosting failed) rendered live off
+  // /api/card/winner (admin-only). The weekly pair renders live for the week chosen.
+  const wn = c.winners || {};
+  const wnFig = (post, label) => (post === 'track' ? wn.trackReady : wn.arReady) || wn[post]
+    ? fig(wn[post] || dlWinnerUrl(post), 'winner-' + post + '-' + dateTag + '.png', label)
+    : '<div class="empty" style="flex:1">Nothing to show yet.</div>';
+  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Winner posts</h4>
+    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">One portrait post per winner. Post it as a collab with them so it lands on their feed too. ${wn.track ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed; rendered live instead.' : 'Rendered live from the day so far; final once the day tallies.')}</p>
+    <div class="row" style="gap:10px;align-items:flex-start">${wnFig('track', 'Top Track of the Day')}${wnFig('ar', 'Top A&R of the Day')}</div>
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="dlCopyWinnerCaption('track')">Copy Top Track caption</button><button class="btn ghost sm" onclick="dlCopyWinnerCaption('ar')">Copy Top A&R caption</button></div>
+    <h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Winners of the week</h4>
+    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">Monday to Sunday. Top Track is the week's highest room average across the published drops; Top A&R is the most points across them. The card is dated by the week it tracks.</p>
+    <div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><label class="muted" style="font-size:12px">Week of <input type="date" id="dlWeekStart" value="${esc(wn.weekDefault || '')}" onchange="dlWeekRedraw()" style="margin-left:6px"></label></div>
+    <div id="dlWeekBody"><div class="empty">Loading…</div></div>`;
   $('#dlCardBody').innerHTML = cardHtml;
+  dlWeekRedraw();
   renderBuild();
 }
 // The live-render fallback carries the admin credential as a header, which an <img> cannot
@@ -2118,6 +2163,89 @@ function dlRecapUrl(kind){
         img.src = dlRecapCache[key]; img.closest('a').href = dlRecapCache[key]; }); })
     .catch(() => { delete dlRecapCache[key]; });
   return dlRecapCache[key];
+}
+// One results slide, rendered live with the admin credential (an <img> cannot send it), shown
+// as an object URL. Keyed by set + slide + drop so a redraw does not refetch.
+const dlResultsCache = {};
+function dlResultsUrl(set, slide){
+  const sid = DL && DL.drop && DL.drop.id; if(!sid) return '';
+  const key = 'results:' + set + ':' + slide + ':' + sid;
+  if(dlResultsCache[key]) return dlResultsCache[key];
+  dlResultsCache[key] = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+  const label = (set === 'ar' ? 'Top A&R' : 'Top Track') + ' · ' + slide + ' / ';
+  fetch('/api/card/results?s=' + encodeURIComponent(sid) + '&set=' + set + '&slide=' + slide, { headers: chAuthHeaders() })
+    .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
+    .then(b => { dlResultsCache[key] = URL.createObjectURL(b);
+      document.querySelectorAll('#dlCardBody img[alt^="' + label + '"]').forEach(img => {
+        img.src = dlResultsCache[key]; img.closest('a').href = dlResultsCache[key]; }); })
+    .catch(() => { delete dlResultsCache[key]; });
+  return dlResultsCache[key];
+}
+// One winner post, rendered live with the admin credential (an <img> cannot send it).
+// key: day posts by drop id, week posts by the Monday.
+const dlWinnerCache = {};
+function dlWinnerUrl(post, week){
+  const sid = DL && DL.drop && DL.drop.id; if(!sid && !week) return '';
+  const key = 'winner:' + post + ':' + (week ? 'w' + week : sid);
+  if(dlWinnerCache[key]) return dlWinnerCache[key];
+  dlWinnerCache[key] = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+  const label = (post === 'ar' ? 'Top A&R' : 'Top Track') + ' of the ' + (week ? 'Week' : 'Day');
+  const q = week ? 'week=' + encodeURIComponent(week) : 's=' + encodeURIComponent(sid);
+  fetch('/api/card/winner?' + q + '&post=' + post, { headers: chAuthHeaders() })
+    .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
+    .then(b => { dlWinnerCache[key] = URL.createObjectURL(b);
+      document.querySelectorAll('#dlCardBody img[alt="' + label + '"]').forEach(img => {
+        img.src = dlWinnerCache[key]; img.closest('a').href = dlWinnerCache[key]; }); })
+    .catch(() => { delete dlWinnerCache[key]; });
+  return dlWinnerCache[key];
+}
+async function dlCopyWinnerCaption(post){
+  const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
+  const c = (DL && DL.cards && DL.cards.winners) || {};
+  let text = post === 'ar' ? c.arCaption : c.trackCaption;
+  if(!text){
+    try{ text = await (await fetch('/api/admin/daily/winner-caption?s=' + encodeURIComponent(sid) + '&post=' + post, { headers: chAuthHeaders() })).text(); }
+    catch(e){}
+  }
+  if(!text){ alert('Nothing to copy yet.'); return; }
+  try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
+  catch(e){ alert('Could not copy the caption.'); }
+}
+// The week's winners: who they are (from /api/admin/weekly/winners) and the two cards, live.
+let dlWeekData = null;
+async function dlWeekRedraw(){
+  const box = $('#dlWeekBody'); if(!box) return;
+  const week = ($('#dlWeekStart') && $('#dlWeekStart').value) || '';
+  let d = null;
+  try{ d = await (await fetch('/api/admin/weekly/winners' + (week ? '?week=' + encodeURIComponent(week) : ''), { headers: chAuthHeaders() })).json(); }
+  catch(e){}
+  dlWeekData = d;
+  if(!d || !d.week){ box.innerHTML = '<div class="empty">Could not load the week.</div>'; return; }
+  const fig = (url, name, label) => `<figure style="flex:1;margin:0;min-width:0"><a href="${esc(url)}" target="_blank" rel="noopener" download="${esc(name)}"><img src="${esc(url)}" alt="${esc(label)}" style="width:100%;border-radius:12px;border:1px solid var(--line);display:block"></a><figcaption class="muted" style="font-size:11px;margin-top:4px">${esc(label)}</figcaption></figure>`;
+  const part = (post, label) => d[post]
+    ? fig(dlWinnerUrl(post, d.week.start), 'winner-' + post + '-week-' + d.week.start + '.png', label)
+    : '<div class="empty" style="flex:1">No published drops that week.</div>';
+  box.innerHTML = `<p class="muted" style="font-size:11.5px;margin:0 0 8px">${esc(d.week.label)}${d.track ? ' · ' + d.track.drops + ' drop' + (d.track.drops === 1 ? '' : 's') : ''}</p>
+    <div class="row" style="gap:10px;align-items:flex-start">${part('track', 'Top Track of the Week')}${part('ar', 'Top A&R of the Week')}</div>
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="dlCopyWeekCaption('track')" ${d.track ? '' : 'disabled'}>Copy Top Track caption</button><button class="btn ghost sm" onclick="dlCopyWeekCaption('ar')" ${d.ar ? '' : 'disabled'}>Copy Top A&R caption</button></div>`;
+}
+async function dlCopyWeekCaption(post){
+  const text = dlWeekData && dlWeekData[post] && dlWeekData[post].caption;
+  if(!text){ alert('Nothing to copy yet.'); return; }
+  try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
+  catch(e){ alert('Could not copy the caption.'); }
+}
+async function dlCopyResultsCaption(set){
+  const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
+  const c = (DL && DL.cards && DL.cards.results) || {};
+  let text = set === 'ar' ? c.arCaption : c.songCaption;
+  if(!text){
+    try{ text = await (await fetch('/api/admin/daily/results-caption?s=' + encodeURIComponent(sid) + '&set=' + set, { headers: chAuthHeaders() })).text(); }
+    catch(e){}
+  }
+  if(!text){ alert('Nothing to copy yet.'); return; }
+  try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
+  catch(e){ alert('Could not copy the caption.'); }
 }
 /* ---- The records table: sortable, with a live play link ---- */
 // The order is remembered per device: the countdown show runs off this table for an hour,
@@ -3399,6 +3527,18 @@ async function chDownloadCsv(){
     anDownload(name+'.csv',await r.text(),'text/csv');
   }catch(e){alert(e.message);}
 }
+// The same rows as the CSV plus email + phone. Separate button, separate file, so a
+// contact list is always something you asked for by name — never a surprise column in
+// the export that feeds the Instagram carousel.
+async function chDownloadContacts(){
+  if(!chData)return;
+  try{
+    const r=await fetch('/api/admin/charts?'+chParams({format:'contacts'}).toString(),{headers:chAuthHeaders()});
+    if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Export failed');
+    const name=(chData.title+'-'+chData.scope.label).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    anDownload(name+'-contacts.csv',await r.text(),'text/csv');
+  }catch(e){alert(e.message);}
+}
 async function chCopyCaption(){
   const b=$('#chCaption');
   try{
@@ -3442,6 +3582,7 @@ document.querySelectorAll('.chart-mode').forEach(b=>b.onclick=()=>{
   chMode=b.dataset.mode;
   document.querySelectorAll('.chart-mode').forEach(x=>{x.classList.toggle('ghost',x!==b);x.classList.toggle('on',x===b);});
   $('#chDedupeRow').style.display=chMode==='records'?'':'none';
+  $('#chContacts').style.display=chMode==='ars'?'':'none';
   $('#chLimitLabel').textContent=chMode==='weekly1s'?'Rooms':'Chart size';
   loadCharts();
 });
@@ -3724,6 +3865,7 @@ if($('#sbDrop')){
 $('#btnCharts')&&($('#btnCharts').onclick=openCharts);
 $('#btnChartsBack')&&($('#btnChartsBack').onclick=openPicker);
 $('#chCsv')&&($('#chCsv').onclick=chDownloadCsv);
+$('#chContacts')&&($('#chContacts').onclick=chDownloadContacts);
 $('#chCaption')&&($('#chCaption').onclick=chCopyCaption);
 $('#chBuild')&&($('#chBuild').onclick=chBuildCarousel);
 
@@ -4648,25 +4790,27 @@ function queueBox(st){
       </div>`).join('');
 }
 
-// Song Report (paid artist tier): fetch the 3 pages with host credentials, then hand
-// them to the phone share sheet (Photos/IG-ready) or download on desktop. Page 3 needs
-// 8+ votes — a smaller round just delivers pages 1–2 with a heads-up.
+// Track Report: fetch every page this record has (the count varies — conditional pages
+// drop out, comments take as many as they need) with host credentials, then hand them to
+// the phone share sheet (Photos/IG-ready) or download on desktop.
 window.dlSongReport=async(rid,btn)=>{
   const label=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='Building report…';}
   try{
     const hdr={}; if(AUTHTOK)hdr['X-Auth-Token']=AUTHTOK; if(ATOK)hdr['X-Admin-Token']=ATOK;
-    const files=[]; let segNote='';
-    for(const page of [1,2,3]){
+    const files=[];
+    const mr=await fetch('/api/card/song-report?r='+encodeURIComponent(rid)+'&meta=1',{headers:hdr});
+    if(!mr.ok){ let m='report failed ('+mr.status+')'; try{const e=await mr.json();if(e.error)m=e.error;}catch(_){} alert(m); return; }
+    const meta=await mr.json();
+    for(let page=1;page<=meta.total;page++){
       const r=await fetch('/api/card/song-report?r='+encodeURIComponent(rid)+'&page='+page,{headers:hdr});
       if(!r.ok){
         let m='page '+page+' failed ('+r.status+')'; try{const e=await r.json();if(e.error)m=e.error;}catch(_){}
-        if(page===3){ segNote=m; continue; } // small round: ship pages 1–2
         alert(m); return;
       }
-      files.push(new File([await r.blob()],'song-report-p'+page+'.png',{type:'image/png'}));
+      files.push(new File([await r.blob()],'track-report-p'+page+'.png',{type:'image/png'}));
     }
     if(MOBILE_SHARE&&navigator.canShare&&navigator.canShare({files})){
-      try{ await navigator.share({files,title:'The A&R Room · Song Report'}); }
+      try{ await navigator.share({files,title:'Track Report'}); }
       catch(e){ if(!(e&&e.name==='AbortError')) throw e; }
     }else{
       for(const f of files){
@@ -4676,7 +4820,6 @@ window.dlSongReport=async(rid,btn)=>{
         await new Promise(r=>setTimeout(r,350)); // let each download start
       }
     }
-    if(segNote)alert('Pages 1–2 generated. Segments page skipped: '+segNote);
   }catch(e){ alert('Report failed: '+e.message); }
   finally{ if(btn){btn.disabled=false;btn.textContent=label;} }
 };
@@ -4697,7 +4840,7 @@ function resultsTableHtml(rows,isBin,round,withReport){
     <table class="data-table"><thead><tr><th>#</th><th>Name</th><th class="num">Guess</th><th class="num">Off</th><th class="num">Pts</th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td class="${r.rank===1?'rank1':''}">${r.rank}</td><td>${esc(r.name)} ${tierBadge(r.tier)}</td><td class="num">${(+r.predict).toFixed(1)}</td><td class="num muted">${(+r.err).toFixed(1)}</td><td class="num" style="color:${r.points>=0?'var(--good)':'var(--hot)'}">${r.points>=0?'+':''}${r.points}</td></tr>`).join('')}
     </tbody></table>`+
-    (withReport?`<button class="btn ghost sm" style="margin-top:12px" onclick="dlSongReport('${round.id}',this)">📊 Song Report — artist analytics (3 pages)</button>`:'');
+    (withReport?`<button class="btn ghost sm" style="margin-top:12px" onclick="dlSongReport('${round.id}',this)">📊 Track Report — the artist’s report</button>`:'');
 }
 
 // The This-round pane is state-driven: live votes while open, a tally hint while

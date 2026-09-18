@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R artist share graphic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   Artist share graphics — stage 5 of the promo build order.
+   These are the assets OTHER people post for you.
+
+     ?p=pack     3.7  the artist posts it; their followers enter the side bet   feed · story
+     ?p=meeting  4.9  "scheduled for review" — posted right after SUBMITTING          square · story
+     ?f=feed|story|square
+     ?artist=&song=                       the record
+     ?link=makinitmag.com/TopPicks        pack (default shown)
+     ?ig=handle&link=makinitmag.com/Review          meeting (no date: nothing has been rated yet)
+
+   PACK (operator, 2026-09-12, final wording): four lines and nothing else. The $150 is
+   the hook for the audience; the artist's name in the sentence is why the artist posts it.
+     Win $150 Cash
+     Check out the latest A&R Service Pack featuring "SONG" by ARTIST
+     And Submit your top picks to win
+     Free to Enter at makinitmag.com/TopPicks
+   Copy verbatim. Small type, lots of air.
+
+   MEETING (operator, 2026-09-13): posted the moment the artist submits, so everyone is
+   promoting the submissions. "Song Title" by Artist (@instagram) scheduled for review,
+   with a thumbs-up, and "Submit your music now at makinitmag.com/Review". No date, no
+   score — nothing has been rated yet.
+   The wall: the pack graphic never carries a score, the Meeting graphic never
+   carries a pack call to action.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;--pad:80px}
+#c.feed{width:1080px;height:1350px}
+#c.story{width:1080px;height:1920px}
+#c.square{width:1080px;height:1080px}
+#c.pack{--fill:var(--purple)} #c.meeting{--fill:var(--green)}
+
+.logo{position:absolute;left:var(--pad);height:36px;width:auto}
+.lock{position:absolute;left:8px;width:auto;height:280px}      /* S=140 */
+.lock.small{height:200px}                                      /* S=100: SERVICE PACK */
+.field{position:absolute;left:0;right:0;bottom:0;background:var(--fill);clip-path:polygon(0 var(--cut-l),100% var(--cut-r),100% 100%,0 100%)}
+.cta{position:absolute;left:var(--pad);right:var(--pad);color:var(--ground);font-weight:900;font-size:40px;line-height:1.1;letter-spacing:-.02em}
+.cta .url{display:block;font-family:'Space Mono',monospace;font-weight:700;font-size:44px;letter-spacing:-.01em;margin-top:14px}
+
+/* ---- pack: hook, sentence, link ---- */
+.hook,.line{position:absolute;left:var(--pad);right:var(--pad);display:none}
+.pack .hook,.pack .line{display:block}
+.hook{font-weight:900;font-size:96px;line-height:.94;letter-spacing:-.04em;max-width:900px}
+.hook .gold{color:var(--gold)}
+.line{font-weight:500;font-size:40px;line-height:1.3;max-width:820px;color:var(--ink)}
+.line b{font-weight:900}
+.line .and{display:block;margin-top:.7em}
+.feed .logo{top:80px}
+.feed .lock{top:130px}
+.feed .lock.small{top:150px}
+.feed .hook{top:430px}
+.feed .line{top:690px}
+.feed .field{height:500px;--cut-l:260px;--cut-r:11px}
+.feed .cta{bottom:100px}
+.story .logo{top:250px}
+.story .lock.small{top:340px}
+.story .hook{top:680px;font-size:108px}
+.story .line{top:980px;font-size:46px;max-width:880px}
+.story .field{height:720px;--cut-l:300px;--cut-r:51px}
+.story .cta{bottom:300px}
+
+/* ---- meeting: label, name, record, date ---- */
+.eyebrow,.name,.song,.meta{position:absolute;left:var(--pad);display:none}
+.meeting .eyebrow,.meeting .name,.meeting .song,.meeting .meta{display:block}
+.eyebrow{font-family:'Space Mono',monospace;font-weight:700;font-size:26px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.eyebrow::before{content:'';display:inline-block;width:.32em;height:.85em;background:var(--fill);transform:skewX(-13deg);margin-right:.5em;vertical-align:-.06em}
+.thumb{width:64px;height:64px;color:var(--green);display:none;flex:none}
+.meeting .thumb{display:block}
+.thumb svg{width:100%;height:100%;display:block}
+.meeting .eyebrow{display:flex;align-items:center;gap:18px}
+.meeting .eyebrow::before{content:none}
+.meeting .song .ig{display:block;font-size:28px;margin-top:6px}
+.meeting .song::before,.meeting .song::after{content:none}
+.meeting .song{font-weight:700}
+.meeting .song .ig{font-family:'Space Mono',monospace;font-weight:700;font-size:.8em;color:var(--dim)}
+.name{right:var(--pad);font-weight:900;font-size:96px;line-height:.92;letter-spacing:-.04em}
+.song{right:var(--pad);font-weight:700;font-size:44px;line-height:1.1;letter-spacing:-.02em}
+.song::before{content:'“'} .song::after{content:'”'}
+.meta{font-family:'Space Mono',monospace;font-weight:700;font-size:28px;letter-spacing:.02em;color:var(--dim)}
+/* the $1,000 Giveaway for participating artists (operator, 2026-09-15): one line under the record */
+.give{position:absolute;left:var(--pad);right:var(--pad);display:none;font-weight:700;font-size:38px;line-height:1.1;letter-spacing:-.02em;color:var(--ink)}
+.give b{font-weight:900;color:var(--gold)}
+.meeting .give{display:block}
+.feed.meeting .give{top:var(--give-top,880px)}
+.square.meeting .give{top:var(--give-top,790px);font-size:34px}
+.story.meeting .give{top:var(--give-top,1160px);font-size:44px}
+.square .logo{top:72px}
+.square .lock{top:130px}
+.feed.meeting .eyebrow{top:430px}
+.feed.meeting .name{top:520px;font-size:88px}
+.feed.meeting .song{top:var(--song-top,720px);font-size:44px}
+.feed.meeting .song .ig{font-size:32px}
+.feed.meeting .meta{display:none}
+.square .eyebrow{top:410px}
+.square .name{top:500px;font-size:76px}
+.square .song{top:var(--song-top,668px);font-size:38px}
+.square .meta{display:none}
+.square.meeting .field{height:320px;--cut-l:190px;--cut-r:-59px}
+.square.meeting .cta{bottom:60px;display:flex;align-items:baseline;gap:14px;font-size:34px}
+.square.meeting .cta .url{margin-top:0;font-size:32px}
+.square .field{height:380px;--cut-l:220px;--cut-r:-29px}
+.square .cta{bottom:64px;font-size:44px;letter-spacing:-.03em}
+.square .cta .url{font-size:34px}
+.story.meeting .logo{top:250px}
+.story.meeting .lock{top:330px}
+.story.meeting .thumb{width:84px;height:84px}
+.story.meeting .eyebrow{top:640px}
+.story.meeting .name{top:740px;font-size:104px}
+.story.meeting .song{top:var(--song-top,980px);font-size:50px}
+.story.meeting .song .ig{font-size:34px}
+.story.meeting .meta{display:none}
+.story.meeting .cta{font-size:52px;letter-spacing:-.03em}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <img class="lock" id="lock" alt="">
+  <div class="hook" id="hook"></div>
+  <div class="line" id="line"></div>
+  <div class="eyebrow" id="eyebrowWrap"><span class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M4 11 H7 V20 H4 Z"/><path d="M7 11 L11 4 C12.6 4 14 5 14 6.5 V9 H19 A2 2 0 0 1 21 11.4 L19.4 18.2 A2.4 2.4 0 0 1 17 20 H7"/></svg></span><span id="eyebrow"></span></div>
+  <div class="name" id="name"></div>
+  <div class="song" id="song"></div>
+  <div class="meta" id="meta"></div>
+  <div class="give" id="give"></div>
+  <div class="field"></div>
+  <div class="cta" id="cta"></div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const P = q.get('p') === 'meeting' ? 'meeting' : 'pack';
+const F = ['feed','story','square'].includes(q.get('f')) ? q.get('f') : 'feed';
+const ARTIST = q.get('artist') || 'Artist Name';
+const SONG = q.get('song') || 'Song Title';
+const DATE = q.get('date') || '';
+const IG = q.get('ig') || '';
+const p2 = n => String(n).padStart(2, '0');
+const mmddyy = iso => { const d = new Date(iso + 'T12:00:00'); return p2(d.getMonth() + 1) + '.' + p2(d.getDate()) + '.' + String(d.getFullYear()).slice(-2); };
+
+const c = document.getElementById('c');
+c.className = F + ' ' + P;
+const lock = document.getElementById('lock');
+const cta = document.getElementById('cta');
+
+if (P === 'pack') {
+  lock.src = '../lockups/anr-service-pack-h.svg'; lock.classList.add('small');
+  document.getElementById('hook').innerHTML = 'Win <span class="gold">$150</span> Cash';
+  const line = document.getElementById('line');
+  line.innerHTML = 'Check out the latest A&amp;R Service Pack featuring “<b class="s"></b>” by <b class="a"></b><span class="and">And Submit your top picks to win</span>';
+  line.querySelector('.s').textContent = SONG; line.querySelector('.a').textContent = ARTIST;
+  cta.innerHTML = 'Free to Enter at<span class="url"></span>';
+  cta.querySelector('.url').textContent = q.get('link') || 'makinitmag.com/TopPicks';
+} else {
+  lock.src = '../lockups/anr-meeting-h.svg';
+  document.getElementById('eyebrow').textContent = 'Scheduled for review';
+  const name = document.getElementById('name'); name.textContent = '\u201C' + SONG + '\u201D';
+  const song = document.getElementById('song');
+  song.innerHTML = 'by <span class="a"></span>' + (IG ? ' <span class="ig"></span>' : '');
+  song.querySelector('.a').textContent = ARTIST; if (IG) song.querySelector('.ig').textContent = '@' + IG.replace(/^@/, '');   // no parentheses (operator, 2026-09-13)
+  document.getElementById('give').innerHTML = '<b>$1,000</b> Giveaway for participating artists';   // operator's phrase (2026-09-15)
+  cta.innerHTML = 'Submit Music<span class="url"></span>';
+  cta.querySelector('.url').textContent = q.get('link') || 'MakinItmag.com/review';   // operator's casing, verbatim
+  // A long name wraps to two lines; push the record and date down to match.
+  document.fonts.ready.then(() => requestAnimationFrame(() => {
+    const name = document.getElementById('name'), fs = parseFloat(getComputedStyle(name).fontSize);
+    const lines = Math.max(1, Math.round(name.getBoundingClientRect().height / (fs * .92)));
+    if (lines > 1) {
+      const extra = (lines - 1) * fs * .92;
+      for (const id of ['song', 'give']) {
+        const el = document.getElementById(id);
+        c.style.setProperty('--' + id + '-top', (parseFloat(getComputedStyle(el).top) + extra) + 'px');
+      }
+    }
+  }));
+}
+document.title = 'A&R artist — ' + P + ' — ' + F;
+</script>
+</body>
+</html>

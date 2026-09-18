@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R Meeting results carousel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   The A&R Meeting results carousels — posted after the reveal stream.
+   Two three-slide Instagram carousels, 1080x1350 each slide:
+
+     ?set=song   slide 1 top record · slide 2 the other records played · slide 3 submit CTA
+     ?set=ar     slide 1 top A&R    · slide 2 the other top A&Rs        · slide 3 join CTA
+     ?slide=1|2|3
+     ?date=2026-09-12
+     ?data=<json>   { winner:{...}, others:[...] }  — the mockup ships sample data
+
+   Posted AFTER the reveal, so ranks and averages are public (the seal has lifted).
+   Gold marks first place and the $500 only. Public surfaces carry display name,
+   city and points — never email or phone. This is a MOCKUP; the production
+   version renders server-side (Satori, like the recap cover) from real results.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;--pad:80px}
+.logo{position:absolute;left:var(--pad);top:80px;height:36px;width:auto}
+.lock{position:absolute;left:8px;top:150px;height:240px;width:auto}      /* S=120 */
+.eyebrow{position:absolute;left:var(--pad);top:420px;font-family:'Space Mono',monospace;font-weight:700;font-size:26px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.eyebrow::before{content:'';display:inline-block;width:.32em;height:.85em;background:var(--green);transform:skewX(-13deg);margin-right:.5em;vertical-align:-.06em}
+.eyebrow .gold{color:var(--gold)}
+.field{position:absolute;left:0;right:0;bottom:0;height:300px;background:var(--green);clip-path:polygon(0 120px,100% -129px,100% 100%,0 100%)}
+.foot{position:absolute;left:var(--pad);right:var(--pad);bottom:72px;color:var(--ground);font-family:'Space Mono',monospace;font-weight:700;font-size:28px;letter-spacing:.02em;display:flex;justify-content:space-between}
+.pager{position:absolute;right:var(--pad);top:420px;font-family:'Space Mono',monospace;font-weight:700;font-size:26px;letter-spacing:.14em;color:var(--dim)}
+
+/* slide 1: "#1 Song | date" is the thing that gets attention (operator, 2026-09-13);
+   the Meeting name appears ONCE, in the lockup. No eyebrow, no footer text. */
+.slide1 .eyebrow{display:none}
+.hero{position:absolute;left:var(--pad);right:var(--pad);top:440px;display:flex;align-items:center;gap:22px;white-space:nowrap}
+.hero .mark{width:96px;height:96px;color:var(--gold);flex:none}
+.hero .mark svg{width:100%;height:100%;display:block}
+.hero.long .h{font-size:76px}
+.hero .h{font-weight:900;font-size:96px;line-height:.9;letter-spacing:-.04em;flex:none}
+.hero .h .gold{color:var(--gold)}
+.hero .bar{display:none}
+.hero .d{font-family:'Space Mono',monospace;font-weight:700;font-size:40px;color:var(--dim);letter-spacing:.02em;align-self:flex-end;padding-bottom:10px}
+.big{position:absolute;left:var(--pad);right:var(--pad);top:600px;font-weight:900;font-size:84px;line-height:.96;letter-spacing:-.04em}
+.sub{position:absolute;left:var(--pad);right:var(--pad);top:var(--sub-top,740px);font-weight:700;font-size:46px;line-height:1.15;letter-spacing:-.02em;color:var(--ink)}
+.handle{position:absolute;left:var(--pad);top:var(--handle-top,814px);font-family:'Space Mono',monospace;font-weight:700;font-size:34px;color:var(--dim)}
+.slide1 .pager{display:none}   /* the counter moves into the foot on slide 1 so it cannot sit on the date */
+/* the A&R's profile photo, when the profile has one (operator, 2026-09-13): the block device
+   holding a picture — skewed frame, upright image, right of the name */
+.photo{position:absolute;right:var(--pad);top:600px;width:300px;height:300px;overflow:hidden;transform:skewX(-13deg);border-radius:12px;background:var(--panel)}
+.photo img{position:absolute;left:-40px;top:0;width:380px;height:300px;object-fit:cover;transform:skewX(13deg)}
+.has-photo .big,.has-photo .sub{right:440px}
+.sub .dim{font-weight:500;color:var(--dim)}
+.stat{position:absolute;left:var(--pad);top:var(--stat-top,950px);font-family:'Space Mono',monospace;font-weight:700;font-size:40px;color:var(--ink)}
+.stat small{display:block;font-size:22px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
+
+/* slide 2: the list */
+.list{position:absolute;left:var(--pad);right:var(--pad);top:490px;display:grid;gap:0}
+.row{display:grid;grid-template-columns:76px 1fr auto;align-items:baseline;gap:18px;padding:16px 0;border-bottom:1px solid var(--line)}
+.row .n{font-family:'Space Mono',monospace;font-weight:700;font-size:30px;color:var(--dim)}
+.row .t{font-weight:900;font-size:36px;letter-spacing:-.03em;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t span{font-weight:500;font-size:30px;color:var(--dim);letter-spacing:0}
+.row .v{font-family:'Space Mono',monospace;font-weight:700;font-size:32px}
+.slide2 .field{height:250px;clip-path:polygon(0 90px,100% -159px,100% 100%,0 100%)}
+
+/* slide 3: the call to action */
+.cta-head{position:absolute;left:var(--pad);right:var(--pad);top:470px;font-weight:900;font-size:112px;line-height:.92;letter-spacing:-.04em;max-width:920px}
+.cta-head .gold{color:var(--gold)}
+.cta-sub{position:absolute;left:var(--pad);right:var(--pad);top:var(--sub2-top,730px);font-weight:700;font-size:56px;line-height:1.08;letter-spacing:-.03em;max-width:820px}
+.cta-give{position:absolute;left:var(--pad);right:var(--pad);top:800px;font-weight:700;font-size:44px;line-height:1.1;letter-spacing:-.02em;color:var(--ink)}
+.cta-give b{font-weight:900;color:var(--gold)}
+.cta-body{position:absolute;left:var(--pad);right:var(--pad);top:var(--body-top,880px);font-weight:500;font-size:36px;line-height:1.3;max-width:760px;color:var(--dim)}
+.slide3 .field{height:440px;clip-path:polygon(0 240px,100% -9px,100% 100%,0 100%)}
+.slide3 .foot{display:none}
+.cta{position:absolute;left:var(--pad);bottom:96px;color:var(--ground);font-weight:900;font-size:52px;line-height:1;letter-spacing:-.03em;display:none}
+.slide3 .cta{display:block}
+.cta .url{display:block;font-family:'Space Mono',monospace;font-weight:700;font-size:44px;letter-spacing:-.01em;margin-top:14px}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <img class="lock" src="../lockups/anr-meeting-h.svg" alt="">
+  <div class="eyebrow" id="eyebrow"></div>
+  <div class="pager" id="pager"></div>
+  <div id="body"></div>
+  <div class="field"></div>
+  <div class="foot" id="foot"></div>
+  <div class="cta" id="cta"></div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const SET = q.get('set') === 'ar' ? 'ar' : 'song';
+const SLIDE = Math.max(1, parseInt(q.get('slide') || '1', 10));
+const PER = 6;   // list rows per slide
+const DATE = q.get('date') || '2026-09-12';
+const MARK = ['trophy','star','none'].includes(q.get('mark')) ? q.get('mark') : 'trophy';   // slide 1 top-position mark
+const LABEL = q.get('label') || '';                                                       // slide 1 wording override
+const LINE = q.get('line') === 'a' ? 'a' : 'b';   // closing line B (operator, 2026-09-13)                                           // slide 3 closing line
+const p2 = n => String(n).padStart(2, '0');
+const d = new Date(DATE + 'T12:00:00');
+const MMDDYY = p2(d.getMonth() + 1) + '.' + p2(d.getDate()) + '.' + String(d.getFullYear()).slice(-2);
+
+// Sample data for the mockup. Production fills this from the day's results.
+const SAMPLE = {
+  song: { winner: { title: 'Song Title', artist: 'Artist Name', ig: '@instagramusername', avg: '7.4' },
+          others: [['Song Title Two','Artist Two','7.1'],['Song Title Three','Artist Three','6.8'],['Song Title Four','Artist Four','6.5'],['Song Title Five','Artist Five','6.2'],['Song Title Six','Artist Six','5.9'],['Song Title Seven','Artist Seven','5.4'],['Song Title Eight','Artist Eight','4.8']] },
+  ar:   { winner: { name: 'A&R Name', city: 'Atlanta, GA', ig: '@instagramusername', pts: '412', photo: '../assets/sample-photo.png' },
+          others: [['A&R Two','Houston, TX','388'],['A&R Three','Brooklyn, NY','371'],['A&R Four','Chicago, IL','355'],['A&R Five','Los Angeles, CA','340'],['A&R Six','Memphis, TN','328'],['A&R Seven','Detroit, MI','311'],['A&R Eight','Charlotte, NC','297']] },
+};
+let data = SAMPLE[SET];
+try { if (q.get('data')) data = JSON.parse(q.get('data')); } catch (e) {}
+// A big day gets more list slides: 1 + ceil(others/6) + the CTA (operator, 2026-09-13). ?n= fakes a day size.
+if (q.get('n')) { const n = Math.max(0, parseInt(q.get('n'), 10) - 1); data = { ...data, others: Array.from({ length: n }, (_, i) => SET === 'song' ? ['Song Title ' + (i + 2), 'Artist ' + (i + 2), ''] : ['A&R ' + (i + 2), 'City, ST', String(400 - i * 9)]) }; }
+const LIST_SLIDES = Math.max(1, Math.ceil(data.others.length / PER));
+const PAGES = (() => { const n = data.others.length, b = Math.floor(n / LIST_SLIDES), x = n % LIST_SLIDES, out = []; for (let i = 0, at = 0; i < LIST_SLIDES; i++) { const k = b + (i < x ? 1 : 0); out.push(data.others.slice(at, at + k)); at += k; } return out; })();   // 13 over 3 slides -> 5, 4, 4
+const ROWS0 = PAGES.length ? PAGES.slice(0, Math.max(0, SLIDE - 2)).reduce((n, p) => n + p.length, 0) : 0;   // rank offset of this slide
+const TOTAL = 1 + LIST_SLIDES + 1;
+const KIND = SLIDE === 1 ? 1 : (SLIDE >= TOTAL ? 3 : 2);
+const PAGE = Math.max(0, SLIDE - 2);
+
+const c = document.getElementById('c'); c.classList.add('slide' + KIND, SET);
+const eyebrow = document.getElementById('eyebrow'), body = document.getElementById('body'), foot = document.getElementById('foot'), cta = document.getElementById('cta');
+document.getElementById('pager').textContent = SLIDE + ' / ' + TOTAL;
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+// Top-position marks: stroke glyphs on the 24 grid, gold because gold is first place.
+const GLYPH = {
+  trophy: '<path d="M7 4 H17 V9 A5 5 0 0 1 7 9 Z"/><path d="M7 6 H4 V8 A3 3 0 0 0 7 10"/><path d="M17 6 H20 V8 A3 3 0 0 1 17 10"/><path d="M12 14 V17"/><path d="M9 17 H15 V20 H9 Z"/>',
+  star:   '<path d="M12 3 L14.7 9 L21 9.6 L16.2 13.9 L17.7 20.2 L12 17 L6.3 20.2 L7.8 13.9 L3 9.6 L9.3 9 Z"/>',
+};
+const markSvg = () => MARK === 'none' ? '' : `<span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter">${GLYPH[MARK]}</svg></span>`;
+if (MARK === 'none') c.classList.add('nomark');
+// "#1 Song" by default; ?label= overrides (e.g. "Top Track", "Track of the Day"). A leading #1 is gold.
+const heroLabel = noun => { const t = LABEL || ('Top ' + noun); return t.startsWith('#1') ? '<span class="gold">#1</span>' + esc(t.slice(2)) : esc(t); };
+const heroClass = noun => ((LABEL || ('Top ' + noun)).length > 12 ? 'hero long' : 'hero');
+
+if (SET === 'song') {
+  if (KIND === 1) {
+    body.innerHTML = `<div class="${heroClass('Track')}">${markSvg()}<span class="h">${heroLabel('Track')}</span><span class="bar"></span><span class="d">${MMDDYY}</span></div>
+      <div class="big">${esc(data.winner.title)}</div>
+      <div class="sub">${esc(data.winner.artist)}</div>
+      <div class="handle">${esc(data.winner.ig || '')}</div>`;
+    foot.innerHTML = '<span>1 / ' + TOTAL + '</span><span>makinitmag.com/ANR</span>';
+  } else if (KIND === 2) {
+    eyebrow.textContent = 'Also played · ' + MMDDYY;
+    // Ranked, NO scores (operator, 2026-09-13); paged six to a slide.
+    body.innerHTML = '<div class="list">' + (PAGES[PAGE] || []).map((r, i) =>
+      `<div class="row"><span class="n">${p2(ROWS0 + i + 2)}</span><span class="t">${esc(r[0])} <span>· ${esc(r[1])}</span></span></div>`).join('') + '</div>';
+    foot.innerHTML = '<span>' + SLIDE + ' / ' + TOTAL + '</span><span>makinitmag.com/ANR</span>';
+  } else {
+    // Operator's structure (2026-09-13): headline, sub, ONE closing line, the link. Two closing lines offered.
+    // Comment 2026-09-13: the call to action is the eyebrow; the deliverable is the big text.
+    eyebrow.textContent = 'Submit your music';
+    const LINES = { a: 'Unreleased, Unfinished, AI Assisted tracks also accepted.', b: 'Get feedback to help finish, release, or promote your music.' };
+    // Three lines, as the operator wrote them (2026-09-13): Free Review / by the / A&R Team
+    // The $1,000 Giveaway for participating artists (operator, 2026-09-15): one line under the big text;
+    // the big text steps down to 96px and the closing line moves to 890px to make room.
+    const GIVE = q.get('give') !== '0';   // &give=0 renders the pre-giveaway slide, for comparison only
+    body.innerHTML = '<div class="cta-head" style="line-height:1.04' + (GIVE ? ';font-size:96px' : '') + '">Free Review<br>by the A&amp;R<br>Team</div>' +
+      (GIVE ? '<div class="cta-give"><b>$1,000</b> Giveaway for participating artists</div>' : '') +
+      '<div class="cta-body" style="top:' + (GIVE ? 890 : 880) + 'px">' + LINES[LINE] + '</div>';
+    cta.innerHTML = '<span class="url" style="margin-top:0">makinitmag.com/review</span>';
+  }
+} else {
+  if (KIND === 1) {
+    body.innerHTML = `<div class="${heroClass('A&R')}">${markSvg()}<span class="h">${heroLabel('A&R')}</span><span class="bar"></span><span class="d">${MMDDYY}</span></div>
+      <div class="big">${esc(data.winner.name)}</div>
+      <div class="sub" style="font-weight:500;color:var(--dim)">${esc(data.winner.city)}</div>
+      <div class="handle">${esc(data.winner.ig || '')}</div>` +
+      (data.winner.photo && q.get('photo') !== '0' ? `<div class="photo"><img src="${data.winner.photo}" alt=""></div>` : '');
+    if (data.winner.photo && q.get('photo') !== '0') c.classList.add('has-photo');
+    foot.innerHTML = '<span>1 / ' + TOTAL + '</span><span>makinitmag.com/ANR</span>';
+  } else if (KIND === 2) {
+    eyebrow.textContent = 'Top A&Rs · ' + MMDDYY;
+    body.innerHTML = '<div class="list">' + (PAGES[PAGE] || []).map((r, i) =>
+      `<div class="row"><span class="n">${p2(ROWS0 + i + 2)}</span><span class="t">${esc(r[0])} <span>· ${esc(r[1])}</span></span><span class="v">${esc(r[2])}</span></div>`).join('') + '</div>';
+    foot.innerHTML = '<span>Points today · ' + SLIDE + ' / ' + TOTAL + '</span><span>makinitmag.com/ANR</span>';
+  } else {
+    eyebrow.textContent = 'Join the A&R Team';
+    body.innerHTML = '<div class="cta-head" style="font-size:100px;line-height:1.04">Win <span class="gold">$500</span> as the month’s top A&amp;R</div>' +
+      '<div class="cta-body" style="top:840px">Rate the day’s records and predict the average.</div>';
+    cta.innerHTML = '<span class="url" style="margin-top:0">makinitmag.com/ANR</span>';
+  }
+}
+// slide 1: a two-line title pushes the lines under it down
+document.fonts.ready.then(() => requestAnimationFrame(() => {
+  const big = document.querySelector('.big'); if (!big) return;
+  const fs = parseFloat(getComputedStyle(big).fontSize), lines = Math.max(1, Math.round(big.getBoundingClientRect().height / (fs * .96)));
+  if (lines > 1) { const extra = (lines - 1) * fs * .96; c.style.setProperty('--sub-top', (740 + extra) + 'px'); c.style.setProperty('--handle-top', (814 + extra) + 'px'); }
+}));
+document.title = 'A&R Meeting results — ' + SET + ' — ' + SLIDE;
+</script>
+</body>
+</html>

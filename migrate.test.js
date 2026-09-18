@@ -405,6 +405,17 @@ async function freshDb() {
   const applied37 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('037 idempotent (not duplicated)', applied37.filter(x => x === '037_round_support').length === 1, JSON.stringify(applied37));
 
+  // ── 038 / 039: the results carousels and the winner posts on recap_jobs ───────
+  // Nullable hosting URLs + captions, same best-effort contract as 036: NULL when the render or
+  // upload failed, the day publishes anyway.
+  const rj39 = (await db.all('PRAGMA table_info(recap_jobs)', [])).map(c => c.name);
+  for (const col of ['results_song_urls', 'results_ar_urls', 'results_song_caption', 'results_ar_caption']) ok('038 creates recap_jobs.' + col, rj39.includes(col), JSON.stringify(rj39));
+  for (const col of ['winner_track_url', 'winner_ar_url', 'winner_track_caption', 'winner_ar_caption']) ok('039 creates recap_jobs.' + col, rj39.includes(col), JSON.stringify(rj39));
+  await db.init();
+  const applied39 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('038 idempotent (not duplicated)', applied39.filter(x => x === '038_results_carousels').length === 1, JSON.stringify(applied39));
+  ok('039 idempotent (not duplicated)', applied39.filter(x => x === '039_winner_posts').length === 1, JSON.stringify(applied39));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

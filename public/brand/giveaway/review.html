@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A&amp;R $1,000 Giveaway Graphics</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{--ground:#0E0C1A;--panel:#171328;--line:#2E2750;--ink:#EAE9F2;--dim:#9793B4;--green:#4BB749;--gold:#F5C518}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+h1{margin:0;font-weight:900;font-size:clamp(30px,4vw,46px);line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+h1 .g{color:var(--gold)}
+.lede{max-width:64ch;color:var(--dim);margin:14px 0 34px}
+.lede b{color:var(--ink)}
+h2{font-weight:900;font-size:24px;letter-spacing:-.04em;text-transform:uppercase;margin:44px 0 6px;line-height:1}
+h2 small{display:block;font-weight:500;text-transform:none;letter-spacing:0;font-size:14px;color:var(--dim);margin-top:6px}
+.rule{height:2px;background:var(--green);margin:10px 0 18px}
+.row{display:grid;gap:14px;align-items:start}
+.r3{grid-template-columns:1fr 1fr .7fr}
+.r4{grid-template-columns:1fr 1fr 1fr .7fr}
+.r2{grid-template-columns:1fr 1fr}
+.card{background:var(--panel);border:1px solid var(--line);padding:14px;min-width:0}
+.card.before{opacity:.55}
+.card img{width:100%;height:auto;display:block;border:1px solid var(--line)}
+.card .l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.06em;margin-top:8px;word-break:break-all}
+.card .l b{color:var(--green)}
+.copy{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.copy > div{background:var(--panel);border:1px solid var(--line);padding:16px}
+.copy .k{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.copy .v{max-width:56ch}
+.copy .why{color:var(--dim);font-size:13.5px;border-left:3px solid var(--line);padding-left:12px;margin-top:10px}
+.copy .why b{color:var(--ink)}
+.g{color:var(--gold)}
+.open{display:grid;border:1px solid var(--line);background:var(--panel)}
+.open > div{display:grid;grid-template-columns:44px 1fr;border-bottom:1px solid var(--line)}
+.open > div:last-child{border-bottom:0}
+.open .n{font-family:'Space Mono',monospace;font-weight:700;color:var(--green);padding:14px 0 14px 16px}
+.open .t{padding:14px 16px 14px 0;max-width:72ch}
+.open .t b{display:block;font-weight:800}
+.open .t span{color:var(--dim);font-size:14px}
+code{font-family:'Space Mono',monospace;font-size:12px}
+.src{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);margin-top:44px;padding-top:16px;border-top:1px solid var(--line)}
+@media (max-width:900px){.r3,.r4,.r2,.copy{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<p class="eyebrow">Makin' It · promo assets · giveaway update · 2026-09-15 · Meeting flyer APPROVED 2026-09-18</p>
+<h1>The <span class="g">$1,000</span> Giveaway</h1>
+<p class="lede">Your phrase, verbatim, on every graphic that asks an artist to submit: the Submit brand ad, the artist's "scheduled for review" post, the closing slide of the Top Track carousel, the link preview for makinitmag.com/review, and the submit line of the starting-soon loop. Nothing viewer-facing changes (Room key art, weekly post, screens, teaser) and the Service Pack graphic stays on the other side of the wall. <b>$1,000 is gold</b> because it is prize money; the words stay in the ink. Where a qualifier fits it reads "for participating artists", which is how you put it. Dimmed images are the approved versions before the change.</p>
+
+<h2>4.1 / 4.2 The Meeting flyer<small>Your four lines. APPROVED 2026-09-18.</small></h2>
+<div class="rule"></div>
+<div class="row r3">
+  <div class="card before"><img src="before/ad-submit-feed.png" alt=""><div class="l">before · approved 2026-09-13</div></div>
+  <div class="card"><img src="ad-submit-feed.png" alt=""><div class="l">ad-submit-feed.png · 1080×1350</div></div>
+  <div class="card"><img src="ad-submit-story.png" alt=""><div class="l">ad-submit-story.png · 1080×1920</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Copy</div><div class="v">Artist, Producers, &amp; Songwriters (audience line) / Win <span class="g">$1,000</span> / Promo budget / Submit for Free · makinitmag.com/review</div><div class="why">Your lines verbatim, in your order. The audience line is the small Space Mono label with the tick; "Win $1,000 / Promo budget" is the headline, the money in gold; "Submit for Free" is the button on the field with the link under it. Nothing else on the card.</div></div>
+  <div><div class="k">Render</div><div class="v"><code>public/brand/ads/render.sh</code></div><div class="why">The earlier A/B (hook line vs giveaway headline) is withdrawn; this replaces both.</div></div>
+</div>
+
+<h2>4.9 The artist's "scheduled for review" post<small>One line under the record. The artist's followers see the prize and the ask on the same card.</small></h2>
+<div class="rule"></div>
+<div class="row r3">
+  <div class="card before"><img src="before/artist-meeting-artist-name-feed.png" alt=""><div class="l">before</div></div>
+  <div class="card"><img src="artist-meeting-artist-name-feed.png" alt=""><div class="l">artist-meeting-artist-name-feed.png</div></div>
+  <div class="card"><img src="artist-meeting-artist-name-story.png" alt=""><div class="l">story</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Copy</div><div class="v"><span class="g">$1,000</span> Giveaway for participating artists</div><div class="why">Sits between the handle and the field. A long song title that wraps pushes it down with the artist line, as before.</div></div>
+  <div><div class="k">Render</div><div class="v"><code>public/brand/artist/render.sh meeting "Artist" "Song" handle</code></div></div>
+</div>
+
+<h2>4.14 Top Track carousel, closing slide<small>The giveaway between the big text and the closing line. The big text steps down one size to make room.</small></h2>
+<div class="rule"></div>
+<div class="row r2" style="grid-template-columns:1fr 1fr 1fr">
+  <div class="card before"><img src="before/results-song-cta.png" alt=""><div class="l">before · approved 2026-09-13</div></div>
+  <div class="card"><img src="results-song-2026-09-12-4.png" alt=""><div class="l">results-song · closing slide</div></div>
+  <div class="card" style="background:transparent;border:0"></div>
+</div>
+<div class="copy">
+  <div><div class="k">Copy</div><div class="v">Submit your music (eyebrow) / Free Review by the A&amp;R Team / <span class="g">$1,000</span> Giveaway for participating artists / Get feedback to help finish, release, or promote your music. / makinitmag.com/review</div><div class="why">The Top A&amp;R carousel's closing slide is unchanged: that one recruits A&amp;Rs, and the giveaway is for artists.</div></div>
+  <div><div class="k">Production</div><div class="v">This is the mockup. On approval the same line goes into the Satori renderer and the 3PM publish (share-cards.js, RESULTS_COPY in server.js), with a test, and the carousel caption gains the line.</div></div>
+</div>
+
+<h2>0.7 Link preview for makinitmag.com/review<small>What shows when the submit link is shared in a chat or feed. Two lines now.</small></h2>
+<div class="rule"></div>
+<div class="row r2">
+  <div class="card before"><img src="before/og-meeting.png" alt=""><div class="l">before</div></div>
+  <div class="card"><img src="og-meeting.png" alt=""><div class="l">og-meeting.png · 1200×630 · upload to the Drupal review page</div></div>
+</div>
+
+<h2>2.16 Starting-soon loop<small>A fifth line in the rotation, so the loop becomes 25 seconds. Still seamless (first and last frames checked identical).</small></h2>
+<div class="rule"></div>
+<div class="row r2" style="grid-template-columns:2fr .75fr">
+  <div class="card"><img src="starting-wide-line5.png" alt=""><div class="l">starting-wide · the fifth line, at 22.5s</div></div>
+  <div class="card"><img src="starting-story-line5.png" alt=""><div class="l">story</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Lines</div><div class="v">Live music review · Rate the records, Predict the average · <span class="g">$500</span> to the month's Top A&amp;R · Submit your music, makinitmag.com/review · <span class="g">$1,000</span> Giveaway for participating artists</div></div>
+  <div><div class="k">Render</div><div class="v">The videos are not re-rendered yet (about 12 minutes for both formats). On approval: <code>public/brand/motion/frames.sh starting</code>.</div></div>
+</div>
+
+<h2>Not changed, on purpose</h2>
+<div class="rule"></div>
+<div class="open">
+  <div><div class="n">—</div><div class="t"><b>Service Pack graphics.</b><span>The pack is placement and the $150 side bet; the giveaway belongs to the review. The wall holds.</span></div></div>
+  <div><div class="n">—</div><div class="t"><b>Room key art, weekly post, stream screens, show open and close, the Join and Watch ads, the Top A&amp;R carousel.</b><span>These speak to viewers and A&amp;Rs, not to submitting artists.</span></div></div>
+  <div><div class="n">—</div><div class="t"><b>The teaser.</b><span>A Room promo for Reels. It could take a "$1,000 Giveaway" scene if you want the artist audience reached there too. Say so and it gets one.</span></div></div>
+</div>
+
+<h2>Open items</h2>
+<div class="rule"></div>
+<div class="open">
+  <div><div class="n">1</div><div class="t"><b>The Meeting flyer: approved 2026-09-18.</b><span>Artist, Producers, &amp; Songwriters / Win $1,000 / Promo budget / Submit for Free.</span></div></div>
+  <div><div class="n">4</div><div class="t"><b>Wording elsewhere.</b><span>The other artist graphics still say "$1,000 Giveaway for participating artists". If they should say "Win $1,000 Promo budget" instead, say so and it goes across.</span></div></div>
+  <div><div class="n">2</div><div class="t"><b>Approve the rest</b><span>(artist post, carousel closing slide, link preview, loop line), or say what should read differently.</span></div></div>
+  <div><div class="n">3</div><div class="t"><b>Any rule line.</b><span>If the giveaway has a line you want on the graphics (who is eligible, when it is drawn), send it and it goes on verbatim. Nothing is invented here beyond your phrase.</span></div></div>
+</div>
+
+<p class="src">Templates: public/brand/ads/ad.html · artist/artist.html · daily/carousel.html · og/og.html · motion/motion.html · this sheet: public/brand/giveaway/review.html</p>
+</div></body></html>

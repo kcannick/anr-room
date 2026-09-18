@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R winner post</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   The winner posts (4.15) — one portrait graphic per person, posted as an Instagram
+   COLLAB post so it lands on their feed too. Four posts from one template:
+
+     ?kind=track&period=day    Track of the Day     name · song · @ig · rank · score · drop date
+     ?kind=ar&period=day       A&R of the Day       name · grade · photo · from · title · points · bullseyes
+     ?kind=track&period=week   Track of the Week    + placed in the next $1,000 Tournament
+     ?kind=ar&period=week      A&R of the Week      + placed in the A&R Wars tournament for $500 Cash
+
+     &name= &song= &ig= &rank= &of= &score= &date=YYYY-MM-DD
+     &city= &title= &grade= &pts= &bulls= &photo=
+
+   1080x1350. Brand: Archivo 900 + Space Mono for every number, the 13° block / tick /
+   cut, gold on the trophy, first place and money only. The lockup is the Meeting's.
+   The letter grade sits in the block device — the same skewed block that holds A&R.
+   Posted AFTER the 3PM publish: rank and score are public by then. Public surfaces
+   carry display name, city and points — never email or phone.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;--pad:80px}
+.logo{position:absolute;left:var(--pad);top:80px;height:36px;width:auto}
+.lock{position:absolute;left:8px;top:150px;height:240px;width:auto}      /* S=120 */
+
+/* the title, stacked: TOP TRACK / of the Day · the date (operator, 2026-09-18). "Too busy" the same day:
+   no trophy, no labelled number cells, the handle on the artist's line, one mono line of numbers. */
+.hero{position:absolute;left:var(--pad);right:var(--pad);top:var(--hero-top,430px);white-space:nowrap}
+.hero .mark{display:none}
+.hero .h1{font-weight:900;font-size:104px;line-height:.88;letter-spacing:-.04em;text-transform:uppercase}
+.hero .h1 .gold{color:var(--gold)}
+.hero .h2{font-weight:700;font-size:46px;line-height:1;letter-spacing:-.02em;margin-top:16px;color:var(--dim)}
+.hero .h2 .d{font-family:'Space Mono',monospace;font-weight:700;font-size:32px;color:var(--dim);margin-left:10px}
+/* the week strap: what the honour earns */
+.strap{position:absolute;left:var(--pad);right:var(--pad);top:var(--strap-top,616px);display:none;font-weight:700;font-size:35px;white-space:nowrap;line-height:1.1;letter-spacing:-.02em}
+.strap b{font-weight:900;color:var(--gold)}
+.strap::before{content:'';display:inline-block;width:.3em;height:.85em;background:var(--green);transform:skewX(-13deg);margin-right:.5em;vertical-align:-.06em}
+.week .strap{display:block}
+
+/* the person */
+.big{position:absolute;left:var(--pad);right:var(--pad);top:var(--big-top,640px);font-weight:900;font-size:84px;line-height:.96;letter-spacing:-.04em}
+.sub{position:absolute;left:var(--pad);right:var(--pad);top:var(--sub-top,0);font-weight:700;font-size:42px;line-height:1.15;letter-spacing:-.02em}
+.sub .dim{font-weight:500;color:var(--dim)}
+.sub .ig{font-family:'Space Mono',monospace;font-weight:700;font-size:32px;color:var(--dim)}
+.handle{display:none}
+.photo{position:absolute;right:var(--pad);top:var(--big-top,640px);width:300px;height:300px;overflow:hidden;transform:skewX(-13deg);border-radius:12px;background:var(--panel);display:none}
+.photo img{position:absolute;left:-40px;top:0;width:380px;height:300px;object-fit:cover;transform:skewX(13deg)}
+.has-photo .photo{display:block}
+.has-photo .big,.has-photo .sub{right:440px}
+
+/* the numbers: ONE line in Space Mono, words instead of labels */
+.stats{position:absolute;left:var(--pad);top:var(--stats-top,0);display:flex;gap:22px;align-items:center;white-space:nowrap;font-family:'Space Mono',monospace;font-weight:700;font-size:36px;color:var(--dim)}
+.stats b{font-weight:700;color:var(--ink)}
+/* the grade in the block device */
+.stats .grade{display:flex;align-items:center;justify-content:center;width:84px;height:68px;background:var(--green);border-radius:4px;transform:skewX(-13deg);margin-right:8px}
+.stats .grade span{transform:skewX(13deg);font-family:'Archivo',sans-serif;font-weight:900;font-size:50px;letter-spacing:-.05em;color:var(--ground);line-height:1}
+
+/* the field with the call to action */
+.field{position:absolute;left:0;right:0;bottom:0;height:300px;background:var(--green);clip-path:polygon(0 110px,100% -139px,100% 100%,0 100%)}  /* 1080*tan13 = 249 */
+.cta{position:absolute;left:var(--pad);bottom:64px;color:var(--ground);font-weight:900;font-size:42px;line-height:1;letter-spacing:-.03em}
+.cta .url{display:block;font-family:'Space Mono',monospace;font-weight:700;font-size:34px;letter-spacing:-.01em;margin-top:12px}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <img class="lock" src="../lockups/anr-meeting-h.svg" alt="">
+  <div class="hero" id="heroRow"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 4 H17 V9 A5 5 0 0 1 7 9 Z"/><path d="M7 6 H4 V8 A3 3 0 0 0 7 10"/><path d="M17 6 H20 V8 A3 3 0 0 1 17 10"/><path d="M12 14 V17"/><path d="M9 17 H15 V20 H9 Z"/></svg></span><div><div class="h1" id="hero"></div><div class="h2"><span id="heroSub"></span><span class="d" id="heroDate"></span></div></div></div>
+  <div class="strap" id="strap"></div>
+  <div class="big" id="big"></div>
+  <div class="sub" id="sub"></div>
+  <div class="handle" id="handle"></div>
+  <div class="photo" id="photo"><img alt=""></div>
+  <div class="stats" id="stats"></div>
+  <div class="field"></div>
+  <div class="cta" id="cta"></div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const KIND = q.get('kind') === 'ar' ? 'ar' : 'track';
+const PERIOD = q.get('period') === 'week' ? 'week' : 'day';
+const g = (k, d) => (q.get(k) == null ? d : q.get(k));
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const p2 = n => String(n).padStart(2, '0');
+const fmt = d => p2(d.getMonth() + 1) + '.' + p2(d.getDate()) + '.' + String(d.getFullYear()).slice(-2);
+const mmddyy = iso => { const d = new Date(iso + 'T12:00:00'); return isNaN(d) ? esc(iso) : fmt(d); };
+// A week card carries the week it TRACKS (first day → last day), never the day it is announced:
+// the post's own timestamp says when it went up, and the day cards use the drop day the same way.
+const weekRange = iso => { const a = new Date(iso + 'T12:00:00'); if (isNaN(a)) return esc(iso); const b = new Date(a); b.setDate(a.getDate() + 6); return fmt(a) + ' – ' + fmt(b); };
+
+const c = document.getElementById('c');
+c.className = KIND + ' ' + PERIOD;
+const set = (k, v) => c.style.setProperty('--' + k, v + 'px');
+const $ = id => document.getElementById(id);
+
+// Sample values stand in for anything not passed; production fills every one from the day's results.
+const NAME = g('name', KIND === 'track' ? 'Artist Name' : 'A&R Name');
+$('hero').textContent = KIND === 'track' ? 'Top Track' : 'Top A&R';
+$('heroSub').textContent = 'of the ' + (PERIOD === 'week' ? 'Week' : 'Day');
+$('heroDate').textContent = '· ' + (PERIOD === 'week' ? weekRange(g('date', '2026-09-07')) : mmddyy(g('date', '2026-09-12')));
+$('strap').innerHTML = KIND === 'track'
+  ? 'Placed in the next <b>$1,000</b> Tournament'                 // operator, 2026-09-18
+  : 'Placed in the A&amp;R Wars tournament for <b>$500</b> Cash'; // operator, 2026-09-18
+
+// Vertical rhythm: the week strap pushes everything under it down by one line.
+const strap = PERIOD === 'week' ? 64 : 0;
+set('big-top', 640 + strap);
+
+if (KIND === 'track') {
+  $('big').textContent = '“' + g('song', 'Song Title') + '”';
+  const ig = g('ig', 'instagramusername');
+  $('sub').innerHTML = 'by <span id="artist"></span>' + (ig ? ' <span class="ig" id="ig"></span>' : '');
+  $('artist').textContent = NAME; if (ig) $('ig').textContent = '@' + ig.replace(/^@/, '');
+  // TOP TRACK already says #1, so rank is not repeated. Score is optional; the week card names the drop day.
+  const bits = [];
+  if (g('score', '') !== '') bits.push('Score <b>' + esc(g('score', '')) + '</b>');
+  if (PERIOD === 'week') bits.push('Dropped <b>' + mmddyy(g('drop', '2026-09-10')) + '</b>');
+  $('stats').innerHTML = bits.join('<span> · </span>');
+  $('cta').innerHTML = 'Submit music to the A&amp;R Team<span class="url">makinitmag.com/review</span>';
+} else {
+  $('big').textContent = NAME;
+  const title = g('title', 'Producer'), city = g('city', 'Atlanta, GA');
+  $('sub').innerHTML = '<span id="t"></span> <span class="dim" id="ci"></span>';
+  $('t').textContent = title; $('ci').textContent = (title && city ? '· ' : '') + city;
+  const photo = g('photo', '../assets/sample-photo.png');
+  if (photo) { $('photo').querySelector('img').src = photo; c.classList.add('has-photo'); }
+  // The grade in the block, then the points and bullseyes as words. Narrow enough to sit beside the photo.
+  $('stats').innerHTML = `<span class="grade"><span>${esc(g('grade', 'A'))}</span></span>` +
+    `<span><b>${esc(g('pts', '412'))}</b> points</span><span> · </span><span><b>${esc(g('bulls', '3'))}</b> bullseyes</span>`;
+  $('cta').innerHTML = 'Join the A&amp;R Team<span class="url">makinitmag.com/ANR</span>';
+}
+
+// Place the lines under the big text once fonts are in, so a two-line title pushes everything down.
+// The numbers row must clear the 13° cut at its right edge (cut y = 1160 − x·tan13°). A long title
+// wraps to two lines and would push the row into the field, so the title steps down a size until it fits.
+const cutAt = x => 1160 - x * Math.tan(13 * Math.PI / 180);
+document.fonts.ready.then(() => requestAnimationFrame(() => {
+  const big = $('big'), stats = $('stats');
+  for (const fs of [84, 76, 68, 62, 56]) {
+    big.style.fontSize = fs + 'px';
+    const lines = Math.max(1, Math.round(big.getBoundingClientRect().height / (fs * .96)));
+    const bigBottom = 640 + strap + lines * fs * .96;
+    set('sub-top', bigBottom + 26);
+    const statsTop = bigBottom + 26 + 56 + 44;
+    set('stats-top', statsTop);
+    const statsBottom = statsTop + stats.getBoundingClientRect().height;
+    const statsRight = 80 + stats.getBoundingClientRect().width;
+    if (statsBottom <= cutAt(statsRight) - 16) break;
+  }
+}));
+document.title = 'A&R winner — ' + KIND + ' of the ' + PERIOD;
+</script>
+</body>
+</html>

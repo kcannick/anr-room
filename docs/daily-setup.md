@@ -26,12 +26,12 @@ on Hobby, this will not deploy at all.
 
 Why five minutes and not hourly: it caps how late the noon open can be, and it is what sets
 email throughput — the sends are governed by how *often* the job runs, not by how long each run
-lasts (each run is capped at 30 seconds). Hourly would also mean the 9:00 AM close might not
-happen until 9:59.
+lasts (each run is capped at 30 seconds). Hourly would also mean the noon close might not
+happen until 12:59.
 
 It is a separate cron from `/api/cron/artist-sms` **on purpose**. That handler returns early
 whenever it is outside the 10 AM–10:30 PM ET text window, which would silently skip the whole
-drop lifecycle for eleven and a half hours a day — including the 9:00 AM close.
+drop lifecycle for eleven and a half hours a day — including the noon close.
 
 ---
 
@@ -72,8 +72,10 @@ one. Without it, `/api/cron/daily` returns 503 and **the day never opens** — A
 
 ## 4. `BLOB_READ_WRITE_TOKEN`
 
-Hosts the Top 8 graphics that ride the daily results email, and the A&R Meeting Recap cover
-and thumbnail for the noon stream (those also render live in the console without it).
+Hosts the Top 8 graphics that ride the daily results email, the A&R Meeting Recap cover
+and thumbnail for the reveal stream, the results carousels, and the two winner posts (Top
+Track / Top A&R of the Day, for collab posts with the winners). All of those also render live
+in the console without it.
 
 If it is missing, the day **still publishes and results still reveal** — that is deliberate, a
 stalled reveal is worse than a graphic-less email — but the digest goes out without its
@@ -203,6 +205,8 @@ Almost never. The console opens on **A&R Daily** and the clock does the work.
 | Reject a comment before it reaches an artist | Within one hour of the noon publish — after that there is no unsend |
 | A cron missed | **Run the lifecycle now** / **Publish the day** |
 | Copy the caption for the Instagram carousel | **Copy caption** on the graphics card |
+| Post the day's winners as collab posts | **Winner posts** on the graphics card: download each card, copy its caption, post it as a collab with the winner |
+| Post the week's winners (Monday) | **Winners of the week** on the graphics card: pick the week (it defaults to the last completed one), download, copy the caption |
 
 **The one thing worth checking daily:** the flag count next to each record. A flag is *one
 A&R, not one click*, so three or four flags means three or four different people are telling

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R motion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   A&R motion — stage 6 of the promo build order. ONE authored time axis, as in the
+   promo reel (mim repo, docs/abyssale/promo.html): every element is a pure function of T (seconds), so a frame at
+   any T is the same frame every time and a render is deterministic.
+
+     ?piece=bumper   0.10  3s logo sting, TRANSPARENT ground        wide · story
+     ?piece=open     2.14  6s show open, ends on the key art        wide · story
+     ?piece=close    2.14  6s show close: thanks, next Wednesday    wide · story
+     ?piece=teaser   2.13  15s typographic teaser                   story
+     ?piece=starting 2.16  25s SEAMLESS LOOP for OBS before the show  wide · story
+                     leaves an empty zone for a countdown text source; &guide=1 draws it
+                     &label=Starting%20soon for a loop with no countdown on it
+     ?f=wide|story   1920x1080 · 1080x1920
+     ?t=<seconds>    the frame to draw (frames.sh steps this at 30fps)
+     ?play=1         run the clock in the browser, for a preview
+
+   Three curves and nothing else: in (ease-out cubic), out (ease-in cubic), hold.
+   The 13° device carries the motion: the block WIPES in along its own edge, the
+   field RISES along its cut, the word REVEALS behind a moving edge. Nothing bounces,
+   spins or glows. Copy is the approved ad copy.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --gold:#F5C518; }
+*{box-sizing:border-box}
+html,body{margin:0;background:transparent}
+#c{position:relative;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;opacity:var(--fade,1)}
+#c.transparent{background:transparent}
+#c.wide{width:1920px;height:1080px;--pad:112px}
+#c.story{width:1080px;height:1920px;--pad:72px}
+
+/* the block, wiping in along its 13° edge */
+.blk{position:absolute;--s:168px;width:calc(var(--s) * 1.23);height:var(--s);overflow:hidden}
+.blk .m{position:absolute;left:calc(var(--s) * .115);top:0;width:var(--s);height:var(--s);background:var(--green);border-radius:calc(var(--s) * .04);
+  transform:skewX(-13deg);clip-path:inset(0 calc((1 - var(--blk,1)) * 100%) 0 0)}
+.blk .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:calc(var(--s) * .39);letter-spacing:-.05em;color:var(--ground);
+  opacity:var(--ar,1);transform:translateY(calc((1 - var(--ar,1)) * .25em))}
+.logo{position:absolute;height:40px;width:auto;opacity:var(--logo,1)}
+/* the descriptor, revealed behind a moving edge */
+.word{position:absolute;font-weight:900;text-transform:uppercase;letter-spacing:-.04em;line-height:.86;white-space:nowrap;
+  clip-path:inset(0 calc((1 - var(--word,1)) * 100%) 0 0)}
+.head{position:absolute;left:var(--pad);font-weight:900;line-height:.9;letter-spacing:-.04em}
+.head span{display:block;opacity:var(--o,1);transform:translateY(calc((1 - var(--o,1)) * .35em))}
+.head.mono{font-family:'Space Mono',monospace;font-weight:700;letter-spacing:-.02em}
+.head .gold{color:var(--gold)}
+.sub{position:absolute;left:var(--pad);font-weight:500;line-height:1.25;opacity:var(--sub,1);transform:translateY(calc((1 - var(--sub,1)) * 12px))}
+.sub .mono{font-family:'Space Mono',monospace;font-weight:700}
+.url{position:absolute;left:var(--pad);font-family:'Space Mono',monospace;font-weight:700;color:var(--ink);opacity:var(--url,1)}
+.field{position:absolute;background:var(--green);transform:translateY(calc((1 - var(--field,1)) * 110%))}
+.mark{position:absolute;width:auto;opacity:var(--mark,1)}
+.cta{position:absolute;left:var(--pad);color:var(--ground);font-weight:900;line-height:1;letter-spacing:-.03em;opacity:var(--cta,1)}
+.cta .u{display:block;font-family:'Space Mono',monospace;font-weight:700;letter-spacing:-.01em;margin-top:14px}
+
+/* ---- starting soon: the countdown zone is the headline slot, left EMPTY for OBS ---- */
+.label{position:absolute;left:var(--pad);display:none;align-items:center;font-family:'Space Mono',monospace;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.label::before{content:'';display:inline-block;width:.42em;height:.95em;background:var(--green);transform:skewX(-13deg);margin-right:.55em}  /* the 13° tick */
+.zone{position:absolute;left:var(--pad);display:none;align-items:center}
+.guide .zone{display:flex;outline:3px dashed rgba(234,233,242,.5);outline-offset:-3px}
+.zone .n{font-family:'Space Mono',monospace;font-weight:700;color:var(--ink);letter-spacing:-.04em;line-height:1}
+.zone .g{position:absolute;left:0;top:100%;margin-top:10px;font-family:'Space Mono',monospace;font-size:22px;letter-spacing:.04em;color:var(--dim)}
+.pager{position:absolute;left:var(--pad);display:none;gap:14px}
+.pager i{display:block;width:34px;height:10px;background:#2E2750;transform:skewX(-13deg)}
+.pager i.on{background:var(--green)}
+.starting .label,.starting .pager{display:flex}
+.starting .head{display:none}
+.sub .gold{color:var(--gold)}
+
+/* ---- wide ---- */
+.wide .logo{left:var(--pad);top:96px}
+.wide .blk{left:calc(var(--pad) - 16px);top:176px;--s:168px}
+.wide .word{left:calc(var(--pad) + 224px);top:176px;font-size:158px;line-height:168px}
+.wide .head{top:540px;font-size:140px}
+.wide .sub{top:830px;font-size:44px}
+.wide .url{top:966px;font-size:36px}
+.wide .field{top:0;right:0;bottom:0;width:600px;clip-path:polygon(249px 0,100% 0,100% 100%,0 100%)}
+.wide .mark{right:96px;top:50%;transform:translateY(-50%);height:420px}
+.wide .cta{display:none}
+.wide .label{top:478px;font-size:28px}
+.wide .zone{top:540px;width:1100px;height:240px}
+.wide .zone .n{font-size:200px}
+.wide .pager{top:912px}
+/* ---- story ---- */
+.story .logo{left:var(--pad);top:250px}
+.story .blk{left:calc(var(--pad) - 16px);top:330px;--s:140px}
+.story .word{left:calc(var(--pad) + 186px);top:330px;font-size:131px;line-height:140px}
+.story .head{top:700px;font-size:168px;width:936px}
+.story .sub{top:1130px;font-size:46px}
+.story .url{top:1230px;font-size:36px}
+.story .field{left:0;right:0;bottom:0;height:720px;clip-path:polygon(0 300px,100% 51px,100% 100%,0 100%)}
+.story .mark{display:none}
+.story .cta{bottom:300px;font-size:56px}
+.story .cta .u{font-size:44px}
+.story .label{top:640px;font-size:26px}
+.story .zone{top:700px;width:936px;height:260px}
+.story .zone .n{font-size:186px}
+.story.starting .sub{top:1010px}
+.story .pager{top:1170px}
+/* ---- bumper: the mark and the endorser, centred ---- */
+.bumper .logo,.bumper .blk{top:auto;left:auto}
+.bumper .g{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:56px}
+.bumper .g .blk{position:relative;--s:260px}
+.bumper .g .logo{position:relative;height:64px}
+.bumper .word,.bumper .head,.bumper .sub,.bumper .url,.bumper .field,.bumper .mark,.bumper .cta{display:none}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="">
+  <div class="blk"><div class="m"></div><div class="t">A&amp;R</div></div>
+  <div class="word">Room</div>
+  <div class="head" id="head"></div>
+  <div class="label" id="label"></div>
+  <div class="zone" id="zone"><span class="n">00:14:59</span><span class="g" id="zg"></span></div>
+  <div class="pager"><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="sub" id="sub"></div>
+  <div class="url" id="url"></div>
+  <div class="field"></div>
+  <img class="mark" src="../mark/anr-mark-ink.svg" alt="">
+  <div class="cta" id="cta"></div>
+  <div class="g" id="g"></div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const PIECE = ['bumper','open','close','teaser','starting'].includes(q.get('piece')) ? q.get('piece') : 'open';
+const F = q.get('f') === 'story' || PIECE === 'teaser' ? 'story' : 'wide';
+const c = document.getElementById('c');
+c.className = F + ' ' + PIECE + (PIECE === 'bumper' ? ' transparent' : '') + (q.get('guide') ? ' guide' : '');
+if (PIECE === 'bumper') { const g = document.getElementById('g'); g.appendChild(document.querySelector('.blk')); g.appendChild(document.querySelector('.logo')); }
+
+// The three curves.
+const clamp = v => Math.max(0, Math.min(1, v));
+const IN  = (t, a, b) => { const x = clamp((t - a) / (b - a)); return 1 - Math.pow(1 - x, 3); };   // ease-out cubic
+const OUT = (t, a, b) => { const x = clamp((t - a) / (b - a)); return x * x * x; };                // ease-in cubic
+const set = (k, v) => c.style.setProperty('--' + k, String(v));
+const head = document.getElementById('head'), sub = document.getElementById('sub'), url = document.getElementById('url'), cta = document.getElementById('cta');
+const lines = (arr, o) => { head.innerHTML = arr.map((l, i) => `<span style="--o:${o[i] == null ? 1 : o[i]}">${l}</span>`).join(''); };
+
+const DUR = { bumper: 3, open: 6, close: 6, teaser: 15, starting: 25 };
+function frame(t) {
+  // Defaults: everything hidden until its cue.
+  set('blk', 0); set('ar', 0); set('logo', 0); set('word', 0); set('sub', 0); set('url', 0); set('field', 0); set('mark', 0); set('cta', 0); set('fade', 1);
+  if (PIECE === 'bumper') {
+    set('blk', IN(t, 0, 0.55)); set('ar', IN(t, 0.35, 0.8)); set('logo', IN(t, 0.7, 1.15));
+    set('fade', 1 - OUT(t, 2.4, 3.0));
+    return;
+  }
+  if (PIECE === 'starting') {
+    // 2.16 Starting soon — a SEAMLESS loop (5s a line): frame(0) and frame(DUR) are the same frame.
+    // The card is static (key art, the countdown zone empty); the approved lines take
+    // turns underneath, 5s each, and the 13° pager marks which one is up. The line
+    // fades out to nothing before the next fades in, so the seam is invisible.
+    set('logo', 1); set('blk', 1); set('ar', 1); set('word', 1); set('field', 1); set('mark', 1); set('url', 1); set('cta', 1);
+    document.getElementById('label').textContent = q.get('label') || 'Starting in';
+    url.textContent = 'makinitmag.com/live';
+    cta.innerHTML = 'Starting soon<span class="u">makinitmag.com/live</span>';
+    const L = 5, LINES = [
+      'Live music review',
+      'Rate the records · Predict the average',
+      '<span class="gold">$500</span> to the month’s Top A&R',
+      'Submit your music · <span class="mono">makinitmag.com/review</span>',
+      '<span class="gold">$1,000</span> Giveaway for participating artists',   // operator, 2026-09-15
+    ];
+    const D = L * LINES.length, tt = ((t % D) + D) % D, i = Math.floor(tt / L) % LINES.length, lt = tt - i * L;
+    sub.innerHTML = LINES[i]; set('sub', IN(lt, 0, 0.5) * (1 - OUT(lt, L - 0.4, L)));
+    document.querySelectorAll('.pager i').forEach((el, k) => el.classList.toggle('on', k === i));
+    // &guide=1: draw the countdown zone with sample numerals and its OBS placement, for review only.
+    const z = document.getElementById('zone');
+    document.getElementById('zg').textContent = 'countdown zone · x ' + z.offsetLeft + ' y ' + z.offsetTop + ' · ' + z.offsetWidth + '×' + z.offsetHeight + ' · Space Mono Bold ' + getComputedStyle(z.querySelector('.n')).fontSize;
+    return;
+  }
+  if (PIECE === 'open') {
+    set('logo', IN(t, 0, 0.4)); set('blk', IN(t, 0.1, 0.65)); set('ar', IN(t, 0.45, 0.9)); set('word', IN(t, 0.7, 1.4));
+    lines(['Wednesday', '7PM ET'], [IN(t, 1.4, 1.95), IN(t, 1.7, 2.25)]);
+    sub.textContent = 'Live music review'; set('sub', IN(t, 2.3, 2.8));
+    url.textContent = 'makinitmag.com/live'; set('url', IN(t, 2.6, 3.1));
+    set('field', IN(t, 3.0, 3.9)); set('mark', IN(t, 3.6, 4.1));
+    cta.innerHTML = 'Watch live<span class="u">makinitmag.com/live</span>'; set('cta', IN(t, 3.8, 4.3));
+    set('fade', 1 - OUT(t, 5.4, 6.0));
+    return;
+  }
+  if (PIECE === 'close') {
+    set('logo', 1); set('blk', 1); set('ar', 1); set('word', 1);
+    lines(['Thanks for', 'watching'], [IN(t, 0.1, 0.65), IN(t, 0.35, 0.9)]);
+    sub.innerHTML = 'Next Wednesday · <span class="mono">7PM ET</span>'; set('sub', IN(t, 1.0, 1.5));
+    url.textContent = 'makinitmag.com/live'; set('url', IN(t, 1.3, 1.8));
+    set('field', IN(t, 1.6, 2.5)); set('mark', IN(t, 2.2, 2.7));
+    cta.innerHTML = 'Next Wednesday<span class="u">makinitmag.com/live</span>'; set('cta', IN(t, 2.4, 2.9));
+    set('fade', 1 - OUT(t, 5.4, 6.0));
+    return;
+  }
+  // teaser — five scenes on the story canvas, the lockup persistent, the field arriving last
+  set('logo', IN(t, 0, 0.4)); set('blk', IN(t, 0.1, 0.65)); set('ar', IN(t, 0.45, 0.9)); set('word', IN(t, 0.7, 1.4));
+  const SCENES = [
+    { at: 1.4,  end: 4.2,  lines: ['Wednesday', '7PM ET'] },
+    { at: 4.2,  end: 7.0,  lines: ['Live music', 'review'] },
+    { at: 7.0,  end: 9.9,  lines: ['Rate the records', 'Predict the average'], small: true },
+    { at: 9.9,  end: 12.6, lines: ['<span class="gold">$500</span> to the', 'month’s Top A&R'], small: true },
+    { at: 12.6, end: 15,   lines: ['Watch live'], last: true },
+  ];
+  const sc = SCENES.find(s => t >= s.at && t < s.end) || (t >= 15 ? SCENES[4] : null);
+  if (sc) {
+    const inA = IN(t, sc.at, sc.at + 0.4), inB = IN(t, sc.at + 0.15, sc.at + 0.55);
+    const out = sc.last ? 0 : OUT(t, sc.end - 0.3, sc.end);
+    head.style.fontSize = sc.small ? '128px' : '';
+    lines(sc.lines, [inA * (1 - out), inB * (1 - out)]);
+    if (sc.last) {
+      set('field', IN(t, 12.6, 13.5)); cta.innerHTML = 'Watch live<span class="u">makinitmag.com/live</span>'; set('cta', IN(t, 13.3, 13.8));
+      sub.textContent = 'Live music review'; set('sub', IN(t, 13.0, 13.5));
+    }
+  } else { head.innerHTML = ''; }
+}
+const T = parseFloat(q.get('t') || '0') || 0;
+frame(T);
+if (q.get('play')) {
+  const t0 = performance.now();
+  (function tick() { const t = ((performance.now() - t0) / 1000) % DUR[PIECE]; frame(t); requestAnimationFrame(tick); })();
+}
+document.title = 'A&R motion — ' + PIECE + ' — ' + F + ' — ' + T.toFixed(2) + 's';
+</script>
+</body>
+</html>

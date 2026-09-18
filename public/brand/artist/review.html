@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A&amp;R Artist Share Graphics</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{--ground:#0E0C1A;--panel:#171328;--line:#2E2750;--ink:#EAE9F2;--dim:#9793B4;--green:#4BB749;--purple:#6D5FE0;--paper:#F3F2F7}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+h1{margin:0;font-weight:900;font-size:clamp(30px,4vw,46px);line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.lede{max-width:64ch;color:var(--dim);margin:14px 0 34px}
+.lede b{color:var(--ink)}
+h2{font-weight:900;font-size:24px;letter-spacing:-.04em;text-transform:uppercase;margin:44px 0 6px;line-height:1}
+h2 small{display:block;font-weight:500;text-transform:none;letter-spacing:0;font-size:14px;color:var(--dim);margin-top:6px}
+.rule{height:2px;background:var(--green);margin:10px 0 18px}
+.rule.purple{background:var(--purple)}
+.row{display:grid;gap:14px;align-items:start}
+.r3{grid-template-columns:1fr .7fr 1fr}
+.r2{grid-template-columns:1fr .7fr 1fr}
+.card{background:var(--panel);border:1px solid var(--line);padding:14px;min-width:0}
+.card.paper{background:var(--paper)}
+.card img{width:100%;height:auto;display:block;border:1px solid var(--line)}
+.card.badge img{border:0}
+.card .l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.06em;margin-top:8px;word-break:break-all}
+.copy{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.copy > div{background:var(--panel);border:1px solid var(--line);padding:16px}
+.copy .k{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.copy .v{max-width:52ch}
+.copy .v b{font-weight:900;font-size:20px;letter-spacing:-.03em;display:block;margin-bottom:6px}
+.copy .why{color:var(--dim);font-size:13.5px;border-left:3px solid var(--line);padding-left:12px;margin-top:10px}
+.copy .why b{color:var(--ink);display:inline;font-size:inherit;letter-spacing:0}
+.open{display:grid;border:1px solid var(--line);background:var(--panel)}
+.open > div{display:grid;grid-template-columns:44px 1fr;border-bottom:1px solid var(--line)}
+.open > div:last-child{border-bottom:0}
+.open .n{font-family:'Space Mono',monospace;font-weight:700;color:var(--green);padding:14px 0 14px 16px}
+.open .t{padding:14px 16px 14px 0;max-width:72ch}
+.open .t b{display:block;font-weight:800}
+.open .t span{color:var(--dim);font-size:14px}
+code{font-family:'Space Mono',monospace;font-size:12px}
+.src{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);margin-top:44px;padding-top:16px;border-top:1px solid var(--line)}
+@media (max-width:900px){.r3,.r2,.copy{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<p class="eyebrow">Makin' It · promo build order · stage 5 · APPROVED 2026-09-13</p>
+<h1>Artist share graphics</h1>
+<p class="lede">The assets other people post for you. One template, two properties, and the wall between them holds: the <b>Service Pack</b> graphic never carries a score, and the <b>Meeting</b> graphic never carries a pack call to action. Stage 4 rules carry over: the lockup is the title, the artist's name sits under it in size, dates are numeric in Space Mono, no full stops. "Artist Name" and "Song Title" are placeholders; every field is a parameter.</p>
+
+<h2>3.7 The Service Pack share graphic<small>Sent to each placed artist when the pack is released, to post and promote the side bet. The $150 is the hook for their followers; the artist's name in the sentence is why they post it. Feed and story.</small></h2>
+<div class="rule purple"></div>
+<div class="row r3">
+  <div class="card"><img src="artist-pack-artist-name-feed.png" alt=""><div class="l">artist-pack-artist-name-feed.png · 1080×1350</div></div>
+  <div class="card"><img src="artist-pack-artist-name-story.png" alt=""><div class="l">artist-pack-artist-name-story.png · 1080×1920</div></div>
+  <div class="card"><img src="artist-pack-a-much-longer-artist-name-feed.png" alt=""><div class="l">a long title and name run to four lines and still clear the cut</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Copy</div><div class="v"><b>Win <span style="color:#F5C518">$150</span> Cash</b>Check out the latest A&amp;R Service Pack featuring “Song Title” by Artist Name<br>And Submit your top picks to win<br>Free to Enter at makinitmag.com/TopPicks</div><div class="why">Four lines, the operator's final wording verbatim (2026-09-12). Small type, air between the lines. The $150 is gold because it is prize money; the title and name are heavy so the artist sees themselves on it. <b>No score, no rating</b> anywhere on it.</div></div>
+  <div><div class="k">Render</div><div class="v"><code>public/brand/artist/render.sh pack "Artist" "Song"</code></div><div class="why">Purple is the pack's colour. The link prints makinitmag.com/TopPicks and takes any other with <code>LINK=</code>.</div></div>
+</div>
+
+<h2>4.9 Scheduled for review<small>For the artist to post the moment they submit, so everyone is promoting the submissions. Portrait and story.</small></h2>
+<div class="rule"></div>
+<div class="row r2">
+  <div class="card"><img src="artist-meeting-artist-name-feed.png" alt=""><div class="l">artist-meeting-artist-name-feed.png · 1080×1350</div></div>
+  <div class="card"><img src="artist-meeting-artist-name-story.png" alt=""><div class="l">artist-meeting-artist-name-story.png · 1080×1920</div></div>
+  <div class="card"><img src="artist-meeting-a-much-longer-artist-name-feed.png" alt=""><div class="l">a long title and name</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Copy</div><div class="v">Thumbs-up · SCHEDULED FOR REVIEW (label)<b>“Song Title”</b>by Artist Name · @instagramusername<br>Submit Music · MakinItmag.com/review</div><div class="why">The operator's structure and wording (2026-09-13): no parentheses on the handle, portrait and story, the link in the operator's casing. No date and no score: nothing has been rated yet. The thumbs-up is a stroke glyph in signal green, not an emoji.</div></div>
+  <div><div class="k">Render</div><div class="v"><code>public/brand/artist/render.sh meeting "Artist" "Song" instagramhandle</code> → feed + story</div><div class="why">Green is the Meeting's colour. In production this would be generated when the submission lands, and sent to the artist with their confirmation.</div></div>
+</div>
+
+<h2>The badge (parked)<small>Built for the earlier "Rated at" framing. Kept in case a post-review badge is wanted later; not part of the submission post.</small></h2>
+<div class="rule"></div>
+<div class="row" style="grid-template-columns:1fr 1fr">
+  <div class="card badge"><img src="badge-2026-09-10.png" alt=""><div class="l">badge-2026-09-10.svg · on dark</div></div>
+  <div class="card badge paper"><img src="badge-2026-09-10-paper.png" alt=""><div class="l" style="color:#5E5A7A">badge-2026-09-10-paper.svg · on paper</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">What it says</div><div class="v">[A&amp;R] RATED AT THE A&amp;R MEETING · 09.10.26</div><div class="why">The pill leans 13° like the block. Generated per date by <code>badge.py</code>, so the text needs no font installed wherever the artist puts it.</div></div>
+  <div><div class="k">Render</div><div class="v"><code>python3 public/brand/artist/badge.py 2026-09-10 --png</code></div><div class="why">Outputs the two SVGs and matching transparent PNGs at 200px tall.</div></div>
+</div>
+
+<h2>Open items<small>Answer these and the templates are final.</small></h2>
+<div class="rule"></div>
+<div class="open">
+  <div><div class="n">1</div><div class="t"><b>Approve the "scheduled for review" post.</b><span>Thumbs-up, title, artist and handle, the submit line. Say if the second line should read differently.</span></div></div>
+  <div><div class="n">2</div><div class="t"><b>Production.</b><span>Generating this at submission and sending it with the artist's confirmation is a build on the ingest path; say when.</span></div></div>
+  <div><div class="n">—</div><div class="t"><b>Settled 2026-09-13.</b><span>Pack graphic: four lines, sent to each placed artist at pack release. Meeting graphic: reframed to the moment of submission; the "Rated at" badge is parked.</span></div></div>
+</div>
+
+<p class="src">Template: public/brand/artist/artist.html · render: render.sh · badge: badge.py · inventory: docs/promo-asset-list.md</p>
+</div></body></html>

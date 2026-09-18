@@ -1,0 +1,167 @@
+{
+    "2026-09-09": {
+        "sessionId": "aUSsQAL85Ey3",
+        "records": [
+            {
+                "ref": "entry\/6",
+                "amount": 25
+            },
+            {
+                "ref": "entry\/10",
+                "amount": 10
+            },
+            {
+                "ref": "entry\/8",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/9",
+                "amount": 0
+            }
+        ]
+    },
+    "2026-09-10": {
+        "sessionId": "oryEhFNkxZdw",
+        "records": [
+            {
+                "ref": "entry\/68",
+                "amount": 30
+            },
+            {
+                "ref": "entry\/64",
+                "amount": 25
+            },
+            {
+                "ref": "entry\/71",
+                "amount": 25
+            },
+            {
+                "ref": "entry\/49",
+                "amount": 20
+            },
+            {
+                "ref": "entry\/54",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/60",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/74",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/51",
+                "amount": 0
+            }
+        ]
+    },
+    "2026-09-11": {
+        "sessionId": "tPjc40BC3WF2",
+        "records": [
+            {
+                "ref": "entry\/89",
+                "amount": 25
+            },
+            {
+                "ref": "entry\/76",
+                "amount": 20
+            },
+            {
+                "ref": "entry\/34",
+                "amount": 15
+            },
+            {
+                "ref": "entry\/21",
+                "amount": 10
+            },
+            {
+                "ref": "entry\/52",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/20",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/15",
+                "amount": 0
+            }
+        ]
+    },
+    "2026-09-12": {
+        "sessionId": "sf5uzPyemC7B",
+        "records": [
+            {
+                "ref": "entry\/101",
+                "amount": 25
+            },
+            {
+                "ref": "entry\/91",
+                "amount": 20
+            },
+            {
+                "ref": "entry\/100",
+                "amount": 15
+            },
+            {
+                "ref": "entry\/39",
+                "amount": 10
+            },
+            {
+                "ref": "entry\/93",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/45",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/99",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/77",
+                "amount": 0
+            }
+        ]
+    },
+    "2026-09-13": {
+        "sessionId": "-zpAFeV97m9D",
+        "records": [
+            {
+                "ref": "entry\/113",
+                "amount": 20
+            },
+            {
+                "ref": "entry\/112",
+                "amount": 15
+            },
+            {
+                "ref": "entry\/41",
+                "amount": 10
+            },
+            {
+                "ref": "entry\/80",
+                "amount": 10
+            },
+            {
+                "ref": "entry\/62",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/78",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/56",
+                "amount": 0
+            },
+            {
+                "ref": "entry\/57",
+                "amount": 0
+            }
+        ]
+    }
+}

@@ -2,7 +2,9 @@
 // to PNG, using Satori (HTML/flex -> SVG) + resvg (SVG -> PNG). No headless browser, so it
 // stays serverless-friendly (the whole point — see docs/multi-tenant-roadmap + the outage rule).
 //
-// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo'.
+// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo';
+// the artist's Track Report is 'trackPage' (see below), the daily graphics 'recap*' / 'resultsSlide' /
+// 'winnerPost' (the Top Track / Top A&R of the Day and of the Week collab posts).
 // Rank-only by default; raw numbers optional. Every card carries the eyebrow "The A&R Room",
 // the big card title, the session/scope subhead, the $500 award pill, makinitmag.com/ANR, @Makinit4indies.
 //
@@ -93,12 +95,9 @@ function frame(opts) {
     text({ ...eyeStyle, color: C.inkDim }, 'The A&R'),
     text({ ...eyeStyle, color: C.signal, marginLeft: 12 }, 'Room'),
   ]);
-  // Top-right pill: the award hook by default; Official Room Reports carry their own badge
-  // (they're a paid artist product — the $500 pitch stays in the footer instead).
-  const pill = opts.pill === 'report'
-    ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.gold,
-        border: `2px solid ${C.gold}`, padding: '9px 18px', borderRadius: 999, flexShrink: 0 }, 'OFFICIAL ROOM REPORT')
-    : text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.bg,
+  // Top-right pill: the award hook. (The artist's Track Report is not on this frame — it is
+  // its own element, 'trackPage', built to the brand.)
+  const pill = text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.bg,
         background: C.gold, padding: '11px 20px', borderRadius: 999, flexShrink: 0 }, `${PRIZE} A&R AWARD`);
   // A null title leaves the header as eyebrow + pill only — the chart COVER carries its
   // own oversized title in the body, centred, and would collide with a header one.
@@ -217,112 +216,6 @@ function bodyPromo() {
   ]);
 }
 
-// ============ Song Report (paid artist tier) — 3 pages ============
-// Design: docs/mockups/song-report-v1.html. All aggregate data; no emoji
-// (no emoji font is bundled) and no mixed-weight paragraphs (Satori has no
-// inline rich text) — explainers are a bold lead line + a plain line.
-
-// Page 1 — the flex: big room score, heat + votes chips. Share-friendly.
-function bodyReport1(d) {
-  const chip = (str, goldish) => text({
-    fontFamily: SANS, fontWeight: 800, fontSize: 28, color: goldish ? C.gold : C.ink,
-    border: `2px solid ${goldish ? 'rgba(245,197,24,0.55)' : C.line}`, background: C.panel,
-    borderRadius: 999, padding: '16px 30px',
-  }, str);
-  return col({ alignItems: 'center' }, [
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 290, color: C.signal, lineHeight: 1 }, d.mean),
-    text({ fontFamily: SANS, fontWeight: 400, fontSize: 32, color: C.inkFaint, marginTop: 4 }, 'out of 9'),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 25, letterSpacing: 7, textTransform: 'uppercase', color: C.inkDim, marginTop: 22 }, 'Final room score'),
-    row({ marginTop: 48, gap: 18 }, [
-      chip(`Room favorite · ${d.heatPct}% scored it 8+`, true),
-      chip(`Evaluated by ${d.votes} verified A&Rs`, false),
-    ]),
-    text({ fontFamily: SANS, fontWeight: 400, fontSize: 25, color: C.inkDim, marginTop: 46 }, `Evaluated live in The A&R Room · ${d.dateLabel}`),
-  ]);
-}
-
-// Page 2 — the numbers: stat tiles + plain-English explainers + histogram + perception gap.
-function bodyReport2(d) {
-  const tile = (v, k, gold) => col({
-    flexGrow: 1, flexBasis: 0, alignItems: 'center', background: C.panel,
-    border: `1px solid ${gold ? 'rgba(245,197,24,0.45)' : C.line}`, borderRadius: 20, padding: '20px 8px',
-  }, [
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 60, color: gold ? C.gold : C.signal }, v),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 18, letterSpacing: 4, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, k),
-  ]);
-  const expl = (dotColor, lead, rest) => row({ alignItems: 'flex-start' }, [
-    h({ width: 12, height: 12, borderRadius: 12, background: dotColor, marginTop: 11, marginRight: 16, flexShrink: 0 }, ''),
-    col({ flexGrow: 1, flexShrink: 1 }, [
-      text({ fontFamily: SANS, fontWeight: 800, fontSize: 25, color: C.ink }, lead),
-      text({ fontFamily: SANS, fontWeight: 400, fontSize: 23, color: C.inkDim, lineHeight: 1.35, marginTop: 2 }, rest),
-    ]),
-  ]);
-  const maxC = Math.max(1, ...d.hist);
-  const bars = row({ alignItems: 'flex-end', marginTop: 14, gap: 12 }, d.hist.map((c, i) => col(
-    { flexGrow: 1, flexBasis: 0, alignItems: 'center', justifyContent: 'flex-end' }, [
-      text({ fontFamily: MONO, fontWeight: 400, fontSize: 19, color: C.inkDim, marginBottom: 6 }, c || ' '),
-      h({ width: '100%', height: Math.max(6, Math.round(c / maxC * 150)),
-          background: d.modes.includes(i) && c > 0 ? C.gold : C.signal, borderRadius: 8 }, ''),
-      text({ fontFamily: MONO, fontWeight: 400, fontSize: 19, color: C.inkFaint, marginTop: 6 }, i),
-    ])));
-  const gap = d.predictMean == null ? text({}, '') : row({
-    marginTop: 34, background: C.panel, border: `1px solid rgba(109,95,224,0.6)`,
-    borderRadius: 20, padding: '22px 28px', alignItems: 'center',
-  }, [
-    col({ flexGrow: 1, flexShrink: 1 }, [
-      text({ fontFamily: SANS, fontWeight: 800, fontSize: 24, color: C.ink }, 'Prediction vs. final score'),
-      text({ fontFamily: SANS, fontWeight: 400, fontSize: 22, color: C.inkDim, lineHeight: 1.35, marginTop: 4 },
-        `The room predicted ${d.predictMean} before the reveal and delivered a final score of ${d.mean}. ${d.gapWord}.`),
-    ]),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 52, color: d.gapUp ? C.signal : C.inkDim, marginLeft: 24, flexShrink: 0 }, d.gapLabel),
-  ]);
-  return col({}, [
-    row({ gap: 18 }, [tile(d.votes, 'A&Rs', false), tile(d.mean, 'Final score', false), tile(d.median, 'Median', true), tile(d.mode, 'Most common', true)]),
-    col({ marginTop: 30, gap: 16 }, [
-      expl(C.signal, `Final score ${d.mean}`, 'The average of all eligible A&R evaluations.'),
-      expl(C.gold, `Median ${d.median}`, d.medianNote),
-      expl(C.gold, `Most common ${d.mode}`, 'The score submitted most often by the room.'),
-    ]),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 21, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginTop: 34 }, 'How the room scored it'),
-    bars,
-    gap,
-  ]);
-}
-
-// Page 3 — who felt it: segments (3+ voters each) + context tiles.
-function bodyReport3(d) {
-  // Fixed column widths — Satori's flexGrow tracks are unreliable inside nested rows.
-  const segBlock = (label, items, unit) => !items.length ? col({}, []) : col({ marginTop: 26 }, [
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 21, letterSpacing: 5, textTransform: 'uppercase', color: C.inkFaint, marginBottom: 12 }, label),
-    col({ gap: 10 }, items.map((it, i) => row({}, [
-      text({ fontFamily: SANS, fontWeight: 700, fontSize: 26, color: C.ink, width: 258, flexShrink: 0, ...NOWRAP }, clip(it.name, 17)),
-      h({ width: 396, height: 22, background: '#1c1631', borderRadius: 11, display: 'flex', flexShrink: 0 }, [
-        h({ width: Math.round(it.avg / 9 * 396), height: 22, borderRadius: 11, background: i === 0 ? C.gold : C.signal }, ''),
-      ]),
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, color: i === 0 ? C.gold : C.signal, width: 104, textAlign: 'right', flexShrink: 0 }, it.avg.toFixed(1)),
-      text({ fontFamily: SANS, fontWeight: 400, fontSize: 20, color: C.inkFaint, width: 128, textAlign: 'right', flexShrink: 0 }, `${it.n} ${unit}`),
-    ]))),
-  ]);
-  const ctxBox = (v, k) => col({
-    flexGrow: 1, flexBasis: 0, alignItems: 'center', background: C.panel,
-    border: `1px solid ${C.line}`, borderRadius: 20, padding: '24px 10px',
-  }, [
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 50, color: C.gold, ...NOWRAP }, v),
-    text({ fontFamily: SANS, fontWeight: 400, fontSize: 21, color: C.inkDim, marginTop: 8, textAlign: 'center', lineHeight: 1.3 }, k),
-  ]);
-  const boxes = [];
-  if (d.rankInRoom) boxes.push(ctxBox(`#${d.rankInRoom.rank}`, `of ${d.rankInRoom.total} records in this session`));
-  if (d.seriesPct) boxes.push(ctxBox(`Top ${d.seriesPct.pct}%`, `of ${d.seriesPct.total} records this series`));
-  if (d.pools) boxes.push(ctxBox(`${d.pools.in.avg.toFixed(1)} / ${d.pools.remote.avg.toFixed(1)}`, 'in-room vs. remote evaluations'));
-  return col({}, [
-    segBlock('By professional role', d.roles || [], 'A&Rs'),
-    segBlock('By city', d.cities || [], 'A&Rs'),
-    boxes.length ? row({ marginTop: 34, gap: 18 }, boxes) : col({}, []),
-    text({ fontFamily: SANS, fontWeight: 400, fontSize: 19, color: C.inkFaint, lineHeight: 1.45, marginTop: 30 },
-      `Aggregated results only. A segment appears when at least three A&Rs qualify. Based on ${d.votes} verified evaluations, one per A&R, submitted before the reveal.`),
-  ]);
-}
-
 // ---- Chart carousel: cover slide + list slides ("Makin' It HOT 100") ----
 // The cover carries the oversized title itself (frame's header title is suppressed), the
 // period, what the room is, the score key, and the join CTA. List slides repeat the key in
@@ -419,7 +312,7 @@ const RECAP = {
   green: '#4bb749', greenInk: '#06210b',
 };
 const RECAP_TITLE = 'The A&R Meeting Recap';
-const RECAP_TIME = 'Daily at Noon';
+const RECAP_TIME = 'Daily at 2PM';   // the reveal stream (operator schedule, 2026-09-13)
 const RECAP_CTA = [
   { label: 'Submit Music', url: 'makinitmag.com/Review' },
   { label: 'Become an A&R', url: JOIN_URL },
@@ -718,6 +611,483 @@ function elementReferFlyer(d, kind) {
     ]),
   ]);
 }
+// ============ The A&R Meeting results carousels — posted after the reveal stream ============
+// Two Instagram carousels off ONE element type, 'resultsSlide', 1080×1350 a slide:
+//   set 'song'  slide 1 the top record · list slides: the other records RANKED, NO SCORES
+//               (operator, 2026-09-13) · last slide: "Submit your music"
+//   set 'ar'    slide 1 the top A&R (with the profile photo when there is one) · list slides:
+//               the other top A&Rs with points · last slide: "Join the A&R Team"
+// The list is split evenly across as many slides as it needs (six rows a slide), so a
+// fourteen-record day is five slides and a four-record day is three. Posted AFTER the reveal,
+// so ranks are public. Gold marks first place (the trophy) and the $500 only. Built to the
+// approved mockup public/brand/daily/carousel.html; the layout numbers here are that file's.
+//
+// Data shape (built by server.js resultsCarouselData):
+//   { set, slide, total, date, kind: 'hero'|'list'|'cta',
+//     hero: { label, title, sub, subDim, handle, photo? (data URI) },
+//     rows: [{ rank: '02', line1, line2, value }], listLabel,
+//     cta: { eyebrow, head: [lines], body, url } }
+const RESULTS_SIZE = [1080, 1350];
+const RESULTS_GOLD = '#f5c518';
+const RESULTS_PER_SLIDE = 6;
+const RESULTS_URL = JOIN_URL;
+// A stroke trophy on the 24 grid, gold: the brand draws icons, never emoji.
+let _trophy = null;
+function trophyDataUri() {
+  if (!_trophy) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="' + RESULTS_GOLD
+      + '" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter">'
+      + '<path d="M7 4 H17 V9 A5 5 0 0 1 7 9 Z"/><path d="M7 6 H4 V8 A3 3 0 0 0 7 10"/><path d="M17 6 H20 V8 A3 3 0 0 1 17 10"/>'
+      + '<path d="M12 14 V17"/><path d="M9 17 H15 V20 H9 Z"/></svg>';
+    _trophy = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _trophy;
+}
+const RES_DISPLAY = (fontSize, color, extra = {}) => ({ fontFamily: DISPLAY, fontWeight: 900, fontSize, lineHeight: 1,
+  letterSpacing: -Math.round(fontSize * 0.04), color, ...NOWRAP, ...extra });
+function resultsLockup() {
+  // [A&R] MEETING — the stage 1 lockup in Satori: the block, then the word, no article.
+  return h({ position: 'absolute', left: 80, top: 150, display: 'flex', flexDirection: 'row', alignItems: 'center' }, [
+    arBlock(120, 47),
+    text(RES_DISPLAY(112, RECAP.fg, { textTransform: 'uppercase', marginLeft: 30 }), 'Meeting'),
+  ]);
+}
+function resultsField(height, cutTop) {
+  // The 13° cut: a green box sheared with skewY so its top edge rises to the right (1080·tan13 = 249px).
+  // Satori skews about the box's CENTRE whatever transform-origin says, so the box is placed
+  // half a shear higher (540 · tan13 = 124px) to land its left edge at cutTop.
+  const boxH = height * 2 + 300;
+  return h({ position: 'absolute', left: 0, top: 1350 - height, width: 1080, height, overflow: 'hidden', display: 'flex' }, [
+    h({ position: 'absolute', left: 0, top: cutTop - Math.round(540 * TAN13), width: 1080, height: boxH, background: RECAP.green,
+      transform: 'skewY(-13deg)' }, ''),
+  ]);
+}
+function resultsFoot(leftTxt, rightTxt) {
+  const st = { fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 1, color: RECAP.bg, ...NOWRAP };
+  return h({ position: 'absolute', left: 80, right: 80, bottom: 72, display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }, [
+    text(st, leftTxt || ''), text(st, rightTxt || ''),
+  ]);
+}
+function resultsEyebrow(label) {
+  return row({ position: 'absolute', left: 80, top: 420 }, [
+    tick(8, 22, 13),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, letterSpacing: 3.6, textTransform: 'uppercase', color: RECAP.dim, ...NOWRAP }, label),
+  ]);
+}
+function resultsPager(slide, total) {
+  return text({ position: 'absolute', right: 80, top: 420, fontFamily: MONO, fontWeight: 700, fontSize: 26, letterSpacing: 3.6, color: RECAP.dim, ...NOWRAP }, slide + ' / ' + total);
+}
+// A headline line with "$500" in gold and everything else in ink.
+function resultsHeadLine(line, fontSize) {
+  const parts = String(line).split('$500');
+  const kids = [];
+  // Leading/trailing spaces collapse in Satori, so they become non-breaking ones.
+  const keep = t => t.replace(/^ /, '\u00A0').replace(/ $/, '\u00A0');
+  parts.forEach((part, i) => {
+    if (i) kids.push(text(RES_DISPLAY(fontSize, RESULTS_GOLD, { lineHeight: 1.04 }), '$500'));
+    if (part) kids.push(text(RES_DISPLAY(fontSize, RECAP.fg, { lineHeight: 1.04 }), keep(part)));
+  });
+  return row({ alignItems: 'flex-end' }, kids);
+}
+function elementResultsSlide(d) {
+  const kids = [
+    h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 36 } } }]),
+    resultsLockup(),
+  ];
+  const kind = d.kind || (d.slide === 1 ? 'hero' : (d.slide >= d.total ? 'cta' : 'list'));
+  if (kind === 'hero') {
+    const hero = d.hero || {};
+    const hasPhoto = !!hero.photo;
+    // trophy · label · date on one line, moderate size (operator: "#1 Song" at 168px was too big)
+    kids.push(h({ position: 'absolute', left: 80, top: 440, display: 'flex', flexDirection: 'row', alignItems: 'center' }, [
+      { type: 'img', props: { src: trophyDataUri(), style: { width: 96, height: 96, marginRight: 22 } } },
+      text(RES_DISPLAY(96, RECAP.fg, { lineHeight: 0.9 }), hero.label || ''),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, letterSpacing: 1, color: RECAP.dim, marginLeft: 22, marginTop: 30, ...NOWRAP }, d.date || ''),
+    ]));
+    kids.push(col({ position: 'absolute', left: 80, top: 600, width: hasPhoto ? 560 : 920 }, [
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 84, lineHeight: 0.96, letterSpacing: -3, color: RECAP.fg }, clip(hero.title, hasPhoto ? 30 : 50)),
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 46, lineHeight: 1.15, letterSpacing: -1, color: hero.subDim ? RECAP.dim : RECAP.fg, marginTop: 46 }, clip(hero.sub, 40)),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, color: RECAP.dim, marginTop: 22, ...NOWRAP }, hero.handle || ''),
+    ]));
+    if (hasPhoto) {
+      // The block device holding a picture: skewed frame, upright image.
+      kids.push(h({ position: 'absolute', right: 80, top: 600, width: 300, height: 300, overflow: 'hidden', borderRadius: 12,
+        background: RECAP.panel, transform: 'skewX(-13deg)', display: 'flex' }, [
+        { type: 'img', props: { src: hero.photo, style: { position: 'absolute', left: -40, top: 0, width: 380, height: 300, objectFit: 'cover', transform: 'skewX(13deg)' } } },
+      ]));
+    }
+    kids.push(resultsField(300, 120), resultsFoot('1 / ' + d.total, RESULTS_URL));
+  } else if (kind === 'list') {
+    kids.push(resultsEyebrow((d.listLabel || 'Also played') + ' · ' + (d.date || '')), resultsPager(d.slide, d.total));
+    const rows = (d.rows || []).map(r => row({ paddingTop: 16, paddingBottom: 16, borderBottom: '1px solid ' + RECAP.line, width: 920 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, width: 76, flexShrink: 0 }, r.rank),
+      row({ flexGrow: 1, flexShrink: 1, overflow: 'hidden', marginLeft: 18 }, [
+        text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 36, letterSpacing: -1, lineHeight: 1.1, color: RECAP.fg, ...NOWRAP }, clip(r.line1, 26)),
+        text({ fontFamily: SANS, fontWeight: 400, fontSize: 30, color: RECAP.dim, marginLeft: 12, ...NOWRAP }, r.line2 ? '· ' + clip(r.line2, 22) : ''),
+      ]),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, color: RECAP.fg, marginLeft: 18, flexShrink: 0, ...NOWRAP }, r.value == null ? '' : String(r.value)),
+    ]));
+    kids.push(col({ position: 'absolute', left: 80, top: 490, width: 920 }, rows));
+    kids.push(resultsField(250, 90), resultsFoot(d.footLeft || (d.slide + ' / ' + d.total), RESULTS_URL));
+  } else {
+    const c = d.cta || {};
+    kids.push(resultsEyebrow(c.eyebrow || ''), resultsPager(d.slide, d.total));
+    kids.push(col({ position: 'absolute', left: 80, top: 470, width: 920 }, (c.head || []).map(line => resultsHeadLine(line, 104))));
+    kids.push(text({ position: 'absolute', left: 80, top: 880, width: 760, fontFamily: SANS, fontWeight: 400, fontSize: 36, lineHeight: 1.3, color: RECAP.dim }, c.body || ''));
+    kids.push(resultsField(440, 240));
+    kids.push(text({ position: 'absolute', left: 80, bottom: 96, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, c.url || ''));
+  }
+  return h({ position: 'relative', display: 'flex', width: RESULTS_SIZE[0], height: RESULTS_SIZE[1], background: RECAP.bg }, kids);
+}
+
+// ============ The winner posts — one 'winnerPost' element, 1080×1350 ============
+// One portrait graphic per person, posted as an Instagram COLLAB post so it lands on their
+// feed too (operator, 2026-09-18). Four posts off one element: Top Track / Top A&R of the Day
+// (the daily #1s from the recap) and of the Week (with a strap saying what the week earns).
+// Built to the approved mockup public/brand/winners/winner.html AFTER it was stripped
+// ("flyers look too busy"): the lockup, the stacked title with its date, the person, ONE
+// line of numbers, the field. No trophy, no labelled cells, no rank (TOP TRACK already says
+// #1). The letter grade sits in the block device. Gold on the money only.
+//
+// Data shape (server.js winnerDayData / winnerWeekData):
+//   { kind: 'track'|'ar', period: 'day'|'week', label, sub: 'of the Day', date: '09.12.26' or a range,
+//     strap: null | 'Placed in the next $1,000 Tournament', title, by, handle, photo? (data URI),
+//     line: { score?, drop? } | { grade, points, bullseyes }, cta: { label, url } }
+const WINNER_SIZE = [1080, 1350];
+// A line with every dollar amount in gold and the rest in ink (Satori collapses leading and
+// trailing spaces, so they become non-breaking ones).
+function winnerGoldLine(str, style) {
+  const keep = t => t.replace(/^ /, '\u00A0').replace(/ $/, '\u00A0');
+  return row({ alignItems: 'flex-end' }, String(str).split(/(\$[\d,]+)/).filter(Boolean).map(part =>
+    text({ ...style, color: /^\$[\d,]+$/.test(part) ? RESULTS_GOLD : style.color }, keep(part))));
+}
+function elementWinnerPost(d) {
+  const line = d.line || {}, hasPhoto = !!d.photo, strap = d.strap ? 64 : 0;
+  const kids = [
+    h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 36 } } }]),
+    resultsLockup(),
+    // the title, stacked: TOP TRACK / of the Day · 09.12.26
+    col({ position: 'absolute', left: 80, top: 430 }, [
+      text(RES_DISPLAY(104, RECAP.fg, { lineHeight: 0.88, textTransform: 'uppercase' }), d.label || ''),
+      row({ marginTop: 16, alignItems: 'flex-end' }, [
+        text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 46, lineHeight: 1, letterSpacing: -1, color: RECAP.dim, ...NOWRAP }, d.sub || ''),
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1, color: RECAP.dim, marginLeft: 10, marginBottom: 4, ...NOWRAP }, d.date ? '· ' + d.date : ''),
+      ]),
+    ]),
+  ];
+  if (d.strap) {
+    kids.push(row({ position: 'absolute', left: 80, top: 616 }, [
+      tick(10, 30, 16),
+      winnerGoldLine(d.strap, { fontFamily: DISPLAY, fontWeight: 700, fontSize: 35, lineHeight: 1, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }),
+    ]));
+  }
+  // The person: the title steps down with its length (Satori cannot measure a wrap), and
+  // everything under it flows in the same column so a two-line title pushes the rest down.
+  const title = clip(d.title, hasPhoto ? 44 : 70);
+  const colW = hasPhoto ? 560 : 920;
+  const handleDrops = d.kind === 'track' && (clip(d.by, 26).length + (d.handle || '').length) > 34;
+  // Satori cannot measure a wrap, so the title's line count is estimated from its length
+  // (Archivo 900 runs ~0.56em a character) and the size steps down until the numbers line
+  // clears the 13° cut at its right edge (cut y = 1160 − x·tan13°), as the mockup does.
+  const numChars = d.kind === 'ar' ? 4 + String(line.points).length + 8 + 3 + String(line.bullseyes).length + 10
+    : (line.score != null ? 6 + String(line.score).length : 0) + (line.drop ? 3 + 8 + String(line.drop).length : 0);
+  const numRight = 80 + numChars * (hasPhoto ? 30 : 36) * 0.6 + (d.kind === 'ar' ? 110 : 0);
+  const cutAt = x => 1160 - x * TAN13;
+  let fs = 58;
+  for (const size of [84, 68, 58]) {
+    const lines = Math.max(1, Math.ceil(title.length * size * 0.56 / colW));
+    const bottom = 640 + strap + lines * size * 0.96 + 26 + 48 + (handleDrops ? 42 : 0) + 44 + (hasPhoto ? 30 : 36);
+    if (bottom <= cutAt(numRight) - 16) { fs = size; break; }
+  }
+  // Satori collapses a leading or trailing space, so the joins are non-breaking spaces. Beside a
+  // photo the line has 620px (the photo starts at x=700), so it steps down a size there.
+  const NB = '\u00A0', numSize = hasPhoto ? 30 : 36;
+  const numStyle = { fontFamily: MONO, fontWeight: 700, fontSize: numSize, lineHeight: 1, color: RECAP.dim, ...NOWRAP };
+  const numVal = { ...numStyle, color: RECAP.fg };
+  let numbers;
+  if (d.kind === 'ar') {
+    numbers = row({ marginTop: 44, alignItems: 'center' }, [
+      h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: hasPhoto ? 72 : 84, height: hasPhoto ? 58 : 68, background: RECAP.green,
+        borderRadius: 4, transform: `skewX(${SKEW}deg)`, marginRight: hasPhoto ? 22 : 30, flexShrink: 0 },
+        text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: hasPhoto ? 44 : 50, letterSpacing: -2, color: RECAP.greenInk, lineHeight: 1 }, line.grade || '')),
+      text(numVal, String(line.points == null ? '' : line.points)), text(numStyle, NB + 'points'),
+      text(numStyle, NB + '·' + NB),
+      text(numVal, String(line.bullseyes == null ? '' : line.bullseyes)), text(numStyle, NB + 'bullseyes'),
+    ]);
+  } else {
+    const bits = [];
+    if (line.score != null && line.score !== '') bits.push(text(numStyle, 'Score' + NB), text(numVal, String(line.score)));
+    if (line.drop) { if (bits.length) bits.push(text(numStyle, NB + '·' + NB)); bits.push(text(numStyle, 'Dropped' + NB), text(numVal, line.drop)); }
+    numbers = bits.length ? row({ marginTop: 44, alignItems: 'center' }, bits) : text({}, '');
+  }
+  const subRow = d.kind === 'ar'
+    ? row({ marginTop: 26, alignItems: 'flex-end' }, [
+        text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, clip(d.by, 22)),
+        text({ fontFamily: DISPLAY, fontWeight: 500, fontSize: 42, lineHeight: 1.15, color: RECAP.dim, ...NOWRAP }, d.handle ? '\u00A0· ' + clip(d.handle, 24) : ''),
+      ])
+    // A long artist name and the handle would run off the edge on one line, so the handle drops
+    // under the name when the two together would not fit (as the mockup wraps it).
+    : (handleDrops
+        ? col({ marginTop: 26, alignItems: 'flex-start' }, [
+            text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, 'by ' + clip(d.by, 26)),
+            text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginTop: 10, ...NOWRAP }, d.handle || ''),
+          ])
+        : row({ marginTop: 26, alignItems: 'flex-end' }, [
+            text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, 'by ' + clip(d.by, 26)),
+            text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginLeft: 14, marginBottom: 2, ...NOWRAP }, d.handle || ''),
+          ]));
+  kids.push(col({ position: 'absolute', left: 80, top: 640 + strap, width: hasPhoto ? 560 : 920 }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.96, letterSpacing: -Math.round(fs * 0.04), color: RECAP.fg }, title),
+    subRow,
+    numbers,
+  ]));
+  if (hasPhoto) {
+    kids.push(h({ position: 'absolute', right: 80, top: 640 + strap, width: 300, height: 300, overflow: 'hidden', borderRadius: 12,
+      background: RECAP.panel, transform: `skewX(${SKEW}deg)`, display: 'flex' }, [
+      { type: 'img', props: { src: d.photo, style: { position: 'absolute', left: -40, top: 0, width: 380, height: 300, objectFit: 'cover', transform: `skewX(${-SKEW}deg)` } } },
+    ]));
+  }
+  const cta = d.cta || {};
+  kids.push(resultsField(300, 110));
+  kids.push(col({ position: 'absolute', left: 80, bottom: 64 }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 42, lineHeight: 1, letterSpacing: -1, color: RECAP.bg, ...NOWRAP }, cta.label || ''),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, color: RECAP.bg, marginTop: 12, ...NOWRAP }, cta.url || ''),
+  ]));
+  return h({ position: 'relative', display: 'flex', width: WINNER_SIZE[0], height: WINNER_SIZE[1], background: RECAP.bg }, kids);
+}
+
+// ============ The Track Report — the artist's report, one 'trackPage' element ============
+// Spec: docs/specs/track-report-spec.md. Design: the Room Report Redesign mockup
+// (mim repo docs/mockups/anr-room-report-v2.html) — the report opens with a DECISION and every
+// headline is a sentence derived from the numbers (track-report.js); nothing is hand-written.
+// 1080×1350 (4:5) like the results carousels, so the artist can post it as one Instagram
+// carousel. Built to the brand: Archivo + Space Mono, the [A&R] MEETING / [A&R] ROOM lockup,
+// green = scoring, purple = the prediction game (head-to-head with the room's guess), NO gold
+// anywhere (nothing here is money or first place), the 13° device as block, tick and rule, and
+// the cut only on the share page, where there is no type to run it behind.
+//
+// Kinds (server.js trackReportPages decides which a record gets):
+//   decision · split · against · whofor · setup · next · comments · share
+// Data shape: { kind, page, total, title, artist, handle, meta, what, votes, mean, band,
+//   sub, shape, hist, modes, median, tail, against, dist, who, roles, cities, setup,
+//   predictMean, steps, comments }.
+const TRACK_SIZE = [1080, 1350];
+const TRACK = { ...RECAP, purple: '#6d5fe0', ink2: '#b9b5d2', track: '#221d3a' };
+const TRACK_TAG = 'Track Report';
+const TRACK_LEFT = 80, TRACK_W = 920, TRACK_TOP = 300, TRACK_H = 900;
+
+function trackHeadline(lines, max = 88) {
+  // Archivo 900 runs ~0.56em a glyph; fit the longest line to the column, floor 54px.
+  const longest = Math.max(1, ...lines.map(l => String(l).length));
+  const fs = Math.max(54, Math.min(max, Math.floor(TRACK_W / (0.56 * longest))));
+  return col({}, lines.map(l => text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.98,
+    letterSpacing: -Math.round(fs * 0.04), color: RECAP.fg, ...NOWRAP }, l)));
+}
+function trackBody(str, { size = 30, color = RECAP.dim, mt = 0, weight = 400 } = {}) {
+  return text({ fontFamily: SANS, fontWeight: weight, fontSize: size, lineHeight: 1.4, color, marginTop: mt, width: TRACK_W }, str);
+}
+function trackPull(str, tone = 'green') {
+  const c = tone === 'purple' ? TRACK.purple : tone === 'plain' ? RECAP.line : RECAP.green;
+  const bg = tone === 'purple' ? 'rgba(109,95,224,0.12)' : tone === 'plain' ? RECAP.panel : 'rgba(75,183,73,0.10)';
+  return row({ marginTop: 'auto', width: TRACK_W, background: bg, borderLeft: `6px solid ${c}`, borderRadius: 6, padding: '24px 28px', alignItems: 'flex-start' }, [
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 28, lineHeight: 1.4, color: RECAP.fg, width: TRACK_W - 62 }, str),
+  ]);
+}
+function trackEyebrow(str, mt = 0) {
+  return row({ marginTop: mt }, [tick(7, 20, 12),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, textTransform: 'uppercase', color: RECAP.dim, ...NOWRAP }, str)]);
+}
+function trackStat(label, value) {
+  return row({ justifyContent: 'space-between', width: TRACK_W, paddingTop: 12, paddingBottom: 12, borderBottom: `1px solid ${TRACK.track}` }, [
+    text({ fontFamily: SANS, fontWeight: 400, fontSize: 28, color: RECAP.dim, ...NOWRAP }, label),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.fg, ...NOWRAP }, String(value)),
+  ]);
+}
+function trackAxis(labels, width = TRACK_W) {
+  // Evenly spaced tick labels under a bar chart, one per bar.
+  return row({ width, marginTop: 8 }, labels.map(l => text({ fontFamily: MONO, fontWeight: 400, fontSize: 20, color: RECAP.dim,
+    flexGrow: 1, flexBasis: 0, textAlign: 'center', ...NOWRAP }, l)));
+}
+// A column chart: bars[] = { v, hi (ink instead of green), label (above) }.
+function trackBars(bars, height, gap = 10) {
+  const max = Math.max(1, ...bars.map(b => b.v));
+  return row({ alignItems: 'flex-end', width: TRACK_W, height: height + 40, gap }, bars.map(b => col(
+    { flexGrow: 1, flexBasis: 0, alignItems: 'center', justifyContent: 'flex-end', height: height + 40 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 20, color: b.hi ? RECAP.fg : RECAP.dim, marginBottom: 8, ...NOWRAP }, b.label == null ? '' : String(b.label)),
+      h({ width: '100%', height: Math.max(4, Math.round(b.v / max * height)), background: b.hi ? RECAP.fg : RECAP.green,
+          opacity: b.hi ? 1 : 0.85, borderRadius: 3 }, ''),
+    ])));
+}
+function trackSegRow(it, unit) {
+  return row({ width: TRACK_W, marginBottom: 14 }, [
+    text({ fontFamily: SANS, fontWeight: 700, fontSize: 28, color: RECAP.fg, width: 290, flexShrink: 0, ...NOWRAP }, clip(it.name, 16)),
+    h({ width: 380, height: 14, background: TRACK.track, borderRadius: 7, display: 'flex', flexShrink: 0, marginLeft: 20 }, [
+      h({ width: Math.round(Math.min(1, it.avg / CHART_SCALE_MAX) * 380), height: 14, borderRadius: 7, background: RECAP.green }, '') ]),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.fg, width: 90, textAlign: 'right', flexShrink: 0, marginLeft: 20, ...NOWRAP }, Number(it.avg).toFixed(1)),
+    text({ fontFamily: MONO, fontWeight: 400, fontSize: 22, color: RECAP.dim, width: 120, textAlign: 'right', flexShrink: 0, ...NOWRAP }, `${it.n} ${unit}`),
+  ]);
+}
+function trackRecordLine(d, mt = 0) {
+  return text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, letterSpacing: 4, textTransform: 'uppercase', color: RECAP.dim, marginTop: mt, ...NOWRAP },
+    clip([d.title, d.artist].filter(Boolean).join(' · '), 34));
+}
+
+function trackContent(d) {
+  const k = d.kind;
+  if (k === 'decision') {
+    const band = d.band || {};
+    return [
+      trackRecordLine(d),
+      col({ marginTop: 26 }, [trackHeadline(band.headline || [], 96)]),
+      trackBody(d.sub || '', { mt: 30 }),
+      row({ marginTop: 'auto', alignItems: 'flex-end' }, [
+        text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 132, lineHeight: 0.9, letterSpacing: -6, color: RECAP.fg, ...NOWRAP }, d.mean),
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, letterSpacing: 3, textTransform: 'uppercase', color: RECAP.dim, marginLeft: 24, marginBottom: 10, ...NOWRAP },
+          `/ ${CHART_SCALE_MAX} · ${band.label || ''}`),
+      ]),
+    ];
+  }
+  if (k === 'split') {
+    const sh = d.shape || {};
+    const hist = d.hist || [];
+    const bars = hist.map((c, i) => ({ v: c, hi: (d.modes || []).includes(i) && c > 0, label: c || '' }));
+    return [
+      trackHeadline(sh.headline || [], 80),
+      col({ marginTop: 30 }, [trackBars(bars, 180, 10), trackAxis(hist.map((_, i) => String(i)))]),
+      col({ marginTop: 16 }, [
+        trackStat('Average', d.mean),
+        trackStat('Middle score', d.median),
+        trackStat('Scored it 7 or higher', `${d.tail} of ${d.votes}`),
+      ]),
+      trackPull(sh.pull || ''),
+    ];
+  }
+  if (k === 'against') {
+    const ag = d.against || {}, dist = d.dist || { buckets: [] };
+    const bars = dist.buckets.map((c, i) => ({ v: c, hi: i === ag.you, label: i === ag.you ? 'THIS RECORD' : (i === ag.mid ? 'MIDDLE' : '') }));
+    // The label sits above a half-point bar and would collide with a neighbour's; only the
+    // two markers carry one, and they read from the legend when adjacent.
+    const axis = dist.buckets.map((_, i) => i % 4 === 0 ? String(i / 2) : '');
+    return [
+      trackHeadline(ag.headline || [], 80),
+      col({ marginTop: 36 }, [trackBars(bars, 210, 6), trackAxis(axis)]),
+      col({ marginTop: 20 }, [
+        trackStat(`Every record ${d.what === 'A&R Room' ? 'the A&R Room' : 'the A&R Meeting'} has rated`, dist.n),
+        trackStat('The middle of the room', Number(dist.median).toFixed(1)),
+        trackStat('This record', d.mean),
+      ]),
+      trackPull(ag.pull || '', 'purple'),
+    ];
+  }
+  if (k === 'whofor') {
+    const who = d.who || {};
+    const kids = [trackHeadline(who.headline || [], 80),
+      trackBody(`The same record, scored by ${(d.roles || []).length + (d.cities || []).length} groups of A&Rs.`, { mt: 20, size: 28 })];
+    if ((d.roles || []).length) kids.push(col({ marginTop: 26 }, [trackEyebrow('By role'), col({ marginTop: 16 }, d.roles.map(r => trackSegRow(r, 'A&Rs')))]));
+    if ((d.cities || []).length) kids.push(col({ marginTop: 16 }, [trackEyebrow('By city'), col({ marginTop: 16 }, d.cities.map(r => trackSegRow(r, 'A&Rs')))]));
+    kids.push(trackPull(who.pull || ''));
+    return kids;
+  }
+  if (k === 'setup') {
+    const su = d.setup || {};
+    const big = (v, label, dim) => col({ alignItems: 'flex-start' }, [
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 150, lineHeight: 0.9, letterSpacing: -7, color: dim ? RECAP.dim : RECAP.fg, ...NOWRAP }, v),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, textTransform: 'uppercase', color: RECAP.dim, marginTop: 14, ...NOWRAP }, label),
+    ]);
+    return [
+      trackHeadline(su.headline || [], 80),
+      row({ marginTop: 56, alignItems: 'flex-end', gap: 44 }, [
+        big(d.predictMean, 'Expected', true),
+        h({ width: 12, height: 110, background: TRACK.purple, transform: `skewX(${SKEW}deg)`, marginBottom: 60, flexShrink: 0 }, ''),
+        big(d.mean, 'Delivered', false),
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: TRACK.purple, marginBottom: 74, marginLeft: 'auto', ...NOWRAP }, su.label || ''),
+      ]),
+      trackBody(`The A&Rs guessed ${d.predictMean} from the setup, then heard it and landed on ${d.mean}.`, { mt: 40 }),
+      trackPull(su.pull || '', 'purple'),
+    ];
+  }
+  if (k === 'next') {
+    const steps = (d.steps || []).map((s, i) => row({ width: TRACK_W, marginTop: i ? 28 : 0, alignItems: 'flex-start' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: RECAP.green, width: 70, flexShrink: 0, marginTop: 8, ...NOWRAP }, '0' + (i + 1)),
+      col({ width: TRACK_W - 70 }, [
+        text({ fontFamily: SANS, fontWeight: 800, fontSize: 32, lineHeight: 1.3, color: RECAP.fg, width: TRACK_W - 70 }, s.lead),
+        text({ fontFamily: SANS, fontWeight: 400, fontSize: 28, lineHeight: 1.4, color: RECAP.dim, marginTop: 6, width: TRACK_W - 70 }, s.rest),
+      ]),
+    ]));
+    return [
+      trackHeadline(['Three things', 'to do next.'], 80),
+      col({ marginTop: 40 }, steps),
+      trackPull('Every line on this page comes from the numbers on the other pages — the decision, the biggest gap between groups of A&Rs, and the setup. Nothing is written by hand.', 'plain'),
+    ];
+  }
+  if (k === 'comments') {
+    const quotes = (d.comments || []).map((c, i) => row({ width: TRACK_W, marginTop: i ? 30 : 0, alignItems: 'flex-start' }, [
+      h({ width: 6, alignSelf: 'stretch', background: RECAP.green, transform: `skewX(${SKEW}deg)`, flexShrink: 0, marginRight: 30, marginTop: 6 }, ''),
+      col({ width: TRACK_W - 36 }, [
+        text({ fontFamily: SANS, fontWeight: 400, fontSize: 30, lineHeight: 1.4, color: RECAP.fg, width: TRACK_W - 36 }, '“' + esc(c.body) + '”'),
+        text({ fontFamily: SANS, fontWeight: 800, fontSize: 26, color: RECAP.fg, marginTop: 14, ...NOWRAP }, clip(c.name, 40)),
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: 22, color: RECAP.dim, marginTop: 4, ...NOWRAP },
+          [c.role, c.location].filter(Boolean).join(' · ')),
+      ]),
+    ]));
+    return [
+      trackHeadline(['What the', 'A&Rs said.'], 80),
+      col({ marginTop: 36 }, quotes),
+      text({ fontFamily: SANS, fontWeight: 400, fontSize: 22, lineHeight: 1.4, color: RECAP.dim, marginTop: 'auto', width: TRACK_W },
+        'Comments are the personal opinions of individual A&Rs who scored the record. Not every A&R left one.'),
+    ];
+  }
+  return [];
+}
+
+function elementTrackPage(d) {
+  const [W0, H0] = TRACK_SIZE;
+  const what = d.what === 'A&R Room' ? 'Room' : 'Meeting';
+  const header = [
+    h({ position: 'absolute', left: TRACK_LEFT, top: 72, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 32 } } }]),
+    h({ position: 'absolute', left: TRACK_LEFT, top: 136, display: 'flex', flexDirection: 'row', alignItems: 'center' }, [
+      arBlock(68, 27),
+      text(RES_DISPLAY(62, RECAP.fg, { textTransform: 'uppercase', marginLeft: 18 }), what),
+    ]),
+    col({ position: 'absolute', right: TRACK_LEFT, top: 146, alignItems: 'flex-end' }, [
+      row({}, [tick(7, 20, 12), text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, textTransform: 'uppercase', color: RECAP.dim, ...NOWRAP }, TRACK_TAG)]),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, color: RECAP.dim, marginTop: 10, ...NOWRAP }, `${d.page || 1} / ${d.total || 1}`),
+    ]),
+    h({ position: 'absolute', left: TRACK_LEFT + 4, top: 236, width: 160, height: 8, background: RECAP.green, transform: `skewX(${SKEW}deg)` }, ''),
+  ];
+  if (d.kind === 'share') {
+    // The postable page: title, artist, "N A&Rs heard it". NO SCORE — postable at 2.1 or 8.4.
+    // The one page that takes the cut, because nothing runs across it.
+    const n = String(d.votes || 0);
+    const shareTitle = clip(d.title, 30);
+    const shareTitleSize = Math.max(48, Math.min(88, Math.floor(TRACK_W / (0.56 * Math.max(1, shareTitle.length)))));
+    return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
+      ...header,
+      col({ position: 'absolute', left: TRACK_LEFT, top: 320, width: TRACK_W, alignItems: 'center' }, [
+        text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: shareTitleSize, lineHeight: 0.96, letterSpacing: -Math.round(shareTitleSize * 0.04), color: RECAP.fg, ...NOWRAP }, shareTitle),
+        text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 44, lineHeight: 1.1, letterSpacing: -1, color: RECAP.dim, marginTop: 26, textAlign: 'center', ...NOWRAP }, clip(d.artist || '', 36)),
+        d.handle ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, marginTop: 14, ...NOWRAP }, d.handle) : text({}, ''),
+        h({ width: 160, height: 8, background: RECAP.green, transform: `skewX(${SKEW}deg)`, marginTop: 44, marginBottom: 36 }, ''),
+        text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 210, lineHeight: 0.9, letterSpacing: -10, color: RECAP.green, ...NOWRAP }, n),
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 5, textTransform: 'uppercase', color: RECAP.fg, marginTop: 26, ...NOWRAP }, 'A&Rs heard it'),
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, letterSpacing: 4, textTransform: 'uppercase', color: RECAP.dim, marginTop: 12, ...NOWRAP },
+          `Rated at the A&R ${what} · ${d.dateLabel || ''}`),
+      ]),
+      resultsField(230, 90),
+      resultsFoot('Submit your music', SUBMIT_URL),
+    ]);
+  }
+  const content = col({ position: 'absolute', left: TRACK_LEFT, top: TRACK_TOP, width: TRACK_W, height: TRACK_H, overflow: 'hidden' }, trackContent(d));
+  const foot = h({ position: 'absolute', left: TRACK_LEFT, right: TRACK_LEFT, bottom: 64, display: 'flex', flexDirection: 'row', justifyContent: 'space-between',
+    borderTop: `1px solid ${RECAP.line}`, paddingTop: 22 }, [
+    text({ fontFamily: MONO, fontWeight: 400, fontSize: 20, letterSpacing: 2, textTransform: 'uppercase', color: RECAP.dim, ...NOWRAP }, clip(d.meta || '', 56)),
+    row({}, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 20, letterSpacing: 2, color: RECAP.fg, ...NOWRAP }, 'makinitmag.com'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 20, letterSpacing: 2, color: RECAP.green, ...NOWRAP }, '/ANR'),
+    ]),
+  ]);
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [...header, content, foot]);
+}
 
 function element(type, data = {}) {
   const showNumbers = !!data.showNumbers;
@@ -725,9 +1095,7 @@ function element(type, data = {}) {
   if (type === 'ars')   return frame({ title: 'Top 8 A&Rs', sub: data.scope || data.session || null, body: bodyArs(data.list || [], showNumbers) });
   if (type === 'songs') return frame({ title: 'Top 8 Records', sub: data.session || null, body: bodySongs(data.list || [], showNumbers) });
   if (type === 'promo') return frame({ title: 'Join the A&R Team', sub: 'Free to join', body: bodyPromo() });
-  if (type === 'report1') return frame({ pill: 'report', title: clip(data.title, 18), sub: data.sub, body: bodyReport1(data) });
-  if (type === 'report2') return frame({ pill: 'report', titleSize: 60, title: "The room's verdict", sub: data.sub, body: bodyReport2(data) });
-  if (type === 'report3') return frame({ pill: 'report', titleSize: 60, title: 'Who connected', sub: data.sub, body: bodyReport3(data) });
+  if (type === 'trackPage') return elementTrackPage(data);
   if (type === 'chartCover') return frame({ title: null, sub: null, body: bodyChartCover(data) });
   if (type === 'chartList') return frame({ titleSize: 66, title: clip(data.title, 18), sub: data.sub, body: bodyChartList(data) });
   if (type === 'recapCover') return elementRecapCover(data);
@@ -735,6 +1103,8 @@ function element(type, data = {}) {
   if (type === 'referCard') return elementReferPerson(data, false);
   if (type === 'referStory') return elementReferPerson(data, true);
   if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
+  if (type === 'resultsSlide') return elementResultsSlide(data);
+  if (type === 'winnerPost') return elementWinnerPost(data);
   throw new Error('unknown card type: ' + type);
 }
 
@@ -742,6 +1112,7 @@ function element(type, data = {}) {
 let _satori = null, _Resvg = null;
 // Every card is 3:4 except the recap graphics, which carry their own size.
 function sizeOf(type) { return RECAP_SIZES[type] || REFER_SIZES[type] || [W, H]; }
+function sizeOf(type) { return type === 'resultsSlide' ? RESULTS_SIZE : type === 'winnerPost' ? WINNER_SIZE : type === 'trackPage' ? TRACK_SIZE : (RECAP_SIZES[type] || [W, H]); }
 async function renderPng(type, data) {
   if (!_satori) { const m = require('satori'); _satori = m.default || m; }
   if (!_Resvg) { _Resvg = require('@resvg/resvg-js').Resvg; }
@@ -752,3 +1123,4 @@ async function renderPng(type, data) {
 }
 
 module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA };
+module.exports = { renderPng, element, sizeOf, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA, RESULTS_PER_SLIDE, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };

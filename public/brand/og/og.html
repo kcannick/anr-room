@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R link preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   Link-preview (Open Graph) images — stage 3 of the promo build order.
+   1200x630, one per property URL:  ?p=team|room|meeting|pack
+
+   A preview is seen at ~500px wide in a feed or chat, so it is the ad
+   layout cut down to what survives: lockup, one headline, the URL, and
+   a colour field on the right behind the block. The field's edge is
+   the 13° cut, and no type touches it. Copy is the approved ad copy.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;width:1200px;height:630px;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+.logo{position:absolute;left:64px;top:56px;height:30px;width:auto}
+.lock{position:absolute;left:8px;top:112px;height:192px;width:auto}     /* S=96 incl. .5S clear space */
+.lock.small{height:150px;top:133px}                                     /* S=75: SERVICE PACK */
+.head{position:absolute;left:64px;top:318px;width:720px;font-weight:900;font-size:84px;line-height:.94;letter-spacing:-.04em}
+.head.big{font-size:104px;top:300px}
+.head.two{font-size:68px;width:780px}          /* two lines: the ask, then the $1,000 Giveaway (operator, 2026-09-15) */
+.head b{color:var(--gold)}
+.url{position:absolute;left:64px;bottom:56px;font-family:'Space Mono',monospace;font-weight:700;font-size:30px;color:var(--dim)}
+.field{position:absolute;top:0;right:0;bottom:0;width:380px;background:var(--fill,var(--green));
+  clip-path:polygon(145px 0, 100% 0, 100% 100%, 0 100%)}                /* 630 * tan13 = 145 */
+.mark{position:absolute;right:52px;top:50%;transform:translateY(-50%);height:250px;width:auto}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <img class="lock" id="lock" alt="">
+  <div class="head" id="head"></div>
+  <div class="url" id="url"></div>
+  <div class="field"></div>
+  <img class="mark" src="../mark/anr-mark-ink.svg" alt="">
+</div>
+<script>
+const P = new URLSearchParams(location.search).get('p') || 'team';
+const CFG = {
+  team:    { lock: 'anr-team-h',         fill: 'var(--green)',  head: 'Join the A&amp;R Team.', url: 'makinitmag.com/ANR' },
+  room:    { lock: 'anr-room-h',         fill: 'var(--green)',  head: 'Wednesday.<br>7PM ET.', url: 'makinitmag.com/live', big: true },
+  meeting: { lock: 'anr-meeting-h',      fill: 'var(--green)',  head: 'Submit your music.<br><b>$1,000</b> Giveaway', url: 'makinitmag.com/review', two: true },
+  pack:    { lock: 'anr-service-pack-h', fill: 'var(--purple)', head: 'Break Your Record',     url: 'makinitmag.com/packs', small: true },
+}[P];
+const c = document.getElementById('c');
+c.style.setProperty('--fill', CFG.fill);
+const lock = document.getElementById('lock');
+lock.src = '../lockups/' + CFG.lock + '.svg'; if (CFG.small) lock.classList.add('small');
+const head = document.getElementById('head');
+head.innerHTML = CFG.head; if (CFG.big) head.classList.add('big'); if (CFG.two) head.classList.add('two');
+document.getElementById('url').textContent = CFG.url;
+document.title = 'A&R link preview — ' + P;
+</script>
+</body>
+</html>

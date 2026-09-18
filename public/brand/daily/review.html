@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A&amp;R Meeting Results Carousels</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{--ground:#0E0C1A;--panel:#171328;--line:#2E2750;--ink:#EAE9F2;--dim:#9793B4;--green:#4BB749;--gold:#F5C518}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+h1{margin:0;font-weight:900;font-size:clamp(30px,4vw,46px);line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.lede{max-width:64ch;color:var(--dim);margin:14px 0 34px}
+.lede b{color:var(--ink)}
+h2{font-weight:900;font-size:24px;letter-spacing:-.04em;text-transform:uppercase;margin:44px 0 6px;line-height:1}
+h2 small{display:block;font-weight:500;text-transform:none;letter-spacing:0;font-size:14px;color:var(--dim);margin-top:6px}
+.rule{height:2px;background:var(--green);margin:10px 0 18px}
+.row{display:grid;gap:14px;grid-template-columns:repeat(3,1fr)}
+.card{background:var(--panel);border:1px solid var(--line);padding:14px;min-width:0}
+.card img{width:100%;height:auto;display:block;border:1px solid var(--line)}
+.card .l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.06em;margin-top:8px}
+.copy{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.copy > div{background:var(--panel);border:1px solid var(--line);padding:16px}
+.copy .k{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.copy .v{max-width:56ch}
+.copy .why{color:var(--dim);font-size:13.5px;border-left:3px solid var(--line);padding-left:12px;margin-top:10px}
+.copy .why b{color:var(--ink)}
+.sched{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+.sched div{background:var(--panel);padding:14px 16px}
+.sched .t{font-family:'Space Mono',monospace;font-weight:700;font-size:22px;color:var(--green)}
+.sched .w{color:var(--dim);font-size:14px;margin-top:4px}
+.open{display:grid;border:1px solid var(--line);background:var(--panel)}
+.open > div{display:grid;grid-template-columns:44px 1fr;border-bottom:1px solid var(--line)}
+.open > div:last-child{border-bottom:0}
+.open .n{font-family:'Space Mono',monospace;font-weight:700;color:var(--green);padding:14px 0 14px 16px}
+.open .t{padding:14px 16px 14px 0;max-width:72ch}
+.open .t b{display:block;font-weight:800}
+.open .t span{color:var(--dim);font-size:14px}
+code{font-family:'Space Mono',monospace;font-size:12px}
+.src{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);margin-top:44px;padding-top:16px;border-top:1px solid var(--line)}
+@media (max-width:900px){.row,.sched{grid-template-columns:1fr 1fr}.copy{grid-template-columns:1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<p class="eyebrow">Makin' It · The A&amp;R Meeting · results carousels · APPROVED AND BUILT 2026-09-13 (038)</p>
+<h1>Results carousels</h1>
+<p class="lede">Two Instagram carousels posted after the reveal stream: one for the day's <b>top record</b>, one for the day's <b>top A&amp;R</b>. Slide 1 is the winner, then the rest ranked (six a slide, as many slides as the day needs), then the call to action. <b>Built into the daily publish</b>: the slides render themselves at 3PM from the day's real results, land on the console with a caption, and render live before that. Names, cities and points here are placeholders.</p>
+
+<div class="sched">
+  <div><div class="t">12:00 PM ET</div><div class="w">Daily drop opens and closes (24-hour window)</div></div>
+  <div><div class="t">2:00 PM ET</div><div class="w">Reveal stream</div></div>
+  <div><div class="t">3:00 PM ET</div><div class="w">Results email · these carousels post</div></div>
+</div>
+<p class="lede" style="margin-top:10px">Confirmed and built 2026-09-13. Days built before the deploy keep their old window.</p>
+
+<h2>Top record<small>Slide 1 the record, slide 2 the other records played, slide 3 submit.</small></h2>
+<div class="rule"></div>
+<div class="row">
+  <div class="card"><img src="results-song-2026-09-12-1.png" alt=""><div class="l">1 · trophy · Top Track · date · title · artist · Instagram handle</div></div>
+  <div class="card"><img src="results-song-2026-09-12-2.png" alt=""><div class="l">2 · also played · ranked, no scores</div></div>
+  <div class="card"><img src="results-song-2026-09-12-3.png" alt=""><div class="l">3 · Submit your music (eyebrow) · Free Review by the A&amp;R Team · closing line B</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Copy</div><div class="v">Top Track 09.12.26 (with the trophy) · Song Title · Artist Name · @instagramusername<br>ALSO PLAYED · 09.12.26 · 02– ranked, no scores<br>SUBMIT YOUR MUSIC (eyebrow) · Free Review by The A&amp;R Team · one closing line · makinitmag.com/review</div><div class="why">Slide 3 per the comment thread: the call to action is the eyebrow, the deliverable is the big text. <b>No pack call to action</b> on a Meeting graphic.</div></div>
+  <div><div class="k">Rules</div><div class="v">Slide 1: a gold trophy, "Top Track" and the date on one line at a moderate size, then title, artist, Instagram handle. The Meeting name appears once, in the lockup. Slide 2 ranks the rest without scores (operator, 2026-09-13); six rows a slide, split evenly across as many slides as the day needs.</div><div class="why">Revised 2026-09-13 from the comment thread: "#1 Song" was too big, the tick divider went, the trophy sits inline. The handle prints where the artist supplied one.</div></div>
+</div>
+
+<h2>Top A&amp;R<small>Slide 1 the A&amp;R, slide 2 the other top A&amp;Rs, slide 3 join.</small></h2>
+<div class="rule"></div>
+<div class="row">
+  <div class="card"><img src="results-ar-2026-09-12-1.png" alt=""><div class="l">1 · trophy · Top A&amp;R · date · name · city · handle · profile photo when there is one</div></div>
+  <div class="card"><img src="results-ar-2026-09-12-2.png" alt=""><div class="l">2 · top A&amp;Rs · ranks 2–7 with points</div></div>
+  <div class="card"><img src="results-ar-2026-09-12-3.png" alt=""><div class="l">3 · Join the A&amp;R Team (eyebrow) · Win $500 as the month's top A&amp;R</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Copy</div><div class="v">Top A&amp;R 09.12.26 (with the trophy) · A&amp;R Name · Atlanta, GA · @instagramusername<br>TOP A&amp;RS · 09.12.26 · 02–07 with points<br>JOIN THE A&amp;R TEAM (eyebrow) · Win $500 as the month's top A&amp;R · Rate the day's records and predict the average. · makinitmag.com/ANR</div><div class="why">Same shape as the submit slide. Gold on the $500.</div></div>
+  <div><div class="k">Rules</div><div class="v">Slide 1 mirrors the song slide: trophy, "Top A&amp;R" and the date, then display name, city, Instagram handle, and the profile photo in the block frame when the profile has one (operator, 2026-09-13). Points moved to slide 2. Never email or phone.</div><div class="why">Ties, absent cities or handles, and long names are handled in production; the mockup shows the shape.</div></div>
+</div>
+
+
+<h2>A big day<small>Fourteen records: the top record, three list slides split 5 / 4 / 4, the call to action.</small></h2>
+<div class="rule"></div>
+<div class="row" style="grid-template-columns:repeat(5,1fr)">
+  <div class="card"><img src="big-song-1.png" alt=""><div class="l">1 / 5</div></div>
+  <div class="card"><img src="big-song-2.png" alt=""><div class="l">2 / 5</div></div>
+  <div class="card"><img src="big-song-3.png" alt=""><div class="l">3 / 5</div></div>
+  <div class="card"><img src="big-song-4.png" alt=""><div class="l">4 / 5</div></div>
+  <div class="card"><img src="big-song-5.png" alt=""><div class="l">5 / 5</div></div>
+</div>
+<div class="row" style="grid-template-columns:1fr 1fr 2fr;margin-top:14px">
+  <div class="card"><img src="results-ar-2026-09-12-1.png" alt=""><div class="l">Top A&amp;R with a profile photo</div></div>
+  <div class="card"><img src="opt-ar1-nophoto.png" alt=""><div class="l">the same slide with no photo on the profile</div></div>
+</div>
+
+<h2>Open items</h2>
+<div class="rule"></div>
+<div class="open">
+  <div><div class="n">—</div><div class="t"><b>Everything on this sheet is settled and built (2026-09-13).</b><span>Slide 1: trophy · Top Track / Top A&amp;R · date. Records ranked without scores. Lists split across slides. Closing line B. Profile photo on the A&amp;R slide. Schedule 12PM / 2PM / 3PM. Production render in the daily publish (038).</span></div></div>
+</div>
+
+<p class="src">Mockup: public/brand/daily/carousel.html · production: share-cards.js resultsSlide + server.js resultsCarouselData · migration 038</p>
+</div></body></html>

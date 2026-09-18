@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A&amp;R Marks and Icons</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Space+Mono:wght@400;700&display=block">
+<style>
+/* ============================================================
+   Level 1 of the promo build order, for review:
+     0.1  the A&R block mark
+     0.2  the four property lockups
+     0.5  the stroke icon set
+   Numbers come from what already shipped (playlist cover, Meeting Recap):
+   skew -13deg, radius 4% of the side, Archivo 900 at 39% of the side,
+   tracking -.05em, counter-skewed. Every block on this page is drawn by
+   the same CSS so the review sees one mark, not five drawings of it.
+   ============================================================ */
+:root{
+  --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4;
+  --green:#4BB749; --purple:#6D5FE0; --gold:#F5C518; --red:#FF5D6C;
+  --paper:#F3F2F7; --paper-ink:#141224; --paper-dim:#5E5A7A; --paper-line:#D6D2E6;
+  --green-paper:#2F8F2E; --purple-paper:#4C3FBD;
+}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.mono{font-family:'Space Mono',ui-monospace,monospace}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+
+/* ---- the mark. One rule, sized by --s ---- */
+.blk{--s:96px;--fill:var(--green);--type:#0E0C1A;
+  width:var(--s);height:var(--s);background:var(--fill);color:var(--type);
+  transform:skewX(-13deg);border-radius:calc(var(--s) * .04);
+  display:flex;align-items:center;justify-content:center;flex:none;
+  margin:0 calc(var(--s) * .115)}              /* the skew adds .23s of width; split it */
+.blk span{transform:skewX(13deg);font-weight:900;font-size:calc(var(--s) * .39);
+  letter-spacing:-.05em;line-height:1;display:block;font-family:'Archivo',sans-serif}
+.blk.amp span{font-size:calc(var(--s) * .62);letter-spacing:0}
+.blk.outline{background:transparent;box-shadow:inset 0 0 0 max(1.5px,calc(var(--s) * .05)) var(--fill);color:var(--fill)}
+.rule13{height:6px;width:120px;background:var(--green);transform:skewX(-13deg)}
+.tick{display:inline-block;width:5px;height:14px;background:var(--green);transform:skewX(-13deg);vertical-align:-2px;margin-right:8px}
+
+/* ---- page chrome ---- */
+header{display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:end;padding-bottom:26px;border-bottom:1px solid var(--line);margin-bottom:34px}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+h1{margin:0;font-weight:900;font-size:clamp(30px,4vw,46px);line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.lede{max-width:64ch;color:var(--dim);margin:14px 0 0}
+.lede b{color:var(--ink)}
+
+section{margin:0 0 56px}
+.sec-head{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:end;padding-bottom:10px;border-bottom:2px solid var(--green);margin-bottom:18px}
+.sec-head .no{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);letter-spacing:.08em;padding-bottom:4px}
+.sec-head h2{margin:0;font-weight:900;font-size:26px;letter-spacing:-.04em;text-transform:uppercase;line-height:1}
+.sec-head h2 small{display:block;font-weight:500;text-transform:none;letter-spacing:0;font-size:14px;color:var(--dim);margin-top:6px}
+
+.grid{display:grid;gap:18px}
+.g2{grid-template-columns:1fr 1fr} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+.board{background:var(--panel);border:1px solid var(--line);padding:22px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.board.paper{background:var(--paper);color:var(--paper-ink);border-color:var(--paper-line)}
+.board .cap{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);display:flex;justify-content:space-between;gap:12px}
+.board.paper .cap{color:var(--paper-dim)}
+.board .cap b{color:var(--green);font-weight:700}
+.board.paper .cap b{color:var(--green-paper)}
+.board .stage{display:flex;align-items:center;justify-content:center;flex:1;min-height:140px;padding:14px 0}
+.board .stage.left{justify-content:flex-start}
+.board p{margin:0;font-size:13.5px;color:var(--dim);max-width:52ch}
+.board.paper p{color:var(--paper-dim)}
+.board p b{color:inherit;font-weight:700}
+.board.paper p b{color:var(--paper-ink)}
+.board p code,.note code{font-family:'Space Mono',monospace;font-size:12px}
+
+/* construction diagram */
+.construct{position:relative;width:340px;height:300px}
+.construct .blk{--s:200px;position:absolute;left:70px;top:50px;margin:0;transform-origin:0 100%}
+.construct svg{position:absolute;inset:0;width:340px;height:300px;overflow:visible}
+.construct text{font-family:'Space Mono',monospace;font-size:11px;fill:var(--dim)}
+.construct line,.construct path{stroke:var(--dim);stroke-width:1;fill:none}
+.construct .ang{stroke:var(--red)}
+
+/* size ladder */
+.ladder{display:flex;align-items:flex-end;gap:34px;flex-wrap:wrap;padding:10px 0 4px}
+.ladder .item{display:flex;flex-direction:column;align-items:center;gap:10px}
+.ladder .item .l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim)}
+.tab{display:inline-flex;align-items:center;gap:8px;background:#26213D;border:1px solid var(--line);border-bottom:0;padding:7px 14px;font-size:12px;color:var(--ink);border-radius:8px 8px 0 0}
+.tab .blk{margin:0 2px}
+.tab.paper{background:#fff;color:var(--paper-ink);border-color:var(--paper-line)}
+
+/* lockups */
+.lock{display:flex;align-items:center;gap:0}
+.lock .blk{margin-left:calc(var(--s) * .16)}
+.lock .word{font-weight:900;text-transform:uppercase;letter-spacing:-.04em;line-height:.86;font-size:var(--w);white-space:nowrap}
+.lock .the{color:var(--dim);font-weight:900;text-transform:uppercase;letter-spacing:-.04em;line-height:.86;font-size:var(--w)}
+.paper .lock .the{color:var(--paper-dim)}
+.lock .word + .blk, .lock .the + .blk{margin-left:calc(var(--s) * .34)}
+.lock .blk + .word{margin-left:calc(var(--s) * .16)}
+.stack{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.stack .the{font-family:'Space Mono',monospace;font-weight:700;font-size:calc(var(--s) * .16);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 calc(var(--s) * .12) calc(var(--s) * .03)}
+.paper .stack .the{color:var(--paper-dim)}
+.stack .blk{margin-left:calc(var(--s) * .12)}
+.stack .word{font-weight:900;text-transform:uppercase;letter-spacing:-.04em;line-height:.86;font-size:calc(var(--s) * .46);margin-top:calc(var(--s) * .2)}
+.endorse{display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+.endorse img{height:22px;width:auto;display:block;align-self:flex-start;flex:none}
+.endorse .by{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.paper .endorse .by{color:var(--paper-dim)}
+
+/* icons */
+.icons{display:grid;grid-template-columns:repeat(8,1fr);gap:14px}
+.ic{background:var(--panel);border:1px solid var(--line);padding:16px 10px 12px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.ic .l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+.ic svg{display:block}
+.ic .row{display:flex;align-items:flex-end;gap:14px;height:28px}
+.big{position:relative;width:192px;height:192px;background:var(--panel);border:1px solid var(--line)}
+.big .g{position:absolute;inset:0;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:8px 8px;opacity:.55}
+.big svg{position:absolute;inset:0;width:192px;height:192px}
+.ctx{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:10px;font-weight:800;font-size:14px;letter-spacing:-.01em;padding:11px 16px;border:1.5px solid var(--line);color:var(--ink);background:transparent}
+.btn.primary{background:var(--green);color:#0E0C1A;border-color:var(--green)}
+.btn.purple{background:var(--purple);color:#0E0C1A;border-color:var(--purple)}
+.btn svg{width:18px;height:18px}
+.chip{display:inline-flex;align-items:center;gap:8px;font-family:'Space Mono',monospace;font-size:12px;padding:6px 10px;border:1px solid var(--line);color:var(--dim)}
+.chip svg{width:16px;height:16px}
+.chip.live{color:var(--green);border-color:var(--green)}
+
+/* decisions */
+.decide{display:grid;gap:0;border:1px solid var(--line);background:var(--panel)}
+.decide > div{display:grid;grid-template-columns:44px 1fr;border-bottom:1px solid var(--line)}
+.decide > div:last-child{border-bottom:0}
+.decide .n{font-family:'Space Mono',monospace;font-weight:700;color:var(--green);padding:14px 0 14px 16px}
+.decide .t{padding:14px 16px 14px 0;max-width:72ch}
+.decide .t b{display:block;font-weight:800}
+.decide .t span{color:var(--dim);font-size:14px}
+.dont{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.dont .board{padding:16px}
+.dont .stage{min-height:110px}
+.dont .cap{color:var(--red)}
+.dont .cap b{color:var(--red)}
+.src{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);margin-top:44px;padding-top:16px;border-top:1px solid var(--line)}
+
+@media (max-width:900px){
+  .g2,.g3,.g4{grid-template-columns:1fr 1fr}
+  .icons{grid-template-columns:repeat(4,1fr)}
+  .dont{grid-template-columns:repeat(2,1fr)}
+  header{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  .g2,.g3,.g4{grid-template-columns:1fr}
+  .icons{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- 0.5 stroke icon set. 24 grid, 2px stroke, square caps, miter joins. -->
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4 L20 12 L7 20 Z"/></symbol>
+    <symbol id="i-vote" viewBox="0 0 24 24"><path d="M4 15 A8 8 0 0 1 20 15"/><path d="M12 15 L17.5 9.5"/><path d="M3 19 H21"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7 V12 H16"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M9 3 H15 V12 A3 3 0 0 1 9 12 Z"/><path d="M5 11 A7 7 0 0 0 19 11"/><path d="M12 18 V21 M8 21 H16"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 20 H21"/><path d="M5 20 V12 H9 V20"/><path d="M10 20 V5 H14 V20"/><path d="M15 20 V14 H19 V20"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3 V16"/><path d="M6 10 L12 16 L18 10"/><path d="M4 20 H20"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12 H20"/><path d="M13 5 L20 12 L13 19"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <div class="blk" style="--s:84px"><span>A&amp;R</span></div>
+    <div>
+      <p class="eyebrow">Makin' It · promo build order · level 1 · for approval · 2026-09-11</p>
+      <h1>The mark, the lockups, the icons</h1>
+      <p class="lede">Assets <b>0.1</b>, <b>0.2</b> and <b>0.5</b> from the promo inventory. Everything after them in the build order is drawn from these, so they are the ones to get right first. Every block on this page is one CSS rule sized by a single number, which is what the SVG master will be.</p>
+    </div>
+  </header>
+
+  <!-- ================= 0.1 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">0.1</span><h2>The A&amp;R block mark<small>The skewed square holding A&amp;R. It is the part of the brand that survives at 48px, so it is drawn for 48px first.</small></h2></div>
+
+    <div class="grid g3">
+      <div class="board">
+        <div class="cap"><span>Construction</span><b>13°</b></div>
+        <div class="stage">
+          <div class="construct">
+            <svg viewBox="0 0 340 300">
+              <line x1="70" y1="20" x2="70" y2="280" stroke-dasharray="3 4"/>
+              <line x1="10" y1="50" x2="330" y2="50" stroke-dasharray="3 4"/>
+              <line x1="10" y1="250" x2="330" y2="250" stroke-dasharray="3 4"/>
+              <line class="ang" x1="70" y1="250" x2="70" y2="170"/>
+              <path class="ang" d="M70 175 A75 75 0 0 1 87 177"/>
+              <text x="36" y="172">13°</text>
+              <line x1="70" y1="264" x2="270" y2="264"/>
+              <text x="164" y="280">S</text>
+              <text x="112" y="38">r = .04S</text>
+              <text x="258" y="280">type .39S</text>
+              <text x="258" y="294">−.05em</text>
+            </svg>
+            <div class="blk"><span>A&amp;R</span></div>
+          </div>
+        </div>
+        <p>A square of side <b>S</b>, skewed −13° on X, corner radius <b>.04S</b>. The three letters are Archivo 900 at <b>.39S</b>, tracking −.05em, counter-skewed so they stay upright. The angle never changes and the type never slants.</p>
+      </div>
+
+      <div class="board">
+        <div class="cap"><span>Clear space</span><b>.5S</b></div>
+        <div class="stage">
+          <div style="position:relative;padding:48px 58px;border:1px dashed var(--line)">
+            <div class="blk" style="--s:96px"><span>A&amp;R</span></div>
+          </div>
+        </div>
+        <p>Nothing else inside half a side on every edge. The lockups below sit on this rule, and so does every ad. Minimum size on screen is <b>24px</b>; below that use the favicon variant.</p>
+      </div>
+
+      <div class="board">
+        <div class="cap"><span>Deliverables</span><b>SVG + PNG</b></div>
+        <div class="stage left" style="align-items:flex-start">
+          <div class="mono" style="font-size:12px;line-height:2;color:var(--dim)">
+            anr-mark.svg <span style="color:var(--ink)">master, green</span><br>
+            anr-mark-ink.svg <span style="color:var(--ink)">mono, one colour</span><br>
+            anr-mark-outline.svg <span style="color:var(--ink)">knockout / embroidery</span><br>
+            anr-mark-512.png · 192 · 96 · 48<br>
+            favicon-32.png · favicon-16.png<br>
+            apple-touch-icon-180.png
+          </div>
+        </div>
+        <p>The PNGs are rendered from the SVG, never redrawn. The 16 and 32 favicons use the ampersand variant (decision 1 below).</p>
+      </div>
+    </div>
+
+    <div class="grid g4" style="margin-top:18px">
+      <div class="board">
+        <div class="cap"><span>Primary</span><b>green · ink type</b></div>
+        <div class="stage"><div class="blk" style="--s:120px"><span>A&amp;R</span></div></div>
+        <p>The default everywhere the ground is dark. Green means live, scoring, go. This is the master.</p>
+      </div>
+      <div class="board paper">
+        <div class="cap"><span>On paper</span><b>#2F8F2E · white type</b></div>
+        <div class="stage"><div class="blk" style="--s:120px;--fill:var(--green-paper);--type:#fff"><span>A&amp;R</span></div></div>
+        <p>Screen green does not hold contrast on white. The paper value is darker and the type flips to white.</p>
+      </div>
+      <div class="board paper">
+        <div class="cap"><span>Mono ink</span><b>one colour</b></div>
+        <div class="stage"><div class="blk" style="--s:120px;--fill:#141224;--type:#fff"><span>A&amp;R</span></div></div>
+        <p>For one-colour print, stamps, engraving, the USB label. Ink block, paper type.</p>
+      </div>
+      <div class="board">
+        <div class="cap"><span>Service Pack</span><b>purple</b></div>
+        <div class="stage"><div class="blk" style="--s:120px;--fill:var(--purple)"><span>A&amp;R</span></div></div>
+        <p>The only other fill. Purple means the pack and anything head-to-head. Already how the playlist covers draw it.</p>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:18px">
+      <div class="board">
+        <div class="cap"><span>Size ladder, real pixels</span><b>512 → 16</b></div>
+        <div class="ladder">
+          <div class="item"><div class="blk" style="--s:192px"><span>A&amp;R</span></div><div class="l">192</div></div>
+          <div class="item"><div class="blk" style="--s:96px"><span>A&amp;R</span></div><div class="l">96</div></div>
+          <div class="item"><div class="blk" style="--s:48px"><span>A&amp;R</span></div><div class="l">48</div></div>
+          <div class="item"><div class="blk" style="--s:32px"><span>A&amp;R</span></div><div class="l">32</div></div>
+          <div class="item"><div class="blk" style="--s:24px"><span>A&amp;R</span></div><div class="l">24</div></div>
+          <div class="item"><div class="blk" style="--s:16px"><span>A&amp;R</span></div><div class="l">16</div></div>
+          <div class="item"><div class="blk amp" style="--s:32px"><span>&amp;</span></div><div class="l">32 amp</div></div>
+          <div class="item"><div class="blk amp" style="--s:16px"><span>&amp;</span></div><div class="l">16 amp</div></div>
+        </div>
+        <p>These are drawn at their true size, not scaled screenshots. <b>A&amp;R holds to 24.</b> At 16 the three letters are a smudge and the ampersand alone still reads as the mark, which is why the favicon takes the ampersand.</p>
+      </div>
+      <div class="board">
+        <div class="cap"><span>In a browser tab</span><b>favicon</b></div>
+        <div class="stage" style="flex-direction:column;gap:14px;align-items:flex-start">
+          <div style="display:flex;gap:6px;align-items:flex-end">
+            <span class="tab"><span class="blk amp" style="--s:16px"><span>&amp;</span></span>The A&amp;R Team</span>
+            <span class="tab" style="opacity:.6"><span class="blk" style="--s:16px"><span>A&amp;R</span></span>The A&amp;R Team</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:flex-end">
+            <span class="tab paper"><span class="blk amp" style="--s:16px;--fill:var(--green-paper);--type:#fff"><span>&amp;</span></span>A&amp;R Service Pack</span>
+            <span class="tab paper" style="opacity:.6"><span class="blk" style="--s:16px;--fill:var(--green-paper);--type:#fff"><span>A&amp;R</span></span>A&amp;R Service Pack</span>
+          </div>
+        </div>
+        <p>Left: the ampersand favicon. Right, dimmed: the full mark at 16px for comparison. The tab title carries the name, so the icon only has to be recognisable.</p>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:18px">
+      <div class="dont">
+        <div class="board"><div class="cap"><b>Do not</b><span>unskew</span></div><div class="stage"><div class="blk" style="--s:72px;transform:none;margin:0"><span style="transform:none">A&amp;R</span></div></div></div>
+        <div class="board"><div class="cap"><b>Do not</b><span>slant the type</span></div><div class="stage"><div class="blk" style="--s:72px"><span style="transform:none">A&amp;R</span></div></div></div>
+        <div class="board"><div class="cap"><b>Do not</b><span>use gold</span></div><div class="stage"><div class="blk" style="--s:72px;--fill:var(--gold)"><span>A&amp;R</span></div></div></div>
+        <div class="board"><div class="cap"><b>Do not</b><span>gradient</span></div><div class="stage"><div class="blk" style="--s:72px;background:linear-gradient(135deg,var(--green),var(--purple))"><span>A&amp;R</span></div></div></div>
+        <div class="board"><div class="cap"><b>Do not</b><span>change the angle</span></div><div class="stage"><div class="blk" style="--s:72px;transform:skewX(-28deg)"><span style="transform:skewX(28deg)">A&amp;R</span></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 0.2 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">0.2</span><h2>The property lockups<small>One block, one word changes. Horizontal for headers and lower thirds, stacked for covers, avatars and anything square.</small></h2></div>
+
+    <div class="grid g2">
+      <div class="board">
+        <div class="cap"><span>Horizontal</span><b>green</b></div>
+        <div class="stage left" style="flex-direction:column;align-items:flex-start;gap:30px;padding:20px 8px">
+          <div class="lock" style="--s:64px;--w:60px"><div class="blk" style="--s:64px"><span>A&amp;R</span></div><div class="word">Room</div></div>
+          <div class="lock" style="--s:64px;--w:60px"><div class="blk" style="--s:64px"><span>A&amp;R</span></div><div class="word">Team</div></div>
+          <div class="lock" style="--s:64px;--w:60px"><div class="blk" style="--s:64px"><span>A&amp;R</span></div><div class="word">Meeting</div></div>
+        </div>
+        <p>The block replaces the letters "A&amp;R" and the descriptor follows it. <b>The article is dropped from the mark</b>: "The" set at descriptor size outweighed the block and unbalanced the line. The names keep their article in copy: The A&amp;R Team, The A&amp;R Meeting.</p>
+      </div>
+      <div class="board">
+        <div class="cap"><span>Horizontal</span><b>purple</b></div>
+        <div class="stage left" style="flex-direction:column;align-items:flex-start;gap:30px;padding:20px 8px">
+          <div class="lock" style="--s:64px;--w:60px"><div class="blk" style="--s:64px;--fill:var(--purple)"><span>A&amp;R</span></div><div class="word">Service Pack</div></div>
+          <div class="lock" style="--s:64px;--w:60px;opacity:.45"><div class="blk" style="--s:64px;--fill:var(--purple)"><span>A&amp;R</span></div><div class="word">Wars</div></div>
+        </div>
+        <p>The pack is purple. A&amp;R Wars is shown dimmed only to prove a fifth property drops in without a new drawing. It is out of scope for this round.</p>
+      </div>
+    </div>
+
+    <div class="grid g4" style="margin-top:18px">
+      <div class="board">
+        <div class="cap"><span>Stacked</span><b>room</b></div>
+        <div class="stage left"><div class="stack" style="--s:88px"><div class="blk" style="--s:88px"><span>A&amp;R</span></div><div class="word">Room</div></div></div>
+      </div>
+      <div class="board">
+        <div class="cap"><span>Stacked</span><b>team</b></div>
+        <div class="stage left"><div class="stack" style="--s:88px"><div class="blk" style="--s:88px"><span>A&amp;R</span></div><div class="word">Team</div></div></div>
+      </div>
+      <div class="board">
+        <div class="cap"><span>Stacked</span><b>meeting</b></div>
+        <div class="stage left"><div class="stack" style="--s:88px"><div class="blk" style="--s:88px"><span>A&amp;R</span></div><div class="word">Meeting</div></div></div>
+      </div>
+      <div class="board">
+        <div class="cap"><span>Stacked</span><b>service pack</b></div>
+        <div class="stage left"><div class="stack" style="--s:88px"><div class="blk" style="--s:88px;--fill:var(--purple)"><span>A&amp;R</span></div><div class="word">Service<br>Pack</div></div></div>
+      </div>
+    </div>
+    <p class="note" style="color:var(--dim);font-size:13.5px;max-width:70ch;margin:12px 0 0">Block above, descriptor below, for all four. With the article gone every stack shares one construction and one baseline, and the block is always the heaviest thing in it.</p>
+
+    <div class="grid g3" style="margin-top:18px">
+      <div class="board paper">
+        <div class="cap"><span>On paper</span><b>horizontal</b></div>
+        <div class="stage left" style="flex-direction:column;align-items:flex-start;gap:22px;padding:16px 8px">
+          <div class="lock" style="--s:38px;--w:35px"><div class="blk" style="--s:38px;--fill:var(--green-paper);--type:#fff"><span>A&amp;R</span></div><div class="word">Meeting</div></div>
+          <div class="lock" style="--s:38px;--w:35px"><div class="blk" style="--s:38px;--fill:var(--purple-paper);--type:#fff"><span>A&amp;R</span></div><div class="word">Service Pack</div></div>
+        </div>
+        <p>Paper values: green #2F8F2E, purple #4C3FBD, white type in the block, ink descriptor.</p>
+      </div>
+      <div class="board">
+        <div class="cap"><span>Endorsed</span><b>Makin' It</b></div>
+        <div class="stage left">
+          <div class="endorse">
+            <div class="lock" style="--s:56px;--w:52px"><div class="blk" style="--s:56px"><span>A&amp;R</span></div><div class="word">Room</div></div>
+            <div class="by">Presented by</div>
+            <img src="assets/makinit-logo-white.png" alt="Makin' It">
+          </div>
+        </div>
+        <p>The endorser sits below, never inside the lockup, at about a quarter of the block height. Swap to the dark logo on paper; never invert with a filter.</p>
+      </div>
+      <div class="board">
+        <div class="cap"><span>Lower third, 1920 wide</span><b>overlay</b></div>
+        <div class="stage left" style="padding:0">
+          <div style="width:100%;aspect-ratio:16/9;background:#000;position:relative;overflow:hidden;border:1px solid var(--line)">
+            <div style="position:absolute;left:5%;bottom:10%;display:flex;align-items:center;gap:12px;background:var(--panel);padding:8px 14px 8px 8px;border-left:4px solid var(--green);white-space:nowrap">
+              <div class="lock" style="--s:24px;--w:21px"><div class="blk" style="--s:30px"><span>A&amp;R</span></div><div class="word">Room</div></div>
+              <span class="mono" style="font-size:10px;color:var(--dim);letter-spacing:.1em;white-space:nowrap">WED 7PM ET</span>
+              <span class="chip live" style="padding:3px 8px;font-size:10px"><svg><use href="#i-clock"/></svg>LIVE</span>
+            </div>
+          </div>
+        </div>
+        <p>How the horizontal lockup sits in a card on the stream. The block is the only skewed thing in the card.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 0.5 ================= -->
+  <section>
+    <div class="sec-head"><span class="no">0.5</span><h2>The stroke icon set<small>Eight glyphs on a 24 grid, 2px stroke, square caps, miter joins. Tight and heavy like the type. No emoji, no dingbats.</small></h2></div>
+
+    <div class="icons">
+      <div class="ic"><svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-play"/></svg><div class="row"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-play"/></svg><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-play"/></svg><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-play"/></svg></div><div class="l">play</div></div>
+      <div class="ic"><svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-vote"/></svg><div class="row"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-vote"/></svg><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-vote"/></svg><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-vote"/></svg></div><div class="l">vote</div></div>
+      <div class="ic"><svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-clock"/></svg><div class="row"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-clock"/></svg><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-clock"/></svg><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-clock"/></svg></div><div class="l">clock</div></div>
+      <div class="ic"><svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-mic"/></svg><div class="row"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-mic"/></svg><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-mic"/></svg><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-mic"/></svg></div><div class="l">mic</div></div>
+      <div class="ic"><svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-chart"/></svg><div class="row"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-chart"/></svg><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-chart"/></svg><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-chart"/></svg></div><div class="l">chart</div></div>
+      <div class="ic"><svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-download"/></svg><div class="row"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-download"/></svg><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-download"/></svg><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-download"/></svg></div><div class="l">download</div></div>
+      <div class="ic"><svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-check"/></svg><div class="row"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-check"/></svg><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-check"/></svg><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-check"/></svg></div><div class="l">check</div></div>
+      <div class="ic"><svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-arrow"/></svg><div class="row"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-arrow"/></svg><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-arrow"/></svg><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-arrow"/></svg></div><div class="l">arrow</div></div>
+    </div>
+
+    <div class="grid g3" style="margin-top:18px">
+      <div class="board">
+        <div class="cap"><span>On the grid, 8×</span><b>vote</b></div>
+        <div class="stage">
+          <div class="big"><div class="g"></div><svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><use href="#i-vote"/></svg></div>
+        </div>
+        <p>The vote glyph is the dial, because the mechanic is a dial: an arc from 0 to 9 and a needle. It is the one icon specific to this product and the one to look at hardest.</p>
+      </div>
+      <div class="board">
+        <div class="cap"><span>In context</span><b>buttons and chips</b></div>
+        <div class="stage" style="flex-direction:column;align-items:flex-start;gap:14px">
+          <div class="ctx">
+            <span class="btn primary"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-check"/></svg>Lock in</span>
+            <span class="btn purple"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-download"/></svg>Get this month's pack</span>
+            <span class="btn"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-arrow"/></svg>Next round</span>
+          </div>
+          <div class="ctx">
+            <span class="chip live"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-clock"/></svg>0:14</span>
+            <span class="chip"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-vote"/></svg>38 A&amp;Rs voted</span>
+            <span class="chip"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-play"/></svg>Now playing</span>
+            <span class="chip"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><use href="#i-chart"/></svg>Series 3</span>
+          </div>
+        </div>
+        <p>Icons take the text colour of whatever they sit in and never carry a colour of their own. The chip shows a vote count, never a direction.</p>
+      </div>
+      <div class="board">
+        <div class="cap"><span>Also in the set</span><b>the tick</b></div>
+        <div class="stage" style="flex-direction:column;align-items:flex-start;gap:10px">
+          <div><span class="tick"></span>Pick your top 18 songs.</div>
+          <div><span class="tick"></span>Tune in to see if your picks get played.</div>
+          <div><span class="tick"></span>Most right selections wins.</div>
+          <div class="rule13" style="margin-top:8px"></div>
+        </div>
+        <p>The 13° tick is the list bullet and the section marker; the rule divides a header from what follows. Both are the block's angle, not a ninth icon.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= decisions ================= -->
+  <section>
+    <div class="sec-head"><span class="no">SIGN-OFF</span><h2>Four decisions<small>One decided, three to approve. Then the SVG masters get cut.</small></h2></div>
+    <div class="decide">
+      <div><div class="n">1</div><div class="t"><b>Favicon at 16 and 32 uses the ampersand alone.</b><span>The three letters do not survive at 16px. The ampersand keeps the shape and the colour. From 48 up it is always A&amp;R.</span></div></div>
+      <div><div class="n">2</div><div class="t"><b>The article is dropped from marks and lockups. Decided.</b><span>[A&amp;R] Team and [A&amp;R] Meeting, never The [A&amp;R] Meeting: the article at descriptor size was larger than the A&amp;R and unbalanced the mark. The full names, with the article, stay in copy and titles.</span></div></div>
+      <div><div class="n">3</div><div class="t"><b>Four fills and no more: green, paper green, mono ink, purple.</b><span>Gold never fills the block. Red never fills the block. A white block on dark ground is not in the set.</span></div></div>
+      <div><div class="n">4</div><div class="t"><b>Icons are 2px square-capped strokes; the vote icon is the dial.</b><span>Round caps would soften the whole set against the 13° block. The alternative for vote was a hand or a ballot, which say election, not rating.</span></div></div>
+    </div>
+  </section>
+
+  <p class="src">Inventory: docs/promo-asset-list.md · brand rules: the anr-brand skill · this sheet: docs/mockups/anr-brand-marks-mockup.html</p>
+</div>
+</body>
+</html>

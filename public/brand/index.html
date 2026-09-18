@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A&amp;R Brand Masters</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{--ground:#0E0C1A;--panel:#171328;--line:#2E2750;--ink:#EAE9F2;--dim:#9793B4;--green:#4BB749;--paper:#F3F2F7;--paper-ink:#141224;--paper-dim:#5E5A7A;--paper-line:#D6D2E6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1240px;margin:0 auto;padding:36px 28px 80px}
+h1{font-weight:900;font-size:34px;letter-spacing:-.04em;text-transform:uppercase;margin:0 0 6px;line-height:1}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+p.lede{color:var(--dim);max-width:66ch;margin:0 0 30px}
+h2{font-weight:900;font-size:22px;letter-spacing:-.04em;text-transform:uppercase;margin:36px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--green)}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(4,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g8{grid-template-columns:repeat(8,1fr)}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card.paper{background:var(--paper);border-color:var(--paper-line);color:var(--paper-ink)}
+.card .st{display:flex;align-items:center;justify-content:center;flex:1;min-height:120px}
+.card .st img,.card .st svg{max-width:100%;height:auto;display:block}
+.card .l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.06em;word-break:break-all}
+.card.paper .l{color:var(--paper-dim)}
+.ladder{display:flex;align-items:flex-end;gap:28px;flex-wrap:wrap}
+.ladder div{display:flex;flex-direction:column;align-items:center;gap:8px}
+.ladder img{display:block;image-rendering:auto}
+.ladder span{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim)}
+.ic{color:var(--ink)}
+.ic svg{width:48px;height:48px}
+code{font-family:'Space Mono',monospace;font-size:12px}
+@media(max-width:820px){.grid{grid-template-columns:repeat(2,1fr)}.g8{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body><div class="wrap">
+<p class="eyebrow">Makin' It · brand masters · built by public/brand/build.py</p>
+<h1>A&amp;R brand masters</h1>
+<p class="lede">Level 1 of the promo build order, approved 2026-09-11. Every file on this page is generated: type is converted to outlines so the SVGs need no installed font, and every PNG is rendered from its SVG. Edit <code>build.py</code>, never the outputs.</p>
+
+<h2>0.1 The block mark</h2>
+<div class="grid">
+  <div class="card"><div class="st"><img src="mark/anr-mark.svg" style="width:180px"></div><div class="l">mark/anr-mark.svg · master</div></div>
+  <div class="card paper"><div class="st"><img src="mark/anr-mark-paper.svg" style="width:180px"></div><div class="l">mark/anr-mark-paper.svg</div></div>
+  <div class="card paper"><div class="st"><img src="mark/anr-mark-ink.svg" style="width:180px"></div><div class="l">mark/anr-mark-ink.svg</div></div>
+  <div class="card"><div class="st"><img src="mark/anr-mark-purple.svg" style="width:180px"></div><div class="l">mark/anr-mark-purple.svg</div></div>
+  <div class="card"><div class="st" style="color:var(--green)"><img src="mark/anr-mark-outline.svg" style="width:180px"></div><div class="l">mark/anr-mark-outline.svg · currentColor</div></div>
+  <div class="card"><div class="st"><img src="mark/anr-mark-amp.svg" style="width:120px"></div><div class="l">mark/anr-mark-amp.svg · favicon source</div></div>
+  <div class="card paper"><div class="st"><img src="mark/anr-mark-amp-paper.svg" style="width:120px"></div><div class="l">mark/anr-mark-amp-paper.svg</div></div>
+  <div class="card"><div class="st"><img src="mark/apple-touch-icon-180.png" style="width:180px;border-radius:40px"></div><div class="l">mark/apple-touch-icon-180.png</div></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="ladder">
+    <div><img src="mark/anr-mark-512.png" width="512" height="512" style="width:256px;height:256px"><span>512 (shown at half)</span></div>
+    <div><img src="mark/anr-mark-192.png" width="192" height="192"><span>192</span></div>
+    <div><img src="mark/anr-mark-96.png" width="96" height="96"><span>96</span></div>
+    <div><img src="mark/anr-mark-48.png" width="48" height="48"><span>48</span></div>
+    <div><img src="mark/favicon-32.png" width="32" height="32"><span>favicon 32</span></div>
+    <div><img src="mark/favicon-16.png" width="16" height="16"><span>favicon 16</span></div>
+    <div><img src="mark/favicon-32.png" width="32" height="32" style="width:128px;height:128px;image-rendering:pixelated"><span>32 at 4×</span></div>
+    <div><img src="mark/favicon-16.png" width="16" height="16" style="width:128px;height:128px;image-rendering:pixelated"><span>16 at 8×</span></div>
+  </div>
+  <div class="l">PNGs at true pixels; the last two are the favicons blown up nearest-neighbour to show what actually survives.</div>
+</div>
+
+<h2>0.2 The property lockups</h2>
+<div class="grid g2">
+  <div class="card"><div class="st"><img src="lockups/anr-room-h.svg" style="height:80px"></div><div class="l">lockups/anr-room-h.svg</div></div>
+  <div class="card"><div class="st"><img src="lockups/anr-team-h.svg" style="height:80px"></div><div class="l">lockups/anr-team-h.svg</div></div>
+  <div class="card"><div class="st"><img src="lockups/anr-meeting-h.svg" style="height:80px"></div><div class="l">lockups/anr-meeting-h.svg</div></div>
+  <div class="card"><div class="st"><img src="lockups/anr-service-pack-h.svg" style="height:80px"></div><div class="l">lockups/anr-service-pack-h.svg</div></div>
+</div>
+<div class="grid" style="margin-top:14px">
+  <div class="card"><div class="st"><img src="lockups/anr-room-stack.svg" style="height:150px"></div><div class="l">lockups/anr-room-stack.svg</div></div>
+  <div class="card"><div class="st"><img src="lockups/anr-team-stack.svg" style="height:150px"></div><div class="l">lockups/anr-team-stack.svg</div></div>
+  <div class="card"><div class="st"><img src="lockups/anr-meeting-stack.svg" style="height:150px"></div><div class="l">lockups/anr-meeting-stack.svg</div></div>
+  <div class="card"><div class="st"><img src="lockups/anr-service-pack-stack.svg" style="height:150px"></div><div class="l">lockups/anr-service-pack-stack.svg</div></div>
+</div>
+<div class="grid" style="margin-top:14px">
+  <div class="card paper"><div class="st"><img src="lockups/anr-room-h-paper.svg" style="height:56px"></div><div class="l">lockups/anr-room-h-paper.svg</div></div>
+  <div class="card paper"><div class="st"><img src="lockups/anr-meeting-h-paper.svg" style="height:56px"></div><div class="l">lockups/anr-meeting-h-paper.svg</div></div>
+  <div class="card paper"><div class="st"><img src="lockups/anr-team-stack-paper.svg" style="height:130px"></div><div class="l">lockups/anr-team-stack-paper.svg</div></div>
+  <div class="card paper"><div class="st"><img src="lockups/anr-service-pack-stack-paper.svg" style="height:130px"></div><div class="l">lockups/anr-service-pack-stack-paper.svg</div></div>
+</div>
+
+<h2>0.7 Link previews</h2>
+<div class="grid">
+  <div class="card"><div class="st"><img src="og/og-team.png" alt=""></div><div class="l">og/og-team.png · app pages</div></div>
+  <div class="card"><div class="st"><img src="og/og-room.png" alt=""></div><div class="l">og/og-room.png · makinitmag.com/live</div></div>
+  <div class="card"><div class="st"><img src="og/og-meeting.png" alt=""></div><div class="l">og/og-meeting.png · makinitmag.com/review</div></div>
+  <div class="card"><div class="st"><img src="og/og-pack.png" alt=""></div><div class="l">og/og-pack.png · makinitmag.com/packs</div></div>
+</div>
+
+<h2>0.5 The stroke icon set</h2>
+<div class="grid g8">
+  <div class="card ic"><div class="st"><img src="icons/play.svg" width="48" height="48"></div><div class="l">play</div></div>
+  <div class="card ic"><div class="st"><img src="icons/vote.svg" width="48" height="48"></div><div class="l">vote</div></div>
+  <div class="card ic"><div class="st"><img src="icons/clock.svg" width="48" height="48"></div><div class="l">clock</div></div>
+  <div class="card ic"><div class="st"><img src="icons/mic.svg" width="48" height="48"></div><div class="l">mic</div></div>
+  <div class="card ic"><div class="st"><img src="icons/chart.svg" width="48" height="48"></div><div class="l">chart</div></div>
+  <div class="card ic"><div class="st"><img src="icons/download.svg" width="48" height="48"></div><div class="l">download</div></div>
+  <div class="card ic"><div class="st"><img src="icons/check.svg" width="48" height="48"></div><div class="l">check</div></div>
+  <div class="card ic"><div class="st"><img src="icons/arrow.svg" width="48" height="48"></div><div class="l">arrow</div></div>
+</div>
+<p class="lede" style="margin-top:14px">Standalone icons render in white (currentColor falls back to black inside an <code>&lt;img&gt;</code>, so they are shown through a white filter here). Inline the sprite <code>icons/anr-icons.svg</code> and reference <code>&lt;use href="#i-vote"&gt;</code> to have them take the surrounding text colour.</p>
+<style>.ic .st img{filter:invert(1)}</style>
+</div></body></html>

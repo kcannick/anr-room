@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (959 passed as of 2026-08-30; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,509 passed as of 2026-09-18; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -84,7 +84,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 037; suite green)
+## Current state (migrations through 039; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -111,8 +111,8 @@ live on anr.makinitmag.com.
   drops to a 15s heartbeat when connected, 2s fallback otherwise. No leaderboard cache needed.
 - **Growth + monetization + ops:** referral points (per accurate round in the invitee's first
   30 days — see the referral rework below; the 10/75 milestones are retired); invite-only rooms (unlisted + access code); share cards (Score Card, Top 8
-  A&Rs, Top 8 Songs — Satori/Blob) + recap emails (chunked queue); host-only paid **Song
-  Report** (3-page per-round analytics PNG) + a Rounds-tab round-history browser; **Platform
+  A&Rs, Top 8 Songs — Satori/Blob) + recap emails (chunked queue); host-only **Song
+  Report** (per-round analytics PNGs — rebuilt as the **Track Report**, see below) + a Rounds-tab round-history browser; **Platform
   control panel** (global banners, allowlisted system settings, SMS test) + host defaults
   (per-host watch/submit/description/banner prefills); **Revive ad server** (ads.cannick.com,
   zones 8=lobby/9=game, phase-aware cascade room→Revive→global, iframe-only); **mass
@@ -128,7 +128,7 @@ live on anr.makinitmag.com.
   `Array(10)`/"out of 9"; all "0–9" copy. See the `scoring-scale-0-10` memory for the full plan.
 
 - **Post-show artist workflow** (026): every artist whose record was rated gets their FULL
-  3-page Song Report free by email + the replay link + carousel-post instructions (no price
+  Song Report (now the Track Report, below) free by email + the replay link + carousel-post instructions (no price
   / no upsell — operator's call, visibility first; a test asserts the copy stays clean), plus
   a heads-up SMS **queued to a 10AM–10:30PM ET window** (TCPA; the show ends at 11PM so texts
   drain the next morning via the `/api/cron/artist-sms` Vercel Cron — needs `CRON_SECRET`,
@@ -525,6 +525,79 @@ live on anr.makinitmag.com.
   records pushed before the field existed — per-row reporting, re-runnable, touches
   support_cents only. Run from live Drupal with `terminus drush mim.live -- php-eval` (the
   token stays on the server). One-off on 2026-09-13.
+
+- **Schedule change + results carousels** (038, 2026-09-13). **The daily schedule moved**: the drop
+  opens at **12:00 PM ET and closes at 12:00 PM ET the next day** (a 24-hour window; the moment
+  the next day opens), the operator runs the **reveal stream at 2:00 PM**, and results **publish
+  at 3:00 PM** (digest, artist reports, social posts). Was open noon / close 9AM / publish noon.
+  (The times are platform-panel settings — see the schedule bullet above; the carousel work
+  here landed alongside that change.)
+  **The results carousels**: two Instagram carousels posted after the reveal stream — the day's
+  **top record** (trophy · "Top Track" · date; title, artist, handle → the other records
+  **ranked WITHOUT scores**, six to a slide, split evenly across as many slides as the day needs
+  → "Submit your music / Free Review by the A&R Team", closing line B) and the day's **top A&R**
+  (name, city, handle, **the profile photo when there is one** → the other top A&Rs with points
+  → "Join the A&R Team / Win $500 as the month's top A&R"). Rendered by the 3PM publish through
+  Satori (`shareCards` type `resultsSlide`, 1080×1350) and hosted at
+  `daily/<day>/results-{song,ar}-N.png`; `recap_jobs.results_{song,ar}_urls` (JSON arrays, null
+  when any slide failed to host) + `results_{song,ar}_caption`. Live admin-only render at
+  `/api/card/results?s=&set=&slide=`, captions at `/api/admin/daily/results-caption?s=&set=`,
+  the daily status carries `cards.results`. The profile photo is fetched into a data URI at
+  render (4s timeout, 3MB cap, best-effort) because Satori cannot fetch. Public surface: display
+  name, city, handle, points. Mockup (approved through five rounds of operator comments):
+  `public/brand/daily/carousel.html`. The promo brand system (marks, ads, key art, share
+  graphics) lives in `public/brand/` — see `docs/promo-asset-list.md`.
+
+- **The winner posts** (039, 2026-09-18): **Top Track of the Day / Top A&R of the Day**, one
+  1080×1350 portrait graphic each, posted as Instagram **collab posts** so they land on the
+  winner's own feed, and **Top Track / Top A&R of the Week** with a strap saying what the week
+  earns ("Placed in the next $1,000 Tournament" / "Placed in the A&R Wars tournament for $500
+  Cash"). One Satori element, `winnerPost`, built to `public/brand/winners/winner.html` after the
+  operator's "flyers look too busy" pass: lockup, stacked title with its date, the person, ONE
+  line of numbers (score; or the letter grade in the block device + points + bullseyes), the
+  field. No trophy, no rank (TOP TRACK already says #1). **The day pair renders at the 3PM
+  publish** (same best-effort contract: `recap_jobs.winner_{track,ar}_url` NULL on failure,
+  captions kept) and hosts at `daily/<day>/winner-{track,ar}.png`; **the week pair renders on
+  demand** (`/api/card/winner?week=&post=`, `/api/admin/weekly/winners?week=`) and stores
+  nothing. **The weekly rule is a default the operator has not yet confirmed:** Top Track of the
+  Week = highest room average across the week's PUBLISHED drops (ties: votes, earlier day, drop
+  order); Top A&R of the Week = most points summed across them. A week runs Monday–Sunday and a
+  week card is **dated by the week it tracks**, never the day it is announced (operator's call
+  when asked). Day cards carry the DROP day. Grade and bullseyes come from the same vote rows
+  the score card uses. Console: "Winner posts" + "Winners of the week" on the daily graphics
+  card, with a week picker defaulting to the last completed week.
+
+
+- **The Track Report** (no migration, 2026-09-15) — the artist's report, rebuilt around the
+  decision. Spec: **docs/specs/track-report-spec.md** (built from the Room Report Redesign
+  mockup). The old three pages opened with a big green number and buried the instruction on
+  the last card; the report now opens with a sentence the artist can act on — "Release it.
+  Don't put money behind it yet." — and the score sits under it as evidence. **Every headline
+  is derived** in `track-report.js` (pure, `track-report.test.js`) from numbers `songReportData`
+  already had: the BAND (edges 3 / 6, the chart key's cuts; `TRACK_BAND_EDGES=a,b` overrides),
+  the histogram's SHAPE (consensus / divided / spread / thin — "Agreement, with three
+  believers."), the record AGAINST THE ROOM (a marker on the real distribution of everything
+  the Meeting has rated, bucketed at 0.5 — replaces "Top 61%", which only flatters below ~25%),
+  WHO IT'S FOR (role/city segments as targeting — "Artists. Not managers."), SETUP VS RECORD
+  (the prediction gap with a meaning: over-predicted = the packaging oversells), and WHAT NOW
+  (three next actions from band + biggest segment gap + prediction direction). Comments get
+  their own page(s), attributed name · role · city. The SHARE page carries the title, the
+  artist and "N A&Rs heard it" with **no score** — postable at 2.1 or 8.4.
+  **Cut on purpose:** "Room favorite · N% scored it 8+", "Top N%", the in-room/remote pool
+  tile, the rank-in-session line, gold on medians and modes (gold is money and first place
+  only). **The page list varies per record** (`trackReportPages`): a page whose data is
+  missing drops out and the rest renumber, so the console fetches `?meta=1` first and the
+  queue row's `report_urls` is the record of what went. One element type, `trackPage`
+  (1080×1350, Archivo + Space Mono, the [A&R] MEETING / [A&R] ROOM lockup by `sessions.mode`,
+  green = scoring, purple = the prediction game, the cut only on the share page). Reference
+  tracks are excluded from every denominator. The comparison set is the Meeting's own history
+  for a Meeting record (needs 20 rated records before the page shows), the series or every
+  live show for a live one. Email rebuilt as a sibling of the site's template (mim
+  `docs/mockups/email-template-round1.html`): decision first, the rating as evidence, the
+  pages, the comments, the post instructions; still no price or upsell (tested). The SMS says
+  "has been rated", never "evaluated live". **Still open (spec §2):** calibrating the band
+  edges to the real quartiles — `?meta=1` returns them — and naming the 7+ raters with
+  consent; and a hosted report page → `reportUrl` in the §12 callback.
 
 - **The weekly report** (no migration, 2026-09-16) — the screen the Wednesday show is read off.
   `/api/admin/weekly/status` (platform-admin; it spans every host and carries artist handles and

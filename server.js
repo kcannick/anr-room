@@ -27,6 +27,7 @@ const { sendSms, PROVIDER: SMS_PROVIDER } = require('./sms');
 const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy } = require('./scoring');
 const shareCards = require('./share-cards');
+const trackReport = require('./track-report');
 const { consensusRanking, scoreEntry, rankEntries, validatePicks } = require('./sidebet');
 
 const PORT = process.env.PORT || 3000;
@@ -988,7 +989,7 @@ function reportsLeftFor(h) { return Math.max(0, reportCapFor(h.total) - h.report
 // Pay the completion bonus for finishing the day. Idempotent by construction.
 //
 // THE TIER COMES FROM WHEN THEY FINISHED, not from now(). Inline (at their final action) those
-// are the same instant; in a sweep they are not, and a 9AM sweep must never pay 25 to someone
+// are the same instant; in a sweep they are not, and a noon sweep must never pay 25 to someone
 // who actually finished at 2PM. One rule, both callers.
 //
 // point_events has UNIQUE (reason, source_uid, milestone), so the session x user pair has to
@@ -1118,8 +1119,8 @@ async function sweepCompletionBonuses(session) {
 }
 
 // ===== A&R DAILY — the lifecycle =====
-// The day runs on the clock, not on a button: it opens at noon, closes at 9AM, tallies, and
-// publishes at noon. Driven by /api/cron/daily (and by an admin route, so the operator can
+// The day runs on the clock, not on a button: it opens at noon, closes at noon the next day,
+// tallies, and publishes at 3PM (the reveal stream runs at 2PM, between the two). Driven by /api/cron/daily (and by an admin route, so the operator can
 // run it by hand and so the suite can drive it without CRON_SECRET set).
 //
 // EVERY TRANSITION IS A CONDITIONAL UPDATE. Vercel documents that a scheduled run can
@@ -1129,13 +1130,13 @@ async function sweepCompletionBonuses(session) {
 //
 // AND IT IS DEADLINE-BUDGETED. ratifyRound() re-scores every vote in a round inside one
 // transaction; at the 2,000-concurrent target a full day is tens of thousands of rows, which
-// is not a 30-second job (vercel.json pins maxDuration to 30). The 9AM close gives a 3-hour
-// runway to the noon publish, so the tally deliberately takes as many ticks as it needs and
+// is not a 30-second job (vercel.json pins maxDuration to 30). The noon close gives a 3-hour
+// runway to the 3PM publish, so the tally deliberately takes as many ticks as it needs and
 // stops cleanly when the budget runs out. A plain `for (const r of rounds) await ratify(r)`
 // would silently produce a half-tallied day and a published-but-wrong leaderboard.
 const DROP_TICK_BUDGET_MS = 22000;   // of the 30s function ceiling
 
-// How long after the noon publish the artist notices are held. 029 made comments ship by
+// How long after the 3PM publish the artist notices are held. 029 made comments ship by
 // DEFAULT with the host rejecting the odd bad one — a model that works because a live show
 // has a wrap-up moment where the send panel prints "N comments about to go out". A cron has
 // no such moment, and there is no unsend. This hour is that checkpoint, restored.
@@ -1225,7 +1226,7 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       }
     }
 
-    // ---- publish: ratified -> published, at results_at (noon) ----
+    // ---- publish: ratified -> published, at results_at (3PM) ----
     const cur = await db.get('SELECT * FROM sessions WHERE id = ?', [s.id]);
     if (cur && cur.async_state === 'ratified' && at >= Number(cur.results_at)) {
       if (left() < 8000) { out.budgetHit = true; break; }
@@ -1303,8 +1304,8 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
 // status page can say "reviewed by 23 A&Rs" instead of promising a report, and so a record
 // that sat behind a dead link is not counted as reviewed.
 //
-// FIRED AT PUBLISH (noon), NOT AT THE 9AM TALLY — the other side offered either. The day is
-// scored at 9 but results do not reach A&Rs until noon, and handing room averages to another
+// FIRED AT PUBLISH (3PM), NOT AT THE NOON TALLY — the other side offered either. The day is
+// scored at noon but results do not reach A&Rs until 3PM, and handing room averages to another
 // system in that window would put the day's results on a public page three hours before the
 // people who did the rating see them. Same seal that hides vote direction during the window.
 //
@@ -1388,8 +1389,8 @@ async function pushDayResults(session) {
   }
 }
 
-// ===== THE A&R MEETING RECAP — the daily noon stream's graphics + caption =====
-// The operator goes live at noon and counts down the previous day's records, reveals the Top
+// ===== THE A&R MEETING RECAP — the daily 2PM stream's graphics + caption =====
+// The operator goes live at 2PM and counts down the previous day's records, reveals the Top
 // 8 A&Rs, then closes on the top artists. The stream needs an Instagram Live cover (9:16), a
 // YouTube thumbnail (16:9) and a caption, all carrying the stream DATE — the one field that
 // tells thirty near-identical videos apart — and the day's artists and A&Rs by handle.
@@ -1398,7 +1399,7 @@ async function pushDayResults(session) {
 // the Top 8 A&Rs alphabetised, so a cover posted an hour before the stream gives away who is
 // on it, never where they placed. The Top 8 card (ranked) stays the post-stream graphic.
 //
-// The date is the day the stream AIRS — results_at (noon ET after the window closes), not
+// The date is the day the stream AIRS — results_at (3PM ET, the afternoon the window closes), not
 // drop_day (when the records opened) — because the video is labelled by when it happened.
 function recapDateLabel(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
@@ -1422,7 +1423,7 @@ async function recapGraphicsData(session) {
     .map(a => (a.ig ? '@' + a.ig : (a.name || '').trim()))
     .filter(Boolean)
     .sort((a, b) => a.replace(/^@/, '').localeCompare(b.replace(/^@/, ''), 'en', { sensitivity: 'base' }));
-  const airs = Number(session.results_at) || etEpoch(etNextDay(session.drop_day), 12) || now();
+  const airs = Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now();
   return { date: recapDateLabel(airs), artists, ars };
 }
 // The stream caption: plain and direct (operator's copy voice), with the same lists as the
@@ -1442,11 +1443,250 @@ function recapCaption(d) {
   return lines.join('\n');
 }
 
+// ===== THE A&R MEETING RESULTS CAROUSELS — posted after the 2PM reveal stream =====
+// Two Instagram carousels, rendered at the 3PM publish beside the recap cover and hosted on
+// the same Blob path (daily/<day>/results-song-N.png, results-ar-N.png), plus a caption each:
+//   song  slide 1 the top record (trophy · "Top Track" · date; title, artist, handle), then
+//         the other records RANKED WITHOUT SCORES six to a slide, then "Submit your music"
+//   ar    slide 1 the top A&R (name, city, handle, and the profile photo when there is one),
+//         then the other top A&Rs with the day's points, then "Join the A&R Team"
+// The list splits evenly across as many slides as it needs, so a four-record day is three
+// slides and a fourteen-record day five. Posted after the reveal, so ranking is public here.
+// Public surface: display name, city, handle, points. Never email or phone.
+// Operator decisions 2026-09-13; the approved mockup is public/brand/daily/carousel.html.
+const RESULTS_MAX_ARS = 13;   // the top A&R + two list slides of six
+const RESULTS_COPY = {
+  song: { label: 'Top Track', listLabel: 'Also played',
+    cta: { eyebrow: 'Submit your music', head: ['Free Review', 'by the A&R', 'Team'],
+      body: 'Get feedback to help finish, release, or promote your music.', url: shareCards.SUBMIT_URL } },
+  ar: { label: 'Top A&R', listLabel: 'Top A&Rs',
+    cta: { eyebrow: 'Join the A&R Team', head: ['Win $500 as the', 'month’s top A&R'],
+      body: 'Rate the day’s records and predict the average.', url: shareCards.JOIN_URL } },
+};
+// Split a list across as few pages of `per` as possible, evenly, so no page is left with one.
+function parseJsonArray(v) { try { const a = JSON.parse(v || 'null'); return Array.isArray(a) ? a : null; } catch (e) { return null; } }
+function resultsPages(list, per) {
+  if (!list.length) return [];
+  const pages = Math.ceil(list.length / per);
+  const base = Math.floor(list.length / pages), extra = list.length % pages;   // 13 over 3 pages -> 5, 4, 4
+  const out = [];
+  for (let i = 0, at = 0; i < pages; i++) { const n = base + (i < extra ? 1 : 0); out.push(list.slice(at, at + n)); at += n; }
+  return out;
+}
+// The profile photo as a data URI for Satori (which cannot fetch), best-effort: a slow or
+// oversized image, or a host that is down, costs the photo and nothing else.
+async function photoDataUri(url) {
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(url, { signal: ctl.signal });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const type = (r.headers.get('content-type') || '').split(';')[0].trim();
+    if (!/^image\/(png|jpeg|webp)$/.test(type)) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 3 * 1024 * 1024) return null;
+    return `data:${type};base64,${buf.toString('base64')}`;
+  } catch (e) { return null; }
+}
+async function resultsCarouselData(session, set, { photo = true } = {}) {
+  const copy = RESULTS_COPY[set];
+  if (!copy) return null;
+  const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  let hero, others;
+  if (set === 'song') {
+    const rows = await db.all(
+      // Reference tracks are known records, not submissions — they never chart here either.
+      `SELECT song_title, song_artist, song_note, artist_instagram FROM rounds
+        WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
+          AND COALESCE(is_reference, 0) = 0
+        ORDER BY room_average DESC, idx ASC`, [session.id]);
+    if (!rows.length) return null;
+    const recs = rows.map(r => {
+      const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+      const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
+      return { title: (r.song_title || '—').trim(), artist: (r.song_artist || '').trim(), ig };
+    });
+    hero = { label: copy.label, title: recs[0].title, sub: recs[0].artist, handle: recs[0].ig ? '@' + recs[0].ig : '' };
+    // Ranked, no scores (operator, 2026-09-13): the position is the news, not the number.
+    others = recs.slice(1).map((r, i) => ({ rank: String(i + 2).padStart(2, '0'), line1: r.title, line2: r.artist }));
+  } else {
+    const rows = await db.all(
+      `SELECT p.name AS pname, u.name AS uname, u.instagram, u.location, u.photo_url, p.total_points AS pts
+         FROM participants p LEFT JOIN users u ON p.user_id = u.uid
+        WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+        ORDER BY pts DESC, p.created_at ASC LIMIT ?`, [session.id, RESULTS_MAX_ARS]);
+    if (!rows.length) return null;
+    const top = rows[0];
+    const ig = igClean(top.instagram);
+    hero = { label: copy.label, title: top.uname || top.pname || 'A&R', sub: (top.location || '').trim(), subDim: true,
+      handle: ig ? '@' + ig : '', photo: photo ? await photoDataUri(top.photo_url) : null };
+    others = rows.slice(1).map((r, i) => ({ rank: String(i + 2).padStart(2, '0'), line1: r.uname || r.pname || 'A&R',
+      line2: (r.location || '').trim(), value: Number(r.pts) || 0 }));
+  }
+  const pages = resultsPages(others, shareCards.RESULTS_PER_SLIDE);
+  const total = 1 + pages.length + 1;
+  const slides = [{ set, slide: 1, total, date, kind: 'hero', hero }];
+  pages.forEach((rows, i) => slides.push({ set, slide: i + 2, total, date, kind: 'list', listLabel: copy.listLabel, rows,
+    footLeft: set === 'ar' ? `Points today · ${i + 2} / ${total}` : null }));
+  slides.push({ set, slide: total, total, date, kind: 'cta', cta: copy.cta });
+  return { set, date, total, slides };
+}
+// The post caption: plain, the same names as the slides, handles where we have them.
+function resultsCaption(d) {
+  const hero = d.slides[0].hero;
+  const lists = d.slides.filter(s => s.kind === 'list').flatMap(s => s.rows);
+  const lines = [];
+  if (d.set === 'song') {
+    lines.push(`Top Track · ${d.date}`, `${hero.title} by ${hero.sub}${hero.handle ? ' ' + hero.handle : ''}`.trim());
+    if (lists.length) lines.push('', 'Also played:', ...lists.map(r => `${r.rank}. ${r.line1}${r.line2 ? ' by ' + r.line2 : ''}`));
+    lines.push('', 'Submit your music. Free review by The A&R Team.', shareCards.SUBMIT_URL);
+  } else {
+    lines.push(`Top A&R · ${d.date}`, `${hero.title}${hero.sub ? ' · ' + hero.sub : ''}${hero.handle ? ' ' + hero.handle : ''}`);
+    if (lists.length) lines.push('', 'Top A&Rs:', ...lists.map(r => `${r.rank}. ${r.line1}${r.line2 ? ' · ' + r.line2 : ''} · ${r.value} pts`));
+    lines.push('', 'Join the A&R Team to win $500.', shareCards.JOIN_URL);
+  }
+  lines.push('', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+  return lines.join('\n');
+}
+
+// ---- The winner posts (039): Top Track / Top A&R of the Day and of the Week ----------------
+// One portrait graphic per winner, posted as an Instagram COLLAB post with them (operator,
+// 2026-09-18). The daily pair renders at the 3PM publish off the same data as the results
+// carousels; the weekly pair renders on demand for a Monday-to-Sunday week and stores nothing.
+//
+// THE WEEKLY RULE (a default, not yet the operator's word — 2026-09-18): Top Track of the Week
+// is the record with the highest room average across the week's PUBLISHED drops (ties: more
+// votes, then the earlier day, then drop order); Top A&R of the Week is the A&R with the most
+// points summed across those drops (ties: name). The week's grade and bullseyes are computed
+// over that A&R's votes in those drops, the same way the score card does it for one day.
+// A week card is dated by the week it TRACKS (first day – last day), never the announce day.
+const WINNER_COPY = {
+  track: { label: 'Top Track', strap: 'Placed in the next $1,000 Tournament',
+    cta: { label: 'Submit music to the A&R Team', url: shareCards.SUBMIT_URL } },
+  ar:    { label: 'Top A&R', strap: 'Placed in the A&R Wars tournament for $500 Cash',
+    cta: { label: 'Join the A&R Team', url: shareCards.JOIN_URL } },
+};
+const dayLabel = day => recapDateLabel(etEpoch(day, 12));
+// The Monday of the ET week that holds `day`.
+function weekStartOf(day) {
+  const ts = etEpoch(day, 12);
+  if (ts == null) return null;
+  const dow = new Date(ts).getUTCDay();                       // noon ET is the same calendar day in UTC
+  return etNextDay(day, -((dow + 6) % 7));
+}
+// The most recent week whose Sunday has passed: the one the console offers by default.
+const lastCompletedWeekStart = () => etNextDay(weekStartOf(etDay()), -7);
+// Grade and bullseyes over a set of vote rows ({ err, tier, poll_type }), as buildRecap does it.
+function gradeAndBullseyes(rows) {
+  const scaleFor = pt => (pt === 'binary' ? 100 : 9);
+  const acc = rows.length ? Math.round((rows.reduce((a, m) => a + roundAccuracy(m.err, scaleFor(m.poll_type)), 0) / rows.length) * 100) / 100 : null;
+  return { grade: gradeForAccuracy(acc), bullseyes: rows.filter(m => m.tier === 'bullseye').length };
+}
+function winnerShape(post, period, date, strap, person, extra) {
+  const copy = WINNER_COPY[post];
+  return { kind: post, period, label: copy.label, sub: 'of the ' + (period === 'week' ? 'Week' : 'Day'), date,
+    strap: period === 'week' ? copy.strap : null, ...person, ...extra, cta: copy.cta };
+}
+async function winnerTrackRow(sessionIds, { idx = true } = {}) {
+  const ph = sessionIds.map(() => '?').join(',');
+  return db.get(
+    `SELECT r.song_title, r.song_artist, r.song_note, r.artist_instagram, r.room_average, s.drop_day,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS nv
+       FROM rounds r JOIN sessions s ON s.id = r.session_id
+      WHERE r.session_id IN (${ph}) AND r.status = 'ratified' AND r.room_average IS NOT NULL
+        AND COALESCE(r.is_reference, 0) = 0
+      ORDER BY r.room_average DESC, nv DESC, s.drop_day ASC, r.idx ASC LIMIT 1`, sessionIds);
+}
+function trackPerson(r) {
+  const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+  const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
+  return { title: '“' + (r.song_title || '—').trim() + '”', by: (r.song_artist || '').trim(), handle: ig ? '@' + ig : '' };
+}
+async function arPerson(u, { photo }) {
+  return { title: u.name || 'A&R', by: (u.primary_category || '').trim(), handle: (u.location || '').trim(),
+    photo: photo ? await photoDataUri(u.photo_url) : null };
+}
+// The day's pair: the top record (with its room average) and the board leader (with the
+// score card's grade and bullseye count). Public surface: display name, category, city, points.
+async function winnerDayData(session, post, { photo = true } = {}) {
+  if (!WINNER_COPY[post]) return null;
+  const date = dayLabel(session.drop_day);
+  if (post === 'track') {
+    const r = await winnerTrackRow([session.id]);
+    if (!r) return null;
+    return winnerShape('track', 'day', date, null, trackPerson(r), { line: { score: Number(r.room_average).toFixed(1) } });
+  }
+  const top = await db.get(
+    `SELECT p.id AS pid, p.name AS pname, u.name, u.primary_category, u.location, u.photo_url, p.total_points AS pts
+       FROM participants p LEFT JOIN users u ON p.user_id = u.uid
+      WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+      ORDER BY pts DESC, p.created_at ASC LIMIT 1`, [session.id]);
+  if (!top) return null;
+  const votes = await db.all(
+    `SELECT v.err, v.tier, r.poll_type FROM votes v JOIN rounds r ON r.id = v.round_id
+      WHERE v.participant_id = ? AND r.status = 'ratified'`, [top.pid]);
+  const gb = gradeAndBullseyes(votes);
+  return winnerShape('ar', 'day', date, null, await arPerson({ ...top, name: top.name || top.pname }, { photo }),
+    { line: { grade: gb.grade || '—', points: Number(top.pts) || 0, bullseyes: gb.bullseyes } });
+}
+// The week's pair, over the PUBLISHED drops dated Monday..Sunday from `weekStart`.
+async function winnerWeekData(weekStart, post, { photo = true } = {}) {
+  if (!WINNER_COPY[post]) return null;
+  const start = weekStartOf(weekStart);
+  if (!start) return null;
+  const end = etNextDay(start, 6);
+  const drops = await db.all(
+    `SELECT id, drop_day FROM sessions WHERE mode = 'async' AND async_state = 'published' AND deleted_at IS NULL
+        AND drop_day BETWEEN ? AND ? ORDER BY drop_day ASC`, [start, end]);
+  if (!drops.length) return null;
+  const ids = drops.map(d => d.id), ph = ids.map(() => '?').join(',');
+  const date = dayLabel(start) + ' – ' + dayLabel(end);
+  if (post === 'track') {
+    const r = await winnerTrackRow(ids);
+    if (!r) return null;
+    return winnerShape('track', 'week', date, WINNER_COPY.track.strap, trackPerson(r),
+      { line: { score: Number(r.room_average).toFixed(1), drop: dayLabel(r.drop_day) }, week: { start, end, drops: drops.length } });
+  }
+  const top = await db.get(
+    `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(p.total_points) AS pts
+       FROM participants p JOIN users u ON p.user_id = u.uid
+      WHERE p.session_id IN (${ph}) AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+      GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
+      ORDER BY pts DESC, u.name ASC LIMIT 1`, ids);
+  if (!top) return null;
+  const votes = await db.all(
+    `SELECT v.err, v.tier, r.poll_type FROM votes v JOIN participants p ON p.id = v.participant_id
+       JOIN rounds r ON r.id = v.round_id
+      WHERE p.user_id = ? AND p.session_id IN (${ph}) AND r.status = 'ratified'`, [top.uid, ...ids]);
+  const gb = gradeAndBullseyes(votes);
+  return winnerShape('ar', 'week', date, WINNER_COPY.ar.strap, await arPerson(top, { photo }),
+    { line: { grade: gb.grade || '—', points: Number(top.pts) || 0, bullseyes: gb.bullseyes }, week: { start, end, drops: drops.length } });
+}
+// The collab post's caption: plain, the same words as the card.
+function winnerCaption(d) {
+  const lines = [`${d.label} ${d.sub} · ${d.date}`];
+  if (d.kind === 'track') {
+    lines.push(`${d.title} by ${d.by}${d.handle ? ' ' + d.handle : ''}`.trim());
+    const bits = [];
+    if (d.line && d.line.score) bits.push('Score ' + d.line.score);
+    if (d.line && d.line.drop) bits.push('Dropped ' + d.line.drop);
+    if (bits.length) lines.push(bits.join(' · '));
+  } else {
+    lines.push(`${d.title}${d.by ? ' · ' + d.by : ''}${d.handle ? ' · ' + d.handle : ''}`);
+    lines.push(`Grade ${d.line.grade} · ${d.line.points} points · ${d.line.bullseyes} bullseyes`);
+  }
+  if (d.strap) lines.push('', d.strap);
+  lines.push('', d.cta.label, d.cta.url, '', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+  return lines.join('\n');
+}
+
 // Publish the day: render and host the two shared cards, build the post kit caption, queue
 // the A&R digest, and flip the session to completed/published.
 //
 // The status flip to 'completed' is what makes playerState's recap branch fire — which is
-// why it happens at NOON and not at the 9AM close. Flipping three hours early would reveal
+// why it happens at 3PM and not at the noon close. Flipping three hours early would reveal
 // every room average while the results are still supposed to be sealed.
 //
 // THE CARDS ARE BEST-EFFORT; THE REVEAL IS NOT.
@@ -1509,10 +1749,47 @@ async function publishDailyDrop(session, { deadline = null } = {}) {
   } catch (e) {
     console.error('[daily] recap graphics failed:', e.message);
   }
+  // The results carousels, same contract, one set at a time so a failure in one cannot cost
+  // the other. A partly-hosted set is stored as null: the console renders the whole set live
+  // rather than showing three hosted slides and a hole.
+  const results = { song: { urls: null, caption: null }, ar: { urls: null, caption: null } };
+  for (const set of ['song', 'ar']) {
+    try {
+      const rd = await resultsCarouselData(session, set);
+      if (!rd) continue;
+      results[set].caption = resultsCaption(rd);
+      const urls = [];
+      for (const sl of rd.slides) {
+        if (deadline && Date.now() > deadline) break;
+        urls.push(await uploadPng(`daily/${day}/results-${set}-${sl.slide}.png`, await shareCards.renderPng('resultsSlide', sl)));
+      }
+      if (urls.length === rd.slides.length) results[set].urls = JSON.stringify(urls);
+    } catch (e) {
+      console.error(`[daily] results carousel (${set}) failed:`, e.message);
+    }
+  }
+  // The winner posts (039), same contract: one post at a time, caption first, URL only when hosted.
+  const winners = { track: { url: null, caption: null }, ar: { url: null, caption: null } };
+  for (const post of ['track', 'ar']) {
+    try {
+      const wd = await winnerDayData(session, post);
+      if (!wd) continue;
+      winners[post].caption = winnerCaption(wd);
+      if (!deadline || Date.now() < deadline) {
+        winners[post].url = await uploadPng(`daily/${day}/winner-${post}.png`, await shareCards.renderPng('winnerPost', wd));
+      }
+    } catch (e) {
+      console.error(`[daily] winner post (${post}) failed:`, e.message);
+    }
+  }
   await db.run(
     `UPDATE recap_jobs SET ars_url = ?, songs_url = ?, caption = ?,
-            recap_cover_url = ?, recap_thumb_url = ?, recap_caption = ? WHERE session_id = ?`,
-    [arsUrl, songsUrl, caption, recapCover, recapThumb, recapText, sessionId]);
+            recap_cover_url = ?, recap_thumb_url = ?, recap_caption = ?,
+            results_song_urls = ?, results_ar_urls = ?, results_song_caption = ?, results_ar_caption = ?,
+            winner_track_url = ?, winner_ar_url = ?, winner_track_caption = ?, winner_ar_caption = ? WHERE session_id = ?`,
+    [arsUrl, songsUrl, caption, recapCover, recapThumb, recapText,
+     results.song.urls, results.ar.urls, results.song.caption, results.ar.caption,
+     winners.track.url, winners.ar.url, winners.track.caption, winners.ar.caption, sessionId]);
 
   try { await enqueueDailyDigest(session); }
   catch (e) { console.error('[daily] digest enqueue failed:', e.message); }
@@ -1577,7 +1854,7 @@ async function asyncPlayerState(participant, session, count) {
   let phase;
   if (session.status === 'completed' || (session.async_state === 'published' && ts >= results)) phase = 'recap';
   else if (ts < opens || session.async_state === 'scheduled') phase = 'waiting';
-  else if (ts >= closes) phase = 'sealed';       // rated, tallying or tallied — results at noon
+  else if (ts >= closes) phase = 'sealed';       // rated, tallying or tallied — results at 3PM
   else phase = handled >= total && total > 0 ? 'done' : 'queue';
 
   // Before the day opens the queue ships EMPTY — titles and pre-release links are a reveal,
@@ -1942,7 +2219,7 @@ async function overlayState(session, lbScope) {
   if (isAsync(session)) {
     // The board is the only piece that still makes sense, and it is already a public shape
     // (it's what the homepage renders). Prefer the series board — the $500 race — since a
-    // drop's own participant totals read 0 until the 9AM tally.
+    // drop's own participant totals read 0 until the noon tally.
     const leaderboard = session.series_id
       ? (await homeSeriesBoard(session.series_id, 10)).map(r => ({ rank: r.rank, name: r.name, points: r.points }))
       : (await db.all('SELECT name, total_points FROM participants WHERE session_id = ? AND verified = 1 ORDER BY total_points DESC, created_at ASC LIMIT 10', [sessionId]))
@@ -2316,9 +2593,43 @@ function chartVoteSpread(rows) {
   return { min: v[0], median: mid, max: v[v.length - 1] };
 }
 
+const csvEsc = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+
+// Contact details for a set of ranked A&Rs, in one query. `users.phone` is optional and
+// often empty — plenty of A&Rs only ever gave a number at a session signup — so fall back
+// to the most recent phone on their participant rows instead of exporting a dead column.
+async function arsContacts(uids) {
+  const ids = uids.filter(Boolean);
+  if (!ids.length) return new Map();
+  const ph = ids.map(() => '?').join(',');
+  const rows = await db.all(
+    `SELECT u.uid, u.email, u.sms_marketing_consent AS consent,
+            COALESCE(NULLIF(TRIM(u.phone), ''),
+                     (SELECT NULLIF(TRIM(p.phone), '') FROM participants p
+                       WHERE p.user_id = u.uid AND NULLIF(TRIM(p.phone), '') IS NOT NULL
+                       ORDER BY p.created_at DESC LIMIT 1)) AS phone
+       FROM users u WHERE u.uid IN (${ph})`, ids);
+  return new Map(rows.map(r => [r.uid, { email: r.email || '', phone: r.phone || '', consent: Number(r.consent) === 1 }]));
+}
+
+// The contact export: the A&R chart plus email + phone, for booking the top of a series
+// (A&R Wars invites, Tastemaker outreach). Deliberately a SEPARATE format rather than two
+// more columns on the normal CSV — that file feeds captions and carousels and gets passed
+// around, and contact details must never ride along by default.
+function chartsContactsCsv(d, contacts) {
+  // sms_consent rides along because the phone column alone can't tell you whether a number
+  // came with a marketing opt-in or only ever with a login code.
+  const head = ['rank', 'name', 'instagram', 'email', 'phone', 'sms_consent', 'category', 'location', 'points', 'rounds_scored'];
+  const body = d.rows.map(r => {
+    const c = contacts.get(r.id) || {};
+    return [r.rank, r.name, r.ig ? '@' + r.ig : '', c.email || '', c.phone || '', c.consent ? 'yes' : 'no', r.category, r.location, r.points, r.rounds];
+  });
+  return [head.join(',')].concat(body.map(row => row.map(csvEsc).join(','))).join('\n');
+}
+
 // CSV per mode. Same rows, same order, same floor as the on-screen chart.
 function chartsCsv(d) {
-  const esc = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const esc = csvEsc;
   let head, body;
   if (d.mode === 'ars') {
     head = ['rank', 'name', 'instagram', 'category', 'location', 'points', 'rounds_scored'];
@@ -2353,13 +2664,31 @@ function chartsCaption(d) {
   return L.join('\n');
 }
 
-// Song Report (paid artist tier): everything the 3-page report needs, computed live
-// from one ratified rating round. Host-triggered only — never on the boot/poll path.
-// Aggregates only: segments (role/city/pool) surface at 3+ voters; individual scores
-// never leave the server.
+// The Track Report: everything the artist's report needs, computed live from one ratified
+// rating round. Host- or queue-triggered only — never on the boot/poll path. Aggregates
+// only: segments (role/city) surface at 3+ A&Rs; individual scores never leave the server.
+//
+// Rebuilt 2026-09-15 to docs/specs/track-report-spec.md: every headline is a sentence
+// derived in track-report.js from the numbers here (the band, the histogram's shape, the
+// segment gap, the prediction gap), so the pages cannot disagree with each other and nothing
+// is written per record. Cut on purpose: "Room favorite · N% scored it 8+" (two people, and
+// the histogram disproves it), "Top N%" (flatters only below ~25%), the in-room/remote pool
+// tile (every Meeting vote is async), and gold on medians and modes (gold is money and first
+// place only). Free vs paid (support_cents) is operator-only and never reaches this shape.
+//
+// The comparison set for "against the room" is the product's own history: every rated
+// record of the A&R Meeting for a Meeting record, the series (or every live show) for a
+// live-show record. Reference tracks are known records, not submissions, and are excluded
+// from every denominator here.
+const TRACK_MIN_FOR_CURVE = 20;    // rated records before the "against the room" page shows
+const TRACK_MIN_FOR_SEGMENTS = 8;  // A&Rs before segments show (a small room would decompose)
+function trackBandEdges() {
+  const env = (process.env.TRACK_BAND_EDGES || '').split(',').map(Number).filter(Number.isFinite);
+  return env.length === 2 && env[0] < env[1] ? env : trackReport.DEFAULT_EDGES;
+}
 async function songReportData(round, session) {
   const votes = await db.all(
-    `SELECT v.taste, v.predict, p.pool, u.primary_category AS cat, u.location AS loc
+    `SELECT v.taste, v.predict, u.primary_category AS cat, u.location AS loc
        FROM votes v
        JOIN participants p ON v.participant_id = p.id
        LEFT JOIN users u   ON p.user_id = u.uid
@@ -2373,68 +2702,101 @@ async function songReportData(round, session) {
   tastes.forEach(t => { if (t >= 0 && t <= 9) hist[t]++; });
   const maxC = Math.max(...hist);
   const modes = hist.map((c, i) => [i, c]).filter(([, c]) => c === maxC && c > 0).map(([i]) => i);
-  const heatPct = Math.round(tastes.filter(t => t >= 8).length / n * 100);
   const preds = votes.map(v => Number(v.predict)).filter(Number.isFinite);
   const predictMean = preds.length ? preds.reduce((a, x) => a + x, 0) / preds.length : null;
-  const gap = predictMean != null ? mean - predictMean : null;
-  const fmt = x => Number.isInteger(x) ? String(x) : x.toFixed(1);
-  // Segments: only groups with 3+ voters, top 4 by score.
-  const segment = key => {
+  // Segments: only groups with 3+ A&Rs, top 4 by score. Names print plural ("Artists").
+  const segment = (key, label) => {
     const m = {};
     votes.forEach(v => { const k = (v[key] || '').toString().trim(); if (k) (m[k] = m[k] || []).push(Number(v.taste)); });
     return Object.entries(m)
       .filter(([, a]) => a.length >= 3)
-      .map(([name, a]) => ({ name, n: a.length, avg: a.reduce((x, y) => x + y, 0) / a.length }))
+      .map(([name, a]) => ({ name: label(name), n: a.length, avg: a.reduce((x, y) => x + y, 0) / a.length }))
       .sort((a, b) => b.avg - a.avg).slice(0, 4);
   };
-  const poolAvg = pool => {
-    const a = votes.filter(v => v.pool === pool).map(v => Number(v.taste));
-    return a.length >= 3 ? { n: a.length, avg: a.reduce((x, y) => x + y, 0) / a.length } : null;
-  };
-  const inP = poolAvg('in_person'), rem = poolAvg('online');
-  // Context: rank among this room's ratified rating rounds; percentile across the series.
-  const roomRows = await db.all(
-    "SELECT room_average FROM rounds WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL", [session.id]);
-  const rankInRoom = { rank: roomRows.filter(r => Number(r.room_average) > Number(round.room_average)).length + 1, total: roomRows.length };
-  let seriesPct = null;
-  if (session.series_id) {
-    const sr = await db.all(
+  const roles = n >= TRACK_MIN_FOR_SEGMENTS ? segment('cat', trackReport.plural) : [];
+  const cities = n >= TRACK_MIN_FOR_SEGMENTS ? segment('loc', s => s) : [];
+  // The comparison set. A Meeting record is measured against everything the Meeting has
+  // rated; a live-show record against its series, or every live show when untagged.
+  const meeting = isAsync(session);
+  const what = meeting ? 'A&R Meeting' : 'A&R Room';
+  const history = meeting
+    ? await db.all(
       `SELECT r.room_average FROM rounds r JOIN sessions s ON r.session_id = s.id
-        WHERE s.series_id = ? AND s.deleted_at IS NULL AND r.status = 'ratified' AND r.room_average IS NOT NULL`, [session.series_id]);
-    if (sr.length >= 5) {
-      const better = sr.filter(r => Number(r.room_average) > Number(round.room_average)).length;
-      seriesPct = { pct: Math.max(1, Math.ceil((better + 1) / sr.length * 100)), total: sr.length };
-    }
-  }
-  const igM = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(round.song_note || '');
-  const dateLabel = new Date(Number(session.created_at) || Date.now())
-    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
+        WHERE s.mode = 'async' AND s.deleted_at IS NULL AND r.status = 'ratified' AND r.room_average IS NOT NULL
+          AND COALESCE(r.poll_type,'rating') <> 'binary' AND COALESCE(r.is_reference, 0) = 0`)
+    : session.series_id
+    ? await db.all(
+      `SELECT r.room_average FROM rounds r JOIN sessions s ON r.session_id = s.id
+        WHERE s.series_id = ? AND s.deleted_at IS NULL AND r.status = 'ratified' AND r.room_average IS NOT NULL
+          AND COALESCE(r.poll_type,'rating') <> 'binary' AND COALESCE(r.is_reference, 0) = 0`, [session.series_id])
+    : await db.all(
+      `SELECT r.room_average FROM rounds r JOIN sessions s ON r.session_id = s.id
+        WHERE s.mode IS NULL AND s.deleted_at IS NULL AND r.status = 'ratified' AND r.room_average IS NOT NULL
+          AND COALESCE(r.poll_type,'rating') <> 'binary' AND COALESCE(r.is_reference, 0) = 0`);
+  const dist = trackReport.distribution(history.map(r => r.room_average));
+  const band = trackReport.bandFor(mean, trackBandEdges());
+  const shape = trackReport.shapeOf(hist, n);
+  const against = dist && dist.n >= TRACK_MIN_FOR_CURVE ? trackReport.againstRoom(mean, dist, 'the ' + what) : null;
+  const who = trackReport.whoFor(roles, cities);
+  const setup = trackReport.setupVsRecord(predictMean, mean);
+  const steps = trackReport.nextActions({ band, who, setup });
+  // Shared comments only, attributed (name · role · city); a blocked account's comment is
+  // dropped for the same reason its votes are excluded from every board.
+  const commentRows = await db.all(
+    `SELECT c.body, p.name AS pname, u.name AS uname, u.primary_category, u.location
+       FROM round_comments c
+       JOIN participants p ON p.id = c.participant_id
+       LEFT JOIN users u ON u.uid = p.user_id
+      WHERE c.round_id = ? AND c.status = 'shared' AND COALESCE(u.blocked, 0) = 0
+      ORDER BY c.created_at ASC`, [round.id]);
+  const comments = commentRows.map(r => ({
+    body: r.body,
+    name: (r.uname || r.pname || 'A&R').toString().trim().slice(0, 40),
+    role: r.primary_category || null,
+    location: r.location || null,
+  }));
+  const ig = igClean(round.artist_instagram) || (m => m ? igClean(m[1]) : null)(/(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(round.song_note || ''));
+  // The Meeting's date is the day the record was rated (drop_day, ET); a live show's is
+  // the night it aired.
+  const dateLabel = meeting && /^\d{4}-\d{2}-\d{2}$/.test(session.drop_day || '')
+    ? new Date(session.drop_day + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    : new Date(Number(session.created_at) || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
+  const fmtScore = trackReport.fmtScore;
   return {
     votes: n,
     title: round.song_title || 'Untitled',
-    sub: [round.song_artist || null, igM ? '@' + igM[1] : null].filter(Boolean).join(' · ') || session.name,
-    // pages 2-3 identify the song in the subhead (the page title takes the header)
-    sub23: [String(round.song_title || 'Untitled').slice(0, 24), (round.song_artist || '').slice(0, 18) || null, n + ' votes'].filter(Boolean).join(' · '),
+    artist: round.song_artist || '',
+    handle: ig ? '@' + ig : null,
+    what, dateLabel,
+    meta: `${n} A&Rs · The ${what} · ${dateLabel}`,
     mean: mean.toFixed(1),
-    median: fmt(median),
-    mode: modes.slice(0, 2).join(' & '),
-    modes,
-    hist,
-    heatPct,
+    median: fmtScore(median),
+    modes, hist,
+    tail: hist.slice(7).reduce((a, x) => a + x, 0),
     predictMean: predictMean != null ? predictMean.toFixed(1) : null,
-    gapUp: gap != null && gap >= 0,
-    gapLabel: gap == null ? '' : (gap >= 0 ? '+' : '') + gap.toFixed(1),
-    gapWord: gap == null ? '' : (gap >= 0.05 ? "It exceeded the room's expectations"
-      : gap <= -0.05 ? 'Expectations finished above the final score' : 'It finished in line with expectations'),
-    medianNote: 'Half of eligible A&Rs scored it ' + fmt(median) + ' or higher.'
-      + (median > mean + 0.2 ? ' The typical evaluation was stronger than the final average; a small number of lower scores shifted the result.' : ''),
-    roles: segment('cat'),
-    cities: segment('loc'),
-    pools: (inP && rem) ? { in: inP, remote: rem } : null,
-    rankInRoom: rankInRoom.total > 1 ? rankInRoom : null,
-    seriesPct,
-    dateLabel,
+    band, shape, against, dist: against ? dist : null, who, setup, steps,
+    sub: trackReport.decisionSub(n, shape, band),
+    roles, cities, comments,
+    // for the operator's band-calibration decision (spec §2): the comparison set's quartiles
+    quartiles: dist ? { n: dist.n, q1: +dist.q1.toFixed(2), median: +dist.median.toFixed(2), q3: +dist.q3.toFixed(2), avg: +dist.avg.toFixed(2), edges: trackBandEdges() } : null,
   };
+}
+
+// The pages a record gets, in order. Conditional pages simply drop out (a record with no
+// prediction has no "setup" page; a small room has no segments; the curve needs history)
+// and the rest renumber, so "3 / 7" is always true. Comments take as many pages as they
+// need. The share page — no score on it — is always last.
+function trackReportPages(d) {
+  const kinds = ['decision', 'split'];
+  if (d.against) kinds.push('against');
+  if (d.who) kinds.push('whofor');
+  if (d.setup) kinds.push('setup');
+  kinds.push('next');
+  const pages = kinds.map(kind => ({ ...d, kind }));
+  trackReport.pageComments(d.comments || []).forEach(cs => pages.push({ ...d, kind: 'comments', comments: cs }));
+  pages.push({ ...d, kind: 'share' });
+  pages.forEach((p, i) => { p.page = i + 1; p.total = pages.length; });
+  return pages;
 }
 
 // A participant's personal score card for their session.
@@ -2499,7 +2861,7 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
 }
 
 // ===== A&R DAILY: THE DAILY DIGEST =====
-// Two INDEPENDENT emails go out at noon, and they stay independent on purpose.
+// Two INDEPENDENT emails go out at 3PM, and they stay independent on purpose.
 //
 // This one is for A&Rs: "here's how you did." The artist gets their own (026's Song Report,
 // unchanged in shape) saying "here's how your record did." Different products for different
@@ -2512,7 +2874,7 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
 // cannot be given a signed manage link (np1.<uid>.<exp> is uid-scoped). Their footer and
 // their compliance basis are different. That is the real reason the two mails are separate.
 //
-// The CTA lands correctly for free: results publish at noon and today's drop opens at noon,
+// The CTA lands correctly for free: today's drop opened at noon, three hours before results publish,
 // so "today's records are open" is true at send time. The recap email IS the acquisition
 // email — the best thing about the schedule.
 //
@@ -2761,7 +3123,7 @@ function nextSmsWindowLabel(ts = Date.now()) {
 // ===== ET DAY ARITHMETIC (A&R Daily) =====
 // Everything above answers "what ET time is it NOW". A&R Daily needs the other direction:
 // given an ET calendar day and a wall-clock hour, what epoch is that? The drop's whole
-// schedule is wall clock — 12PM ET open, 9AM ET close, 12PM ET publish — and the window
+// schedule is wall clock — 12PM ET open, 12PM ET close, 3PM ET publish — and the window
 // crosses the DST switch twice a year, so deriving the close as "open + 21h" would give an
 // 8AM close in spring and a 10AM close in fall. Both ends resolve from wall clock instead.
 //
@@ -3472,72 +3834,88 @@ function asyncQueueOrder(seedKey, sessionId, rounds) {
   return arr;
 }
 
-const artistEmailText = (d) => `Your record was evaluated live — ${d.title}\n\n`
-  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was evaluated by The A&R Room on ${d.dateLabel}. `
-  + `It earned a final room score of ${d.mean} and ranked #${d.rank} of ${d.total} records evaluated in the session.\n\n`
-  + (d.watchUrl ? `Watch the evaluation: ${d.watchUrl}\n\n` : '')
+const artistEmailText = (d) => `Your Track Report — ${d.title}\n\n`
+  + `${d.decision}\n\n`
+  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}. `
+  + `Official track rating: ${d.mean} out of 9 (${d.bandLabel}).\n\n`
+  + (d.watchUrl ? `Watch the room hear your record: ${d.watchUrl}\n\n` : '')
   + artistCommentsText(d.comments)
-  + `Your Official Room Report is attached as three images. Share them as one Instagram carousel, `
-  + `add @Makinit4indies as a collaborator, and tag #TheARRoom.\n\n`
-  + `Submit another record for consideration: https://makinitmag.com/review`;
+  + `Your Track Report is attached as ${d.pages.length} images. Share them as one Instagram carousel, `
+  + `add @Makinit4indies as a collaborator, and tag ${d.hashtag}.\n\n`
+  + `Submit another record: https://${shareCards.SUBMIT_URL}`;
 
-// The artist's post-show email: full 3-page report card + the replay link + post instructions.
-// Deliberately carries NO price or upsell — the operator's call: visibility first
-// (see the postshow-artist-workflow memory).
-// Approved A&R comments, rendered for the artist. Attribution is the whole point — these
-// are named people who scored the record, not anonymous internet opinion — so each quote
-// carries display name + role + city, the same PII surface as the public boards.
-// Only 'shared' rows ever reach here; the host approves every one by hand.
+// The artist's report email: the decision first, the rating as evidence, every report page,
+// the A&R comments attributed, and the post instructions. Deliberately carries NO price or
+// upsell — the operator's call: visibility first (see the postshow-artist-workflow memory).
+// Built as a sibling of the site's own email template (mim docs/mockups/email-template-
+// round1.html: the #0D0E12 masthead well, #17191D body, #24272C cards, green = go, 24px
+// pill buttons, Open Sans), so the mail looks like the site the links land on.
+// Comments are attributed (name · role · city) — attribution is the whole point: named people
+// who scored the record, not anonymous opinion. Only 'shared' rows ever reach here.
 function artistCommentsHtml(comments) {
   if (!comments || !comments.length) return '';
   const quotes = comments.map(c => {
     const meta = [c.role, c.location].filter(Boolean).map(escapeHtml).join(' · ');
-    return `<div style="background:#171328;border:1px solid #2e2750;border-left:3px solid #4bb749;border-radius:0 12px 12px 0;padding:14px 15px;margin-bottom:11px;text-align:left">
-        <div style="font-size:14.5px;line-height:1.55;color:#f3f0fb">“${escapeHtml(c.body)}”</div>
-        <div style="font-size:12.5px;font-weight:700;color:#f3f0fb;margin-top:10px">${escapeHtml(c.name)}</div>
-        ${meta ? `<div style="font-size:12px;color:#8c84ad;margin-top:1px">${meta}</div>` : ''}
-      </div>`;
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#24272C" style="background:#24272C;border:1px solid #2C2F34;border-radius:10px;margin-bottom:8px;"><tr>
+        <td width="5" bgcolor="#4BB749" style="border-radius:10px 0 0 10px;font-size:1px;line-height:1px;">&nbsp;</td>
+        <td style="padding:13px 14px;text-align:left;">
+          <p style="margin:0;font-size:14px;line-height:1.55;color:#F6F7FB;">“${escapeHtml(c.body)}”</p>
+          <p style="margin:9px 0 0;font-size:12.5px;font-weight:bold;color:#F6F7FB;">${escapeHtml(c.name)}</p>
+          ${meta ? `<p style="margin:2px 0 0;font-size:11.5px;color:#8A94A6;">${meta}</p>` : ''}
+        </td></tr></table>`;
   }).join('');
-  return `<div style="margin:22px 0 4px">
-      <div style="font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#8c84ad">From the room</div>
-      <div style="font-size:19px;font-weight:700;margin:8px 0 4px">What the A&amp;Rs said</div>
-      <p style="font-size:13.5px;line-height:1.5;color:#a9a2c9;margin:0 0 16px">Selected comments from the A&amp;Rs who rated your record live.</p>
+  return `<p style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:bold;margin:24px 2px 9px;text-align:left;">What the A&amp;Rs said</p>
       ${quotes}
-      <p style="font-size:12px;line-height:1.5;color:#8c84ad;margin:14px 0 0">Comments are the personal opinions of individual A&amp;Rs, selected by the host. Not every A&amp;R left one.</p>
-    </div>`;
+      <p style="font-size:11.5px;line-height:1.55;color:#8A94A6;margin:10px 2px 0;text-align:left;">Comments are the personal opinions of individual A&amp;Rs who scored the record. Not every A&amp;R left one.</p>`;
 }
 const artistCommentsText = (comments) => (!comments || !comments.length) ? ''
   : `What the A&Rs said\n\n`
     + comments.map(c => `"${c.body}"\n— ${c.name}${[c.role, c.location].filter(Boolean).length ? ' (' + [c.role, c.location].filter(Boolean).join(', ') + ')' : ''}`).join('\n\n')
-    + `\n\nComments are the personal opinions of individual A&Rs, selected by the host.\n\n`;
+    + `\n\nComments are the personal opinions of individual A&Rs who scored the record.\n\n`;
 
-function artistEmailHtml({ title, artist, mean, rank, total, dateLabel, sessionName, watchUrl, pages, comments }) {
-  const pageBlock = pages.filter(Boolean).map((u, i) =>
-    `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
+function artistEmailHtml({ title, artist, mean, bandLabel, decision, votes, what, dateLabel, watchUrl, pages, comments, hashtag }) {
+  what = what || 'A&R Meeting';
+  hashtag = hashtag || (what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting');
+  const pageBlock = (pages || []).filter(Boolean).map((u, i) =>
+    `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Track Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:10px;display:block;margin:0 auto 10px;border:1px solid #2C2F34"></a>`
   ).join('');
   const watchBlock = watchUrl ? `
-      <a href="${watchUrl}" style="display:block;background:#4bb749;color:#07130a;font-weight:700;font-size:15px;border-radius:12px;padding:14px 16px;text-decoration:none;margin:4px 0 8px">▶ Watch the room evaluate your record</a>
-      <p style="font-size:12.5px;line-height:1.55;color:#a9a2c9;margin:0 0 18px">Go to your record in the replay to hear the room's live response. Short clips can help you share the evaluation in context.</p>` : '';
-  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
-    <div style="max-width:360px;margin:0 auto;text-align:center">
-      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">The A&amp;R Room</div>
-      <h1 style="font-size:22px;margin:8px 0 4px">Your record was evaluated live${artist ? ', ' + escapeHtml(String(artist).split(/\s+/)[0]) : ''}.</h1>
-      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 18px"><b style="color:#f3f0fb">“${escapeHtml(title)}”</b> was evaluated by The A&amp;R Room on <b style="color:#f3f0fb">${escapeHtml(dateLabel)}</b>. Your Official Room Report is ready.</p>
-      <div style="background:#171328;border:1px solid #2e2750;border-radius:14px;padding:18px 16px;margin-bottom:16px">
-        <div style="font-weight:700;font-size:17px">${escapeHtml(title)}</div>
-        ${artist ? `<div style="font-size:13px;color:#a9a2c9;margin-top:2px">${escapeHtml(artist)}</div>` : ''}
-        <div style="font-family:'Space Mono',monospace;font-size:44px;font-weight:700;color:#4bb749;line-height:1.1;margin-top:10px">${escapeHtml(mean)}</div>
-        <div style="font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6f688f">final room score · out of 9</div>
-        ${total > 1 ? `<div style="font-size:13px;color:#a9a2c9;margin-top:8px">Ranked <b style="color:#f3f0fb">#${rank} of ${total}</b> records evaluated in the session</div>` : ''}
-      </div>
-      ${pageBlock}
-      ${watchBlock}
-      ${artistCommentsHtml(comments)}
-      <div style="background:#171328;border:1px solid #6d5fe0;border-radius:14px;padding:16px;text-align:left">
-        <div style="font-weight:700;font-size:14px;margin-bottom:6px">📲 Share your Official Room Report</div>
-        <div style="font-size:13px;line-height:1.6;color:#a9a2c9">Share all three report pages as one Instagram <b style="color:#f3f0fb">carousel</b>. Add <b style="color:#f3f0fb">@Makinit4indies</b> as a <b>collaborator</b> and tag us with <b style="color:#f3f0fb">#TheARRoom</b>.</div>
-      </div>
-      <p style="font-size:13px;color:#6f688f;margin:20px 0 0">Submit another record for consideration → <a href="https://makinitmag.com/review" style="color:#4bb749;text-decoration:none">makinitmag.com/review</a></p>
+      <p style="margin:6px 0 4px;"><a href="${watchUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">Watch the room hear your record</a></p>
+      <p style="font-size:12px;line-height:1.55;color:#8A94A6;margin:0 0 14px;">Go to your record in the replay. Short clips of the live response are the easiest thing to post.</p>` : '';
+  const first = artist ? escapeHtml(String(artist).split(/\s+/)[0]) : '';
+  return `<div style="background:#17191D;padding:26px 12px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#F6F7FB;">
+    <div style="max-width:600px;margin:0 auto;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0D0E12" style="background:#0D0E12;border-radius:12px 12px 0 0;">
+        <tr><td align="center" style="padding:20px 16px 18px;">
+          <img src="https://makinitmag.com/sites/all/themes/mim2/images/mim-logo-email.png" alt="Makin' It Magazine" width="190" style="display:block;border:0;width:190px;max-width:70%;height:auto;margin:0 auto;">
+          <p style="margin:14px 0 0;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#4BB749;font-weight:bold;">The ${escapeHtml(what)}</p>
+          <p style="margin:5px 0 0;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#8A94A6;">${escapeHtml(dateLabel || '')}</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#17191D" style="background:#17191D;border:1px solid #2C2F34;border-top:0;border-radius:0 0 12px 12px;">
+        <tr><td style="padding:22px 18px 24px;text-align:center;">
+          <p style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:bold;margin:0 0 10px;">Your Track Report${first ? ', ' + first : ''}</p>
+          <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F6F7FB;">${escapeHtml(decision || '')}</h1>
+          <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0 0 18px;"><b style="color:#F6F7FB">“${escapeHtml(title)}”</b>${artist ? ' by ' + escapeHtml(artist) : ''} was rated by <b style="color:#F6F7FB">${escapeHtml(String(votes || 0))} A&amp;Rs</b> in The ${escapeHtml(what)} on ${escapeHtml(dateLabel || '')}.</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#24272C" style="background:#24272C;border:1px solid #2C2F34;border-radius:10px;margin-bottom:16px;">
+            <tr><td align="center" style="padding:16px;">
+              <p style="margin:0;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:bold;">Official track rating</p>
+              <p style="margin:6px 0 0;font-family:'Space Mono',Menlo,monospace;font-size:40px;font-weight:bold;line-height:1.1;color:#4BB749;">${escapeHtml(mean)}</p>
+              <p style="margin:4px 0 0;font-family:'Space Mono',Menlo,monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;">out of 9 · ${escapeHtml(bandLabel || '')}</p>
+            </td></tr>
+          </table>
+          ${pageBlock}
+          ${watchBlock}
+          ${artistCommentsHtml(comments)}
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#24272C" style="background:#24272C;border:1px solid #2F6B31;border-radius:10px;margin-top:22px;">
+            <tr><td style="padding:14px 15px;text-align:left;">
+              <p style="margin:0 0 6px;font-size:14px;font-weight:bold;color:#F6F7FB;">Share your Track Report</p>
+              <p style="margin:0;font-size:13px;line-height:1.6;color:#B0B7C3;">Post the pages as one Instagram <b style="color:#F6F7FB">carousel</b>. Add <b style="color:#F6F7FB">@Makinit4indies</b> as a <b>collaborator</b> and tag <b style="color:#F6F7FB">${escapeHtml(hashtag)}</b>. The last page carries no score, so it is the one to lead with.</p>
+            </td></tr>
+          </table>
+          <p style="font-size:12.5px;color:#8A94A6;margin:20px 0 0;">Submit another record → <a href="https://${shareCards.SUBMIT_URL}" style="color:#4BB749;text-decoration:none;">${shareCards.SUBMIT_URL}</a></p>
+        </td></tr>
+      </table>
     </div>
   </div>`;
 }
@@ -3554,43 +3932,26 @@ const ARTIST_ELIGIBLE_SQL = `
 
 // Render + host this round's report pages, then mail them to the artist. Returns the
 // hosted page URLs so the queue row can record exactly what was delivered.
-// Page 3 (segments) needs 8+ votes — same floor the host-facing report enforces, so a
-// small room never decomposes into near-individual scores.
+// The page count varies by record (trackReportPages): conditional pages drop out and
+// comments take as many as they need, so the URLs are the record of what went.
 async function sendArtistReportEmail(round, session, dest) {
   const d = await songReportData(round, session);
   if (!d) return { ok: false, error: 'No eligible evaluations to report' };
-  const pageCount = d.votes >= 8 ? 3 : 2;
+  const pageData = trackReportPages(d);
   const pages = [];
-  for (let i = 1; i <= pageCount; i++) {
-    const buf = await shareCards.renderPng('report' + i, i === 1 ? d : { ...d, sub: d.sub23 });
-    pages.push(await uploadPng(`artist/${session.id}/${round.id}-p${i}.png`, buf));
+  for (const pg of pageData) {
+    const buf = await shareCards.renderPng('trackPage', pg);
+    pages.push(await uploadPng(`artist/${session.id}/${round.id}-p${pg.page}.png`, buf));
   }
-  // Host-approved comments only. A blocked account's comment is dropped here for the same
-  // reason its votes are excluded from every board.
-  const commentRows = await db.all(
-    `SELECT c.body, p.name AS pname, u.name AS uname, u.primary_category, u.location
-       FROM round_comments c
-       JOIN participants p ON p.id = c.participant_id
-       LEFT JOIN users u ON u.uid = p.user_id
-      WHERE c.round_id = ? AND c.status = 'shared' AND COALESCE(u.blocked, 0) = 0
-      ORDER BY c.created_at ASC`, [round.id]);
-  const comments = commentRows.map(r => ({
-    body: r.body,
-    name: (r.uname || r.pname || 'A&R').toString().trim().slice(0, 40),
-    role: r.primary_category || null,
-    location: r.location || null,
-  }));
-  const html = artistEmailHtml({
-    title: round.song_title || 'Your record', artist: round.song_artist || '',
-    mean: d.mean, rank: d.rankInRoom ? d.rankInRoom.rank : 1, total: d.rankInRoom ? d.rankInRoom.total : 1,
-    dateLabel: d.dateLabel, sessionName: session.name, watchUrl: session.watch_url || null, pages, comments,
-  });
-  const text = artistEmailText({
-    title: round.song_title || 'Your record', artist: round.song_artist || '', mean: d.mean,
-    rank: d.rankInRoom ? d.rankInRoom.rank : 1, total: d.rankInRoom ? d.rankInRoom.total : 1,
-    dateLabel: d.dateLabel, watchUrl: session.watch_url || null, comments,
-  });
-  const r = await sendEmail(dest, `Official Room Report: “${round.song_title || 'your song'}” scored ${d.mean}`, html, text);
+  const decision = d.band.headline.join(' ');
+  const common = {
+    title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, decision, votes: d.votes,
+    what: d.what, dateLabel: d.dateLabel, watchUrl: isAsync(session) ? null : (session.watch_url || null),
+    pages, comments: d.comments, hashtag: d.what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting',
+  };
+  const html = artistEmailHtml(common);
+  const text = artistEmailText(common);
+  const r = await sendEmail(dest, `Track Report: “${d.title}” — ${decision}`, html, text);
   return r.ok ? { ok: true, pages } : { ok: false, error: r.error };
 }
 
@@ -3613,9 +3974,10 @@ async function drainArtistSms({ sessionId = null, roundId = null, limit = 10 } =
     const claim = await db.run("UPDATE artist_notices SET status = 'sending' WHERE id = ? AND status = 'pending'", [row.id]);
     if (!claim.changes) continue; // another run already took it
     try {
-      const round = await db.get('SELECT song_title FROM rounds WHERE id = ?', [row.round_id]);
+      const round = await db.get('SELECT r.song_title, s.mode FROM rounds r JOIN sessions s ON s.id = r.session_id WHERE r.id = ?', [row.round_id]);
       const title = (round && round.song_title) || 'your record';
-      const body = `🎧 The A&R Room: "${title}" was evaluated live. Your Official Room Report is in your email. Reply STOP to opt out.`;
+      const what = round && round.mode === 'async' ? 'A&R Meeting' : 'A&R Room';
+      const body = `The ${what}: "${title}" has been rated. Your Track Report is in your email. Reply STOP to opt out.`;
       const r = await sendSms(row.dest, body);
       if (r.ok) { await db.run("UPDATE artist_notices SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
       else { await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
@@ -3740,16 +4102,17 @@ async function buildPostKit(session) {
   const files = [];
   if (ars.length) files.push({ name: 'top8-ars.png', kind: 'ars', buf: await shareCards.renderPng('ars', { list: ars, session: session.name }) });
   if (songs.length) files.push({ name: 'top8-songs.png', kind: 'songs', buf: await shareCards.renderPng('songs', { list: songs, session: session.name }) });
-  // The top record's report cards — highest room average of the session.
+  // The top record's Track Report — highest room average of the session (reference tracks
+  // are known records, never the top record). The first three pages: the decision, how it
+  // split, and the next page the record has.
   const topRound = await db.get(
     `SELECT * FROM rounds WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
-       AND COALESCE(poll_type,'rating') <> 'binary' ORDER BY room_average DESC, idx ASC LIMIT 1`, [sessionId]);
+       AND COALESCE(poll_type,'rating') <> 'binary' AND COALESCE(is_reference, 0) = 0 ORDER BY room_average DESC, idx ASC LIMIT 1`, [sessionId]);
   if (topRound) {
     const d = await songReportData(topRound, session);
     if (d) {
-      const pageCount = d.votes >= 8 ? 3 : 2; // page 3 needs 8+ votes (same floor as the report)
-      for (let i = 1; i <= pageCount; i++) {
-        files.push({ name: `top-record-p${i}.png`, kind: 'report' + i, buf: await shareCards.renderPng('report' + i, i === 1 ? d : { ...d, sub: d.sub23 }) });
+      for (const pg of trackReportPages(d).slice(0, 3)) {
+        files.push({ name: `top-record-p${pg.page}.png`, kind: 'report' + pg.page, buf: await shareCards.renderPng('trackPage', pg) });
       }
     }
   }
@@ -6150,6 +6513,13 @@ async function handleApi(req, res, url) {
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${slug}.csv"` });
       return res.end(chartsCsv(data));
     }
+    if (format === 'contacts') {
+      // A&Rs only — a record has no person behind it to contact.
+      if (data.mode !== 'ars') return bad(res, 'The contact export is for the Top A&Rs chart only');
+      const csv = chartsContactsCsv(data, await arsContacts(data.rows.map(r => r.id)));
+      res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${slug}-contacts.csv"` });
+      return res.end(csv);
+    }
     if (format === 'caption') {
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
       return res.end(chartsCaption(data));
@@ -7103,7 +7473,7 @@ async function handleApi(req, res, url) {
     // and it is also just true about the product.
     //
     // Its own key rather than a field on `daily`: `daily` is TODAY's open drop, and the last
-    // published day is a different session entirely (on the 9AM-to-noon gap, both exist).
+    // published day is a different session entirely (on the noon-to-3PM gap, both exist).
     const lastPub = await db.get(
       `SELECT id, drop_day FROM sessions WHERE mode = 'async' AND async_state = 'published'
          AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted')
@@ -7402,18 +7772,26 @@ async function handleApi(req, res, url) {
       // small samples never decompose into near-individual scores.
       if (kind === 'song-report') {
         const roundId = url.searchParams.get('r');
-        const page = Math.max(1, Math.min(3, parseInt(url.searchParams.get('page') || '1', 10) || 1));
         if (!roundId) return bad(res, 'r (roundId) required');
         const round = await db.get('SELECT * FROM rounds WHERE id = ?', [roundId]);
         if (!round) return bad(res, 'Round not found', 404);
         const session = await canAdminSession(req, round.session_id);
         if (!session) return bad(res, 'Host auth required', 401);
-        if (session.poll_type === 'binary') return bad(res, 'Song Reports cover rating rounds (Versus reports come later)', 409);
+        if (session.poll_type === 'binary') return bad(res, 'Track Reports cover rating rounds (Versus reports come later)', 409);
         if (round.status !== 'ratified' || round.room_average == null) return bad(res, 'Ratify the round first — the report reads final scores');
         const d = await songReportData(round, session);
         if (!d) return bad(res, 'No eligible evaluations to report', 404);
-        if (page === 3 && d.votes < 8) return bad(res, 'The segments page requires at least 8 eligible evaluations', 409);
-        return sendPng(await shareCards.renderPng('report' + page, page === 1 ? d : { ...d, sub: d.sub23 }), 'private, no-store');
+        const pages = trackReportPages(d);
+        // ?meta=1: the page list (so the console can fetch exactly the pages this record
+        // has) plus the derived sentences and the comparison set's quartiles, which is the
+        // operator's data for the band-calibration decision (spec §2).
+        if (url.searchParams.get('meta')) {
+          return send(res, 200, { total: pages.length, kinds: pages.map(p => p.kind), decision: d.band.headline.join(' '),
+            band: d.band.key, mean: d.mean, votes: d.votes, quartiles: d.quartiles, steps: d.steps, comments: d.comments.length });
+        }
+        const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+        if (page > pages.length) return bad(res, `This report has ${pages.length} pages`, 404);
+        return sendPng(await shareCards.renderPng('trackPage', pages[page - 1]), 'private, no-store');
       }
       // The A&R Meeting Recap cover (9:16) / thumbnail (16:9) for a daily drop, rendered
       // live off the day's records and board. Platform-admin: it names the day's A&Rs before
@@ -7424,6 +7802,37 @@ async function handleApi(req, res, url) {
         if (!session) return bad(res, 'Drop not found', 404);
         const rd = await recapGraphicsData(session);
         return sendPng(await shareCards.renderPng(kind === 'recap-cover' ? 'recapCover' : 'recapThumb', rd), 'private, no-store');
+      }
+      // One results-carousel slide, rendered live: ?s=<sessionId>&set=song|ar&slide=N.
+      // Platform-admin: it ranks the day's A&Rs by name, and a drop spans no room owner.
+      if (kind === 'results') {
+        if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+        const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
+        if (!session) return bad(res, 'Drop not found', 404);
+        const set = url.searchParams.get('set') === 'ar' ? 'ar' : 'song';
+        const slide = Math.max(1, parseInt(url.searchParams.get('slide') || '1', 10) || 1);
+        const rd = await resultsCarouselData(session, set);
+        if (!rd) return bad(res, 'Nothing to show yet', 404);
+        const sl = rd.slides.find(x => x.slide === slide);
+        if (!sl) return bad(res, `This carousel has ${rd.total} slides`, 404);
+        return sendPng(await shareCards.renderPng('resultsSlide', sl), 'private, no-store');
+      }
+      // A winner post, rendered live (admin): ?post=track|ar with either &s=<sessionId> (the day)
+      // or &week=YYYY-MM-DD (any day in the week; the Monday is derived).
+      if (kind === 'winner') {
+        if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+        const post = url.searchParams.get('post') === 'ar' ? 'ar' : 'track';
+        let wd;
+        if (url.searchParams.get('week')) {
+          wd = await winnerWeekData(url.searchParams.get('week'), post);
+          if (!wd) return bad(res, 'No published drops in that week', 404);
+        } else {
+          const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
+          if (!session) return bad(res, 'Drop not found', 404);
+          wd = await winnerDayData(session, post);
+          if (!wd) return bad(res, 'Nothing to show yet', 404);
+        }
+        return sendPng(await shareCards.renderPng('winnerPost', wd), 'private, no-store');
       }
       // Chart carousel (admin): slide 0 is the cover, 1..N are the list slides. Same query
       // params as /api/admin/charts, plus &per= (rows per slide) and &slide=.
@@ -7779,10 +8188,10 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, ...out, remaining: Number(rem.c) || 0 });
   }
 
-  // ---- A&R Daily lifecycle: open at noon, close + tally at 9AM, publish at noon ----
+  // ---- A&R Daily lifecycle: open at noon, close + tally at noon next day, publish at 3PM ----
   // Its OWN path, deliberately not folded into /api/cron/artist-sms: that handler returns
   // early whenever withinSmsWindow() is false, which would silently skip the drop lifecycle
-  // for 11.5 hours a day — including the 9:00 AM close.
+  // for 11.5 hours a day — including the noon close.
   if (p === '/api/cron/daily' && (method === 'GET' || method === 'POST')) {
     const secret = process.env.CRON_SECRET || '';
     if (!secret) return bad(res, 'Cron not configured (set CRON_SECRET)', 503);
@@ -8069,6 +8478,12 @@ async function handleApi(req, res, url) {
     const artistDelayMin = (await dailySchedule()).artistDelayMin;
     const holdUntil = session.published_at
       ? Number(session.published_at) + artistDelayMin * 60000 : null;
+    // Cheap (two small queries, no photo fetch); the seal has lifted only after publish, so
+    // before then this is the operator's own preview of what the carousels will say.
+    const rsSong = await resultsCarouselData(session, 'song', { photo: false }).catch(() => null);
+    const rsAr = await resultsCarouselData(session, 'ar', { photo: false }).catch(() => null);
+    const wnTrack = await winnerDayData(session, 'track', { photo: false }).catch(() => null);
+    const wnAr = await winnerDayData(session, 'ar', { photo: false }).catch(() => null);
     return send(res, 200, {
       days, day,
       drop: {
@@ -8111,7 +8526,16 @@ async function handleApi(req, res, url) {
         // off /api/card/recap-* (admin-only) when these are null, so a missing Blob token
         // never leaves the stream without a cover.
         recapCover: (job && job.recap_cover_url) || null, recapThumb: (job && job.recap_thumb_url) || null,
-        recapCaption: (job && job.recap_caption) || null },
+        recapCaption: (job && job.recap_caption) || null,
+        // The results carousels: hosted slide lists (JSON arrays) at publish, captions, and
+        // the slide counts so the console can render a set live slide by slide.
+        results: { song: parseJsonArray(job && job.results_song_urls), ar: parseJsonArray(job && job.results_ar_urls),
+          songCaption: (job && job.results_song_caption) || null, arCaption: (job && job.results_ar_caption) || null,
+          songCount: rsSong ? rsSong.total : 0, arCount: rsAr ? rsAr.total : 0 },
+        // The winner posts (039): hosted at publish, captions, and whether each has a subject yet.
+        winners: { track: (job && job.winner_track_url) || null, ar: (job && job.winner_ar_url) || null,
+          trackCaption: (job && job.winner_track_caption) || null, arCaption: (job && job.winner_ar_caption) || null,
+          trackReady: !!wnTrack, arReady: !!wnAr, weekDefault: lastCompletedWeekStart() } },
       queues: { digest, artistEmail: chan('email'), artistSms: chan('sms') },
       artistHold: { until: holdUntil, held: !!(holdUntil && now() < holdUntil),
         minutes: artistDelayMin },
@@ -8173,6 +8597,42 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Drop not found', 404);
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
     return res.end(recapCaption(await recapGraphicsData(session)));
+  }
+
+  // A results-carousel caption as text — the same builder the publish stores. ?set=song|ar.
+  if (p === '/api/admin/daily/results-caption' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const sid = url.searchParams.get('s');
+    const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
+    if (!session) return bad(res, 'Drop not found', 404);
+    const rd = await resultsCarouselData(session, url.searchParams.get('set') === 'ar' ? 'ar' : 'song', { photo: false });
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
+    return res.end(rd ? resultsCaption(rd) : '');
+  }
+
+  // A winner post's caption as text — the same builder the publish stores. ?s=&post=track|ar.
+  if (p === '/api/admin/daily/winner-caption' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const sid = url.searchParams.get('s');
+    const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
+    if (!session) return bad(res, 'Drop not found', 404);
+    const wd = await winnerDayData(session, url.searchParams.get('post') === 'ar' ? 'ar' : 'track', { photo: false });
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
+    return res.end(wd ? winnerCaption(wd) : '');
+  }
+  // The week's winners (039): who they are and their captions, for the console. ?week=YYYY-MM-DD
+  // (any day in the week); defaults to the last completed week. The cards render live off
+  // /api/card/winner?week=&post=. Nothing is stored for a week.
+  if (p === '/api/admin/weekly/winners' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const start = weekStartOf(url.searchParams.get('week') || lastCompletedWeekStart());
+    if (!start) return bad(res, 'Bad week');
+    const out = { week: { start, end: etNextDay(start, 6), label: dayLabel(start) + ' – ' + dayLabel(etNextDay(start, 6)) } };
+    for (const post of ['track', 'ar']) {
+      const wd = await winnerWeekData(start, post, { photo: false });
+      out[post] = wd ? { title: wd.title, by: wd.by, handle: wd.handle, line: wd.line, drops: wd.week.drops, caption: winnerCaption(wd) } : null;
+    }
+    return send(res, 200, out);
   }
 
   // Run the publish + drain once by hand, for a cron that never fired. Same implementation
@@ -8695,6 +9155,7 @@ module.exports._etHour = etHour;
 // Pure template (no secrets) — exported so the artist-facing email can be rendered and
 // eyeballed without a live Blob token or a real send.
 module.exports._artistEmailHtml = artistEmailHtml;
+module.exports._trackReportPages = trackReportPages;
 module.exports._drainArtistSms = drainArtistSms;
 // Exported for tests: minting a manage link is what a real sender does, and the scope
 // test needs a genuine token to prove it's rejected everywhere except the prefs routes.
@@ -8730,3 +9191,10 @@ module.exports._pushDayResults = pushDayResults;
 module.exports._recapGraphicsData = recapGraphicsData;
 module.exports._recapCaption = recapCaption;
 module.exports._recapDateLabel = recapDateLabel;
+module.exports._resultsCarouselData = resultsCarouselData;
+module.exports._resultsCaption = resultsCaption;
+module.exports._winnerDayData = winnerDayData;
+module.exports._winnerWeekData = winnerWeekData;
+module.exports._winnerCaption = winnerCaption;
+module.exports._weekStartOf = weekStartOf;
+module.exports._resultsPages = resultsPages;

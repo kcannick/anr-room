@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   A&R Room key art + the weekly post — stage 4 of the promo build order.
+
+     ?f=wide|yt|story|feed|square    1920x1080 · 1280x720 · 1080x1920 · 1080x1350 · 1080x1080
+     ?date=2026-09-17                this week's post; omit for the evergreen key art
+     ?time=7PM%20ET                  default 7PM ET
+     ?guest=Name                     optional guest reviewer line
+     ?screen=brb|end                 stream screens (2.7): "Be right back" / "Thanks for watching"
+
+   The wide and yt formats share one 1920x1080 layout (yt is zoomed to 2/3),
+   so a YouTube thumbnail and a stream title card can never disagree.
+   Green is the show's colour. The lockup and block are the stage 1 masters.
+   No type touches the 13° cut. The [A&R] ROOM lockup is the title: the date or
+   day/time headline is always set SMALLER than the lockup's caps, the weekly date
+   is NUMERIC (MM.DD.YY) in Space Mono, and there are no full stops (operator, 2026-09-11).
+   ============================================================ */
+:root{ --ground:#0E0C1A; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+#c.wide,#c.yt{width:1920px;height:1080px}
+#c.yt{zoom:.6666667}
+#c.story{width:1080px;height:1920px}
+#c.feed{width:1080px;height:1350px}
+#c.square{width:1080px;height:1080px}
+
+.logo{position:absolute;height:40px;width:auto;left:var(--pad)}
+.lock{position:absolute;width:auto}
+.head{position:absolute;left:var(--pad);font-weight:900;line-height:.9;letter-spacing:-.04em}
+.head.date{font-family:'Space Mono',monospace;font-weight:700;letter-spacing:-.02em}   /* a date is a number: Space Mono */
+.sub{position:absolute;left:var(--pad);font-weight:500;color:var(--ink);line-height:1.25}
+.sub .mono{font-family:'Space Mono',monospace;font-weight:700}
+.guest{position:absolute;left:var(--pad);display:none}
+.has-guest .guest{display:block}
+.guest small{display:block;font-family:'Space Mono',monospace;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:.35em}
+.guest b{display:block;font-weight:900;line-height:.95;letter-spacing:-.04em;color:var(--ink);white-space:nowrap}
+.guest b::before{content:'';display:inline-block;width:.09em;height:.78em;background:var(--green);transform:skewX(-13deg);margin-right:.22em;vertical-align:-.04em}  /* the 13° tick */
+.cta{position:absolute;color:var(--ground);font-weight:900;line-height:1;letter-spacing:-.03em}
+.cta .url{display:block;font-family:'Space Mono',monospace;font-weight:700;letter-spacing:-.01em}
+.field{position:absolute;background:var(--green)}
+.mark{position:absolute;width:auto}
+
+/* ---- wide 1920x1080: text left, vertical cut on the right with the block ---- */
+.wide{--pad:112px}
+.wide .logo{top:96px}
+.wide .lock{left:16px;top:150px;height:400px}                 /* S=200: the title leads */
+.wide .head{top:540px;font-size:140px;width:1100px}          /* caps 96px < lockup caps 132px */
+.wide .sub{top:830px;font-size:44px}
+.wide .guest{top:724px}
+.wide .guest small{font-size:28px}
+.wide .guest b{font-size:96px}
+.wide.has-guest .sub{top:900px}
+.wide .field{top:0;right:0;bottom:0;width:600px;clip-path:polygon(249px 0,100% 0,100% 100%,0 100%)} /* 1080*tan13 */
+.wide .mark{right:96px;top:50%;transform:translateY(-50%);height:420px}
+.wide .cta{display:none}
+.cta .url{display:block}
+#c > .url{display:none}
+#c.wide > .url{display:block;position:absolute;left:var(--pad);top:966px;font-family:'Space Mono',monospace;font-weight:700;font-size:36px;color:var(--ink)}  /* operator: the 16:9 card prints the URL too (2026-09-11) */
+
+/* ---- story 1080x1920 ---- */
+.story{--pad:72px}
+.story .logo{top:250px}
+.story .lock{left:0;top:330px;height:280px}                   /* S=140 */
+.story .head{top:660px;font-size:120px;width:936px}          /* caps 82px < lockup caps 92px */
+.story .sub{top:920px;font-size:46px}
+.story .guest{top:830px}
+.story .guest small{font-size:26px}
+.story .guest b{font-size:84px}
+.story.has-guest .sub{top:990px}
+.story .field{left:0;right:0;bottom:0;height:720px;clip-path:polygon(0 300px,100% 51px,100% 100%,0 100%)}
+.story .cta{left:72px;bottom:300px;font-size:56px}
+.story .cta .url{font-size:44px;margin-top:14px}
+.story .mark{display:none}
+
+/* ---- feed 1080x1350 and square 1080x1080 ---- */
+.feed,.square{--pad:72px}
+.feed .logo,.square .logo{top:72px}
+.feed .lock,.square .lock{left:0;top:130px;height:280px}
+.feed .head{top:420px;font-size:120px;width:936px}
+.square .head{top:400px;font-size:108px;width:936px}
+.feed .sub{top:680px;font-size:40px}
+.square .sub{top:630px;font-size:38px}
+.feed .guest{top:585px}
+.feed .guest small{font-size:24px}
+.feed .guest b{font-size:72px}
+.feed.has-guest .sub{top:735px}
+.square .guest{top:540px}
+.square .guest small{font-size:22px}
+.square .guest b{font-size:64px}
+.square.has-guest .sub{top:672px}
+.feed .field{left:0;right:0;bottom:0;height:500px;clip-path:polygon(0 260px,100% 11px,100% 100%,0 100%)}
+.square .field{left:0;right:0;bottom:0;height:420px;clip-path:polygon(0 260px,100% 11px,100% 100%,0 100%)}
+.feed .cta,.square .cta{left:72px;bottom:96px;font-size:56px}
+.square .cta{bottom:72px;font-size:48px}
+.feed .cta .url,.square .cta .url{font-size:44px;margin-top:14px}
+.square .cta .url{font-size:38px}
+.feed .mark,.square .mark{display:none}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <img class="lock" src="../lockups/anr-room-h.svg" alt="">
+  <div class="head" id="head"></div>
+  <div class="sub" id="sub"></div>
+  <div class="guest" id="guest"></div>
+  <div class="field"></div>
+  <img class="mark" src="../mark/anr-mark-ink.svg" alt="">
+  <div class="cta">Watch live<span class="url">makinitmag.com/live</span></div>
+  <div class="url">makinitmag.com/live</div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const F = ['wide','yt','story','feed','square'].includes(q.get('f')) ? q.get('f') : 'wide';
+const TIME = q.get('time') || '7PM ET';
+const GUEST = q.get('guest') || '';
+const DATE = q.get('date') || '';
+const SCREEN = ['brb','end'].includes(q.get('screen')) ? q.get('screen') : '';
+
+const c = document.getElementById('c');
+c.className = F === 'yt' ? 'wide yt' : F;
+
+const head = document.getElementById('head'), sub = document.getElementById('sub');
+if (SCREEN === 'brb') {
+  // Stream screens (2.7): the same card, a different line. Plain copy, no full stops.
+  head.innerHTML = 'Be right<br>back';
+  sub.innerHTML = 'Wednesday · <span class="mono">' + TIME + '</span> · Live music review';
+  document.querySelector('.cta').innerHTML = 'Back in a moment<span class="url">makinitmag.com/live</span>';
+} else if (SCREEN === 'end') {
+  head.innerHTML = 'Thanks for<br>watching';
+  sub.innerHTML = 'Next Wednesday · <span class="mono">' + TIME + '</span>';
+  document.querySelector('.cta').innerHTML = 'Next Wednesday<span class="url">makinitmag.com/live</span>';
+} else if (DATE) {
+  // This week's post: month over day as the headline (always two lines, so the
+  // longest month still fits every format); weekday and time go under it.
+  // Numeric, MM.DD.YY, as the Meeting Recap prints it (operator, 2026-09-11: no
+  // spelled-out month, no full stops). One line, so it never wraps.
+  const d = new Date(DATE + 'T12:00:00');
+  const wd = d.toLocaleDateString('en-US', { weekday: 'long' });
+  const p2 = n => String(n).padStart(2, '0');
+  head.textContent = p2(d.getMonth() + 1) + '.' + p2(d.getDate()) + '.' + String(d.getFullYear()).slice(-2);
+  head.classList.add('date');
+  sub.innerHTML = wd + ' · <span class="mono">' + TIME + '</span> · Live music review';
+} else {
+  // Key art: the day and the time. Nothing else.
+  head.innerHTML = 'Wednesday<br>' + TIME;
+  sub.textContent = 'Live music review';
+}
+// Operator (2026-09-11): the label is "Featuring:" verbatim, and a guest is rare so
+// the NAME must be unmissable — Archivo 900 with the 13° tick, second only to the title.
+if (GUEST) {
+  const g = document.getElementById('guest');
+  g.innerHTML = '<small>Featuring:</small><b></b>';
+  g.querySelector('b').textContent = GUEST;
+  c.classList.add('has-guest');
+}
+document.title = 'A&R Room — ' + (SCREEN || DATE || 'key art') + ' — ' + F;
+</script>
+</body>
+</html>

@@ -163,8 +163,9 @@ text  · 6 reachable — 6 queued, holds until 10 AM ET
 status · 0 sent / 0 pending
 ```
 
-Click **📨 Send artist notices**. Each artist with an email gets their full 3-page report card,
-the replay link, and post instructions. Texts queue for the window.
+Click **📨 Send artist notices**. Each artist with an email gets their full Track Report (the page
+count varies by record — the decision, how it split, the next actions, the A&R comments, the
+share page), the replay link, and post instructions. Texts queue for the window.
 
 **A good first test:** put your own email and phone on one song (see below), send, and check
 what lands.

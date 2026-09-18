@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A&amp;R Room Screens and Motion</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{--ground:#0E0C1A;--panel:#171328;--line:#2E2750;--ink:#EAE9F2;--dim:#9793B4;--green:#4BB749;--gold:#F5C518}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+h1{margin:0;font-weight:900;font-size:clamp(30px,4vw,46px);line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.lede{max-width:64ch;color:var(--dim);margin:14px 0 34px}
+.lede b{color:var(--ink)}
+h2{font-weight:900;font-size:24px;letter-spacing:-.04em;text-transform:uppercase;margin:44px 0 6px;line-height:1}
+h2 small{display:block;font-weight:500;text-transform:none;letter-spacing:0;font-size:14px;color:var(--dim);margin-top:6px}
+.rule{height:2px;background:var(--green);margin:10px 0 18px}
+.row{display:grid;gap:14px;align-items:start}
+.r2w{grid-template-columns:2fr .75fr}
+.r3{grid-template-columns:repeat(3,1fr)}
+.card{background:var(--panel);border:1px solid var(--line);padding:14px;min-width:0}
+.card img,.card video{width:100%;height:auto;display:block;border:1px solid var(--line);background:#000}
+.card.checker video{background:repeating-conic-gradient(#3a3550 0 25%,#2a2640 0 50%) 0 0/24px 24px}
+.card .l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.06em;margin-top:8px;word-break:break-all}
+.copy{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.copy > div{background:var(--panel);border:1px solid var(--line);padding:16px}
+.copy .k{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.copy .v{max-width:56ch}
+.copy .why{color:var(--dim);font-size:13.5px;border-left:3px solid var(--line);padding-left:12px;margin-top:10px}
+.copy .why b{color:var(--ink)}
+.open{display:grid;border:1px solid var(--line);background:var(--panel)}
+.open > div{display:grid;grid-template-columns:44px 1fr;border-bottom:1px solid var(--line)}
+.open > div:last-child{border-bottom:0}
+.open .n{font-family:'Space Mono',monospace;font-weight:700;color:var(--green);padding:14px 0 14px 16px}
+.open .t{padding:14px 16px 14px 0;max-width:72ch}
+.open .t b{display:block;font-weight:800}
+.open .t span{color:var(--dim);font-size:14px}
+code{font-family:'Space Mono',monospace;font-size:12px}
+.src{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);margin-top:44px;padding-top:16px;border-top:1px solid var(--line)}
+@media (max-width:900px){.r2w,.r3,.copy{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<p class="eyebrow">Makin' It · promo build order · stage 6 · for approval · 2026-09-13 · starting-soon loop added 2026-09-14</p>
+<h1>Stream screens and motion</h1>
+<p class="lede">The break and sign-off screens for the broadcast (<b>2.7</b>), the 3-second logo sting (<b>0.10</b>), the show open and close (<b>2.14</b>) and a 15-second teaser (<b>2.13</b>). Added 2026-09-14: a <b>2.16</b> "Starting soon" loop for OBS with the countdown zone left empty. The screens are the Room key art with a different line. The motion is one time-axis page rendered to frames and encoded: nothing bounces or glows; the block wipes in along its own 13° edge, the word reveals behind a moving edge, the field rises along its cut. Copy is the approved ad copy.</p>
+
+<h2>2.7 Stream screens<small>Be right back, and the sign-off. 16:9 for the stream, 9:16 for the vertical platforms.</small></h2>
+<div class="rule"></div>
+<div class="row r2w">
+  <div class="card"><img src="room-screen-brb-wide.png" alt=""><div class="l">room-screen-brb-wide.png · 1920×1080</div></div>
+  <div class="card"><img src="room-screen-brb-story.png" alt=""><div class="l">room-screen-brb-story.png · 1080×1920</div></div>
+</div>
+<div class="row r2w" style="margin-top:14px">
+  <div class="card"><img src="room-screen-end-wide.png" alt=""><div class="l">room-screen-end-wide.png · 1920×1080</div></div>
+  <div class="card"><img src="room-screen-end-story.png" alt=""><div class="l">room-screen-end-story.png · 1080×1920</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Copy</div><div class="v">Be right back · Wednesday · 7PM ET · Live music review · makinitmag.com/live<br>Thanks for watching · Next Wednesday · 7PM ET · makinitmag.com/live</div><div class="why">The 9:16 versions carry the field with "Back in a moment" and "Next Wednesday". Render with <code>public/brand/room/render.sh brb</code> and <code>end</code>.</div></div>
+  <div><div class="k">Rules</div><div class="v">Same card as the key art so the stream never changes its look between segments. No full stops, numeric time in Space Mono.</div></div>
+</div>
+
+<h2>2.16 Starting soon loop<small>Twenty seconds, seamless, for the OBS media source before the show. The headline slot is left empty for a countdown text source. 16:9 and 9:16.</small></h2>
+<div class="rule"></div>
+<div class="row r2w">
+  <div class="card"><video src="starting-wide.mp4" poster="starting-wide-poster.png" controls muted loop playsinline></video><div class="l">starting-wide.mp4 · 1920×1080 · 20s loop</div></div>
+  <div class="card"><video src="starting-story.mp4" poster="starting-story-poster.png" controls muted loop playsinline></video><div class="l">starting-story.mp4 · 1080×1920 · 20s loop</div></div>
+</div>
+<div class="row r2w" style="margin-top:14px">
+  <div class="card"><img src="starting-wide-guide.png" alt=""><div class="l">starting-wide-guide.png · the countdown zone drawn on, with sample numerals · not for air</div></div>
+  <div class="card"><img src="starting-story-guide.png" alt=""><div class="l">starting-story-guide.png</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">What moves</div><div class="v">The card is the key art and holds still. Under the empty zone, four lines take turns, five seconds each: Live music review · Rate the records, Predict the average · <span style="color:#F5C518">$500</span> to the month’s Top A&amp;R · Submit your music, makinitmag.com/review. The 13° pager marks which one is up.</div><div class="why">A line fades out to nothing before the next fades in, and the first and last frames are pixel-identical (checked), so the loop point never shows. The number counting down is the rest of the motion.</div></div>
+  <div><div class="k">OBS setup</div><div class="v">Media Source → the .mp4, <b>Loop</b> on, "Restart playback when source becomes active" off. Then any countdown that drives a Text source (the bundled countdown script, or the Countdown Timer plugin) laid over it.</div><div class="why"><b>Wide:</b> text source at x 112, y 540, in a 1100×240 box, left-aligned, Space Mono Bold 200, colour #EAE9F2. <b>Story:</b> x 72, y 700, 936×260, Space Mono Bold 186. The guide stills show the fit. Space Mono is free from Google Fonts; install it on the streaming machine once.</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Without a countdown</div><div class="v">Render with <code>&amp;label=Starting%20soon</code> and the zone stays empty under a "Starting soon" label, for a day the timer is not set up.</div></div>
+  <div><div class="k">Render</div><div class="v"><code>public/brand/motion/frames.sh starting</code> → starting-wide.mp4, starting-story.mp4, the posters and the two guide stills.</div></div>
+</div>
+
+<h2>0.10 The bumper<small>Three seconds, transparent. The block wipes in along its edge, A&amp;R settles, the Makin' It mark arrives, hold, fade.</small></h2>
+<div class="rule"></div>
+<div class="row r2w">
+  <div class="card checker"><video src="bumper-wide.webm" poster="bumper-wide-poster.png" controls muted loop playsinline></video><div class="l">bumper-wide.webm (VP9 alpha) · bumper-wide.mov (ProRes 4444 alpha) · 1920×1080</div></div>
+  <div class="card checker"><video src="bumper-story.webm" poster="bumper-story-poster.png" controls muted loop playsinline></video><div class="l">bumper-story.webm · bumper-story.mov · 1080×1920</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Use</div><div class="v">Drop the .mov on a timeline over anything (the ground is transparent), or load the .webm in OBS as a media source with alpha. Opens and closes every video cut; the show open and close start from it.</div></div>
+  <div><div class="k">Timing</div><div class="v">0.0–0.55s block wipe · 0.35–0.8s A&amp;R · 0.7–1.15s the endorser · hold · 2.4–3.0s fade.</div><div class="why">Three curves only: ease-out in, ease-in out, hold.</div></div>
+</div>
+
+<h2>2.14 Show open and close<small>Six seconds each. The open lands on the key art, then fades to the stream; the close thanks and points to next Wednesday.</small></h2>
+<div class="rule"></div>
+<div class="row r2w">
+  <div class="card"><video src="open-wide.mp4" poster="open-wide-poster.png" controls muted playsinline></video><div class="l">open-wide.mp4 · 1920×1080</div></div>
+  <div class="card"><video src="open-story.mp4" poster="open-story-poster.png" controls muted playsinline></video><div class="l">open-story.mp4 · 1080×1920</div></div>
+</div>
+<div class="row r2w" style="margin-top:14px">
+  <div class="card"><video src="close-wide.mp4" poster="close-wide-poster.png" controls muted playsinline></video><div class="l">close-wide.mp4 · 1920×1080</div></div>
+  <div class="card"><video src="close-story.mp4" poster="close-story-poster.png" controls muted playsinline></video><div class="l">close-story.mp4 · 1080×1920</div></div>
+</div>
+<div class="copy">
+  <div><div class="k">Open</div><div class="v">Logo · block · ROOM reveals · Wednesday · 7PM ET · Live music review · the link · the field rises with the block on it · hold · fade out at 5.4s so it cuts straight to the stream.</div></div>
+  <div><div class="k">Close</div><div class="v">Thanks for watching · Next Wednesday · 7PM ET · the link · the field rises · hold · fade.</div><div class="why">Silent. Say if it should carry a sting or music bed and I will leave a stem slot in the encode.</div></div>
+</div>
+
+<h2>2.13 The teaser<small>Fifteen seconds, 9:16, for Reels, TikTok and Shorts. Typographic: five scenes on the key-art canvas.</small></h2>
+<div class="rule"></div>
+<div class="row" style="grid-template-columns:.42fr 1fr">
+  <div class="card"><video src="teaser-story.mp4" poster="teaser-story-poster.png" controls muted playsinline></video><div class="l">teaser-story.mp4 · 1080×1920 · 15s</div></div>
+  <div class="copy" style="margin-top:0;grid-template-columns:1fr">
+    <div><div class="k">Scenes</div><div class="v">1.4s Wednesday / 7PM ET · 4.2s Live music / review · 7.0s Rate the records / Predict the average · 9.9s <span style="color:#F5C518">$500</span> to the / month’s Top A&amp;R · 12.6s Watch live, the field rises, makinitmag.com/live.</div><div class="why">Built without show footage, so it is a typographic cut of the approved lines. A footage version is a different edit: say if you want a cut list for it.</div></div>
+  </div>
+</div>
+
+<h2>Open items</h2>
+<div class="rule"></div>
+<div class="open">
+  <div><div class="n">1</div><div class="t"><b>Approve the screens, the four motion pieces and the starting-soon loop.</b><span>Timing and lines are on this page; every number is a cue in motion.html.</span></div></div>
+  <div><div class="n">4</div><div class="t"><b>Starting-soon lines.</b><span>Four approved lines rotate under the countdown. Say if the set or the five-second pace should change, or if the zone should sit somewhere else.</span></div></div>
+  <div><div class="n">2</div><div class="t"><b>Sound.</b><span>Everything is silent. Say if the bumper and open should carry a sting or bed.</span></div></div>
+  <div><div class="n">3</div><div class="t"><b>Teaser footage.</b><span>The typographic teaser stands on its own; a footage version needs a clip from a show.</span></div></div>
+</div>
+
+<p class="src">Screens: public/brand/room/room.html?screen=brb|end · motion: public/brand/motion/motion.html?piece=bumper|open|close|teaser|starting&amp;f=&amp;t= (add &amp;play=1 to watch it run) · render: public/brand/motion/frames.sh</p>
+</div></body></html>

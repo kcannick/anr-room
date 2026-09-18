@@ -1931,8 +1931,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and lifetime points do not move on a repeat tick',
     lifetimeAfter.lifetime_points === lifetimeAfter2.lifetime_points, `${lifetimeAfter.lifetime_points} -> ${lifetimeAfter2.lifetime_points}`);
 
-  console.log('\n— A&R Daily: the noon publish and the two independent emails —');
-  // Publish is deliberately the LAST transition and it happens at NOON, not at the 9AM
+  console.log('\n— A&R Daily: the 3PM publish and the two independent emails —');
+  // Publish is deliberately the LAST transition and it happens at 3PM, not at the noon
   // close: status='completed' is what makes playerState's recap branch fire, so flipping
   // it three hours early would reveal every room average while the day is still sealed.
   const tBeforeNoon = await tick(closesAt + 4000);
@@ -2017,6 +2017,101 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the recap render is platform-admin only (it names the A&Rs before the stream does)', rcovAnon.status === 403 || rcovAnon.status === 401, 'got ' + rcovAnon.status);
   const rcapTxt = await fetch(base + "/api/admin/daily/recap-caption?s=" + LDROP, { headers: BOOTH });
   ok('the caption preview is the same text the publish stored', rcapTxt.status === 200 && (await rcapTxt.text()) === rjob.recap_caption);
+
+  console.log('\n— The A&R Meeting results carousels: rendered at publish, ranked, no scores on the records —');
+  // Same publish, same best-effort contract as the recap graphics: no Blob token here, so the
+  // hosted slide lists are null and the day published anyway — the captions are kept.
+  const rjob2 = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
+  ok('the publish stores both carousel captions even with no Blob token',
+    /Top Track/.test(rjob2.results_song_caption || '') && /Top A&R/.test(rjob2.results_ar_caption || ''),
+    JSON.stringify([rjob2.results_song_caption, rjob2.results_ar_caption]));
+  ok('and leaves the hosted slide lists null rather than failing the publish',
+    rjob2.results_song_urls == null && rjob2.results_ar_urls == null, JSON.stringify([rjob2.results_song_urls, rjob2.results_ar_urls]));
+  const rsSong = await srv._resultsCarouselData(pubbed, 'song');
+  ok('three records make three slides: the top record, one list slide, the call to action',
+    rsSong && rsSong.total === 3 && rsSong.slides.map(s => s.kind).join(',') === 'hero,list,cta', JSON.stringify(rsSong && rsSong.slides.map(s => s.kind)));
+  const topRec = await dDb.get("SELECT song_title FROM rounds WHERE session_id = ? AND status = 'ratified' AND COALESCE(is_reference,0) = 0 ORDER BY room_average DESC, idx ASC LIMIT 1", [LDROP]);
+  ok('slide 1 is the record with the highest room average', rsSong.slides[0].hero.title === topRec.song_title, JSON.stringify([rsSong.slides[0].hero, topRec]));
+  ok('the list ranks the rest from 02 and carries NO scores',
+    rsSong.slides[1].rows.length === 2 && rsSong.slides[1].rows[0].rank === '02' && rsSong.slides[1].rows.every(r => r.value === undefined),
+    JSON.stringify(rsSong.slides[1].rows));
+  ok('the song carousel closes on Submit your music, closing line B',
+    rsSong.slides[2].cta.eyebrow === 'Submit your music' && /finish, release, or promote/.test(rsSong.slides[2].cta.body), JSON.stringify(rsSong.slides[2].cta));
+  const rsAr = await srv._resultsCarouselData(pubbed, 'ar');
+  ok('the A&R carousel leads with the board leader and no photo when the profile has none',
+    rsAr && rsAr.slides[0].hero.title === 'Lex' && rsAr.slides[0].hero.photo == null, JSON.stringify(rsAr && rsAr.slides[0].hero));
+  ok('the A&R list carries points; nothing carries an email or phone',
+    rsAr.slides[1].rows.every(r => typeof r.value === 'number') && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsAr)), JSON.stringify(rsAr.slides[1].rows));
+  ok('the A&R carousel closes on Join the A&R Team with the $500', rsAr.slides[2].cta.eyebrow === 'Join the A&R Team' && rsAr.slides[2].cta.head.join(' ').includes('$500'));
+  ok('a fourteen-record day is five slides with the list split evenly (5/4/4)',
+    JSON.stringify(srv._resultsPages(Array.from({ length: 13 }, (_, i) => i), 6).map(p => p.length)) === '[5,4,4]');
+  ok('a four-record day is three slides', srv._resultsPages([1, 2, 3], 6).length === 1);
+  const rsCapTxt = await fetch(base + '/api/admin/daily/results-caption?s=' + LDROP + '&set=song', { headers: BOOTH });
+  ok('the caption preview is the same text the publish stored', rsCapTxt.status === 200 && (await rsCapTxt.text()) === rjob2.results_song_caption);
+  const rs1 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=1', { headers: BOOTH });
+  const rs1Buf = Buffer.from(await rs1.arrayBuffer());
+  ok('a results slide renders as a 1080x1350 PNG', rs1.status === 200 && rs1.headers.get('content-type') === 'image/png' && pngDims(rs1Buf) === '1080x1350', rs1.status + ' ' + pngDims(rs1Buf));
+  const rs9 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=9', { headers: BOOTH });
+  ok('a slide past the end is 404, not a blank card', rs9.status === 404, 'got ' + rs9.status);
+  const rsAnon = await fetch(base + '/api/card/results?s=' + LDROP + '&set=ar&slide=1');
+  ok('the results render is platform-admin only', rsAnon.status === 403 || rsAnon.status === 401, 'got ' + rsAnon.status);
+  const rsStatus = (await call('/api/admin/daily/status?day=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
+  ok('the daily status carries the carousel captions and slide counts for the console',
+    rsStatus.cards && rsStatus.cards.results && rsStatus.cards.results.songCount === 3 && rsStatus.cards.results.arCount === 3
+      && rsStatus.cards.results.songCaption === rjob2.results_song_caption, JSON.stringify(rsStatus.cards && rsStatus.cards.results));
+
+  console.log('\n— The winner posts (039): Top Track / Top A&R of the Day at publish, of the Week on demand —');
+  const wjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
+  ok('the publish stores both winner captions even with no Blob token',
+    /^Top Track of the Day/.test(wjob.winner_track_caption || '') && /^Top A&R of the Day/.test(wjob.winner_ar_caption || ''),
+    JSON.stringify([wjob.winner_track_caption, wjob.winner_ar_caption]));
+  ok('and leaves the hosted post URLs null rather than failing the publish',
+    wjob.winner_track_url == null && wjob.winner_ar_url == null, JSON.stringify([wjob.winner_track_url, wjob.winner_ar_url]));
+  const wdTrack = await srv._winnerDayData(pubbed, 'track');
+  ok('Top Track of the Day is the record with the highest room average, dated by the DROP day',
+    wdTrack && wdTrack.title === '“' + topRec.song_title + '”' && wdTrack.period === 'day' && wdTrack.strap == null
+      && wdTrack.date === srv._recapDateLabel(srv._etEpoch(pubbed.drop_day, 12)), JSON.stringify(wdTrack));
+  ok('the day card carries the score and no rank (TOP TRACK already says #1)',
+    /^\d\.\d$/.test(String(wdTrack.line.score)) && wdTrack.line.drop === undefined && !('rank' in wdTrack.line), JSON.stringify(wdTrack.line));
+  const wdAr = await srv._winnerDayData(pubbed, 'ar');
+  ok('Top A&R of the Day is the board leader with a letter grade, points and a bullseye count',
+    wdAr && wdAr.title === 'Lex' && typeof wdAr.line.points === 'number' && typeof wdAr.line.bullseyes === 'number'
+      && /^[A-F][+-]?$/.test(wdAr.line.grade) && wdAr.photo == null, JSON.stringify(wdAr));
+  ok('the winner data never carries an email or phone', !/@test\.com|\+1\d{9}/.test(JSON.stringify([wdTrack, wdAr])));
+  ok('the captions match the stored ones', srv._winnerCaption(wdTrack) === wjob.winner_track_caption && srv._winnerCaption(wdAr) === wjob.winner_ar_caption);
+  ok('a week starts on Monday', srv._weekStartOf('2026-09-16') === '2026-09-14' && srv._weekStartOf('2026-09-14') === '2026-09-14' && srv._weekStartOf('2026-09-20') === '2026-09-14',
+    [srv._weekStartOf('2026-09-16'), srv._weekStartOf('2026-09-14'), srv._weekStartOf('2026-09-20')].join(','));
+  const wkStart = srv._weekStartOf(pubbed.drop_day);
+  const wwTrack = await srv._winnerWeekData(pubbed.drop_day, 'track');
+  ok('Top Track of the Week spans the published drops of that week and carries the strap, the range and the drop day',
+    wwTrack && wwTrack.title === '“' + topRec.song_title + '”' && wwTrack.period === 'week' && /\$1,000 Tournament/.test(wwTrack.strap)
+      && wwTrack.date.includes(' – ') && wwTrack.line.drop === srv._recapDateLabel(srv._etEpoch(pubbed.drop_day, 12)) && wwTrack.week.start === wkStart,
+    JSON.stringify(wwTrack));
+  const wwAr = await srv._winnerWeekData(pubbed.drop_day, 'ar');
+  ok('Top A&R of the Week is the most points across the week with the A&R Wars strap',
+    wwAr && wwAr.title === 'Lex' && /A&R Wars/.test(wwAr.strap) && /\$500/.test(wwAr.strap) && wwAr.line.points === wdAr.line.points, JSON.stringify(wwAr));
+  ok('a week with no published drops has no winners', (await srv._winnerWeekData('2020-01-06', 'track')) === null);
+  const wp1 = await fetch(base + '/api/card/winner?s=' + LDROP + '&post=track', { headers: BOOTH });
+  const w1Buf = Buffer.from(await wp1.arrayBuffer());
+  ok('a day post renders as a 1080x1350 PNG', wp1.status === 200 && wp1.headers.get('content-type') === 'image/png' && pngDims(w1Buf) === '1080x1350', wp1.status + ' ' + pngDims(w1Buf));
+  const wp2 = await fetch(base + '/api/card/winner?week=' + pubbed.drop_day + '&post=ar', { headers: BOOTH });
+  const w2Buf = Buffer.from(await wp2.arrayBuffer());
+  ok('a week post renders as a 1080x1350 PNG', wp2.status === 200 && pngDims(w2Buf) === '1080x1350', wp2.status + ' ' + pngDims(w2Buf));
+  const wp3 = await fetch(base + '/api/card/winner?week=2020-01-06&post=track', { headers: BOOTH });
+  ok('an empty week is 404, not a blank card', wp3.status === 404, 'got ' + wp3.status);
+  const wpAnon = await fetch(base + '/api/card/winner?s=' + LDROP + '&post=ar');
+  ok('the winner render is platform-admin only', wpAnon.status === 403 || wpAnon.status === 401, 'got ' + wpAnon.status);
+  const wpCap = await fetch(base + '/api/admin/daily/winner-caption?s=' + LDROP + '&post=ar', { headers: BOOTH });
+  ok('the caption preview is the same text the publish stored', wpCap.status === 200 && (await wpCap.text()) === wjob.winner_ar_caption);
+  const wpWeek = (await call('/api/admin/weekly/winners?week=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
+  ok('the weekly endpoint names both winners with captions and the week label',
+    wpWeek && wpWeek.week && wpWeek.week.start === wkStart && wpWeek.track && wpWeek.ar && /^Top A&R of the Week/.test(wpWeek.ar.caption)
+      && !/@test\.com|\+1\d{9}/.test(JSON.stringify(wpWeek)), JSON.stringify(wpWeek));
+  const wpStatus = (await call('/api/admin/daily/status?day=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
+  ok('the daily status carries the winner captions, readiness and the default week for the console',
+    wpStatus.cards && wpStatus.cards.winners && wpStatus.cards.winners.trackReady === true && wpStatus.cards.winners.arReady === true
+      && wpStatus.cards.winners.trackCaption === wjob.winner_track_caption && /^\d{4}-\d{2}-\d{2}$/.test(wpStatus.cards.winners.weekDefault),
+    JSON.stringify(wpStatus.cards && wpStatus.cards.winners));
 
   // 7a — the A&R digest. This is notifyAudience()'s FIRST production caller, and the
   // assertion that its {sql, params} fragment really does compose into an INSERT...SELECT.
@@ -2809,7 +2904,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const weOther = await call('/api/watch-embed?s=' + weC.d.sessionId, null, 'GET');
   ok('non-YouTube watch link resolves to null', weOther.status === 200 && weOther.d.videoId === null, JSON.stringify(weOther.d));
 
-  console.log('\n— Song Report (paid artist tier): host-only, 3 PNG pages, ratified rounds —');
+  console.log('\n— Track Report: host-only, a variable page list, ratified rounds —');
   const rpC = await call('/api/session', { name: 'Report Night' }, 'POST', BOOTH);
   const RPID = rpC.d.sessionId, RPAH = { 'X-Admin-Token': rpC.d.adminToken };
   const rpRound = await call('/api/admin/round', { sessionId: RPID, song_title: 'Report Song', song_artist: 'Test Artist', song_note: 'IG: @testartist' }, 'POST', RPAH);
@@ -2828,13 +2923,26 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // Host-only: no credentials -> 401.
   const noAuth = await fetch(base + `/api/card/song-report?r=${RPRID}&page=1`);
   ok('report is host-only (401 without credentials)', noAuth.status === 401, 'status ' + noAuth.status);
-  // All three pages render as PNGs with 8 votes.
-  for (const page of [1, 2, 3]) {
+  // The page list is derived per record: the decision leads, the share page (no score)
+  // closes, the setup page exists because every vote carried a prediction, and there is no
+  // segments page because none of these A&Rs has a role on their profile.
+  const rpMeta = await call(`/api/card/song-report?r=${RPRID}&meta=1`, null, 'GET', RPAH);
+  ok('report meta lists the pages', rpMeta.status === 200 && Array.isArray(rpMeta.d.kinds) && rpMeta.d.total === rpMeta.d.kinds.length, JSON.stringify(rpMeta.d));
+  const rpKinds = rpMeta.d.kinds || [];
+  ok('page 1 is the decision, page 2 how it split', rpKinds[0] === 'decision' && rpKinds[1] === 'split', rpKinds.join());
+  ok('the share page is last', rpKinds[rpKinds.length - 1] === 'share');
+  ok('a prediction gives a setup page; three actions always', rpKinds.includes('setup') && rpKinds.includes('next') && (rpMeta.d.steps || []).length === 3);
+  ok('no role segments -> no "who it is for" page', !rpKinds.includes('whofor'));
+  ok('a 6.6 is the invest band, and the decision is a sentence', rpMeta.d.mean === '6.6' && rpMeta.d.band === 'invest' && rpMeta.d.decision === 'Release it. This one is worth investing in.', rpMeta.d.decision);
+  ok('the report never says how the machine works', !/pool|lottery|queue|submission|ratif/i.test(JSON.stringify(rpMeta.d.steps) + rpMeta.d.decision));
+  for (const page of [1, 2, rpKinds.length]) {
     const r = await fetch(base + `/api/card/song-report?r=${RPRID}&page=${page}`, { headers: RPAH });
     const buf = Buffer.from(await r.arrayBuffer());
-    ok(`report page ${page} renders a PNG`, r.status === 200 && (r.headers.get('content-type') || '').includes('image/png') && buf.length > 5000,
+    ok(`report page ${page} (${rpKinds[page - 1]}) renders a PNG`, r.status === 200 && (r.headers.get('content-type') || '').includes('image/png') && buf.length > 5000,
       `status ${r.status}, ${buf.length} bytes`);
   }
+  const rpBeyond = await call(`/api/card/song-report?r=${RPRID}&page=${rpKinds.length + 1}`, null, 'GET', RPAH);
+  ok('a page past the end is a 404, not a blank render', rpBeyond.status === 404, 'status ' + rpBeyond.status);
   // Round history browser: host-only list with scores + vote counts per round.
   const histNoAuth = await call(`/api/admin/rounds?sessionId=${RPID}`, null, 'GET');
   ok('round history is host-only (401)', histNoAuth.status === 401, 'status ' + histNoAuth.status);
@@ -3121,18 +3229,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   await cbDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), cbSid]);
 
   console.log('\n— A&R Daily: ET day arithmetic across DST —');
-  // The drop's schedule is WALL CLOCK: 12PM ET open, 9AM ET close, 12PM ET publish. The
-  // window crosses the DST switch twice a year, so the rule that has to hold is "noon is
-  // noon" — and the DURATION is what flexes (20h in spring, 22h in fall), not the times.
-  // Deriving the close as open+21h would give an 8AM close in March and a 10AM close in
-  // November, which is the bug this helper exists to prevent.
+  // The drop's schedule is WALL CLOCK: 12PM ET open, 12PM ET close the next day, 3PM ET
+  // publish. The window crosses the DST switch twice a year, so the rule that has to hold is
+  // "noon is noon" — and the DURATION is what flexes (23h in spring, 25h in fall), not the
+  // times. Deriving the close as open+24h would give an 11AM close in March and a 1PM close
+  // in November, which is the bug this helper exists to prevent.
   const etWall = (ts) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
     hour: 'numeric', minute: '2-digit', hour12: false }).format(new Date(ts));
   const wallCases = [
     ['2026-03-08', 12, '12:00', 'spring-forward day, noon'],
-    ['2026-03-08',  9, '09:00', 'spring-forward day, 9AM'],
+    ['2026-03-08', 15, '15:00', 'spring-forward day, 3PM'],
     ['2026-11-01', 12, '12:00', 'fall-back day, noon'],
-    ['2026-11-01',  9, '09:00', 'fall-back day, 9AM'],
+    ['2026-11-01', 15, '15:00', 'fall-back day, 3PM'],
     ['2026-07-04', 12, '12:00', 'EDT, noon'],
     ['2026-01-15', 12, '12:00', 'EST, noon'],
   ];
@@ -3141,11 +3249,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok(`etEpoch: ${label} -> ${want} ET`, got === want, `got ${got}`);
   }
   // The window length flexing is the CORRECT behaviour, not a defect — assert it so nobody
-  // "fixes" it into a fixed 21 hours.
-  const spanH = (d) => (server._etEpoch(server._etNextDay(d), 9) - server._etEpoch(d, 12)) / 3600000;
-  ok('window is 21h on an ordinary day', spanH('2026-07-04') === 21, `got ${spanH('2026-07-04')}`);
-  ok('window is 20h across spring-forward (an hour is lost)', spanH('2026-03-07') === 20, `got ${spanH('2026-03-07')}`);
-  ok('window is 22h across fall-back (an hour is gained)', spanH('2026-10-31') === 22, `got ${spanH('2026-10-31')}`);
+  // "fixes" it into a fixed 24 hours.
+  const spanH = (d) => (server._etEpoch(server._etNextDay(d), 12) - server._etEpoch(d, 12)) / 3600000;
+  ok('window is 24h on an ordinary day', spanH('2026-07-04') === 24, `got ${spanH('2026-07-04')}`);
+  ok('window is 23h across spring-forward (an hour is lost)', spanH('2026-03-07') === 23, `got ${spanH('2026-03-07')}`);
+  ok('window is 25h across fall-back (an hour is gained)', spanH('2026-10-31') === 25, `got ${spanH('2026-10-31')}`);
   ok('etNextDay crosses a month boundary', server._etNextDay('2026-02-28') === '2026-03-01');
   ok('etNextDay crosses a year boundary', server._etNextDay('2026-12-31') === '2027-01-01');
   ok('etNextDay crosses spring-forward', server._etNextDay('2026-03-07') === '2026-03-08');
@@ -3477,44 +3585,43 @@ async function startVoting(sessionId, headers, minutes = 5) {
     await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), sid]);
   }
 
-  console.log('\n— artist email: carries the report + replay link, and NO pricing —');
-  // The operator's explicit call: the report card goes out free to drive visibility, and the
+  console.log('\n— artist email: the decision first, the report pages, the replay link, and NO pricing —');
+  // The operator's explicit call: the report goes out free to drive visibility, and the
   // email must never mention price or an upsell. That's a product decision a future copy
   // edit could quietly undo, so it's asserted here rather than left to review.
-  const aeHtml = server._artistEmailHtml({ title: 'Midnight Run', artist: 'Jaylen Cole', mean: '7.4',
-    rank: 2, total: 11, dateLabel: 'Jul 8, 2026', sessionName: 'Test Night',
-    watchUrl: 'https://youtube.com/watch?v=abc123', pages: ['https://blob/p1.png', 'https://blob/p2.png', 'https://blob/p3.png'] });
+  const aeBase = { title: 'Midnight Run', artist: 'Jaylen Cole', mean: '7.4', bandLabel: 'Potential Single',
+    decision: 'Release it. This one is worth investing in.', votes: 11, what: 'A&R Room', dateLabel: 'Jul 8, 2026',
+    watchUrl: 'https://youtube.com/watch?v=abc123', pages: ['https://blob/p1.png', 'https://blob/p2.png', 'https://blob/p3.png'] };
+  const aeHtml = server._artistEmailHtml(aeBase);
   ok('artist email embeds every report page', ['p1', 'p2', 'p3'].every(p => aeHtml.includes(p + '.png')));
+  ok('artist email leads with the decision as the headline', /<h1[^>]*>Release it\. This one is worth investing in\.<\/h1>/.test(aeHtml));
   ok('artist email carries the replay link', aeHtml.includes('youtube.com/watch?v=abc123'));
   ok('artist email points the artist at the replay for clips', /short clips/i.test(aeHtml));
-  ok('artist email asks for the collab post', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARRoom'));
-  ok('artist email shows the score + rank', aeHtml.includes('7.4') && aeHtml.includes('#2 of 11'));
+  ok('a live-show email asks for the collab post with the Room tag', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARRoom'));
+  ok('artist email shows the rating, the band and the A&R count', aeHtml.includes('7.4') && aeHtml.includes('Potential Single') && /11 A&amp;Rs/.test(aeHtml));
+  ok('artist email says nothing about the machine', !/pool|lottery|queue|submission|ratif/i.test(aeHtml));
   const sellWords = /\$\d|\bprice\b|\bpricing\b|\bpurchase\b|\bpaid\b|\bupgrade\b|\bcheckout\b|\bbuy\b|\bupsell\b/i;
   ok('artist email mentions NO price or upsell (operator decision)', !sellWords.test(aeHtml),
     (aeHtml.match(sellWords) || [''])[0]);
-  // A room with no replay link must simply omit the button, not render a dead one.
-  const aeNoWatch = server._artistEmailHtml({ title: 'X', artist: '', mean: '5.0', rank: 1, total: 1,
-    dateLabel: 'Jul 8, 2026', sessionName: 'N', watchUrl: null, pages: ['https://blob/p1.png'] });
-  ok('no replay link -> no watch button (not a dead link)', !/Watch the room/.test(aeNoWatch));
-  ok('single-song room omits the rank line', !/of 1<\/b> records/.test(aeNoWatch));
+  // A Meeting record: no replay (every vote is async), the Meeting's own tag.
+  const aeMeeting = server._artistEmailHtml({ ...aeBase, what: 'A&R Meeting', watchUrl: null, pages: ['https://blob/p1.png'] });
+  ok('a Meeting email has no watch button (not a dead link)', !/Watch the room/.test(aeMeeting));
+  ok('a Meeting email carries the Meeting tag and name', aeMeeting.includes('#TheARMeeting') && /The A&amp;R Meeting/.test(aeMeeting) && !/#TheARRoom/.test(aeMeeting));
   // Approved A&R comments ride along, attributed. Attribution is the whole value —
   // named people who scored the record, not anonymous opinion.
-  const aeCmts = server._artistEmailHtml({ title: 'Midnight Run', artist: 'Jaylen Cole', mean: '7.4',
-    rank: 2, total: 11, dateLabel: 'Jul 8, 2026', sessionName: 'Test Night', watchUrl: null,
-    pages: ['https://blob/p1.png'],
+  const aeCmts = server._artistEmailHtml({ ...aeBase, watchUrl: null, pages: ['https://blob/p1.png'],
     comments: [{ body: 'The rasp on verse two is the whole record.', name: 'Devin R.', role: 'A&R', location: 'Atlanta' }] });
   ok('artist email carries approved comments', aeCmts.includes('The rasp on verse two is the whole record.'));
   ok('artist email attributes each comment', aeCmts.includes('Devin R.') && aeCmts.includes('A&amp;R') && aeCmts.includes('Atlanta'));
   ok('artist email frames comments as individual opinions', /personal opinions of individual/i.test(aeCmts));
   ok('comment block still carries no price or upsell', !sellWords.test(aeCmts), (aeCmts.match(sellWords) || [''])[0]);
   // Escaping: a comment is untrusted free text going into an HTML email.
-  const aeXss = server._artistEmailHtml({ title: 'T', artist: '', mean: '5.0', rank: 1, total: 1,
-    dateLabel: 'd', sessionName: 'N', watchUrl: null, pages: [],
+  const aeXss = server._artistEmailHtml({ ...aeBase, title: 'T', artist: '', watchUrl: null, pages: [],
     comments: [{ body: '<script>alert(1)</script>', name: '<b>x</b>', role: null, location: null }] });
   ok('comment bodies are HTML-escaped', !aeXss.includes('<script>') && aeXss.includes('&lt;script&gt;'));
   ok('commenter names are HTML-escaped', !aeXss.includes('<b>x</b>'));
   // No approved comments -> the block vanishes entirely, no empty header.
-  ok('no shared comments -> no comment block at all', !/What the A&amp;Rs said/.test(aeNoWatch));
+  ok('no shared comments -> no comment block at all', !/What the A&amp;Rs said/.test(aeMeeting));
 
   console.log('\n— artist notices: contact capture, retroactive edit, queue —');
   const anC = await call('/api/session', { name: 'Artist Night' }, 'POST', BOOTH);
@@ -4192,6 +4299,46 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('charts: caption sends artists to /review and viewers to /ANR',
     /makinitmag\.com\/review/.test(capTxt) && /makinitmag\.com\/ANR/.test(capTxt), capTxt.slice(-200));
   ok('charts: caption lists the #1 record', capTxt.includes('1. Broad Appeal'), capTxt.slice(0, 300));
+
+  console.log('\n— charts: the contact export is a separate, deliberate file —');
+  const arsQ = `scope=series&seriesId=${CHSER}&mode=ars`;
+  const arsCsv = await (await fetch(`${base}/api/admin/charts?${arsQ}&format=csv`, { headers: ADMINH })).text();
+  ok('contacts: the ordinary A&R CSV carries NO contact columns',
+    /^rank,name,instagram,category,location,points,rounds_scored/.test(arsCsv) && !/@fan\.com/.test(arsCsv), arsCsv.split('\n')[0]);
+  const conRes = await fetch(`${base}/api/admin/charts?${arsQ}&format=contacts`, { headers: ADMINH });
+  const conTxt = await conRes.text();
+  ok('contacts: the export downloads as its own file', conRes.status === 200
+    && /text\/csv/.test(conRes.headers.get('content-type') || '')
+    && /filename="[^"]*-contacts\.csv"/.test(conRes.headers.get('content-disposition') || ''),
+    conRes.status + ' ' + conRes.headers.get('content-disposition'));
+  ok('contacts: header is name, IG, email, phone', /^rank,name,instagram,email,phone,sms_consent,category,location,points,rounds_scored/.test(conTxt), conTxt.split('\n')[0]);
+  ok('contacts: one row per charting A&R, same ranks', conTxt.trim().split('\n').length === cA.d.rows.length + 1,
+    'lines ' + conTxt.trim().split('\n').length + ' vs rows ' + cA.d.rows.length);
+  ok('contacts: rows carry the real email', /ch1@fan\.com/.test(conTxt), conTxt.split('\n')[1]);
+  ok('contacts: the ranking is the chart\'s, unchanged',
+    conTxt.split('\n')[1].split(',')[1] === cA.d.rows[0].name, conTxt.split('\n')[1]);
+  ok('contacts: limit truncates it like any other chart',
+    (await (await fetch(`${base}/api/admin/charts?${arsQ}&limit=2&format=contacts`, { headers: ADMINH })).text()).trim().split('\n').length === 3);
+  const conRec = await fetch(`${base}/api/admin/charts?${chBase}&format=contacts`, { headers: ADMINH });
+  ok('contacts: refused on the records chart (a record has nobody to call)', conRec.status === 400, String(conRec.status));
+  const conAnon = await fetch(`${base}/api/admin/charts?${arsQ}&format=contacts`);
+  ok('contacts: admin only — no token, no contacts', conAnon.status === 403, String(conAnon.status));
+  // A phone given at a session signup, on an account that has none of its own.
+  const phRoom = await chRoom('Chart Room Phone');
+  const phSeat = await (async () => {
+    const rq = await call('/api/join/request', { sessionId: phRoom.id, email: 'chphone@fan.com' });
+    const vr = await call('/api/join/verify', { sessionId: phRoom.id, email: 'chphone@fan.com', code: rq.d.devCode, name: 'Cee Phone', phone: '404-555-0117' });
+    return { 'X-Player-Token': vr.d.token };
+  })();
+  await call('/api/me/profile', { name: 'Cee Phone', categories: ['Producer'], primaryCategory: 'Producer', location: 'Atlanta, GA', instagram: 'ceephone' }, 'POST', phSeat);
+  await chPlay(phRoom, [phSeat], 'Phone Room Record', 'Somebody', [7]);
+  const conPh = await (await fetch(`${base}/api/admin/charts?${arsQ}&format=contacts`, { headers: ADMINH })).text();
+  const phLine = conPh.split('\n').find(l => /chphone@fan\.com/.test(l)) || '';
+  ok('contacts: a signup phone reaches the export', /404-555-0117/.test(phLine), phLine);
+  ok('contacts: ...and its SMS consent is reported', /,yes,/.test(phLine), phLine);
+  const noPhLine = conPh.split('\n').find(l => /ch1@fan\.com/.test(l)) || '';
+  ok('contacts: an A&R with no number exports an empty phone, not a wrong one',
+    /,ch1@fan\.com,,no,/.test(noPhLine), noPhLine);
 
   console.log('\n— charts: the carousel renders, and the band edges do not overlap —');
   const slide0 = await fetch(`${base}/api/card/chart?${chBase}&slide=0`, { headers: ADMINH });
