@@ -1787,7 +1787,7 @@ async function creditReferralRounds(round, session) {
     if (!ref || ref.blocked || ref.uid === r.uid) continue;
     // substr, not LIKE: a uid is base64url and may contain '_', which LIKE reads as a wildcard.
     const c = Number((await db.get(
-      "SELECT COUNT(*) AS c FROM point_events WHERE reason = 'referral_round' AND substr(source_uid, 1, ?) = ?",
+      "SELECT COUNT(*) AS c FROM point_events WHERE reason = 'referral_round' AND substr(source_uid, 1, CAST(? AS INTEGER)) = ?",
       [r.uid.length + 1, r.uid + ':'])).c) || 0;
     if (c >= REFERRAL.cap) continue;
     const ins = await db.run(
@@ -7420,11 +7420,14 @@ async function handleApi(req, res, url) {
     // ---- Artist lane: every record this A&R scouted. The average is SEALED until the day it
     // ran has published (a daily drop is tallied hours before its results go out), so an
     // unpublished record reports only that it is waiting.
+    // Never test a bare placeholder for NULL in SQL: Postgres cannot infer its type and the
+    // request 500s, while SQLite (the test suite) is happy. Shape the predicate here instead.
+    const scoutIds = u.drupal_uid ? [uid, u.drupal_uid] : [uid];
     const scouted = await db.all(
       `SELECT r.id, r.song_title, r.song_artist, r.status, r.room_average, r.created_at, s.mode, s.async_state
          FROM rounds r JOIN sessions s ON s.id = r.session_id
-        WHERE s.deleted_at IS NULL AND (r.scout_drupal_uid = ? OR (? IS NOT NULL AND r.scout_drupal_uid = ?))
-        ORDER BY r.created_at DESC LIMIT 200`, [uid, u.drupal_uid || null, u.drupal_uid || null]);
+        WHERE s.deleted_at IS NULL AND r.scout_drupal_uid IN (${scoutIds.map(() => '?').join(',')})
+        ORDER BY r.created_at DESC LIMIT 200`, scoutIds);
     const scoutPts = new Map();
     let artistEarned = 0;
     for (const e of await db.all("SELECT source_uid, points FROM point_events WHERE user_id = ? AND reason = 'scout'", [uid])) {

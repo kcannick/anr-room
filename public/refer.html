@@ -117,6 +117,7 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 
   <!-- THE PAGE -->
   <section id="screen-main" class="stack hide" style="gap:16px">
+    <div class="err hide" id="loadErr"></div>
     <div class="stack" style="gap:8px">
       <h1 style="font-weight:900;font-size:30px;letter-spacing:-.04em;line-height:1.05">Earn bonus points</h1>
       <p class="dim" style="margin:0;font-size:14.5px;line-height:1.5">Two ways to earn on top of your daily play. Each has its own link.</p>
@@ -195,7 +196,7 @@ async function api(path, body, headers){
   const h = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
   const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: h, body: body ? JSON.stringify(body) : undefined });
   const d = await r.json().catch(() => ({}));
-  if(!r.ok) throw new Error(d.error || ('Request failed (' + r.status + ')'));
+  if(!r.ok){ const e = new Error(d.error || ('Request failed (' + r.status + ')')); e.status = r.status; throw e; }
   return d;
 }
 function show(id){ ['screen-login','screen-main'].forEach(s => $('#' + s).classList.toggle('hide', s !== id)); }
@@ -224,6 +225,7 @@ $('#btnVerify').onclick = async () => {
     const d = await api('/api/auth/verify', { email: $('#emailEcho').textContent, code, ref: localStorage.getItem('rt_ref') || '' });
     localStorage.setItem('rt_auth_token', d.token);
     localStorage.removeItem('rt_ref');
+    $('#code').value = '';
     await load();
   }catch(e){ $('#codeErr').textContent = e.message; }
   $('#btnVerify').disabled = false;
@@ -296,9 +298,18 @@ async function load(){
     const d = await api('/api/me/referrals', null, h);
     render(d); show('screen-main');
   }catch(e){
-    // A dead token (expired, or a session that no longer resolves) sends them to sign in.
-    if(h['X-Auth-Token']) localStorage.removeItem('rt_auth_token');
-    show('screen-login');
+    // ONLY a 401 means the token is dead. Any other failure keeps the token and says so —
+    // the first build dropped the token on a server error, which read as being logged out
+    // and burned the one-time code on the retry.
+    if(e.status === 401){
+      if(h['X-Auth-Token']) localStorage.removeItem('rt_auth_token');
+      show('screen-login');
+      return;
+    }
+    show('screen-main');
+    $('#arRows').innerHTML = '';
+    $('#loadErr').classList.remove('hide');
+    $('#loadErr').textContent = 'Could not load your referral page (' + e.message + '). Try again in a moment.';
   }
 }
 load();

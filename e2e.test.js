@@ -1056,6 +1056,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('an invitee is worth at most 240, ever', (await refEvents()).length === rsrv._REFERRAL.cap, String((await refEvents()).length));
   await rDb.run("DELETE FROM point_events WHERE id LIKE 'capfill%'");
 
+  // The dialect trap that took /refer down on its first night: SQLite types a bare `? IS NOT
+  // NULL` parameter, Postgres refuses to ("could not determine data type of parameter"), and
+  // the suite only runs SQLite. Guard the pattern at the source.
+  ok('no `? IS NOT NULL` parameter anywhere in server SQL (Postgres cannot type it)',
+    !/\?\s+IS\s+(NOT\s+)?NULL/i.test(require('fs').readFileSync(__dirname + '/server.js', 'utf8')));
+
   console.log('\n— /refer: the A&R\'s links, lanes and graphics —');
   const rpAnon = await fetch(base + '/api/me/referrals').then(r => r.status);
   ok('the referral page needs a token', rpAnon === 401);
