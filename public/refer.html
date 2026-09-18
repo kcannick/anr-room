@@ -179,9 +179,17 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params || {}); }catch(e){} }
 
+// ---- a signed link from an email or text (#rt=...) opens this page with no login on this
+// device. Kept in sessionStorage only and scrubbed from the URL so it never rides a Referer.
+(function(){
+  try{
+    const m = (location.hash || '').match(/[#&]rt=([^&]+)/);
+    if(m){ sessionStorage.setItem('rt_refer_link', decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + location.search); }
+  }catch(e){}
+})();
 // ---- which token this device holds. The account token wins; otherwise any per-session
 // player token (a daily drop is a new session every day, so pick the newest-looking one —
-// they all resolve to the same user).
+// they all resolve to the same user); otherwise the signed link.
 function authHeaders(){
   const at = localStorage.getItem('rt_auth_token');
   if(at) return { 'X-Auth-Token': at };
@@ -190,7 +198,9 @@ function authHeaders(){
     const k = localStorage.key(i);
     if(k && k.indexOf('rt_token_') === 0 && localStorage.getItem(k)) best = localStorage.getItem(k);
   }
-  return best ? { 'X-Player-Token': best } : null;
+  if(best) return { 'X-Player-Token': best };
+  const rl = sessionStorage.getItem('rt_refer_link');
+  return rl ? { 'X-Refer-Link': rl } : null;
 }
 async function api(path, body, headers){
   const h = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
@@ -303,6 +313,7 @@ async function load(){
     // and burned the one-time code on the retry.
     if(e.status === 401){
       if(h['X-Auth-Token']) localStorage.removeItem('rt_auth_token');
+      if(h['X-Refer-Link']) sessionStorage.removeItem('rt_refer_link');
       show('screen-login');
       return;
     }

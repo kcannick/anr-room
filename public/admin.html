@@ -1070,6 +1070,12 @@
       <input id="nbSubject" placeholder="e.g. The A&R Room is live Wednesday at 8PM ET" maxlength="150">
       <label style="margin-top:10px">Message</label>
       <textarea id="nbMessage" maxlength="1000" placeholder="Keep SMS-friendly if texting — the same text goes to both channels."></textarea>
+      <p class="muted" style="font-size:11px;margin:6px 0 0">Tokens, filled in per A&amp;R (subject too). Click to insert:
+        <button type="button" class="nb-tok" data-tok="[first name]" style="font:inherit;color:var(--signal);background:none;border:0;padding:0 2px;cursor:pointer">[first name]</button> ·
+        <button type="button" class="nb-tok" data-tok="[card link]" style="font:inherit;color:var(--signal);background:none;border:0;padding:0 2px;cursor:pointer">[card link]</button> ·
+        <button type="button" class="nb-tok" data-tok="[submit link]" style="font:inherit;color:var(--signal);background:none;border:0;padding:0 2px;cursor:pointer">[submit link]</button> ·
+        <button type="button" class="nb-tok" data-tok="[join link]" style="font:inherit;color:var(--signal);background:none;border:0;padding:0 2px;cursor:pointer">[join link]</button>
+        — the card link opens their A&amp;R Team page (links + graphics) signed in; the other two are their referral links.</p>
       <div class="row" style="margin-top:10px">
         <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer"><input type="checkbox" id="nbEmail" checked style="width:auto;margin:0"><span>Email <span class="muted" id="nbEmailCount">(…)</span></span></label>
         <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer"><input type="checkbox" id="nbSms" style="width:auto;margin:0"><span>SMS <span class="muted" id="nbSmsCount">(…)</span></span></label>
@@ -3057,6 +3063,16 @@ $('#plUpload')&&($('#plUpload').onclick=async()=>{
 // Mass announcement: irreversible + outward-facing, so counts + a hard confirm first,
 // then the chunked process loop (12 per request) with live progress. Resume-safe: if
 // the tab dies mid-send, re-running start would dupe — so we finish the loop here.
+// Token chips insert at the caret of whichever field was last focused (subject or message).
+(function(){
+  let last=null;
+  ['nbSubject','nbMessage'].forEach(id=>{ const el=$('#'+id); if(el) el.addEventListener('focus',()=>{last=el;}); });
+  document.querySelectorAll('.nb-tok').forEach(b=>b.onclick=()=>{
+    const el=last||$('#nbMessage'); if(!el)return;
+    const t=b.dataset.tok, s=el.selectionStart??el.value.length, e=el.selectionEnd??s;
+    el.value=el.value.slice(0,s)+t+el.value.slice(e); el.focus(); el.selectionStart=el.selectionEnd=s+t.length;
+  });
+})();
 $('#nbSend')&&($('#nbSend').onclick=async()=>{
   $('#nbErr').textContent='';
   const message=$('#nbMessage').value.trim(), subject=$('#nbSubject').value.trim();

@@ -464,6 +464,76 @@ async function verifyNotifyLink(req, url) {
   return { uid: u.uid, user: u };
 }
 
+// A second signed link kind, `rf1`, opens the A&R's OWN /refer page from an email or text
+// with no login on that device — the same shape and secret as the manage link, and the same
+// discipline: prefs-scope was "read masked contact, never change the phone"; refer-scope is
+// "read your own links, totals and graphics" and nothing else. Never wired into
+// resolveUserId; the two endpoints that accept it check it explicitly.
+function mintReferLink(uid) {
+  const secret = notifyLinkSecret();
+  if (!secret || !uid) return null;
+  const exp = Math.floor(now() / 1000) + NOTIFY_LINK_TTL;
+  const msg = `rf1.${uid}.${exp}`;
+  return `${msg}.${crypto.createHmac('sha256', secret).update(msg).digest('base64url')}`;
+}
+function referPageUrl(base, uid) {
+  const tok = mintReferLink(uid);
+  return tok ? `${base}/refer#rt=${tok}` : `${base}/refer`;
+}
+async function verifyReferLink(req, url) {
+  const secret = notifyLinkSecret();
+  if (!secret) return { error: 'refer_links_unconfigured', status: 503 };
+  const raw = (req.headers['x-refer-link'] || (url && url.searchParams.get('rt')) || '').toString();
+  if (!raw) return { error: 'bad_link', status: 401 };
+  const parts = raw.split('.');
+  if (parts.length !== 4 || parts[0] !== 'rf1') return { error: 'bad_link', status: 401 };
+  const [, uid, exp, sig] = parts;
+  if (!/^[A-Za-z0-9_-]{6,32}$/.test(uid) || !/^\d{1,12}$/.test(exp)) return { error: 'bad_link', status: 401 };
+  if (Number(exp) * 1000 < now()) return { error: 'link_expired', status: 401 };
+  const expected = crypto.createHmac('sha256', secret).update(`rf1.${uid}.${exp}`).digest('base64url');
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return { error: 'bad_link', status: 401 };
+  const u = await db.get('SELECT * FROM users WHERE uid = ?', [uid]);
+  if (!u) return { error: 'bad_link', status: 401 };
+  if (u.blocked === 1 || u.blocked === true) return { error: 'account_suspended', status: 403 };
+  return { uid: u.uid, user: u };
+}
+// Either token, or a refer link. Used ONLY by /api/me/referrals and /api/card/refer.
+async function resolveReferUid(req, url) {
+  const uid = await resolveUserId(req);
+  if (uid) return uid;
+  const v = await verifyReferLink(req, url);
+  return v.error ? null : v.uid;
+}
+
+// Merge tokens for the operator's announcements (2026-09-18): [first name], [card link],
+// [submit link], [join link]. Case-insensitive, spaces optional ([firstname] works). In the
+// HTML email the text around a token is escaped and a link token becomes a real anchor; in
+// text and SMS the values drop in bare. Unknown [brackets] pass through untouched, so a
+// message that uses brackets for its own reasons is not mangled.
+const NOTIFY_TOKEN_RE = /\[\s*(first\s*name|card\s*link|submit\s*link|join\s*link)\s*\]/gi;
+function renderNotifyTokens(text, vals, html) {
+  const key = k => k.toLowerCase().replace(/\s+/g, '');
+  const out = [];
+  let last = 0;
+  const src = String(text == null ? '' : text);
+  for (const m of src.matchAll(NOTIFY_TOKEN_RE)) {
+    const before = src.slice(last, m.index);
+    out.push(html ? escapeHtml(before) : before);
+    const k = key(m[1]);
+    const v = k === 'firstname' ? (vals.firstName || 'A&R')
+      : k === 'cardlink' ? vals.cardLink : k === 'submitlink' ? vals.submitLink : vals.joinLink;
+    if (html && k !== 'firstname') out.push(`<a href="${escapeHtml(v || '')}" style="color:#4bb749">${escapeHtml(v || '')}</a>`);
+    else out.push(html ? escapeHtml(v || '') : (v || ''));
+    last = m.index + m[0].length;
+  }
+  const tail = src.slice(last);
+  out.push(html ? escapeHtml(tail) : tail);
+  return out.join('');
+}
+function firstNameOf(name) {
+  return (name || '').toString().trim().split(/\s+/)[0] || '';
+}
+
 // Footers that make every message we send carry a working way out. `manage` comes from
 // notifyManageUrl(), so it deep-links straight into the contact center when
 // NOTIFY_LINK_SECRET is configured and degrades to a login-gated /profile when it isn't.
@@ -6022,18 +6092,32 @@ async function handleApi(req, res, url) {
     // The footer is per-recipient (the manage link is signed with their uid), so the body
     // is built inside the loop. Note the SMS branch previously carried NO opt-out language
     // at all, unlike the go-live and artist texts — smsFooter() fixes that too.
-    const htmlFor = (manage) => `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
+    const htmlFor = (manage, bodyHtml) => `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
       <div style="max-width:520px;margin:0 auto;background:#171328;border:1px solid #2e2750;border-radius:16px;padding:26px">
         <p style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;font-weight:700;margin:0 0 14px">The A&amp;R Room</p>
-        <div style="font-size:15px;line-height:1.6;color:#f3f0fb">${escapeHtml(bc.message).replace(/\n/g, '<br>')}</div>
+        <div style="font-size:15px;line-height:1.6;color:#f3f0fb">${bodyHtml.replace(/\n/g, '<br>')}</div>
         <p style="font-size:12px;color:#6f688f;margin:22px 0 0">Makin' It Magazine · The A&amp;R Room · <a href="https://anr.makinitmag.com" style="color:#6d5fe0">anr.makinitmag.com</a></p>
         ${notifyFooterHtml(manage)}
       </div></div>`;
+    // Tokens are per recipient: their first name, and the three links that carry their uid.
+    // The card link is a signed deep link into /refer (no login on the device the email
+    // lands on); without NOTIFY_LINK_SECRET it degrades to the plain page, which asks for a code.
+    const usesTokens = NOTIFY_TOKEN_RE.test(bc.message + ' ' + (bc.subject || ''));
+    NOTIFY_TOKEN_RE.lastIndex = 0;
     for (const r of batch) {
       const manage = notifyManageUrl(base, r.uid);
+      let vals = {};
+      if (usesTokens) {
+        const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
+        const links = referralLinks(r.uid);
+        vals = { firstName: firstNameOf(u && u.name), cardLink: referPageUrl(base, r.uid), submitLink: links.submit, joinLink: links.join };
+      }
+      const subject = usesTokens ? renderNotifyTokens(bc.subject || 'The A&R Room', vals, false) : (bc.subject || 'The A&R Room');
+      const bodyText = usesTokens ? renderNotifyTokens(bc.message, vals, false) : bc.message;
+      const bodyHtml = usesTokens ? renderNotifyTokens(bc.message, vals, true) : escapeHtml(bc.message);
       const out = r.channel === 'email'
-        ? await sendEmail(r.dest, bc.subject || 'The A&R Room', htmlFor(manage), `${bc.message}\n\n${notifyFooterText(manage)}`)
-        : await sendSms(r.dest, `${bc.message}\n${smsFooter(manage)}`);
+        ? await sendEmail(r.dest, subject, htmlFor(manage, bodyHtml), `${bodyText}\n\n${notifyFooterText(manage)}`)
+        : await sendSms(r.dest, `${bodyText}\n${smsFooter(manage)}`);
       if (out.ok) { sentN++; await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); }
       else { failedN++; await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); }
     }
@@ -7245,7 +7329,7 @@ async function handleApi(req, res, url) {
   // attribution survives a repost. Rendered on demand and never cached: it is one person's
   // face and links, and the photo can change.
   if (p === '/api/card/refer' && method === 'GET') {
-    const uid = await resolveUserId(req);
+    const uid = await resolveReferUid(req, url);
     if (!uid) return bad(res, 'Not logged in', 401);
     const kinds = { card: 'referCard', story: 'referStory', join: 'referJoin', submit: 'referSubmit' };
     const type = kinds[url.searchParams.get('kind') || 'card'];
@@ -7385,8 +7469,10 @@ async function handleApi(req, res, url) {
   // signup holds an account token; resolveUserId takes both). Names of invitees are their
   // public display names — the referrer already knows who they invited; no email, no phone.
   if (p === '/api/me/referrals' && method === 'GET') {
-    const uid = await resolveUserId(req);
+    const uid = await resolveReferUid(req, url);
     if (!uid) return bad(res, 'Not logged in', 401);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
     const u = await db.get('SELECT uid, name, primary_category, location, photo_url, drupal_uid, blocked FROM users WHERE uid = ?', [uid]);
     if (!u || u.blocked) return bad(res, 'Not logged in', 401);
     const dayMs = 86400000, nowTs = now();
@@ -8631,6 +8717,8 @@ module.exports._parseDailySchedule = parseDailySchedule;
 // is a real second lane or a garnish, so its shape is asserted rather than eyeballed.
 module.exports._scoutPointsFor = scoutPointsFor;
 module.exports._REFERRAL = REFERRAL;
+module.exports._renderNotifyTokens = renderNotifyTokens;
+module.exports._mintReferLink = mintReferLink;
 module.exports._referralLinks = referralLinks;
 module.exports._buildRecap = buildRecap;
 module.exports._enqueueDailyDigest = enqueueDailyDigest;

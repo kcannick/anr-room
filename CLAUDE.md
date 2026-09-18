@@ -586,6 +586,15 @@ live on anr.makinitmag.com.
   on a decode failure. Copy is the operator's verbatim: "Official A&R", "$1,000 Giveaway",
   "$1,000 Promo Budget". Satori has no inline runs, so the card's statement is laid as wrapped
   words with the money words gold.
+  **Announcement merge tokens** (2026-09-18): `[first name]`, `[card link]`, `[submit link]`,
+  `[join link]` in the mass announcement's subject and body (`renderNotifyTokens`, case and
+  spacing forgiven, unknown brackets untouched; HTML escapes around them and makes link
+  tokens anchors). `[card link]` is a **signed `rf1` deep link** into `/refer` (`mintReferLink`,
+  same secret and TTL as the `np1` manage link, refer-scope only: `/api/me/referrals` +
+  `/api/card/refer` via `X-Refer-Link` / `?rt=`, never `resolveUserId`); without
+  `NOTIFY_LINK_SECRET` it degrades to the plain page, which asks for a code. The page keeps
+  it in sessionStorage and scrubs the fragment. Console: click-to-insert chips under the
+  composer.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed

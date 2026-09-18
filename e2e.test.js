@@ -2747,6 +2747,33 @@ async function startVoting(sessionId, headers, minutes = 5) {
   while (nbOut.remaining > 0 && spins++ < 50) nbOut = (await call('/api/admin/notify/process', { broadcastId: nb.d.broadcastId, limit: 20 }, 'POST', ADMINH)).d;
   ok('chunked processing drains the queue (console senders)', nbOut.remaining === 0 && nbOut.sent === nb.d.queued && nbOut.failed === 0, JSON.stringify(nbOut));
 
+  console.log('\n— announcement tokens: [first name] [card link] [submit link] [join link] —');
+  const tsrv = require('./server');
+  const tv = { firstName: 'Jordan', cardLink: 'https://a/refer#rt=t', submitLink: 'https://m/review?ref=u1', joinLink: 'https://a/?ref=u1' };
+  ok('tokens fill in text and SMS', tsrv._renderNotifyTokens('Hi [first name], join: [join link]', tv, false) === 'Hi Jordan, join: https://a/?ref=u1');
+  ok('case and spacing are forgiven', tsrv._renderNotifyTokens('[FirstName] [ Submit Link ]', tv, false) === 'Jordan https://m/review?ref=u1');
+  ok('in HTML the text is escaped and a link token becomes an anchor',
+    tsrv._renderNotifyTokens('<b>[first name]</b> [card link]', tv, true) === '&lt;b&gt;Jordan&lt;/b&gt; <a href="https://a/refer#rt=t" style="color:#4bb749">https://a/refer#rt=t</a>');
+  ok('an unknown bracket passes through untouched', tsrv._renderNotifyTokens('[other] stays', tv, false) === '[other] stays');
+  ok('no name falls back to A&R', tsrv._renderNotifyTokens('Hi [first name]', {}, false) === 'Hi A&R');
+  const nbTok = await call('/api/admin/notify/start', { subject: 'For [first name]', message: 'Your links: [join link] and [submit link]. Your card: [card link]', email: true }, 'POST', ADMINH);
+  let nbTokOut = { remaining: nbTok.d.queued }, tokSpins = 0;
+  while (nbTokOut.remaining > 0 && tokSpins++ < 50) nbTokOut = (await call('/api/admin/notify/process', { broadcastId: nbTok.d.broadcastId, limit: 20 }, 'POST', ADMINH)).d;
+  ok('a tokenised broadcast renders per recipient and drains clean', nbTokOut.remaining === 0 && nbTokOut.failed === 0 && nbTokOut.sent === nbTok.d.queued, JSON.stringify(nbTokOut));
+
+  console.log('\n— the signed refer link opens /refer with no login on that device —');
+  process.env.NOTIFY_LINK_SECRET = process.env.NOTIFY_LINK_SECRET || 'test-notify-link-secret';
+  const rlUid = (await require('./db').get("SELECT uid FROM users WHERE email = 'inviter@test.com'")).uid;
+  const rlTok = tsrv._mintReferLink(rlUid);
+  ok('a link is minted when the secret is set', typeof rlTok === 'string' && rlTok.startsWith('rf1.' + rlUid + '.'));
+  const rlPage = await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': rlTok });
+  ok('the link reads the owner\'s own referral page', rlPage.status === 200 && rlPage.d.me.uid === rlUid, rlPage.status + ' ' + JSON.stringify(rlPage.d.me));
+  const rlCard = await fetch(base + '/api/card/refer?kind=join&rt=' + encodeURIComponent(rlTok));
+  ok('and their graphics', rlCard.status === 200 && rlCard.headers.get('content-type') === 'image/png', String(rlCard.status));
+  ok('a tampered link is refused', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': rlTok.slice(0, -2) + 'xx' })).status === 401);
+  ok('a manage link (np1) is not a refer link', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': tsrv._mintNotifyLink(rlUid) })).status === 401);
+  ok('the link cannot reach the profile or prefs handlers', (await call('/api/me/notify-prefs', null, 'GET', { 'X-Refer-Link': rlTok })).status !== 200);
+
   console.log('\n— Revive ad zones: phase-aware, room banners always win —');
   await call('/api/admin/settings', { reviveDeliveryUrl: 'https://ads.cannick.com/www/delivery', reviveZoneLobby: '8', reviveZoneGame: '9' }, 'POST', ADMINH);
   const rvC = await call('/api/session', { name: 'Revive Night' }, 'POST', BOOTH);
