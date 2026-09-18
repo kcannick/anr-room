@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script async src="/analytics.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/png" href="/mark-color.png"><title>Earn bonus points · The A&R Team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* ============================================================================
+   /refer — the A&R's referral page (2026-09-18). Two links, two lanes, four graphics.
+   Built to the approved canvas (design/refer/Main.dc.html) on the daily page's dialect:
+   Archivo display, Space Mono for every number and label, gold on the $1,000 only.
+   Auth is whichever token this device holds: the account token from /join, or any
+   per-session player token from a daily drop (the server resolves both to the same
+   user). With neither, the page asks for an email code and mints an account token.
+   ============================================================================ */
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased;min-height:100dvh}
+.wrap{max-width:430px;margin:0 auto;padding:20px 20px calc(28px + env(safe-area-inset-bottom));min-height:100dvh;display:flex;flex-direction:column;gap:16px}
+.hide{display:none !important}
+.mono{font-family:"Space Mono",ui-monospace,"SF Mono",Menlo,monospace}
+.dim{color:var(--ink-dim)}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em}
+a{color:var(--signal);text-decoration:none}
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;letter-spacing:-.02em;color:var(--bg)}
+.tick{display:block;width:3px;height:12px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.tick.contest{background:var(--accent)} .tick.prize{background:var(--gold)}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wordmark{font-weight:800;font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+.standing{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:var(--r-pill);padding:5px 11px;white-space:nowrap}
+.standing b{color:var(--ink);font-weight:700}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.section-head{display:flex;align-items:center;gap:9px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:14px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.note{background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;font-size:13px;color:var(--ink-dim);line-height:1.5}
+.err{color:var(--hot);font-size:13.5px;min-height:1em}
+label{display:block;font-size:12.5px;font-weight:600;margin:0}
+input:not([type=checkbox]){width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:15px;padding:12px 13px;border-radius:var(--r-md);outline:none}
+input:focus{border-color:var(--accent)}
+input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34em;text-align:center}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;cursor:pointer;border:0;border-radius:13px;padding:16px;font-family:inherit;font-weight:800;font-size:15.5px;letter-spacing:-.01em;background:var(--signal);color:var(--bg);text-decoration:none}
+.btn:hover{filter:brightness(1.07)} .btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.35;cursor:default}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.linkrow{display:flex;align-items:center;gap:8px;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:8px 8px 8px 13px}
+.linkrow .url{font-family:"Space Mono",monospace;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy{display:flex;align-items:center;gap:6px;background:var(--signal);color:var(--bg);border:0;border-radius:10px;padding:0 12px;height:44px;font-family:inherit;font-weight:800;font-size:13px;cursor:pointer;flex:none}
+.copy.done{background:var(--signal-deep);color:var(--ink)}
+.stats{display:flex;gap:10px}
+.stat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 10px;text-align:center}
+.stat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim)}
+.stat .v{font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:5px}
+.stat .v.earned{color:var(--signal)}
+.rows{display:flex;flex-direction:column;gap:6px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-family:"Space Mono",monospace;font-size:12px}
+.row .l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.row .r{color:var(--ink-dim);white-space:nowrap;flex:none}
+.row .r b{color:var(--ink);font-weight:700}
+.prize{display:flex;align-items:center;gap:9px;background:rgba(245,197,24,.08);border:1px solid var(--gold);border-radius:11px;padding:10px 12px;font-size:13px;line-height:1.45}
+.prize b{font-family:"Space Mono",monospace;color:var(--gold);font-weight:700}
+.gfx{display:flex;align-items:center;gap:12px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:10px 12px 10px 10px}
+.gfx .th{width:44px;height:55px;flex:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.gfx .th.story{width:31px;margin:0 6px}
+.gfx .th .face{width:20px;height:20px;border-radius:50%;background:var(--accent)}
+.gfx .th.story .face{width:16px;height:16px}
+.gfx .th .line{width:24px;height:3px;background:var(--ink)}
+.gfx .th.story .line{width:18px}
+.gfx .th .mk{width:18px;height:18px;transform:skewX(-13deg);display:flex;align-items:center;justify-content:center}
+.gfx .th .mk span{transform:skewX(13deg);font-weight:900;font-size:6.5px;color:var(--bg)}
+.gfx .t{flex:1;min-width:0}
+.gfx .t b{display:block;font-weight:800;font-size:14px}
+.gfx .t small{display:block;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:3px}
+.dl{display:flex;align-items:center;justify-content:center;width:44px;height:44px;background:transparent;border:1px solid var(--line);border-radius:10px;color:var(--ink);flex:none}
+.endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
+.endorse img{height:13px;width:auto;opacity:.75}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <a href="/" style="display:flex;align-items:center;gap:10px;color:inherit">
+      <div class="mark"><span>A&amp;R</span></div>
+      <span class="wordmark">A&amp;R Team</span>
+    </a>
+    <div class="standing hide" id="standing"></div>
+  </div>
+
+  <!-- SIGN IN: only when this device holds no token at all. -->
+  <section id="screen-login" class="stack hide">
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Sign in</span></div>
+      <h2 style="font-size:22px">Your referral links are tied to your account.</h2>
+      <div id="loginEmail" class="stack">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
+        <div class="err" id="emailErr"></div>
+        <button class="btn" id="btnSend">Send me a code</button>
+      </div>
+      <div id="loginCode" class="stack hide">
+        <label for="code">Enter the code we emailed to <span id="emailEcho"></span></label>
+        <input id="code" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+        <div class="note hide" id="devBox"></div>
+        <div class="err" id="codeErr"></div>
+        <button class="btn" id="btnVerify">Continue</button>
+        <button class="btn ghost" id="btnBack">Use a different email</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE PAGE -->
+  <section id="screen-main" class="stack hide" style="gap:16px">
+    <div class="stack" style="gap:8px">
+      <h1 style="font-weight:900;font-size:30px;letter-spacing:-.04em;line-height:1.05">Earn bonus points</h1>
+      <p class="dim" style="margin:0;font-size:14.5px;line-height:1.5">Two ways to earn on top of your daily play. Each has its own link.</p>
+    </div>
+
+    <div class="stack">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Your links</span></div>
+      <label>Join the A&amp;R Team</label>
+      <div class="linkrow"><span class="url" id="linkJoin"></span><button class="copy" data-copy="linkJoin">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <label style="margin-top:4px">Submit music</label>
+      <div class="linkrow"><span class="url" id="linkSubmit"></span><button class="copy" data-copy="linkSubmit">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who joins or submits through your link counts as yours.</p>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Refer an A&amp;R</span></div>
+      <h2 style="font-size:20px;line-height:1.15" id="arHead">Refer someone new and earn up to 240 points.</h2>
+      <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="arRule"></p>
+      <div class="stats">
+        <div class="stat"><div class="k">Referred</div><div class="v" id="arReferred">0</div></div>
+        <div class="stat"><div class="k">Active</div><div class="v" id="arActive">0</div></div>
+        <div class="stat"><div class="k">Earned</div><div class="v earned" id="arEarned">+0</div></div>
+      </div>
+      <div class="rows" id="arRows"></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Refer an artist</span></div>
+      <h2 style="font-size:20px;line-height:1.15">Refer artists to submit their music.</h2>
+      <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="artistRule"></p>
+      <div class="prize"><span class="tick prize"></span><span>Every artist who submits is entered in the <b>$1,000 Giveaway</b> for a $1,000 Promo Budget.</span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Submitted</div><div class="v" id="artSubmitted">0</div></div>
+        <div class="stat"><div class="k">Rated</div><div class="v" id="artRated">0</div></div>
+        <div class="stat"><div class="k">Earned</div><div class="v earned" id="artEarned">+0</div></div>
+      </div>
+      <div class="rows" id="artRows"></div>
+    </div>
+
+    <div class="stack">
+      <div class="section-head"><span class="tick contest"></span><span class="eyebrow">Your graphics</span></div>
+      <p class="dim" style="margin:0;font-size:13px;line-height:1.5">Each one carries your link as a QR code. Your card and story carry both. Post it, put the link in your bio, or send the link by DM.</p>
+      <div class="stack" id="gfxList"></div>
+      <div class="note" id="photoNote">Your card uses your profile photo. <a href="/profile">Add a photo</a> to use your face on it.</div>
+    </div>
+  </section>
+
+  <div class="endorse">
+    <span class="mono" style="font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)">Brought to you by</span>
+    <img src="/logo.png" alt="Makin' It">
+  </div>
+</div>
+
+<script>
+(function(){
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params || {}); }catch(e){} }
+
+// ---- which token this device holds. The account token wins; otherwise any per-session
+// player token (a daily drop is a new session every day, so pick the newest-looking one —
+// they all resolve to the same user).
+function authHeaders(){
+  const at = localStorage.getItem('rt_auth_token');
+  if(at) return { 'X-Auth-Token': at };
+  let best = null;
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k && k.indexOf('rt_token_') === 0 && localStorage.getItem(k)) best = localStorage.getItem(k);
+  }
+  return best ? { 'X-Player-Token': best } : null;
+}
+async function api(path, body, headers){
+  const h = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
+  const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: h, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(d.error || ('Request failed (' + r.status + ')'));
+  return d;
+}
+function show(id){ ['screen-login','screen-main'].forEach(s => $('#' + s).classList.toggle('hide', s !== id)); }
+
+// ---- sign in (email code -> account token), only when there is nothing on this device.
+$('#btnSend').onclick = async () => {
+  $('#emailErr').textContent = '';
+  const email = $('#email').value.trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return $('#emailErr').textContent = 'Enter a valid email';
+  $('#btnSend').disabled = true;
+  try{
+    const d = await api('/api/auth/request', { email });
+    $('#emailEcho').textContent = email;
+    if(d.devCode){ $('#devBox').classList.remove('hide'); $('#devBox').textContent = 'Dev mode — your code is ' + d.devCode; }
+    $('#loginEmail').classList.add('hide'); $('#loginCode').classList.remove('hide'); $('#code').focus();
+  }catch(e){ $('#emailErr').textContent = e.message; }
+  $('#btnSend').disabled = false;
+};
+$('#btnBack').onclick = () => { $('#loginCode').classList.add('hide'); $('#loginEmail').classList.remove('hide'); };
+$('#btnVerify').onclick = async () => {
+  $('#codeErr').textContent = '';
+  const code = $('#code').value.trim();
+  if(!code) return $('#codeErr').textContent = 'Enter the code';
+  $('#btnVerify').disabled = true;
+  try{
+    const d = await api('/api/auth/verify', { email: $('#emailEcho').textContent, code, ref: localStorage.getItem('rt_ref') || '' });
+    localStorage.setItem('rt_auth_token', d.token);
+    localStorage.removeItem('rt_ref');
+    await load();
+  }catch(e){ $('#codeErr').textContent = e.message; }
+  $('#btnVerify').disabled = false;
+};
+
+// ---- the page
+function stripProto(u){ return String(u || '').replace(/^https?:\/\//, ''); }
+function fmtPts(n){ return (n >= 0 ? '+' : '') + Number(n || 0).toLocaleString(); }
+function render(d){
+  const r = d.rules || {};
+  $('#linkJoin').textContent = stripProto(d.links.join);
+  $('#linkSubmit').textContent = stripProto(d.links.submit);
+  $('#linkJoin').dataset.full = d.links.join; $('#linkSubmit').dataset.full = d.links.submit;
+  $('#arHead').textContent = 'Refer someone new and earn up to ' + r.cap + ' points.';
+  $('#arRule').textContent = 'Earn bonus points for helping grow the A&R Team. You earn ' + r.pointsPerRound + ' point for every round your referral comes within ' + r.errMax + ' of the average, for their first ' + r.windowDays + ' days.';
+  $('#artistRule').textContent = 'Earn bonus points by discovering new talent. You earn points based on the referred artist’s score: ' + r.scoutMultiplier + ' times the average. A 7.1 earns ' + Math.round(7.1 * r.scoutMultiplier) + ' points.';
+  $('#arReferred').textContent = d.ars.referred; $('#arActive').textContent = d.ars.active; $('#arEarned').textContent = fmtPts(d.ars.earned);
+  $('#artSubmitted').textContent = d.artists.submitted; $('#artRated').textContent = d.artists.rated; $('#artEarned').textContent = fmtPts(d.artists.earned);
+  $('#arRows').innerHTML = d.ars.rows.map(x => {
+    const right = !x.played ? 'joined, not yet played'
+      : (x.windowOpen ? ('day ' + x.day + ' of ' + r.windowDays + ' · ') : 'window closed · ') + '<b>' + fmtPts(x.points) + '</b>';
+    return '<div class="row"><span class="l">' + esc(x.name) + '</span><span class="r">' + right + '</span></div>';
+  }).join('') || '<div class="row dim"><span class="l">No one yet. Share your link.</span></div>';
+  $('#artRows').innerHTML = d.artists.rows.map(x => {
+    const left = esc(x.artist ? (x.artist + ' · ' + x.title) : x.title);
+    const right = x.rated ? (Number(x.average).toFixed(1) + ' · <b>' + fmtPts(x.points) + '</b>') : 'submitted, not yet rated';
+    return '<div class="row"><span class="l">' + left + '</span><span class="r">' + right + '</span></div>';
+  }).join('') || '<div class="row dim"><span class="l">No records yet. Share your submit link.</span></div>';
+  const th = { card: '<div class="th"><div class="face"></div><div class="line"></div></div>',
+    story: '<div class="th story"><div class="face"></div><div class="line"></div></div>',
+    join: '<div class="th"><div class="mk" style="background:var(--signal)"><span>A&amp;R</span></div></div>',
+    submit: '<div class="th"><div class="mk" style="background:var(--accent)"><span>A&amp;R</span></div></div>' };
+  $('#gfxList').innerHTML = d.graphics.map(g => '<div class="gfx">' + (th[g.kind] || th.join)
+    + '<div class="t"><b>' + esc(g.label) + '</b><small>' + (g.kind === 'story' ? 'Story' : 'Portrait') + ' · ' + esc(g.size) + '</small></div>'
+    + '<a class="dl" href="#" data-kind="' + esc(g.kind) + '" data-url="' + esc(g.url) + '" aria-label="Download ' + esc(g.label) + '">'
+    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></a></div>').join('');
+  $('#photoNote').classList.toggle('hide', !!(d.me && d.me.hasPhoto));
+  if(d.me && d.me.name){ $('#standing').classList.remove('hide'); $('#standing').innerHTML = esc(d.me.name); }
+}
+document.addEventListener('click', async (ev) => {
+  const c = ev.target.closest('.copy');
+  if(c){
+    const el = $('#' + c.dataset.copy), full = el.dataset.full || el.textContent;
+    try{ await navigator.clipboard.writeText(full); c.classList.add('done'); c.lastChild.textContent = 'Copied'; setTimeout(() => { c.classList.remove('done'); c.lastChild.textContent = 'Copy'; }, 1600); }
+    catch(e){ window.prompt('Copy your link', full); }
+    track('referral_link_copy', { which: c.dataset.copy });
+    return;
+  }
+  const a = ev.target.closest('.dl');
+  if(a){
+    ev.preventDefault();
+    if(a.dataset.busy) return;
+    a.dataset.busy = '1'; a.style.opacity = '.5';
+    try{
+      // The graphic needs the token in a header, so fetch it and hand the bytes to a download.
+      const r = await fetch(a.dataset.url, { headers: authHeaders() || {} });
+      if(!r.ok) throw new Error('Could not build the graphic');
+      const blob = await r.blob(), u = URL.createObjectURL(blob);
+      const l = document.createElement('a'); l.href = u; l.download = 'anr-team-' + a.dataset.kind + '.png'; document.body.appendChild(l); l.click(); l.remove();
+      setTimeout(() => URL.revokeObjectURL(u), 10000);
+      track('referral_graphic_download', { kind: a.dataset.kind });
+    }catch(e){ alert(e.message); }
+    delete a.dataset.busy; a.style.opacity = '';
+  }
+});
+async function load(){
+  const h = authHeaders();
+  if(!h){ show('screen-login'); return; }
+  try{
+    const d = await api('/api/me/referrals', null, h);
+    render(d); show('screen-main');
+  }catch(e){
+    // A dead token (expired, or a session that no longer resolves) sends them to sign in.
+    if(h['X-Auth-Token']) localStorage.removeItem('rt_auth_token');
+    show('screen-login');
+  }
+}
+load();
+})();
+</script>
+</body>
+</html>

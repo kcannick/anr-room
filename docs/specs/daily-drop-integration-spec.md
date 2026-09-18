@@ -103,8 +103,8 @@ the lower-value integration this one's blast radius.
 | `ref` | no | 100 | Your node/submission id. **Must be unique within the batch** or the batch is rejected. Stored for audit and for update-by-ref. |
 | | | | **The same song may appear only once per day.** Two records whose title and artist match once case and punctuation are stripped (a free submission and a paid one of the same record, say) reject the batch with `"reason": "same song as index N"`. Drop one before pushing — the free-pool draw should skip a song already in the paid set. |
 | `url` | no | 500, http(s) | Deep link back to the submission node. **PRIVATE — platform-admin only.** See §5. |
-| `scout.uid` | no | 60 | The referring A&R's **Drupal uid**. See §3. |
-| `scout.email` | no | 200 | The referring A&R's email, used once to link accounts. See §3. |
+| `scout.uid` | no | 60 | The referring A&R's **A&R Team user id**, verbatim from the `?ref=` link. See §3. |
+| `scout.email` | no | 200 | Only for links issued under the earlier Drupal-uid form. See §3. |
 | `amount` | no | ≥ 0, ≤ 100000 | **The support level — what the artist paid to submit, in dollars.** `0` for a free submission; the pay-what-you-want amount for a paid one (`25`, `"25.50"` and `"$25"` all work). Stored in cents. **Omit it only when you genuinely do not know**: absent prints as "—" on the console, never as free. Unusable → nulls out with a `warnings[]` entry, never fatal. Drives the recap: free records play for a minute, paid ones in full, and the day's highest amount is marked **top supporter**. Not scored, not ranked, never shown to A&Rs or artists. |
 
 Unknown fields are ignored. Field names are accepted in both camelCase and snake_case where
@@ -181,46 +181,50 @@ level and nothing else, is safe to re-run, and reports per row rather than all-o
 
 ## 3. Scouting attribution — what you must build
 
-A&Rs recruit artists. The referral is the **Drupal uid**, and **Drupal issues the link**, because
-the A&R is logged in on your side and no account linking is needed for a link to exist:
+A&Rs recruit artists. **The A&R Team app issues the link** (from the A&R's `/refer` page and the
+graphics generated there), and the referral is the A&R Team **user id** — not a Drupal uid, so an
+A&R needs no Makin' It account for a link to exist:
 
 ```
-https://makinitmag.com/opportunities/anr-meeting?a=<drupal_uid>
+https://www.makinitmag.com/review?ref=<anr_team_uid>
 ```
+
+The id is an opaque URL-safe string (base64url, up to 40 characters, case-sensitive). Store it
+verbatim; never upper-case, trim to a shorter length, or match it against a Drupal uid.
 
 ### Capture, in priority order
 
-1. **URL parameter** — `?a=<drupal_uid>` for an artist who submits without ever registering.
-2. **Cookie** — set when the `?a=` link is first followed, so an artist who comes back later is
+1. **URL parameter** — `?ref=<anr_team_uid>` for an artist who submits without ever registering.
+2. **Cookie** — set when the `?ref=` link is first followed, so an artist who comes back later is
    still attributed to the A&R who invited them.
 3. **The submitting account's own referrer** — for a registered artist arriving with no link,
-   using the `referred_by` on their Makin' It account.
+   using the `referred_by` on their Makin' It account, where that referrer arrived as an
+   `?ref=` value.
 
-**Source 3 applies only when the referring user is an A&R.** A regular user inviting a friend is
-not scouting, and without this condition every ordinary account referral silently becomes
-scouting credit.
+**Source 3 applies only when the stored referrer is an A&R Team id.** A regular user inviting a
+friend is not scouting, and without this condition every ordinary account referral silently
+becomes scouting credit.
 
 The referral is **permanent**: an account created through an A&R's link stays attached to that
 A&R, shows "invited by" on the artist's profile, and every future submission attributes back.
 
-### What to send, and why both fields
+### What to send
 
-Send `scout.uid` **and** `scout.email` on every song that has a referrer.
+Send `scout.uid` on every song that has a referrer, carrying the `?ref=` value **verbatim**.
 
 - `scout.uid` is stored on the round **unconditionally**, even when no A&R Team account matches.
   Your ambassador and promo-budget reporting reads it and must not depend on the app having
   resolved the person.
-- `scout.email` bootstraps the account link: the app matches it against its own `users.email` and,
-  on first match, writes `users.drupal_uid` permanently. No handshake, no connect UI — the mapping
-  accumulates through normal use. Without the email, an A&R who has never been linked earns no
-  points (attribution still records).
+- The app resolves it directly against its own users. `scout.email` is no longer needed; it is
+  still accepted for links issued under the earlier Drupal-uid form (`?a=<drupal_uid>`), which
+  keep resolving through the one-time email link described in earlier versions of this spec.
 
 ### Two counts that will differ, deliberately
 
 Drupal should count **every submission** an A&R scouted — that measures promotional effort and is
 the right basis for ambassador tiers and promo budget. The app awards points only for records that
-**make a drop and score well** (floor 5.0, 250 points per point above it) — that measures taste.
-They will not match. Do not reconcile them.
+**make a drop and get rated** — five times the room average, rounded (a 7.1 earns 36) — that
+measures taste. They will not match. Do not reconcile them.
 
 ---
 

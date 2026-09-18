@@ -109,8 +109,8 @@ live on anr.makinitmag.com.
 - **Binary ("Verzuz") polls:** full player + overlay + export; split SEALED until ratify.
 - **Push migration (Ably):** board recomputes on ratify and pushes to all clients; polling
   drops to a 15s heartbeat when connected, 2s fallback otherwise. No leaderboard cache needed.
-- **Growth + monetization + ops:** referral milestones (invitee's 10th scored round → +10,
-  50th → +75); invite-only rooms (unlisted + access code); share cards (Score Card, Top 8
+- **Growth + monetization + ops:** referral points (per accurate round in the invitee's first
+  30 days — see the referral rework below; the 10/75 milestones are retired); invite-only rooms (unlisted + access code); share cards (Score Card, Top 8
   A&Rs, Top 8 Songs — Satori/Blob) + recap emails (chunked queue); host-only paid **Song
   Report** (3-page per-round analytics PNG) + a Rounds-tab round-history browser; **Platform
   control panel** (global banners, allowlisted system settings, SMS test) + host defaults
@@ -550,6 +550,42 @@ live on anr.makinitmag.com.
   **do not hand out a seat off a week that is still settling.** "Copy the read sheet" on each
   table gives the same rows as plain text for the host's script. No cards, no cron, no send: this
   is a read-only screen, and every query is admin-triggered (CLAUDE.md #1 rule).
+
+- **Referral rework — `/refer`, per-round referral points, 5× scouting, per-user graphics**
+  (no migration, 2026-09-18). Two links per A&R, both carrying their `users.uid` (already
+  public as the `/u/<uid>` profile URL): **join** = `anr.makinitmag.com/?ref=<uid>` and
+  **submit** = `www.makinitmag.com/review?ref=<uid>`. The uid replaces the Drupal uid on the
+  scouting link, so an A&R needs no Makin' It account; `creditScoutPoints` resolves by our uid
+  first, `drupal_uid` second (older links). Drupal passes `scout.uid` back verbatim (spec §3).
+  **A&R referral points** (`creditReferralRounds`, replacing `creditReferralMilestones`):
+  the referrer earns **1 point per round the invitee lands within 1.5 of the average**
+  (the `close` tier), **only in the invitee's first 30 days** (from `users.first_seen` — when
+  the referral happened, not the first vote), **capped at 240 per invitee** for life. Binary
+  rounds skipped. `point_events` reason `referral_round`, `source_uid` = `<invitee>:<round>`
+  (cap counted with `substr`, not `LIKE` — uids are base64url and may contain `_`). Old
+  `referral` milestone rows stay as paid history. The weekly report never sees these (its
+  bonus filter is `<sessionId>:<uid>`), which is right: a seat is won on the week's listening.
+  **Scouting** = `Math.round(avg × 5)` (7.1 → 36), no floor; the 250-per-point curve is gone.
+  **Attribution** (`attributeReferral`): `ref` resolves to a users.uid first, then the older
+  per-session participant code; only a brand-new account, never self, set once. Rides
+  `/api/auth/verify` (the `/join` signup — new `ref` field) and `/api/join/verify`. Client:
+  the landing page and join page stash `?ref=` under `rt_ref` (session-less — the old
+  `rt_ref_<sid>` key died with the session, and a daily drop is a new session every day);
+  auth.js sends the per-session key first, `rt_ref` second, and clears both on join.
+  **`/refer` page** (`public/refer.html`, mockup `design/refer/`): links with copy buttons, the
+  two lanes with totals and per-invitee / per-record rows, four graphics. Auth is EITHER token
+  (`resolveUserId`) — a daily player holds only a per-session player token, so the page picks
+  any `rt_token_*` on the device; with nothing it runs an email-code login. `GET
+  /api/me/referrals` (display names only, never email/phone) and `GET /api/card/refer?kind=
+  card|story|join|submit` (registered BEFORE the `/api/card/` prefix route, or it 404s;
+  `private, no-store`). **The artist lane is sealed**: a scouted record shows its average and
+  points only once ratified AND, for a daily drop, published — the 9AM–3PM gap leaks otherwise.
+  **Graphics** (`share-cards.js` `refer*`): Satori, Archivo + Space Mono, the 13° cut kept
+  BELOW the copy on the two flyers, gold on the $1,000 only, QR as a PNG data URI (rasterised
+  from the `qrcode` SVG by resvg), profile photo fetched with a 5s timeout and retried without
+  on a decode failure. Copy is the operator's verbatim: "Official A&R", "$1,000 Giveaway",
+  "$1,000 Promo Budget". Satori has no inline runs, so the card's statement is laid as wrapped
+  words with the money words gold.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed

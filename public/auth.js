@@ -64,8 +64,13 @@
 
   // Incoming referral code from the share link (?ref=CODE). Persist per-session so it
   // survives the email->code step. Cleared once we've joined.
-  const INCOMING_REF = (new URLSearchParams(location.search).get('ref') || '').trim().toUpperCase();
-  if (INCOMING_REF) localStorage.setItem('rt_ref_' + (SID || ''), INCOMING_REF);
+  // The durable join link (anr.makinitmag.com/?ref=<uid>) carries no session, so the code is
+  // ALSO kept session-less under rt_ref and read as the fallback below — a link opened on the
+  // landing page must still attribute the join that happens on a drop the next day. Not
+  // uppercased: a uid is case-sensitive (the older per-session codes are upper-cased by the
+  // server itself).
+  const INCOMING_REF = (new URLSearchParams(location.search).get('ref') || '').trim().slice(0, 40);
+  if (INCOMING_REF) { localStorage.setItem('rt_ref_' + (SID || ''), INCOMING_REF); localStorage.setItem('rt_ref', INCOMING_REF); }
 
   // ---- page hooks. The page owns its own screens and what happens after a join. ----
   let show = function () {};
@@ -182,13 +187,13 @@
       // mask), tell the server to keep it (and keep them opted in). A newly typed number is
       // sent and replaces it. No stored number + empty field => no phone => no SMS consent.
       const keepPhone = phonePrefilled && phone.length === 0;
-      const ref = localStorage.getItem('rt_ref_' + SID) || '';
+      const ref = localStorage.getItem('rt_ref_' + SID) || localStorage.getItem('rt_ref') || '';
       $('#btnVerify').disabled = true;
       try {
         const d = await api('/api/join/verify', { sessionId: SID, email: localStorage.getItem('rt_email'), code, name, phone, keepPhone, ref, notifyRooms: $('#notifyRooms').checked });
         track('session_register', { method: 'otp' });
         setToken(d.token);
-        localStorage.removeItem('rt_ref_' + SID);
+        localStorage.removeItem('rt_ref_' + SID); localStorage.removeItem('rt_ref');
         onJoined();
       } catch (e) { $('#codeErr').textContent = e.message; }
       $('#btnVerify').disabled = false;

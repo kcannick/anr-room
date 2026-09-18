@@ -285,8 +285,11 @@ $('#btnJoin').onclick=async()=>{
   if(!known.hasName && !name)return $('#codeErr').textContent='Add a display name';
   $('#btnJoin').disabled=true;
   try{
-    const d=await api('/api/auth/verify',{email:$('#emailEcho').textContent,code,name,phone,notifyRooms:$('#jNotifyRooms').checked});
-    AUTHTOK=d.token; localStorage.setItem('rt_auth_token',AUTHTOK);
+    // ?ref= from the join link, kept by the landing page (or this page) — attributed only
+    // to a brand-new account, server-side.
+    try{ const r=(new URLSearchParams(location.search).get('ref')||'').trim().slice(0,40); if(r)localStorage.setItem('rt_ref',r); }catch(e){}
+    const d=await api('/api/auth/verify',{email:$('#emailEcho').textContent,code,name,phone,notifyRooms:$('#jNotifyRooms').checked,ref:localStorage.getItem('rt_ref')||''});
+    AUTHTOK=d.token; localStorage.setItem('rt_auth_token',AUTHTOK); localStorage.removeItem('rt_ref');
     if(!known.exists)track('account_signup',{where:'join'});
     await loadProfile();
     // Already-complete members skip the profile step entirely.

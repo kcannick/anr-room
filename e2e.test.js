@@ -1010,6 +1010,90 @@ async function startVoting(sessionId, headers, minutes = 5) {
   inv2 = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': inviterTok })).d;
   ok('referral credited after referee plays', inv2.referredCount === 1, 'got ' + inv2.referredCount);
 
+  console.log('\n— referral points: one per round the invitee reads the room, first 30 days, cap 240 —');
+  const rDb = require('./db'), rsrv = require('./server');
+  const INVITER_UID = (await rDb.get("SELECT user_id FROM participants WHERE session_id = ? AND email = 'inviter@test.com'", [RSID])).user_id;
+  const REFERRED_UID = (await rDb.get("SELECT user_id FROM participants WHERE session_id = ? AND email = 'referred@test.com'", [RSID])).user_id;
+  ok('the invitee is attributed to the inviter durably', (await rDb.get('SELECT referrer_uid FROM users WHERE uid = ?', [REFERRED_UID])).referrer_uid === INVITER_UID);
+  const refEvents = async () => rDb.all("SELECT * FROM point_events WHERE reason = 'referral_round' AND user_id = ? ORDER BY created_at", [INVITER_UID]);
+  // The invitee was the only voter (taste 5, predict 5) so the average is 5.0 and their error 0.
+  await call('/api/admin/round/ratify', { sessionId: RSID, roundId: RRID }, 'POST', RAH);
+  let rev = await refEvents();
+  ok('a round the invitee lands within 1.5 of pays the inviter 1 point', rev.length === 1 && Number(rev[0].points) === rsrv._REFERRAL.pointsPerRound, JSON.stringify(rev));
+  ok('keyed <invitee>:<round>, so a re-ratify can never pay twice', rev[0].source_uid === REFERRED_UID + ':' + RRID, rev[0].source_uid);
+  await call('/api/admin/round/ratify', { sessionId: RSID, roundId: RRID }, 'POST', RAH);
+  ok('re-ratify is a no-op', (await refEvents()).length === 1);
+  ok('the point reaches the inviter\'s lifetime total', Number((await rDb.get('SELECT lifetime_points FROM users WHERE uid = ?', [INVITER_UID])).lifetime_points) >= 1);
+  // A round the invitee reads badly pays nothing: inviter rates 9 / predicts 9, invitee rates 0
+  // and predicts 0 -> average 4.5, invitee error 4.5.
+  const rr2 = await call('/api/admin/round', { sessionId: RSID, song_title: 'Ref Song 2' }, 'POST', RAH);
+  await startVoting(RSID, RAH);
+  await call('/api/admin/round/open', { sessionId: RSID, roundId: rr2.d.roundId, minutes: 2 }, 'POST', RAH);
+  await call('/api/vote', { taste: 9, predict: 9 }, 'POST', { 'X-Player-Token': inviterTok });
+  await call('/api/vote', { taste: 0, predict: 0 }, 'POST', { 'X-Player-Token': refTok });
+  await call('/api/admin/round/ratify', { sessionId: RSID, roundId: rr2.d.roundId }, 'POST', RAH);
+  ok('a round the invitee misses by more than 1.5 pays nothing', (await refEvents()).length === 1);
+  // The 30-day window: an invitee whose account is 31 days old earns their inviter nothing more.
+  const firstSeen = (await rDb.get('SELECT first_seen FROM users WHERE uid = ?', [REFERRED_UID])).first_seen;
+  await rDb.run('UPDATE users SET first_seen = ? WHERE uid = ?', [Date.now() - 31 * 86400000, REFERRED_UID]);
+  const rr3 = await call('/api/admin/round', { sessionId: RSID, song_title: 'Ref Song 3' }, 'POST', RAH);
+  await startVoting(RSID, RAH);
+  await call('/api/admin/round/open', { sessionId: RSID, roundId: rr3.d.roundId, minutes: 2 }, 'POST', RAH);
+  await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': refTok });
+  await call('/api/admin/round/ratify', { sessionId: RSID, roundId: rr3.d.roundId }, 'POST', RAH);
+  ok('after the invitee\'s first 30 days, an accurate round pays nothing', (await refEvents()).length === 1);
+  await rDb.run('UPDATE users SET first_seen = ? WHERE uid = ?', [firstSeen, REFERRED_UID]);
+  // The cap: with 240 already paid for this invitee, the next accurate round pays nothing.
+  for (let i = 0; i < rsrv._REFERRAL.cap - 1; i++) {
+    await rDb.run("INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at) VALUES (?,?,?,?,?,?,?,?)",
+      ['capfill' + i, INVITER_UID, 1, null, 'referral_round', REFERRED_UID + ':cap' + i, 1, Date.now()]);
+  }
+  const rr4 = await call('/api/admin/round', { sessionId: RSID, song_title: 'Ref Song 4' }, 'POST', RAH);
+  await startVoting(RSID, RAH);
+  await call('/api/admin/round/open', { sessionId: RSID, roundId: rr4.d.roundId, minutes: 2 }, 'POST', RAH);
+  await call('/api/vote', { taste: 5, predict: 5 }, 'POST', { 'X-Player-Token': refTok });
+  await call('/api/admin/round/ratify', { sessionId: RSID, roundId: rr4.d.roundId }, 'POST', RAH);
+  ok('an invitee is worth at most 240, ever', (await refEvents()).length === rsrv._REFERRAL.cap, String((await refEvents()).length));
+  await rDb.run("DELETE FROM point_events WHERE id LIKE 'capfill%'");
+
+  console.log('\n— /refer: the A&R\'s links, lanes and graphics —');
+  const rpAnon = await fetch(base + '/api/me/referrals').then(r => r.status);
+  ok('the referral page needs a token', rpAnon === 401);
+  const rp = (await call('/api/me/referrals', null, 'GET', { 'X-Player-Token': inviterTok })).d;
+  ok('a player token resolves to the account (no separate login)', rp.me && rp.me.uid === INVITER_UID, JSON.stringify(rp.me));
+  ok('the join link carries the uid into this app', rp.links && rp.links.join === rsrv._referralLinks(INVITER_UID).join && /\?ref=/.test(rp.links.join), JSON.stringify(rp.links));
+  ok('the submit link goes to makinitmag.com/review with the same uid', rp.links.submit === 'https://www.makinitmag.com/review?ref=' + encodeURIComponent(INVITER_UID), rp.links.submit);
+  ok('the rules ride the payload (nothing hardcoded on the page)', rp.rules.cap === 240 && rp.rules.windowDays === 30 && rp.rules.errMax === 1.5 && rp.rules.scoutMultiplier === 5, JSON.stringify(rp.rules));
+  ok('the A&R lane counts the invitee and what they paid', rp.ars.referred === 1 && rp.ars.active === 1 && rp.ars.earned === 1, JSON.stringify(rp.ars));
+  ok('invitee rows carry a display name and the day of the window, never an email',
+    rp.ars.rows[0].name === 'Reggie Referred' && rp.ars.rows[0].day === 1 && !JSON.stringify(rp.ars.rows).includes('@'), JSON.stringify(rp.ars.rows));
+  ok('four graphics are offered', rp.graphics.length === 4 && rp.graphics.every(g => /^\/api\/card\/refer\?kind=/.test(g.url)));
+  const cardR = await fetch(base + '/api/card/refer?kind=card', { headers: { 'X-Player-Token': inviterTok } });
+  const cardBuf = Buffer.from(await cardR.arrayBuffer());
+  ok('the A&R Team card renders as a PNG', cardR.status === 200 && cardR.headers.get('content-type') === 'image/png' && cardBuf.slice(1, 4).toString() === 'PNG', cardR.status + ' ' + cardBuf.length);
+  ok('the graphic is private to its owner (no-store)', /no-store/.test(cardR.headers.get('cache-control') || ''));
+  ok('an unknown graphic is refused', (await fetch(base + '/api/card/refer?kind=poster', { headers: { 'X-Player-Token': inviterTok } })).status === 404);
+  ok('no token, no graphic', (await fetch(base + '/api/card/refer?kind=join')).status === 401);
+
+  console.log('\n— the durable join link: ?ref=<uid> attributes on both signup paths —');
+  // /join signup (account only, no session): a brand-new account is attributed.
+  const lnkRq = await call('/api/auth/request', { email: 'viauid@test.com' });
+  const lnkVer = await call('/api/auth/verify', { email: 'viauid@test.com', code: lnkRq.d.devCode, name: 'Via Link', ref: INVITER_UID });
+  ok('a /join signup through the link is attributed to the inviter', (await rDb.get('SELECT referrer_uid FROM users WHERE uid = ?', [lnkVer.d.uid])).referrer_uid === INVITER_UID);
+  // A session join with the uid form (not the per-session code).
+  const sesTok = await rjoin('viasession@test.com', 'Via Session', INVITER_UID);
+  const sesUid = (await rDb.get("SELECT user_id FROM participants WHERE session_id = ? AND email = 'viasession@test.com'", [RSID])).user_id;
+  ok('a session join through the link is attributed too', !!sesTok && (await rDb.get('SELECT referrer_uid FROM users WHERE uid = ?', [sesUid])).referrer_uid === INVITER_UID);
+  // An EXISTING account is never re-attributed, and nobody can refer themselves.
+  const exRq = await call('/api/auth/request', { email: 'referred@test.com' });
+  await call('/api/auth/verify', { email: 'referred@test.com', code: exRq.d.devCode, ref: sesUid });
+  ok('an existing account keeps its first-touch referrer', (await rDb.get('SELECT referrer_uid FROM users WHERE uid = ?', [REFERRED_UID])).referrer_uid === INVITER_UID);
+  const selfRq = await call('/api/auth/request', { email: 'selfref@test.com' });
+  const selfVer = await call('/api/auth/verify', { email: 'selfref@test.com', code: selfRq.d.devCode, name: 'Self', ref: 'nope-not-a-uid' });
+  ok('an unknown ref is organic', (await rDb.get('SELECT referrer_uid FROM users WHERE uid = ?', [selfVer.d.uid])).referrer_uid === null);
+  const rp2 = (await call('/api/me/referrals', null, 'GET', { 'X-Player-Token': inviterTok })).d;
+  ok('new invitees show as joined, not yet played', rp2.ars.referred === 3 && rp2.ars.rows.filter(r => !r.played).length === 2, JSON.stringify(rp2.ars));
+
   console.log('\n— referrals: self-referral and unknown codes are ignored —');
   // Self-referral: a NEW player using a code that maps to their own (future) row can't —
   // codes map to existing inviters, so test that an unknown code yields organic.
@@ -2390,11 +2474,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The curve is the dial that decides whether scouting is a real second lane or a garnish.
   // Context for the numbers: a month of A&R Daily is ~15,000 (6-record days) to ~45,000
   // (full 16-record days, sharp) points, so five 7.0 records ≈ 2,500 ≈ 6-15% of a month.
-  ok('a record at the floor earns nothing', srv._scoutPointsFor(5.0) === 0);
-  ok('a weak record earns nothing (zero, never negative — or nobody refers anyone)', srv._scoutPointsFor(3.0) === 0);
-  ok('scouting scales with the score, not with volume', srv._scoutPointsFor(7.0) === 500 && srv._scoutPointsFor(6.0) === 250,
+  // Operator's curve (2026-09-18): five times the room average, rounded.
+  ok('a 7.1 earns 36 (the operator\'s own example)', srv._scoutPointsFor(7.1) === 36, String(srv._scoutPointsFor(7.1)));
+  ok('a weak record earns a little, never nothing and never negative', srv._scoutPointsFor(3.0) === 15 && srv._scoutPointsFor(0) === 0 && srv._scoutPointsFor(-2) === 0);
+  ok('scouting scales with the score, not with volume', srv._scoutPointsFor(7.0) === 35 && srv._scoutPointsFor(6.0) === 30,
     srv._scoutPointsFor(7.0) + '/' + srv._scoutPointsFor(6.0));
-  ok('a great find pays a lot more than a mediocre one', srv._scoutPointsFor(8.5) > 3 * srv._scoutPointsFor(5.5));
+  ok('rounded half up at the tenth', srv._scoutPointsFor(6.5) === 33 && srv._scoutPointsFor(8.9) === 45);
 
   // End-to-end: a scout who is linked earns when their record tallies well.
   const scoutEmail = 'scout@test.com';
@@ -2405,7 +2490,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const scOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
     opensAt: sOpens, closesAt: sCloses, resultsAt: sCloses + 1000,
     songs: [song(51, { scout: { uid: 'drupal-777', email: scoutEmail } }),
-            song(52, { scout: { uid: 'drupal-999', email: 'nobody@nowhere.test' } })] }, 'POST', DTOK);
+            song(52, { scout: { uid: 'drupal-999', email: 'nobody@nowhere.test' } }),
+            // The submit link form: Drupal hands back OUR uid as scout.uid, no email needed.
+            song(53, { scout: { uid: SCOUT_UID } })] }, 'POST', DTOK);
   const SDROP = scOk.d.sessionId;
   ok('the scout ref is stored on the record', (await dDb.get('SELECT scout_drupal_uid FROM rounds WHERE session_id = ? AND idx = 1', [SDROP])).scout_drupal_uid === 'drupal-777');
   ok('an UNMATCHED scout ref is still stored (Drupal reports off it and must not depend on us)',
@@ -2424,14 +2511,28 @@ async function startVoting(sessionId, headers, minutes = 5) {
   for (const q of sQ) await call('/api/vote', { roundId: q.id, taste: 8, predict: 8.0 }, 'POST', SH1);
   await call('/api/admin/daily/tick', { at: sCloses + 1000 }, 'POST', BOOTH);
   const scEvents = await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND user_id = ?", [SCOUT_UID]);
-  ok('a linked scout earns once their record tallies', scEvents.length === 1, JSON.stringify(scEvents));
-  ok('and the award scales with the room average', Number(scEvents[0].points) === srv._scoutPointsFor(8.0), JSON.stringify(scEvents[0]));
+  ok('a scout earns once their record tallies — by our uid off the submit link, or by the older email link', scEvents.length === 2, JSON.stringify(scEvents));
+  ok('and the award scales with the room average', scEvents.every(e => Number(e.points) === srv._scoutPointsFor(8.0)), JSON.stringify(scEvents));
+  // The artist lane on /refer: the average is SEALED until the day publishes.
+  const scH = { 'X-Auth-Token': scVer.d.token };
+  const scState = (await dDb.get('SELECT async_state FROM sessions WHERE id = ?', [SDROP])).async_state;
+  const scRp = (await call('/api/me/referrals', null, 'GET', scH)).d;
+  ok('the scout\'s records are listed', scRp.artists.submitted === 2, JSON.stringify(scRp.artists));
+  if (scState !== 'published') {
+    ok('a tallied-but-unpublished record shows no average and no points (sealed)',
+      scRp.artists.rated === 0 && scRp.artists.rows.every(r => r.average === undefined && r.points === undefined), JSON.stringify(scRp.artists.rows));
+  }
   ok('the scout award reaches the $500 board (series-tagged)', scEvents[0].series_id === serId);
   const scUnlinked = await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND source_uid IN (SELECT id FROM rounds WHERE session_id = ? AND idx = 2)", [SDROP]);
   ok('an unlinked scout earns nothing until the accounts match', scUnlinked.length === 0, JSON.stringify(scUnlinked));
   await call('/api/admin/daily/tick', { at: sCloses + 5000 }, 'POST', BOOTH);
   ok('a repeat tally never pays the scout twice',
-    (await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND user_id = ?", [SCOUT_UID])).length === 1);
+    (await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND user_id = ?", [SCOUT_UID])).length === 2);
+  if ((await dDb.get('SELECT async_state FROM sessions WHERE id = ?', [SDROP])).async_state === 'published') {
+    const scRp2 = (await call('/api/me/referrals', null, 'GET', scH)).d;
+    ok('once published, the artist lane shows the average and the points', scRp2.artists.rated === 2 && scRp2.artists.earned === 2 * srv._scoutPointsFor(8.0)
+      && scRp2.artists.rows.every(r => r.average === 8 && r.points === srv._scoutPointsFor(8.0)), JSON.stringify(scRp2.artists));
+  }
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), SDROP]);
 
   console.log('\n— live shows as bonus-point events —');
@@ -3686,7 +3787,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const hkAuto = await call(`/api/control/state?k=${hkKey}`, null, 'GET');
   ok('a bare key auto-resolves to that host\'s own room', hkAuto.status === 200 && /^HK /.test(hkAuto.d.room || ''), JSON.stringify(hkAuto.d));
 
-  console.log('\n— referral bonus milestones: 10 rounds → +10, 50 → +75 —');
+  console.log('\n— referral points on the series board: 1 per accurate round, new accounts only —');
   const rbSer = await call('/api/admin/series/create', { title: 'Referral Bonus Series', status: 'active' }, 'POST', ADMINH);
   const rbC = await call('/api/session', { name: 'Referral Night' }, 'POST', BOOTH);
   const RBID = rbC.d.sessionId, RBAH = { 'X-Admin-Token': rbC.d.adminToken };
@@ -3703,7 +3804,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const niaVer = await call('/api/join/verify', { sessionId: RBID, email: 'nia.new@fan.com', code: niaJr.d.devCode, name: 'Nia New', ref: RAYCODE });
   const NIA = { 'X-Player-Token': niaVer.d.token };
   // Maya (a@test.com) is a VETERAN account with a long round history — joining on Ray's
-  // code must NOT attach attribution (else her history would fire both milestones).
+  // code must NOT attach attribution (else her accurate rounds would pay Ray).
   const mayJr = await call('/api/join/request', { sessionId: RBID, email: 'a@test.com' });
   const mayVer = await call('/api/join/verify', { sessionId: RBID, email: 'a@test.com', code: mayJr.d.devCode, name: 'Maya', ref: RAYCODE });
   const MAYA_RB = { 'X-Player-Token': mayVer.d.token };
@@ -3713,32 +3814,27 @@ async function startVoting(sessionId, headers, minutes = 5) {
     return lb.find(r => r.email === 'ray.referrer@fan.com') || null;
   };
   // One scored round: add (auto-opens) → Nia votes (Maya too, for the veteran check) → ratify.
+  // Nia and Maya both predict the average they make, so each is within 1.5 every round.
   let rbRound = 0;
   const playRound = async () => {
     rbRound++;
     const r = await call('/api/admin/round', { sessionId: RBID, song_title: 'RB ' + rbRound }, 'POST', RBAH);
     await startVoting(RBID, RBAH);
-    await call('/api/vote', { taste: 6, predict: 6 }, 'POST', NIA);
-    if (rbRound === 1) await call('/api/vote', { taste: 4, predict: 5 }, 'POST', MAYA_RB);
+    await call('/api/vote', { taste: 6, predict: 5 }, 'POST', NIA);
+    await call('/api/vote', { taste: 4, predict: 5 }, 'POST', MAYA_RB);
     await call('/api/admin/round/ratify', { sessionId: RBID, roundId: r.d.roundId }, 'POST', RBAH);
   };
-  for (let i = 0; i < 9; i++) await playRound();
+  await playRound();
   let ray = await rayOnBoard();
-  ok('no bonus before the 10th round', !ray || ray.points === 0, JSON.stringify(ray));
-  ok('veteran joining via a code fires nothing (first-touch is new accounts only)', !ray || ray.points === 0, JSON.stringify(ray));
-  await playRound(); // Nia's 10th scored round
+  ok('the first accurate round pays the referrer 1 point on the series board', ray && ray.points === 1, JSON.stringify(ray));
+  ok('the veteran joining via a code pays nothing (first-touch is new accounts only)', ray && ray.points === 1, JSON.stringify(ray));
+  for (let i = 0; i < 9; i++) await playRound();
   ray = await rayOnBoard();
-  ok('10th round pays the referrer +10 on the series board', ray && ray.points === 10, JSON.stringify(ray));
-  await playRound(); // 11th — same milestone must not re-fire
-  ray = await rayOnBoard();
-  ok('milestone is once-ever (11th round adds nothing)', ray && ray.points === 10, JSON.stringify(ray));
-  while (rbRound < 50) await playRound();
-  ray = await rayOnBoard();
-  ok('50th round pays +75 more (85 total per invitee)', ray && ray.points === 85, JSON.stringify(ray));
+  ok('ten accurate rounds, ten points — no milestone, no multiplier', ray && ray.points === 10, JSON.stringify(ray));
   // Lifetime rolls up alongside the series board.
   const rayUser = (((await call('/api/admin/users?q=ray.referrer', null, 'GET', ADMINH)).d.users) || []).find(u => u.email === 'ray.referrer@fan.com');
-  ok('referrer lifetime total carries the bonus', rayUser && rayUser.points === 85, JSON.stringify(rayUser && rayUser.points));
-  // Nia's own score is untouched by the bonus machinery (50 rounds of her votes).
+  ok('referrer lifetime total carries the points', rayUser && rayUser.points === 10, JSON.stringify(rayUser && rayUser.points));
+  // Nia's own score is untouched by the bonus machinery.
   const niaState = (await call('/api/me/state', null, 'GET', NIA)).d;
   ok('invitee keeps only her own vote points', niaState.totalPoints == null || typeof niaState.totalPoints === 'number', 'state ok');
 

@@ -347,11 +347,15 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
     <span class="mono" style="font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-dim)">A Makin' It property</span>
     <img src="/logo.png" alt="Makin' It" style="height:21px;width:auto">
     <a href="/profile" class="mono" style="font-size:10px;letter-spacing:.12em;text-transform:uppercase">Your A&amp;R record</a>
+    <a href="/refer" class="mono" style="font-size:10px;letter-spacing:.12em;text-transform:uppercase">Earn bonus points</a>
   </div>
 
 </div>
 
 <script>
+// The join link (anr.makinitmag.com/?ref=<uid>) lands here. Keep the code on this device so
+// the signup that follows — /join, or a drop tomorrow — is attributed to the A&R who sent it.
+(function(){ try{ const r = (new URLSearchParams(location.search).get('ref') || '').trim().slice(0, 40); if(r) localStorage.setItem('rt_ref', r); }catch(e){} })();
 const $ = s => document.querySelector(s);
 function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params||{}); }catch(e){} }
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

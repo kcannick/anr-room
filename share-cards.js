@@ -581,6 +581,144 @@ function elementRecapThumb(d) {
   ]);
 }
 
+
+// ============ Referral graphics — the A&R's own promo set ============
+// Four per-user graphics off ONE data shape { name, category, location, photo, qrJoin, qrSubmit }
+// (photo and the two QRs are data URIs, prepared by the caller — this module never fetches):
+//   'referCard'   1080×1350 — the A&R Team card (portrait); face, name, title, both QRs
+//   'referStory'  1080×1920 — the same as a story
+//   'referJoin'   1080×1350 — "Join the A&R Team." on the green cut, the join QR
+//   'referSubmit' 1080×1350 — "Submit your music." on the purple cut, the submit QR
+// Built to the approved canvas (design/refer, 2026-09-18) and the brand: Archivo display,
+// Space Mono labels, the 13° cut as a colour field that stays BELOW the copy on the two
+// flyers (never behind type), gold on the $1,000 and nothing else. The copy is the
+// operator's, verbatim ("Official A&R", "$1,000 Giveaway", "$1,000 Promo Budget").
+const REFER_SIZES = { referCard: [1080, 1350], referStory: [1080, 1920], referJoin: [1080, 1350], referSubmit: [1080, 1350] };
+const REFER = { ...RECAP, purple: '#6d5fe0', gold: '#f5c518', avBg: '#221b3a' };
+const REFER_COPY = {
+  title: 'Official A&R · The A&R Team',
+  statement: 'I rate new records every day and help choose which artists get covered and who wins the ',
+  money: '$1,000 Promo Budget',
+  giveaway: '$1,000 GIVEAWAY',
+  join: { title: ['Join the', 'A&R Team.'], sub: 'Become an official A&R. Rate new records every day and help choose which artists get covered and who wins the $1,000 Promo Budget.' },
+  submit: { title: ['Submit', 'your music.'], sub: 'Get your record rated by the A&R Team, get a full report on what they heard, and enter the $1,000 Giveaway for a $1,000 Promo Budget.' },
+  dm: 'or DM me for the link', dms: 'or DM me for the links', scan: 'Scan the code',
+  qrJoin: 'Join the A&R Team', qrSubmit: 'Submit your music',
+};
+// The block in any fill, letters in any ink (the recap block is green-only).
+function referBlock(size, fontSize, fill, ink) {
+  return h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: size, height: size, background: fill, borderRadius: Math.round(size * 0.075),
+    transform: `skewX(${SKEW}deg)` },
+    text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize,
+      letterSpacing: -Math.round(fontSize * 0.05), color: ink, lineHeight: 1 }, 'A&R'));
+}
+function referLockup(fill, ink) {
+  return row({ gap: 34 }, [
+    referBlock(84, 30, fill, ink),
+    text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 52, letterSpacing: 7, textTransform: 'uppercase', color: REFER.fg, ...NOWRAP }, 'Team'),
+  ]);
+}
+function referEndorse(hgt) {
+  return row({ gap: hgt }, [
+    text({ fontFamily: MONO, fontWeight: 400, fontSize: Math.round(hgt * 1.1), letterSpacing: Math.round(hgt * 0.15), textTransform: 'uppercase', color: REFER.dim, ...NOWRAP }, 'Brought to you by'),
+    { type: 'img', props: { src: logoDataUri(), style: { height: hgt } } },
+  ]);
+}
+// A full-bleed colour field cut along the 13° line. `top` is the field's top edge at the LEFT
+// margin; the skew lifts the right end by ~23% of the width.
+function referCut(fill, top, hgt, Wd) {
+  return h({ position: 'absolute', left: -200, top, width: Wd + 400, height: hgt, background: fill,
+    transform: `skewY(${SKEW}deg)`, transformOrigin: 'left top' }, '');
+}
+function referFace(d, size) {
+  const border = Math.round(size * 0.02);
+  if (d.photo) {
+    return { type: 'img', props: { src: d.photo, width: size, height: size,
+      style: { width: size, height: size, borderRadius: size, objectFit: 'cover', border: `${border}px solid ${REFER.purple}`, flexShrink: 0 } } };
+  }
+  const initials = (esc(d.name).trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2) || 'A').toUpperCase();
+  return h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: size, height: size, borderRadius: size, background: REFER.avBg, border: `${border}px solid ${REFER.purple}` },
+    text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: Math.round(size * 0.32), letterSpacing: -Math.round(size * 0.012), color: REFER.purple }, initials));
+}
+function referQr(src, size, label) {
+  return col({ gap: 18, flexGrow: 1 }, [
+    h({ display: 'flex', padding: 16, background: REFER.fg, alignSelf: 'flex-start' },
+      { type: 'img', props: { src, width: size, height: size, style: { width: size, height: size } } }),
+    text({ fontFamily: MONO, fontWeight: 400, fontSize: 28, color: REFER.fg, ...NOWRAP }, label),
+  ]);
+}
+// The name, two lines, hard-clipped so a long display name never runs under the QRs.
+function referName(name, fontSize) {
+  const words = esc(name).trim().split(/\s+/).filter(Boolean);
+  const first = clip(words[0] || 'A&R', 14), rest = clip(words.slice(1).join(' '), 14);
+  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize, lineHeight: 0.92, letterSpacing: -Math.round(fontSize * 0.04), color: REFER.fg, ...NOWRAP };
+  return col({}, rest ? [text(st, first), text(st, rest)] : [text(st, first)]);
+}
+function elementReferPerson(d, story) {
+  const W0 = 1080, H0 = story ? 1920 : 1350;
+  const face = story ? 500 : 300, nameSize = story ? 118 : 88, stmt = story ? 40 : 34, qr = story ? 240 : 176;
+  const stStyle = { fontFamily: DISPLAY, fontWeight: 800, fontSize: stmt, lineHeight: 1.25, letterSpacing: -Math.round(stmt * 0.02), color: REFER.fg };
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
+    referCut(REFER.green, -Math.round(H0 * 0.18), Math.round(H0 * 0.42), W0),
+    col({ position: 'absolute', left: 80, right: 80, top: 72, bottom: 72, justifyContent: 'space-between' }, [
+      row({ justifyContent: 'space-between' }, [referLockup(REFER.bg, REFER.green)]),
+      col({ gap: story ? 44 : 18 }, [
+        referFace(d, face),
+        col({ gap: 14 }, [
+          referName(d.name, nameSize),
+          text({ fontFamily: MONO, fontWeight: 400, fontSize: 30, letterSpacing: 6, textTransform: 'uppercase', color: REFER.green, marginTop: 10, ...NOWRAP }, REFER_COPY.title),
+          text({ fontFamily: MONO, fontWeight: 400, fontSize: 26, color: REFER.dim, ...NOWRAP }, [d.category, d.location].filter(Boolean).join(' · ')),
+        ]),
+        // Satori has no inline runs, so the statement is laid as wrapped words: the money
+        // words take gold, everything else ink, and the wrap gap stands in for the space.
+        row({ flexWrap: 'wrap', maxWidth: 920, columnGap: Math.round(stmt * 0.26), rowGap: 0, alignItems: 'baseline' }, [
+          ...REFER_COPY.statement.trim().split(' ').map(w => text(stStyle, w)),
+          ...REFER_COPY.money.split(' ').map((w, i, a) => text({ ...stStyle, color: REFER.gold }, w + (i === a.length - 1 ? '.' : ''))),
+        ]),
+      ]),
+      col({ gap: 28 }, [
+        h({ height: 2, background: REFER.line, transform: `skewX(${SKEW}deg)` }, ''),
+        row({ gap: 40, alignItems: 'flex-start' }, [referQr(d.qrJoin, qr, REFER_COPY.qrJoin), referQr(d.qrSubmit, qr, REFER_COPY.qrSubmit)]),
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: 26, color: REFER.dim, ...NOWRAP }, REFER_COPY.dms),
+        referEndorse(22),
+      ]),
+    ]),
+  ]);
+}
+function elementReferFlyer(d, kind) {
+  const W0 = 1080, H0 = 1350;
+  const join = kind === 'referJoin';
+  const fill = join ? REFER.green : REFER.purple, onFill = join ? REFER.bg : REFER.fg;
+  const c = join ? REFER_COPY.join : REFER_COPY.submit;
+  const tSt = { fontFamily: DISPLAY, fontWeight: 900, fontSize: 128, lineHeight: 0.92, letterSpacing: -5, color: REFER.fg, ...NOWRAP };
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
+    // the colour field: its top edge at the left margin sits at 1170, so the copy above is
+    // always on ink and the QR + "scan" line below are always on colour.
+    referCut(fill, 1170, 800, W0),
+    col({ position: 'absolute', left: 80, right: 80, top: 72, bottom: 72, justifyContent: 'space-between' }, [
+      row({ justifyContent: 'space-between' }, [referLockup(fill, join ? REFER.greenInk : REFER.fg), referEndorse(22)]),
+      col({ gap: 28 }, [
+        row({ gap: 18 }, [
+          h({ width: 6, height: 34, background: REFER.gold, transform: `skewX(${SKEW}deg)`, flexShrink: 0 }, ''),
+          text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, letterSpacing: 2, color: REFER.gold, ...NOWRAP }, REFER_COPY.giveaway),
+        ]),
+        col({}, c.title.map(l => text(tSt, l))),
+        text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 38, lineHeight: 1.3, letterSpacing: -1, color: REFER.dim, maxWidth: 880 }, c.sub),
+      ]),
+      row({ justifyContent: 'space-between', alignItems: 'flex-end', gap: 40 }, [
+        col({ gap: 14, paddingBottom: 20 }, [
+          text({ fontFamily: MONO, fontWeight: 400, fontSize: 30, color: onFill, ...NOWRAP }, REFER_COPY.scan),
+          text({ fontFamily: MONO, fontWeight: 400, fontSize: 26, color: onFill, opacity: 0.75, ...NOWRAP }, REFER_COPY.dm),
+        ]),
+        h({ display: 'flex', padding: 20, background: REFER.fg, flexShrink: 0 },
+          { type: 'img', props: { src: join ? d.qrJoin : d.qrSubmit, width: 240, height: 240, style: { width: 240, height: 240 } } }),
+      ]),
+    ]),
+  ]);
+}
+
 function element(type, data = {}) {
   const showNumbers = !!data.showNumbers;
   if (type === 'score') return frame({ title: 'A&R Record', sub: data.session || null, body: bodyScore(data) });
@@ -594,13 +732,16 @@ function element(type, data = {}) {
   if (type === 'chartList') return frame({ titleSize: 66, title: clip(data.title, 18), sub: data.sub, body: bodyChartList(data) });
   if (type === 'recapCover') return elementRecapCover(data);
   if (type === 'recapThumb') return elementRecapThumb(data);
+  if (type === 'referCard') return elementReferPerson(data, false);
+  if (type === 'referStory') return elementReferPerson(data, true);
+  if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
   throw new Error('unknown card type: ' + type);
 }
 
 // ---- render to PNG ----
 let _satori = null, _Resvg = null;
 // Every card is 3:4 except the recap graphics, which carry their own size.
-function sizeOf(type) { return RECAP_SIZES[type] || [W, H]; }
+function sizeOf(type) { return RECAP_SIZES[type] || REFER_SIZES[type] || [W, H]; }
 async function renderPng(type, data) {
   if (!_satori) { const m = require('satori'); _satori = m.default || m; }
   if (!_Resvg) { _Resvg = require('@resvg/resvg-js').Resvg; }
@@ -610,4 +751,4 @@ async function renderPng(type, data) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA };
+module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA };
