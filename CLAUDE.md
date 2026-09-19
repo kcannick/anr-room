@@ -669,7 +669,7 @@ live on anr.makinitmag.com.
   it in sessionStorage and scrubs the fragment. Console: click-to-insert chips under the
   composer.
 
-- **Sales leads → Asana** (040, built 2026-09-19 on `claude/ar-sales-leads-asana-7d766d` — NOT yet on main): the platform as a lead source for Mimberships and
+- **Sales leads → Asana** (040, 2026-09-19, on main): the platform as a lead source for Mimberships and
   performances. Platform panel card: the **top N% of every ratified rating record** (live +
   daily; reference tracks and Versus out; a re-pushed record counted once at its best), ranked
   on room average, then **collapsed to one task per ARTIST** on their highest record (identity:
