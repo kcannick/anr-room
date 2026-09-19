@@ -1076,7 +1076,9 @@
         <label style="margin:0;display:flex;align-items:center;gap:6px">with at least <input id="leadsMinVotes" type="number" min="0" max="100000" value="3" style="width:64px;display:inline-block"> A&amp;Rs</label>
         <button class="btn ghost sm" id="leadsPreview">Preview</button>
         <button class="btn sm" id="leadsSync">Create Asana tasks</button>
+        <button class="btn ghost sm" id="leadsCheck" title="Runs every setup step with timings">Check Asana</button>
       </div>
+      <pre id="leadsCheckOut" class="hide" style="font-size:11px;white-space:pre-wrap;margin:8px 0 0;padding:8px;border:1px solid var(--line);border-radius:6px"></pre>
       <div id="leadsStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       <div id="leadsList" style="margin-top:10px;max-height:420px;overflow:auto"><div class="empty">Loading…</div></div>
     </div>
@@ -3277,6 +3279,7 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=false;
 });
 // ===== Sales leads → Asana (040) =====
+const LEADS_UI_BUILD='2026-09-19c';   // printed by Check Asana so a cached console is visible
 const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));
 // 0 is a real answer (floor off), so not `||`.
 const leadsMinVotes=()=>{const v=parseInt($('#leadsMinVotes').value,10);return Math.max(0,Number.isFinite(v)?v:3);};
@@ -3301,6 +3304,14 @@ async function leadsLoad(){
   }catch(e){box.innerHTML='';st.textContent=e.message;}
 }
 $('#leadsPreview')&&($('#leadsPreview').onclick=leadsLoad);
+$('#leadsCheck')&&($('#leadsCheck').onclick=async()=>{
+  const out=$('#leadsCheckOut'),btn=$('#leadsCheck');out.classList.remove('hide');out.textContent='Checking… (console build '+LEADS_UI_BUILD+')';btn.disabled=true;
+  try{
+    const d=await api('/api/admin/leads/check?pct='+leadsPct()+'&minVotes='+leadsMinVotes(),null,'GET');
+    out.textContent='console build '+LEADS_UI_BUILD+' · total '+d.totalMs+' ms\n'+d.steps.map(s=>(s.ok?'✓':'✗')+' '+s.name+' — '+s.ms+' ms'+(s.error?'\n    '+s.error:'')+(s.result?'\n    '+JSON.stringify(s.result):'')).join('\n');
+  }catch(e){out.textContent='console build '+LEADS_UI_BUILD+'\n✗ '+e.message;}
+  btn.disabled=false;
+});
 ['#leadsPct','#leadsMinVotes'].forEach(sel=>{const el=$(sel);el&&(el.onchange=leadsLoad);});
 $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
   const btn=$('#leadsSync'),st=$('#leadsStatus'),old=btn.textContent;

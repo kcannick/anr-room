@@ -4681,6 +4681,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const sync4 = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads: a plan without custom fields still syncs and says why the columns are missing',
     sync4.status === 200 && /premium/i.test(sync4.d.fieldsError || ''), JSON.stringify(sync4.d));
+  process.env.ASANA_TOKEN = 'test-asana-pat';
+  const ldCheck = await call('/api/admin/leads/check?pct=100&minVotes=0', null, 'GET', ADMINH);
+  ok('leads/check: runs every step and times it', ldCheck.status === 200 && ldCheck.d.steps.length >= 5 && ldCheck.d.steps.every(s => typeof s.ms === 'number'), JSON.stringify(ldCheck.d).slice(0, 300));
+  ok('leads/check: names a step that fails instead of hanging', ldCheck.d.steps.some(s => s.name === 'GET /users/me' && s.ok === false && /unmocked|Asana/.test(s.error)), JSON.stringify(ldCheck.d.steps[2]));
   delete process.env.ASANA_TOKEN;
   asanaMock.close();
 

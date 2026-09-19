@@ -4056,12 +4056,21 @@ async function drainArtistEmail({ sessionId = null, limit = 4, deadline = null }
 // deliberately NOT the settings table: a PAT there would be echoed back by the platform
 // GET to every admin. The project gid is not a secret and does live in settings.
 const ASANA_API = process.env.ASANA_API_BASE || 'https://app.asana.com/api/1.0';
+const ASANA_CALL_TIMEOUT_MS = 8000;
 async function asanaFetch(path, opts = {}) {
   const token = process.env.ASANA_TOKEN;
   if (!token) throw new Error('Asana not configured (set ASANA_TOKEN)');
-  const r = await fetch(ASANA_API + path, {
-    ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
-  });
+  // A hard per-call timeout: a call that never answers must surface as an error the console
+  // can print, not as a gateway timeout it cannot (the leads button "stuck on Writing…").
+  let r;
+  try {
+    r = await fetch(ASANA_API + path, {
+      ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+      signal: AbortSignal.timeout(ASANA_CALL_TIMEOUT_MS),
+    });
+  } catch (e) {
+    throw new Error(`Asana did not answer ${opts.method || 'GET'} ${path.split('?')[0]} within ${ASANA_CALL_TIMEOUT_MS / 1000}s (${e.name || e.message})`);
+  }
   const body = await r.text();
   if (!r.ok) {
     let msg = `Asana ${r.status}`;
@@ -9034,6 +9043,35 @@ async function handleApi(req, res, url) {
       projectUrl: project ? `https://app.asana.com/0/${project}/list` : null,
       batch: LEADS_BATCH,
     });
+  }
+  // Diagnostic: every step the sync takes before it writes a task, with timings, so a stall
+  // can be named from the console rather than guessed at from a hung button.
+  if (p === '/api/admin/leads/check' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const steps = [];
+    const step = async (name, fn) => {
+      const t0 = Date.now();
+      try { const v = await fn(); steps.push({ name, ms: Date.now() - t0, ok: true, result: v }); return v; }
+      catch (e) { steps.push({ name, ms: Date.now() - t0, ok: false, error: e.message }); return null; }
+    };
+    steps.push({ name: 'ASANA_TOKEN set', ok: !!process.env.ASANA_TOKEN, ms: 0 });
+    steps.push({ name: 'Asana API base', ok: true, ms: 0, result: ASANA_API });
+    if (process.env.ASANA_TOKEN) {
+      const me = await step('GET /users/me', async () => {
+        const m = await asanaFetch('/users/me?opt_fields=name,workspaces.name');
+        return { name: m.data.name, workspaces: (m.data.workspaces || []).map(w => w.name) };
+      });
+      if (me) await step('project + fields (ensureLeadsProject)', async () => {
+        const p = await ensureLeadsProject();
+        return { project: p.gid, url: p.url, fields: p.fields, fieldsError: p.fieldsError };
+      });
+    }
+    await step('leads query (salesLeadsData)', async () => {
+      const d = await salesLeadsData({ pct: url.searchParams.get('pct'), minVotes: url.searchParams.get('minVotes') });
+      return { leads: d.leads.length, cut: d.cut, total: d.total };
+    });
+    await step('ledger (asana_leads)', async () => ({ rows: Number((await db.get('SELECT COUNT(*) AS n FROM asana_leads'))?.n || 0) }));
+    return send(res, 200, { steps, totalMs: steps.reduce((a, x) => a + x.ms, 0) });
   }
   // Create the project (once) and write the tasks. Bounded per press; the console loops
   // while `remaining` > 0.
