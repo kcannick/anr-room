@@ -3309,7 +3309,9 @@ $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
   try{
     for(let i=0;i<50;i++){
       btn.textContent='Writing… ('+(created+updated)+')';
-      const d=await api('/api/admin/leads/asana',{pct:leadsPct(),minVotes:leadsMinVotes()});
+      let d;
+      try{ d=await api('/api/admin/leads/asana',{pct:leadsPct(),minVotes:leadsMinVotes()}); }
+      catch(e){ throw new Error((e.message==='Error'?'The request timed out at the server':e.message)+' — what was written so far is kept; press again to continue.'); }
       created+=d.created;updated+=d.updated;failed=failed.concat(d.failed||[]);url=d.url;fieldsError=d.fieldsError||null;
       if(!d.remaining)break;
     }

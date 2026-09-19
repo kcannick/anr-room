@@ -4623,6 +4623,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const ldFloor5 = await call('/api/admin/leads?pct=100&minVotes=5', null, 'GET', ADMINH);
   ok('leads: a higher floor is honoured', ldFloor5.status === 200 && ldFloor5.d.minVotes === 5 && ldFloor5.d.leads.every(l => l.votes >= 5));
   ok('leads: minVotes=0 turns the floor off (0 is not "unset")', (await call('/api/admin/leads?pct=100&minVotes=0', null, 'GET', ADMINH)).d.minVotes === 0);
+  // The time budget: a press whose clock has run out writes nothing more and reports the rest.
+  const ldSrv = require('./server');
+  process.env.ASANA_TOKEN = 'test-asana-pat';
+  const ldBudget = await ldSrv._syncLeadsToAsana({ pct: 100, minVotes: 0, budgetMs: 0 });
+  ok('leads: a press out of time returns everything as remaining, nothing written', ldBudget.created === 0 && ldBudget.remaining === ldAll.d.leads.length, JSON.stringify(ldBudget));
+  delete process.env.ASANA_TOKEN;
   ok('leads: a lead with more than one record in the cut reports the extras',
     ldAll.d.leads.length < ldAll.d.total ? ldAll.d.leads.some(l => l.others > 0) : true);
 

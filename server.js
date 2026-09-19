@@ -4146,6 +4146,7 @@ const LEADS_FIELDS = [
   { key: 'score', name: 'Average score', resource_subtype: 'number', precision: 1 },
 ];
 const LEADS_BATCH = 12;   // tasks written per press — Vercel caps a request at 30s (vercel.json), the UI loops
+const LEADS_BUDGET_MS = 16000;   // and a press stops WRITING at 16s regardless — Asana can take a second a call
 
 const leadArtistKey = (r) => {
   const em = (r.artist_email || '').trim().toLowerCase();
@@ -4321,7 +4322,11 @@ async function ensureLeadsFields(project, workspace, set) {
 // Write the leads into the project: a task per artist new to the list, an update for an
 // artist whose best record changed. Bounded per call so one press never runs into Vercel's
 // clock; returns `remaining` and the console presses again.
-async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH } = {}) {
+async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs = LEADS_BUDGET_MS } = {}) {
+  // The clock starts before the project/field setup: the FIRST press does that work too, and
+  // a press that overruns Vercel's cap comes back as a gateway error the console cannot read
+  // — which looks like a button stuck on "Writing…" (2026-09-19, the first prod run).
+  const deadline = Date.now() + budgetMs;
   const proj = await ensureLeadsProject();
   const data = await salesLeadsData({ pct, minVotes });
   const ledger = new Map((await db.all('SELECT * FROM asana_leads', [])).map(r => [r.artist_key, r]));
@@ -4338,7 +4343,7 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH } = {}) {
     const row = ledger.get(l.artistKey);
     const same = row && row.round_id === l.id && Number(row.score) === l.score && row.played_day === l.day;
     if (same) { out.skipped++; continue; }
-    if (budget <= 0) { out.remaining++; continue; }
+    if (budget <= 0 || Date.now() > deadline) { out.remaining++; continue; }
     budget--;
     const body = { name: leadTaskName(l), notes: leadTaskNotes(l) };
     const cf = fieldsFor(l);
@@ -9444,6 +9449,7 @@ module.exports.ensureInit = ensureInit;
 // Exported for tests: the artist-SMS quiet-hours gate is a TCPA constraint, so it's
 // asserted directly against fixed timestamps rather than inferred from a live clock.
 module.exports._withinSmsWindow = withinSmsWindow;
+module.exports._syncLeadsToAsana = syncLeadsToAsana;
 module.exports._etHour = etHour;
 // Pure template (no secrets) — exported so the artist-facing email can be rendered and
 // eyeballed without a live Blob token or a real send.

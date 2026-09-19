@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,611 passed as of 2026-09-19; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,612 passed as of 2026-09-19; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -687,7 +687,7 @@ live on anr.makinitmag.com.
   **Re-runnable by design:** the `asana_leads` ledger (artist_key → task gid + the record it
   describes) means a second press creates only new artists, UPDATES a task whose artist scored
   higher, skips the rest without touching Asana, recreates a task deleted on their side, and
-  never removes an artist who dropped out of the cut. 12 tasks per press (Vercel's 30s cap), the console loops.
+  never removes an artist who dropped out of the cut. 12 tasks per press AND a 16s write budget from request start (Vercel's 30s cap; the first press also creates the project + fields, and an overrun comes back as a gateway error the console cannot read), the console loops.
   Full scan of rounds, admin-triggered only (rule #1). Tests drive a mock Asana on
   `ASANA_API_BASE` (env override of the API base). Doc: **docs/sales-leads-asana.md**.
 
