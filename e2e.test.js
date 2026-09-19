@@ -4641,6 +4641,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const more = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
     sync1.d.created += more.d.created; sync1.d.updated += more.d.updated; sync1.d.remaining = more.d.remaining; sync1.d.failed.push(...more.d.failed); ldPresses++;
   }
+  ok('leads: a press carries a step trace', Array.isArray(sync1.d.trace) && sync1.d.trace.some(x => /leads ready/.test(x)) && sync1.d.trace.some(x => /ledger #1 ok/.test(x)), JSON.stringify(sync1.d.trace));
   ok('leads: the presses together create the project and one task per artist',
     sync1.d.created === ldAll.d.leads.length && sync1.d.updated === 0 && sync1.d.remaining === 0 && !sync1.d.failed.length,
     JSON.stringify(sync1.d));

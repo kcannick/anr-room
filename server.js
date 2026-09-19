@@ -4331,14 +4331,20 @@ async function ensureLeadsFields(project, workspace, set) {
 // Write the leads into the project: a task per artist new to the list, an update for an
 // artist whose best record changed. Bounded per call so one press never runs into Vercel's
 // clock; returns `remaining` and the console presses again.
-async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs = LEADS_BUDGET_MS } = {}) {
+async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs = LEADS_BUDGET_MS, trace = [] } = {}) {
+  const t0 = Date.now();
+  const mark = (what) => { trace.push(`${Date.now() - t0}ms ${what}`); };
+  mark('start');
   // The clock starts before the project/field setup: the FIRST press does that work too, and
   // a press that overruns Vercel's cap comes back as a gateway error the console cannot read
   // — which looks like a button stuck on "Writing…" (2026-09-19, the first prod run).
   const deadline = Date.now() + budgetMs;
   const proj = await ensureLeadsProject();
+  mark('project ready ' + proj.gid);
   const data = await salesLeadsData({ pct, minVotes });
+  mark('leads ready ' + data.leads.length);
   const ledger = new Map((await db.all('SELECT * FROM asana_leads', [])).map(r => [r.artist_key, r]));
+  mark('ledger read ' + ledger.size);
   const out = { ok: true, project: proj.gid, url: proj.url, fieldsError: proj.fieldsError,
     created: 0, updated: 0, skipped: 0, remaining: 0, failed: [], leads: data.leads.length, cut: data.cut, total: data.total, pct: data.pct, minVotes: data.minVotes, excluded: data.excluded };
   let budget = limit;
@@ -4357,6 +4363,7 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs =
     const body = { name: leadTaskName(l), notes: leadTaskNotes(l) };
     const cf = fieldsFor(l);
     if (cf) body.custom_fields = cf;
+    mark('write #' + l.rank + ' ' + (row ? 'update' : 'create'));
     try {
       let gid = row ? row.task_gid : null;
       if (gid) {
@@ -4374,11 +4381,15 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs =
          ON CONFLICT (artist_key) DO UPDATE SET task_gid = excluded.task_gid, round_id = excluded.round_id,
            score = excluded.score, played_day = excluded.played_day, synced_at = excluded.synced_at`,
         [l.artistKey, gid, l.id, l.score, l.day, now()]);
+      mark('ledger #' + l.rank + ' ok');
     } catch (e) {
+      mark('write #' + l.rank + ' FAILED ' + e.message);
       console.error('[asana-leads] task failed:', l.artistKey, e.message);
       out.failed.push({ artist: l.artist, title: l.title, error: e.message });
     }
   }
+  mark('done');
+  out.trace = trace;
   return out;
 }
 
@@ -9078,12 +9089,27 @@ async function handleApi(req, res, url) {
   if (p === '/api/admin/leads/asana' && method === 'POST') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     if (!process.env.ASANA_TOKEN) return bad(res, 'Asana not configured (set ASANA_TOKEN)', 409);
-    const { pct, minVotes } = await readBody(req);
+    const trace = [];
+    // The request ALWAYS answers inside Vercel's 30s cap: past 22s it returns what it has
+    // reached (the trace) rather than dying at the gateway as a page the console cannot read.
+    // Whatever Asana had already accepted is in the ledger, so the next press continues.
+    let timer;
+    const cutoff = new Promise(resolve => { timer = setTimeout(() => resolve({ timedOut: true }), 22000); });
     try {
-      return send(res, 200, await syncLeadsToAsana({ pct, minVotes }));
+      trace.push('0ms body');
+      const { pct, minVotes } = await readBody(req);
+      trace.push('body read');
+      const r = await Promise.race([syncLeadsToAsana({ pct, minVotes, trace }), cutoff]);
+      clearTimeout(timer);
+      if (r.timedOut) {
+        console.error('[asana-leads] press timed out; trace:', trace.join(' | '));
+        return send(res, 200, { ok: false, timedOut: true, created: 0, updated: 0, skipped: 0, remaining: 0, failed: [], trace });
+      }
+      return send(res, 200, r);
     } catch (e) {
-      console.error('[asana-leads] sync failed:', e.message);
-      return bad(res, 'Asana sync failed: ' + e.message, 502);
+      clearTimeout(timer);
+      console.error('[asana-leads] sync failed:', e.message, trace.join(' | '));
+      return send(res, 502, { error: 'Asana sync failed: ' + e.message, trace });
     }
   }
 
