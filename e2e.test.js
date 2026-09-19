@@ -11,6 +11,7 @@ process.env.INGEST_TOKEN = 'test-ingest-secret';
 // route does NOT fall back to INGEST_TOKEN — see the note on its token check.
 process.env.DAILY_INGEST_TOKEN = 'test-daily-secret';
 process.env.ANALYTICS_TOKEN = 'test-analytics-secret';
+process.env.ASANA_API_BASE = 'http://localhost:3997';   // a mock Asana, started by the leads tests
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
 try { fs.unlinkSync('./test.db-wal'); } catch {}
@@ -4551,6 +4552,123 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('sidebet: an entry after the cut-off is refused by the server', sbTooLate.status === 400, JSON.stringify(sbTooLate.d));
   ok('sidebet: a closed pack reports itself closed',
     (await call('/api/sidebet', null, 'GET')).d.pack.open === false);
+
+  // ======================================================================
+  // Sales leads → Asana (040): the top of the board as one task per artist.
+  // Asana itself is a mock on ASANA_API_BASE (set at the top of this file) that records
+  // every call, so the shape of what would be written is asserted, not just the counts.
+  console.log('\n— sales leads → Asana —');
+  const asanaCalls = [];
+  const asanaState = { projects: {}, fields: {}, tasks: {}, nextGid: 1000, refuseFields: false };
+  const asanaMock = require('http').createServer((req, res) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      const u = new URL(req.url, 'http://x');
+      const data = body ? JSON.parse(body).data : null;
+      asanaCalls.push({ method: req.method, path: u.pathname, data });
+      const reply = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      const gid = () => String(asanaState.nextGid++);
+      let m;
+      if (req.method === 'GET' && u.pathname === '/workspaces') return reply(200, { data: [{ gid: '77', name: 'Makin It', is_organization: false }] });
+      if (req.method === 'POST' && u.pathname === '/projects') {
+        const g = gid(); asanaState.projects[g] = { gid: g, name: data.name, permalink_url: 'https://app.asana.com/0/' + g + '/list', workspace: { gid: data.workspace }, custom_field_settings: [] };
+        return reply(201, { data: asanaState.projects[g] });
+      }
+      if (req.method === 'GET' && (m = /^\/projects\/(\d+)$/.exec(u.pathname))) {
+        const p = asanaState.projects[m[1]]; return p ? reply(200, { data: p }) : reply(404, { errors: [{ message: 'Not Found' }] });
+      }
+      if (req.method === 'GET' && (m = /^\/workspaces\/(\d+)\/custom_fields$/.exec(u.pathname))) {
+        if (asanaState.refuseFields) return reply(402, { errors: [{ message: 'Custom fields are a premium feature' }] });
+        return reply(200, { data: Object.values(asanaState.fields) });
+      }
+      if (req.method === 'POST' && u.pathname === '/custom_fields') {
+        if (asanaState.refuseFields) return reply(402, { errors: [{ message: 'Custom fields are a premium feature' }] });
+        const g = gid(); asanaState.fields[g] = { gid: g, name: data.name, resource_subtype: data.resource_subtype, precision: data.precision };
+        return reply(201, { data: asanaState.fields[g] });
+      }
+      if (req.method === 'POST' && (m = /^\/projects\/(\d+)\/addCustomFieldSetting$/.exec(u.pathname))) {
+        asanaState.projects[m[1]].custom_field_settings.push({ custom_field: asanaState.fields[data.custom_field] });
+        return reply(200, { data: {} });
+      }
+      if (req.method === 'POST' && u.pathname === '/tasks') { const g = gid(); asanaState.tasks[g] = { gid: g, ...data }; return reply(201, { data: { gid: g, permalink_url: 'https://app.asana.com/0/0/' + g } }); }
+      if (req.method === 'PUT' && (m = /^\/tasks\/(\d+)$/.exec(u.pathname))) {
+        if (!asanaState.tasks[m[1]]) return reply(404, { errors: [{ message: 'Not Found' }] });
+        Object.assign(asanaState.tasks[m[1]], data); return reply(200, { data: asanaState.tasks[m[1]] });
+      }
+      reply(500, { errors: [{ message: 'unmocked ' + req.method + ' ' + u.pathname } ] });
+    });
+  });
+  await new Promise(r => asanaMock.listen(3997, r));
+
+  const ldNoAuth = await call('/api/admin/leads?pct=30', null, 'GET', AH);
+  ok('leads: platform-admin only (a host token gets 403)', ldNoAuth.status === 403, 'got ' + ldNoAuth.status);
+  const ldOff = await call('/api/admin/leads/asana', { pct: 30 }, 'POST', ADMINH);
+  ok('leads: sync refuses without ASANA_TOKEN (409)', ldOff.status === 409, 'got ' + ldOff.status);
+
+  const ldAll = await call('/api/admin/leads?pct=100', null, 'GET', ADMINH);
+  ok('leads: preview lists every rated record at 100%', ldAll.status === 200 && ldAll.d.total > 0 && ldAll.d.cut === ldAll.d.total, JSON.stringify({ s: ldAll.status, t: ldAll.d.total, c: ldAll.d.cut }));
+  ok('leads: sorted highest score first',
+    ldAll.d.leads.every((l, i) => i === 0 || ldAll.d.leads[i - 1].score >= l.score), ldAll.d.leads.map(l => l.score).join(','));
+  ok('leads: ranks are 1..n', ldAll.d.leads.every((l, i) => l.rank === i + 1));
+  const ldEmails = ldAll.d.leads.map(l => (l.email || '').toLowerCase()).filter(Boolean);
+  ok('leads: one task per artist — no email appears twice', new Set(ldEmails).size === ldEmails.length, ldEmails.join(','));
+  ok('leads: every lead carries a YYYY-MM-DD played day', ldAll.d.leads.every(l => /^\d{4}-\d{2}-\d{2}$/.test(l.day)), JSON.stringify(ldAll.d.leads.map(l => l.day)));
+  ok('leads: the cut is ceil(total × pct)', (await call('/api/admin/leads?pct=30', null, 'GET', ADMINH)).d.cut === Math.ceil(ldAll.d.total * 0.3));
+  ok('leads: a lead with more than one record in the cut reports the extras',
+    ldAll.d.leads.length < ldAll.d.total ? ldAll.d.leads.some(l => l.others > 0) : true);
+
+  process.env.ASANA_TOKEN = 'test-asana-pat';
+  // Bounded per press (12 — Vercel's 30s cap), so drive it the way the console does.
+  const sync1 = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+  ok('leads: one press is bounded and reports what is left', sync1.status === 200 && sync1.d.created === 12 && sync1.d.remaining === ldAll.d.leads.length - 12, JSON.stringify(sync1.d));
+  let ldPresses = 1;
+  while (sync1.d.remaining > 0 && ldPresses < 20) {
+    const more = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+    sync1.d.created += more.d.created; sync1.d.updated += more.d.updated; sync1.d.remaining = more.d.remaining; sync1.d.failed.push(...more.d.failed); ldPresses++;
+  }
+  ok('leads: the presses together create the project and one task per artist',
+    sync1.d.created === ldAll.d.leads.length && sync1.d.updated === 0 && sync1.d.remaining === 0 && !sync1.d.failed.length,
+    JSON.stringify(sync1.d));
+  ok('leads: the project is named A&R Sales Leads and remembered', asanaCalls.some(c => c.method === 'POST' && c.path === '/projects' && c.data.name === 'A&R Sales Leads')
+    && (await call('/api/admin/platform', null, 'GET', ADMINH)).d.settings.asanaLeadsProject === sync1.d.project);
+  const ldFieldNames = asanaCalls.filter(c => c.method === 'POST' && c.path === '/custom_fields').map(c => c.data.name + ':' + c.data.resource_subtype).sort();
+  ok('leads: the two custom fields are created (Date played: date, Average score: number)',
+    ldFieldNames.join('|') === 'Average score:number|Date played:date', ldFieldNames.join('|'));
+  ok('leads: both fields are added to the project', asanaCalls.filter(c => /addCustomFieldSetting$/.test(c.path)).length === 2);
+  const ldTaskPosts = asanaCalls.filter(c => c.method === 'POST' && c.path === '/tasks');
+  const ldTop = ldAll.d.leads[0], ldTopTask = ldTaskPosts[0] && ldTaskPosts[0].data;
+  ok('leads: tasks are written highest score first, into the project', !!ldTopTask && ldTopTask.projects[0] === sync1.d.project && ldTopTask.name.startsWith(ldTop.artist), JSON.stringify(ldTopTask && ldTopTask.name));
+  const ldCfVals = ldTopTask ? Object.values(ldTopTask.custom_fields || {}) : [];
+  ok('leads: the task carries the played date and the score as custom fields',
+    ldCfVals.includes(ldTop.day) && ldCfVals.includes(Number(ldTop.score.toFixed(1))), JSON.stringify(ldTopTask && ldTopTask.custom_fields));
+  ok('leads: the notes carry the contact details for the call', !!ldTopTask && /Email: /.test(ldTopTask.notes) && /Instagram: /.test(ldTopTask.notes) && /Date played: /.test(ldTopTask.notes));
+  ok('leads: no price or upsell in the notes', !!ldTopTask && !/\$\d+ (report|upsell)/i.test(ldTopTask.notes));
+
+  const ldAfter = await call('/api/admin/leads?pct=100', null, 'GET', ADMINH);
+  ok('leads: the preview now shows every artist as in Asana and current', ldAfter.d.leads.every(l => l.synced && l.synced.current));
+  const ldCallsBefore = asanaCalls.length;
+  const sync2 = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+  ok('leads: a second press writes nothing — no duplicate tasks', sync2.d.created === 0 && sync2.d.updated === 0 && sync2.d.skipped === ldAll.d.leads.length, JSON.stringify(sync2.d));
+  ok('leads: …and touches no task in Asana', !asanaCalls.slice(ldCallsBefore).some(c => /^\/tasks/.test(c.path)));
+
+  // A task the operator deleted in Asana is recreated, not silently lost.
+  const ldGone = Object.keys(asanaState.tasks)[0];
+  delete asanaState.tasks[ldGone];
+  const ldLedgerRow = await anDb.get('SELECT artist_key FROM asana_leads WHERE task_gid = ?', [ldGone]);
+  await anDb.run('UPDATE asana_leads SET score = score - 1 WHERE task_gid = ?', [ldGone]);   // force an update attempt
+  const sync3 = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+  const ldNewRow = await anDb.get('SELECT task_gid FROM asana_leads WHERE artist_key = ?', [ldLedgerRow.artist_key]);
+  ok('leads: a task deleted in Asana is recreated on the next sync', sync3.d.created === 1 && ldNewRow.task_gid !== ldGone, JSON.stringify(sync3.d));
+
+  // Custom fields are a paid feature: without them the list still goes out.
+  asanaState.refuseFields = true;
+  await call('/api/admin/settings', { asanaLeadsProject: '' }, 'POST', ADMINH);
+  const sync4 = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+  ok('leads: a plan without custom fields still syncs and says why the columns are missing',
+    sync4.status === 200 && /premium/i.test(sync4.d.fieldsError || ''), JSON.stringify(sync4.d));
+  delete process.env.ASANA_TOKEN;
+  asanaMock.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();

@@ -4055,7 +4055,7 @@ async function drainArtistEmail({ sessionId = null, limit = 4, deadline = null }
 // Token lives in ASANA_TOKEN (env) — same shape as INGEST_TOKEN/ANALYTICS_TOKEN/Blob, and
 // deliberately NOT the settings table: a PAT there would be echoed back by the platform
 // GET to every admin. The project gid is not a secret and does live in settings.
-const ASANA_API = 'https://app.asana.com/api/1.0';
+const ASANA_API = process.env.ASANA_API_BASE || 'https://app.asana.com/api/1.0';
 async function asanaFetch(path, opts = {}) {
   const token = process.env.ASANA_TOKEN;
   if (!token) throw new Error('Asana not configured (set ASANA_TOKEN)');
@@ -4117,6 +4117,246 @@ async function buildPostKit(session) {
     }
   }
   return { files, caption: await postKitCaption(sessionId, ars, songs), ars, songs };
+}
+
+// ===== SALES LEADS → ASANA (040) =====
+// The operator sells Mimberships and performances to the artists whose records did best on
+// the platform. This turns "the top N% of everything we have rated" into one Asana task per
+// ARTIST, in a dedicated project carrying two custom fields (Date played, Average score), so
+// the list can be worked in Asana rather than read off a screen.
+//
+// The cut is on RECORDS: every ratified rating round the platform has scored (live shows and
+// daily drops alike, reference tracks and Versus rounds out, a replayed record counted once at
+// its best showing) is ranked on room average and the top `pct` percent is kept. THEN the
+// kept records collapse to artists — an artist with two records in the cut gets one task, on
+// the higher one — so the task count is "artists in the top 30% of records", not 30% of
+// artists. `pct` is the operator's dial (default 30), never hardcoded downstream.
+//
+// One artist = one email address; without an email, one Instagram handle; without either,
+// one artist name (loose match, the charts' rule). The email is the strongest identity the
+// submission form gives us, and it is also what the operator will write to.
+const LEADS_DEFAULT_PCT = 30;
+const LEADS_PROJECT_NAME = 'A&R Sales Leads';
+const LEADS_FIELDS = [
+  { key: 'date',  name: 'Date played',   resource_subtype: 'date' },
+  { key: 'score', name: 'Average score', resource_subtype: 'number', precision: 1 },
+];
+const LEADS_BATCH = 12;   // tasks written per press — Vercel caps a request at 30s (vercel.json), the UI loops
+
+const leadArtistKey = (r) => {
+  const em = (r.artist_email || '').trim().toLowerCase();
+  if (em) return 'e:' + em;
+  const ig = igClean(r.artist_instagram);
+  if (ig) return 'i:' + ig.toLowerCase();
+  return 'n:' + (chartKey(r.song_artist) || chartKey(r.song_title));
+};
+
+// Every scorable record on the platform with the fields a lead needs, ranked. Read-only and
+// admin-triggered: this is a full scan of rounds, which is fine for a button and would not be
+// fine on a poll (rule #1). Returns { records, leads, cut, pct }.
+async function salesLeadsData(opts = {}) {
+  const pct = Math.min(100, Math.max(1, Number(opts.pct) || LEADS_DEFAULT_PCT));
+  const rows = await db.all(
+    `SELECT r.id, r.idx, r.session_id, r.song_title, r.song_artist, r.artist_instagram, r.song_note,
+            r.artist_email, r.artist_phone, r.play_url, r.room_average, r.support_cents, r.opens_at,
+            s.name AS session_name, s.mode, s.drop_day, s.scheduled_at, s.created_at AS session_created,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS votes
+       FROM rounds r JOIN sessions s ON s.id = r.session_id
+      WHERE s.deleted_at IS NULL AND r.status = 'ratified' AND r.room_average IS NOT NULL
+        AND COALESCE(r.poll_type,'rating') <> 'binary' AND COALESCE(r.is_reference, 0) = 0`, []);
+  const all = rows.map(r => {
+    const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+    // A daily drop is dated by its drop day; a live show by the night the round opened.
+    const day = r.mode === 'async' && /^\d{4}-\d{2}-\d{2}$/.test(r.drop_day || '')
+      ? r.drop_day : chartDay(r.opens_at || r.scheduled_at || r.session_created);
+    return {
+      id: r.id, idx: r.idx, sessionId: r.session_id, session: r.session_name || '',
+      day, title: r.song_title || '—', artist: r.song_artist || '',
+      ig: igClean(r.artist_instagram) || (m ? igClean(m[1]) : null),
+      email: (r.artist_email || '').trim() || null, phone: (r.artist_phone || '').trim() || null,
+      play_url: r.play_url || null, support_cents: supportCentsOf(r),
+      score: Number(r.room_average), votes: Number(r.votes) || 0,
+      artistKey: leadArtistKey(r),
+    };
+  });
+  const rank = (a, b) => b.score - a.score || b.votes - a.votes
+    || (a.day < b.day ? -1 : a.day > b.day ? 1 : 0) || a.idx - b.idx;
+  all.sort(rank);
+  // A record pushed twice (the same title + artist) is one record at its best showing.
+  const seen = new Map();
+  for (const r of all) {
+    const k = chartKey(r.title) + '|' + chartKey(r.artist);
+    const prev = seen.get(k);
+    if (prev) { prev.plays++; continue; }
+    r.plays = 1; seen.set(k, r);
+  }
+  const records = [...seen.values()];
+  const cut = Math.ceil(records.length * pct / 100);
+  const top = records.slice(0, cut);
+  // Collapse to artists — first hit wins because `top` is already ranked; the rest of an
+  // artist's records ride along as `others` so the task can list them.
+  const byArtist = new Map();
+  for (const r of top) {
+    const lead = byArtist.get(r.artistKey);
+    if (lead) { lead.others.push({ id: r.id, title: r.title, score: r.score, day: r.day }); continue; }
+    byArtist.set(r.artistKey, { ...r, others: [] });
+  }
+  const leads = [...byArtist.values()];
+  leads.forEach((l, i) => { l.rank = i + 1; });
+  return { pct, cut, total: records.length, leads };
+}
+
+const leadTaskName = (l) => `${l.artist || 'Unknown artist'} — “${l.title}” · ${l.score.toFixed(1)}`;
+function leadTaskNotes(l) {
+  const money = l.support_cents == null ? '—' : l.support_cents === 0 ? 'Free' : '$' + (l.support_cents / 100).toFixed(2);
+  const lines = [
+    `Artist: ${l.artist || '—'}`,
+    `Record: ${l.title}`,
+    `Average score: ${l.score.toFixed(1)} (${l.votes} A&R${l.votes === 1 ? '' : 's'})`,
+    `Date played: ${etDayLabel(l.day) || l.day}${l.session ? ' — ' + l.session : ''}`,
+    `Support level: ${money}`,
+    '',
+    `Email: ${l.email || '—'}`,
+    `Phone: ${l.phone || '—'}`,
+    `Instagram: ${l.ig ? '@' + l.ig : '—'}`,
+    `Listen: ${l.play_url || '—'}`,
+  ];
+  if (l.others && l.others.length) {
+    lines.push('', 'Also rated:');
+    l.others.forEach(o => lines.push(`  ${o.title} · ${o.score.toFixed(1)} · ${etDayLabel(o.day) || o.day}`));
+  }
+  lines.push('', 'Generated by The A&R Team.');
+  return lines.join('\n');
+}
+
+const asanaJson = (path, method, data) => asanaFetch(path, {
+  method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) });
+
+// The project + its two fields, created once and remembered in settings. The operator can
+// point this at an existing project (Platform panel); a project the operator deleted in
+// Asana is detected by a 404 on read and re-created.
+async function ensureLeadsProject() {
+  const get = async (k) => (await db.get('SELECT v FROM settings WHERE k = ?', [k]))?.v || null;
+  const set = (k, v) => db.run('INSERT INTO settings (k,v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v', [k, v]);
+  let project = await get('asana_leads_project');
+  let workspace = await get('asana_workspace');
+  if (project) {
+    try {
+      const p = await asanaFetch(`/projects/${project}?opt_fields=gid,name,permalink_url,workspace.gid,custom_field_settings.custom_field.(gid|name|resource_subtype)`);
+      workspace = (p.data.workspace && p.data.workspace.gid) || workspace;
+      return await ensureLeadsFields(p.data, workspace, set);
+    } catch (e) {
+      if (!/Asana 404/.test(e.message)) throw e;
+      project = null;   // deleted on their side — make a new one
+    }
+  }
+  if (!workspace) {
+    const ws = await asanaFetch('/workspaces?opt_fields=gid,name,is_organization');
+    const first = ws.data && ws.data[0];
+    if (!first) throw new Error('the token has no Asana workspace');
+    workspace = first.gid;
+    await set('asana_workspace', workspace);
+  }
+  const body = { name: LEADS_PROJECT_NAME, workspace, default_view: 'list',
+    notes: 'One task per artist from the top of the A&R Team board. Created by The A&R Team; re-syncs add new artists and update scores.' };
+  let created;
+  try {
+    created = await asanaJson('/projects', 'POST', body);
+  } catch (e) {
+    // An organization workspace needs a team on the project. Use the first the token can see.
+    if (!/team/i.test(e.message)) throw e;
+    const teams = await asanaFetch(`/organizations/${workspace}/teams?opt_fields=gid,name`);
+    const team = teams.data && teams.data[0];
+    if (!team) throw e;
+    created = await asanaJson('/projects', 'POST', { ...body, team: team.gid });
+  }
+  project = created.data.gid;
+  await set('asana_leads_project', project);
+  return await ensureLeadsFields({ ...created.data, custom_field_settings: [] }, workspace, set);
+}
+
+// Custom fields are a paid Asana feature. When they cannot be created the sync still runs —
+// the score is in the task name and the date in the notes — and `fieldsError` tells the
+// console why the columns are missing, rather than failing the whole list on a plan limit.
+async function ensureLeadsFields(project, workspace, set) {
+  const have = new Map((project.custom_field_settings || [])
+    .map(s => s.custom_field).filter(Boolean).map(f => [f.name.toLowerCase(), f]));
+  const fields = {};
+  let fieldsError = null;
+  for (const spec of LEADS_FIELDS) {
+    const got = have.get(spec.name.toLowerCase());
+    if (got) { fields[spec.key] = got.gid; continue; }
+    try {
+      let gid = null;
+      // A field of that name may already exist in the workspace (from an earlier project).
+      try {
+        const ws = await asanaFetch(`/workspaces/${workspace}/custom_fields?opt_fields=gid,name,resource_subtype&limit=100`);
+        const f = (ws.data || []).find(x => x.name.toLowerCase() === spec.name.toLowerCase() && x.resource_subtype === spec.resource_subtype);
+        if (f) gid = f.gid;
+      } catch (e) { /* fall through to create */ }
+      if (!gid) {
+        const body = { name: spec.name, resource_subtype: spec.resource_subtype, workspace };
+        if (spec.precision != null) body.precision = spec.precision;
+        gid = (await asanaJson('/custom_fields', 'POST', body)).data.gid;
+      }
+      await asanaJson(`/projects/${project.gid}/addCustomFieldSetting`, 'POST', { custom_field: gid, is_important: true });
+      fields[spec.key] = gid;
+    } catch (e) {
+      fieldsError = fieldsError || e.message;
+    }
+  }
+  await set('asana_leads_fields', JSON.stringify(fields));
+  return { gid: project.gid, url: project.permalink_url || `https://app.asana.com/0/${project.gid}/list`, fields, fieldsError };
+}
+
+// Write the leads into the project: a task per artist new to the list, an update for an
+// artist whose best record changed. Bounded per call so one press never runs into Vercel's
+// clock; returns `remaining` and the console presses again.
+async function syncLeadsToAsana({ pct, limit = LEADS_BATCH } = {}) {
+  const proj = await ensureLeadsProject();
+  const data = await salesLeadsData({ pct });
+  const ledger = new Map((await db.all('SELECT * FROM asana_leads', [])).map(r => [r.artist_key, r]));
+  const out = { ok: true, project: proj.gid, url: proj.url, fieldsError: proj.fieldsError,
+    created: 0, updated: 0, skipped: 0, remaining: 0, failed: [], leads: data.leads.length, cut: data.cut, total: data.total, pct: data.pct };
+  let budget = limit;
+  const fieldsFor = (l) => {
+    const cf = {};
+    if (proj.fields.date) cf[proj.fields.date] = l.day;
+    if (proj.fields.score) cf[proj.fields.score] = Number(l.score.toFixed(1));
+    return Object.keys(cf).length ? cf : undefined;
+  };
+  for (const l of data.leads) {
+    const row = ledger.get(l.artistKey);
+    const same = row && row.round_id === l.id && Number(row.score) === l.score && row.played_day === l.day;
+    if (same) { out.skipped++; continue; }
+    if (budget <= 0) { out.remaining++; continue; }
+    budget--;
+    const body = { name: leadTaskName(l), notes: leadTaskNotes(l) };
+    const cf = fieldsFor(l);
+    if (cf) body.custom_fields = cf;
+    try {
+      let gid = row ? row.task_gid : null;
+      if (gid) {
+        try { await asanaJson(`/tasks/${gid}`, 'PUT', body); out.updated++; }
+        catch (e) { if (!/Asana 404/.test(e.message)) throw e; gid = null; }   // deleted in Asana → recreate
+      }
+      if (!gid) {
+        const t = await asanaJson('/tasks', 'POST', { ...body, projects: [proj.gid] });
+        gid = t.data && t.data.gid;
+        if (!gid) throw new Error('Asana did not return a task id');
+        out.created++;
+      }
+      await db.run(
+        `INSERT INTO asana_leads (artist_key, task_gid, round_id, score, played_day, synced_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (artist_key) DO UPDATE SET task_gid = excluded.task_gid, round_id = excluded.round_id,
+           score = excluded.score, played_day = excluded.played_day, synced_at = excluded.synced_at`,
+        [l.artistKey, gid, l.id, l.score, l.day, now()]);
+    } catch (e) {
+      console.error('[asana-leads] task failed:', l.artistKey, e.message);
+      out.failed.push({ artist: l.artist, title: l.title, error: e.message });
+    }
+  }
+  return out;
 }
 
 async function adminState(session, opts = {}) {
@@ -6650,7 +6890,8 @@ async function handleApi(req, res, url) {
         reviveDeliveryUrl: (await db.get("SELECT v FROM settings WHERE k = 'revive_delivery_url'"))?.v || null,
         reviveZoneLobby: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_lobby'"))?.v || null,
         reviveZoneGame: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_game'"))?.v || null,
-        asanaProject: (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null },
+        asanaProject: (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null,
+        asanaLeadsProject: (await db.get("SELECT v FROM settings WHERE k = 'asana_leads_project'"))?.v || null },
       dailySchedule: dailyScheduleView(await dailySchedule()),
       smsProvider: (process.env.SMS_PROVIDER || 'none'),
       // The PAT itself is an env var and never leaves the server — only whether it's set.
@@ -6677,6 +6918,12 @@ async function handleApi(req, res, url) {
     if ('reviveZoneGame' in body) await setOrClear('revive_zone_game', String(parseInt(body.reviveZoneGame, 10) || '') || null);
     // Asana project gid for the post kit (digits; the PAT itself is ASANA_TOKEN in env).
     if ('asanaProject' in body) await setOrClear('asana_project', (body.asanaProject || '').toString().trim().replace(/\D/g, '').slice(0, 30) || null);
+    // The sales-leads project (040). Clearing it makes the next sync create a fresh one; the
+    // remembered field gids go with it because they are read back off the project anyway.
+    if ('asanaLeadsProject' in body) {
+      await setOrClear('asana_leads_project', (body.asanaLeadsProject || '').toString().trim().replace(/\D/g, '').slice(0, 30) || null);
+      await db.run("DELETE FROM settings WHERE k = 'asana_leads_fields'");
+    }
     // A&R Daily schedule. Saved values are validated as a whole; null puts the defaults back.
     // Every drop that has NOT opened is re-stamped to the new window here, because a cold day
     // is nothing but its window — otherwise "the schedule changed" would only be true from
@@ -8749,6 +8996,43 @@ async function handleApi(req, res, url) {
       sent: out.filter(d => d.status === 'sent').length,
       results: out,
     });
+  }
+
+  // ---- Sales leads → Asana (040): the top of the board as one task per artist. ----
+  // Preview: the ranked list the sync would write, with each artist's sync state.
+  if (p === '/api/admin/leads' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const data = await salesLeadsData({ pct: url.searchParams.get('pct') });
+    const ledger = new Map((await db.all('SELECT * FROM asana_leads', [])).map(r => [r.artist_key, r]));
+    const project = (await db.get("SELECT v FROM settings WHERE k = 'asana_leads_project'"))?.v || null;
+    return send(res, 200, {
+      pct: data.pct, cut: data.cut, total: data.total,
+      leads: data.leads.map(l => {
+        const row = ledger.get(l.artistKey);
+        return { rank: l.rank, id: l.id, artist: l.artist, title: l.title, score: l.score, votes: l.votes,
+          day: l.day, dayLabel: etDayLabel(l.day) || l.day, session: l.session,
+          email: l.email, phone: l.phone, ig: l.ig, play_url: l.play_url, support_cents: l.support_cents,
+          others: l.others.length,
+          synced: row ? { taskId: row.task_gid, at: Number(row.synced_at),
+            current: row.round_id === l.id && Number(row.score) === l.score && row.played_day === l.day } : null };
+      }),
+      hasToken: !!process.env.ASANA_TOKEN, project,
+      projectUrl: project ? `https://app.asana.com/0/${project}/list` : null,
+      batch: LEADS_BATCH,
+    });
+  }
+  // Create the project (once) and write the tasks. Bounded per press; the console loops
+  // while `remaining` > 0.
+  if (p === '/api/admin/leads/asana' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    if (!process.env.ASANA_TOKEN) return bad(res, 'Asana not configured (set ASANA_TOKEN)', 409);
+    const { pct } = await readBody(req);
+    try {
+      return send(res, 200, await syncLeadsToAsana({ pct }));
+    } catch (e) {
+      console.error('[asana-leads] sync failed:', e.message);
+      return bad(res, 'Asana sync failed: ' + e.message, 502);
+    }
   }
 
   // ---- Asana post kit: the night's graphics + a tag-everyone caption, as one task. ----

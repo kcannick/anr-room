@@ -110,6 +110,9 @@ token stored there would be readable by any admin who opens the Platform panel.
 
 Reference: [Asana personal access tokens](https://developers.asana.com/docs/personal-access-token)
 
+The same token powers the **Sales leads → Asana** card on the Platform panel — see
+[sales-leads-asana.md](sales-leads-asana.md).
+
 ---
 
 ## 4. Confirm `BLOB_READ_WRITE_TOKEN` is already there

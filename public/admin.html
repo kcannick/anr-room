@@ -1040,6 +1040,8 @@
         <label>Asana post task <span class="muted">(target project for the post-kit task)</span></label>
         <input id="plAsanaProject" placeholder="project ID, e.g. 1209876543210987">
         <div id="plAsanaStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
+        <label style="margin-top:10px">Asana sales-leads project <span class="muted">(optional — leave blank and the first sync creates “A&amp;R Sales Leads” for you)</span></label>
+        <input id="plAsanaLeadsProject" placeholder="project ID, or blank to create one">
         <p class="muted" style="font-size:11px;margin:8px 0 0">The project ID is the long number in your Asana project URL. The access token is an environment variable (<b>ASANA_TOKEN</b>) — it never lives in the database.</p>
       </div>
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
@@ -1065,6 +1067,17 @@
       </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
       <div class="muted" id="plStatus" style="font-size:12px;margin-top:6px"></div>
+    </div>
+    <div class="card" id="leadsCard">
+      <h2>Sales leads → Asana</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">The top of everything the platform has rated, one Asana task per artist, in a project with <b>Date played</b> and <b>Average score</b> fields. An artist with more than one record in the cut gets one task, on their highest score. Press again any time: new artists are added and a task is updated when its artist scores higher. Tasks are never removed.</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="margin:0;display:flex;align-items:center;gap:6px">Top <input id="leadsPct" type="number" min="1" max="100" value="30" style="width:64px;display:inline-block"> % of records</label>
+        <button class="btn ghost sm" id="leadsPreview">Preview</button>
+        <button class="btn sm" id="leadsSync">Create Asana tasks</button>
+      </div>
+      <div id="leadsStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
+      <div id="leadsList" style="margin-top:10px;max-height:420px;overflow:auto"><div class="empty">Loading…</div></div>
     </div>
     <div class="card">
       <h2>Message all A&amp;Rs</h2>
@@ -3096,7 +3109,9 @@ async function openPlatform(){
     $('#plReviveGame').value=d.settings.reviveZoneGame||'';
     plReviveStatus(d.settings);
     $('#plAsanaProject').value=d.settings.asanaProject||'';
+    $('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';
     dsFill(d.dailySchedule);
+    leadsLoad();
     plAsanaStatus(d);
     $('#plSmsProvider').textContent=d.smsProvider||'none';
     api('/api/admin/notify/audience',null,'GET').then(a=>{
@@ -3251,13 +3266,56 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
       reviveZoneLobby:$('#plReviveLobby').value.trim(),
       reviveZoneGame:$('#plReviveGame').value.trim(),
       asanaProject:$('#plAsanaProject').value.trim(),
+      asanaLeadsProject:$('#plAsanaLeadsProject').value.trim(),
       dailySchedule:dsRead()});
     plReviveStatus({reviveDeliveryUrl:$('#plReviveUrl').value.trim(),reviveZoneLobby:$('#plReviveLobby').value.trim(),reviveZoneGame:$('#plReviveGame').value.trim()});
     // Re-read: the server normalizes the project id, and only it knows if the token is set.
-    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';plAsanaStatus(d);dsFill(d.dailySchedule);}catch(e){}
+    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';$('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';plAsanaStatus(d);dsFill(d.dailySchedule);leadsLoad();}catch(e){}
     $('#plStatus').textContent='Saved ✓';setTimeout(()=>$('#plStatus').textContent='',2000);
   }catch(e){$('#plStatus').textContent=e.message;}
   $('#plSaveSettings').disabled=false;
+});
+// ===== Sales leads → Asana (040) =====
+const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));
+const leadsMoney=c=>c==null?'—':c===0?'Free':'$'+(c/100).toFixed(0);
+async function leadsLoad(){
+  const box=$('#leadsList'),st=$('#leadsStatus'); if(!box)return;
+  box.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const d=await api('/api/admin/leads?pct='+leadsPct(),null,'GET');
+    const synced=d.leads.filter(l=>l.synced).length, stale=d.leads.filter(l=>l.synced&&!l.synced.current).length;
+    st.innerHTML=(d.hasToken?'':'ASANA_TOKEN is not set — the button is off. ')
+      +d.leads.length+' artist'+(d.leads.length===1?'':'s')+' in the top '+d.pct+'% ('+d.cut+' of '+d.total+' records)'
+      +(synced?' · '+synced+' already in Asana'+(stale?', '+stale+' to update':''):'')
+      +(d.projectUrl?' · <a href="'+d.projectUrl+'" target="_blank" rel="noopener" style="color:var(--signal)">open the project</a>':'');
+    $('#leadsSync').disabled=!d.hasToken;
+    if(!d.leads.length){box.innerHTML='<div class="empty">No rated records yet.</div>';return;}
+    const rows=d.leads.map(l=>'<tr><td class="num">'+l.rank+'</td><td><b>'+esc(l.artist||'—')+'</b><br><span class="muted">'+esc(l.title)+(l.others?' <span class="muted">+'+l.others+' more</span>':'')+'</span></td>'
+      +'<td class="num">'+(+l.score).toFixed(1)+'</td><td class="num">'+l.votes+'</td><td>'+esc(l.dayLabel)+'</td><td>'+leadsMoney(l.support_cents)+'</td>'
+      +'<td>'+(l.email?'✉ ':'')+(l.phone?'☎ ':'')+(l.ig?'@'+esc(l.ig):'')+'</td>'
+      +'<td>'+(l.synced?(l.synced.current?'<a href="https://app.asana.com/0/0/'+l.synced.taskId+'" target="_blank" rel="noopener" style="color:var(--signal)">in Asana ✓</a>':'<span style="color:var(--accent)">update</span>'):'<span class="muted">new</span>')+'</td></tr>').join('');
+    box.innerHTML='<table class="dltable"><tr><th class="num">#</th><th style="width:34%">Artist · record</th><th class="num">Score</th><th class="num">A&amp;Rs</th><th>Played</th><th>Support</th><th>Contact</th><th>Asana</th></tr>'+rows+'</table>';
+  }catch(e){box.innerHTML='';st.textContent=e.message;}
+}
+$('#leadsPreview')&&($('#leadsPreview').onclick=leadsLoad);
+$('#leadsSync')&&($('#leadsSync').onclick=async()=>{
+  const btn=$('#leadsSync'),st=$('#leadsStatus'),old=btn.textContent;
+  btn.disabled=true;
+  let created=0,updated=0,failed=[],url=null,fieldsError=null;
+  try{
+    for(let i=0;i<50;i++){
+      btn.textContent='Writing… ('+(created+updated)+')';
+      const d=await api('/api/admin/leads/asana',{pct:leadsPct()});
+      created+=d.created;updated+=d.updated;failed=failed.concat(d.failed||[]);url=d.url;fieldsError=d.fieldsError||null;
+      if(!d.remaining)break;
+    }
+    st.innerHTML='✅ '+created+' task'+(created===1?'':'s')+' created, '+updated+' updated'
+      +(failed.length?', <b>'+failed.length+' failed</b> ('+esc(failed[0].error)+')':'')
+      +(fieldsError?'. <b>Custom fields could not be added</b> ('+esc(fieldsError)+') — the score is in each task name and the date in its notes.':'')
+      +(url?' — <a href="'+url+'" target="_blank" rel="noopener" style="color:var(--signal)">open in Asana</a>':'');
+  }catch(e){st.textContent=e.message;}
+  btn.textContent=old;btn.disabled=false;
+  if(created||updated){const keep=st.innerHTML;await leadsLoad();st.innerHTML=keep;}
 });
 $('#btnPlatform')&&($('#btnPlatform').onclick=openPlatform);
 $('#btnPlatformBack')&&($('#btnPlatformBack').onclick=()=>showScreen('picker'));
