@@ -4606,7 +4606,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const ldOff = await call('/api/admin/leads/asana', { pct: 30 }, 'POST', ADMINH);
   ok('leads: sync refuses without ASANA_TOKEN (409)', ldOff.status === 409, 'got ' + ldOff.status);
 
-  const ldAll = await call('/api/admin/leads?pct=100', null, 'GET', ADMINH);
+  const ldAll = await call('/api/admin/leads?pct=100&minVotes=0', null, 'GET', ADMINH);
   ok('leads: preview lists every rated record at 100%', ldAll.status === 200 && ldAll.d.total > 0 && ldAll.d.cut === ldAll.d.total, JSON.stringify({ s: ldAll.status, t: ldAll.d.total, c: ldAll.d.cut }));
   ok('leads: sorted highest score first',
     ldAll.d.leads.every((l, i) => i === 0 || ldAll.d.leads[i - 1].score >= l.score), ldAll.d.leads.map(l => l.score).join(','));
@@ -4614,17 +4614,25 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const ldEmails = ldAll.d.leads.map(l => (l.email || '').toLowerCase()).filter(Boolean);
   ok('leads: one task per artist — no email appears twice', new Set(ldEmails).size === ldEmails.length, ldEmails.join(','));
   ok('leads: every lead carries a YYYY-MM-DD played day', ldAll.d.leads.every(l => /^\d{4}-\d{2}-\d{2}$/.test(l.day)), JSON.stringify(ldAll.d.leads.map(l => l.day)));
-  ok('leads: the cut is ceil(total × pct)', (await call('/api/admin/leads?pct=30', null, 'GET', ADMINH)).d.cut === Math.ceil(ldAll.d.total * 0.3));
+  ok('leads: the cut is ceil(total × pct)', (await call('/api/admin/leads?pct=30&minVotes=0', null, 'GET', ADMINH)).d.cut === Math.ceil(ldAll.d.total * 0.3));
+  // The floor: a 9.0 from one A&R must not lead the list. Default 3; the floor EXCLUDES.
+  const ldDef = await call('/api/admin/leads?pct=100', null, 'GET', ADMINH);
+  ok('leads: the floor defaults to 3 A&Rs', ldDef.d.minVotes === 3, JSON.stringify(ldDef.d.minVotes));
+  ok('leads: records under the floor are left out and counted', ldDef.d.leads.every(l => l.votes >= 3) && ldDef.d.excluded === ldAll.d.total - ldDef.d.total && ldDef.d.excluded > 0, JSON.stringify({ ex: ldDef.d.excluded, t: ldDef.d.total }));
+  ok('leads: the singleton 9.0 that led the unfloored list is gone', ldAll.d.leads[0].votes < 3 && !ldDef.d.leads.some(l => l.id === ldAll.d.leads[0].id));
+  const ldFloor5 = await call('/api/admin/leads?pct=100&minVotes=5', null, 'GET', ADMINH);
+  ok('leads: a higher floor is honoured', ldFloor5.status === 200 && ldFloor5.d.minVotes === 5 && ldFloor5.d.leads.every(l => l.votes >= 5));
+  ok('leads: minVotes=0 turns the floor off (0 is not "unset")', (await call('/api/admin/leads?pct=100&minVotes=0', null, 'GET', ADMINH)).d.minVotes === 0);
   ok('leads: a lead with more than one record in the cut reports the extras',
     ldAll.d.leads.length < ldAll.d.total ? ldAll.d.leads.some(l => l.others > 0) : true);
 
   process.env.ASANA_TOKEN = 'test-asana-pat';
   // Bounded per press (12 — Vercel's 30s cap), so drive it the way the console does.
-  const sync1 = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+  const sync1 = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads: one press is bounded and reports what is left', sync1.status === 200 && sync1.d.created === 12 && sync1.d.remaining === ldAll.d.leads.length - 12, JSON.stringify(sync1.d));
   let ldPresses = 1;
   while (sync1.d.remaining > 0 && ldPresses < 20) {
-    const more = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+    const more = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
     sync1.d.created += more.d.created; sync1.d.updated += more.d.updated; sync1.d.remaining = more.d.remaining; sync1.d.failed.push(...more.d.failed); ldPresses++;
   }
   ok('leads: the presses together create the project and one task per artist',
@@ -4645,10 +4653,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('leads: the notes carry the contact details for the call', !!ldTopTask && /Email: /.test(ldTopTask.notes) && /Instagram: /.test(ldTopTask.notes) && /Date played: /.test(ldTopTask.notes));
   ok('leads: no price or upsell in the notes', !!ldTopTask && !/\$\d+ (report|upsell)/i.test(ldTopTask.notes));
 
-  const ldAfter = await call('/api/admin/leads?pct=100', null, 'GET', ADMINH);
+  const ldAfter = await call('/api/admin/leads?pct=100&minVotes=0', null, 'GET', ADMINH);
   ok('leads: the preview now shows every artist as in Asana and current', ldAfter.d.leads.every(l => l.synced && l.synced.current));
   const ldCallsBefore = asanaCalls.length;
-  const sync2 = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+  const sync2 = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads: a second press writes nothing — no duplicate tasks', sync2.d.created === 0 && sync2.d.updated === 0 && sync2.d.skipped === ldAll.d.leads.length, JSON.stringify(sync2.d));
   ok('leads: …and touches no task in Asana', !asanaCalls.slice(ldCallsBefore).some(c => /^\/tasks/.test(c.path)));
 
@@ -4657,14 +4665,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
   delete asanaState.tasks[ldGone];
   const ldLedgerRow = await anDb.get('SELECT artist_key FROM asana_leads WHERE task_gid = ?', [ldGone]);
   await anDb.run('UPDATE asana_leads SET score = score - 1 WHERE task_gid = ?', [ldGone]);   // force an update attempt
-  const sync3 = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+  const sync3 = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   const ldNewRow = await anDb.get('SELECT task_gid FROM asana_leads WHERE artist_key = ?', [ldLedgerRow.artist_key]);
   ok('leads: a task deleted in Asana is recreated on the next sync', sync3.d.created === 1 && ldNewRow.task_gid !== ldGone, JSON.stringify(sync3.d));
 
   // Custom fields are a paid feature: without them the list still goes out.
   asanaState.refuseFields = true;
   await call('/api/admin/settings', { asanaLeadsProject: '' }, 'POST', ADMINH);
-  const sync4 = await call('/api/admin/leads/asana', { pct: 100 }, 'POST', ADMINH);
+  const sync4 = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads: a plan without custom fields still syncs and says why the columns are missing',
     sync4.status === 200 && /premium/i.test(sync4.d.fieldsError || ''), JSON.stringify(sync4.d));
   delete process.env.ASANA_TOKEN;

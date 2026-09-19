@@ -4131,11 +4131,15 @@ async function buildPostKit(session) {
 // kept records collapse to artists — an artist with two records in the cut gets one task, on
 // the higher one — so the task count is "artists in the top 30% of records", not 30% of
 // artists. `pct` is the operator's dial (default 30), never hardcoded downstream.
+// `minVotes` is the charts' floor, applied BEFORE the cut: a 8.0 from one A&R must not sit
+// at #1 above an 7.6 from forty, and the floor EXCLUDES a record rather than reweighting
+// it — the printed score stays the room's real average. Default 3; 0 turns it off.
 //
 // One artist = one email address; without an email, one Instagram handle; without either,
 // one artist name (loose match, the charts' rule). The email is the strongest identity the
 // submission form gives us, and it is also what the operator will write to.
 const LEADS_DEFAULT_PCT = 30;
+const LEADS_DEFAULT_MIN_VOTES = 3;
 const LEADS_PROJECT_NAME = 'A&R Sales Leads';
 const LEADS_FIELDS = [
   { key: 'date',  name: 'Date played',   resource_subtype: 'date' },
@@ -4156,6 +4160,9 @@ const leadArtistKey = (r) => {
 // fine on a poll (rule #1). Returns { records, leads, cut, pct }.
 async function salesLeadsData(opts = {}) {
   const pct = Math.min(100, Math.max(1, Number(opts.pct) || LEADS_DEFAULT_PCT));
+  // Number.isFinite, not `||`: a legitimate 0 turns the floor off.
+  const mv = parseInt(opts.minVotes, 10);
+  const minVotes = Math.max(0, Number.isFinite(mv) ? mv : LEADS_DEFAULT_MIN_VOTES);
   const rows = await db.all(
     `SELECT r.id, r.idx, r.session_id, r.song_title, r.song_artist, r.artist_instagram, r.song_note,
             r.artist_email, r.artist_phone, r.play_url, r.room_average, r.support_cents, r.opens_at,
@@ -4190,7 +4197,9 @@ async function salesLeadsData(opts = {}) {
     if (prev) { prev.plays++; continue; }
     r.plays = 1; seen.set(k, r);
   }
-  const records = [...seen.values()];
+  const kept = [...seen.values()];
+  const records = kept.filter(r => r.votes >= minVotes);
+  const excluded = kept.length - records.length;
   const cut = Math.ceil(records.length * pct / 100);
   const top = records.slice(0, cut);
   // Collapse to artists — first hit wins because `top` is already ranked; the rest of an
@@ -4203,7 +4212,7 @@ async function salesLeadsData(opts = {}) {
   }
   const leads = [...byArtist.values()];
   leads.forEach((l, i) => { l.rank = i + 1; });
-  return { pct, cut, total: records.length, leads };
+  return { pct, minVotes, excluded, cut, total: records.length, leads };
 }
 
 const leadTaskName = (l) => `${l.artist || 'Unknown artist'} — “${l.title}” · ${l.score.toFixed(1)}`;
@@ -4312,12 +4321,12 @@ async function ensureLeadsFields(project, workspace, set) {
 // Write the leads into the project: a task per artist new to the list, an update for an
 // artist whose best record changed. Bounded per call so one press never runs into Vercel's
 // clock; returns `remaining` and the console presses again.
-async function syncLeadsToAsana({ pct, limit = LEADS_BATCH } = {}) {
+async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH } = {}) {
   const proj = await ensureLeadsProject();
-  const data = await salesLeadsData({ pct });
+  const data = await salesLeadsData({ pct, minVotes });
   const ledger = new Map((await db.all('SELECT * FROM asana_leads', [])).map(r => [r.artist_key, r]));
   const out = { ok: true, project: proj.gid, url: proj.url, fieldsError: proj.fieldsError,
-    created: 0, updated: 0, skipped: 0, remaining: 0, failed: [], leads: data.leads.length, cut: data.cut, total: data.total, pct: data.pct };
+    created: 0, updated: 0, skipped: 0, remaining: 0, failed: [], leads: data.leads.length, cut: data.cut, total: data.total, pct: data.pct, minVotes: data.minVotes, excluded: data.excluded };
   let budget = limit;
   const fieldsFor = (l) => {
     const cf = {};
@@ -9002,11 +9011,11 @@ async function handleApi(req, res, url) {
   // Preview: the ranked list the sync would write, with each artist's sync state.
   if (p === '/api/admin/leads' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
-    const data = await salesLeadsData({ pct: url.searchParams.get('pct') });
+    const data = await salesLeadsData({ pct: url.searchParams.get('pct'), minVotes: url.searchParams.get('minVotes') });
     const ledger = new Map((await db.all('SELECT * FROM asana_leads', [])).map(r => [r.artist_key, r]));
     const project = (await db.get("SELECT v FROM settings WHERE k = 'asana_leads_project'"))?.v || null;
     return send(res, 200, {
-      pct: data.pct, cut: data.cut, total: data.total,
+      pct: data.pct, minVotes: data.minVotes, excluded: data.excluded, cut: data.cut, total: data.total,
       leads: data.leads.map(l => {
         const row = ledger.get(l.artistKey);
         return { rank: l.rank, id: l.id, artist: l.artist, title: l.title, score: l.score, votes: l.votes,
@@ -9026,9 +9035,9 @@ async function handleApi(req, res, url) {
   if (p === '/api/admin/leads/asana' && method === 'POST') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     if (!process.env.ASANA_TOKEN) return bad(res, 'Asana not configured (set ASANA_TOKEN)', 409);
-    const { pct } = await readBody(req);
+    const { pct, minVotes } = await readBody(req);
     try {
-      return send(res, 200, await syncLeadsToAsana({ pct }));
+      return send(res, 200, await syncLeadsToAsana({ pct, minVotes }));
     } catch (e) {
       console.error('[asana-leads] sync failed:', e.message);
       return bad(res, 'Asana sync failed: ' + e.message, 502);

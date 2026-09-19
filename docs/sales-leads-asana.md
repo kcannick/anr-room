@@ -8,8 +8,11 @@ to sell Mimberships and performances. Platform panel → **Sales leads → Asana
 1. Takes **every ratified rating round** the platform has scored — live shows and daily drops
    alike. Reference tracks and Versus rounds are out. A record pushed twice counts once, at its
    best showing.
-2. Ranks them on room average (ties: more A&Rs, then the earlier day) and keeps the **top N %**
-   (default 30; the dial is on the card).
+2. Drops every record under the **minimum A&Rs** floor (default 3; 0 turns it off). The floor
+   excludes a record, it never reweights one — an 8.0 from a single A&R is not a lead, and the
+   score printed is always the room's real average. Then ranks what is left on room average
+   (ties: more A&Rs, then the earlier day) and keeps the **top N %** (default 30). Both dials
+   are on the card.
 3. Collapses the kept records to **artists** — one artist = one email address; without an email,
    one Instagram handle; without either, the artist name. An artist with two records in the cut
    gets **one task, on the higher score**, with the others listed in the notes.
@@ -41,5 +44,5 @@ own until the list is done.
 - `ASANA_TOKEN` in Vercel (same token as the post kit — see `post-show-setup.md` §3).
 - Platform-admin role: the list spans every room and carries artist email and phone.
 
-Endpoints: `GET /api/admin/leads?pct=30` (preview + sync state), `POST /api/admin/leads/asana`
-`{pct}`. Settings keys: `asana_leads_project`, `asana_workspace`, `asana_leads_fields`.
+Endpoints: `GET /api/admin/leads?pct=30&minVotes=3` (preview + sync state),
+`POST /api/admin/leads/asana` `{pct, minVotes}`. Settings keys: `asana_leads_project`, `asana_workspace`, `asana_leads_fields`.

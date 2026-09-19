@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,606 passed as of 2026-09-19; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,611 passed as of 2026-09-19; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -675,7 +675,9 @@ live on anr.makinitmag.com.
   on room average, then **collapsed to one task per ARTIST** on their highest record (identity:
   email → Instagram → name). The cut is on RECORDS, then artists — an artist whose best sits
   below the cut is not a lead. `pct` is the operator's dial (default 30), never hardcoded past
-  `salesLeadsData`. Writes to Asana highest first: project **"A&R Sales Leads"** created on
+  `salesLeadsData`. **A min-A&Rs floor (`minVotes`, default 3, 0 = off) is applied BEFORE the
+  cut and EXCLUDES rather than reweights** — the charts' rule; the operator's first prod run
+  had an 8.0 from one A&R at #1 (2026-09-19). Both dials are on the card. Writes to Asana highest first: project **"A&R Sales Leads"** created on
   the first press and remembered (`asana_leads_project`; an existing project id can be pasted
   in System settings), custom fields **Date played** (date) + **Average score** (number, 1dp)
   created in the workspace if missing and attached to the project. **Custom fields are a paid

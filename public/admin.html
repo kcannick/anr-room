@@ -1073,6 +1073,7 @@
       <p class="muted" style="font-size:12px;margin:0 0 10px">The top of everything the platform has rated, one Asana task per artist, in a project with <b>Date played</b> and <b>Average score</b> fields. An artist with more than one record in the cut gets one task, on their highest score. Press again any time: new artists are added and a task is updated when its artist scores higher. Tasks are never removed.</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;display:flex;align-items:center;gap:6px">Top <input id="leadsPct" type="number" min="1" max="100" value="30" style="width:64px;display:inline-block"> % of records</label>
+        <label style="margin:0;display:flex;align-items:center;gap:6px">with at least <input id="leadsMinVotes" type="number" min="0" max="100000" value="3" style="width:64px;display:inline-block"> A&amp;Rs</label>
         <button class="btn ghost sm" id="leadsPreview">Preview</button>
         <button class="btn sm" id="leadsSync">Create Asana tasks</button>
       </div>
@@ -3277,15 +3278,17 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
 });
 // ===== Sales leads → Asana (040) =====
 const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));
+// 0 is a real answer (floor off), so not `||`.
+const leadsMinVotes=()=>{const v=parseInt($('#leadsMinVotes').value,10);return Math.max(0,Number.isFinite(v)?v:3);};
 const leadsMoney=c=>c==null?'—':c===0?'Free':'$'+(c/100).toFixed(0);
 async function leadsLoad(){
   const box=$('#leadsList'),st=$('#leadsStatus'); if(!box)return;
   box.innerHTML='<div class="empty">Loading…</div>';
   try{
-    const d=await api('/api/admin/leads?pct='+leadsPct(),null,'GET');
+    const d=await api('/api/admin/leads?pct='+leadsPct()+'&minVotes='+leadsMinVotes(),null,'GET');
     const synced=d.leads.filter(l=>l.synced).length, stale=d.leads.filter(l=>l.synced&&!l.synced.current).length;
     st.innerHTML=(d.hasToken?'':'ASANA_TOKEN is not set — the button is off. ')
-      +d.leads.length+' artist'+(d.leads.length===1?'':'s')+' in the top '+d.pct+'% ('+d.cut+' of '+d.total+' records)'
+      +d.leads.length+' artist'+(d.leads.length===1?'':'s')+' in the top '+d.pct+'% ('+d.cut+' of '+d.total+' records'+(d.excluded?'; '+d.excluded+' under the '+d.minVotes+'-A&amp;R floor left out':'')+')'
       +(synced?' · '+synced+' already in Asana'+(stale?', '+stale+' to update':''):'')
       +(d.projectUrl?' · <a href="'+d.projectUrl+'" target="_blank" rel="noopener" style="color:var(--signal)">open the project</a>':'');
     $('#leadsSync').disabled=!d.hasToken;
@@ -3298,6 +3301,7 @@ async function leadsLoad(){
   }catch(e){box.innerHTML='';st.textContent=e.message;}
 }
 $('#leadsPreview')&&($('#leadsPreview').onclick=leadsLoad);
+['#leadsPct','#leadsMinVotes'].forEach(sel=>{const el=$(sel);el&&(el.onchange=leadsLoad);});
 $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
   const btn=$('#leadsSync'),st=$('#leadsStatus'),old=btn.textContent;
   btn.disabled=true;
@@ -3305,7 +3309,7 @@ $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
   try{
     for(let i=0;i<50;i++){
       btn.textContent='Writing… ('+(created+updated)+')';
-      const d=await api('/api/admin/leads/asana',{pct:leadsPct()});
+      const d=await api('/api/admin/leads/asana',{pct:leadsPct(),minVotes:leadsMinVotes()});
       created+=d.created;updated+=d.updated;failed=failed.concat(d.failed||[]);url=d.url;fieldsError=d.fieldsError||null;
       if(!d.remaining)break;
     }
