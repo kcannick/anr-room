@@ -2532,6 +2532,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
     'yesterday' in fdHome && 'teamCount' in fdHome && 'tryIt' in fdHome, JSON.stringify(Object.keys(fdHome)));
   ok('and it never carries a viewer-specific field',
     !('me' in fdHome) && !('myVote' in fdHome) && !('progress' in fdHome), JSON.stringify(Object.keys(fdHome)));
+  // The daily clock rides the payload as labels (open / close / results) so the landing copy
+  // follows the platform-panel schedule instead of hardcoding "noon" (it moved to 3PM on
+  // 2026-09-20 and the page had five hardcoded noons).
+  const fdSched = fdHome.schedule || {};
+  const clockRe = /^\d{1,2}:\d{2} [AP]M ET$/;
+  ok('the front door carries the daily schedule as ET clock labels',
+    clockRe.test(fdSched.opensLabel) && clockRe.test(fdSched.closesLabel) && clockRe.test(fdSched.resultsLabel), JSON.stringify(fdSched));
   const fdJson = JSON.stringify(fdHome);
   ok('the most public surface there is leaks no email', !/@/.test(fdJson.replace(/makinitmag\.com|@Makinit4indies/g, '')), fdJson.slice(0, 200));
 

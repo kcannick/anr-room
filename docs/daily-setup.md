@@ -1,12 +1,15 @@
 # Setup guide — A&R Daily
 
 A&R Daily runs on a clock, not on a button. Every day a set of records (4 to 16 — four drawn
-at random from the free pool plus up to twelve paid) opens at **12:00 PM ET**, closes at
-**12:00 PM ET** the next day, tallies, and publishes results at **3:00 PM ET** — the next
-day's records open at noon, and the operator streams the reveal between the close and the
-publish. (All of these are settings on the platform panel;
-those are the defaults.) That coincidence is deliberate: the results email *is*
-the "come back and play" email.
+at random from the free pool plus up to twelve paid) opens at **3:00 PM ET**, closes at
+**3:00 PM ET** the next day (the moment the next set opens), tallies, the operator streams
+the reveal at 5:00 PM, and results publish at **6:00 PM ET** with the artist reports an hour
+later. All of these are settings on the platform panel (System settings → A&R Daily
+schedule); the code's built-in defaults are still the older noon / noon / 3:00 PM clock, so
+"reset to defaults" puts that back. The schedule moved to the afternoon on 2026-09-20 so the
+deadline day carries a full working afternoon to review and the results go live in the
+evening. The landing page and the daily page read the schedule off the API, so a time change
+needs no copy edit.
 
 Nothing about that happens unless the pieces below are in place. This guide is the checklist.
 

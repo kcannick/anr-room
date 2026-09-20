@@ -268,7 +268,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
         <div class="mono" style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.1em">01</div>
         <div style="font-weight:800;font-size:17px;letter-spacing:-.02em;margin-top:9px">Listen</div>
         <p class="dim" style="margin:7px 0 0;font-size:14px;line-height:1.5;text-wrap:pretty">A handful of records
-          land every day at noon. Real submissions from independent artists, most of them unreleased.</p>
+          land every day at <span class="schedOpen">3:00 PM ET</span>. Real submissions from independent artists, most of them unreleased.</p>
       </div>
       <div class="panel">
         <div class="mono" style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.1em">02</div>
@@ -294,7 +294,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
         </div>
         <div style="font-weight:900;font-size:26px;letter-spacing:-.035em;margin-top:11px;text-wrap:pretty" id="openHead"></div>
         <p class="dim" style="margin:9px 0 0;font-size:14.5px;line-height:1.5;text-wrap:pretty" id="openSub">
-          A new set drops every day at noon. Rate them on your own time — at work, on the train,
+          A new set drops every day at <span class="schedOpen">3:00 PM ET</span>. Rate them on your own time — at work, on the train,
           at 2 in the morning.</p>
       </div>
       <div class="count-box">
@@ -312,7 +312,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       </div>
       <div class="board" id="proofBoard"></div>
       <p class="dim" style="margin:12px 2px 0;font-size:13px;line-height:1.55">
-        <b style="color:var(--ink);font-weight:700">Everyone starts over at noon.</b>
+        <b style="color:var(--ink);font-weight:700">Everyone starts over at <span class="schedOpen">3:00 PM ET</span>.</b>
         Daily points stack across <span id="proofSeries">the series</span> toward the
         <b class="mono" style="color:var(--gold);font-weight:700">$500</b>.</p>
     </div>
@@ -504,6 +504,11 @@ function renderJoiners(d){
   }).join('');
 }
 
+// The daily clock comes from /api/home (`schedule`), which reads the platform-panel setting.
+// The fallbacks are the schedule as of 2026-09-20 and only show if the payload is missing.
+function schedOpen(d){ return (d && d.schedule && d.schedule.opensLabel) || '3:00 PM ET'; }
+function schedResults(d){ return (d && d.schedule && d.schedule.resultsLabel) || '6:00 PM ET'; }
+
 function renderOpenNow(d){
   const n = d.daily && d.daily.songs;
   if(n){
@@ -511,10 +516,12 @@ function renderOpenNow(d){
     // NEVER a fixed number. The day is 4-16 and the copy follows whatever it actually is.
     $('#openHead').innerHTML = '<span class="mono">' + n + '</span> record' + (n === 1 ? '' : 's') + ' are waiting.';
   }else{
-    // No drop open (the 9AM-to-noon gap, or nothing staged). Say when, not "nothing".
+    // No drop open (the gap between close and open, or nothing staged). Say when, not "nothing".
     $('#openLabel').textContent = 'Next drop';
-    $('#openHead').textContent = 'The next set lands at noon.';
+    $('#openHead').textContent = 'The next set lands at ' + schedOpen(d) + '.';
   }
+  // Every "at <time>" in the static copy follows the platform-panel schedule.
+  document.querySelectorAll('.schedOpen').forEach(el => { el.textContent = schedOpen(d); });
   $('#teamCount').textContent = d.teamCount ? Number(d.teamCount).toLocaleString('en-US') : '—';
 }
 
@@ -568,12 +575,12 @@ function showMember(d, me){
     $('#mCta').href = '/daily?s=' + encodeURIComponent(day.id);
     $('#mCta').classList.remove('hide');
   }else{
-    // The 9AM-to-noon gap, or nothing staged. Never a dead end: say when, and give them
-    // somewhere to go in the meantime.
+    // The gap between close and open, or nothing staged. Never a dead end: say when, and give
+    // them somewhere to go in the meantime.
     $('#mDay').textContent = 'A&R Daily';
     $('#mCount').textContent = '—';
-    $('#mCountWord').innerHTML = 'Next drop<br>at noon.';
-    $('#mSub').textContent = "Yesterday's results and today's records land together at noon ET.";
+    $('#mCountWord').innerHTML = 'Next drop<br>at ' + schedOpen(d) + '.';
+    $('#mSub').textContent = "Today's records land at " + schedOpen(d) + '. Yesterday\u2019s results publish at ' + schedResults(d) + '.';
     $('#mCta').classList.add('hide');
   }
 }

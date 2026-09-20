@@ -7927,7 +7927,12 @@ async function handleApi(req, res, url) {
     // Everything here is anonymous and cacheable — no per-viewer field on the one endpoint
     // worth putting behind a CDN, which would be a PII/seal leak waiting to happen.
     // "13 records left" is a client-side patch using the viewer's own session token.
-    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, houseSubmitUrl });
+    // The daily clock, as labels, so the landing copy never hardcodes a time of day: the
+    // schedule is a platform-panel setting (it moved from noon to 3PM on 2026-09-20) and the
+    // page must follow it without an edit. Today's window under the CURRENT setting.
+    const schedW = dropWindowFor(etDay(), await dailySchedule());
+    const schedule = { opensLabel: etClockLabel(schedW.opensAt), closesLabel: etClockLabel(schedW.closesAt), resultsLabel: etClockLabel(schedW.resultsAt) };
+    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, houseSubmitUrl, schedule });
   }
 
 
