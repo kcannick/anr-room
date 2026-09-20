@@ -2923,6 +2923,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the link reads the owner\'s own referral page', rlPage.status === 200 && rlPage.d.me.uid === rlUid, rlPage.status + ' ' + JSON.stringify(rlPage.d.me));
   const rlCard = await fetch(base + '/api/card/refer?kind=join&rt=' + encodeURIComponent(rlTok));
   ok('and their graphics', rlCard.status === 200 && rlCard.headers.get('content-type') === 'image/png', String(rlCard.status));
+  // Every referral graphic renders at ITS size (a duplicate sizeOf() once dropped these and
+  // the 1920-tall story came out cut off at 1440 — 2026-09-20). PNG dimensions live in the
+  // IHDR chunk: width at byte 16, height at byte 20, big-endian.
+  const pngSize = (buf) => [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+  const sc = require('./share-cards');
+  for (const [kind, type] of [['card', 'referCard'], ['story', 'referStory'], ['join', 'referJoin'], ['submit', 'referSubmit']]) {
+    const r = await fetch(base + '/api/card/refer?kind=' + kind + '&rt=' + encodeURIComponent(rlTok));
+    const dims = pngSize(Buffer.from(await r.arrayBuffer()));
+    ok(`the ${kind} graphic is ${sc.REFER_SIZES[type].join('×')}`, dims[0] === sc.REFER_SIZES[type][0] && dims[1] === sc.REFER_SIZES[type][1], dims.join('×'));
+  }
+  ok('the story is taller than the feed card', sc.REFER_SIZES.referStory[1] === 1920 && sc.REFER_SIZES.referCard[1] === 1350);
   ok('a tampered link is refused', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': rlTok.slice(0, -2) + 'xx' })).status === 401);
   ok('a manage link (np1) is not a refer link', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': tsrv._mintNotifyLink(rlUid) })).status === 401);
   ok('the link cannot reach the profile or prefs handlers', (await call('/api/me/notify-prefs', null, 'GET', { 'X-Refer-Link': rlTok })).status !== 200);
