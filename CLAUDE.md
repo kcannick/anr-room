@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,616 passed as of 2026-09-19; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,621 passed as of 2026-09-19; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -672,8 +672,11 @@ live on anr.makinitmag.com.
 - **Sales leads → Asana** (040, 2026-09-19, on main): the platform as a lead source for Mimberships and
   performances. Platform panel card: the **top N% of every ratified rating record** (live +
   daily; reference tracks and Versus out; a re-pushed record counted once at its best), ranked
-  on room average, then **collapsed to one task per ARTIST** on their highest record (identity:
-  email → Instagram → name). The cut is on RECORDS, then artists — an artist whose best sits
+  on room average, then **collapsed to one task per ARTIST** on their highest record. **Identity is
+  transitive** (`leadGroups`, union-find over email / Instagram / name — the first prod run
+  made a duplicate when one submission had an email and the next only the name); the ledger
+  is looked up by ANY of the group's keys and an extra task the feature made is deleted on
+  the next sync (`merged`). The cut is on RECORDS, then artists — an artist whose best sits
   below the cut is not a lead. `pct` is the operator's dial (default 30), never hardcoded past
   `salesLeadsData`. **A min-A&Rs floor (`minVotes`, default 3, 0 = off) is applied BEFORE the
   cut and EXCLUDES rather than reweights** — the charts' rule; the operator's first prod run

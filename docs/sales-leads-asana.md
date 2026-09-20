@@ -13,8 +13,9 @@ to sell Mimberships and performances. Platform panel → **Sales leads → Asana
    score printed is always the room's real average. Then ranks what is left on room average
    (ties: more A&Rs, then the earlier day) and keeps the **top N %** (default 30). Both dials
    are on the card.
-3. Collapses the kept records to **artists** — one artist = one email address; without an email,
-   one Instagram handle; without either, the artist name. An artist with two records in the cut
+3. Collapses the kept records to **artists**. Records that share an email address, an Instagram
+   handle, or an artist name are the same artist, transitively: a submission with an email and a
+   later one from the same name without it are one lead. An artist with two records in the cut
    gets **one task, on the higher score**, with the others listed in the notes.
 4. Writes them to Asana, highest score first:
    - **Project:** `A&R Sales Leads`, created on the first press and remembered. To use a project
@@ -34,6 +35,8 @@ The sync is **re-runnable**. A ledger (`asana_leads`) remembers which artist has
 - an artist whose best record changed (a higher score, a new day) → their task is **updated**;
 - everything else is skipped — no duplicates, no Asana calls;
 - a task you deleted in Asana is recreated on the next press;
+- two tasks for one artist (created before their identifiers were linked) → the extra one is
+  removed and the count says "N duplicates removed";
 - an artist who drops out of the top set **keeps their task** — you may be mid-conversation.
 
 Each press writes at most 12 tasks (one bounded request, inside Vercel's 30-second cap); the console presses again on its

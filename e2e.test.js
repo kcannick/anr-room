@@ -4592,6 +4592,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
         return reply(200, { data: {} });
       }
       if (req.method === 'POST' && u.pathname === '/tasks') { const g = gid(); asanaState.tasks[g] = { gid: g, ...data }; return reply(201, { data: { gid: g, permalink_url: 'https://app.asana.com/0/0/' + g } }); }
+      if (req.method === 'DELETE' && (m = /^\/tasks\/(\d+)$/.exec(u.pathname))) {
+        if (!asanaState.tasks[m[1]]) return reply(404, { errors: [{ message: 'Not Found' }] });
+        delete asanaState.tasks[m[1]]; return reply(200, { data: {} });
+      }
       if (req.method === 'PUT' && (m = /^\/tasks\/(\d+)$/.exec(u.pathname))) {
         if (!asanaState.tasks[m[1]]) return reply(404, { errors: [{ message: 'Not Found' }] });
         Object.assign(asanaState.tasks[m[1]], data); return reply(200, { data: asanaState.tasks[m[1]] });
@@ -4683,6 +4687,35 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const sync4 = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads: a plan without custom fields still syncs and says why the columns are missing',
     sync4.status === 200 && /premium/i.test(sync4.d.fieldsError || ''), JSON.stringify(sync4.d));
+  // Identity is transitive: a record with an email, one with the same name and an IG, and one
+  // with only that IG are ONE artist. Two names that share nothing stay apart.
+  const ldG = ldSrv._leadGroups([
+    { artist_email: 'A@x.com', song_artist: 'Nova' },
+    { song_artist: 'nova', artist_instagram: '@novamusic' },
+    { artist_instagram: 'NovaMusic', song_artist: 'N.O.V.A. (feat. Q)' },
+    { song_artist: 'Other Act' },
+    { song_title: 'Untitled 3' },
+  ]);
+  ok('leads: identifiers merge transitively (email ↔ name ↔ IG)', ldG[0].join() === ldG[1].join() && ldG[0].includes('e:a@x.com') && ldG[0].includes('i:novamusic') && ldG[0][0] === 'e:a@x.com', JSON.stringify(ldG));
+  ok('leads: the third record joins through the handle alone', ldG[2].join() === ldG[0].join());
+  ok('leads: unrelated records stay separate', ldG[3].join() !== ldG[0].join() && ldG[4][0] === 't:untitled 3', JSON.stringify(ldG.slice(3)));
+  // A duplicate task from before the identities merged is removed on the next sync: seed a
+  // second ledger row under a key the first lead also carries.
+  const ldFirst = ldAll.d.leads.find(l => (l.email ? 1 : 0) + (l.ig ? 1 : 0) + (l.artist ? 1 : 0) >= 2) || ldAll.d.leads[0];
+  const ldFirstKeys = ldSrv._leadGroups([{ artist_email: ldFirst.email, artist_instagram: ldFirst.ig, song_artist: ldFirst.artist, song_title: ldFirst.title }])[0];
+  const ldDupGid = String(asanaState.nextGid++); asanaState.tasks[ldDupGid] = { gid: ldDupGid, name: 'dup' };
+  const ldPrimaryKey = (await anDb.get('SELECT artist_key FROM asana_leads WHERE round_id = ?', [ldFirst.id])).artist_key;
+  const ldDupKey = ldFirstKeys.find(k => k !== ldPrimaryKey);
+  if (ldDupKey) {
+    await anDb.run('INSERT INTO asana_leads (artist_key, task_gid, round_id, score, played_day, synced_at) VALUES (?,?,?,?,?,?)', [ldDupKey, ldDupGid, 'old', 1, '2026-01-01', Date.now()]);
+    process.env.ASANA_TOKEN = 'test-asana-pat';
+    const ldMerge = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
+    ok('leads: a duplicate task for a merged artist is removed and the ledger row dropped',
+      ldMerge.d.merged === 1 && !asanaState.tasks[ldDupGid] && !(await anDb.get('SELECT 1 AS x FROM asana_leads WHERE artist_key = ?', [ldDupKey])), JSON.stringify({ m: ldMerge.d.merged, keys: ldFirstKeys, dupKey: ldDupKey }));
+    ok('leads: the artist still has exactly one task', asanaCalls.filter(c => c.method === 'DELETE').length === 1);
+  } else {
+    ok('leads: (merge case skipped — the top lead carries a single identifier)', true);
+  }
   process.env.ASANA_TOKEN = 'test-asana-pat';
   const ldCheck = await call('/api/admin/leads/check?pct=100&minVotes=0', null, 'GET', ADMINH);
   ok('leads/check: runs every step and times it', ldCheck.status === 200 && ldCheck.d.steps.length >= 5 && ldCheck.d.steps.every(s => typeof s.ms === 'number'), JSON.stringify(ldCheck.d).slice(0, 300));

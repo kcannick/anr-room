@@ -3279,7 +3279,7 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=false;
 });
 // ===== Sales leads → Asana (040) =====
-const LEADS_UI_BUILD='2026-09-19e';   // printed by Check Asana so a cached console is visible
+const LEADS_UI_BUILD='2026-09-19f';   // printed by Check Asana so a cached console is visible
 const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));
 // 0 is a real answer (floor off), so not `||`.
 const leadsMinVotes=()=>{const v=parseInt($('#leadsMinVotes').value,10);return Math.max(0,Number.isFinite(v)?v:3);};
@@ -3299,7 +3299,7 @@ async function leadsLoad(){
     const rows=d.leads.map(l=>'<tr><td class="num">'+l.rank+'</td><td><b>'+esc(l.artist||'—')+'</b><br><span class="muted">'+esc(l.title)+(l.others?' <span class="muted">+'+l.others+' more</span>':'')+'</span></td>'
       +'<td class="num">'+(+l.score).toFixed(1)+'</td><td class="num">'+l.votes+'</td><td>'+esc(l.dayLabel)+'</td><td>'+leadsMoney(l.support_cents)+'</td>'
       +'<td>'+(l.email?'✉ ':'')+(l.phone?'☎ ':'')+(l.ig?'@'+esc(l.ig):'')+'</td>'
-      +'<td>'+(l.synced?(l.synced.current?'<a href="https://app.asana.com/0/0/'+l.synced.taskId+'" target="_blank" rel="noopener" style="color:var(--signal)">in Asana ✓</a>':'<span style="color:var(--accent)">update</span>'):'<span class="muted">new</span>')+'</td></tr>').join('');
+      +'<td>'+(l.synced?(l.synced.current?'<a href="https://app.asana.com/0/0/'+l.synced.taskId+'" target="_blank" rel="noopener" style="color:var(--signal)">in Asana ✓</a>':'<span style="color:var(--accent)">update</span>')+(l.synced.duplicates?' <span style="color:var(--accent)">+'+l.synced.duplicates+' duplicate</span>':''):'<span class="muted">new</span>')+'</td></tr>').join('');
     box.innerHTML='<table class="dltable"><tr><th class="num">#</th><th style="width:34%">Artist · record</th><th class="num">Score</th><th class="num">A&amp;Rs</th><th>Played</th><th>Support</th><th>Contact</th><th>Asana</th></tr>'+rows+'</table>';
   }catch(e){box.innerHTML='';st.textContent=e.message;}
 }
@@ -3316,7 +3316,7 @@ $('#leadsCheck')&&($('#leadsCheck').onclick=async()=>{
 $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
   const btn=$('#leadsSync'),st=$('#leadsStatus'),old=btn.textContent;
   btn.disabled=true;
-  let created=0,updated=0,failed=[],url=null,fieldsError=null;
+  let created=0,updated=0,merged=0,failed=[],url=null,fieldsError=null;
   try{
     for(let i=0;i<50;i++){
       btn.textContent='Writing… ('+(created+updated)+')';
@@ -3330,18 +3330,18 @@ $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
       if(d.trace)$('#leadsCheckOut').classList.remove('hide'),$('#leadsCheckOut').textContent='console build '+LEADS_UI_BUILD+' · last press:\n'+d.trace.join('\n');
       if(!r.ok) throw new Error(d.error||('Server error '+r.status));
       if(d.timedOut) throw new Error('The press ran out of time before finishing — see the trace below; press again to continue.');
-      created+=d.created;updated+=d.updated;failed=failed.concat(d.failed||[]);url=d.url;fieldsError=d.fieldsError||null;
+      created+=d.created;updated+=d.updated;merged+=(d.merged||0);failed=failed.concat(d.failed||[]);url=d.url;fieldsError=d.fieldsError||null;
       if(!d.remaining)break;
       // No progress this press (every write failed) — pressing again would fail the same way.
-      if(!d.created&&!d.updated){failed.push({error:'stopped: nothing could be written this press — '+(d.failed&&d.failed[0]?d.failed[0].error:'see the trace')});break;}
+      if(!d.created&&!d.updated&&!d.merged){failed.push({error:'stopped: nothing could be written this press — '+(d.failed&&d.failed[0]?d.failed[0].error:'see the trace')});break;}
     }
-    st.innerHTML='✅ '+created+' task'+(created===1?'':'s')+' created, '+updated+' updated'
+    st.innerHTML='✅ '+created+' task'+(created===1?'':'s')+' created, '+updated+' updated'+(merged?', '+merged+' duplicate'+(merged===1?'':'s')+' removed':'')
       +(failed.length?', <b>'+failed.length+' failed</b> ('+esc(failed[0].error)+')':'')
       +(fieldsError?'. <b>Custom fields could not be added</b> ('+esc(fieldsError)+') — the score is in each task name and the date in its notes.':'')
       +(url?' — <a href="'+url+'" target="_blank" rel="noopener" style="color:var(--signal)">open in Asana</a>':'');
   }catch(e){st.textContent=e.message;}
   btn.textContent=old;btn.disabled=false;
-  if(created||updated){const keep=st.innerHTML;await leadsLoad();st.innerHTML=keep;}
+  if(created||updated||merged){const keep=st.innerHTML;await leadsLoad();st.innerHTML=keep;}
 });
 $('#btnPlatform')&&($('#btnPlatform').onclick=openPlatform);
 $('#btnPlatformBack')&&($('#btnPlatformBack').onclick=()=>showScreen('picker'));

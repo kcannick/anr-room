@@ -4157,13 +4157,35 @@ const LEADS_FIELDS = [
 const LEADS_BATCH = 12;   // tasks written per press — Vercel caps a request at 30s (vercel.json), the UI loops
 const LEADS_BUDGET_MS = 16000;   // and a press stops WRITING at 16s regardless — Asana can take a second a call
 
-const leadArtistKey = (r) => {
+// Every identifier a record carries for its artist, strongest first. Records that share ANY
+// one of them are the same artist (transitively): a submission with an email and a later one
+// from the same name without it must not become two tasks — the first production run's
+// duplicate (2026-09-19). Two different artists with the exact same stage name would merge;
+// on a sales list, where the task lists every record anyway, that is the cheaper mistake.
+const leadIdKeys = (r) => {
+  const keys = [];
   const em = (r.artist_email || '').trim().toLowerCase();
-  if (em) return 'e:' + em;
-  const ig = igClean(r.artist_instagram);
-  if (ig) return 'i:' + ig.toLowerCase();
-  return 'n:' + (chartKey(r.song_artist) || chartKey(r.song_title));
+  if (em) keys.push('e:' + em);
+  // Same handle resolution as the row itself: the column, else the legacy note parse.
+  const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+  const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
+  if (ig) keys.push('i:' + ig.toLowerCase());
+  const nm = chartKey(r.song_artist);
+  if (nm) keys.push('n:' + nm);
+  if (!keys.length) keys.push('t:' + chartKey(r.song_title));   // nothing at all: the record is its own artist
+  return keys;
 };
+// Union-find over the records' identifiers → each record gets its group's key list (sorted so
+// the canonical key, keys[0], is stable: e: before i: before n:). Pure; unit-tested.
+function leadGroups(rows) {
+  const parent = new Map();
+  const find = (k) => { while (parent.get(k) !== k) { parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; };
+  const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent.set(a, b); };
+  const keysOf = rows.map(r => { const ks = leadIdKeys(r); ks.forEach(k => { if (!parent.has(k)) parent.set(k, k); }); ks.slice(1).forEach(k => union(ks[0], k)); return ks; });
+  const members = new Map();
+  for (const k of parent.keys()) { const root = find(k); if (!members.has(root)) members.set(root, new Set()); members.get(root).add(k); }
+  return keysOf.map(ks => [...members.get(find(ks[0]))].sort());
+}
 
 // Every scorable record on the platform with the fields a lead needs, ranked. Read-only and
 // admin-triggered: this is a full scan of rounds, which is fine for a button and would not be
@@ -4193,9 +4215,9 @@ async function salesLeadsData(opts = {}) {
       email: (r.artist_email || '').trim() || null, phone: (r.artist_phone || '').trim() || null,
       play_url: r.play_url || null, support_cents: supportCentsOf(r),
       score: Number(r.room_average), votes: Number(r.votes) || 0,
-      artistKey: leadArtistKey(r),
     };
   });
+  leadGroups(rows).forEach((keys, i) => { all[i].keys = keys; all[i].artistKey = keys[0]; });
   const rank = (a, b) => b.score - a.score || b.votes - a.votes
     || (a.day < b.day ? -1 : a.day > b.day ? 1 : 0) || a.idx - b.idx;
   all.sort(rank);
@@ -4328,6 +4350,11 @@ async function ensureLeadsFields(project, workspace, set) {
   return { gid: project.gid, url: project.permalink_url || `https://app.asana.com/0/${project.gid}/list`, fields, fieldsError };
 }
 
+// The ledger row for a lead: any of its identifiers may have been the key an earlier sync
+// wrote under (identities merge over time). Returns [primary, ...extras]; extras are duplicate
+// tasks this feature created before the identities merged.
+const leadLedgerRows = (ledger, lead) => lead.keys.map(k => ledger.get(k)).filter(Boolean);
+
 // Write the leads into the project: a task per artist new to the list, an update for an
 // artist whose best record changed. Bounded per call so one press never runs into Vercel's
 // clock; returns `remaining` and the console presses again.
@@ -4346,7 +4373,7 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs =
   const ledger = new Map((await db.all('SELECT * FROM asana_leads', [])).map(r => [r.artist_key, r]));
   mark('ledger read ' + ledger.size);
   const out = { ok: true, project: proj.gid, url: proj.url, fieldsError: proj.fieldsError,
-    created: 0, updated: 0, skipped: 0, remaining: 0, failed: [], leads: data.leads.length, cut: data.cut, total: data.total, pct: data.pct, minVotes: data.minVotes, excluded: data.excluded };
+    created: 0, updated: 0, skipped: 0, merged: 0, remaining: 0, failed: [], leads: data.leads.length, cut: data.cut, total: data.total, pct: data.pct, minVotes: data.minVotes, excluded: data.excluded };
   let budget = limit;
   const fieldsFor = (l) => {
     const cf = {};
@@ -4358,7 +4385,16 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs =
     return Object.keys(cf).length ? cf : undefined;
   };
   for (const l of data.leads) {
-    const row = ledger.get(l.artistKey);
+    const [row, ...extras] = leadLedgerRows(ledger, l);
+    // Two tasks for one (now merged) artist: keep the first, remove the duplicates WE made.
+    // The ledger row goes even when Asana already lost the task, or it would be recreated.
+    for (const x of extras) {
+      if (Date.now() > deadline) break;
+      try { await asanaFetch(`/tasks/${x.task_gid}`, { method: 'DELETE' }); } catch (e) { if (!/Asana 404/.test(e.message)) { mark('merge FAILED ' + e.message); continue; } }
+      await db.run('DELETE FROM asana_leads WHERE artist_key = ?', [x.artist_key]);
+      ledger.delete(x.artist_key);
+      out.merged++; mark('merged duplicate task ' + x.task_gid);
+    }
     const same = row && row.round_id === l.id && Number(row.score) === l.score && row.played_day === l.day;
     if (same) { out.skipped++; continue; }
     if (budget <= 0 || Date.now() > deadline) { out.remaining++; continue; }
@@ -4383,7 +4419,7 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs =
         `INSERT INTO asana_leads (artist_key, task_gid, round_id, score, played_day, synced_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (artist_key) DO UPDATE SET task_gid = excluded.task_gid, round_id = excluded.round_id,
            score = excluded.score, played_day = excluded.played_day, synced_at = excluded.synced_at`,
-        [l.artistKey, gid, l.id, l.score, l.day, now()]);
+        [row ? row.artist_key : l.artistKey, gid, l.id, l.score, l.day, now()]);
       mark('ledger #' + l.rank + ' ok');
     } catch (e) {
       mark('write #' + l.rank + ' FAILED ' + e.message);
@@ -9045,12 +9081,12 @@ async function handleApi(req, res, url) {
     return send(res, 200, {
       pct: data.pct, minVotes: data.minVotes, excluded: data.excluded, cut: data.cut, total: data.total,
       leads: data.leads.map(l => {
-        const row = ledger.get(l.artistKey);
+        const [row, ...extras] = leadLedgerRows(ledger, l);
         return { rank: l.rank, id: l.id, artist: l.artist, title: l.title, score: l.score, votes: l.votes,
           day: l.day, dayLabel: etDayLabel(l.day) || l.day, session: l.session,
           email: l.email, phone: l.phone, ig: l.ig, play_url: l.play_url, support_cents: l.support_cents,
           others: l.others.length,
-          synced: row ? { taskId: row.task_gid, at: Number(row.synced_at),
+          synced: row ? { taskId: row.task_gid, at: Number(row.synced_at), duplicates: extras.length,
             current: row.round_id === l.id && Number(row.score) === l.score && row.played_day === l.day } : null };
       }),
       hasToken: !!process.env.ASANA_TOKEN, project,
@@ -9517,6 +9553,7 @@ module.exports.ensureInit = ensureInit;
 // asserted directly against fixed timestamps rather than inferred from a live clock.
 module.exports._withinSmsWindow = withinSmsWindow;
 module.exports._syncLeadsToAsana = syncLeadsToAsana;
+module.exports._leadGroups = leadGroups;
 module.exports._etHour = etHour;
 // Pure template (no secrets) — exported so the artist-facing email can be rendered and
 // eyeballed without a live Blob token or a real send.
