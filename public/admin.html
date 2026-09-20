@@ -357,7 +357,7 @@
         </div>
         <div class="err" id="bErr"></div>
         <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0">
-          The day opens on its own at noon ET. Records can be added or removed right up until
+          The day opens on its own at the scheduled time (3:00 PM ET unless the platform panel says otherwise). Records can be added or removed right up until
           then — once it opens, adding one would un-finish every A&amp;R who already completed it.
         </p>
       </div>
@@ -2400,7 +2400,7 @@ function renderWeekly(){
     + stat('Support', t.support_cents ? dlMoney(t.support_cents) : '—',
         t.support_cents ? 'var(--gold)' : null);
   $('#wkNote').textContent = 'Wednesday through Tuesday, by the day each record dropped. '
-    + "Tuesday's drop publishes at 3PM Wednesday — before the show, after this week closes.";
+    + "Tuesday's drop publishes on Wednesday, before the show and after this week closes.";
 
   if(w.pending && w.pending.length){
     $('#wkPending').classList.remove('hide');
@@ -2520,7 +2520,7 @@ $('#btnWkCopyArs').onclick = () => {
 function renderBuild(){
   const b = (DL && DL.building) || null;
   const q = b ? b.rounds : [];
-  $('#bDayLbl').textContent = b ? ('· ' + (b.dayLabel || b.day) + ' · opens ' + (b.opensLabel || 'noon ET')) : '';
+  $('#bDayLbl').textContent = b ? ('· ' + (b.dayLabel || b.day) + ' · opens ' + (b.opensLabel || '3:00 PM ET')) : '';
   $('#bCount').textContent = b ? (q.length + ' of ' + b.max) : 'Nothing staged yet';
   $('#bCount').className = 'pill' + (b && q.length ? ' upcoming' : '');
   if(!b || !q.length){

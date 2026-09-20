@@ -3198,22 +3198,25 @@ function etWhenLabel(ts, fromDay) {
 // The daily schedule, as ET minutes-of-day. Defaults, not hardcodes: the drop builder takes
 // explicit overrides so a test can run a 60-second window instead of waiting for noon.
 // ===== A&R DAILY — the schedule, TUNABLE from the platform panel =====
-// Defaults (operator, 2026-09-15): records open at 12:00 PM ET, rating closes 12:00 PM ET the
-// next day (a 24-hour window), results publish at 3:00 PM ET — the operator runs a livestream
-// reveal between the close and the publish, off the console's post-tally scores — and the
+// Defaults (operator, 2026-09-20 — moved from noon/noon/3PM, the 2026-09-15 clock): records
+// open at 3:00 PM ET, rating closes 3:00 PM ET the next day (a 24-hour window), results
+// publish at 6:00 PM ET — the operator runs a livestream reveal at 5PM, between the close and
+// the publish, off the console's post-tally scores — and the
 // Daily Blast (A&R digest) goes at publish and the artist results emails an hour later
 // (artistDelayMin 60, operator's call 2026-09-15) — the hold is the comment-rejection
 // checkpoint 029 needs, and it is tunable.
 // Completion bonus: 100 for finishing every record within 6 hours of the open, 75 within 12,
 // 50 within 18, 25 any time before the close. The tiers are HOURS AFTER THE OPEN, not ET
-// clock times, so they follow the open when it moves.
+// clock times, so they follow the open when it moves (they did, on 2026-09-20: 9PM/3AM/9AM).
+// The afternoon clock is the operator's: a full working afternoon on the deadline day,
+// day-of urgency for the reminder, results live in the evening.
 //
 // Overrides live in `settings` (daily_open_min / daily_close_min / daily_results_min as ET
 // minutes-of-day, daily_bonus_tiers as JSON) and are read through dailySchedule(), cached
 // per instance for 30s. A closing time at or before the opening time means the NEXT day.
 // Results never publish before the close: results_at is clamped to closes_at.
 const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
-  openMin: 12 * 60, closeMin: 12 * 60, resultsMin: 15 * 60,
+  openMin: 15 * 60, closeMin: 15 * 60, resultsMin: 18 * 60,
   tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 12, points: 75 }, { hours: 18, points: 50 }]),
   finalPoints: 25,
   artistDelayMin: 60,  // minutes after publish before artist reports/texts queue
@@ -7927,7 +7930,12 @@ async function handleApi(req, res, url) {
     // Everything here is anonymous and cacheable — no per-viewer field on the one endpoint
     // worth putting behind a CDN, which would be a PII/seal leak waiting to happen.
     // "13 records left" is a client-side patch using the viewer's own session token.
-    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, houseSubmitUrl });
+    // The daily clock, as labels, so the landing copy never hardcodes a time of day: the
+    // schedule is a platform-panel setting (it moved from noon to 3PM on 2026-09-20) and the
+    // page must follow it without an edit. Today's window under the CURRENT setting.
+    const schedW = dropWindowFor(etDay(), await dailySchedule());
+    const schedule = { opensLabel: etClockLabel(schedW.opensAt), closesLabel: etClockLabel(schedW.closesAt), resultsLabel: etClockLabel(schedW.resultsAt) };
+    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, houseSubmitUrl, schedule });
   }
 
 
