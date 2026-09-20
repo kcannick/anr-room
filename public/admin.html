@@ -1099,7 +1099,12 @@
         <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer"><input type="checkbox" id="nbEmail" checked style="width:auto;margin:0"><span>Email <span class="muted" id="nbEmailCount">(…)</span></span></label>
         <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer"><input type="checkbox" id="nbSms" style="width:auto;margin:0"><span>SMS <span class="muted" id="nbSmsCount">(…)</span></span></label>
       </div>
-      <button class="btn ghost" id="nbSend" style="margin-top:12px;width:100%">Send announcement</button>
+      <p class="muted" id="nbSmsRead" style="font-size:11px;margin:8px 0 0"></p>
+      <div class="row" style="margin-top:12px;gap:8px">
+        <button class="btn ghost" id="nbTest" style="flex:1" title="Sends the selected channels to your own email / phone. Nothing goes to the list.">Send test to me</button>
+        <button class="btn ghost" id="nbSend" style="flex:2">Send announcement</button>
+      </div>
+      <div class="muted" id="nbTestStatus" style="font-size:12px;margin-top:8px"></div>
       <div class="muted" id="nbStatus" style="font-size:12px;margin-top:8px"></div>
       <div class="err" id="nbErr"></div>
     </div>
@@ -3219,6 +3224,42 @@ $('#plUpload')&&($('#plUpload').onclick=async()=>{
     el.value=el.value.slice(0,s)+t+el.value.slice(e); el.focus(); el.selectionStart=el.selectionEnd=s+t.length;
   });
 })();
+// What the SMS will cost as written, live: GSM-7 in one segment is the conservative default;
+// an emoji, an em dash or curly quotes (anything outside GSM-7) or more than 160 characters
+// sends it as MMS instead (sms.js decides; this mirrors the rule so the operator sees it
+// BEFORE pressing send). The footer ("Reply STOP... Manage: <link>") is added per recipient
+// and is not counted here, so a message near 160 is already an MMS by the time it goes.
+(function(){
+  const GSM=/^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&'()*+,\-./0-9:;<=>?¡A-ZÄÖÑÜ§¿a-zäöñüà\f^{}\\\[~\]|€]*$/;
+  const read=()=>{
+    const el=$('#nbSmsRead'); if(!el)return;
+    const t=$('#nbMessage').value; const n=[...t].length;
+    if(!$('#nbSms').checked||!n){el.textContent='';return;}
+    const gsm=GSM.test(t);
+    if(gsm&&n<=160) el.innerHTML='SMS: <b>'+n+'</b> of 160 characters, plain text, one segment (before the opt-out footer).';
+    else el.innerHTML='Will send as <b>MMS</b>: '+(gsm?'':'it has an emoji or a character outside plain text, ')+(n>160?(n+' characters is more than one segment'):'')+(gsm?'':(n>160?' and':' which')+' would split it into '+Math.ceil(n/(gsm?153:67))+' segments')+'. One MMS costs less than that.';
+  };
+  ['nbMessage','nbSms'].forEach(id=>{const el=$('#'+id); if(el){el.addEventListener('input',read);el.addEventListener('change',read);}});
+})();
+$('#nbTest')&&($('#nbTest').onclick=async()=>{
+  $('#nbErr').textContent='';$('#nbTestStatus').textContent='';
+  const message=$('#nbMessage').value.trim(), subject=$('#nbSubject').value.trim();
+  const wantEmail=$('#nbEmail').checked, wantSms=$('#nbSms').checked;
+  if(!message)return $('#nbErr').textContent='Write the message first.';
+  if(!wantEmail&&!wantSms)return $('#nbErr').textContent='Pick at least one channel.';
+  if(wantEmail&&!subject)return $('#nbErr').textContent='Email needs a subject.';
+  $('#nbTest').disabled=true;$('#nbTestStatus').textContent='Sending the test to you…';
+  try{
+    const d=await api('/api/admin/notify/test',{subject,message,email:wantEmail,sms:wantSms});
+    const parts=[];
+    if(d.email) parts.push(d.email.ok?('Email sent to '+d.email.to+' (subject starts with [TEST]).'):('Email: '+(d.email.error||'failed')+'.'));
+    if(d.sms) parts.push(d.sms.ok
+      ?('Text sent to '+d.sms.to+' as '+(d.sms.channel||'sms').toUpperCase()+' ('+d.sms.chars+' characters with the footer, '+(d.sms.gsm7?'plain text':'not plain text')+', '+d.sms.segments+' segment'+(d.sms.segments===1?'':'s')+' as SMS)'+(d.sms.provider!=='twilio'?' — SMS_PROVIDER is "'+d.sms.provider+'", so it was only logged.':'.'))
+      :('Text: '+(d.sms.error||'failed')+'.'));
+    $('#nbTestStatus').textContent=parts.join(' ');
+  }catch(e){$('#nbErr').textContent=e.message;}
+  $('#nbTest').disabled=false;
+});
 $('#nbSend')&&($('#nbSend').onclick=async()=>{
   $('#nbErr').textContent='';
   const message=$('#nbMessage').value.trim(), subject=$('#nbSubject').value.trim();
@@ -4603,7 +4644,7 @@ $('#btnSmsTest')&&($('#btnSmsTest').onclick=async()=>{
   try{
     const d=await api('/api/admin/sms/test',{to});
     if(d.provider!=='twilio') $('#smsTestStatus').textContent='⚠️ SMS_PROVIDER is "'+d.provider+'" — set it to twilio and redeploy. Nothing was actually sent.';
-    else if(d.ok) $('#smsTestStatus').textContent='Sent ✓ — check your phone.';
+    else if(d.ok) $('#smsTestStatus').textContent='Sent ✓ as '+(d.channel||'sms').toUpperCase()+' — check your phone.';
     else $('#smsTestStatus').textContent='Twilio error: '+(d.error||'unknown');
   }catch(e){$('#smsTestStatus').textContent=e.message;}
   $('#btnSmsTest').disabled=false;
