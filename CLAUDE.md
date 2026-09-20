@@ -428,17 +428,17 @@ live on anr.makinitmag.com.
     unscored record has no rank and sits last.
   - **The schedule moved to the afternoon (2026-09-20, operator's call, standing):** open
     **3:00 PM ET**, close 3:00 PM ET next day, reveal stream 5:00 PM, publish **6:00 PM**,
-    artist reports 7:00 PM — set on the platform panel, NOT by changing the code defaults
-    (which still say noon / noon / 3PM, so "reset to defaults" reverts it). Reason: the
+    artist reports 7:00 PM — `DAILY_SCHEDULE_DEFAULTS` moved with it (15/15/18) so a panel
+    "reset to defaults" lands on the same clock. Reason: the
     deadline day gets a full working afternoon, the reminder carries day-of urgency, and
     results go live in the evening. The 9/19 drop that was open at the time was extended by
     a one-off SQL update (no route extends an OPEN day; the panel save only re-stamps cold and
     sealed days). `/api/home` now carries `schedule.{opens,closes,results}Label` and the
     landing page reads every "at <time>" off it — no hardcoded noon anywhere public.
-  - **The schedule is a SETTING** (2026-09-15): `DAILY_SCHEDULE_DEFAULTS` (open 12:00 PM ET,
-    close 12:00 PM ET next day = 24h, results 3:00 PM ET (a livestream reveal runs noon→3 off
-    the console's post-tally scores), artist reports an hour after (`artistDelayMin` 60, the
-    1-hour hold is now that setting); bonus 100/75/50
+  - **The schedule is a SETTING** (2026-09-15): `DAILY_SCHEDULE_DEFAULTS` (as of 2026-09-20:
+    open 3:00 PM ET, close 3:00 PM ET next day = 24h, results 6:00 PM ET (a livestream reveal
+    runs at 5PM off the console's post-tally scores), artist reports an hour after
+    (`artistDelayMin` 60, the 1-hour hold is now that setting); bonus 100/75/50
     within 6/12/18 HOURS OF THE OPEN, 25 before close) overridden by `settings` rows
     `daily_open_min / daily_close_min / daily_results_min / daily_bonus_tiers`, read via
     `dailySchedule()` (30s per-instance cache). Platform panel → System settings. Saving

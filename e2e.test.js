@@ -2362,8 +2362,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and so do its records', Number(handReR.opens_at) === Number(handRe.window_opens_at) && Number(handReR.closes_at) === Number(handRe.window_closes_at));
   const schedReset = await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
   const schedBack = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
-  ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 12 * 60 && schedBack.closeMin === 12 * 60
-    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 60 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 12),
+  ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 15 * 60 && schedBack.closeMin === 15 * 60
+    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 60 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 15),
     JSON.stringify(schedBack));
 
   // MOVING a cold day. The case: the review site's noon lock-in pressed at 12:01 pushes a
@@ -2385,9 +2385,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const mvNext = srv._etNextDay(mvTo);
   ok('the whole window moves with it — open, close, results, scheduled start and the default name',
     mvSess.drop_day === mvTo
-      && Number(mvSess.window_opens_at) === srv._etEpoch(mvTo, 12)
-      && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 12)
-      && Number(mvSess.results_at) === srv._etEpoch(mvNext, 15)
+      && Number(mvSess.window_opens_at) === srv._etEpoch(mvTo, 15)
+      && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 15)
+      && Number(mvSess.results_at) === srv._etEpoch(mvNext, 18)
       && Number(mvSess.scheduled_at) === Number(mvSess.window_opens_at)
       && mvSess.name === 'A&R Daily — ' + mvTo,
     JSON.stringify({ day: mvSess.drop_day, name: mvSess.name, o: mvSess.window_opens_at, c: mvSess.window_closes_at, r: mvSess.results_at }));
@@ -2395,7 +2395,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and every record carries the new window',
     mvRounds.length === 3 && mvRounds.every(r => Number(r.opens_at) === Number(mvSess.window_opens_at)
       && Number(r.closes_at) === Number(mvSess.window_closes_at)), JSON.stringify(mvRounds));
-  ok('moving to a day whose noon has not come does not open it', mvOk.d.opened === false && mvSess.async_state === 'scheduled',
+  ok('moving to a day whose open time has not come does not open it', mvOk.d.opened === false && mvSess.async_state === 'scheduled',
     JSON.stringify({ opened: mvOk.d.opened, state: mvSess.async_state }));
   ok('the reply carries no artist contact', !/@/.test(JSON.stringify(mvOk.d)), JSON.stringify(mvOk.d));
   const mvSame = await call('/api/admin/daily/move', { fromDay: mvTo, toDay: mvTo }, 'POST', BOOTH);
@@ -2411,10 +2411,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // Onto a day whose noon HAS passed: it opens in the same request — "move it to today" means
   // open now, not on the next five-minute tick. Only THIS drop opens; the lifecycle is not run
   // over every other day.
-  const mvNow = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: handDay, at: srv._etEpoch(handDay, 12) + 1000 }, 'POST', BOOTH);
+  const mvNow = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: handDay, at: srv._etEpoch(handDay, 15) + 1000 }, 'POST', BOOTH);
   const mvLive = await dDb.get('SELECT * FROM sessions WHERE id = ?', [handSess.id]);
   const mvVoting = (await dDb.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'voting'", [handSess.id])).c;
-  ok('a move onto a day past its noon opens the drop at once',
+  ok('a move onto a day past its open time opens the drop at once',
     mvNow.status === 200 && mvNow.d.opened === true && mvLive.async_state === 'open' && mvLive.status === 'live' && Number(mvVoting) === 3,
     JSON.stringify({ d: mvNow.d, state: mvLive.async_state, status: mvLive.status, voting: mvVoting }));
   const mvOpen = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: mvTo }, 'POST', BOOTH);
@@ -3295,8 +3295,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   console.log('\n— A&R Daily: the schedule —');
   const D = server._DAILY_SCHEDULE_DEFAULTS;
   const dw = server._dropWindowFor('2026-07-04', D);
-  ok('default window: opens noon, closes noon next day, results 3 PM next day',
-    dw.opensAt === at('2026-07-04', 12) && dw.closesAt === at('2026-07-05', 12) && dw.resultsAt === at('2026-07-05', 15), JSON.stringify(dw));
+  ok('default window: opens 3 PM, closes 3 PM next day, results 6 PM next day (the 2026-09-20 clock)',
+    dw.opensAt === at('2026-07-04', 15) && dw.closesAt === at('2026-07-05', 15) && dw.resultsAt === at('2026-07-05', 18), JSON.stringify(dw));
   ok('artist reports hold an hour after the results by default', D.artistDelayMin === 60);
   const sameDay = server._dropWindowFor('2026-07-04', { ...D, openMin: 9 * 60, closeMin: 21 * 60, resultsMin: 20 * 60 });
   ok('a close later than the open is the same day, and results never publish before the close',
