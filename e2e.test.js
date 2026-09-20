@@ -4591,7 +4591,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
         asanaState.projects[m[1]].custom_field_settings.push({ custom_field: asanaState.fields[data.custom_field] });
         return reply(200, { data: {} });
       }
-      if (req.method === 'POST' && u.pathname === '/tasks') { const g = gid(); asanaState.tasks[g] = { gid: g, ...data }; return reply(201, { data: { gid: g, permalink_url: 'https://app.asana.com/0/0/' + g } }); }
+      if (req.method === 'GET' && (m = /^\/projects\/(\d+)\/tasks$/.exec(u.pathname))) {
+        const all = Object.values(asanaState.tasks).filter(t => (t.projects || []).includes(m[1]) || t.project === m[1]).map(t => ({ gid: t.gid, name: t.name, notes: t.notes || '', created_at: t.created_at || '2026-01-01T00:00:00.000Z' }));
+        const off = parseInt(u.searchParams.get('offset') || '0', 10), size = 2;
+        const slice = all.slice(off, off + size);
+        return reply(200, { data: slice, next_page: off + size < all.length ? { offset: String(off + size) } : null });
+      }
+      if (req.method === 'POST' && u.pathname === '/tasks') { const g = gid(); asanaState.tasks[g] = { gid: g, created_at: new Date(Date.now() + asanaState.nextGid).toISOString(), ...data }; return reply(201, { data: { gid: g, permalink_url: 'https://app.asana.com/0/0/' + g } }); }
       if (req.method === 'DELETE' && (m = /^\/tasks\/(\d+)$/.exec(u.pathname))) {
         if (!asanaState.tasks[m[1]]) return reply(404, { errors: [{ message: 'Not Found' }] });
         delete asanaState.tasks[m[1]]; return reply(200, { data: {} });
@@ -4679,7 +4685,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   await anDb.run('UPDATE asana_leads SET score = score - 1 WHERE task_gid = ?', [ldGone]);   // force an update attempt
   const sync3 = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   const ldNewRow = await anDb.get('SELECT task_gid FROM asana_leads WHERE artist_key = ?', [ldLedgerRow.artist_key]);
-  ok('leads: a task deleted in Asana is recreated on the next sync', sync3.d.created === 1 && ldNewRow.task_gid !== ldGone, JSON.stringify(sync3.d));
+  ok('leads: a task deleted in Asana by hand stays out — marked, never recreated', sync3.d.created === 0 && ldNewRow.task_gid === 'deleted', JSON.stringify({ d: sync3.d.created, row: ldNewRow }));
 
   // Custom fields are a paid feature: without them the list still goes out.
   asanaState.refuseFields = true;
@@ -4687,6 +4693,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const sync4 = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads: a plan without custom fields still syncs and says why the columns are missing',
     sync4.status === 200 && /premium/i.test(sync4.d.fieldsError || ''), JSON.stringify(sync4.d));
+  ok('leads: pointing at a different project starts a fresh ledger', sync4.d.created > 0, JSON.stringify(sync4.d.created));
+  asanaState.refuseFields = false;
   // Identity is transitive: a record with an email, one with the same name and an IG, and one
   // with only that IG are ONE artist. Two names that share nothing stay apart.
   const ldG = ldSrv._leadGroups([
@@ -4716,7 +4724,40 @@ async function startVoting(sessionId, headers, minutes = 5) {
   } else {
     ok('leads: (merge case skipped — the top lead carries a single identifier)', true);
   }
+  // --- reconcile: the project is the truth ---
   process.env.ASANA_TOKEN = 'test-asana-pat';
+  ok('leads: every task carries its lead ref', Object.values(asanaState.tasks).filter(t => /Lead ref: /.test(t.notes || '')).length >= ldAll.d.leads.length - 1);
+  ok('leads: a ref parses back from the line, or from the contact lines of an older task',
+    ldSrv._parseLeadRef('Artist: X\n\nLead ref: e:a@b.c') === 'e:a@b.c' && ldSrv._parseLeadRef('Artist: Nova\nEmail: —\nInstagram: @NovaMusic') === 'i:novamusic' && ldSrv._parseLeadRef('Artist: Nova\nEmail: A@X.com\nInstagram: @nova') === 'e:a@x.com' && ldSrv._parseLeadRef('Artist: Big Room\nEmail: —\nInstagram: —') === 'n:big room');
+  // Plant the 2026-09-19 damage in the current project: three duplicate tasks of one lead
+  // (the two-loop race) and a task nobody's ledger knows.
+  const ldProj = (await call('/api/admin/platform', null, 'GET', ADMINH)).d.settings.asanaLeadsProject;
+  const ldVictim = Object.values(asanaState.tasks).find(t => /Lead ref: /.test(t.notes || '') && (t.projects || [])[0] === ldProj);
+  const ldVictimRef = /Lead ref: (.+?)\s*$/m.exec(ldVictim.notes)[1];
+  const ldDupGids = [];
+  for (let i = 0; i < 3; i++) { const g = String(asanaState.nextGid++); asanaState.tasks[g] = { ...ldVictim, gid: g, created_at: new Date(Date.now() + 100000 + i).toISOString() }; ldDupGids.push(g); }
+  const ldOrphanGid = String(asanaState.nextGid++);
+  asanaState.tasks[ldOrphanGid] = { gid: ldOrphanGid, name: 'Orphan — “Lost” · 5.0', notes: 'Artist: Orphan\nEmail: orphan@x.com\nInstagram: —', projects: [ldProj], created_at: '2026-09-01T00:00:00.000Z' };
+  // …and a task the operator removed by hand (its ledger row exists).
+  const ldHandDeleted = (await anDb.all("SELECT artist_key, task_gid FROM asana_leads WHERE task_gid <> ? AND task_gid <> 'deleted' ORDER BY artist_key", [ldVictim.gid]))[0];
+  delete asanaState.tasks[ldHandDeleted.task_gid];
+  const ldRec = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0, reconcile: true }, 'POST', ADMINH);
+  ok('leads/reconcile: duplicates of one ref are removed, the newest kept',
+    ldRec.d.merged >= 3 && ldDupGids.filter(g => asanaState.tasks[g]).length + (asanaState.tasks[ldVictim.gid] ? 1 : 0) === 1, JSON.stringify({ m: ldRec.d.merged, trace: ldRec.d.trace.slice(0, 8) }));
+  const ldVictimRow = await anDb.get('SELECT task_gid FROM asana_leads WHERE artist_key = ?', [ldVictimRef]);
+  ok('leads/reconcile: the ledger points at the surviving task', !!asanaState.tasks[ldVictimRow.task_gid], JSON.stringify(ldVictimRow));
+  ok('leads/reconcile: a task the ledger never knew is adopted', (await anDb.get('SELECT task_gid FROM asana_leads WHERE artist_key = ?', ['e:orphan@x.com']))?.task_gid === ldOrphanGid);
+  ok('leads/reconcile: a task deleted by hand is marked and never recreated',
+    (await anDb.get('SELECT task_gid FROM asana_leads WHERE artist_key = ?', [ldHandDeleted.artist_key]))?.task_gid === 'deleted'
+      && !Object.values(asanaState.tasks).some(t => (t.projects || [])[0] === ldProj && (t.notes || '').includes('Lead ref: ' + ldHandDeleted.artist_key)), JSON.stringify(ldHandDeleted));
+  ok('leads/reconcile: the press reports the project clean', ldRec.d.reconciled === true);
+  // --- the lock: a press while another runs is refused ---
+  await anDb.run("UPDATE settings SET v = ? WHERE k = 'asana_leads_lock'", [String(Date.now() + 20000)]);
+  const ldLocked = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
+  ok('leads/lock: a second press while one is running gets 409', ldLocked.status === 409 && /already running/.test(ldLocked.d.error), JSON.stringify(ldLocked.d));
+  await anDb.run("UPDATE settings SET v = '0' WHERE k = 'asana_leads_lock'");
+  const ldUnlocked = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
+  ok('leads/lock: released when the press finishes', ldUnlocked.status === 200 && (await anDb.get("SELECT v FROM settings WHERE k = 'asana_leads_lock'")).v === '0');
   const ldCheck = await call('/api/admin/leads/check?pct=100&minVotes=0', null, 'GET', ADMINH);
   ok('leads/check: runs every step and times it', ldCheck.status === 200 && ldCheck.d.steps.length >= 5 && ldCheck.d.steps.every(s => typeof s.ms === 'number'), JSON.stringify(ldCheck.d).slice(0, 300));
   ok('leads/check: names a step that fails instead of hanging', ldCheck.d.steps.some(s => s.name === 'GET /users/me' && s.ok === false && /unmocked|Asana/.test(s.error)), JSON.stringify(ldCheck.d.steps[2]));

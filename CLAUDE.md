@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,621 passed as of 2026-09-19; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,630 passed as of 2026-09-19; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -676,7 +676,13 @@ live on anr.makinitmag.com.
   transitive** (`leadGroups`, union-find over email / Instagram / name — the first prod run
   made a duplicate when one submission had an email and the next only the name); the ledger
   is looked up by ANY of the group's keys and an extra task the feature made is deleted on
-  the next sync (`merged`). The cut is on RECORDS, then artists — an artist whose best sits
+  the next sync (`merged`). **The project is the truth** (2026-09-19, after two racing loops —
+  a forgotten tab plus a fresh one — doubled ~115 tasks): every task's notes end in `Lead
+  ref: <key>`, the first press of a run `reconcileLeadsProject`s (dedupe by ref keeping the
+  newest, adopt unknown tasks, mark hand-deleted rows `task_gid='deleted'` — never
+  recreated; an EMPTY project marks nothing), a settings-row lock (`asana_leads_lock`,
+  conditional UPDATE) makes a concurrent press a 409, and changing the project setting
+  clears the ledger. The cut is on RECORDS, then artists — an artist whose best sits
   below the cut is not a lead. `pct` is the operator's dial (default 30), never hardcoded past
   `salesLeadsData`. **A min-A&Rs floor (`minVotes`, default 3, 0 = off) is applied BEFORE the
   cut and EXCLUDES rather than reweights** — the charts' rule; the operator's first prod run

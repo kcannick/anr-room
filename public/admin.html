@@ -3279,7 +3279,7 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=false;
 });
 // ===== Sales leads → Asana (040) =====
-const LEADS_UI_BUILD='2026-09-19f';   // printed by Check Asana so a cached console is visible
+const LEADS_UI_BUILD='2026-09-19g';   // printed by Check Asana so a cached console is visible
 const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));
 // 0 is a real answer (floor off), so not `||`.
 const leadsMinVotes=()=>{const v=parseInt($('#leadsMinVotes').value,10);return Math.max(0,Number.isFinite(v)?v:3);};
@@ -3316,7 +3316,7 @@ $('#leadsCheck')&&($('#leadsCheck').onclick=async()=>{
 $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
   const btn=$('#leadsSync'),st=$('#leadsStatus'),old=btn.textContent;
   btn.disabled=true;
-  let created=0,updated=0,merged=0,failed=[],url=null,fieldsError=null;
+  let created=0,updated=0,merged=0,failed=[],url=null,fieldsError=null,reconciled=false;
   try{
     for(let i=0;i<50;i++){
       btn.textContent='Writing… ('+(created+updated)+')';
@@ -3324,13 +3324,14 @@ $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
       // A hard client-side timeout too: whatever the gateway does, the button comes back.
       const h={'Content-Type':'application/json'};if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;if(ATOK)h['X-Admin-Token']=ATOK;
       let r,txt='';
-      try{ r=await fetch('/api/admin/leads/asana',{method:'POST',headers:h,body:JSON.stringify({pct:leadsPct(),minVotes:leadsMinVotes()}),signal:AbortSignal.timeout(28000)}); txt=await r.text(); }
+      try{ r=await fetch('/api/admin/leads/asana',{method:'POST',headers:h,body:JSON.stringify({pct:leadsPct(),minVotes:leadsMinVotes(),reconcile:!reconciled}),signal:AbortSignal.timeout(28000)}); txt=await r.text(); }
       catch(e){ throw new Error('No answer from the server in 28s ('+e.name+') — what was written so far is kept; press again to continue.'); }
       try{ d=JSON.parse(txt); }catch(e){ throw new Error('The server answered '+r.status+' with a page, not data — press again to continue. '+txt.slice(0,120)); }
       if(d.trace)$('#leadsCheckOut').classList.remove('hide'),$('#leadsCheckOut').textContent='console build '+LEADS_UI_BUILD+' · last press:\n'+d.trace.join('\n');
       if(!r.ok) throw new Error(d.error||('Server error '+r.status));
       if(d.timedOut) throw new Error('The press ran out of time before finishing — see the trace below; press again to continue.');
       created+=d.created;updated+=d.updated;merged+=(d.merged||0);failed=failed.concat(d.failed||[]);url=d.url;fieldsError=d.fieldsError||null;
+      if(d.reconciled)reconciled=true;   // the project is clean; later presses skip the check
       if(!d.remaining)break;
       // No progress this press (every write failed) — pressing again would fail the same way.
       if(!d.created&&!d.updated&&!d.merged){failed.push({error:'stopped: nothing could be written this press — '+(d.failed&&d.failed[0]?d.failed[0].error:'see the trace')});break;}

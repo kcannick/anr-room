@@ -34,10 +34,18 @@ The sync is **re-runnable**. A ledger (`asana_leads`) remembers which artist has
 - an artist new to the top set → a task is created;
 - an artist whose best record changed (a higher score, a new day) → their task is **updated**;
 - everything else is skipped — no duplicates, no Asana calls;
-- a task you deleted in Asana is recreated on the next press;
+- a task you deleted in Asana by hand **stays deleted** — the artist is marked and never
+  recreated;
 - two tasks for one artist (created before their identifiers were linked) → the extra one is
   removed and the count says "N duplicates removed";
 - an artist who drops out of the top set **keeps their task** — you may be mid-conversation.
+
+Only one press can run at a time, platform-wide: a second tab pressing while one runs gets
+"A sync is already running". The first press of a run **reconciles the project first**: it
+lists every task, removes duplicates of one artist (keeping the newest), adopts tasks the
+ledger did not know, and marks hand-deleted ones. Every task carries a `Lead ref:` line in
+its notes — that is how the project can be read back. Pointing the setting at a different
+project starts a fresh ledger.
 
 Each press writes at most 12 tasks (one bounded request, inside Vercel's 30-second cap); the console presses again on its
 own until the list is done.
