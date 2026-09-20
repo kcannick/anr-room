@@ -44,6 +44,11 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   fall under this rule too** — "this one's a 9 for me" leaks direction just as surely, so a
   comment body is readable ONLY by its author and the host. There is no public read path.
 - **Static files cache aggressively** — test in incognito after deploy.
+- **The Vercel function bundle only contains what `includeFiles` names.** The CDN serves
+  `public/` directly, so `/landing.html` can be up while `/`, `/daily`, `/admin` and every
+  other clean route (served by the function's own `serveStatic`) answer "Not found". That was
+  the 2026-09-20 outage: `includeFiles` listed only `assets/**`. It is `{assets/**,public/*}`
+  now — keep `public/*` in it, and keep `public/brand` (32MB) out of it.
 - **PII discipline:** public/leaderboard/overlay endpoints emit display name + points only.
   Email/phone never leave via a public surface.
 
