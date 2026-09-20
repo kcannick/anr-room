@@ -3279,7 +3279,7 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=false;
 });
 // ===== Sales leads → Asana (040) =====
-const LEADS_UI_BUILD='2026-09-19d';   // printed by Check Asana so a cached console is visible
+const LEADS_UI_BUILD='2026-09-19e';   // printed by Check Asana so a cached console is visible
 const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));
 // 0 is a real answer (floor off), so not `||`.
 const leadsMinVotes=()=>{const v=parseInt($('#leadsMinVotes').value,10);return Math.max(0,Number.isFinite(v)?v:3);};
@@ -3332,6 +3332,8 @@ $('#leadsSync')&&($('#leadsSync').onclick=async()=>{
       if(d.timedOut) throw new Error('The press ran out of time before finishing — see the trace below; press again to continue.');
       created+=d.created;updated+=d.updated;failed=failed.concat(d.failed||[]);url=d.url;fieldsError=d.fieldsError||null;
       if(!d.remaining)break;
+      // No progress this press (every write failed) — pressing again would fail the same way.
+      if(!d.created&&!d.updated){failed.push({error:'stopped: nothing could be written this press — '+(d.failed&&d.failed[0]?d.failed[0].error:'see the trace')});break;}
     }
     st.innerHTML='✅ '+created+' task'+(created===1?'':'s')+' created, '+updated+' updated'
       +(failed.length?', <b>'+failed.length+' failed</b> ('+esc(failed[0].error)+')':'')

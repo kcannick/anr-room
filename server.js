@@ -4350,7 +4350,10 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs =
   let budget = limit;
   const fieldsFor = (l) => {
     const cf = {};
-    if (proj.fields.date) cf[proj.fields.date] = l.day;
+    // A date custom field takes an OBJECT, {date: 'YYYY-MM-DD'} — a bare string is a 400
+    // ("DayAndDateTime is not a JSON object"), which is what every write in the first
+    // production run hit (2026-09-19).
+    if (proj.fields.date) cf[proj.fields.date] = { date: l.day };
     if (proj.fields.score) cf[proj.fields.score] = Number(l.score.toFixed(1));
     return Object.keys(cf).length ? cf : undefined;
   };

@@ -4655,8 +4655,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const ldTop = ldAll.d.leads[0], ldTopTask = ldTaskPosts[0] && ldTaskPosts[0].data;
   ok('leads: tasks are written highest score first, into the project', !!ldTopTask && ldTopTask.projects[0] === sync1.d.project && ldTopTask.name.startsWith(ldTop.artist), JSON.stringify(ldTopTask && ldTopTask.name));
   const ldCfVals = ldTopTask ? Object.values(ldTopTask.custom_fields || {}) : [];
-  ok('leads: the task carries the played date and the score as custom fields',
-    ldCfVals.includes(ldTop.day) && ldCfVals.includes(Number(ldTop.score.toFixed(1))), JSON.stringify(ldTopTask && ldTopTask.custom_fields));
+  ok('leads: the task carries the played date ({date}) and the score as custom fields',
+    ldCfVals.some(v => v && typeof v === 'object' && v.date === ldTop.day) && ldCfVals.includes(Number(ldTop.score.toFixed(1))), JSON.stringify(ldTopTask && ldTopTask.custom_fields));
+  ok('leads: the date is never sent as a bare string (Asana 400s it)', !ldCfVals.some(v => typeof v === 'string'));
   ok('leads: the notes carry the contact details for the call', !!ldTopTask && /Email: /.test(ldTopTask.notes) && /Instagram: /.test(ldTopTask.notes) && /Date played: /.test(ldTopTask.notes));
   ok('leads: no price or upsell in the notes', !!ldTopTask && !/\$\d+ (report|upsell)/i.test(ldTopTask.notes));
 
