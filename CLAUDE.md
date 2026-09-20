@@ -714,6 +714,27 @@ live on anr.makinitmag.com.
   Full scan of rounds, admin-triggered only (rule #1). Tests drive a mock Asana on
   `ASANA_API_BASE` (env override of the API base). Doc: **docs/sales-leads-asana.md**.
 
+- **SMS discipline: conservative transactional texts + the SMS→MMS switch + "send test to
+  me"** (no migration, 2026-09-20, operator's call). Carriers bill SMS per SEGMENT, and one
+  emoji, em dash or curly quote turns the whole text UCS-2 (70 chars a segment instead of
+  160). So: **(1) transactional texts are GSM-7 inside one 160-character segment** wherever
+  the message allows — `artistNoticeSmsBody` trims a long title ("..." not "…"),
+  `goLiveSmsBody` is plain text (its two links make it an MMS by LENGTH alone); the SMS test
+  message is the plain default. **(2) sms.js decides the channel once, for every caller**
+  (`shouldSendAsMms`: anything outside GSM-7, or > 160 characters → MMS; `SMS_MMS_AUTO=0`
+  turns it off). Twilio sends MMS when a `MediaUrl` rides along, so the switch attaches the
+  site mark (`SMS_MMS_MEDIA_URL`, default `<PUBLIC_BASE_URL>/mark-color.png`); the number /
+  Messaging Service must be MMS-capable (US/CA). `sendSms` returns `channel`; `sms.test.js`
+  (unit + a mock-Twilio wire check on `TWILIO_API_BASE`) is in `npm test`. **(3) The mass
+  announcement composer has "Send test to me"** (`POST /api/admin/notify/test`): renders the
+  announcement through the same `renderAnnouncement()` the real loop uses (tokens with the
+  admin's own name/links, their own manage link), sends to the logged-in admin's own
+  email/phone only, `[TEST]` subject prefix, no broadcast or recipient rows, consent gate not
+  consulted (their own number), masked destinations in the reply. The composer shows a live
+  SMS readout (characters / plain text / segments, or "will send as MMS" and why) that
+  mirrors the sms.js rule; the per-recipient footer is not counted, so a message near 160 is
+  already an MMS by the time it goes.
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count

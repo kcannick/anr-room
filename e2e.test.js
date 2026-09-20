@@ -1418,6 +1418,22 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('sms test requires a number', smsNoNum.status === 400, 'got ' + smsNoNum.status);
   const smsTest = await call('/api/admin/sms/test', { to: '+13055551234' }, 'POST', ADMINH);
   ok('sms test sends (console provider in tests)', smsTest.status === 200 && smsTest.d.ok === true && smsTest.d.provider === 'console', JSON.stringify(smsTest.d));
+  ok('the test text is the transactional default: plain GSM-7, one segment, sent as SMS',
+    smsTest.d.channel === 'sms' && smsTest.d.segments === 1, JSON.stringify(smsTest.d));
+
+  // Transactional texts are conservative (operator, 2026-09-20): GSM-7, one segment where
+  // the message allows, and MMS by LENGTH alone when it cannot.
+  {
+    const { isGsm7, smsSegments, shouldSendAsMms } = require('./sms');
+    const a = require('./server')._artistNoticeSmsBody('A&R Meeting', 'Song Title');
+    ok('artist notice is GSM-7 in one segment', isGsm7(a) && smsSegments(a).segments === 1 && !shouldSendAsMms(a), a);
+    const longT = require('./server')._artistNoticeSmsBody('A&R Meeting', 'A Very Long Record Title That Goes On And On And On And On And On And On And On And On And On And On (Remix) [feat. Everyone]');
+    ok('a long title is trimmed so the notice still fits one plain segment', isGsm7(longT) && smsSegments(longT).segments === 1 && longT.includes('...'), longT);
+    const emojiT = require('./server')._artistNoticeSmsBody('A&R Room', 'Song 🎧 — “Live”');
+    ok('emoji, em dashes and curly quotes in a title never turn the notice UCS-2', isGsm7(emojiT) && emojiT.includes('"Song Live"'), emojiT);
+    const g = require('./server')._goLiveSmsBody('Wednesday Show — 🎧', 'https://anr.makinitmag.com/?s=abc', 'https://anr.makinitmag.com/profile#nt=np1.x.y.z');
+    ok('go-live text is GSM-7 (two links make it an MMS by length alone)', isGsm7(g) && !/[—🎧]/.test(g) && g.includes('Reply STOP'), g);
+  }
 
   console.log('\n— host role: assignment (admin-only) + engagement-only visibility (no PII) —');
   const usersList = (await call('/api/admin/users', null, 'GET', ADMINH)).d;
@@ -2849,6 +2865,32 @@ async function startVoting(sessionId, headers, minutes = 5) {
   let nbOut = { remaining: nb.d.queued }, spins = 0;
   while (nbOut.remaining > 0 && spins++ < 50) nbOut = (await call('/api/admin/notify/process', { broadcastId: nb.d.broadcastId, limit: 20 }, 'POST', ADMINH)).d;
   ok('chunked processing drains the queue (console senders)', nbOut.remaining === 0 && nbOut.sent === nb.d.queued && nbOut.failed === 0, JSON.stringify(nbOut));
+
+  console.log('\n— send test to me: the announcement to the admin\'s own email/phone, nobody else —');
+  const tdb = require('./db');
+  const nbBefore = Number((await tdb.get('SELECT COUNT(*) AS c FROM notify_broadcasts')).c);
+  const nbRecBefore = Number((await tdb.get('SELECT COUNT(*) AS c FROM notify_recipients')).c);
+  const ntNoAuth = await call('/api/admin/notify/test', { message: 'x', email: true, subject: 's' }, 'POST', { 'X-Auth-Token': HOSTTOK });
+  ok('test send is admin-only', ntNoAuth.status === 403 || ntNoAuth.status === 401, 'status ' + ntNoAuth.status);
+  ok('test send needs a message', (await call('/api/admin/notify/test', { message: '', email: true, subject: 's' }, 'POST', ADMINH)).status === 400);
+  ok('test send needs a channel', (await call('/api/admin/notify/test', { message: 'x', subject: 's' }, 'POST', ADMINH)).status === 400);
+  // The admin has no phone yet: the SMS half says so instead of failing the whole request.
+  await tdb.run("UPDATE users SET phone = NULL WHERE email = 'admin@test.com'");
+  const ntNoPhone = await call('/api/admin/notify/test', { subject: 'Hi [first name]', message: 'Card: [card link]', email: true, sms: true }, 'POST', ADMINH);
+  ok('email goes to the admin\'s own (masked) address; SMS reports the missing phone',
+    ntNoPhone.status === 200 && ntNoPhone.d.email && ntNoPhone.d.email.ok === true && /•/.test(ntNoPhone.d.email.to)
+      && ntNoPhone.d.sms && ntNoPhone.d.sms.ok === false && /phone/i.test(ntNoPhone.d.sms.error), JSON.stringify(ntNoPhone.d));
+  await tdb.run("UPDATE users SET phone = '+13055550100' WHERE email = 'admin@test.com'");
+  const ntBoth = await call('/api/admin/notify/test', { subject: 'Hi [first name]', message: 'Plain text with a link: [join link]', email: true, sms: true }, 'POST', ADMINH);
+  ok('with a phone on file the text goes too, and reports channel, encoding and segments',
+    ntBoth.status === 200 && ntBoth.d.sms && ntBoth.d.sms.ok === true && /•/.test(ntBoth.d.sms.to)
+      && ['sms', 'mms'].includes(ntBoth.d.sms.channel) && typeof ntBoth.d.sms.gsm7 === 'boolean' && ntBoth.d.sms.segments >= 1, JSON.stringify(ntBoth.d.sms));
+  const ntEmoji = await call('/api/admin/notify/test', { subject: 's', message: '🎧 Live tonight', sms: true }, 'POST', ADMINH);
+  ok('an emoji announcement reports MMS', ntEmoji.status === 200 && ntEmoji.d.sms.channel === 'mms' && ntEmoji.d.sms.gsm7 === false && ntEmoji.d.email === null, JSON.stringify(ntEmoji.d));
+  ok('the reply never carries the raw email or phone', !/admin@test\.com|3055550100/.test(JSON.stringify(ntBoth.d) + JSON.stringify(ntNoPhone.d)));
+  ok('a test queues no broadcast and no recipient rows',
+    Number((await tdb.get('SELECT COUNT(*) AS c FROM notify_broadcasts')).c) === nbBefore
+      && Number((await tdb.get('SELECT COUNT(*) AS c FROM notify_recipients')).c) === nbRecBefore);
 
   console.log('\n— announcement tokens: [first name] [card link] [submit link] [join link] —');
   const tsrv = require('./server');

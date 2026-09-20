@@ -23,7 +23,7 @@ const path = require('path');
 
 const db = require('./db');
 const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
-const { sendSms, PROVIDER: SMS_PROVIDER } = require('./sms');
+const { sendSms, PROVIDER: SMS_PROVIDER, smsSegments, isGsm7, SMS_SINGLE_SEGMENT } = require('./sms');
 const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy } = require('./scoring');
 const shareCards = require('./share-cards');
@@ -531,6 +531,37 @@ function renderNotifyTokens(text, vals, html) {
   out.push(html ? escapeHtml(tail) : tail);
   return out.join('');
 }
+// One announcement, rendered for ONE recipient: subject, HTML email, plain-text email and
+// the SMS body. The footer is per-recipient (the manage link is signed with their uid), and
+// tokens are per recipient too: their first name and the three links that carry their uid.
+// The card link is a signed deep link into /refer (no login on the device the email lands
+// on); without NOTIFY_LINK_SECRET it degrades to the plain page, which asks for a code.
+// Shared by the real send loop and the "send test to me" route so the two can never differ.
+async function renderAnnouncement(bc, uid, base) {
+  const manage = notifyManageUrl(base, uid);
+  const usesTokens = NOTIFY_TOKEN_RE.test(bc.message + ' ' + (bc.subject || ''));
+  NOTIFY_TOKEN_RE.lastIndex = 0;
+  let vals = {};
+  if (usesTokens) {
+    const u = await db.get('SELECT name FROM users WHERE uid = ?', [uid]);
+    const links = referralLinks(uid);
+    vals = { firstName: firstNameOf(u && u.name), cardLink: referPageUrl(base, uid), submitLink: links.submit, joinLink: links.join };
+  }
+  const subject = usesTokens ? renderNotifyTokens(bc.subject || 'The A&R Room', vals, false) : (bc.subject || 'The A&R Room');
+  const bodyText = usesTokens ? renderNotifyTokens(bc.message, vals, false) : bc.message;
+  const bodyHtml = usesTokens ? renderNotifyTokens(bc.message, vals, true) : escapeHtml(bc.message);
+  const html = `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
+      <div style="max-width:520px;margin:0 auto;background:#171328;border:1px solid #2e2750;border-radius:16px;padding:26px">
+        <p style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;font-weight:700;margin:0 0 14px">The A&amp;R Room</p>
+        <div style="font-size:15px;line-height:1.6;color:#f3f0fb">${bodyHtml.replace(/\n/g, '<br>')}</div>
+        <p style="font-size:12px;color:#6f688f;margin:22px 0 0">Makin' It Magazine · The A&amp;R Room · <a href="https://anr.makinitmag.com" style="color:#6d5fe0">anr.makinitmag.com</a></p>
+        ${notifyFooterHtml(manage)}
+      </div></div>`;
+  // The SMS branch once carried NO opt-out language, unlike the go-live and artist texts;
+  // smsFooter() is what fixed that.
+  return { subject, html, text: `${bodyText}\n\n${notifyFooterText(manage)}`, sms: `${bodyText}\n${smsFooter(manage)}` };
+}
+
 function firstNameOf(name) {
   return (name || '').toString().trim().split(/\s+/)[0] || '';
 }
@@ -551,6 +582,30 @@ function notifyFooterText(manage) {
 // matters more than the convenience.
 function smsFooter(manage) {
   return `Reply STOP to opt out. Manage: ${manage}`;
+}
+
+// ---- Transactional texts are CONSERVATIVE (operator, 2026-09-20) ----
+// GSM-7 only and inside one 160-character segment wherever the message allows it: say what
+// has to be said, no emoji, no em dashes, no curly quotes (any of those turns the whole text
+// UCS-2 and splits it at 70). A text that HAS to exceed a segment (two links, say) goes as
+// MMS by sms.js's rule, and then it may use the room; it still stays GSM-7 here so the
+// switch is driven by length alone and a future edit does not flip it by accident.
+// Both builders are pure and unit-tested against isGsm7 / SMS_SINGLE_SEGMENT.
+function fitSmsTitle(title, roomFor) {
+  // Trim a long record title so the whole text stays in one segment; "..." not "…" (GSM-7).
+  const t = String(title || '').replace(/[^\x00-\x7F]/g, '').replace(/\s+/g, ' ').trim() || 'your record';
+  if (t.length <= roomFor) return t;
+  return t.slice(0, Math.max(roomFor - 3, 1)).trimEnd() + '...';
+}
+function artistNoticeSmsBody(what, title) {
+  const frame = `The ${what}: "" has been rated. Your Track Report is in your email. Reply STOP to opt out.`;
+  return `The ${what}: "${fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame.length)}" has been rated. Your Track Report is in your email. Reply STOP to opt out.`;
+}
+function goLiveSmsBody(name, url, manage) {
+  // Two links (the room and the signed manage link) do not fit a single segment, so this
+  // one is an MMS by length; it is still plain GSM-7 so nothing else decides that.
+  const n = String(name || 'The A&R Room').replace(/[^\x00-\x7F]/g, '').replace(/\s+/g, ' ').trim() || 'The A&R Room';
+  return `${n} is live in The A&R Room. Rate records and predict the room: ${url}\n${smsFooter(manage)}`;
 }
 
 // Mask helpers for the token-authed read: a link holder sees enough to recognise the
@@ -3980,7 +4035,7 @@ async function drainArtistSms({ sessionId = null, roundId = null, limit = 10 } =
       const round = await db.get('SELECT r.song_title, s.mode FROM rounds r JOIN sessions s ON s.id = r.session_id WHERE r.id = ?', [row.round_id]);
       const title = (round && round.song_title) || 'your record';
       const what = round && round.mode === 'async' ? 'A&R Meeting' : 'A&R Room';
-      const body = `The ${what}: "${title}" has been rated. Your Track Report is in your email. Reply STOP to opt out.`;
+      const body = artistNoticeSmsBody(what, title);
       const r = await sendSms(row.dest, body);
       if (r.ok) { await db.run("UPDATE artist_notices SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
       else { await db.run("UPDATE artist_notices SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
@@ -4726,7 +4781,7 @@ async function dispatchGoLiveNotifications(session, base, channels) {
     }
     if (wantSms && p.phone && Number(p.sms_marketing_consent) === 1 && onSms(p)
         && !(await alreadyNotified(sessionId, p.id, 'sms'))) {
-      const smsBody = `🎧 ${name} is LIVE in The A&R Room—evaluate records and predict the room: ${url}\n${smsFooter(notifyManageUrl(base, p.user_id))}`;
+      const smsBody = goLiveSmsBody(name, url, notifyManageUrl(base, p.user_id));
       const r = await sendSms(p.phone, smsBody);
       await logNotify(sessionId, p, 'sms', p.phone, r.ok ? 'sent' : 'failed', r.error);
       r.ok ? sent++ : failed++;
@@ -6321,8 +6376,12 @@ async function handleApi(req, res, url) {
     if (!user) return bad(res, 'Not logged in', 401);
     const { to } = await readBody(req);
     if (!to || !to.trim()) return bad(res, 'Phone number required');
-    const r = await sendSms(to.trim(), '🎧 Test from The A&R Room — your SMS setup is working! Reply STOP to opt out.');
-    return send(res, 200, { ok: !!r.ok, provider: SMS_PROVIDER, error: r.error || null });
+    const testBody = 'Test from The A&R Room: your SMS setup is working. Reply STOP to opt out.';
+    const r = await sendSms(to.trim(), testBody);
+    // channel + segments: a plain GSM-7 text in one segment is the transactional default,
+    // and the panel says which channel it went by.
+    return send(res, 200, { ok: !!r.ok, provider: SMS_PROVIDER, channel: r.channel || null,
+      segments: smsSegments(testBody).segments, error: r.error || null });
   }
 
   // Host pulls the latest staged submission into the queue form (mirrors nero-pull).
@@ -6831,6 +6890,41 @@ async function handleApi(req, res, url) {
     const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
     return send(res, 200, { broadcastId: bcId, queued: Number(q) || 0 });
   }
+  // "Send test to me": the announcement exactly as the audience would get it (tokens filled
+  // with the admin's own name and links, their own manage link, the same HTML and the same
+  // SMS body) to the LOGGED-IN admin's own email and/or phone. Nothing is queued or logged
+  // as a broadcast, nobody else is touched, and the SMS consent gate is not consulted —
+  // they asked for it themselves, on their own number. Subject is prefixed [TEST] so a test
+  // is never mistaken for the real send in an inbox.
+  if (p === '/api/admin/notify/test' && method === 'POST') {
+    const admin = await platformAdmin(req);
+    if (!admin) return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const message = (body.message || '').toString().trim().slice(0, 1000);
+    const subject = (body.subject || '').toString().trim().slice(0, 150);
+    const wantEmail = !!body.email, wantSms = !!body.sms;
+    if (!message) return bad(res, 'Write the message first');
+    if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
+    if (wantEmail && !subject) return bad(res, 'Email needs a subject');
+    const me = await db.get('SELECT uid, email, phone FROM users WHERE uid = ?', [admin.uid]);
+    if (!me) return bad(res, 'Account not found', 404);
+    const m = await renderAnnouncement({ subject, message }, me.uid, publicBaseFromReq(req));
+    const out = { email: null, sms: null };
+    if (wantEmail) {
+      if (!me.email) out.email = { ok: false, error: 'No email on your account' };
+      else { const r = await sendEmail(me.email, '[TEST] ' + m.subject, m.html, m.text); out.email = { ok: !!r.ok, error: r.error || null, to: maskEmail(me.email) }; }
+    }
+    if (wantSms) {
+      if (!me.phone || String(me.phone).length < 7) out.sms = { ok: false, error: 'No phone number on your account (add one on your profile)' };
+      else {
+        const r = await sendSms(me.phone, m.sms);
+        const seg = smsSegments(m.sms);
+        out.sms = { ok: !!r.ok, error: r.error || null, to: maskPhone(me.phone), channel: r.channel || null,
+          provider: SMS_PROVIDER, gsm7: seg.encoding === 'gsm7', segments: seg.segments, chars: [...m.sms].length };
+      }
+    }
+    return send(res, 200, out);
+  }
   if (p === '/api/admin/notify/process' && method === 'POST') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const { broadcastId, limit } = await readBody(req);
@@ -6840,35 +6934,11 @@ async function handleApi(req, res, url) {
     const batch = await db.all("SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [broadcastId, n]);
     let sentN = 0, failedN = 0;
     const base = publicBaseFromReq(req);
-    // The footer is per-recipient (the manage link is signed with their uid), so the body
-    // is built inside the loop. Note the SMS branch previously carried NO opt-out language
-    // at all, unlike the go-live and artist texts — smsFooter() fixes that too.
-    const htmlFor = (manage, bodyHtml) => `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
-      <div style="max-width:520px;margin:0 auto;background:#171328;border:1px solid #2e2750;border-radius:16px;padding:26px">
-        <p style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;font-weight:700;margin:0 0 14px">The A&amp;R Room</p>
-        <div style="font-size:15px;line-height:1.6;color:#f3f0fb">${bodyHtml.replace(/\n/g, '<br>')}</div>
-        <p style="font-size:12px;color:#6f688f;margin:22px 0 0">Makin' It Magazine · The A&amp;R Room · <a href="https://anr.makinitmag.com" style="color:#6d5fe0">anr.makinitmag.com</a></p>
-        ${notifyFooterHtml(manage)}
-      </div></div>`;
-    // Tokens are per recipient: their first name, and the three links that carry their uid.
-    // The card link is a signed deep link into /refer (no login on the device the email
-    // lands on); without NOTIFY_LINK_SECRET it degrades to the plain page, which asks for a code.
-    const usesTokens = NOTIFY_TOKEN_RE.test(bc.message + ' ' + (bc.subject || ''));
-    NOTIFY_TOKEN_RE.lastIndex = 0;
     for (const r of batch) {
-      const manage = notifyManageUrl(base, r.uid);
-      let vals = {};
-      if (usesTokens) {
-        const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
-        const links = referralLinks(r.uid);
-        vals = { firstName: firstNameOf(u && u.name), cardLink: referPageUrl(base, r.uid), submitLink: links.submit, joinLink: links.join };
-      }
-      const subject = usesTokens ? renderNotifyTokens(bc.subject || 'The A&R Room', vals, false) : (bc.subject || 'The A&R Room');
-      const bodyText = usesTokens ? renderNotifyTokens(bc.message, vals, false) : bc.message;
-      const bodyHtml = usesTokens ? renderNotifyTokens(bc.message, vals, true) : escapeHtml(bc.message);
+      const m = await renderAnnouncement(bc, r.uid, base);
       const out = r.channel === 'email'
-        ? await sendEmail(r.dest, subject, htmlFor(manage, bodyHtml), `${bodyText}\n\n${notifyFooterText(manage)}`)
-        : await sendSms(r.dest, `${bodyText}\n${smsFooter(manage)}`);
+        ? await sendEmail(r.dest, m.subject, m.html, m.text)
+        : await sendSms(r.dest, m.sms);
       if (out.ok) { sentN++; await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); }
       else { failedN++; await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); }
     }
@@ -9646,6 +9716,9 @@ module.exports.ensureInit = ensureInit;
 // Exported for tests: the artist-SMS quiet-hours gate is a TCPA constraint, so it's
 // asserted directly against fixed timestamps rather than inferred from a live clock.
 module.exports._withinSmsWindow = withinSmsWindow;
+module.exports._artistNoticeSmsBody = artistNoticeSmsBody;
+module.exports._goLiveSmsBody = goLiveSmsBody;
+module.exports._fitSmsTitle = fitSmsTitle;
 module.exports._syncLeadsToAsana = syncLeadsToAsana;
 module.exports._leadGroups = leadGroups;
 module.exports._parseLeadRef = parseLeadRef;
