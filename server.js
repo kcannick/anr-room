@@ -512,6 +512,9 @@ async function resolveReferUid(req, url) {
 // text and SMS the values drop in bare. Unknown [brackets] pass through untouched, so a
 // message that uses brackets for its own reasons is not mangled.
 const NOTIFY_TOKEN_RE = /\[\s*(first\s*name|card\s*link|submit\s*link|join\s*link)\s*\]/gi;
+// The announcement body cap. 1,000 was a text-message-sized limit that silently clipped a
+// sectioned email (2026-09-20); the column is TEXT, and a long body sent to SMS is one MMS.
+const NOTIFY_MESSAGE_MAX = 6000;
 function renderNotifyTokens(text, vals, html) {
   const key = k => k.toLowerCase().replace(/\s+/g, '');
   const out = [];
@@ -6869,7 +6872,7 @@ async function handleApi(req, res, url) {
     const admin = await platformAdmin(req);
     if (!admin) return bad(res, 'Admin only', 403);
     const body = await readBody(req);
-    const message = (body.message || '').toString().trim().slice(0, 1000);
+    const message = (body.message || '').toString().trim().slice(0, NOTIFY_MESSAGE_MAX);
     const subject = (body.subject || '').toString().trim().slice(0, 150);
     const wantEmail = !!body.email, wantSms = !!body.sms;
     if (!message) return bad(res, 'Write the message first');
@@ -6900,7 +6903,7 @@ async function handleApi(req, res, url) {
     const admin = await platformAdmin(req);
     if (!admin) return bad(res, 'Admin only', 403);
     const body = await readBody(req);
-    const message = (body.message || '').toString().trim().slice(0, 1000);
+    const message = (body.message || '').toString().trim().slice(0, NOTIFY_MESSAGE_MAX);
     const subject = (body.subject || '').toString().trim().slice(0, 150);
     const wantEmail = !!body.email, wantSms = !!body.sms;
     if (!message) return bad(res, 'Write the message first');

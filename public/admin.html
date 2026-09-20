@@ -1088,7 +1088,8 @@
       <label>Email subject</label>
       <input id="nbSubject" placeholder="e.g. The A&R Room is live Wednesday at 8PM ET" maxlength="150">
       <label style="margin-top:10px">Message</label>
-      <textarea id="nbMessage" maxlength="1000" placeholder="Keep SMS-friendly if texting — the same text goes to both channels."></textarea>
+      <textarea id="nbMessage" maxlength="6000" style="min-height:160px" placeholder="Keep SMS-friendly if texting — the same text goes to both channels."></textarea>
+      <p class="muted" id="nbLen" style="font-size:11px;margin:4px 0 0;text-align:right"></p>
       <p class="muted" style="font-size:11px;margin:6px 0 0">Tokens, filled in per A&amp;R (subject too). Click to insert:
         <button type="button" class="nb-tok" data-tok="[first name]" style="font:inherit;color:var(--signal);background:none;border:0;padding:0 2px;cursor:pointer">[first name]</button> ·
         <button type="button" class="nb-tok" data-tok="[card link]" style="font:inherit;color:var(--signal);background:none;border:0;padding:0 2px;cursor:pointer">[card link]</button> ·
@@ -3239,7 +3240,8 @@ $('#plUpload')&&($('#plUpload').onclick=async()=>{
     if(gsm&&n<=160) el.innerHTML='SMS: <b>'+n+'</b> of 160 characters, plain text, one segment (before the opt-out footer).';
     else el.innerHTML='Will send as <b>MMS</b>: '+(gsm?'':'it has an emoji or a character outside plain text, ')+(n>160?(n+' characters is more than one segment'):'')+(gsm?'':(n>160?' and':' which')+' would split it into '+Math.ceil(n/(gsm?153:67))+' segments')+'. One MMS costs less than that.';
   };
-  ['nbMessage','nbSms'].forEach(id=>{const el=$('#'+id); if(el){el.addEventListener('input',read);el.addEventListener('change',read);}});
+  const len=()=>{ const el=$('#nbLen'); if(el) el.textContent=[...$('#nbMessage').value].length.toLocaleString('en-US')+' / 6,000 characters'; };
+  ['nbMessage','nbSms'].forEach(id=>{const el=$('#'+id); if(el){el.addEventListener('input',()=>{read();len();});el.addEventListener('change',read);}});
 })();
 $('#nbTest')&&($('#nbTest').onclick=async()=>{
   $('#nbErr').textContent='';$('#nbTestStatus').textContent='';

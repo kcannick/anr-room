@@ -2888,9 +2888,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const ntEmoji = await call('/api/admin/notify/test', { subject: 's', message: '🎧 Live tonight', sms: true }, 'POST', ADMINH);
   ok('an emoji announcement reports MMS', ntEmoji.status === 200 && ntEmoji.d.sms.channel === 'mms' && ntEmoji.d.sms.gsm7 === false && ntEmoji.d.email === null, JSON.stringify(ntEmoji.d));
   ok('the reply never carries the raw email or phone', !/admin@test\.com|3055550100/.test(JSON.stringify(ntBoth.d) + JSON.stringify(ntNoPhone.d)));
+  const longMsg = 'Section one.\n\n' + 'A full email with sections, not a text. '.repeat(60) + '\nEnd: [join link]';
+  const ntLong = await call('/api/admin/notify/test', { subject: 's', message: longMsg, email: true }, 'POST', ADMINH);
+  ok('a 2,400-character sectioned email is not clipped (the cap is 6,000, not 1,000)', ntLong.status === 200 && ntLong.d.email.ok === true && longMsg.length > 2000, String(longMsg.length));
+  const nbLong = await call('/api/admin/notify/start', { subject: 's', message: longMsg, email: true }, 'POST', ADMINH);
+  const nbLongRow = await tdb.get('SELECT message FROM notify_broadcasts WHERE id = ?', [nbLong.d.broadcastId]);
+  ok('and the real broadcast stores the whole body', nbLongRow && nbLongRow.message === longMsg, nbLongRow && String(nbLongRow.message.length));
+  let nbLongOut = { remaining: nbLong.d.queued }, ls = 0;
+  while (nbLongOut.remaining > 0 && ls++ < 50) nbLongOut = (await call('/api/admin/notify/process', { broadcastId: nbLong.d.broadcastId, limit: 20 }, 'POST', ADMINH)).d;
   ok('a test queues no broadcast and no recipient rows',
-    Number((await tdb.get('SELECT COUNT(*) AS c FROM notify_broadcasts')).c) === nbBefore
-      && Number((await tdb.get('SELECT COUNT(*) AS c FROM notify_recipients')).c) === nbRecBefore);
+    Number((await tdb.get('SELECT COUNT(*) AS c FROM notify_broadcasts')).c) === nbBefore + 1
+      && Number((await tdb.get('SELECT COUNT(*) AS c FROM notify_recipients')).c) === nbRecBefore + nbLong.d.queued);
 
   console.log('\n— announcement tokens: [first name] [card link] [submit link] [join link] —');
   const tsrv = require('./server');
