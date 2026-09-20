@@ -1,7 +1,7 @@
 {
   "version": 2,
   "buildCommand": "bash scripts/vercel-build.sh",
-  "functions": { "api/index.js": { "maxDuration": 30, "includeFiles": "assets/**" } },
+  "functions": { "api/index.js": { "maxDuration": 30, "includeFiles": "{assets/**,public/*}" } },
   "crons": [
     { "path": "/api/cron/artist-sms", "schedule": "0 * * * *" },
     { "path": "/api/cron/daily", "schedule": "*/5 * * * *" }
