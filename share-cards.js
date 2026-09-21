@@ -1111,8 +1111,15 @@ function element(type, data = {}) {
 // ---- render to PNG ----
 let _satori = null, _Resvg = null;
 // Every card is 3:4 except the recap graphics, which carry their own size.
-function sizeOf(type) { return RECAP_SIZES[type] || REFER_SIZES[type] || [W, H]; }
-function sizeOf(type) { return type === 'resultsSlide' ? RESULTS_SIZE : type === 'winnerPost' ? WINNER_SIZE : type === 'trackPage' ? TRACK_SIZE : (RECAP_SIZES[type] || [W, H]); }
+// ONE size table. A merge once left two sizeOf()s here; the later one lost REFER_SIZES, so
+// every referral graphic rendered on the 1080×1440 default and the 1920-tall story was cut
+// off at the QR codes (found 2026-09-20). The test suite now pins the refer sizes.
+function sizeOf(type) {
+  if (type === 'resultsSlide') return RESULTS_SIZE;
+  if (type === 'winnerPost') return WINNER_SIZE;
+  if (type === 'trackPage') return TRACK_SIZE;
+  return RECAP_SIZES[type] || REFER_SIZES[type] || [W, H];
+}
 async function renderPng(type, data) {
   if (!_satori) { const m = require('satori'); _satori = m.default || m; }
   if (!_Resvg) { _Resvg = require('@resvg/resvg-js').Resvg; }
@@ -1122,5 +1129,4 @@ async function renderPng(type, data) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA };
-module.exports = { renderPng, element, sizeOf, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA, RESULTS_PER_SLIDE, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };
+module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA, RESULTS_PER_SLIDE, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };
