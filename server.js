@@ -9238,9 +9238,18 @@ async function handleApi(req, res, url) {
   if (p === '/api/admin/rounds/contact-backfill' && method === 'POST') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const body = await readBody(req, 6 * 1024 * 1024);
-    const contacts = Array.isArray(body.contacts) ? body.contacts : [];
-    if (!contacts.length) return bad(res, 'No contacts in the file');
+    // The site's own records are always in the pool (operator, 2026-09-22): an artist whose
+    // later submission carried email + phone fills their earlier one that had only a handle.
+    // The uploaded file is optional on top of that.
+    const fileContacts = Array.isArray(body.contacts) ? body.contacts : [];
     const apply = body.apply === true;
+    const own = await db.all(
+      `SELECT r.song_title AS title, r.song_artist AS artist, r.artist_email AS email, r.artist_phone AS phone, r.artist_instagram AS instagram
+         FROM rounds r JOIN sessions s ON s.id = r.session_id
+        WHERE s.deleted_at IS NULL AND COALESCE(r.is_reference, 0) = 0
+          AND (COALESCE(r.artist_email,'') <> '' OR COALESCE(r.artist_phone,'') <> '' OR COALESCE(r.artist_instagram,'') <> '')`, []);
+    const contacts = [...own, ...fileContacts];
+    if (!contacts.length) return bad(res, 'No contacts to work from');
     const igOf = (v) => {
       let x = (v == null ? '' : String(v)).trim().replace(/^'+/, '');
       const m = /instagram\.com\/([A-Za-z0-9_.]+)/i.exec(x); if (m) x = m[1];
@@ -9250,16 +9259,17 @@ async function handleApi(req, res, url) {
     // Merge rows into one best contact per key: a later row's value wins per field only where
     // the earlier had none, so the most complete picture of an artist is kept.
     const merge = (into, c) => { for (const k of ['email', 'phone', 'instagram']) if (!into[k] && c[k]) into[k] = c[k]; return into; };
-    const byPair = new Map(), byArtist = new Map();
+    const byPair = new Map(), byArtist = new Map(), byIg = new Map(), byEmail = new Map();
     let usable = 0;
     for (const raw of contacts) {
       const c = { email: cleanArtistEmail(raw.email), phone: phoneOf(raw.phone), instagram: igOf(raw.instagram || raw.ig) };
       if (!c.email && !c.phone && !c.instagram) continue;
       const a = chartKey(raw.artist || raw.name), t = chartKey(raw.title);
-      if (!a) continue;
       usable++;
-      if (t) byPair.set(t + '|' + a, merge(byPair.get(t + '|' + a) || {}, c));
-      byArtist.set(a, merge(byArtist.get(a) || {}, c));
+      if (a && t) byPair.set(t + '|' + a, merge(byPair.get(t + '|' + a) || {}, c));
+      if (a) byArtist.set(a, merge(byArtist.get(a) || {}, c));
+      if (c.instagram) byIg.set(c.instagram.toLowerCase(), merge(byIg.get(c.instagram.toLowerCase()) || {}, c));
+      if (c.email) byEmail.set(c.email, merge(byEmail.get(c.email) || {}, c));
     }
     const rounds = await db.all(
       `SELECT r.id, r.song_title, r.song_artist, r.artist_email, r.artist_phone, r.artist_instagram, r.status, s.name AS session
@@ -9273,8 +9283,20 @@ async function handleApi(req, res, url) {
     const out = { apply, usable, candidates: rounds.length, matched: 0, applied: 0, remaining: 0, filled: { email: 0, phone: 0, instagram: 0 }, rows: [], unmatched: [] };
     for (const r of rounds) {
       const a = chartKey(r.song_artist), t = chartKey(r.song_title);
-      if (!a) continue;
-      const c = byPair.get(t + '|' + a) || byArtist.get(a);
+      const ownIg = igClean(r.artist_instagram), ownEm = cleanArtistEmail(r.artist_email);
+      // Every level contributes; where two disagree the earlier wins. Precedence (operator,
+      // 2026-09-22): the email and the handle the round already carries are UNIQUE
+      // identifiers, so they outrank a name match; title + artist beats the artist name
+      // alone. A round's own title hit (it is in the pool itself) must not stop the artist's
+      // OTHER records from completing it, hence the merge across levels.
+      const levels = [
+        ['email', ownEm ? byEmail.get(ownEm) : null],
+        ['instagram', ownIg ? byIg.get(ownIg.toLowerCase()) : null],
+        ['title', a && t ? byPair.get(t + '|' + a) : null],
+        ['artist', a ? byArtist.get(a) : null],
+      ].filter(([, v]) => v);
+      const c = levels.length ? levels.reduce((acc, [, v]) => merge(acc, v), {}) : null;
+      const via = levels.map(([k]) => k).join('+');
       if (!c) { if (out.unmatched.length < 400) out.unmatched.push({ artist: r.song_artist, title: r.song_title }); continue; }
       const fill = {};
       if (!(r.artist_email || '').trim() && c.email) fill.artist_email = c.email;
@@ -9284,7 +9306,7 @@ async function handleApi(req, res, url) {
       if (!keys.length) continue;
       out.matched++;
       keys.forEach(k => { out.filled[k.replace('artist_', '')]++; });
-      if (out.rows.length < 600) out.rows.push({ id: r.id, artist: r.song_artist, title: r.song_title, session: r.session, via: byPair.has(t + '|' + a) ? 'title' : 'artist', ...Object.fromEntries(keys.map(k => [k.replace('artist_', ''), fill[k]])) });
+      if (out.rows.length < 600) out.rows.push({ id: r.id, artist: r.song_artist, title: r.song_title, session: r.session, via, ...Object.fromEntries(keys.map(k => [k.replace('artist_', ''), fill[k]])) });
       if (apply) {
         if (Date.now() - t0 > budgetMs) { out.remaining++; continue; }
         await db.run(`UPDATE rounds SET ${keys.map(k => k + ' = ?').join(', ')} WHERE id = ?`, [...keys.map(k => fill[k]), r.id]);

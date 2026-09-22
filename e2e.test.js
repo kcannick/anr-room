@@ -4640,18 +4640,28 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const cbkNoAuth = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts }, 'POST', cbkH);
   ok('backfill: platform-admin only', cbkNoAuth.status === 403, 'got ' + cbkNoAuth.status);
   const cbkPrev = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts, apply: false }, 'POST', ADMINH);
-  ok('backfill: preview matches the rounds missing contact', cbkPrev.status === 200 && cbkPrev.d.usable === 3 && cbkPrev.d.matched >= 3, JSON.stringify({ s: cbkPrev.status, u: cbkPrev.d.usable, m: cbkPrev.d.matched, f: cbkPrev.d.filled }));
+  ok('backfill: preview matches the rounds missing contact', cbkPrev.status === 200 && cbkPrev.d.usable >= 3 && cbkPrev.d.matched >= 3, JSON.stringify({ s: cbkPrev.status, u: cbkPrev.d.usable, m: cbkPrev.d.matched, f: cbkPrev.d.filled }));
   ok('backfill: preview writes nothing', !(await anDb.get('SELECT artist_email FROM rounds WHERE id = ?', [cbkR1])).artist_email);
   ok('backfill: an artist not in the file is reported', cbkPrev.d.unmatched.some(u => u.artist === 'Nobody Here'));
   const cbkAp = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts, apply: true }, 'POST', ADMINH);
   const cbk1 = await anDb.get('SELECT artist_email, artist_phone, artist_instagram FROM rounds WHERE id = ?', [cbkR1]);
-  ok('backfill: a bare round gets email, phone and handle (cleaned)', cbk1.artist_email === 'big@room.com' && cbk1.artist_phone === '4045550100' && cbk1.artist_instagram === 'BigRoom', JSON.stringify(cbk1));
+  // The site's own record of the same artist (keep@me.com) outranks the file for the email.
+  ok('backfill: a bare round gets email (from the sibling record), phone and handle (cleaned)', cbk1.artist_email === 'keep@me.com' && cbk1.artist_phone === '4045550100' && cbk1.artist_instagram === 'BigRoom', JSON.stringify(cbk1));
   const cbk2 = await anDb.get('SELECT artist_email, artist_phone, artist_instagram FROM rounds WHERE id = ?', [cbkR2]);
-  ok('backfill: a field already on the round is never overwritten', cbk2.artist_email === 'keep@me.com' && cbk2.artist_phone === '4045550100', JSON.stringify(cbk2));
+  ok('backfill: a field already on the round is never overwritten, the rest is filled', cbk2.artist_email === 'keep@me.com' && cbk2.artist_phone === '4045550100' && cbk2.artist_instagram === 'BigRoom', JSON.stringify(cbk2));
   const cbk4 = await anDb.get('SELECT artist_email, artist_phone, artist_instagram FROM rounds WHERE id = ?', [cbkR4]);
   ok('backfill: title + artist beats artist-only, and a profile URL becomes a handle', cbk4.artist_email === 'right@x.com' && cbk4.artist_phone === '2125550199' && cbk4.artist_instagram === 'twonames', JSON.stringify(cbk4));
   ok('backfill: the unmatched round is untouched', !(await anDb.get('SELECT artist_email FROM rounds WHERE id = ?', [cbkR3])).artist_email);
   const cbkAgain = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts, apply: true }, 'POST', ADMINH);
+  // The site's own records are a source too: a round with only a handle is completed from a
+  // later round of the same artist (by handle, even under a different stage name).
+  const cbkR5 = await cbkAdd({ song_title: 'Early One', song_artist: 'Stage Name A' });
+  const cbkR6 = await cbkAdd({ song_title: 'Later One', song_artist: 'Stage Name B', artist_email: 'both@x.com', artist_phone: '3055550123' });
+  await anDb.run('UPDATE rounds SET artist_instagram = ? WHERE id = ?', ['SameHandle', cbkR5]);   // the round form has no handle field; the ingest sets it
+  await anDb.run('UPDATE rounds SET artist_instagram = ? WHERE id = ?', ['samehandle', cbkR6]);
+  const cbkSelf = await call('/api/admin/rounds/contact-backfill', { contacts: [], apply: true }, 'POST', ADMINH);
+  const cbk5 = await anDb.get('SELECT artist_email, artist_phone FROM rounds WHERE id = ?', [cbkR5]);
+  ok('backfill: no file — a round is completed from another round sharing its handle', cbkSelf.status === 200 && cbk5.artist_email === 'both@x.com' && cbk5.artist_phone === '3055550123' && cbkSelf.d.rows.some(r => r.id === cbkR5 && /instagram/.test(r.via)), JSON.stringify({ s: cbkSelf.status, r: cbk5, v: (cbkSelf.d.rows || []).find(r => r.id === cbkR5) }));
   ok('backfill: apply reports what it wrote and nothing remaining', cbkAp.d.applied >= 3 && cbkAp.d.remaining === 0, JSON.stringify({ a: cbkAp.d.applied, r: cbkAp.d.remaining }));
   ok('backfill: re-running has nothing left to fill for those rounds', cbkAgain.d.rows.every(r => ![cbkR1, cbkR2, cbkR4].includes(r.id)), JSON.stringify(cbkAgain.d.filled));
 

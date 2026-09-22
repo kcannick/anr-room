@@ -1084,7 +1084,7 @@
     </div>
     <div class="card" id="cbCard">
       <h2>Backfill artist contacts</h2>
-      <p class="muted" style="font-size:12px;margin:0 0 10px">Records from before the contact fields existed have no email, phone or Instagram. Upload a CSV export with columns <b>artist, title, email, phone, instagram</b>. Each record missing a field is matched by title and artist, then by artist name alone, and <b>only blank fields are filled</b> — nothing already on a record changes. Preview first.</p>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">Records from before the contact fields existed have no email, phone or Instagram. Every record that has contact details is a source; a CSV export with columns <b>artist, title, email, phone, instagram</b> adds more. Each record missing a field is matched by its email or Instagram handle first (unique identifiers), then title and artist, then artist name alone, and <b>only blank fields are filled</b> — nothing already on a record changes. Preview first. With no file chosen it works from the site's own records.</p>
       <input type="file" id="cbFile" accept=".csv,text/csv" style="font-size:13px">
       <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
         <button class="btn ghost sm" id="cbPreview">Preview matches</button>
@@ -3350,7 +3350,7 @@ function cbParseCSV(text){
   return rows;
 }
 async function cbRead(){
-  const f=$('#cbFile').files[0]; if(!f) throw new Error('Choose the CSV first.');
+  const f=$('#cbFile').files[0]; if(!f) return [];   // no file: the site's own records are the pool
   const text=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsText(f);});
   const rows=cbParseCSV(text.replace(/^\uFEFF/,'')); if(!rows.length) throw new Error('The file is empty.');
   const hdr=rows[0].map(x=>String(x||'').trim().toLowerCase());
