@@ -1108,6 +1108,16 @@ function scoutPointsFor(roomAverage) {
   return Math.round(a * SCOUT_MULTIPLIER);
 }
 
+// A self-referral (operator, 2026-09-22): an A&R submitting their OWN record through their
+// own submit link earns nothing — scouting pays for finding someone else. The only identity
+// the push carries for the artist is the contact email, so that is the match, case-blind.
+// Attribution still records on the round (Drupal's own reporting reads it); only the points
+// and the /refer artist lane skip it.
+function isSelfScout(round, scout) {
+  const a = (round.artist_email || '').toString().trim().toLowerCase();
+  const s = (scout && scout.email || '').toString().trim().toLowerCase();
+  return !!a && a === s;
+}
 // Credit the A&R who found this record, once it has a room average. Fires at ratify next to
 // the referral milestones, because room_average does not exist before then. Idempotent on the
 // same UNIQUE (reason, source_uid, milestone) that makes referral milestones safe.
@@ -1119,9 +1129,10 @@ async function creditScoutPoints(round, session) {
   // The submit link carries OUR uid (makinitmag.com/review?ref=<users.uid>) and Drupal hands it
   // back verbatim as scout.uid, so the A&R resolves directly — no Makin' It account needed.
   // Older links carried a Drupal uid; the lazy email link still resolves those.
-  const u = (await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [round.scout_drupal_uid]))
-    || (await db.get('SELECT uid, blocked FROM users WHERE drupal_uid = ?', [round.scout_drupal_uid]));
+  const u = (await db.get('SELECT uid, blocked, email FROM users WHERE uid = ?', [round.scout_drupal_uid]))
+    || (await db.get('SELECT uid, blocked, email FROM users WHERE drupal_uid = ?', [round.scout_drupal_uid]));
   if (!u || u.blocked) return null;      // an unresolvable scout earns nothing
+  if (isSelfScout(round, u)) return null;
   const ins = await db.run(
     `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
      VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
@@ -8395,11 +8406,14 @@ async function handleApi(req, res, url) {
     // Never test a bare placeholder for NULL in SQL: Postgres cannot infer its type and the
     // request 500s, while SQLite (the test suite) is happy. Shape the predicate here instead.
     const scoutIds = u.drupal_uid ? [uid, u.drupal_uid] : [uid];
-    const scouted = await db.all(
-      `SELECT r.id, r.song_title, r.song_artist, r.status, r.room_average, r.created_at, s.mode, s.async_state
+    const scoutedAll = await db.all(
+      `SELECT r.id, r.song_title, r.song_artist, r.status, r.room_average, r.created_at, r.artist_email, s.mode, s.async_state
          FROM rounds r JOIN sessions s ON s.id = r.session_id
         WHERE s.deleted_at IS NULL AND r.scout_drupal_uid IN (${scoutIds.map(() => '?').join(',')})
         ORDER BY r.created_at DESC LIMIT 200`, scoutIds);
+    // Your own record is not a referral: it never earns and it does not count on the page.
+    const me = await db.get('SELECT email FROM users WHERE uid = ?', [uid]);
+    const scouted = scoutedAll.filter(r => !isSelfScout(r, me));
     const scoutPts = new Map();
     let artistEarned = 0;
     for (const e of await db.all("SELECT source_uid, points FROM point_events WHERE user_id = ? AND reason = 'scout'", [uid])) {
@@ -9876,6 +9890,7 @@ module.exports._parseDailySchedule = parseDailySchedule;
 module.exports._scoutPointsFor = scoutPointsFor;
 module.exports._REFERRAL = REFERRAL;
 module.exports._renderNotifyTokens = renderNotifyTokens;
+module.exports._isSelfScout = isSelfScout;
 module.exports._mintReferLink = mintReferLink;
 module.exports._referralLinks = referralLinks;
 module.exports._buildRecap = buildRecap;

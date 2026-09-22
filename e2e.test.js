@@ -2617,7 +2617,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
     songs: [song(51, { scout: { uid: 'drupal-777', email: scoutEmail } }),
             song(52, { scout: { uid: 'drupal-999', email: 'nobody@nowhere.test' } }),
             // The submit link form: Drupal hands back OUR uid as scout.uid, no email needed.
-            song(53, { scout: { uid: SCOUT_UID } })] }, 'POST', DTOK);
+            song(53, { scout: { uid: SCOUT_UID } }),
+            // A self-referral: the scout submitted their OWN record through their own link.
+            song(54, { email: scoutEmail.toUpperCase(), scout: { uid: SCOUT_UID } })] }, 'POST', DTOK);
   const SDROP = scOk.d.sessionId;
   ok('the scout ref is stored on the record', (await dDb.get('SELECT scout_drupal_uid FROM rounds WHERE session_id = ? AND idx = 1', [SDROP])).scout_drupal_uid === 'drupal-777');
   ok('an UNMATCHED scout ref is still stored (Drupal reports off it and must not depend on us)',
@@ -2637,12 +2639,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
   await call('/api/admin/daily/tick', { at: sCloses + 1000 }, 'POST', BOOTH);
   const scEvents = await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND user_id = ?", [SCOUT_UID]);
   ok('a scout earns once their record tallies — by our uid off the submit link, or by the older email link', scEvents.length === 2, JSON.stringify(scEvents));
+  const selfRoundId = (await dDb.get('SELECT id FROM rounds WHERE session_id = ? AND idx = 4', [SDROP])).id;
+  ok('a self-referral earns nothing (matched on the artist email, case-blind)',
+    !scEvents.some(e => e.source_uid === selfRoundId), JSON.stringify(scEvents));
+  ok('isSelfScout is a pure email match', srv._isSelfScout({ artist_email: ' A@X.com ' }, { email: 'a@x.com' }) && !srv._isSelfScout({ artist_email: '' }, { email: '' }) && !srv._isSelfScout({ artist_email: 'b@x.com' }, { email: 'a@x.com' }));
   ok('and the award scales with the room average', scEvents.every(e => Number(e.points) === srv._scoutPointsFor(8.0)), JSON.stringify(scEvents));
   // The artist lane on /refer: the average is SEALED until the day publishes.
   const scH = { 'X-Auth-Token': scVer.d.token };
   const scState = (await dDb.get('SELECT async_state FROM sessions WHERE id = ?', [SDROP])).async_state;
   const scRp = (await call('/api/me/referrals', null, 'GET', scH)).d;
-  ok('the scout\'s records are listed', scRp.artists.submitted === 2, JSON.stringify(scRp.artists));
+  ok('the scout\'s records are listed, and their own record is not among them', scRp.artists.submitted === 2, JSON.stringify(scRp.artists));
   if (scState !== 'published') {
     ok('a tallied-but-unpublished record shows no average and no points (sealed)',
       scRp.artists.rated === 0 && scRp.artists.rows.every(r => r.average === undefined && r.points === undefined), JSON.stringify(scRp.artists.rows));

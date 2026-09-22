@@ -653,6 +653,10 @@ live on anr.makinitmag.com.
   `referral` milestone rows stay as paid history. The weekly report never sees these (its
   bonus filter is `<sessionId>:<uid>`), which is right: a seat is won on the week's listening.
   **Scouting** = `Math.round(avg × 5)` (7.1 → 36), no floor; the 250-per-point curve is gone.
+  **Self-referrals earn nothing** (operator, 2026-09-22): an A&R submitting their OWN record
+  through their own link is matched on the artist email (`isSelfScout`, case-blind) — the only
+  artist identity the push carries. Attribution still lands on the round (Drupal reports off
+  it); the points and the `/refer` artist lane skip it.
   **Attribution** (`attributeReferral`): `ref` resolves to a users.uid first, then the older
   per-session participant code; only a brand-new account, never self, set once. Rides
   `/api/auth/verify` (the `/join` signup — new `ref` field) and `/api/join/verify`. Client:
