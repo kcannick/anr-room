@@ -3334,10 +3334,25 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
 });
 // ===== Backfill artist contacts =====
 let cbContacts=null;
+// A real CSV parser (quotes, commas and line breaks inside quotes): the sidebet loader's
+// two-column splitter is not one, which is where "rows[0].map is not a function" came from.
+function cbParseCSV(text){
+  const rows=[];let row=[],f='',q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; } else f+=c; }
+    else if(c==='"')q=true;
+    else if(c===','){row.push(f);f='';}
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n')i++; row.push(f);f='';if(row.some(x=>x.trim()))rows.push(row);row=[]; }
+    else f+=c;
+  }
+  row.push(f); if(row.some(x=>x.trim()))rows.push(row);
+  return rows;
+}
 async function cbRead(){
   const f=$('#cbFile').files[0]; if(!f) throw new Error('Choose the CSV first.');
   const text=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsText(f);});
-  const rows=sbParseCSV(text); if(!rows.length) throw new Error('The file is empty.');
+  const rows=cbParseCSV(text.replace(/^\uFEFF/,'')); if(!rows.length) throw new Error('The file is empty.');
   const hdr=rows[0].map(x=>String(x||'').trim().toLowerCase());
   const col=n=>hdr.findIndex(x=>x===n||x.startsWith(n));
   const ci={artist:col('artist')>=0?col('artist'):col('name'),title:col('title')>=0?col('title'):col('song'),email:col('email'),phone:col('phone'),instagram:col('instagram')};
