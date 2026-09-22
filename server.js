@@ -4350,11 +4350,11 @@ function parseLeadRef(notes) {
 // is bounded by the press's deadline like everything else — the rest waits for the next press.
 async function reconcileLeadsProject(proj, { deadline, mark, out }) {
   const tasks = [];
-  let path = `/projects/${proj.gid}/tasks?opt_fields=name,notes,created_at&limit=100`;
-  while (path) {
-    const page = await asanaFetch(path);
+  let nextUrl = `/projects/${proj.gid}/tasks?opt_fields=name,notes,created_at&limit=100`;   // never `path`: it shadows the module for Vercel's tracer
+  while (nextUrl) {
+    const page = await asanaFetch(nextUrl);
     tasks.push(...(page.data || []));
-    path = page.next_page && page.next_page.offset ? `/projects/${proj.gid}/tasks?opt_fields=name,notes,created_at&limit=100&offset=${encodeURIComponent(page.next_page.offset)}` : null;
+    nextUrl = page.next_page && page.next_page.offset ? `/projects/${proj.gid}/tasks?opt_fields=name,notes,created_at&limit=100&offset=${encodeURIComponent(page.next_page.offset)}` : null;
   }
   mark('reconcile: ' + tasks.length + ' tasks in the project');
   const byRef = new Map();
@@ -9226,6 +9226,66 @@ async function handleApi(req, res, url) {
       sent: out.filter(d => d.status === 'sent').length,
       results: out,
     });
+  }
+
+  // ---- Backfill artist contacts from an export (2026-09-22). ----
+  // Rounds from before the contact fields existed have no email / phone / Instagram, which
+  // is what the sales-leads project is worked from. The operator uploads the review-site's
+  // submission exports (artist, title, email, phone, instagram); each round MISSING a field
+  // is matched — title + artist first, then the artist name alone — and ONLY its blank fields
+  // are filled. Nothing already on a round is overwritten. `apply: false` previews.
+  // Platform-admin only: the payload is artist PII across every room.
+  if (p === '/api/admin/rounds/contact-backfill' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const body = await readBody(req, 6 * 1024 * 1024);
+    const contacts = Array.isArray(body.contacts) ? body.contacts : [];
+    if (!contacts.length) return bad(res, 'No contacts in the file');
+    const apply = body.apply === true;
+    const igOf = (v) => {
+      let x = (v == null ? '' : String(v)).trim().replace(/^'+/, '');
+      const m = /instagram\.com\/([A-Za-z0-9_.]+)/i.exec(x); if (m) x = m[1];
+      return igClean(x.split(/\s+/)[0] || '');
+    };
+    const phoneOf = (v) => { const d = (v == null ? '' : String(v)).replace(/\D/g, '').replace(/^1(\d{10})$/, '$1'); return d.length >= 7 && d.length <= 15 && !/^0+$/.test(d) ? d : null; };
+    // Merge rows into one best contact per key: a later row's value wins per field only where
+    // the earlier had none, so the most complete picture of an artist is kept.
+    const merge = (into, c) => { for (const k of ['email', 'phone', 'instagram']) if (!into[k] && c[k]) into[k] = c[k]; return into; };
+    const byPair = new Map(), byArtist = new Map();
+    let usable = 0;
+    for (const raw of contacts) {
+      const c = { email: cleanArtistEmail(raw.email), phone: phoneOf(raw.phone), instagram: igOf(raw.instagram || raw.ig) };
+      if (!c.email && !c.phone && !c.instagram) continue;
+      const a = chartKey(raw.artist || raw.name), t = chartKey(raw.title);
+      if (!a) continue;
+      usable++;
+      if (t) byPair.set(t + '|' + a, merge(byPair.get(t + '|' + a) || {}, c));
+      byArtist.set(a, merge(byArtist.get(a) || {}, c));
+    }
+    const rounds = await db.all(
+      `SELECT r.id, r.song_title, r.song_artist, r.artist_email, r.artist_phone, r.artist_instagram, r.status, s.name AS session
+         FROM rounds r JOIN sessions s ON s.id = r.session_id
+        WHERE s.deleted_at IS NULL AND COALESCE(r.poll_type,'rating') <> 'binary' AND COALESCE(r.is_reference, 0) = 0
+          AND (COALESCE(r.artist_email,'') = '' OR COALESCE(r.artist_phone,'') = '' OR COALESCE(r.artist_instagram,'') = '')`, []);
+    const out = { apply, usable, candidates: rounds.length, matched: 0, filled: { email: 0, phone: 0, instagram: 0 }, rows: [], unmatched: [] };
+    for (const r of rounds) {
+      const a = chartKey(r.song_artist), t = chartKey(r.song_title);
+      if (!a) continue;
+      const c = byPair.get(t + '|' + a) || byArtist.get(a);
+      if (!c) { if (out.unmatched.length < 400) out.unmatched.push({ artist: r.song_artist, title: r.song_title }); continue; }
+      const fill = {};
+      if (!(r.artist_email || '').trim() && c.email) fill.artist_email = c.email;
+      if (!(r.artist_phone || '').trim() && c.phone) fill.artist_phone = c.phone;
+      if (!(r.artist_instagram || '').trim() && c.instagram) fill.artist_instagram = c.instagram;
+      const keys = Object.keys(fill);
+      if (!keys.length) continue;
+      out.matched++;
+      keys.forEach(k => { out.filled[k.replace('artist_', '')]++; });
+      if (out.rows.length < 600) out.rows.push({ id: r.id, artist: r.song_artist, title: r.song_title, session: r.session, via: byPair.has(t + '|' + a) ? 'title' : 'artist', ...Object.fromEntries(keys.map(k => [k.replace('artist_', ''), fill[k]])) });
+      if (apply) {
+        await db.run(`UPDATE rounds SET ${keys.map(k => k + ' = ?').join(', ')} WHERE id = ?`, [...keys.map(k => fill[k]), r.id]);
+      }
+    }
+    return send(res, 200, out);
   }
 
   // ---- Sales leads → Asana (040): the top of the board as one task per artist. ----

@@ -1082,6 +1082,17 @@
       <div id="leadsStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       <div id="leadsList" style="margin-top:10px;max-height:420px;overflow:auto"><div class="empty">Loading…</div></div>
     </div>
+    <div class="card" id="cbCard">
+      <h2>Backfill artist contacts</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">Records from before the contact fields existed have no email, phone or Instagram. Upload a CSV export with columns <b>artist, title, email, phone, instagram</b>. Each record missing a field is matched by title and artist, then by artist name alone, and <b>only blank fields are filled</b> — nothing already on a record changes. Preview first.</p>
+      <input type="file" id="cbFile" accept=".csv,text/csv" style="font-size:13px">
+      <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn ghost sm" id="cbPreview">Preview matches</button>
+        <button class="btn sm" id="cbApply" disabled>Apply to records</button>
+      </div>
+      <div id="cbStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
+      <div id="cbList" style="margin-top:10px;max-height:360px;overflow:auto"></div>
+    </div>
     <div class="card">
       <h2>Message all A&amp;Rs</h2>
       <p class="muted" style="font-size:12px;margin:0 0 10px">One announcement to the whole platform. Email goes to every active account; SMS only to A&amp;Rs who opted in (Twilio handles STOP replies).</p>
@@ -3321,6 +3332,36 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   }catch(e){$('#plStatus').textContent=e.message;}
   $('#plSaveSettings').disabled=false;
 });
+// ===== Backfill artist contacts =====
+let cbContacts=null;
+async function cbRead(){
+  const f=$('#cbFile').files[0]; if(!f) throw new Error('Choose the CSV first.');
+  const text=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsText(f);});
+  const rows=sbParseCSV(text); if(!rows.length) throw new Error('The file is empty.');
+  const hdr=rows[0].map(x=>String(x||'').trim().toLowerCase());
+  const col=n=>hdr.findIndex(x=>x===n||x.startsWith(n));
+  const ci={artist:col('artist')>=0?col('artist'):col('name'),title:col('title')>=0?col('title'):col('song'),email:col('email'),phone:col('phone'),instagram:col('instagram')};
+  if(ci.artist<0) throw new Error('No artist / name column.');
+  cbContacts=rows.slice(1).filter(r=>r.some(x=>String(x||'').trim())).map(r=>({artist:r[ci.artist]||'',title:ci.title>=0?(r[ci.title]||''):'',email:ci.email>=0?(r[ci.email]||''):'',phone:ci.phone>=0?(r[ci.phone]||''):'',instagram:ci.instagram>=0?(r[ci.instagram]||''):''}));
+  return cbContacts;
+}
+async function cbRun(apply){
+  const st=$('#cbStatus'),box=$('#cbList');
+  $('#cbPreview').disabled=$('#cbApply').disabled=true; st.textContent=apply?'Applying…':'Matching…';
+  try{
+    const contacts=await cbRead();
+    const d=await api('/api/admin/rounds/contact-backfill',{contacts,apply});
+    st.innerHTML=(apply?'✅ Applied: ':'Preview: ')+d.matched+' record'+(d.matched===1?'':'s')+' matched of '+d.candidates+' missing contact · +'+d.filled.email+' email, +'+d.filled.phone+' phone, +'+d.filled.instagram+' Instagram · '+d.usable+' usable rows in the file'+(d.unmatched.length?' · '+d.unmatched.length+' still unmatched':'');
+    box.innerHTML=(d.rows.length?'<table class="dltable"><tr><th style="width:34%">Record</th><th>Session</th><th>Matched by</th><th>Email</th><th>Phone</th><th>Instagram</th></tr>'+d.rows.map(r=>'<tr><td><b>'+esc(r.artist||'—')+'</b><br><span class="muted">'+esc(r.title)+'</span></td><td class="muted">'+esc(r.session)+'</td><td>'+r.via+'</td><td>'+esc(r.email||'')+'</td><td>'+esc(r.phone||'')+'</td><td>'+(r.instagram?'@'+esc(r.instagram):'')+'</td></tr>').join('')+'</table>':'<div class="empty">Nothing to fill.</div>')
+      +(d.unmatched.length?'<p class="muted" style="font-size:11px;margin:10px 0 0">Not in the file: '+d.unmatched.slice(0,80).map(u=>esc(u.artist||u.title)).join(' · ')+(d.unmatched.length>80?' …':'')+'</p>':'');
+    $('#cbApply').disabled=apply||!d.matched;
+  }catch(e){st.textContent=e.message;$('#cbApply').disabled=true;}
+  $('#cbPreview').disabled=false;
+}
+$('#cbPreview')&&($('#cbPreview').onclick=()=>cbRun(false));
+$('#cbApply')&&($('#cbApply').onclick=()=>{ if(confirm('Fill the blank contact fields on the matched records? Nothing already filled in will change.')) cbRun(true); });
+$('#cbFile')&&($('#cbFile').onchange=()=>{$('#cbApply').disabled=true;$('#cbStatus').textContent='';$('#cbList').innerHTML='';});
+
 // ===== Sales leads → Asana (040) =====
 const LEADS_UI_BUILD='2026-09-19g';   // printed by Check Asana so a cached console is visible
 const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));

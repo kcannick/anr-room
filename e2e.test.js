@@ -4622,6 +4622,39 @@ async function startVoting(sessionId, headers, minutes = 5) {
     (await call('/api/sidebet', null, 'GET')).d.pack.open === false);
 
   // ======================================================================
+  // Backfill artist contacts from an export (2026-09-22)
+  console.log('\n— contact backfill —');
+  const cbkS = await call('/api/session', { name: 'Old Show' }, 'POST', BOOTH);
+  const cbkH = { 'X-Admin-Token': cbkS.d.adminToken }, cbkSid = cbkS.d.sessionId;
+  const cbkAdd = async (o) => (await call('/api/admin/round', { sessionId: cbkSid, ...o }, 'POST', cbkH)).d.roundId || (await anDb.get('SELECT id FROM rounds WHERE session_id = ? AND song_title = ?', [cbkSid, o.song_title])).id;
+  const cbkR1 = await cbkAdd({ song_title: 'Old Song', song_artist: 'Big Room' });                       // nothing on file
+  const cbkR2 = await cbkAdd({ song_title: 'Other Song', song_artist: 'Big Room', artist_email: 'keep@me.com' });   // email present, rest blank
+  const cbkR3 = await cbkAdd({ song_title: 'Solo', song_artist: 'Nobody Here' });                       // not in the file
+  const cbkR4 = await cbkAdd({ song_title: 'Titled', song_artist: 'Two Names' });                       // matched by title+artist over artist-only
+  const cbkContacts = [
+    { artist: 'big room', title: '', email: 'BIG@room.com', phone: '(404) 555-0100', instagram: "'@BigRoom" },
+    { artist: 'Two Names', title: 'Another', email: 'wrong@x.com', phone: '', instagram: '' },
+    { artist: 'Two Names', title: 'Titled', email: 'right@x.com', phone: '1 (212) 555-0199', instagram: 'https://www.instagram.com/twonames/' },
+    { artist: 'Ghost', title: '', email: '', phone: '', instagram: '' },   // no contact at all → unusable
+  ];
+  const cbkNoAuth = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts }, 'POST', cbkH);
+  ok('backfill: platform-admin only', cbkNoAuth.status === 403, 'got ' + cbkNoAuth.status);
+  const cbkPrev = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts, apply: false }, 'POST', ADMINH);
+  ok('backfill: preview matches the rounds missing contact', cbkPrev.status === 200 && cbkPrev.d.usable === 3 && cbkPrev.d.matched >= 3, JSON.stringify({ s: cbkPrev.status, u: cbkPrev.d.usable, m: cbkPrev.d.matched, f: cbkPrev.d.filled }));
+  ok('backfill: preview writes nothing', !(await anDb.get('SELECT artist_email FROM rounds WHERE id = ?', [cbkR1])).artist_email);
+  ok('backfill: an artist not in the file is reported', cbkPrev.d.unmatched.some(u => u.artist === 'Nobody Here'));
+  const cbkAp = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts, apply: true }, 'POST', ADMINH);
+  const cbk1 = await anDb.get('SELECT artist_email, artist_phone, artist_instagram FROM rounds WHERE id = ?', [cbkR1]);
+  ok('backfill: a bare round gets email, phone and handle (cleaned)', cbk1.artist_email === 'big@room.com' && cbk1.artist_phone === '4045550100' && cbk1.artist_instagram === 'BigRoom', JSON.stringify(cbk1));
+  const cbk2 = await anDb.get('SELECT artist_email, artist_phone, artist_instagram FROM rounds WHERE id = ?', [cbkR2]);
+  ok('backfill: a field already on the round is never overwritten', cbk2.artist_email === 'keep@me.com' && cbk2.artist_phone === '4045550100', JSON.stringify(cbk2));
+  const cbk4 = await anDb.get('SELECT artist_email, artist_phone, artist_instagram FROM rounds WHERE id = ?', [cbkR4]);
+  ok('backfill: title + artist beats artist-only, and a profile URL becomes a handle', cbk4.artist_email === 'right@x.com' && cbk4.artist_phone === '2125550199' && cbk4.artist_instagram === 'twonames', JSON.stringify(cbk4));
+  ok('backfill: the unmatched round is untouched', !(await anDb.get('SELECT artist_email FROM rounds WHERE id = ?', [cbkR3])).artist_email);
+  const cbkAgain = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts, apply: true }, 'POST', ADMINH);
+  ok('backfill: re-running has nothing left to fill for those rounds', cbkAgain.d.rows.every(r => ![cbkR1, cbkR2, cbkR4].includes(r.id)), JSON.stringify(cbkAgain.d.filled));
+
+  // ======================================================================
   // Sales leads → Asana (040): the top of the board as one task per artist.
   // Asana itself is a mock on ASANA_API_BASE (set at the top of this file) that records
   // every call, so the shape of what would be written is asserted, not just the counts.

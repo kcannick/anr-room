@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,630 passed as of 2026-09-19; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,690 passed as of 2026-09-22; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -734,6 +734,15 @@ live on anr.makinitmag.com.
   SMS readout (characters / plain text / segments, or "will send as MMS" and why) that
   mirrors the sms.js rule; the per-recipient footer is not counted, so a message near 160 is
   already an MMS by the time it goes.
+
+- **Backfill artist contacts** (no migration, 2026-09-22): rounds from before the contact
+  fields existed had no email/phone/Instagram, which is what the sales-leads project is worked
+  from. Platform panel → "Backfill artist contacts": upload a CSV (`artist, title, email,
+  phone, instagram` — the review-site exports merged), `POST /api/admin/rounds/contact-backfill`
+  `{contacts, apply}` matches every round missing a field by title+artist, then artist alone,
+  and fills ONLY blank fields (nothing on a round is ever overwritten; preview first;
+  re-runnable). Handles the exports' quirks: leading `'`, `@`, profile URLs → handle, `1`-prefixed
+  phones → 10 digits. Platform-admin only (PII across every room).
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
