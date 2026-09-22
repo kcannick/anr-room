@@ -4652,6 +4652,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('backfill: title + artist beats artist-only, and a profile URL becomes a handle', cbk4.artist_email === 'right@x.com' && cbk4.artist_phone === '2125550199' && cbk4.artist_instagram === 'twonames', JSON.stringify(cbk4));
   ok('backfill: the unmatched round is untouched', !(await anDb.get('SELECT artist_email FROM rounds WHERE id = ?', [cbkR3])).artist_email);
   const cbkAgain = await call('/api/admin/rounds/contact-backfill', { contacts: cbkContacts, apply: true }, 'POST', ADMINH);
+  ok('backfill: apply reports what it wrote and nothing remaining', cbkAp.d.applied >= 3 && cbkAp.d.remaining === 0, JSON.stringify({ a: cbkAp.d.applied, r: cbkAp.d.remaining }));
   ok('backfill: re-running has nothing left to fill for those rounds', cbkAgain.d.rows.every(r => ![cbkR1, cbkR2, cbkR4].includes(r.id)), JSON.stringify(cbkAgain.d.filled));
 
   // ======================================================================

@@ -9266,7 +9266,11 @@ async function handleApi(req, res, url) {
          FROM rounds r JOIN sessions s ON s.id = r.session_id
         WHERE s.deleted_at IS NULL AND COALESCE(r.poll_type,'rating') <> 'binary' AND COALESCE(r.is_reference, 0) = 0
           AND (COALESCE(r.artist_email,'') = '' OR COALESCE(r.artist_phone,'') = '' OR COALESCE(r.artist_instagram,'') = '')`, []);
-    const out = { apply, usable, candidates: rounds.length, matched: 0, filled: { email: 0, phone: 0, instagram: 0 }, rows: [], unmatched: [] };
+    // Writes are time-boxed (Vercel's 30s cap; each UPDATE is a Neon round trip): a press
+    // applies what fits in ~15s and reports `remaining`; the console presses again. Re-running
+    // is safe by construction — a filled round leaves the candidate set.
+    const t0 = Date.now(), budgetMs = 15000;
+    const out = { apply, usable, candidates: rounds.length, matched: 0, applied: 0, remaining: 0, filled: { email: 0, phone: 0, instagram: 0 }, rows: [], unmatched: [] };
     for (const r of rounds) {
       const a = chartKey(r.song_artist), t = chartKey(r.song_title);
       if (!a) continue;
@@ -9282,7 +9286,9 @@ async function handleApi(req, res, url) {
       keys.forEach(k => { out.filled[k.replace('artist_', '')]++; });
       if (out.rows.length < 600) out.rows.push({ id: r.id, artist: r.song_artist, title: r.song_title, session: r.session, via: byPair.has(t + '|' + a) ? 'title' : 'artist', ...Object.fromEntries(keys.map(k => [k.replace('artist_', ''), fill[k]])) });
       if (apply) {
+        if (Date.now() - t0 > budgetMs) { out.remaining++; continue; }
         await db.run(`UPDATE rounds SET ${keys.map(k => k + ' = ?').join(', ')} WHERE id = ?`, [...keys.map(k => fill[k]), r.id]);
+        out.applied++;
       }
     }
     return send(res, 200, out);

@@ -3365,8 +3365,15 @@ async function cbRun(apply){
   $('#cbPreview').disabled=$('#cbApply').disabled=true; st.textContent=apply?'Applying…':'Matching…';
   try{
     const contacts=await cbRead();
-    const d=await api('/api/admin/rounds/contact-backfill',{contacts,apply});
-    st.innerHTML=(apply?'✅ Applied: ':'Preview: ')+d.matched+' record'+(d.matched===1?'':'s')+' matched of '+d.candidates+' missing contact · +'+d.filled.email+' email, +'+d.filled.phone+' phone, +'+d.filled.instagram+' Instagram · '+d.usable+' usable rows in the file'+(d.unmatched.length?' · '+d.unmatched.length+' still unmatched':'');
+    // Apply is bounded per request (Vercel's 30s cap), so keep pressing until nothing remains.
+    let d,applied=0;
+    for(let i=0;i<60;i++){
+      d=await api('/api/admin/rounds/contact-backfill',{contacts,apply});
+      applied+=(d.applied||0);
+      if(!apply||!d.remaining||!d.applied)break;
+      st.textContent='Applying… '+applied+' records updated, '+d.remaining+' to go';
+    }
+    st.innerHTML=(apply?'✅ Applied: '+applied+' record'+(applied===1?'':'s')+' updated'+(d.remaining?' — '+d.remaining+' left, press Apply again':'')+' · ':'Preview: '+d.matched+' record'+(d.matched===1?'':'s')+' matched of '+d.candidates+' missing contact · ')+'+'+d.filled.email+' email, +'+d.filled.phone+' phone, +'+d.filled.instagram+' Instagram · '+d.usable+' usable rows in the file'+(d.unmatched.length?' · '+d.unmatched.length+' still unmatched':'');
     box.innerHTML=(d.rows.length?'<table class="dltable"><tr><th style="width:34%">Record</th><th>Session</th><th>Matched by</th><th>Email</th><th>Phone</th><th>Instagram</th></tr>'+d.rows.map(r=>'<tr><td><b>'+esc(r.artist||'—')+'</b><br><span class="muted">'+esc(r.title)+'</span></td><td class="muted">'+esc(r.session)+'</td><td>'+r.via+'</td><td>'+esc(r.email||'')+'</td><td>'+esc(r.phone||'')+'</td><td>'+(r.instagram?'@'+esc(r.instagram):'')+'</td></tr>').join('')+'</table>':'<div class="empty">Nothing to fill.</div>')
       +(d.unmatched.length?'<p class="muted" style="font-size:11px;margin:10px 0 0">Not in the file: '+d.unmatched.slice(0,80).map(u=>esc(u.artist||u.title)).join(' · ')+(d.unmatched.length>80?' …':'')+'</p>':'');
     $('#cbApply').disabled=apply||!d.matched;
