@@ -1077,6 +1077,7 @@
         <button class="btn ghost sm" id="leadsPreview">Preview</button>
         <button class="btn sm" id="leadsSync">Create Asana tasks</button>
         <button class="btn ghost sm" id="leadsCheck" title="Runs every setup step with timings">Check Asana</button>
+        <button class="btn ghost sm" id="leadsRebuild" title="Deletes every task in the project and writes the list again from the current records">Rebuild project</button>
       </div>
       <pre id="leadsCheckOut" class="hide" style="font-size:11px;white-space:pre-wrap;margin:8px 0 0;padding:8px;border:1px solid var(--line);border-radius:6px"></pre>
       <div id="leadsStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
@@ -3410,6 +3411,23 @@ async function leadsLoad(){
   }catch(e){box.innerHTML='';st.textContent=e.message;}
 }
 $('#leadsPreview')&&($('#leadsPreview').onclick=leadsLoad);
+$('#leadsRebuild')&&($('#leadsRebuild').onclick=async()=>{
+  if(!confirm('Rebuild the Asana project? Every task in it is deleted — including any notes, comments or assignments you added in Asana — and the list is written again from the current records.'))return;
+  const btn=$('#leadsRebuild'),st=$('#leadsStatus');btn.disabled=true;$('#leadsSync').disabled=true;
+  let deleted=0;
+  try{
+    for(let i=0;i<80;i++){
+      btn.textContent='Emptying… ('+deleted+')';
+      const d=await api('/api/admin/leads/rebuild',{});
+      deleted+=d.deleted;
+      if(d.done)break;
+      if(!d.deleted)throw new Error('Nothing could be deleted this press — check the trace and press again.');
+    }
+    st.textContent=deleted+' task'+(deleted===1?'':'s')+' removed. Writing the list again…';
+    btn.textContent='Rebuild project';btn.disabled=false;$('#leadsSync').disabled=false;
+    $('#leadsSync').click();
+  }catch(e){st.textContent=e.message;btn.textContent='Rebuild project';btn.disabled=false;$('#leadsSync').disabled=false;}
+});
 $('#leadsCheck')&&($('#leadsCheck').onclick=async()=>{
   const out=$('#leadsCheckOut'),btn=$('#leadsCheck');out.classList.remove('hide');out.textContent='Checking… (console build '+LEADS_UI_BUILD+')';btn.disabled=true;
   try{

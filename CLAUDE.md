@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,692 passed as of 2026-09-22; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,696 passed as of 2026-09-22; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -696,7 +696,9 @@ live on anr.makinitmag.com.
   newest, adopt unknown tasks, mark hand-deleted rows `task_gid='deleted'` — never
   recreated; an EMPTY project marks nothing), a settings-row lock (`asana_leads_lock`,
   conditional UPDATE) makes a concurrent press a 409, and changing the project setting
-  clears the ledger. The cut is on RECORDS, then artists — an artist whose best sits
+  clears the ledger. **Rebuild** (`/api/admin/leads/rebuild`, 2026-09-22): deletes the
+  project's tasks in time-boxed presses, clears the ledger when empty, the console then runs
+  the ordinary sync — for after a contact backfill regroups artists. The cut is on RECORDS, then artists — an artist whose best sits
   below the cut is not a lead. `pct` is the operator's dial (default 30), never hardcoded past
   `salesLeadsData`. **A min-A&Rs floor (`minVotes`, default 3, 0 = off) is applied BEFORE the
   cut and EXCLUDES rather than reweights** — the charts' rule; the operator's first prod run

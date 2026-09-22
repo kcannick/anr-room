@@ -4870,6 +4870,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
   await anDb.run("UPDATE settings SET v = '0' WHERE k = 'asana_leads_lock'");
   const ldUnlocked = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads/lock: released when the press finishes', ldUnlocked.status === 200 && (await anDb.get("SELECT v FROM settings WHERE k = 'asana_leads_lock'")).v === '0');
+  // --- rebuild: empty the project, forget the ledger, sync again from scratch ---
+  const ldProjNow = (await call('/api/admin/platform', null, 'GET', ADMINH)).d.settings.asanaLeadsProject;
+  const ldBeforeRb = Object.values(asanaState.tasks).filter(t => (t.projects || [])[0] === ldProjNow).length;
+  let ldRb, ldRbDeleted = 0;
+  for (let i = 0; i < 20; i++) { ldRb = await call('/api/admin/leads/rebuild', {}, 'POST', ADMINH); ldRbDeleted += ldRb.d.deleted; if (ldRb.d.done) break; }
+  ok('leads/rebuild: every task in the project is deleted', ldRb.status === 200 && ldRb.d.done && ldRbDeleted === ldBeforeRb && !Object.values(asanaState.tasks).some(t => (t.projects || [])[0] === ldProjNow), JSON.stringify({ s: ldRb.status, d: ldRbDeleted, b: ldBeforeRb }));
+  ok('leads/rebuild: the ledger is cleared', Number((await anDb.get('SELECT COUNT(*) AS n FROM asana_leads')).n) === 0);
+  const ldAfterRb = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
+  ok('leads/rebuild: the next sync writes the list again from scratch', ldAfterRb.d.created > 0 && ldAfterRb.d.merged === 0, JSON.stringify({ c: ldAfterRb.d.created, m: ldAfterRb.d.merged }));
+  ok('leads/rebuild: the lock is released after', (await anDb.get("SELECT v FROM settings WHERE k = 'asana_leads_lock'")).v === '0');
   const ldCheck = await call('/api/admin/leads/check?pct=100&minVotes=0', null, 'GET', ADMINH);
   ok('leads/check: runs every step and times it', ldCheck.status === 200 && ldCheck.d.steps.length >= 5 && ldCheck.d.steps.every(s => typeof s.ms === 'number'), JSON.stringify(ldCheck.d).slice(0, 300));
   ok('leads/check: names a step that fails instead of hanging', ldCheck.d.steps.some(s => s.name === 'GET /users/me' && s.ok === false && /unmocked|Asana/.test(s.error)), JSON.stringify(ldCheck.d.steps[2]));

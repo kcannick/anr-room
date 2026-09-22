@@ -9368,6 +9368,41 @@ async function handleApi(req, res, url) {
     await step('ledger (asana_leads)', async () => ({ rows: Number((await db.get('SELECT COUNT(*) AS n FROM asana_leads'))?.n || 0) }));
     return send(res, 200, { steps, totalMs: steps.reduce((a, x) => a + x.ms, 0) });
   }
+  // Rebuild (2026-09-22, after the contact backfill): empty the project and forget the ledger,
+  // so the next sync re-derives every artist from the corrected records — identities regroup
+  // (a record once keyed by name now has an email) and every task's notes are rewritten.
+  // Bounded per press like the sync; the console loops until the project is empty, then
+  // runs the ordinary sync. Same lock, so it cannot interleave with a press elsewhere.
+  if (p === '/api/admin/leads/rebuild' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    if (!process.env.ASANA_TOKEN) return bad(res, 'Asana not configured (set ASANA_TOKEN)', 409);
+    const lockUntil = String(Date.now() + 26000);
+    await db.run("INSERT INTO settings (k, v) VALUES ('asana_leads_lock', '0') ON CONFLICT (k) DO NOTHING");
+    const claim = await db.run("UPDATE settings SET v = ? WHERE k = 'asana_leads_lock' AND v < ?", [lockUntil, String(Date.now())]);
+    if (!claim.changes) return bad(res, 'A sync is already running (another tab or window). Wait for it to finish, then press again.', 409);
+    const t0 = Date.now();
+    try {
+      const project = (await db.get("SELECT v FROM settings WHERE k = 'asana_leads_project'"))?.v || null;
+      if (!project) { await db.run('DELETE FROM asana_leads'); return send(res, 200, { ok: true, deleted: 0, remaining: 0, done: true }); }
+      const page = await asanaFetch(`/projects/${project}/tasks?opt_fields=gid&limit=100`);
+      const tasks = page.data || [];
+      let deleted = 0;
+      for (const t of tasks) {
+        if (Date.now() - t0 > LEADS_BUDGET_MS) break;
+        try { await asanaFetch(`/tasks/${t.gid}`, { method: 'DELETE' }); } catch (e) { if (!/Asana 404/.test(e.message)) throw e; }
+        deleted++;
+      }
+      const remaining = (page.next_page ? 100 : tasks.length) - deleted;
+      const done = remaining <= 0;
+      if (done) await db.run('DELETE FROM asana_leads');
+      return send(res, 200, { ok: true, deleted, remaining: Math.max(0, remaining), done });
+    } catch (e) {
+      console.error('[asana-leads] rebuild failed:', e.message);
+      return bad(res, 'Rebuild failed: ' + e.message, 502);
+    } finally {
+      await db.run("UPDATE settings SET v = '0' WHERE k = 'asana_leads_lock' AND v = ?", [lockUntil]);
+    }
+  }
   // Create the project (once) and write the tasks. Bounded per press; the console loops
   // while `remaining` > 0.
   if (p === '/api/admin/leads/asana' && method === 'POST') {

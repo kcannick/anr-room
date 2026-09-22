@@ -47,6 +47,10 @@ ledger did not know, and marks hand-deleted ones. Every task carries a `Lead ref
 its notes — that is how the project can be read back. Pointing the setting at a different
 project starts a fresh ledger.
 
+**Rebuild project** empties the project (every task, including anything you added to them in
+Asana), forgets the ledger, and writes the list again from the current records — use it after
+a contact backfill or any change that regroups artists.
+
 Each press writes at most 12 tasks (one bounded request, inside Vercel's 30-second cap); the console presses again on its
 own until the list is done.
 
