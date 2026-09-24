@@ -2218,13 +2218,53 @@ async function creditReferralRounds(round, session) {
 }
 
 // The two links an A&R shares. The JOIN link carries the uid as ?ref= into this app (resolved
-// at account creation in /api/auth/verify and /api/join/verify); the SUBMIT link carries the
-// same uid to makinitmag.com/review, which hands it back on the daily push as scout.uid.
+// at account creation in /api/auth/verify and /api/join/verify); the SUBMIT link is /r/<uid>
+// on THIS app, which counts the click and 302s to the review form with ?ref=<uid>, and
+// makinitmag.com hands the ref back on the daily push as scout.uid.
 // The uid is already public (it is the /u/<uid> profile URL), so it is safe in a link.
-const SUBMIT_REVIEW_URL = 'https://www.makinitmag.com/review';
+// Links posted before 2026-09-23 (makinitmag.com/review?ref=<uid>) go straight to Drupal and
+// keep working; they are simply never counted.
 function referralLinks(uid) {
   const u = encodeURIComponent(uid);
-  return { join: `${publicBase()}/?ref=${u}`, submit: `${SUBMIT_REVIEW_URL}?ref=${u}` };
+  return { join: `${publicBase()}/?ref=${u}`, submit: `${publicBase()}/r/${u}` };
+}
+// Where /r/<uid> sends the click. The FINAL form URL, not makinitmag.com/review (which only
+// reaches it through two redirects nobody set up for this) and never the bare domain (it 301s
+// to www — that extra hop silently broke the results callback for nine days).
+const SUBMIT_FORM_URL = 'https://www.makinitmag.com/opportunities/anr-meeting';
+const REF_UID_RE = /^[A-Za-z0-9_-]{8,40}$/;
+// Link previewers and crawlers. Chat apps fetch a pasted link at once, so without this one
+// post in a group chat reads as several opens. A previewer with a browser UA gets through;
+// a small overcount is accepted.
+const CLICK_BOT_RE = /bot|crawl|spider|slurp|facebookexternalhit|facebot|whatsapp|telegram|discord|slack|skype|linkedin|pinterest|embedly|preview|curl|wget|python-|go-http|okhttp|headless|lighthouse/i;
+// The client IP behind Vercel: the first x-forwarded-for hop, else the socket. (Nothing else
+// in this server reads the client IP; if something does later, it should call this.)
+function clientIp(req) {
+  const xff = (req.headers['x-forwarded-for'] || '').toString().split(',')[0].trim();
+  return xff || (req.socket && req.socket.remoteAddress) || '';
+}
+// Count one click. Best-effort by contract: any failure is logged and swallowed, because a
+// tracking fault must never stop an artist reaching the form. Only a real, unblocked A&R's
+// uid is counted. Diagnosis only — this never awards anything.
+async function recordReferralClick(req, uid) {
+  try {
+    const u = await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [uid]);
+    if (!u || u.blocked) return;
+    const ua = (req.headers['user-agent'] || '').toString();
+    const day = etDay();
+    const visitor = crypto.createHash('sha256').update(`${clientIp(req)}|${ua}|${day}`).digest('hex').slice(0, 32);
+    const kind = !ua.trim() || CLICK_BOT_RE.test(ua) ? 'bot' : 'human';
+    await db.run('INSERT INTO referral_clicks (day, user_id, visitor, kind, created_at) VALUES (?,?,?,?,?) ON CONFLICT (day, user_id, visitor) DO NOTHING',
+      [day, u.uid, visitor, kind, now()]);
+  } catch (e) { console.error('[referral click] not recorded:', e.message); }
+}
+// Human opens of an A&R's submit link: the last 7 ET days (today and the six before) and all time.
+async function referralClickCounts(uid) {
+  const since = etDay(now() - 6 * 86400000);
+  const r = await db.get(
+    `SELECT COUNT(*) AS total, SUM(CASE WHEN day >= ? THEN 1 ELSE 0 END) AS week
+       FROM referral_clicks WHERE user_id = ? AND kind = 'human'`, [since, uid]);
+  return { week: Number(r && r.week) || 0, total: Number(r && r.total) || 0 };
 }
 // A QR as a PNG data URI for Satori (its SVG-image support is the less certain path; resvg
 // rasterises the SVG the qrcode package emits in a few ms).
@@ -8433,6 +8473,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, {
       me: { uid: u.uid, name: u.name || null, hasPhoto: !!u.photo_url },
       links: referralLinks(u.uid),
+      clicks: await referralClickCounts(u.uid).catch(() => null),
       rules: { windowDays: REFERRAL.windowDays, cap: REFERRAL.cap, errMax: REFERRAL.errMax, pointsPerRound: REFERRAL.pointsPerRound, scoutMultiplier: SCOUT_MULTIPLIER },
       ars: { referred: arRows.length, active: arRows.filter(r => r.played).length, earned: arEarned, rows: arRows.slice(0, 50) },
       artists: { submitted: artistRows.length, rated: artistRows.filter(r => r.rated).length, earned: artistEarned, rows: artistRows.slice(0, 50) },
@@ -9769,6 +9810,17 @@ const server = http.createServer(async (req, res) => {
     // The QR encodes this route, so the host can change the destination mid-show
     // and every printed/on-screen code keeps working. no-store: never cache a 302
     // to a stale destination.
+    // An A&R's submit link. Count the click (GET only — link checkers send HEAD), then 302 to
+    // the review form carrying the ref. An invalid uid still redirects, without the ref: a
+    // posted link never 404s. The uid is passed verbatim — case-sensitive, never trimmed.
+    if (url.pathname.startsWith('/r/')) {
+      let uid = null;
+      try { uid = decodeURIComponent(url.pathname.slice(3)); } catch (e) { /* malformed escape */ }
+      if (uid && !REF_UID_RE.test(uid)) uid = null;
+      if (uid && req.method === 'GET') await recordReferralClick(req, uid);
+      res.writeHead(302, { Location: uid ? `${SUBMIT_FORM_URL}?ref=${encodeURIComponent(uid)}` : SUBMIT_FORM_URL, 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     if (url.pathname === '/submit') {
       const sid = url.searchParams.get('s');
       let dest = null;

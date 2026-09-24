@@ -186,8 +186,15 @@ graphics generated there), and the referral is the A&R Team **user id** — not 
 A&R needs no Makin' It account for a link to exist:
 
 ```
-https://www.makinitmag.com/review?ref=<anr_team_uid>
+https://anr.makinitmag.com/r/<anr_team_uid>
+  → 302 https://www.makinitmag.com/opportunities/anr-meeting?ref=<anr_team_uid>
 ```
+
+Since 2026-09-23 the link goes through the app first (`/r/<uid>`), which counts the open and
+redirects straight to the form with `?ref=` intact — nothing changes on this side: Drupal still
+reads `?ref=` off whatever page it lands on. Links issued before then
+(`https://www.makinitmag.com/review?ref=<anr_team_uid>`) are still out there and must keep
+working; they reach the form through the `/review` → `/dmr` redirects and are never counted.
 
 The id is an opaque URL-safe string (base64url, up to 40 characters, case-sensitive). Store it
 verbatim; never upper-case, trim to a shorter length, or match it against a Drupal uid.
