@@ -768,8 +768,9 @@ live on anr.makinitmag.com.
   (`PUBLIC_BASE_URL`, else the production host): with it unset, preview-issued links point at
   prod and count there — only for a uid that exists in prod; with it set to the preview host,
   they count in the preview DB. Both are fine for a diagnosis number. Spec:
-  docs/specs/referral-click-tracking-prompt.md. **The /refer line is mocked
-  (`public/_mock-refer-clicks.html`), not yet on the page.**
+  docs/specs/referral-click-tracking-prompt.md. `/refer` prints one line under the submit link
+  ("N people opened your link this week · M all time", or "No one has opened this link yet."),
+  built to the approved mockup `public/_mock-refer-clicks.html`.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed

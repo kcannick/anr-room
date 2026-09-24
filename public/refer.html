@@ -78,6 +78,9 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 .gfx .t b{display:block;font-weight:800;font-size:14px}
 .gfx .t small{display:block;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:3px}
 .dl{display:flex;align-items:center;justify-content:center;width:44px;height:44px;background:transparent;border:1px solid var(--line);border-radius:10px;color:var(--ink);flex:none}
+/* Opens of the submit link (human only; diagnosis, never points). Approved 2026-09-23. */
+.opens{margin:-2px 0 0;font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-dim)}
+.opens b{color:var(--ink);font-weight:700}
 .endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
 .endorse img{height:13px;width:auto;opacity:.75}
 </style>
@@ -131,6 +134,7 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
       <label style="margin-top:4px">Submit music</label>
       <div class="linkrow"><span class="url" id="linkSubmit"></span><button class="copy" data-copy="linkSubmit">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <p class="opens hide" id="submitOpens"></p>
       <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who joins or submits through your link counts as yours.</p>
     </div>
 
@@ -249,6 +253,12 @@ function render(d){
   $('#linkJoin').textContent = stripProto(d.links.join);
   $('#linkSubmit').textContent = stripProto(d.links.submit);
   $('#linkJoin').dataset.full = d.links.join; $('#linkSubmit').dataset.full = d.links.submit;
+  const c = d.clicks;
+  if (c) {
+    $('#submitOpens').innerHTML = !c.total ? 'No one has opened this link yet.'
+      : '<b>' + c.week + '</b> ' + (c.week === 1 ? 'person' : 'people') + ' opened your link this week · <b>' + c.total + '</b> all time';
+    $('#submitOpens').classList.remove('hide');
+  }
   $('#arHead').textContent = 'Refer someone new and earn up to ' + r.cap + ' points.';
   $('#arRule').textContent = 'Earn bonus points for helping grow the A&R Team. You earn ' + r.pointsPerRound + ' point for every round your referral comes within ' + r.errMax + ' of the average, for their first ' + r.windowDays + ' days.';
   $('#artistRule').textContent = 'Earn bonus points by discovering new talent. You earn points based on the referred artist’s score: ' + r.scoutMultiplier + ' times the average. A 7.1 earns ' + Math.round(7.1 * r.scoutMultiplier) + ' points.';
