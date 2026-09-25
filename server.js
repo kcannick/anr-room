@@ -4128,7 +4128,7 @@ async function drainArtistEmail({ sessionId = null, limit = 4, deadline = null }
 // deliberately NOT the settings table: a PAT there would be echoed back by the platform
 // GET to every admin. The project gid is not a secret and does live in settings.
 const ASANA_API = process.env.ASANA_API_BASE || 'https://app.asana.com/api/1.0';
-const ASANA_CALL_TIMEOUT_MS = 8000;
+const ASANA_CALL_TIMEOUT_MS = Number(process.env.ASANA_CALL_TIMEOUT_MS) || 8000;
 async function asanaFetch(path, opts = {}) {
   const token = process.env.ASANA_TOKEN;
   if (!token) throw new Error('Asana not configured (set ASANA_TOKEN)');
@@ -9400,16 +9400,21 @@ async function handleApi(req, res, url) {
       if (!project) { await db.run('DELETE FROM asana_leads'); return send(res, 200, { ok: true, deleted: 0, remaining: 0, done: true }); }
       const page = await asanaFetch(`/projects/${project}/tasks?opt_fields=gid&limit=100`);
       const tasks = page.data || [];
-      let deleted = 0;
+      let deleted = 0, stalled = null;
       for (const t of tasks) {
         if (Date.now() - t0 > LEADS_BUDGET_MS) break;
-        try { await asanaFetch(`/tasks/${t.gid}`, { method: 'DELETE' }); } catch (e) { if (!/Asana 404/.test(e.message)) throw e; }
+        // One slow or rate-limited delete must not end the rebuild (2026-09-25: a DELETE that
+        // Asana did not answer in 8s failed the whole press). Stop this press here; the task
+        // is still in the project, so the next press simply meets it again — or gets a 404,
+        // which counts as done.
+        try { await asanaFetch(`/tasks/${t.gid}`, { method: 'DELETE' }); }
+        catch (e) { if (/Asana 404/.test(e.message)) { deleted++; continue; } stalled = e.message; break; }
         deleted++;
       }
       const remaining = (page.next_page ? 100 : tasks.length) - deleted;
       const done = remaining <= 0;
       if (done) await db.run('DELETE FROM asana_leads');
-      return send(res, 200, { ok: true, deleted, remaining: Math.max(0, remaining), done });
+      return send(res, 200, { ok: true, deleted, remaining: Math.max(0, remaining), done, stalled, pause: stalled && /429|rate/i.test(stalled) ? 15 : stalled ? 3 : 0 });
     } catch (e) {
       console.error('[asana-leads] rebuild failed:', e.message);
       return bad(res, 'Rebuild failed: ' + e.message, 502);

@@ -3414,14 +3414,18 @@ $('#leadsPreview')&&($('#leadsPreview').onclick=leadsLoad);
 $('#leadsRebuild')&&($('#leadsRebuild').onclick=async()=>{
   if(!confirm('Rebuild the Asana project? Every task in it is deleted — including any notes, comments or assignments you added in Asana — and the list is written again from the current records.'))return;
   const btn=$('#leadsRebuild'),st=$('#leadsStatus');btn.disabled=true;$('#leadsSync').disabled=true;
-  let deleted=0;
+  let deleted=0,dry=0;
   try{
-    for(let i=0;i<80;i++){
+    for(let i=0;i<120;i++){
       btn.textContent='Emptying… ('+deleted+')';
       const d=await api('/api/admin/leads/rebuild',{});
       deleted+=d.deleted;
       if(d.done)break;
-      if(!d.deleted)throw new Error('Nothing could be deleted this press — check the trace and press again.');
+      // A stalled or rate-limited delete: wait it out and go again. Give up only after
+      // several presses in a row that removed nothing.
+      dry=d.deleted?0:dry+1;
+      if(dry>=4)throw new Error('Asana is not answering deletes right now ('+(d.stalled||'no progress')+'). Wait a minute and press Rebuild again — it continues where it stopped.');
+      if(d.pause){st.textContent='Emptying… '+deleted+' removed — Asana is slow, waiting '+d.pause+'s';await new Promise(r=>setTimeout(r,d.pause*1000));}
     }
     st.textContent=deleted+' task'+(deleted===1?'':'s')+' removed. Writing the list again…';
     btn.textContent='Rebuild project';btn.disabled=false;$('#leadsSync').disabled=false;

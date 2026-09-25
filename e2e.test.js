@@ -12,6 +12,7 @@ process.env.INGEST_TOKEN = 'test-ingest-secret';
 process.env.DAILY_INGEST_TOKEN = 'test-daily-secret';
 process.env.ANALYTICS_TOKEN = 'test-analytics-secret';
 process.env.ASANA_API_BASE = 'http://localhost:3997';   // a mock Asana, started by the leads tests
+process.env.ASANA_CALL_TIMEOUT_MS = '500';               // so a deliberately stalled call fails fast
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
 try { fs.unlinkSync('./test.db-wal'); } catch {}
@@ -4716,6 +4717,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
         return reply(200, { data: slice, next_page: off + size < all.length ? { offset: String(off + size) } : null });
       }
       if (req.method === 'POST' && u.pathname === '/tasks') { const g = gid(); asanaState.tasks[g] = { gid: g, created_at: new Date(Date.now() + asanaState.nextGid).toISOString(), ...data }; return reply(201, { data: { gid: g, permalink_url: 'https://app.asana.com/0/0/' + g } }); }
+      if (req.method === 'DELETE' && asanaState.stallDelete) return;   // never answers: the call timeout fires
       if (req.method === 'DELETE' && (m = /^\/tasks\/(\d+)$/.exec(u.pathname))) {
         if (!asanaState.tasks[m[1]]) return reply(404, { errors: [{ message: 'Not Found' }] });
         delete asanaState.tasks[m[1]]; return reply(200, { data: {} });
@@ -4885,6 +4887,15 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('leads/rebuild: the ledger is cleared', Number((await anDb.get('SELECT COUNT(*) AS n FROM asana_leads')).n) === 0);
   const ldAfterRb = await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads/rebuild: the next sync writes the list again from scratch', ldAfterRb.d.created > 0 && ldAfterRb.d.merged === 0, JSON.stringify({ c: ldAfterRb.d.created, m: ldAfterRb.d.merged }));
+  // A delete Asana does not answer ends the PRESS, not the rebuild: the press reports what it
+  // removed, the stalled task stays for the next press.
+  asanaState.stallDelete = true;
+  const ldStall = await call('/api/admin/leads/rebuild', {}, 'POST', ADMINH);
+  asanaState.stallDelete = false;
+  ok('leads/rebuild: a stalled delete returns the press with remaining > 0, not an error', ldStall.status === 200 && ldStall.d.done === false && /did not answer/.test(ldStall.d.stalled || '') && ldStall.d.pause > 0, JSON.stringify(ldStall.d));
+  let ldRb2; for (let i = 0; i < 20; i++) { ldRb2 = await call('/api/admin/leads/rebuild', {}, 'POST', ADMINH); if (ldRb2.d.done) break; }
+  ok('leads/rebuild: the next press finishes the job', ldRb2.d.done === true);
+  await call('/api/admin/leads/asana', { pct: 100, minVotes: 0 }, 'POST', ADMINH);
   ok('leads/rebuild: the lock is released after', (await anDb.get("SELECT v FROM settings WHERE k = 'asana_leads_lock'")).v === '0');
   const ldCheck = await call('/api/admin/leads/check?pct=100&minVotes=0', null, 'GET', ADMINH);
   ok('leads/check: runs every step and times it', ldCheck.status === 200 && ldCheck.d.steps.length >= 5 && ldCheck.d.steps.every(s => typeof s.ms === 'number'), JSON.stringify(ldCheck.d).slice(0, 300));
