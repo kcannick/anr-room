@@ -514,7 +514,12 @@ function renderOpenNow(d){
   if(n){
     $('#openLabel').textContent = 'Open right now';
     // NEVER a fixed number. The day is 4-16 and the copy follows whatever it actually is.
-    $('#openHead').innerHTML = '<span class="mono">' + n + '</span> record' + (n === 1 ? '' : 's') + ' are waiting.';
+    // A link, not a statement: this card is the only mention of the open drop a signed-out
+    // visitor sees, and /daily runs its own join. Before 2026-09-23 it was plain text and the
+    // only way forward was /join, which ends on "we'll notify you" — returning A&Rs from the
+    // results email could not find the records.
+    $('#openHead').innerHTML = '<a href="/daily?s=' + encodeURIComponent(d.daily.id) + '" style="color:inherit;text-decoration:none">'
+      + '<span class="mono">' + n + '</span> record' + (n === 1 ? ' is' : 's are') + ' waiting. <span style="color:var(--signal)">Start rating &rarr;</span></a>';
   }else{
     // No drop open (the gap between close and open, or nothing staged). Say when, not "nothing".
     $('#openLabel').textContent = 'Next drop';

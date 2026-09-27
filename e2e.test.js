@@ -3174,6 +3174,15 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('but they still get the day and the way back in',
     /Today's records are open/.test(dgIdle));
 
+  // The digest's "Today's records are open" button went to /, where a daily player (who holds
+  // only a per-session token) sees the sign-up pitch; /join then ended on "we'll notify you when
+  // the next session opens". A&Rs reported they could not vote (2026-09-23). It links the drop.
+  const liveDrop = await dDb.get(
+    "SELECT id FROM sessions WHERE mode = 'async' AND status = 'live' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
+  const dropUrl = await srv._openDropUrl('https://x');
+  ok('the digest links straight to the open drop when there is one',
+    liveDrop ? dropUrl === 'https://x/daily?s=' + encodeURIComponent(liveDrop.id) : dropUrl === 'https://x/', dropUrl);
+
   // An empty rounds array is the same fact as no recap at all, and used to slip through.
   const dgEmpty = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: { rounds: [] } });
   ok('a recap with zero rounds counts as not having played',

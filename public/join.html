@@ -486,13 +486,34 @@ async function initJoin(){
 // copy-pasted along with the URL. NLINK still holds it for this page's requests.
 if(NLINK){ try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){} }
 initJoin();
-function finishDone(listed){
+// Today's drop, if one is open. /api/home is anonymous and CDN-cacheable, so this costs nothing.
+// Every way out of this page must lead to the open records: the done screen used to say "we'll
+// notify you when the next session opens" while a drop was open, and returning A&Rs coming in
+// from the results email read it as "there is nothing to rate" (2026-09-23).
+let OPEN_DROP=null;
+const openDropReady=fetch('/api/home').then(r=>r.ok?r.json():null)
+  .then(d=>{ if(d&&d.daily&&d.daily.id&&d.daily.songs) OPEN_DROP=d.daily; }).catch(()=>{});
+async function pointDoneAtDrop(){
+  await openDropReady;
+  if(!OPEN_DROP) return false;
+  const n=OPEN_DROP.songs;
+  const cta=$('#doneCta');
+  cta.textContent='Rate today\'s '+n+' record'+(n===1?'':'s');
+  cta.href='/daily?s='+encodeURIComponent(OPEN_DROP.id);
+  return n;
+}
+async function finishDone(listed){
   if(!listed){ $('#doneTitle').textContent='Welcome to The A&R Room.'; $('#doneSub').innerHTML='Your account is active. <b style="color:var(--ink)">Complete your profile</b> when you\'re ready to publish your A&R record and activate ranking eligibility.'; }
+  const n=await pointDoneAtDrop();
+  if(n && listed) $('#doneSub').textContent='Your A&R profile is live. '+n+' record'+(n===1?' is':'s are')+' open to rate right now.';
   show('done');
 }
-function doneReturning(){
+async function doneReturning(){
   $('#doneTitle').textContent='Welcome back, A&R.';
-  $('#doneSub').innerHTML='Your public record is active. We\'ll notify you when the next evaluation session opens.';
+  const n=await pointDoneAtDrop();
+  $('#doneSub').innerHTML=n
+    ? 'Your public record is active. '+n+' record'+(n===1?' is':'s are')+' open to rate right now.'
+    : 'Your public record is active. We\'ll notify you when the next evaluation session opens.';
   show('done');
 }
 

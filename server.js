@@ -3116,6 +3116,16 @@ async function enqueueDailyDigest(session) {
 // day's drop. The round-by-round breakdown is an HTML table — which reads better than a
 // 1080x1440 card at 16 rows anyway — so each send is one sendEmail() at ~200ms, 60-80 per
 // tick. This is the single most important efficiency decision in the daily outputs.
+// "Today's records are open" goes to the open drop itself, not the homepage: a daily player
+// holds only a per-session token, so / shows them the sign-up pitch and the records are three
+// screens away (2026-09-23, "people can't vote"). Same pick as /api/home's `daily`, so the email
+// and the homepage always name the same drop. Falls back to / between close and open.
+async function openDropUrl(base) {
+  const open = await db.get(
+    "SELECT id FROM sessions WHERE mode = 'async' AND status = 'live' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
+  return base + (open ? '/daily?s=' + encodeURIComponent(open.id) : '/');
+}
+
 async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline = null, base = null } = {}) {
   const bc = await db.get('SELECT * FROM notify_broadcasts WHERE id = ?', [broadcastId]);
   if (!bc) return { sent: 0, failed: 0, remaining: 0 };
@@ -3123,7 +3133,7 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
   const job = await db.get('SELECT * FROM recap_jobs WHERE session_id = ?', [sessionId]);
   const day = session && session.drop_day;
   const dayLabel = etDayLabel(day);
-  const playUrl = (base || publicBase()) + '/';
+  const playUrl = await openDropUrl(base || publicBase());
   const rows = await db.all(
     "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [broadcastId, limit]);
   let sent = 0, failed = 0;
@@ -9896,6 +9906,7 @@ module.exports._scoutPointsFor = scoutPointsFor;
 module.exports._REFERRAL = REFERRAL;
 module.exports._renderNotifyTokens = renderNotifyTokens;
 module.exports._isSelfScout = isSelfScout;
+module.exports._openDropUrl = openDropUrl;
 module.exports._mintReferLink = mintReferLink;
 module.exports._referralLinks = referralLinks;
 module.exports._buildRecap = buildRecap;
