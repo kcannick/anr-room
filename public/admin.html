@@ -167,6 +167,14 @@
   .dllink.bad{color:var(--hot)}
   a.dllink{color:var(--accent);text-decoration:none}
   a.dllink:hover{text-decoration:underline}
+  a.dlig{color:var(--accent);text-decoration:none;font-family:"Space Mono",monospace;font-size:11px}
+  a.dlig:hover{text-decoration:underline}
+  .dlig.none{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-faint)}
+  /* The artist's note sits on its own full-width line under the record, so a long note
+     wraps across the table instead of stretching the Record column. */
+  .dltable tr.dlsub td{border-top:0;padding-top:0}
+  .dlnote{font-size:12px;color:var(--ink-dim);white-space:pre-wrap;line-height:1.45;
+    border-left:2px solid var(--line);padding-left:9px}
   /* ---- admin users panel ---- */
   .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
   .urow+.urow{margin-top:8px}
@@ -2365,6 +2373,25 @@ function dlSupport(r){
   return `<span class="dlsup ${r.top_supporter ? 'top' : 'paid'}">${esc(dlMoney(r.support_cents))}</span>`
     + (r.top_supporter ? '<span class="pill top" title="Paid the most of anyone on this day">Top supporter</span>' : '');
 }
+// The comment posted under the stream on Instagram while a record plays: tagging the
+// artist's handle notifies them, so they can come into the live. No handle → plain name.
+function dlNowPlayingText(r){
+  const by = r.instagram ? '@' + r.instagram : (r.song_artist || '').trim();
+  return `Now playing "${(r.song_title || '').trim()}"` + (by ? ` by ${by}` : '');
+}
+async function dlCopyNowPlaying(id, btn){
+  const r = ((DL && DL.rounds) || []).find(x => x.id === id); if(!r) return;
+  try{ await navigator.clipboard.writeText(dlNowPlayingText(r)); }
+  catch(e){ alert('Could not copy. The text is:\n\n' + dlNowPlayingText(r)); return; }
+  // No alert on success — this is pressed on air, once per record.
+  const was = btn.textContent;
+  btn.textContent = 'Copied'; btn.disabled = true;
+  setTimeout(() => { btn.textContent = was; btn.disabled = false; }, 1500);
+}
+function dlIgLink(h){
+  if(!h) return '<span class="dlig none">no Instagram</span>';
+  return `<a class="dlig" href="https://www.instagram.com/${encodeURIComponent(h)}/" target="_blank" rel="noopener">@${esc(h)}</a>`;
+}
 function renderDlRecords(){
   const rounds = dlSortedRounds();
   const bySc = dlSort === 'score_desc' || dlSort === 'score_asc';
@@ -2374,14 +2401,15 @@ function renderDlRecords(){
     const cls = [alarm ? 'alarm' : '', r.top_supporter ? 'top' : ''].filter(Boolean).join(' ');
     return `<tr${cls?` class="${cls}"`:''}>
       <td class="num muted" style="width:34px">${bySc ? (r.rank != null ? '#' + r.rank : '—') : r.idx}</td>
-      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')}</div></td>
+      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')} · ${dlIgLink(r.instagram)}</div></td>
       <td>${dlSupport(r)}</td>
       <td>${dlPlayLink(r.play_url)}</td>
       <td class="num" style="color:var(--signal);font-weight:700">${score}</td>
       <td class="num">${r.votes}</td>
       <td class="num"${r.reports?' style="color:var(--hot);font-weight:700"':' class="num muted"'}>${r.reports}</td>
-      <td class="num"><button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
-    </tr>`;
+      <td class="num" style="white-space:nowrap"><button class="btn ghost sm" title="${esc(dlNowPlayingText(r))}" onclick="dlCopyNowPlaying('${r.id}', this)">Now playing</button>
+        <button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
+    </tr>${r.artist_note ? `<tr class="dlsub${cls?' '+cls:''}"><td></td><td colspan="7"><div class="dlnote">${esc(r.artist_note)}</div></td></tr>` : ''}`;
   }).join('');
   $('#dlRounds').innerHTML = rounds.length
     ? `<table class="dltable"><tr><th class="num">${bySc ? 'Rank' : '#'}</th><th style="width:32%">Record</th><th>Support</th><th>Play link</th><th class="num">Score</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
