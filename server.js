@@ -9025,7 +9025,7 @@ async function handleApi(req, res, url) {
     const day = session.drop_day;
     const rounds = await db.all(
       `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.play_url, r.artist_note,
-              r.ingest_ref, r.ingest_url, r.room_average, r.artist_email, r.artist_phone, r.support_cents,
+              r.artist_instagram, r.song_note, r.ingest_ref, r.ingest_url, r.room_average, r.artist_email, r.artist_phone, r.support_cents,
               (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
               (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id) AS reports,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared
@@ -9091,6 +9091,10 @@ async function handleApi(req, res, url) {
         id: r.id, idx: r.idx, status: r.status,
         song_title: r.song_title, song_artist: r.song_artist,
         play_url: r.play_url || '', artist_note: r.artist_note || '',
+        // The handle the console tags in the "Now playing" comment. Older rows carry it only
+        // in song_note ("IG: @x"), the same fallback the cards use.
+        instagram: igClean(r.artist_instagram)
+          || (m => m ? igClean(m[1]) : null)(/(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '')),
         ingest_ref: r.ingest_ref || null, ingest_url: r.ingest_url || null,
         room_average: r.room_average != null ? Number(r.room_average) : null,
         hasEmail: !!(r.artist_email || '').trim(), hasPhone: !!(r.artist_phone || '').trim(),

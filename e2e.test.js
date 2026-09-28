@@ -2242,12 +2242,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
   console.log('\n— A&R Daily: the console —');
   // The console opens on the day, so this one status call has to carry all of it.
   const cOk = await call('/api/ingest/daily', { day: srv._etNextDay(today), seriesId: serId,
-    songs: [song(71, { email: 'a71@test.com', phone: '+15551230071', amount: 10 }), song(72, { amount: 0 }),
+    songs: [song(71, { email: 'a71@test.com', phone: '+15551230071', amount: 10, instagram: '@Rec71' }), song(72, { amount: 0 }),
             song(73, { amount: 50 }), song(74)] }, 'POST', DTOK);
   const CDROP = cOk.d.sessionId;
   await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ? WHERE id = ?",
     [Date.now() - 1000, Date.now() + 3600000, CDROP]);
   await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [CDROP]);
+  // An older row with the handle only in song_note — the cards' fallback applies here too.
+  await dDb.run("UPDATE rounds SET artist_instagram = NULL, song_note = 'IG: @legacy72' WHERE session_id = ? AND idx = 2", [CDROP]);
 
   const dStatAnon = await call('/api/admin/daily/status?day=' + srv._etNextDay(today), null, 'GET', {});
   ok('the daily status is platform-admin only — a drop spans no host and carries artist PII',
@@ -2262,6 +2264,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify(dStat.queues));
   ok('a status call never leaks an artist address — only whether one is on file',
     !/a71@test\.com/.test(JSON.stringify(dStat)) && dStat.rounds.some(r => r.hasEmail === true), JSON.stringify(dStat.rounds[0]));
+  // The handle and the note ride the status so the console can show them and copy the
+  // "Now playing" comment that tags the artist on the stream.
+  const igOf = (i) => dStat.rounds.find(r => r.idx === i);
+  ok('the status carries each record\'s Instagram handle, @-stripped, with the song_note fallback',
+    igOf(1).instagram === 'Rec71' && igOf(2).instagram === 'legacy72' && igOf(3).instagram === null,
+    JSON.stringify(dStat.rounds.map(r => r.instagram)));
+  ok('and the artist\'s note', /drums/.test(igOf(1).artist_note), JSON.stringify(igOf(1).artist_note));
   // The support level rides the status so the recap can play free records short, paid ones
   // in full, and single out whoever paid the most.
   const supOf = (i) => dStat.rounds.find(r => r.idx === i);
