@@ -1512,6 +1512,89 @@ function recapCaption(d) {
   return lines.join('\n');
 }
 
+
+// ===== THE COUNTDOWN CLIP CAPTIONS — the recorded countdown, posted to every platform =====
+// After the stream the operator cuts a countdown clip of the day's records and posts it
+// everywhere. Its caption shouts out EVERY artist, lowest to highest so it reads in the
+// clip's order, ends on the Top Track, and congratulates the TOP 3 A&Rs only (operator,
+// 2026-09-27). Ranked, so it is only offered once the day has tallied.
+//
+// THE DATE IS THE DAY THE CLIP POSTS — never the day it was recorded, never drop_day. The
+// clip for the 27th is recorded on the 26th from records that opened on the 24th. The post
+// date is a console field; it defaults to drop_day + COUNTDOWN_POST_OFFSET_DAYS, which is
+// that cadence.
+//
+// Three flavours: `instagram` (@handles — Threads shares Instagram usernames, so it posts
+// this one too), `social` (Facebook / YouTube / TikTok: an Instagram handle there tags the
+// wrong account or nobody, so names only) and `x` (names, and it has to fit 280).
+const COUNTDOWN_CLIP_TITLE = "Makin' It HOT 100 Daily Countdown";
+const COUNTDOWN_POST_OFFSET_DAYS = 3;
+const COUNTDOWN_PLATFORMS = ['instagram', 'social', 'x'];
+const COUNTDOWN_SUBMIT_URL = 'makinitmag.com/review';
+const COUNTDOWN_JOIN_URL = 'anr.makinitmag.com';
+const COUNTDOWN_TAGS = '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom';
+const X_MAX = 280, X_URL_LEN = 23;   // X counts every link as 23 characters
+function countdownPostDay(session, requested) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(requested || '')) return requested;
+  const d = new Date(String(session.drop_day) + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + COUNTDOWN_POST_OFFSET_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+async function countdownClipData(session, postDay) {
+  // Same order as the console's countdown sort: room average, then more ratings, then drop
+  // order — reversed so the lowest comes first. Unscored and reference records are not on it.
+  const rows = await db.all(
+    `SELECT r.idx, r.song_title, r.song_artist, r.artist_instagram, r.room_average,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
+       FROM rounds r
+      WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
+        AND COALESCE(r.is_reference, 0) = 0`, [session.id]);
+  rows.sort((a, b) => (Number(b.room_average) - Number(a.room_average)) || (Number(b.votes) - Number(a.votes)) || (a.idx - b.idx));
+  const records = rows.reverse().map(r => ({
+    name: (r.song_artist || r.song_title || '').trim(), ig: igClean(r.artist_instagram),
+    title: (r.song_title || '').trim() }));
+  // An artist with two records on the day is shouted out once, at their higher placing.
+  const artists = records.filter((r, i) => !records.slice(i + 1).some(o =>
+    (r.ig && o.ig ? r.ig.toLowerCase() === o.ig.toLowerCase() : r.name.toLowerCase() === o.name.toLowerCase())));
+  const ars = await cardArsData({ sessionId: session.id }, 3);
+  const [y, m, d] = postDay.split('-');
+  return { date: `${m}.${d}.${y.slice(2)}`, artists, ars };
+}
+function xLength(text) {
+  return [...text.replace(/\b(?:https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(?:\/\S*)?/gi, 'x'.repeat(X_URL_LEN))].length;
+}
+function countdownCaption(d, platform) {
+  const handles = platform === 'instagram';
+  const who = (p) => (handles && p.ig ? '@' + p.ig : p.name);
+  const top = d.artists[d.artists.length - 1];
+  const topLine = top ? `${who(top)} — Top Track of the day${top.title ? ` with "${top.title}"` : ''}` : '';
+  const head = `${COUNTDOWN_CLIP_TITLE} — ${d.date}`;
+  if (platform === 'x') {
+    // One paragraph. If it will not fit, drop the hashtag, then the song title; what is
+    // left over is the operator's to trim, and the console prints the count.
+    const rest = d.artists.slice(0, -1).map(who);
+    const build = (title, tag) => {
+      const topBit = top ? `Top Track of the day ${who(top)}${title && top.title ? ` with "${top.title}"` : ''}` : '';
+      const so = rest.length ? `S/O to ${rest.join(', ')}${topBit ? ', and ' + topBit : ''}` : (topBit ? `S/O to ${topBit}` : '');
+      return [head, so, d.ars.length ? `Top A&Rs: ${d.ars.map(who).join(', ')}` : '',
+        `Submit your music: ${COUNTDOWN_SUBMIT_URL}`, tag ? '#MakinIt' : ''].filter(Boolean).join('\n\n');
+    };
+    for (const [title, tag] of [[true, true], [true, false], [false, false]]) {
+      const t = build(title, tag);
+      if (xLength(t) <= X_MAX) return t;
+    }
+    return build(false, false);
+  }
+  const lines = [head, ''];
+  if (d.artists.length) {
+    lines.push("S/O to all the artists featured on yesterday's countdown:", '',
+      ...d.artists.slice(0, -1).map(who), topLine);
+  }
+  if (d.ars.length) lines.push('', 'Congratulations to our top A&Rs:', ...d.ars.map((a, i) => `${i + 1}. ${who(a)}`));
+  lines.push('', `Submit your music for a free review: ${COUNTDOWN_SUBMIT_URL}`, `Join the A&R Team: ${COUNTDOWN_JOIN_URL}`,
+    '', COUNTDOWN_TAGS);
+  return lines.join('\n');
+}
 // ===== THE A&R MEETING RESULTS CAROUSELS — posted after the 2PM reveal stream =====
 // Two Instagram carousels, rendered at the 3PM publish beside the recap cover and hosted on
 // the same Blob path (daily/<day>/results-song-N.png, results-ar-N.png), plus a caption each:
@@ -9100,6 +9183,23 @@ async function handleApi(req, res, url) {
     return res.end(recapCaption(await recapGraphicsData(session)));
   }
 
+  // The countdown clip captions, all three platforms at once. Ranked, so refused until the
+  // day has tallied. ?date=YYYY-MM-DD is the day the clip POSTS (see countdownPostDay).
+  if (p === '/api/admin/daily/countdown-captions' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const sid = url.searchParams.get('s');
+    const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
+    if (!session) return bad(res, 'Drop not found', 404);
+    if (!['ratified', 'published'].includes(session.async_state)) return bad(res, 'The day has not tallied yet', 409);
+    const postDay = countdownPostDay(session, url.searchParams.get('date'));
+    const d = await countdownClipData(session, postDay);
+    const captions = {};
+    for (const pf of COUNTDOWN_PLATFORMS) captions[pf] = countdownCaption(d, pf);
+    return send(res, 200, { postDay, date: d.date, captions, xLength: xLength(captions.x), xMax: X_MAX,
+      // Who the Instagram caption could not tag — the operator adds these by hand.
+      noHandle: d.artists.concat(d.ars).filter(a => !a.ig).map(a => a.name) });
+  }
+
   // A results-carousel caption as text — the same builder the publish stores. ?set=song|ar.
   if (p === '/api/admin/daily/results-caption' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
@@ -9918,6 +10018,10 @@ module.exports._buildDayResults = buildDayResults;
 module.exports._pushDayResults = pushDayResults;
 module.exports._recapGraphicsData = recapGraphicsData;
 module.exports._recapCaption = recapCaption;
+module.exports._countdownCaption = countdownCaption;
+module.exports._countdownClipData = countdownClipData;
+module.exports._countdownPostDay = countdownPostDay;
+module.exports._xLength = xLength;
 module.exports._recapDateLabel = recapDateLabel;
 module.exports._resultsCarouselData = resultsCarouselData;
 module.exports._resultsCaption = resultsCaption;

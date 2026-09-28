@@ -2145,6 +2145,16 @@ function renderDaily(){
     <p class="muted" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">${c.recapCover ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed' + (d.blobConfigured ? '' : ' — BLOB_READ_WRITE_TOKEN is not set') + '; these are rendered live instead.' : 'Rendered live from the day so far. The A&Rs column fills in once the day tallies.')}
       Artists print in drop order and A&Rs alphabetically — nothing on the cover is ranked.</p>
     <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost sm" onclick="dlCopyRecapCaption()">Copy recap caption</button></div>`;
+  // The countdown clip — recorded after the stream, posted everywhere. Every artist lowest to
+  // highest, ending on the Top Track, and the top 3 A&Rs. Ranked, so only once the day has
+  // tallied. Dated the day it POSTS (records that opened on the 24th post on the 27th), which
+  // the field defaults to and the operator can move.
+  const tallied = dr.async_state === 'ratified' || dr.async_state === 'published';
+  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Countdown clip captions</h4>
+    ${tallied ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><label class="muted" style="font-size:12px">Posts on <input type="date" id="dlCdDate" value="${esc(dlCdPick.sid === (DL.drop && DL.drop.id) ? dlCdPick.date : dlCountdownDefaultDay(dr.day))}" onchange="dlCdPick = { sid: DL.drop && DL.drop.id, date: this.value }" style="margin-left:6px"></label></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn ghost sm" onclick="dlCopyCountdown('instagram')">Copy Instagram / Threads caption</button><button class="btn ghost sm" onclick="dlCopyCountdown('social')">Copy Facebook / YouTube / TikTok caption</button><button class="btn ghost sm" onclick="dlCopyCountdown('x')">Copy X caption</button></div>
+    <p class="muted" id="dlCdNote" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">Instagram and Threads use @handles. The others use names, because an Instagram handle tags the wrong account there.</p>`
+    : '<div class="empty">Available once the day tallies.</div>'}`;
   // The results carousels — posted after the 2PM reveal stream. Slide 1 is the top record /
   // top A&R, then the rest ranked, then the call to action; a big day gets more list slides.
   // Hosted at the 3PM publish; before that, or if hosting failed, every slide renders live off
@@ -2268,6 +2278,32 @@ async function dlCopyWeekCaption(post){
   if(!text){ alert('Nothing to copy yet.'); return; }
   try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
   catch(e){ alert('Could not copy the caption.'); }
+}
+// A post date the operator moved survives the status poll's redraw, for that drop only.
+let dlCdPick = { sid: null, date: '' };
+// The clip posts COUNTDOWN_POST_OFFSET_DAYS (server.js) after the records opened.
+function dlCountdownDefaultDay(day){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return '';
+  const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 3);
+  return d.toISOString().slice(0, 10);
+}
+async function dlCopyCountdown(platform){
+  const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
+  const date = ($('#dlCdDate') && $('#dlCdDate').value) || '';
+  let d = null;
+  try{
+    const r = await fetch('/api/admin/daily/countdown-captions?s=' + encodeURIComponent(sid) + (date ? '&date=' + encodeURIComponent(date) : ''), { headers: chAuthHeaders() });
+    d = await r.json();
+    if(!r.ok){ alert(d.error || 'Could not build the caption.'); return; }
+  }catch(e){ alert('Could not build the caption.'); return; }
+  const text = d.captions && d.captions[platform];
+  if(!text){ alert('Nothing to copy yet.'); return; }
+  try{ await navigator.clipboard.writeText(text); }
+  catch(e){ alert('Could not copy the caption.'); return; }
+  let msg = 'Caption copied, dated ' + d.date + '.';
+  if(platform === 'x') msg += ' ' + d.xLength + ' of ' + d.xMax + ' characters' + (d.xLength > d.xMax ? ' — trim it before posting.' : '.');
+  if(platform === 'instagram' && d.noHandle && d.noHandle.length) msg += ' No Instagram handle on file for: ' + d.noHandle.join(', ') + '. Tag them by hand.';
+  alert(msg);
 }
 async function dlCopyResultsCaption(set){
   const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
