@@ -2036,6 +2036,31 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const rcapTxt = await fetch(base + "/api/admin/daily/recap-caption?s=" + LDROP, { headers: BOOTH });
   ok('the caption preview is the same text the publish stored', rcapTxt.status === 200 && (await rcapTxt.text()) === rjob.recap_caption);
 
+  console.log('\n— The countdown clip captions: every artist lowest to highest, top 3 A&Rs, dated the day it posts —');
+  const cdRes = await fetch(base + '/api/admin/daily/countdown-captions?s=' + LDROP + '&date=2031-01-09', { headers: BOOTH });
+  const cd = await cdRes.json();
+  ok('the countdown captions come back for a tallied day', cdRes.status === 200 && cd.captions && cd.captions.instagram && cd.captions.social && cd.captions.x, cdRes.status + ' ' + JSON.stringify(cd).slice(0, 200));
+  ok('dated the day the clip POSTS, not the drop day', cd.date === '01.09.31' && /Countdown — 01\.09\.31/.test(cd.captions.instagram), cd.date);
+  // The console's countdown order: average, then more ratings, then drop order — reversed.
+  const cdRounds = (await dDb.all("SELECT r.song_artist, r.room_average, (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS n FROM rounds r WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL AND COALESCE(r.is_reference,0) = 0 ORDER BY r.room_average ASC, n ASC, r.idx DESC", [LDROP]));
+  const cdPos = cdRounds.map(r => cd.captions.social.indexOf(r.song_artist));
+  ok('every scored artist is shouted out, lowest first', cdPos.every(i => i > 0) && cdPos.every((v, i) => i === 0 || v >= cdPos[i - 1]), JSON.stringify(cdPos));
+  const cdTop = cdRounds[cdRounds.length - 1];
+  ok('and it ends on the Top Track', cdTop && new RegExp(cdTop.song_artist.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' — Top Track of the day').test(cd.captions.social), cd.captions.social);
+  const cdArs = (cd.captions.social.split('Congratulations to our top A&Rs:')[1] || '').split('\n\n')[0].trim().split('\n');
+  ok('only the top 3 A&Rs are named', cdArs.length <= 3 && /^1\. /.test(cdArs[0] || ''), JSON.stringify(cdArs));
+  ok('the non-Instagram caption carries no @handles', !/@[A-Za-z0-9_.]/.test(cd.captions.social) && !/@[A-Za-z0-9_.]/.test(cd.captions.x), cd.captions.x);
+  ok('the X caption fits in 280 (links count 23)', cd.xLength <= 280 && cd.xLength === srv._xLength(cd.captions.x), String(cd.xLength));
+  const cdDefault = await (await fetch(base + '/api/admin/daily/countdown-captions?s=' + LDROP, { headers: BOOTH })).json();
+  const ldDay = (await dDb.get('SELECT drop_day FROM sessions WHERE id = ?', [LDROP])).drop_day;
+  ok('with no date it defaults to three days after the records opened', cdDefault.postDay === srv._countdownPostDay({ drop_day: ldDay }) && cdDefault.postDay > ldDay, cdDefault.postDay + ' vs ' + ldDay);
+  const cdAnon = await fetch(base + '/api/admin/daily/countdown-captions?s=' + LDROP);
+  ok('the countdown captions are platform-admin only', cdAnon.status === 401 || cdAnon.status === 403, 'got ' + cdAnon.status);
+  // Pure builder: the X caption drops the hashtag, then the song title, before it goes over.
+  const longDay = { date: '01.01.31', ars: [{ name: 'A', ig: 'a' }], artists: Array.from({ length: 9 }, (_, i) => ({ name: 'Artist Number ' + i, ig: null, title: 'A Fairly Long Song Title ' + i })) };
+  const xLong = srv._countdownCaption(longDay, 'x');
+  ok('a long day\'s X caption sheds the hashtag and title first', !/#MakinIt/.test(xLong) && !/ with "/.test(xLong), xLong);
+
   console.log('\n— The A&R Meeting results carousels: rendered at publish, ranked, no scores on the records —');
   // Same publish, same best-effort contract as the recap graphics: no Blob token here, so the
   // hosted slide lists are null and the day published anyway — the captions are kept.
