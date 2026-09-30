@@ -1223,6 +1223,7 @@
     #charts .ctitle{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #charts .csub{font-size:12px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #charts .cmeta{font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-faint);width:94px;flex:none;text-align:right}
+    #charts .cacc{font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-dim);width:84px;flex:none;text-align:right}
     #charts .cscore{font-family:'Space Mono',monospace;font-size:16px;color:var(--signal);width:54px;flex:none;text-align:right}
     #charts .cutline{display:flex;align-items:center;gap:10px;margin:12px 0 2px;font-family:'Space Mono',monospace;
       font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
@@ -1255,7 +1256,7 @@
             <option value="100" selected>Top 100</option><option value="50">Top 50</option>
             <option value="20">Top 20</option><option value="10">Top 10</option><option value="1000">All</option>
           </select></div>
-        <div><label>Min votes</label><input type="number" id="chMinVotes" value="10" min="0" step="1"></div>
+        <div><label id="chMinLabel">Min votes</label><input type="number" id="chMinVotes" value="10" min="0" step="1"></div>
         <div><label>Order</label><select id="chOrder">
           <option value="top">#1 first</option><option value="countdown">Countdown</option></select></div>
       </div>
@@ -1266,6 +1267,8 @@
       <div class="row" style="gap:14px;margin-top:10px;align-items:center">
         <div style="flex:0 0 auto"><label style="margin:0 0 4px">Per slide</label>
           <select id="chPer" style="width:auto"><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option></select></div>
+        <div id="chSortWrap" style="flex:0 0 auto;display:none"><label style="margin:0 0 4px">Rank A&amp;Rs by</label>
+          <select id="chSort" style="width:auto"><option value="points" selected>Points</option><option value="accuracy">Accuracy</option></select></div>
         <label class="pref-row" id="chDedupeRow" style="flex:1;min-width:220px">
           <input type="checkbox" id="chDedupe" checked>
           <span><b>Merge repeat plays</b><small>A record played in more than one room charts once, at its best showing. The CSV keeps a <code>plays</code> count.</small></span>
@@ -3708,7 +3711,9 @@ function chParams(extra){
     p.set('to',String(chDayMs($('#chTo').value,true)||Date.now()));
   } else p.set('scope','all');
   p.set('limit',$('#chLimit').value);
-  p.set('minVotes',String(Math.max(0,parseInt($('#chMinVotes').value,10)||0)));
+  // One input, two floors: votes per record, or rounds per A&R on the accuracy chart.
+  p.set(chMode==='ars'?'minRounds':'minVotes',String(Math.max(0,parseInt($('#chMinVotes').value,10)||0)));
+  if(chMode==='ars')p.set('sort',$('#chSort').value);
   p.set('order',$('#chOrder').value);
   p.set('per',$('#chPer').value);
   p.set('dedupe',$('#chDedupe').checked?'1':'0');
@@ -3741,7 +3746,9 @@ function renderCharts(d){
   const when=sc.from?`${chFmtDay(sc.from)} – ${chFmtDay(sc.to)}`:'no rooms yet';
   let sum=`scope · <b>${esc(sc.label)}</b> — ${sc.rooms} room${sc.rooms===1?'':'s'}, ${esc(when)}<br>`;
   if(d.mode==='ars'){
-    sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`;
+    sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`
+      +(d.sort==='accuracy'?` · ranked on <b>accuracy</b>`
+        +(s.excluded?` · <span class="warn">${s.excluded} excluded</span> (under ${d.minRounds} round${d.minRounds===1?'':'s'})`:''):'');
   }else if(d.mode==='weekly1s'){
     sum+=`rooms · <b>${s.charting}</b> with a #1`+(s.excluded?` · <span class="warn">${s.excluded} had nothing clear the floor</span>`:' · every room cleared the floor');
   }else{
@@ -3758,11 +3765,13 @@ function renderCharts(d){
   let html='';
   for(const r of d.rows){
     if(d.mode==='ars'){
+      const byAcc=d.sort==='accuracy',acc=r.accuracy==null?'—':r.accuracy.toFixed(1)+'%';
       html+=`<div class="crow"><div class="crank ${chRankClass(r.rank)}">${r.rank}</div>
         <div class="cmain"><div class="ctitle">${esc(r.name)}</div>
         <div class="csub">${esc([r.ig?'@'+r.ig:'',r.category,r.location].filter(Boolean).join(' · ')||'—')}</div></div>
         <div class="cmeta">${r.rounds==null?'':r.rounds+' rounds'}</div>
-        <div class="cscore">${r.points.toLocaleString()}</div></div>`;
+        <div class="cacc">${byAcc?r.points.toLocaleString()+' pts':acc+' acc'}</div>
+        <div class="cscore"${byAcc?' style="width:70px"':''}>${byAcc?acc:r.points.toLocaleString()}</div></div>`;
     }else if(d.mode==='weekly1s'){
       const rec=r.record;
       html+=`<div class="crow${rec?'':' excl'}"><div class="crank r1">${rec?'#1':'—'}</div>
@@ -3860,13 +3869,23 @@ document.querySelectorAll('.chart-mode').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.chart-mode').forEach(x=>{x.classList.toggle('ghost',x!==b);x.classList.toggle('on',x===b);});
   $('#chDedupeRow').style.display=chMode==='records'?'':'none';
   $('#chContacts').style.display=chMode==='ars'?'':'none';
+  $('#chSortWrap').style.display=chMode==='ars'?'':'none';
+  chFloorUi();
   $('#chLimitLabel').textContent=chMode==='weekly1s'?'Rooms':'Chart size';
   loadCharts();
 });
-['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo'].forEach(sel=>{
+// The floor input means votes per record, or rounds per A&R — and on the points board it
+// does nothing, so it is switched off there rather than left looking live.
+function chFloorUi(){
+  const ars=chMode==='ars';
+  $('#chMinLabel').textContent=ars?'Min rounds':'Min votes';
+  $('#chMinVotes').disabled=ars&&$('#chSort').value!=='accuracy';
+}
+['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo','#chSort'].forEach(sel=>{
   const el=$(sel);if(!el)return;
   el.addEventListener('change',()=>{
     if(sel==='#chScope')$('#chRangeRow').style.display=$('#chScope').value==='range'?'':'none';
+    if(sel==='#chSort')chFloorUi();
     loadCharts();
   });
 });

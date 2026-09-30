@@ -4402,6 +4402,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('charts: A&R rows never carry contact PII',
     cA.d.rows.every(r => !('email' in r) && !('phone' in r)), JSON.stringify(Object.keys(cA.d.rows[0])));
 
+  console.log('\n— charts: A&R accuracy, and ranking on it —');
+  ok('charts: every A&R row carries an accuracy between 0 and 100',
+    cA.d.rows.every(r => r.rounds === 0 || (typeof r.accuracy === 'number' && r.accuracy >= 0 && r.accuracy <= 100)),
+    JSON.stringify(cA.d.rows.map(r => r.accuracy)));
+  ok('charts: the points board is unchanged by default', cA.d.sort === 'points');
+  const cAcc = await chGet(`scope=series&seriesId=${CHSER}&mode=ars&sort=accuracy&minRounds=1`);
+  ok('charts: sort=accuracy ranks on accuracy, highest first',
+    cAcc.d.sort === 'accuracy' && cAcc.d.rows.length > 1
+    && cAcc.d.rows.every((r, i, a) => i === 0 || a[i - 1].accuracy >= r.accuracy)
+    && cAcc.d.rows.every((r, i) => r.rank === i + 1), JSON.stringify(cAcc.d.rows.map(r => r.accuracy)));
+  const cAccFloor = await chGet(`scope=series&seriesId=${CHSER}&mode=ars&sort=accuracy&minRounds=9999`);
+  ok('charts: the round floor excludes, and says how many',
+    cAccFloor.d.rows.length === 0 && cAccFloor.d.summary.excluded === cAccFloor.d.summary.pool && cAccFloor.d.summary.pool > 0,
+    JSON.stringify(cAccFloor.d.summary));
+  const cAccCap = await (await fetch(`${base}/api/admin/charts?scope=series&seriesId=${CHSER}&mode=ars&sort=accuracy&minRounds=1&format=caption`, { headers: ADMINH })).text();
+  ok('charts: the accuracy caption prints accuracy, not points', /% accuracy\)/.test(cAccCap) && !/ pts\)/.test(cAccCap), cAccCap.slice(0, 300));
+
   console.log('\n— charts: CSV and caption carry the same rows as the screen —');
   const chCsvRes = await fetch(`${base}/api/admin/charts?${chBase}&format=csv`, { headers: ADMINH });
   const csvTxt = await chCsvRes.text();

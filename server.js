@@ -2617,6 +2617,14 @@ async function chartRecords(sessions, { minVotes, dedupe }) {
 // Top A&Rs over the scope. A SERIES chart reads the public board verbatim (bonus
 // point_events included) — that's the $500 board, and a chart that disagreed with it
 // would be a support ticket. Other scopes sum vote points over the scoped rooms.
+// Accuracy is the score card's number (buildRecap): each round's error as a distance on its
+// OWN scale (9 rating / 100 Versus), averaged onto one 0..100 axis — here over every scored
+// round in the scope rather than one session. CASE rather than MAX()/GREATEST() so one
+// string runs on both dialects.
+const CHART_ACC_SQL = `AVG(CASE WHEN v.err IS NULL THEN NULL
+    WHEN r.poll_type = 'binary' THEN (CASE WHEN ABS(v.err) >= 100 THEN 0 ELSE 1 - ABS(v.err) / 100.0 END)
+    ELSE (CASE WHEN ABS(v.err) >= 9 THEN 0 ELSE 1 - ABS(v.err) / 9.0 END) END) * 100`;
+const CHART_DEFAULT_MIN_ROUNDS = 10;
 async function chartArs(scope, sessions) {
   const ids = sessions.map(s => s.id);
   const ph = ids.map(() => '?').join(',');
@@ -2624,6 +2632,7 @@ async function chartArs(scope, sessions) {
     id: r.uid, name: r.name || 'A&R', ig: igClean(r.instagram),
     category: r.primary_category || null, location: r.location || null,
     points: Number(r.pts) || 0, rounds: r.rounds == null ? null : Number(r.rounds),
+    accuracy: r.acc == null ? null : Math.round(Number(r.acc) * 100) / 100,
   });
   if (scope.kind === 'series') {
     const rows = await db.all(
@@ -2635,18 +2644,19 @@ async function chartArs(scope, sessions) {
     // Rounds-scored isn't derivable from the points union (it carries bonus events too),
     // so count it off the scoped rooms and merge.
     const counts = ids.length ? await db.all(
-      `SELECT p.user_id AS uid, COUNT(v.id) AS rounds
+      `SELECT p.user_id AS uid, COUNT(v.id) AS rounds, ${CHART_ACC_SQL} AS acc
          FROM votes v JOIN participants p ON v.participant_id = p.id
          JOIN rounds r ON r.id = v.round_id
         WHERE r.session_id IN (${ph}) AND v.points IS NOT NULL AND p.user_id IS NOT NULL
         GROUP BY p.user_id`, ids) : [];
-    const byUid = new Map(counts.map(c => [c.uid, Number(c.rounds) || 0]));
-    return rows.map(r => shape({ ...r, rounds: byUid.get(r.uid) ?? 0 }));
+    const byUid = new Map(counts.map(c => [c.uid, c]));
+    return rows.map(r => shape({ ...r, rounds: Number((byUid.get(r.uid) || {}).rounds) || 0,
+      acc: (byUid.get(r.uid) || {}).acc }));
   }
   if (!ids.length) return [];
   const rows = await db.all(
     `SELECT u.uid, u.name, u.instagram, u.primary_category, u.location,
-            SUM(v.points) AS pts, COUNT(v.id) AS rounds
+            SUM(v.points) AS pts, COUNT(v.id) AS rounds, ${CHART_ACC_SQL} AS acc
        FROM votes v
        JOIN participants p ON v.participant_id = p.id
        JOIN rounds r ON r.id = v.round_id
@@ -2674,6 +2684,10 @@ function chartQuery(url) {
     to: parseInt(g('to'), 10) || 0,
     lastN: int('lastN', 4, 1, 52),
     minVotes: int('minVotes', CHART_DEFAULT_MIN_VOTES, 0, 100000),
+    // A&R chart only: rank on points (default) or accuracy. minRounds is the accuracy
+    // chart's floor — one lucky round is 100% and must not outrank a month of listening.
+    sort: g('sort') === 'accuracy' ? 'accuracy' : 'points',
+    minRounds: int('minRounds', CHART_DEFAULT_MIN_ROUNDS, 0, 100000),
     limit: int('limit', 100, 1, 1000),
     per: int('per', 10, 5, 20),          // rows per carousel slide (IG caps a carousel at 20)
     order: g('order') === 'countdown' ? 'countdown' : 'top',
@@ -2696,12 +2710,20 @@ async function chartsData(q) {
   };
 
   if (q.mode === 'ars') {
-    const all = await chartArs(scope, sessions);
+    const pool = await chartArs(scope, sessions);
+    out.sort = q.sort;
+    let all = pool;
+    if (q.sort === 'accuracy') {
+      // Same rule as the record floor: under it you are EXCLUDED, not reweighted.
+      out.minRounds = q.minRounds;
+      all = pool.filter(r => r.accuracy != null && (r.rounds || 0) >= q.minRounds)
+        .sort((a, b) => b.accuracy - a.accuracy || b.points - a.points || a.name.localeCompare(b.name));
+    }
     const rows = all.slice(0, q.limit).map((r, i) => ({ rank: i + 1, ...r }));
     out.rows = q.order === 'countdown' ? rows.slice().reverse() : rows;
     out.excluded = [];
-    out.summary = { pool: all.length, charting: rows.length, excluded: 0, votes: null };
-    out.title = q.title || 'Top A&Rs';
+    out.summary = { pool: pool.length, charting: rows.length, excluded: pool.length - all.length, votes: null };
+    out.title = q.title || (q.sort === 'accuracy' ? 'Most Accurate A&Rs' : 'Top A&Rs');
     return out;
   }
 
@@ -2745,6 +2767,7 @@ function chartVoteSpread(rows) {
   return { min: v[0], median: mid, max: v[v.length - 1] };
 }
 
+const chartAcc = a => (a == null ? '' : Number(a).toFixed(1));
 const csvEsc = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
 
 // Contact details for a set of ranked A&Rs, in one query. `users.phone` is optional and
@@ -2771,10 +2794,10 @@ async function arsContacts(uids) {
 function chartsContactsCsv(d, contacts) {
   // sms_consent rides along because the phone column alone can't tell you whether a number
   // came with a marketing opt-in or only ever with a login code.
-  const head = ['rank', 'name', 'instagram', 'email', 'phone', 'sms_consent', 'category', 'location', 'points', 'rounds_scored'];
+  const head = ['rank', 'name', 'instagram', 'email', 'phone', 'sms_consent', 'category', 'location', 'points', 'rounds_scored', 'accuracy'];
   const body = d.rows.map(r => {
     const c = contacts.get(r.id) || {};
-    return [r.rank, r.name, r.ig ? '@' + r.ig : '', c.email || '', c.phone || '', c.consent ? 'yes' : 'no', r.category, r.location, r.points, r.rounds];
+    return [r.rank, r.name, r.ig ? '@' + r.ig : '', c.email || '', c.phone || '', c.consent ? 'yes' : 'no', r.category, r.location, r.points, r.rounds, chartAcc(r.accuracy)];
   });
   return [head.join(',')].concat(body.map(row => row.map(csvEsc).join(','))).join('\n');
 }
@@ -2784,8 +2807,8 @@ function chartsCsv(d) {
   const esc = csvEsc;
   let head, body;
   if (d.mode === 'ars') {
-    head = ['rank', 'name', 'instagram', 'category', 'location', 'points', 'rounds_scored'];
-    body = d.rows.map(r => [r.rank, r.name, r.ig ? '@' + r.ig : '', r.category, r.location, r.points, r.rounds]);
+    head = ['rank', 'name', 'instagram', 'category', 'location', 'points', 'rounds_scored', 'accuracy'];
+    body = d.rows.map(r => [r.rank, r.name, r.ig ? '@' + r.ig : '', r.category, r.location, r.points, r.rounds, chartAcc(r.accuracy)]);
   } else if (d.mode === 'weekly1s') {
     head = ['room', 'show_date', 'title', 'artist', 'instagram', 'room_average', 'votes'];
     body = d.rows.map(r => r.record
@@ -2805,7 +2828,8 @@ function chartsCaption(d) {
   L.push(`Tracks submitted to the A&R Room at ${shareCards.SUBMIT_URL} — rated live, 0–${d.scaleMax}, by the room.`, '');
   if (d.mode !== 'ars') { d.bands.forEach(b => L.push(`${b.range} | ${b.label}`)); L.push(''); }
   d.rows.forEach(r => {
-    if (d.mode === 'ars') return L.push(`${r.rank}. ${r.name}${r.ig ? ' — @' + r.ig : ''} (${r.points.toLocaleString()} pts)`);
+    if (d.mode === 'ars') return L.push(`${r.rank}. ${r.name}${r.ig ? ' — @' + r.ig : ''} (${d.sort === 'accuracy'
+      ? chartAcc(r.accuracy) + '% accuracy' : r.points.toLocaleString() + ' pts'})`);
     if (d.mode === 'weekly1s') return L.push(r.record
       ? `${r.room} — ${r.record.title}${r.record.ig ? ' — @' + r.record.ig : ' — ' + r.record.artist} (${r.record.score.toFixed(1)})`
       : `${r.room} — no record cleared the floor`);
@@ -8432,7 +8456,7 @@ async function handleApi(req, res, url) {
         const shaped = chunk.map(r => {
           if (data.mode === 'ars') return { rank: r.rank, top: r.rank === 1, line1: r.name,
             line2: r.ig ? '@' + r.ig : [r.category, r.location].filter(Boolean).join(' · '),
-            value: (r.points || 0).toLocaleString() };
+            value: data.sort === 'accuracy' ? chartAcc(r.accuracy) + '%' : (r.points || 0).toLocaleString() };
           if (data.mode === 'weekly1s') return { rank: '#1', top: false,
             line1: r.record ? r.record.title : '—',
             line2: r.record ? [r.room, chartDate(r.showAt)].filter(Boolean).join(' · ') : r.room + ' · no record cleared the floor',
