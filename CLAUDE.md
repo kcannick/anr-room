@@ -743,8 +743,8 @@ live on anr.makinitmag.com.
   already an MMS by the time it goes.
 
 - **The 69-hour schedule** (041, 2026-09-27, operator's call — "more production time and
-  notification between events"). **BUILT, NOT YET PUSHED** (branch
-  `claude/event-notification-schedule-c0a56a`, committed locally, main merged in 2026-09-30). Hours after the open: **−1** track list locked
+  notification between events"). **SHIPPED 2026-10-01** (PR #12, merged to main). After any deploy of it: the
+  schedule must be SAVED once on the platform panel and the livestream link set. Hours after the open: **−1** track list locked
   (review site) · **0** 3PM ET open + A&Rs emailed "voting is open" (new topic `daily_open`,
   email only, **default ON**) · **24** 3PM close + tally + each rated artist gets a heads-up by
   email AND SMS ("rated and will appear on tomorrow's Livestream Countdown", the operator's
