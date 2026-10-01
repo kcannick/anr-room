@@ -2054,7 +2054,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify(rd.artists) === JSON.stringify(['Artist 41', 'Artist 42', 'Artist 43']), JSON.stringify(rd.artists));
   ok('A&Rs print ALPHABETISED, not by points (Lex leads the board; amber leads the list)',
     JSON.stringify(rd.ars) === JSON.stringify(['amber', 'Lex', 'Zed']), JSON.stringify(rd.ars));
-  ok('the date is the day the stream AIRS (results_at), as MM.DD.YY',
+  ok('on the 69-hour clock the results day IS the countdown clip\'s default post day — one date on everything that posts',
+    srv._etDay(srv._dropWindowFor('2026-09-24', srv._DAILY_SCHEDULE_DEFAULTS).resultsAt) === srv._countdownPostDay({ drop_day: '2026-09-24' })
+      && srv._countdownPostDay({ drop_day: '2026-09-24' }) === '2026-09-27');
+  ok('the date is the day it POSTS (results_at), as MM.DD.YY',
     /^\d\d\.\d\d\.\d\d$/.test(rd.date) && rd.date === srv._recapDateLabel(pubbed.results_at), rd.date);
   ok('the stored caption carries the date, every artist and every A&R',
     rjob.recap_caption.includes(rd.date) && rd.artists.every(a => rjob.recap_caption.includes(a))

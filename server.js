@@ -1515,6 +1515,11 @@ async function pushDayResults(session) {
   }
 }
 
+// The two shows, by name (operator, 2026-09-27). ONE definition: the stream caption, the
+// countdown clip captions, the artist heads-up and both results emails all read these.
+const DAILY_STREAM_NAME = "Makin' It HOT 100 Daily Countdown";   // the daily 3PM livestream
+const WEEKLY_SHOW_NAME = 'The A&R Room - Weekly Live Music Review'; // Wednesday 7PM ET
+
 // ===== THE A&R MEETING RECAP — the Livestream Countdown's graphics + caption =====
 // The operator goes live at stream_at (3PM ET, the day after the close) and counts down the day's records, reveals the Top
 // 8 A&Rs, then closes on the top artists. The stream needs an Instagram Live cover (9:16), a
@@ -1525,9 +1530,11 @@ async function pushDayResults(session) {
 // the Top 8 A&Rs alphabetised, so a cover posted an hour before the stream gives away who is
 // on it, never where they placed. The Top 8 card (ranked) stays the post-stream graphic.
 //
-// The date is the day the stream AIRS — stream_at (dropStreamAt), not drop_day (when the
-// records opened) and not results_at (the email, a day later) — because the video is labelled
-// by when it happened.
+// THE DATE IS THE DAY IT POSTS (operator, 2026-09-27) — results_at, never drop_day and never
+// the day the countdown was recorded (stream_at): the operator records ahead and everything
+// that goes up on a day carries that day. Same rule as the countdown clip captions below
+// (drop_day + COUNTDOWN_POST_OFFSET_DAYS, which is results day on the 69-hour clock). The
+// TIME printed beside it is still the stream's own ("Daily at 3PM", off stream_at).
 function recapDateLabel(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
     month: '2-digit', day: '2-digit', year: '2-digit' }).formatToParts(new Date(Number(ts)));
@@ -1550,8 +1557,9 @@ async function recapGraphicsData(session) {
     .map(a => (a.ig ? '@' + a.ig : (a.name || '').trim()))
     .filter(Boolean)
     .sort((a, b) => a.replace(/^@/, '').localeCompare(b.replace(/^@/, ''), 'en', { sensitivity: 'base' }));
-  const airs = dropStreamAt(session, await dailySchedule()) || now();
-  return { date: recapDateLabel(airs), time: recapTimeLabel(airs), artists, ars };
+  const sched = await dailySchedule();
+  const posts = Number(session.results_at) || dropWindowFor(session.drop_day, sched).resultsAt || now();
+  return { date: recapDateLabel(posts), time: recapTimeLabel(dropStreamAt(session, sched) || posts), artists, ars };
 }
 // The stream caption: plain and direct (operator's copy voice), with the same lists as the
 // graphics. Handles where we have them, names where we do not, so the operator can see who
@@ -1592,7 +1600,6 @@ function recapCaption(d) {
 // Three flavours: `instagram` (@handles — Threads shares Instagram usernames, so it posts
 // this one too), `social` (Facebook / YouTube / TikTok: an Instagram handle there tags the
 // wrong account or nobody, so names only) and `x` (names, and it has to fit 280).
-const COUNTDOWN_CLIP_TITLE = "Makin' It HOT 100 Daily Countdown";
 const COUNTDOWN_POST_OFFSET_DAYS = 3;
 const COUNTDOWN_PLATFORMS = ['instagram', 'social', 'x'];
 const COUNTDOWN_SUBMIT_URL = 'makinitmag.com/review';
@@ -1633,7 +1640,7 @@ function countdownCaption(d, platform) {
   const who = (p) => (handles && p.ig ? '@' + p.ig : p.name);
   const top = d.artists[d.artists.length - 1];
   const topLine = top ? `${who(top)} — Top Track of the day${top.title ? ` with "${top.title}"` : ''}` : '';
-  const head = `${COUNTDOWN_CLIP_TITLE} — ${d.date}`;
+  const head = `${DAILY_STREAM_NAME} — ${d.date}`;
   if (platform === 'x') {
     // One paragraph. If it will not fit, drop the hashtag, then the song title; what is
     // left over is the operator's to trim, and the console prints the count.
@@ -1710,7 +1717,7 @@ async function photoDataUri(url) {
 async function resultsCarouselData(session, set, { photo = true } = {}) {
   const copy = RESULTS_COPY[set];
   if (!copy) return null;
-  const date = recapDateLabel(dropStreamAt(session, await dailySchedule()) || now());
+  const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
   let hero, others;
   if (set === 'song') {
     const rows = await db.all(
@@ -3620,9 +3627,6 @@ function etWhenLabel(ts, fromDay) {
 // the close day, daily_bonus_tiers as JSON) and are read through dailySchedule(), cached per
 // instance for 30s. A closing time at or before the opening time means the NEXT day. Order is
 // clamped: close <= stream <= results.
-// The two shows, by name (operator, 2026-09-27). Used verbatim in every message that names them.
-const DAILY_STREAM_NAME = "Makin' It HOT 100 Daily Countdown";   // the daily 3PM livestream
-const WEEKLY_SHOW_NAME = 'The A&R Room - Weekly Live Music Review'; // Wednesday 7PM ET
 const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
   openMin: 15 * 60, closeMin: 15 * 60,
   streamMin: 15 * 60, streamDays: 1,      // the Livestream Countdown, the day after the close

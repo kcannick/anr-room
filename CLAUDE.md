@@ -744,12 +744,12 @@ live on anr.makinitmag.com.
 
 - **The 69-hour schedule** (041, 2026-09-27, operator's call — "more production time and
   notification between events"). **BUILT, NOT YET PUSHED** (branch
-  `claude/event-notification-schedule-c0a56a`). Hours after the open: **−1** track list locked
+  `claude/event-notification-schedule-c0a56a`, committed locally, main merged in 2026-09-30). Hours after the open: **−1** track list locked
   (review site) · **0** 3PM ET open + A&Rs emailed "voting is open" (new topic `daily_open`,
   email only, **default ON**) · **24** 3PM close + tally + each rated artist gets a heads-up by
   email AND SMS ("rated and will appear on tomorrow's Livestream Countdown", the operator's
   "Tune in for results. Have your fans tune in to participate in the comments." verbatim) ·
-  **48** 3PM **Livestream Countdown** (`sessions.stream_at`) — the ranked graphics render HERE
+  **48** 3PM **Makin' It HOT 100 Daily Countdown** (`DAILY_STREAM_NAME`, one constant shared with the clip captions; `sessions.stream_at`; cover/caption are DATED BY THE DAY THEY POST = `results_at`, the time beside it is the stream's) — the ranked graphics render HERE
   (`recap_jobs.rendered_at`) so clips/carousels can go up after the stream · **69** noon
   results: seal lifts on /daily, A&R digest (now with the stream link, a personal results link
   and "today's records close at 3:00 PM ET — in 3 hours"), artist Track Reports (email only —
