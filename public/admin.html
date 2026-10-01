@@ -167,6 +167,14 @@
   .dllink.bad{color:var(--hot)}
   a.dllink{color:var(--accent);text-decoration:none}
   a.dllink:hover{text-decoration:underline}
+  a.dlig{color:var(--accent);text-decoration:none;font-family:"Space Mono",monospace;font-size:11px}
+  a.dlig:hover{text-decoration:underline}
+  .dlig.none{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-faint)}
+  /* The artist's note sits on its own full-width line under the record, so a long note
+     wraps across the table instead of stretching the Record column. */
+  .dltable tr.dlsub td{border-top:0;padding-top:0}
+  .dlnote{font-size:12px;color:var(--ink-dim);white-space:pre-wrap;line-height:1.45;
+    border-left:2px solid var(--line);padding-left:9px}
   /* ---- admin users panel ---- */
   .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
   .urow+.urow{margin-top:8px}
@@ -1220,6 +1228,7 @@
     #charts .ctitle{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #charts .csub{font-size:12px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #charts .cmeta{font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-faint);width:94px;flex:none;text-align:right}
+    #charts .cacc{font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-dim);width:84px;flex:none;text-align:right}
     #charts .cscore{font-family:'Space Mono',monospace;font-size:16px;color:var(--signal);width:54px;flex:none;text-align:right}
     #charts .cutline{display:flex;align-items:center;gap:10px;margin:12px 0 2px;font-family:'Space Mono',monospace;
       font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
@@ -1252,7 +1261,7 @@
             <option value="100" selected>Top 100</option><option value="50">Top 50</option>
             <option value="20">Top 20</option><option value="10">Top 10</option><option value="1000">All</option>
           </select></div>
-        <div><label>Min votes</label><input type="number" id="chMinVotes" value="10" min="0" step="1"></div>
+        <div><label id="chMinLabel">Min votes</label><input type="number" id="chMinVotes" value="10" min="0" step="1"></div>
         <div><label>Order</label><select id="chOrder">
           <option value="top">#1 first</option><option value="countdown">Countdown</option></select></div>
       </div>
@@ -1263,6 +1272,8 @@
       <div class="row" style="gap:14px;margin-top:10px;align-items:center">
         <div style="flex:0 0 auto"><label style="margin:0 0 4px">Per slide</label>
           <select id="chPer" style="width:auto"><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option></select></div>
+        <div id="chSortWrap" style="flex:0 0 auto;display:none"><label style="margin:0 0 4px">Rank A&amp;Rs by</label>
+          <select id="chSort" style="width:auto"><option value="points" selected>Points</option><option value="accuracy">Accuracy</option></select></div>
         <label class="pref-row" id="chDedupeRow" style="flex:1;min-width:220px">
           <input type="checkbox" id="chDedupe" checked>
           <span><b>Merge repeat plays</b><small>A record played in more than one room charts once, at its best showing. The CSV keeps a <code>plays</code> count.</small></span>
@@ -2151,6 +2162,16 @@ function renderDaily(){
     <p class="muted" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">${c.recapCover ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed' + (d.blobConfigured ? '' : ' — BLOB_READ_WRITE_TOKEN is not set') + '; these are rendered live instead.' : 'Rendered live from the day so far. The A&Rs column fills in once the day tallies.')}
       Artists print in drop order and A&Rs alphabetically — nothing on the cover is ranked.</p>
     <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost sm" onclick="dlCopyRecapCaption()">Copy recap caption</button></div>`;
+  // The countdown clip — recorded after the stream, posted everywhere. Every artist lowest to
+  // highest, ending on the Top Track, and the top 3 A&Rs. Ranked, so only once the day has
+  // tallied. Dated the day it POSTS (records that opened on the 24th post on the 27th), which
+  // the field defaults to and the operator can move.
+  const tallied = dr.async_state === 'ratified' || dr.async_state === 'published';
+  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Countdown clip captions</h4>
+    ${tallied ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><label class="muted" style="font-size:12px">Posts on <input type="date" id="dlCdDate" value="${esc(dlCdPick.sid === (DL.drop && DL.drop.id) ? dlCdPick.date : dlCountdownDefaultDay(dr.day))}" onchange="dlCdPick = { sid: DL.drop && DL.drop.id, date: this.value }" style="margin-left:6px"></label></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn ghost sm" onclick="dlCopyCountdown('instagram')">Copy Instagram / Threads caption</button><button class="btn ghost sm" onclick="dlCopyCountdown('social')">Copy Facebook / YouTube / TikTok caption</button><button class="btn ghost sm" onclick="dlCopyCountdown('x')">Copy X caption</button></div>
+    <p class="muted" id="dlCdNote" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">Instagram and Threads use @handles. The others use names, because an Instagram handle tags the wrong account there.</p>`
+    : '<div class="empty">Available once the day tallies.</div>'}`;
   // The results carousels — posted after the 2PM reveal stream. Slide 1 is the top record /
   // top A&R, then the rest ranked, then the call to action; a big day gets more list slides.
   // Hosted at the 3PM publish; before that, or if hosting failed, every slide renders live off
@@ -2275,6 +2296,32 @@ async function dlCopyWeekCaption(post){
   try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
   catch(e){ alert('Could not copy the caption.'); }
 }
+// A post date the operator moved survives the status poll's redraw, for that drop only.
+let dlCdPick = { sid: null, date: '' };
+// The clip posts COUNTDOWN_POST_OFFSET_DAYS (server.js) after the records opened.
+function dlCountdownDefaultDay(day){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return '';
+  const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 3);
+  return d.toISOString().slice(0, 10);
+}
+async function dlCopyCountdown(platform){
+  const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
+  const date = ($('#dlCdDate') && $('#dlCdDate').value) || '';
+  let d = null;
+  try{
+    const r = await fetch('/api/admin/daily/countdown-captions?s=' + encodeURIComponent(sid) + (date ? '&date=' + encodeURIComponent(date) : ''), { headers: chAuthHeaders() });
+    d = await r.json();
+    if(!r.ok){ alert(d.error || 'Could not build the caption.'); return; }
+  }catch(e){ alert('Could not build the caption.'); return; }
+  const text = d.captions && d.captions[platform];
+  if(!text){ alert('Nothing to copy yet.'); return; }
+  try{ await navigator.clipboard.writeText(text); }
+  catch(e){ alert('Could not copy the caption.'); return; }
+  let msg = 'Caption copied, dated ' + d.date + '.';
+  if(platform === 'x') msg += ' ' + d.xLength + ' of ' + d.xMax + ' characters' + (d.xLength > d.xMax ? ' — trim it before posting.' : '.');
+  if(platform === 'instagram' && d.noHandle && d.noHandle.length) msg += ' No Instagram handle on file for: ' + d.noHandle.join(', ') + '. Tag them by hand.';
+  alert(msg);
+}
 async function dlCopyResultsCaption(set){
   const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
   const c = (DL && DL.cards && DL.cards.results) || {};
@@ -2335,6 +2382,25 @@ function dlSupport(r){
   return `<span class="dlsup ${r.top_supporter ? 'top' : 'paid'}">${esc(dlMoney(r.support_cents))}</span>`
     + (r.top_supporter ? '<span class="pill top" title="Paid the most of anyone on this day">Top supporter</span>' : '');
 }
+// The comment posted under the stream on Instagram while a record plays: tagging the
+// artist's handle notifies them, so they can come into the live. No handle → plain name.
+function dlNowPlayingText(r){
+  const by = r.instagram ? '@' + r.instagram : (r.song_artist || '').trim();
+  return `Now playing "${(r.song_title || '').trim()}"` + (by ? ` by ${by}` : '');
+}
+async function dlCopyNowPlaying(id, btn){
+  const r = ((DL && DL.rounds) || []).find(x => x.id === id); if(!r) return;
+  try{ await navigator.clipboard.writeText(dlNowPlayingText(r)); }
+  catch(e){ alert('Could not copy. The text is:\n\n' + dlNowPlayingText(r)); return; }
+  // No alert on success — this is pressed on air, once per record.
+  const was = btn.textContent;
+  btn.textContent = 'Copied'; btn.disabled = true;
+  setTimeout(() => { btn.textContent = was; btn.disabled = false; }, 1500);
+}
+function dlIgLink(h){
+  if(!h) return '<span class="dlig none">no Instagram</span>';
+  return `<a class="dlig" href="https://www.instagram.com/${encodeURIComponent(h)}/" target="_blank" rel="noopener">@${esc(h)}</a>`;
+}
 function renderDlRecords(){
   const rounds = dlSortedRounds();
   const bySc = dlSort === 'score_desc' || dlSort === 'score_asc';
@@ -2344,14 +2410,15 @@ function renderDlRecords(){
     const cls = [alarm ? 'alarm' : '', r.top_supporter ? 'top' : ''].filter(Boolean).join(' ');
     return `<tr${cls?` class="${cls}"`:''}>
       <td class="num muted" style="width:34px">${bySc ? (r.rank != null ? '#' + r.rank : '—') : r.idx}</td>
-      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')}</div></td>
+      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')} · ${dlIgLink(r.instagram)}</div></td>
       <td>${dlSupport(r)}</td>
       <td>${dlPlayLink(r.play_url)}</td>
       <td class="num" style="color:var(--signal);font-weight:700">${score}</td>
       <td class="num">${r.votes}</td>
       <td class="num"${r.reports?' style="color:var(--hot);font-weight:700"':' class="num muted"'}>${r.reports}</td>
-      <td class="num"><button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
-    </tr>`;
+      <td class="num" style="white-space:nowrap"><button class="btn ghost sm" title="${esc(dlNowPlayingText(r))}" onclick="dlCopyNowPlaying('${r.id}', this)">Now playing</button>
+        <button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
+    </tr>${r.artist_note ? `<tr class="dlsub${cls?' '+cls:''}"><td></td><td colspan="7"><div class="dlnote">${esc(r.artist_note)}</div></td></tr>` : ''}`;
   }).join('');
   $('#dlRounds').innerHTML = rounds.length
     ? `<table class="dltable"><tr><th class="num">${bySc ? 'Rank' : '#'}</th><th style="width:32%">Record</th><th>Support</th><th>Play link</th><th class="num">Score</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
@@ -3654,7 +3721,9 @@ function chParams(extra){
     p.set('to',String(chDayMs($('#chTo').value,true)||Date.now()));
   } else p.set('scope','all');
   p.set('limit',$('#chLimit').value);
-  p.set('minVotes',String(Math.max(0,parseInt($('#chMinVotes').value,10)||0)));
+  // One input, two floors: votes per record, or rounds per A&R on the accuracy chart.
+  p.set(chMode==='ars'?'minRounds':'minVotes',String(Math.max(0,parseInt($('#chMinVotes').value,10)||0)));
+  if(chMode==='ars')p.set('sort',$('#chSort').value);
   p.set('order',$('#chOrder').value);
   p.set('per',$('#chPer').value);
   p.set('dedupe',$('#chDedupe').checked?'1':'0');
@@ -3687,7 +3756,9 @@ function renderCharts(d){
   const when=sc.from?`${chFmtDay(sc.from)} – ${chFmtDay(sc.to)}`:'no rooms yet';
   let sum=`scope · <b>${esc(sc.label)}</b> — ${sc.rooms} room${sc.rooms===1?'':'s'}, ${esc(when)}<br>`;
   if(d.mode==='ars'){
-    sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`;
+    sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`
+      +(d.sort==='accuracy'?` · ranked on <b>accuracy</b>`
+        +(s.excluded?` · <span class="warn">${s.excluded} excluded</span> (under ${d.minRounds} round${d.minRounds===1?'':'s'})`:''):'');
   }else if(d.mode==='weekly1s'){
     sum+=`rooms · <b>${s.charting}</b> with a #1`+(s.excluded?` · <span class="warn">${s.excluded} had nothing clear the floor</span>`:' · every room cleared the floor');
   }else{
@@ -3704,11 +3775,13 @@ function renderCharts(d){
   let html='';
   for(const r of d.rows){
     if(d.mode==='ars'){
+      const byAcc=d.sort==='accuracy',acc=r.accuracy==null?'—':r.accuracy.toFixed(1)+'%';
       html+=`<div class="crow"><div class="crank ${chRankClass(r.rank)}">${r.rank}</div>
         <div class="cmain"><div class="ctitle">${esc(r.name)}</div>
         <div class="csub">${esc([r.ig?'@'+r.ig:'',r.category,r.location].filter(Boolean).join(' · ')||'—')}</div></div>
         <div class="cmeta">${r.rounds==null?'':r.rounds+' rounds'}</div>
-        <div class="cscore">${r.points.toLocaleString()}</div></div>`;
+        <div class="cacc">${byAcc?r.points.toLocaleString()+' pts':acc+' acc'}</div>
+        <div class="cscore"${byAcc?' style="width:70px"':''}>${byAcc?acc:r.points.toLocaleString()}</div></div>`;
     }else if(d.mode==='weekly1s'){
       const rec=r.record;
       html+=`<div class="crow${rec?'':' excl'}"><div class="crank r1">${rec?'#1':'—'}</div>
@@ -3806,13 +3879,23 @@ document.querySelectorAll('.chart-mode').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.chart-mode').forEach(x=>{x.classList.toggle('ghost',x!==b);x.classList.toggle('on',x===b);});
   $('#chDedupeRow').style.display=chMode==='records'?'':'none';
   $('#chContacts').style.display=chMode==='ars'?'':'none';
+  $('#chSortWrap').style.display=chMode==='ars'?'':'none';
+  chFloorUi();
   $('#chLimitLabel').textContent=chMode==='weekly1s'?'Rooms':'Chart size';
   loadCharts();
 });
-['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo'].forEach(sel=>{
+// The floor input means votes per record, or rounds per A&R — and on the points board it
+// does nothing, so it is switched off there rather than left looking live.
+function chFloorUi(){
+  const ars=chMode==='ars';
+  $('#chMinLabel').textContent=ars?'Min rounds':'Min votes';
+  $('#chMinVotes').disabled=ars&&$('#chSort').value!=='accuracy';
+}
+['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo','#chSort'].forEach(sel=>{
   const el=$(sel);if(!el)return;
   el.addEventListener('change',()=>{
     if(sel==='#chScope')$('#chRangeRow').style.display=$('#chScope').value==='range'?'':'none';
+    if(sel==='#chSort')chFloorUi();
     loadCharts();
   });
 });

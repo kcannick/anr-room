@@ -1577,6 +1577,89 @@ function recapCaption(d) {
   return lines.join('\n');
 }
 
+
+// ===== THE COUNTDOWN CLIP CAPTIONS — the recorded countdown, posted to every platform =====
+// After the stream the operator cuts a countdown clip of the day's records and posts it
+// everywhere. Its caption shouts out EVERY artist, lowest to highest so it reads in the
+// clip's order, ends on the Top Track, and congratulates the TOP 3 A&Rs only (operator,
+// 2026-09-27). Ranked, so it is only offered once the day has tallied.
+//
+// THE DATE IS THE DAY THE CLIP POSTS — never the day it was recorded, never drop_day. The
+// clip for the 27th is recorded on the 26th from records that opened on the 24th. The post
+// date is a console field; it defaults to drop_day + COUNTDOWN_POST_OFFSET_DAYS, which is
+// that cadence.
+//
+// Three flavours: `instagram` (@handles — Threads shares Instagram usernames, so it posts
+// this one too), `social` (Facebook / YouTube / TikTok: an Instagram handle there tags the
+// wrong account or nobody, so names only) and `x` (names, and it has to fit 280).
+const COUNTDOWN_CLIP_TITLE = "Makin' It HOT 100 Daily Countdown";
+const COUNTDOWN_POST_OFFSET_DAYS = 3;
+const COUNTDOWN_PLATFORMS = ['instagram', 'social', 'x'];
+const COUNTDOWN_SUBMIT_URL = 'makinitmag.com/review';
+const COUNTDOWN_JOIN_URL = 'anr.makinitmag.com';
+const COUNTDOWN_TAGS = '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom';
+const X_MAX = 280, X_URL_LEN = 23;   // X counts every link as 23 characters
+function countdownPostDay(session, requested) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(requested || '')) return requested;
+  const d = new Date(String(session.drop_day) + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + COUNTDOWN_POST_OFFSET_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+async function countdownClipData(session, postDay) {
+  // Same order as the console's countdown sort: room average, then more ratings, then drop
+  // order — reversed so the lowest comes first. Unscored and reference records are not on it.
+  const rows = await db.all(
+    `SELECT r.idx, r.song_title, r.song_artist, r.artist_instagram, r.room_average,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
+       FROM rounds r
+      WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
+        AND COALESCE(r.is_reference, 0) = 0`, [session.id]);
+  rows.sort((a, b) => (Number(b.room_average) - Number(a.room_average)) || (Number(b.votes) - Number(a.votes)) || (a.idx - b.idx));
+  const records = rows.reverse().map(r => ({
+    name: (r.song_artist || r.song_title || '').trim(), ig: igClean(r.artist_instagram),
+    title: (r.song_title || '').trim() }));
+  // An artist with two records on the day is shouted out once, at their higher placing.
+  const artists = records.filter((r, i) => !records.slice(i + 1).some(o =>
+    (r.ig && o.ig ? r.ig.toLowerCase() === o.ig.toLowerCase() : r.name.toLowerCase() === o.name.toLowerCase())));
+  const ars = await cardArsData({ sessionId: session.id }, 3);
+  const [y, m, d] = postDay.split('-');
+  return { date: `${m}.${d}.${y.slice(2)}`, artists, ars };
+}
+function xLength(text) {
+  return [...text.replace(/\b(?:https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(?:\/\S*)?/gi, 'x'.repeat(X_URL_LEN))].length;
+}
+function countdownCaption(d, platform) {
+  const handles = platform === 'instagram';
+  const who = (p) => (handles && p.ig ? '@' + p.ig : p.name);
+  const top = d.artists[d.artists.length - 1];
+  const topLine = top ? `${who(top)} — Top Track of the day${top.title ? ` with "${top.title}"` : ''}` : '';
+  const head = `${COUNTDOWN_CLIP_TITLE} — ${d.date}`;
+  if (platform === 'x') {
+    // One paragraph. If it will not fit, drop the hashtag, then the song title; what is
+    // left over is the operator's to trim, and the console prints the count.
+    const rest = d.artists.slice(0, -1).map(who);
+    const build = (title, tag) => {
+      const topBit = top ? `Top Track of the day ${who(top)}${title && top.title ? ` with "${top.title}"` : ''}` : '';
+      const so = rest.length ? `S/O to ${rest.join(', ')}${topBit ? ', and ' + topBit : ''}` : (topBit ? `S/O to ${topBit}` : '');
+      return [head, so, d.ars.length ? `Top A&Rs: ${d.ars.map(who).join(', ')}` : '',
+        `Submit your music: ${COUNTDOWN_SUBMIT_URL}`, tag ? '#MakinIt' : ''].filter(Boolean).join('\n\n');
+    };
+    for (const [title, tag] of [[true, true], [true, false], [false, false]]) {
+      const t = build(title, tag);
+      if (xLength(t) <= X_MAX) return t;
+    }
+    return build(false, false);
+  }
+  const lines = [head, ''];
+  if (d.artists.length) {
+    lines.push("S/O to all the artists featured on yesterday's countdown:", '',
+      ...d.artists.slice(0, -1).map(who), topLine);
+  }
+  if (d.ars.length) lines.push('', 'Congratulations to our top A&Rs:', ...d.ars.map((a, i) => `${i + 1}. ${who(a)}`));
+  lines.push('', `Submit your music for a free review: ${COUNTDOWN_SUBMIT_URL}`, `Join the A&R Team: ${COUNTDOWN_JOIN_URL}`,
+    '', COUNTDOWN_TAGS);
+  return lines.join('\n');
+}
 // ===== THE A&R MEETING RESULTS CAROUSELS — posted after the 2PM reveal stream =====
 // Two Instagram carousels, rendered at the 3PM publish beside the recap cover and hosted on
 // the same Blob path (daily/<day>/results-song-N.png, results-ar-N.png), plus a caption each:
@@ -2636,6 +2719,14 @@ async function chartRecords(sessions, { minVotes, dedupe }) {
 // Top A&Rs over the scope. A SERIES chart reads the public board verbatim (bonus
 // point_events included) — that's the $500 board, and a chart that disagreed with it
 // would be a support ticket. Other scopes sum vote points over the scoped rooms.
+// Accuracy is the score card's number (buildRecap): each round's error as a distance on its
+// OWN scale (9 rating / 100 Versus), averaged onto one 0..100 axis — here over every scored
+// round in the scope rather than one session. CASE rather than MAX()/GREATEST() so one
+// string runs on both dialects.
+const CHART_ACC_SQL = `AVG(CASE WHEN v.err IS NULL THEN NULL
+    WHEN r.poll_type = 'binary' THEN (CASE WHEN ABS(v.err) >= 100 THEN 0 ELSE 1 - ABS(v.err) / 100.0 END)
+    ELSE (CASE WHEN ABS(v.err) >= 9 THEN 0 ELSE 1 - ABS(v.err) / 9.0 END) END) * 100`;
+const CHART_DEFAULT_MIN_ROUNDS = 10;
 async function chartArs(scope, sessions) {
   const ids = sessions.map(s => s.id);
   const ph = ids.map(() => '?').join(',');
@@ -2643,6 +2734,7 @@ async function chartArs(scope, sessions) {
     id: r.uid, name: r.name || 'A&R', ig: igClean(r.instagram),
     category: r.primary_category || null, location: r.location || null,
     points: Number(r.pts) || 0, rounds: r.rounds == null ? null : Number(r.rounds),
+    accuracy: r.acc == null ? null : Math.round(Number(r.acc) * 100) / 100,
   });
   if (scope.kind === 'series') {
     const rows = await db.all(
@@ -2654,18 +2746,19 @@ async function chartArs(scope, sessions) {
     // Rounds-scored isn't derivable from the points union (it carries bonus events too),
     // so count it off the scoped rooms and merge.
     const counts = ids.length ? await db.all(
-      `SELECT p.user_id AS uid, COUNT(v.id) AS rounds
+      `SELECT p.user_id AS uid, COUNT(v.id) AS rounds, ${CHART_ACC_SQL} AS acc
          FROM votes v JOIN participants p ON v.participant_id = p.id
          JOIN rounds r ON r.id = v.round_id
         WHERE r.session_id IN (${ph}) AND v.points IS NOT NULL AND p.user_id IS NOT NULL
         GROUP BY p.user_id`, ids) : [];
-    const byUid = new Map(counts.map(c => [c.uid, Number(c.rounds) || 0]));
-    return rows.map(r => shape({ ...r, rounds: byUid.get(r.uid) ?? 0 }));
+    const byUid = new Map(counts.map(c => [c.uid, c]));
+    return rows.map(r => shape({ ...r, rounds: Number((byUid.get(r.uid) || {}).rounds) || 0,
+      acc: (byUid.get(r.uid) || {}).acc }));
   }
   if (!ids.length) return [];
   const rows = await db.all(
     `SELECT u.uid, u.name, u.instagram, u.primary_category, u.location,
-            SUM(v.points) AS pts, COUNT(v.id) AS rounds
+            SUM(v.points) AS pts, COUNT(v.id) AS rounds, ${CHART_ACC_SQL} AS acc
        FROM votes v
        JOIN participants p ON v.participant_id = p.id
        JOIN rounds r ON r.id = v.round_id
@@ -2693,6 +2786,10 @@ function chartQuery(url) {
     to: parseInt(g('to'), 10) || 0,
     lastN: int('lastN', 4, 1, 52),
     minVotes: int('minVotes', CHART_DEFAULT_MIN_VOTES, 0, 100000),
+    // A&R chart only: rank on points (default) or accuracy. minRounds is the accuracy
+    // chart's floor — one lucky round is 100% and must not outrank a month of listening.
+    sort: g('sort') === 'accuracy' ? 'accuracy' : 'points',
+    minRounds: int('minRounds', CHART_DEFAULT_MIN_ROUNDS, 0, 100000),
     limit: int('limit', 100, 1, 1000),
     per: int('per', 10, 5, 20),          // rows per carousel slide (IG caps a carousel at 20)
     order: g('order') === 'countdown' ? 'countdown' : 'top',
@@ -2715,12 +2812,20 @@ async function chartsData(q) {
   };
 
   if (q.mode === 'ars') {
-    const all = await chartArs(scope, sessions);
+    const pool = await chartArs(scope, sessions);
+    out.sort = q.sort;
+    let all = pool;
+    if (q.sort === 'accuracy') {
+      // Same rule as the record floor: under it you are EXCLUDED, not reweighted.
+      out.minRounds = q.minRounds;
+      all = pool.filter(r => r.accuracy != null && (r.rounds || 0) >= q.minRounds)
+        .sort((a, b) => b.accuracy - a.accuracy || b.points - a.points || a.name.localeCompare(b.name));
+    }
     const rows = all.slice(0, q.limit).map((r, i) => ({ rank: i + 1, ...r }));
     out.rows = q.order === 'countdown' ? rows.slice().reverse() : rows;
     out.excluded = [];
-    out.summary = { pool: all.length, charting: rows.length, excluded: 0, votes: null };
-    out.title = q.title || 'Top A&Rs';
+    out.summary = { pool: pool.length, charting: rows.length, excluded: pool.length - all.length, votes: null };
+    out.title = q.title || (q.sort === 'accuracy' ? 'Most Accurate A&Rs' : 'Top A&Rs');
     return out;
   }
 
@@ -2764,6 +2869,7 @@ function chartVoteSpread(rows) {
   return { min: v[0], median: mid, max: v[v.length - 1] };
 }
 
+const chartAcc = a => (a == null ? '' : Number(a).toFixed(1));
 const csvEsc = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
 
 // Contact details for a set of ranked A&Rs, in one query. `users.phone` is optional and
@@ -2790,10 +2896,10 @@ async function arsContacts(uids) {
 function chartsContactsCsv(d, contacts) {
   // sms_consent rides along because the phone column alone can't tell you whether a number
   // came with a marketing opt-in or only ever with a login code.
-  const head = ['rank', 'name', 'instagram', 'email', 'phone', 'sms_consent', 'category', 'location', 'points', 'rounds_scored'];
+  const head = ['rank', 'name', 'instagram', 'email', 'phone', 'sms_consent', 'category', 'location', 'points', 'rounds_scored', 'accuracy'];
   const body = d.rows.map(r => {
     const c = contacts.get(r.id) || {};
-    return [r.rank, r.name, r.ig ? '@' + r.ig : '', c.email || '', c.phone || '', c.consent ? 'yes' : 'no', r.category, r.location, r.points, r.rounds];
+    return [r.rank, r.name, r.ig ? '@' + r.ig : '', c.email || '', c.phone || '', c.consent ? 'yes' : 'no', r.category, r.location, r.points, r.rounds, chartAcc(r.accuracy)];
   });
   return [head.join(',')].concat(body.map(row => row.map(csvEsc).join(','))).join('\n');
 }
@@ -2803,8 +2909,8 @@ function chartsCsv(d) {
   const esc = csvEsc;
   let head, body;
   if (d.mode === 'ars') {
-    head = ['rank', 'name', 'instagram', 'category', 'location', 'points', 'rounds_scored'];
-    body = d.rows.map(r => [r.rank, r.name, r.ig ? '@' + r.ig : '', r.category, r.location, r.points, r.rounds]);
+    head = ['rank', 'name', 'instagram', 'category', 'location', 'points', 'rounds_scored', 'accuracy'];
+    body = d.rows.map(r => [r.rank, r.name, r.ig ? '@' + r.ig : '', r.category, r.location, r.points, r.rounds, chartAcc(r.accuracy)]);
   } else if (d.mode === 'weekly1s') {
     head = ['room', 'show_date', 'title', 'artist', 'instagram', 'room_average', 'votes'];
     body = d.rows.map(r => r.record
@@ -2824,7 +2930,8 @@ function chartsCaption(d) {
   L.push(`Tracks submitted to the A&R Room at ${shareCards.SUBMIT_URL} — rated live, 0–${d.scaleMax}, by the room.`, '');
   if (d.mode !== 'ars') { d.bands.forEach(b => L.push(`${b.range} | ${b.label}`)); L.push(''); }
   d.rows.forEach(r => {
-    if (d.mode === 'ars') return L.push(`${r.rank}. ${r.name}${r.ig ? ' — @' + r.ig : ''} (${r.points.toLocaleString()} pts)`);
+    if (d.mode === 'ars') return L.push(`${r.rank}. ${r.name}${r.ig ? ' — @' + r.ig : ''} (${d.sort === 'accuracy'
+      ? chartAcc(r.accuracy) + '% accuracy' : r.points.toLocaleString() + ' pts'})`);
     if (d.mode === 'weekly1s') return L.push(r.record
       ? `${r.room} — ${r.record.title}${r.record.ig ? ' — @' + r.record.ig : ' — ' + r.record.artist} (${r.record.score.toFixed(1)})`
       : `${r.room} — no record cleared the floor`);
@@ -8751,7 +8858,7 @@ async function handleApi(req, res, url) {
         const shaped = chunk.map(r => {
           if (data.mode === 'ars') return { rank: r.rank, top: r.rank === 1, line1: r.name,
             line2: r.ig ? '@' + r.ig : [r.category, r.location].filter(Boolean).join(' · '),
-            value: (r.points || 0).toLocaleString() };
+            value: data.sort === 'accuracy' ? chartAcc(r.accuracy) + '%' : (r.points || 0).toLocaleString() };
           if (data.mode === 'weekly1s') return { rank: '#1', top: false,
             line1: r.record ? r.record.title : '—',
             line2: r.record ? [r.room, chartDate(r.showAt)].filter(Boolean).join(' · ') : r.room + ' · no record cleared the floor',
@@ -9345,7 +9452,7 @@ async function handleApi(req, res, url) {
     const day = session.drop_day;
     const rounds = await db.all(
       `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.play_url, r.artist_note,
-              r.ingest_ref, r.ingest_url, r.room_average, r.artist_email, r.artist_phone, r.support_cents,
+              r.artist_instagram, r.song_note, r.ingest_ref, r.ingest_url, r.room_average, r.artist_email, r.artist_phone, r.support_cents,
               (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
               (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id) AS reports,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared
@@ -9412,6 +9519,10 @@ async function handleApi(req, res, url) {
         id: r.id, idx: r.idx, status: r.status,
         song_title: r.song_title, song_artist: r.song_artist,
         play_url: r.play_url || '', artist_note: r.artist_note || '',
+        // The handle the console tags in the "Now playing" comment. Older rows carry it only
+        // in song_note ("IG: @x"), the same fallback the cards use.
+        instagram: igClean(r.artist_instagram)
+          || (m => m ? igClean(m[1]) : null)(/(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '')),
         ingest_ref: r.ingest_ref || null, ingest_url: r.ingest_url || null,
         room_average: r.room_average != null ? Number(r.room_average) : null,
         hasEmail: !!(r.artist_email || '').trim(), hasPhone: !!(r.artist_phone || '').trim(),
@@ -9502,6 +9613,23 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Drop not found', 404);
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
     return res.end(recapCaption(await recapGraphicsData(session)));
+  }
+
+  // The countdown clip captions, all three platforms at once. Ranked, so refused until the
+  // day has tallied. ?date=YYYY-MM-DD is the day the clip POSTS (see countdownPostDay).
+  if (p === '/api/admin/daily/countdown-captions' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const sid = url.searchParams.get('s');
+    const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
+    if (!session) return bad(res, 'Drop not found', 404);
+    if (!['ratified', 'published'].includes(session.async_state)) return bad(res, 'The day has not tallied yet', 409);
+    const postDay = countdownPostDay(session, url.searchParams.get('date'));
+    const d = await countdownClipData(session, postDay);
+    const captions = {};
+    for (const pf of COUNTDOWN_PLATFORMS) captions[pf] = countdownCaption(d, pf);
+    return send(res, 200, { postDay, date: d.date, captions, xLength: xLength(captions.x), xMax: X_MAX,
+      // Who the Instagram caption could not tag — the operator adds these by hand.
+      noHandle: d.artists.concat(d.ars).filter(a => !a.ig).map(a => a.name) });
   }
 
   // A results-carousel caption as text — the same builder the publish stores. ?set=song|ar.
@@ -10333,6 +10461,10 @@ module.exports._buildDayResults = buildDayResults;
 module.exports._pushDayResults = pushDayResults;
 module.exports._recapGraphicsData = recapGraphicsData;
 module.exports._recapCaption = recapCaption;
+module.exports._countdownCaption = countdownCaption;
+module.exports._countdownClipData = countdownClipData;
+module.exports._countdownPostDay = countdownPostDay;
+module.exports._xLength = xLength;
 module.exports._recapDateLabel = recapDateLabel;
 module.exports._resultsCarouselData = resultsCarouselData;
 module.exports._resultsCaption = resultsCaption;
