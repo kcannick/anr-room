@@ -2414,6 +2414,16 @@ async function creditReferralRounds(round, session) {
 // same uid to makinitmag.com/review, which hands it back on the daily push as scout.uid.
 // The uid is already public (it is the /u/<uid> profile URL), so it is safe in a link.
 const SUBMIT_REVIEW_URL = 'https://www.makinitmag.com/review';
+// The account page's thumbnail grid. 432px is 2x a ~200px card on a phone.
+const REFER_THUMB_WIDTH = 432;
+// What a referral graphic PRINTS, hashed: the cache key for its thumbnail. Per-A&R (the uid
+// is in it, so a shared device never shows the last person's card) and it moves when the
+// printed fields do, so a new photo shows on the next visit instead of a day later.
+function referGraphicVersion(u) {
+  return crypto.createHash('sha256')
+    .update([u.uid, u.name || '', u.primary_category || '', u.location || '', u.photo_url || ''].join('\u0000'))
+    .digest('hex').slice(0, 12);
+}
 function referralLinks(uid) {
   const u = encodeURIComponent(uid);
   return { join: `${publicBase()}/?ref=${u}`, submit: `${SUBMIT_REVIEW_URL}?ref=${u}` };
@@ -8710,6 +8720,7 @@ async function handleApi(req, res, url) {
   // attribution survives a repost. Rendered on demand and never cached: it is one person's
   // face and links, and the photo can change.
   if (p === '/api/card/refer' && method === 'GET') {
+    // (REFER_THUMB_WIDTH / referGraphicVersion are defined beside referralLinks.)
     const uid = await resolveReferUid(req, url);
     if (!uid) return bad(res, 'Not logged in', 401);
     const kinds = { card: 'referCard', story: 'referStory', join: 'referJoin', submit: 'referSubmit' };
@@ -8724,15 +8735,22 @@ async function handleApi(req, res, url) {
         photo: await photoDataUri(u.photo_url),
         qrJoin: await qrPngDataUri(links.join), qrSubmit: await qrPngDataUri(links.submit),
       };
+      // thumb=1: the SAME render at 432px wide, for the account page's preview grid — the
+      // A&R sees the graphic before downloading it (operator, 2026-09-20). A thumbnail may
+      // sit in the browser's private cache for a day: its URL carries `v`, a hash of what
+      // the graphic prints (referGraphicVersion), so it is per-A&R and changes the moment
+      // their name, photo, city or role does. The full download stays no-store.
+      const thumb = url.searchParams.get('thumb') === '1';
       let png;
-      try { png = await shareCards.renderPng(type, data); }
+      try { png = await shareCards.renderPng(type, data, thumb ? REFER_THUMB_WIDTH : undefined); }
       catch (e) {
         // A photo the renderer cannot decode must not cost the A&R their graphic.
         if (!data.photo) throw e;
         console.error('[refer] render with photo failed, retrying without:', e.message);
-        png = await shareCards.renderPng(type, { ...data, photo: null });
+        png = await shareCards.renderPng(type, { ...data, photo: null }, thumb ? REFER_THUMB_WIDTH : undefined);
       }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store' });
+      const fresh = thumb && url.searchParams.get('v') === referGraphicVersion(u);
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': fresh ? 'private, max-age=86400' : 'private, no-store' });
       return res.end(png);
     } catch (e) {
       console.error('[refer] card render failed:', e.message);
@@ -8953,17 +8971,24 @@ async function handleApi(req, res, url) {
         points: revealed ? (scoutPts.get(r.id) || 0) : undefined,
       };
     });
+    const gv = referGraphicVersion(u);
+    const gfx = (kind, label, size) => ({ kind, label, size, url: '/api/card/refer?kind=' + kind,
+      thumb: '/api/card/refer?kind=' + kind + '&thumb=1&v=' + gv });
     return send(res, 200, {
-      me: { uid: u.uid, name: u.name || null, hasPhoto: !!u.photo_url },
+      // name / photo / city / role feed the account page's header (the A&R's own data, on
+      // a header-authenticated or signed-link route; nothing here is email or phone).
+      me: { uid: u.uid, name: u.name || null, hasPhoto: !!u.photo_url, photoUrl: u.photo_url || null,
+        location: u.location || null, primaryCategory: u.primary_category || null },
       links: referralLinks(u.uid),
       rules: { windowDays: REFERRAL.windowDays, cap: REFERRAL.cap, errMax: REFERRAL.errMax, pointsPerRound: REFERRAL.pointsPerRound, scoutMultiplier: SCOUT_MULTIPLIER },
       ars: { referred: arRows.length, active: arRows.filter(r => r.played).length, earned: arEarned, rows: arRows.slice(0, 50) },
       artists: { submitted: artistRows.length, rated: artistRows.filter(r => r.rated).length, earned: artistEarned, rows: artistRows.slice(0, 50) },
+      // Labels are the operator's (2026-09-20): "Official A&R Card - Feed" / "- Story".
       graphics: [
-        { kind: 'card', label: 'Your A&R Team card', size: '1080 × 1350', url: '/api/card/refer?kind=card' },
-        { kind: 'story', label: 'Your A&R Team story', size: '1080 × 1920', url: '/api/card/refer?kind=story' },
-        { kind: 'join', label: 'Join the A&R Team', size: '1080 × 1350', url: '/api/card/refer?kind=join' },
-        { kind: 'submit', label: 'Submit your music', size: '1080 × 1350', url: '/api/card/refer?kind=submit' },
+        gfx('card', 'Official A&R Card - Feed', '1080 × 1350'),
+        gfx('story', 'Official A&R Card - Story', '1080 × 1920'),
+        gfx('join', 'Join the A&R Team', '1080 × 1350'),
+        gfx('submit', 'Submit your music', '1080 × 1350'),
       ],
     });
   }
@@ -10313,7 +10338,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html'); // A&R Wars prediction contest
-    if (url.pathname === '/refer') return serveStatic(res, 'refer.html'); // the A&R's referral links + graphics
+    // The A&R's account (2026-10-01): ONE page with sections — Earn points (the default;
+    // what /refer was), My profile, and a tab to the edit form. /refer serves the same file
+    // so every link already out there (email footers, the signed [card link], QR'd flyers'
+    // copy) lands on the same page and section.
+    if (url.pathname === '/account' || url.pathname === '/refer') return serveStatic(res, 'account.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // Stable submit link for QR codes: /submit?s=<session> 302s to wherever that
     // session's submission link points RIGHT NOW (Nero, review site, anything).

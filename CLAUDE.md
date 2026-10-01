@@ -664,7 +664,7 @@ live on anr.makinitmag.com.
   the landing page and join page stash `?ref=` under `rt_ref` (session-less — the old
   `rt_ref_<sid>` key died with the session, and a daily drop is a new session every day);
   auth.js sends the per-session key first, `rt_ref` second, and clears both on join.
-  **`/refer` page** (`public/refer.html`, mockup `design/refer/`): links with copy buttons, the
+  **`/refer` page** (now `public/account.html`'s Earn points section — see the account bullet; mockup `design/refer/`): links with copy buttons, the
   two lanes with totals and per-invitee / per-record rows, four graphics. Auth is EITHER token
   (`resolveUserId`) — a daily player holds only a per-session player token, so the page picks
   any `rt_token_*` on the device; with nothing it runs an email-code login. `GET
@@ -777,6 +777,28 @@ live on anr.makinitmag.com.
   artist alone (all levels merge), and fills ONLY blank fields (nothing on a round is ever overwritten; preview first;
   re-runnable). Handles the exports' quirks: leading `'`, `@`, profile URLs → handle, `1`-prefixed
   phones → 10 digits. Platform-admin only (PII across every room).
+
+- **The A&R account — one page with sections** (no migration, 2026-10-01; mockup
+  `public/_mock-account.html`). `/account` (`public/account.html`) is the A&R's home:
+  a header (photo, name, "Official A&R · city", rank/points pill) over tabs. **Earn points**
+  is the default section and IS the old referral page — `/refer` serves the same file, so
+  email footers, the signed `[card link]` (`#rt=`) and every link already out still land
+  there. Intro copy is the operator's verbatim. **My profile** renders the public record
+  from the public `/api/profile?u=` (the same data as `/u/<uid>`). **Edit profile** is NOT
+  re-implemented: the tab goes to `/profile` (join.html's edit mode — photo crop, city
+  lookup, notification settings and the `#nt=` manage-link mode all live there), which shows
+  the same tab strip in edit mode so it reads as one account. "Sessions" and "Rounds" are
+  greyed "coming" tabs. **Graphics are SHOWN, not described** (operator: nobody should have
+  to download a graphic to see it): `/api/card/refer?kind=&thumb=1&v=` is the SAME Satori
+  render rasterised at 432px (`renderPng(type, data, outWidth)`), fetched with the auth
+  header and shown as blob URLs one at a time. `v` = `referGraphicVersion(u)`, a hash of
+  what the graphic prints (uid, name, role, city, photo): a matching `v` is
+  `private, max-age=86400`, anything else and the full download are `no-store`, so the
+  cache is per-A&R and a new photo shows on the next visit. Card names are the operator's:
+  **"Official A&R Card - Feed" / "Official A&R Card - Story"**. Nav: home, landing and the
+  play page link one "My account"; the daily page's bonus-points CTAs still go to `/refer`.
+  A device holding only a per-session player token can use the account page but `/profile`
+  still asks for an email code (join.html's edit mode reads `rt_auth_token` only).
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed

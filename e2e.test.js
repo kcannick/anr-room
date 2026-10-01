@@ -1080,6 +1080,28 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const cardBuf = Buffer.from(await cardR.arrayBuffer());
   ok('the A&R Team card renders as a PNG', cardR.status === 200 && cardR.headers.get('content-type') === 'image/png' && cardBuf.slice(1, 4).toString() === 'PNG', cardR.status + ' ' + cardBuf.length);
   ok('the graphic is private to its owner (no-store)', /no-store/.test(cardR.headers.get('cache-control') || ''));
+  // The account page (2026-10-01): thumbnails are the same render, smaller, and cacheable
+  // per profile version; the labels are the operator's; /account and /refer are one page.
+  ok('the two cards carry the operator\'s names', rp.graphics[0].label === 'Official A&R Card - Feed' && rp.graphics[1].label === 'Official A&R Card - Story', JSON.stringify(rp.graphics.map(g => g.label)));
+  ok('every graphic offers a versioned thumbnail', rp.graphics.every(g => /^\/api\/card\/refer\?kind=\w+&thumb=1&v=[0-9a-f]{12}$/.test(g.thumb)), JSON.stringify(rp.graphics.map(g => g.thumb)));
+  ok('the header fields ride the payload, and no contact detail does',
+    rp.me.uid && 'photoUrl' in rp.me && 'location' in rp.me && !/@|phone|email/i.test(JSON.stringify(rp.me)), JSON.stringify(rp.me));
+  const thR = await fetch(base + rp.graphics[1].thumb, { headers: { 'X-Player-Token': inviterTok } });
+  const thBuf = Buffer.from(await thR.arrayBuffer());
+  ok('a thumbnail is the story at 432 wide, same shape as the download',
+    thR.status === 200 && thBuf.readUInt32BE(16) === 432 && thBuf.readUInt32BE(20) === 768, thBuf.readUInt32BE(16) + 'x' + thBuf.readUInt32BE(20));
+  ok('a current thumbnail may sit in the private cache for a day', thR.headers.get('cache-control') === 'private, max-age=86400', thR.headers.get('cache-control'));
+  const thStale = await fetch(base + '/api/card/refer?kind=card&thumb=1&v=000000000000', { headers: { 'X-Player-Token': inviterTok } });
+  ok('a stale version key is never cached', thStale.status === 200 && thStale.headers.get('cache-control') === 'private, no-store', thStale.headers.get('cache-control'));
+  ok('the full download is never cached', cardR.headers.get('cache-control') === 'private, no-store', cardR.headers.get('cache-control'));
+  ok('no token, no thumbnail', (await fetch(base + rp.graphics[0].thumb)).status === 401);
+  const acctPage = await fetch(base + '/account'), referPage = await fetch(base + '/refer');
+  const acctHtml = await acctPage.text();
+  ok('/account serves the account page, and /refer is the same page',
+    acctPage.status === 200 && referPage.status === 200 && /Earn more points/.test(acctHtml) && (await referPage.text()) === acctHtml);
+  ok('the account page carries the operator\'s intro and the three sections',
+    /Invite new A&amp;Rs to the platform and earn bonus points\./.test(acctHtml) && /official member of our A&amp;R Team/.test(acctHtml)
+      && /data-sec="earn"/.test(acctHtml) && /data-sec="profile"/.test(acctHtml) && /data-sec="edit"/.test(acctHtml));
   ok('an unknown graphic is refused', (await fetch(base + '/api/card/refer?kind=poster', { headers: { 'X-Player-Token': inviterTok } })).status === 404);
   ok('no token, no graphic', (await fetch(base + '/api/card/refer?kind=join')).status === 401);
 

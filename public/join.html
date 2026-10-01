@@ -115,6 +115,13 @@
 
   <!-- STEP 3: PROFILE -->
   <section id="s-profile" class="hide">
+    <!-- Edit mode only: the account's tab strip (public/account.html), so editing reads as a
+         section of the same account rather than a different page. Hidden during signup. -->
+    <nav id="acctTabs" class="hide" style="display:flex;border-bottom:1px solid var(--line);margin:0 0 16px;overflow-x:auto;scrollbar-width:none">
+      <a href="/account" style="flex:none;padding:11px 13px 12px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);text-decoration:none;white-space:nowrap">Earn points</a>
+      <a href="/account#profile" style="flex:none;padding:11px 13px 12px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);text-decoration:none;white-space:nowrap">My profile</a>
+      <span style="flex:none;padding:11px 13px 12px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);border-bottom:2px solid var(--signal);margin-bottom:-1px;white-space:nowrap">Edit profile</span>
+    </nav>
     <p class="eyebrow g" id="profileEyebrow">Step 2 of 2 · complete your public record</p>
     <div class="panel">
       <h2 style="font-size:18px" id="profileH2">Complete your A&amp;R profile</h2>
@@ -458,8 +465,9 @@ async function initJoin(){
       const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
       if(me&&me.uid){ AUTHTOK=tok; MEUID=me.uid; editMode=true; await loadProfile();
         $('#jNameRow').classList.remove('hide'); $('#jName').value=profile.name||'';
-        $('#profileEyebrow').textContent='Your A&R record';
-        $('#profileH2').textContent='Edit your A&R record';
+        $('#profileEyebrow').classList.add('hide');
+        $('#acctTabs').classList.remove('hide'); $('#acctTabs').style.display='flex';
+        $('#profileH2').textContent='Edit profile';
         $('#profileSub').innerHTML='Update your roles, location, social links, or photo. <a href="/u/'+encodeURIComponent(me.uid)+'" style="color:var(--cool)">View public A&R record ↗</a>';
         $('#btnFinish').textContent='Save changes';
         $('#btnSkip').textContent='Cancel';
