@@ -507,7 +507,7 @@ function renderJoiners(d){
 // The daily clock comes from /api/home (`schedule`), which reads the platform-panel setting.
 // The fallbacks are the schedule as of 2026-09-20 and only show if the payload is missing.
 function schedOpen(d){ return (d && d.schedule && d.schedule.opensLabel) || '3:00 PM ET'; }
-function schedResults(d){ return (d && d.schedule && d.schedule.resultsLabel) || '6:00 PM ET'; }
+function schedResults(d){ return (d && d.schedule && d.schedule.resultsLabel) || '12:00 PM ET'; }
 
 function renderOpenNow(d){
   const n = d.daily && d.daily.songs;
@@ -585,7 +585,7 @@ function showMember(d, me){
     $('#mDay').textContent = 'A&R Daily';
     $('#mCount').textContent = '—';
     $('#mCountWord').innerHTML = 'Next drop<br>at ' + schedOpen(d) + '.';
-    $('#mSub').textContent = "Today's records land at " + schedOpen(d) + '. Yesterday\u2019s results publish at ' + schedResults(d) + '.';
+    $('#mSub').textContent = "Today's records land at " + schedOpen(d) + '. Results publish at ' + schedResults(d) + '.';
     $('#mCta').classList.add('hide');
   }
 }

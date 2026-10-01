@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 040; suite green)
+## Current state (migrations through 041; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -615,7 +615,8 @@ live on anr.makinitmag.com.
 
 - **The weekly report** (no migration, 2026-09-16) — the screen the Wednesday show is read off.
   `/api/admin/weekly/status` (platform-admin; it spans every host and carries artist handles and
-  what they paid) over a **Wed → Tue window keyed on `drop_day`** — the day a record OPENED, not
+  what they paid) over a **Mon → Sun window keyed on `drop_day`** (was Wed → Tue until the
+  69-hour schedule, 2026-09-27) — the day a record OPENED, not
   when it published, so the Tuesday drop's 3PM-Wednesday publish still lands inside the week the
   7PM show reads. The screen defaults to the **last COMPLETE week**, never the one that opened at
   noon the same day. `weekStartFor` / `weekWindow` / `lastCompleteWeekStart` in server.js are the
@@ -740,6 +741,31 @@ live on anr.makinitmag.com.
   SMS readout (characters / plain text / segments, or "will send as MMS" and why) that
   mirrors the sms.js rule; the per-recipient footer is not counted, so a message near 160 is
   already an MMS by the time it goes.
+
+- **The 69-hour schedule** (041, 2026-09-27, operator's call — "more production time and
+  notification between events"). **BUILT, NOT YET PUSHED** (branch
+  `claude/event-notification-schedule-c0a56a`). Hours after the open: **−1** track list locked
+  (review site) · **0** 3PM ET open + A&Rs emailed "voting is open" (new topic `daily_open`,
+  email only, **default ON**) · **24** 3PM close + tally + each rated artist gets a heads-up by
+  email AND SMS ("rated and will appear on tomorrow's Livestream Countdown", the operator's
+  "Tune in for results. Have your fans tune in to participate in the comments." verbatim) ·
+  **48** 3PM **Livestream Countdown** (`sessions.stream_at`) — the ranked graphics render HERE
+  (`recap_jobs.rendered_at`) so clips/carousels can go up after the stream · **69** noon
+  results: seal lifts on /daily, A&R digest (now with the stream link, a personal results link
+  and "today's records close at 3:00 PM ET — in 3 hours"), artist Track Reports (email only —
+  the text went at the close), makinitmag callback. **The seal holds through the stream**
+  (operator's call): the page must not spoil the countdown. Three drops are in flight at once.
+  Stream/results are a DAY OFFSET after the close day + an ET minute (`daily_stream_days/_min`,
+  `daily_results_days/_min`), never a duration (DST). `artistDelayMin` default 60 → 0 (the
+  report is 45h after the tally — that IS the rejection window). 041 deletes the stored
+  `daily_results_min` / `daily_artist_delay_min` rows so the new defaults apply. Heads-up is its
+  own queue (`artist_headsups`), not a second kind on `artist_notices` (whose unique index the
+  resend UPSERTs against); it stops sending once the stream has happened. Livestream link =
+  `daily_stream_url` system setting. **Deploy note:** a day already open/tallied keeps its old
+  results_at until the schedule is SAVED once on the panel (the save re-stamps unpublished
+  days); publish renders the graphics itself when the stream step never ran.
+  **Week is now Mon → Sun** (`WEEK_START_DOW = 1`, was Wed → Tue): the Sunday drop publishes
+  at noon Wednesday, before the show that announces the week. `digest_daily` stays default OFF.
 
 - **Backfill artist contacts** (no migration, 2026-09-22): rounds from before the contact
   fields existed had no email/phone/Instagram, which is what the sales-leads project is worked

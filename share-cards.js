@@ -312,7 +312,9 @@ const RECAP = {
   green: '#4bb749', greenInk: '#06210b',
 };
 const RECAP_TITLE = 'The A&R Meeting Recap';
-const RECAP_TIME = 'Daily at 2PM';   // the reveal stream (operator schedule, 2026-09-13)
+// The Livestream Countdown's time. The fallback only: recapGraphicsData() passes d.time off the
+// day's own stream_at, so the graphic follows the schedule setting instead of this string.
+const RECAP_TIME = 'Daily at 3PM';
 const RECAP_CTA = [
   { label: 'Submit Music', url: 'makinitmag.com/Review' },
   { label: 'Become an A&R', url: JOIN_URL },
@@ -348,8 +350,8 @@ function recapRule(w, hgt, mt, mb) {
 function recapDate(date, fontSize) {
   return text({ fontFamily: MONO, fontWeight: 700, fontSize, lineHeight: 1, letterSpacing: -Math.round(fontSize * 0.02), color: RECAP.fg, ...NOWRAP }, date);
 }
-function recapTime(fontSize, mt) {
-  return text({ fontFamily: MONO, fontWeight: 700, fontSize, color: RECAP.green, textTransform: 'uppercase', letterSpacing: Math.round(fontSize * 0.18), lineHeight: 1, marginTop: mt, ...NOWRAP }, RECAP_TIME);
+function recapTime(fontSize, mt, time) {
+  return text({ fontFamily: MONO, fontWeight: 700, fontSize, color: RECAP.green, textTransform: 'uppercase', letterSpacing: Math.round(fontSize * 0.18), lineHeight: 1, marginTop: mt, ...NOWRAP }, time || RECAP_TIME);
 }
 function recapCta(c, { tickW, tickH, tickMr, labelSize, labelW, urlSize, urlMl }) {
   return row({}, [
@@ -440,7 +442,7 @@ function elementRecapCover(d) {
       recapTitle([['The', 'A&R'], ['Meeting'], ['Recap']], 136),
       recapRule(260, 12, 36, 34),
       recapDate(d.date, 196),
-      recapTime(34, 22),
+      recapTime(34, 22, d.time),
     ]),
     h({ position: 'absolute', left: 80, right: 80, top: 1330, display: 'flex', flexDirection: 'column', gap: 22 },
       RECAP_CTA.map(c => recapCta(c, { tickW: 14, tickH: 34, tickMr: 22, labelSize: 46, labelW: 440, urlSize: 30 }))),
@@ -463,7 +465,7 @@ function elementRecapThumb(d) {
       recapTitle([['The', 'A&R', 'Meeting'], ['Recap']], 118),
       recapRule(220, 11, 30, 26),
       recapDate(d.date, 220),
-      recapTime(30, 16),
+      recapTime(30, 16, d.time),
     ]),
     h({ position: 'absolute', left: 90, top: 905, display: 'flex', flexDirection: 'row', gap: 70 },
       RECAP_CTA.map(c => recapCta(c, { tickW: 12, tickH: 30, tickMr: 18, labelSize: 38, urlSize: 26, urlMl: 18 }))),

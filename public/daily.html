@@ -820,9 +820,7 @@ function render(){
 
   if(st.phase === 'sealed'){
     $('#sealedDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
-    $('#sealedSub').textContent = as.resultsWhen
-      ? ('Everything is being tallied. Results land ' + as.resultsWhen + ', and so does the next drop.')
-      : 'Everything is being tallied. Results and the next drop land together.';
+    $('#sealedSub').textContent = afterLines(as, 'Rating is closed.');
     show('sealed'); return;
   }
 
@@ -862,9 +860,18 @@ function renderDone(st){
     row.appendChild(l); row.appendChild(v); tiers.appendChild(row);
   });
 
-  $('#doneNext').textContent = as.resultsWhen
-    ? ('Results land ' + as.resultsWhen + ', and so does the next drop.')
-    : 'Results and the next drop land together.';
+  $('#doneNext').textContent = afterLines(as, '');
+}
+
+// What happens after the close, in order: the next records, the Livestream Countdown, the
+// results. Every time is a server-rendered label (never the browser's clock).
+function afterLines(as, lead){
+  const out = lead ? [lead] : [];
+  if(as.nextOpensWhen) out.push('The next records open ' + as.nextOpensWhen + '.');
+  const show = as.streamName || 'daily countdown';
+  if(as.streamWhen) out.push('These records are counted down on the ' + show + ' ' + as.streamWhen + '.');
+  out.push(as.resultsWhen ? ('Your results land ' + as.resultsWhen + '.') : ('Your results land after the ' + show + '.'));
+  return out.join(' ');
 }
 
 function renderRecap(st){

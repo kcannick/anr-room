@@ -389,7 +389,7 @@
 </div>
 
 <!-- ===== THE WEEKLY REPORT — the screen the Wednesday show is read off =====
-     Same window every week: drops from Wednesday through Tuesday. Two ranked lists, because
+     Same window every week: drops from Monday through Sunday. Two ranked lists, because
      both #1s pay out — the top record's artist is seeded into the Artist Tournament and the
      top A&R takes a seat in A&R Wars. The tables are the daily ones (same .dltable, same
      support marks) so the host reads the same shapes on air seven days a week. -->
@@ -1049,9 +1049,14 @@
         <div class="row" style="margin-top:8px">
           <div><label>Records open at</label><input id="dsOpen" type="time" step="300"></div>
           <div><label>Rating closes at</label><input id="dsClose" type="time" step="300"></div>
-          <div><label>Results publish at</label><input id="dsResults" type="time" step="300"></div>
         </div>
-        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. Results never publish before the close. Set them equal to publish as soon as the day is tallied.</p>
+        <div class="row" style="margin-top:8px">
+          <div><label>HOT 100 Daily Countdown at</label><input id="dsStream" type="time" step="300"><select id="dsStreamDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
+          <div><label>Results publish at</label><input id="dsResults" type="time" step="300"><select id="dsResultsDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. At the close, rated artists are told their record is on the next Makin' It HOT 100 Daily Countdown. At the countdown the ranked graphics render for posting. Results (scores on the site, the results emails, the Track Reports) stay sealed until they publish, which is never before the countdown.</p>
+        <label style="margin-top:10px">Livestream link <span class="muted">(sent to artists and A&amp;Rs; a channel's /live link works)</span></label>
+        <input id="dsStreamUrl" placeholder="https://www.youtube.com/@yourchannel/live">
         <label style="margin-top:10px">Completion bonus <span class="muted">(for rating every record in the day)</span></label>
         <table class="data-table" style="margin-top:6px">
           <tbody>
@@ -1062,7 +1067,7 @@
           </tbody>
         </table>
         <p class="muted" style="font-size:11px;margin:8px 0 0">Leave a step's hours blank to drop that step. Steps must increase and stay inside the window.</p>
-        <label style="margin-top:10px">Artist reports go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(0 = with the results; a hold is your window to reject comments)</span></label>
+        <label style="margin-top:10px">Artist reports go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(0 = with the results. Comments can be rejected any time before then.)</span></label>
         <div id="dsSummary" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
@@ -2080,7 +2085,8 @@ function renderDaily(){
     ? esc(seriesTitleFor(dr.series_id) || 'Series ' + dr.series_id)
     : '<b style="color:var(--hot)">Not tagged into a series — these points never reach the board</b>';
   $('#dlSched').innerHTML = `Opens ${esc(dlFmtWhen(dr.opensLabel))} · tallies ${esc(dlFmtWhen(dr.closesLabel))}`
-    + ` · results and the next drop both land ${esc(dlFmtWhen(dr.resultsLabel))}. ${ser}.`
+    + (dr.streamLabel ? ` · livestream ${esc(dlFmtWhen(dr.streamLabel))}` : '')
+    + ` · results ${esc(dlFmtWhen(dr.resultsLabel))}. ${ser}.`
     + ' <span class="muted">The clock runs this, not a button.</span>';
 
   // The hold. Comments ship by DEFAULT (029) and there is no unsend; a cron has no wrap-up
@@ -2352,7 +2358,7 @@ function renderDlRecords(){
     : '<div class="empty">No records on this day.</div>';
 }
 /* ===== THE WEEKLY REPORT — the Wednesday show's read sheet =====
-   One window (Wed → Tue) and two ranked lists, off /api/admin/weekly/status. The tables are
+   One window (Mon → Sun) and two ranked lists, off /api/admin/weekly/status. The tables are
    deliberately the daily ones — same .dltable, same support marks — because the host reads
    the same shapes on air every day and a different layout on show night is a new thing to
    learn at 7PM. Nothing here computes a ranking client-side: the server owns the order, so
@@ -2417,8 +2423,8 @@ function renderWeekly(){
     + stat('Ratings cast', t.ratings)
     + stat('Support', t.support_cents ? dlMoney(t.support_cents) : '—',
         t.support_cents ? 'var(--gold)' : null);
-  $('#wkNote').textContent = 'Wednesday through Tuesday, by the day each record dropped. '
-    + "Tuesday's drop publishes on Wednesday, before the show and after this week closes.";
+  $('#wkNote').textContent = 'Monday through Sunday, by the day each record dropped. '
+    + "Sunday's drop publishes at noon on Wednesday, before The A&R Room - Weekly Live Music Review at 7:00 PM ET.";
 
   if(w.pending && w.pending.length){
     $('#wkPending').classList.remove('hide');
@@ -3131,6 +3137,7 @@ async function openPlatform(){
     plReviveStatus(d.settings);
     $('#plAsanaProject').value=d.settings.asanaProject||'';
     $('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';
+    $('#dsStreamUrl').value=d.settings.dailyStreamUrl||'';
     dsFill(d.dailySchedule);
     leadsLoad();
     plAsanaStatus(d);
@@ -3303,9 +3310,10 @@ const dsTime=n=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padSta
 function dsFill(sc){
   if(!sc)return;
   $('#dsOpen').value=dsTime(sc.openMin);$('#dsClose').value=dsTime(sc.closeMin);$('#dsResults').value=dsTime(sc.resultsMin);
+  $('#dsStream').value=dsTime(sc.streamMin);$('#dsStreamDays').value=String(sc.streamDays);$('#dsResultsDays').value=String(sc.resultsDays);
   for(let i=1;i<=3;i++){const t=(sc.tiers||[])[i-1];$('#dsT'+i+'H').value=t?t.hours:'';$('#dsT'+i+'P').value=t?t.points:'';}
   $('#dsFinal').value=sc.finalPoints;$('#dsDelay').value=sc.artistDelayMin;
-  $('#dsSummary').textContent='Opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · results '+sc.resultsLabel+' · bonus '+(sc.tierLabels||[]).join(', ');
+  $('#dsSummary').textContent='Track list locks '+sc.lockLabel+' · opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · daily countdown '+sc.streamLabel+' ('+sc.streamHours+' h) · results '+sc.resultsLabel+' ('+sc.resultsHours+' h) · bonus '+(sc.tierLabels||[]).join(', ');
 }
 function dsRead(){
   const tiers=[];
@@ -3313,6 +3321,7 @@ function dsRead(){
     if(Number.isFinite(h)&&h>0)tiers.push({hours:h,points:Number.isFinite(p)?p:0});}
   const f=parseInt($('#dsFinal').value,10);
   return {openMin:dsMin($('#dsOpen').value),closeMin:dsMin($('#dsClose').value),resultsMin:dsMin($('#dsResults').value),
+    streamMin:dsMin($('#dsStream').value),streamDays:parseInt($('#dsStreamDays').value,10),resultsDays:parseInt($('#dsResultsDays').value,10),
     tiers,finalPoints:Number.isFinite(f)?f:undefined,
     artistDelayMin:(v=>Number.isFinite(v)?v:undefined)(parseInt($('#dsDelay').value,10))};
 }
@@ -3325,6 +3334,7 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
       reviveZoneGame:$('#plReviveGame').value.trim(),
       asanaProject:$('#plAsanaProject').value.trim(),
       asanaLeadsProject:$('#plAsanaLeadsProject').value.trim(),
+      dailyStreamUrl:$('#dsStreamUrl').value.trim(),
       dailySchedule:dsRead()});
     plReviveStatus({reviveDeliveryUrl:$('#plReviveUrl').value.trim(),reviveZoneLobby:$('#plReviveLobby').value.trim(),reviveZoneGame:$('#plReviveGame').value.trim()});
     // Re-read: the server normalizes the project id, and only it knows if the token is set.
