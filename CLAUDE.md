@@ -825,8 +825,8 @@ live on anr.makinitmag.com.
   still asks for an email code (join.html's edit mode reads `rt_auth_token` only).
 
 - **My results — the results live on the site, the email points at them** (no migration,
-  2026-10-02; mockup `public/_mock-account-results.html`). **NOT pushed: built on
-  `claude/ar-dashboard-results-821950`, on top of the unmerged account page (PR #13).**
+  2026-10-02; mockup `public/_mock-account-results.html`). **LIVE: merged to main as PR #16
+  on 2026-10-02, which carried the account page (PR #13's commits) with it.**
   The operator's reason: the results email handed an A&R everything, so nothing brought them
   back to the site, where today's records are waiting. Two halves:
   - **`/account#results`** (`GET /api/me/results?week=YYYY-MM-DD`, `arResultsData`). One A&R,
