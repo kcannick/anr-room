@@ -787,8 +787,8 @@ live on anr.makinitmag.com.
   from the public `/api/profile?u=` (the same data as `/u/<uid>`). **Edit profile** is NOT
   re-implemented: the tab goes to `/profile` (join.html's edit mode — photo crop, city
   lookup, notification settings and the `#nt=` manage-link mode all live there), which shows
-  the same tab strip in edit mode so it reads as one account. "Sessions" and "Rounds" are
-  greyed "coming" tabs. **Graphics are SHOWN, not described** (operator: nobody should have
+  the same tab strip in edit mode so it reads as one account. The greyed "Sessions" and
+  "Rounds" tabs became ONE tab, **My results** (next bullet). **Graphics are SHOWN, not described** (operator: nobody should have
   to download a graphic to see it): `/api/card/refer?kind=&thumb=1&v=` is the SAME Satori
   render rasterised at 432px (`renderPng(type, data, outWidth)`), fetched with the auth
   header and shown as blob URLs one at a time. `v` = `referGraphicVersion(u)`, a hash of
@@ -799,6 +799,43 @@ live on anr.makinitmag.com.
   play page link one "My account"; the daily page's bonus-points CTAs still go to `/refer`.
   A device holding only a per-session player token can use the account page but `/profile`
   still asks for an email code (join.html's edit mode reads `rt_auth_token` only).
+
+- **My results — the results live on the site, the email points at them** (no migration,
+  2026-10-02; mockup `public/_mock-account-results.html`). **NOT pushed: built on
+  `claude/ar-dashboard-results-821950`, on top of the unmerged account page (PR #13).**
+  The operator's reason: the results email handed an A&R everything, so nothing brought them
+  back to the site, where today's records are waiting. Two halves:
+  - **`/account#results`** (`GET /api/me/results?week=YYYY-MM-DD`, `arResultsData`). One A&R,
+    one week (Monday to Sunday by the day a drop OPENED, `weekStartFor`/`weekWindow`). Top to
+    bottom: the OPEN drop (how many they have dealt with, when voting closes, a button into
+    `/daily?s=`), the week's four numbers (points, played, bullseyes, grade), then each day
+    newest first, opening into the daily page's record table (rating, guess, room average,
+    points, completion bonus). Arrows page a week at a time and stop at the week the account
+    was made. Earn points stays the DEFAULT tab (operator: the push is on getting people to
+    refer artists). Auth is `resolveReferUid` — either token or the signed `rf1` link — so the
+    refer-scope link now reads three things: referrals, graphics, own results.
+  - **THE SEAL:** a day carries numbers only when `async_state = 'published'` (or a completed
+    live session). A closed-but-unpublished day is already tallied in the database, so that
+    branch selects COUNTS ONLY ("You rated 5 of 5", when results come out) — never add a score
+    column to it. The open drop likewise ships a count and nothing else. Tested at each stage.
+  - **NO RANK, by decision** (operator, 2026-10-02): the section shows points; the weekly
+    announcement is where rank is REVEALED, and showing it daily would make that an
+    announcement of something already known. Not for a day, not for the week. (The header
+    pill's series rank and the daily page's own recap screen still show a rank — not changed
+    here, operator not yet asked.)
+  - **A missed day is listed and carries nothing** (operator: results are for the days an A&R
+    took part in, not a history of the platform) — no records, no averages, and it does not
+    open. Only public daily drops are listed as missed. A record they skipped on a day they
+    DID play shows its average with no points of theirs.
+  - **The digest is a HEADLINE now.** `dailyDigestEmailHtml/Text` lost the round-by-round
+    table and the Rank tile: points, grade, bullseyes, the completion bonus, one sentence, and
+    a green **See your results** button to `accountResultsUrl(base, uid)` =
+    `/account#results&rt=<rf1>` (signed per recipient so it lands logged in; plain
+    `/account#results` without `NOTIFY_LINK_SECRET`, which asks for a code). account.html
+    keeps the section when it scrubs the token from the hash. The Top 8 graphics, the stream
+    link and "Rate today's records" are unchanged. A non-player still gets no personal block.
+  - The daily page's done, sealed and recap screens link **My past results**; the edit form's
+    copy of the tab strip (join.html) carries the tab too.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
