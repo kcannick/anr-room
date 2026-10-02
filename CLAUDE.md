@@ -767,6 +767,30 @@ live on anr.makinitmag.com.
   **Week is now Mon → Sun** (`WEEK_START_DOW = 1`, was Wed → Tue): the Sunday drop publishes
   at noon Wednesday, before the show that announces the week. `digest_daily` stays default OFF.
 
+- **The Makin' It Daily Countdown carousel** (no migration, SHIPPED 2026-10-02):
+  replaces the daily stream as the results announcement AND replaces the Top Track results
+  carousel (the `song` set — the Top A&R `ar` carousel is unchanged). One Instagram carousel,
+  **rank only — never a score, average or vote count** (scores are private to the Track Report):
+  cover · one slide per record from #N up to #1 · the A&R Team (thanks + "Become an A&R",
+  makinitmag.com/ANR) · artists (submit + $1,000 Music Tournament). 8–16 records → 11–19 slides,
+  inside Instagram's 20 (`COUNTDOWN_MAX_RECORDS = 17`). **A rank slide never shows the size of the
+  field** (operator: "3rd place isn't last unless we say only 3 were racing"): its blocks run from
+  its own rank to #1. Every rank slide stands alone, since artists repost only theirs. Order = the
+  console countdown sort (average, then ratings, then drop order). Satori element `countdownSlide`
+  (share-cards.js), data `countdownCarouselData` + caption `countdownCarouselCaption` (server.js),
+  hosted at `daily/<day>/countdown-N.png` in the existing `recap_jobs.results_song_*` columns and
+  served by the existing `/api/card/results?set=song` + `results-caption` routes. **The caption
+  names nobody** — Instagram stops notifying once a caption mentions more than 10 accounts — so
+  artists are tagged on their own slides (the console prints who under each slide) and mentioned
+  in comments, FOUR a comment, bottom up (`countdownComments`): "Follow all the artists who made
+  the countdown: @a, @b, Name, @c" — names only, no ranks or titles; an artist with two records
+  is mentioned once; an artist with no Instagram handle is not mentioned. The caption asks by
+  COMMENT KEYWORD, not link ("Comment #REVIEW to Submit Music" / "Comment #ANR to join the A&R
+  Team", operator's wording). **Instagram allows 5 hashtags a post** — the keywords count, so the
+  countdown carries 3 more (`COUNTDOWN_TAGS`); every other IG caption uses `IG_TAGS` (5). Approved mockup:
+  `public/brand/countdown/`. **"HOT 100" is for the MONTHLY countdown post only** —
+  `DAILY_STREAM_NAME` is now "Makin' It Daily Countdown".
+
 - **Backfill artist contacts** (no migration, 2026-09-22): rounds from before the contact
   fields existed had no email/phone/Instagram, which is what the sales-leads project is worked
   from. Platform panel → "Backfill artist contacts": upload a CSV (`artist, title, email,
