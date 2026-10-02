@@ -1519,7 +1519,9 @@ async function pushDayResults(session) {
 
 // The two shows, by name (operator, 2026-09-27). ONE definition: the stream caption, the
 // countdown clip captions, the artist heads-up and both results emails all read these.
-const DAILY_STREAM_NAME = "Makin' It HOT 100 Daily Countdown";   // the daily 3PM livestream
+// "HOT 100" belongs to the MONTHLY countdown post only (operator, 2026-10-02); the daily is the
+// Makin' It Daily Countdown — the carousel (countdownCarouselData) and, while it still runs, the stream.
+const DAILY_STREAM_NAME = "Makin' It Daily Countdown";
 const WEEKLY_SHOW_NAME = 'The A&R Room - Weekly Live Music Review'; // Wednesday 7PM ET
 
 // ===== THE A&R MEETING RECAP — the Livestream Countdown's graphics + caption =====
@@ -1583,7 +1585,7 @@ function recapCaption(d) {
   if (d.artists.length) lines.push('', "Artists in today's recap:", ...d.artists);
   if (d.ars.length) lines.push('', 'A&Rs on the board:', ...d.ars);
   lines.push('', `Submit music: ${shareCards.RECAP_CTA[0].url}`, `Become an A&R: ${shareCards.RECAP_CTA[1].url}`,
-    '', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+    '', IG_TAGS);
   return lines.join('\n');
 }
 
@@ -1606,7 +1608,11 @@ const COUNTDOWN_POST_OFFSET_DAYS = 3;
 const COUNTDOWN_PLATFORMS = ['instagram', 'social', 'x'];
 const COUNTDOWN_SUBMIT_URL = 'makinitmag.com/review';
 const COUNTDOWN_JOIN_URL = 'anr.makinitmag.com';
-const COUNTDOWN_TAGS = '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom';
+// Instagram allows FIVE hashtags a post (operator, 2026-10-02) — every caption the app writes
+// for Instagram stays at or under it. IG_TAGS is the standard five; COUNTDOWN_TAGS is three,
+// because the Daily Countdown caption already spends two on its comment keywords (#REVIEW, #ANR).
+const IG_TAGS = '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists';
+const COUNTDOWN_TAGS = '#MakinIt #NewMusic #UnsignedArtists';
 const X_MAX = 280, X_URL_LEN = 23;   // X counts every link as 23 characters
 function countdownPostDay(session, requested) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(requested || '')) return requested;
@@ -1666,15 +1672,15 @@ function countdownCaption(d, platform) {
   }
   if (d.ars.length) lines.push('', 'Congratulations to our top A&Rs:', ...d.ars.map((a, i) => `${i + 1}. ${who(a)}`));
   lines.push('', `Submit your music for a free review: ${COUNTDOWN_SUBMIT_URL}`, `Join the A&R Team: ${COUNTDOWN_JOIN_URL}`,
-    '', COUNTDOWN_TAGS);
+    '', IG_TAGS);
   return lines.join('\n');
 }
-// ===== THE A&R MEETING RESULTS CAROUSELS — posted after the 2PM reveal stream =====
-// Two Instagram carousels, rendered at the 3PM publish beside the recap cover and hosted on
-// the same Blob path (daily/<day>/results-song-N.png, results-ar-N.png), plus a caption each:
-//   song  slide 1 the top record (trophy · "Top Track" · date; title, artist, handle), then
-//         the other records RANKED WITHOUT SCORES six to a slide, then "Submit your music"
-//   ar    slide 1 the top A&R (name, city, handle, and the profile photo when there is one),
+// ===== THE A&R MEETING RESULTS CAROUSELS =====
+// Two Instagram carousels, rendered with the day's graphics and hosted on the same Blob path,
+// plus a caption each:
+//   song  the MAKIN' IT DAILY COUNTDOWN (daily/<day>/countdown-N.png) — it replaced the Top
+//         Track carousel on 2026-10-02; see countdownCarouselData below
+//   ar    (daily/<day>/results-ar-N.png) slide 1 the top A&R (name, city, handle, and the profile photo when there is one),
 //         then the other top A&Rs with the day's points, then "Join the A&R Team"
 // The list splits evenly across as many slides as it needs, so a four-record day is three
 // slides and a fourteen-record day five. Posted after the reveal, so ranking is public here.
@@ -1682,9 +1688,6 @@ function countdownCaption(d, platform) {
 // Operator decisions 2026-09-13; the approved mockup is public/brand/daily/carousel.html.
 const RESULTS_MAX_ARS = 13;   // the top A&R + two list slides of six
 const RESULTS_COPY = {
-  song: { label: 'Top Track', listLabel: 'Also played',
-    cta: { eyebrow: 'Submit your music', head: ['Free Review', 'by the A&R', 'Team'],
-      body: 'Get feedback to help finish, release, or promote your music.', url: shareCards.SUBMIT_URL } },
   ar: { label: 'Top A&R', listLabel: 'Top A&Rs',
     cta: { eyebrow: 'Join the A&R Team', head: ['Win $500 as the', 'month’s top A&R'],
       body: 'Rate the day’s records and predict the average.', url: shareCards.JOIN_URL } },
@@ -1716,51 +1719,111 @@ async function photoDataUri(url) {
     return `data:${type};base64,${buf.toString('base64')}`;
   } catch (e) { return null; }
 }
+// The 'song' set IS the Makin' It Daily Countdown since 2026-10-02 (it replaced the Top Track
+// carousel); 'ar' is still the Top A&R carousel. Each set says which card type renders it.
 async function resultsCarouselData(session, set, { photo = true } = {}) {
+  if (set === 'song') return countdownCarouselData(session);
   const copy = RESULTS_COPY[set];
   if (!copy) return null;
   const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
-  let hero, others;
-  if (set === 'song') {
-    const rows = await db.all(
-      // Reference tracks are known records, not submissions — they never chart here either.
-      `SELECT song_title, song_artist, song_note, artist_instagram FROM rounds
-        WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
-          AND COALESCE(is_reference, 0) = 0
-        ORDER BY room_average DESC, idx ASC`, [session.id]);
-    if (!rows.length) return null;
-    const recs = rows.map(r => {
-      const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
-      const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
-      return { title: (r.song_title || '—').trim(), artist: (r.song_artist || '').trim(), ig };
-    });
-    hero = { label: copy.label, title: recs[0].title, sub: recs[0].artist, handle: recs[0].ig ? '@' + recs[0].ig : '' };
-    // Ranked, no scores (operator, 2026-09-13): the position is the news, not the number.
-    others = recs.slice(1).map((r, i) => ({ rank: String(i + 2).padStart(2, '0'), line1: r.title, line2: r.artist }));
-  } else {
-    const rows = await db.all(
-      `SELECT p.name AS pname, u.name AS uname, u.instagram, u.location, u.photo_url, p.total_points AS pts
-         FROM participants p LEFT JOIN users u ON p.user_id = u.uid
-        WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
-        ORDER BY pts DESC, p.created_at ASC LIMIT ?`, [session.id, RESULTS_MAX_ARS]);
-    if (!rows.length) return null;
-    const top = rows[0];
-    const ig = igClean(top.instagram);
-    hero = { label: copy.label, title: top.uname || top.pname || 'A&R', sub: (top.location || '').trim(), subDim: true,
-      handle: ig ? '@' + ig : '', photo: photo ? await photoDataUri(top.photo_url) : null };
-    others = rows.slice(1).map((r, i) => ({ rank: String(i + 2).padStart(2, '0'), line1: r.uname || r.pname || 'A&R',
-      line2: (r.location || '').trim(), value: Number(r.pts) || 0 }));
-  }
+  const rows = await db.all(
+    `SELECT p.name AS pname, u.name AS uname, u.instagram, u.location, u.photo_url, p.total_points AS pts
+       FROM participants p LEFT JOIN users u ON p.user_id = u.uid
+      WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+      ORDER BY pts DESC, p.created_at ASC LIMIT ?`, [session.id, RESULTS_MAX_ARS]);
+  if (!rows.length) return null;
+  const top = rows[0];
+  const ig = igClean(top.instagram);
+  const hero = { label: copy.label, title: top.uname || top.pname || 'A&R', sub: (top.location || '').trim(), subDim: true,
+    handle: ig ? '@' + ig : '', photo: photo ? await photoDataUri(top.photo_url) : null };
+  const others = rows.slice(1).map((r, i) => ({ rank: String(i + 2).padStart(2, '0'), line1: r.uname || r.pname || 'A&R',
+    line2: (r.location || '').trim(), value: Number(r.pts) || 0 }));
   const pages = resultsPages(others, shareCards.RESULTS_PER_SLIDE);
   const total = 1 + pages.length + 1;
   const slides = [{ set, slide: 1, total, date, kind: 'hero', hero }];
   pages.forEach((rows, i) => slides.push({ set, slide: i + 2, total, date, kind: 'list', listLabel: copy.listLabel, rows,
     footLeft: set === 'ar' ? `Points today · ${i + 2} / ${total}` : null }));
   slides.push({ set, slide: total, total, date, kind: 'cta', cta: copy.cta });
-  return { set, date, total, slides };
+  return { set, card: 'resultsSlide', date, total, slides };
+}
+
+// ===== THE MAKIN' IT DAILY COUNTDOWN — the carousel that replaced the daily stream =====
+// Operator, 2026-10-02: the day's records counted down on Instagram, ONE RECORD A SLIDE, RANK
+// ONLY — never a score, an average or a vote count; scores are private to the artist's Track
+// Report. cover · #N … #1 · the A&R Team (thanks + Become an A&R) · artists (submit + $1,000).
+// The day has 8–16 records; Instagram takes 20 images, so at most COUNTDOWN_MAX_RECORDS rank
+// slides (the cover and two closing slides take the other three).
+// A rank slide NEVER shows how many records there were — "3rd place isn't last unless we say
+// only 3 were racing" — so it carries its own rank and the blocks from there to #1, nothing else.
+// Order matches the console's countdown sort and the clip captions: room average, then more
+// ratings, then drop order. Reference tracks and unscored records are not on it.
+// Dated the day it POSTS (results_at), like every graphic the day makes.
+// Public surface: song title, artist name, Instagram handle. Never email, phone or a score.
+const COUNTDOWN_MAX_RECORDS = 17;
+async function countdownCarouselData(session) {
+  const rows = await db.all(
+    `SELECT r.idx, r.song_title, r.song_artist, r.song_note, r.artist_instagram, r.room_average,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
+       FROM rounds r
+      WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
+        AND COALESCE(r.is_reference, 0) = 0`, [session.id]);
+  if (!rows.length) return null;
+  rows.sort((a, b) => (Number(b.room_average) - Number(a.room_average)) || (Number(b.votes) - Number(a.votes)) || (a.idx - b.idx));
+  const recs = rows.slice(0, COUNTDOWN_MAX_RECORDS).map((r, i) => {
+    const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+    const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
+    return { rank: i + 1, title: (r.song_title || '—').trim(), artist: (r.song_artist || '').trim(), handle: ig ? '@' + ig : '' };
+  });
+  const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  const n = recs.length, total = n + 3;
+  const slides = [{ slide: 1, total, date, kind: 'cover', count: n }];
+  recs.slice().reverse().forEach((r, i) => slides.push({ slide: i + 2, total, date, kind: 'rank', ...r }));
+  slides.push({ slide: n + 2, total, date, kind: 'team' }, { slide: n + 3, total, date, kind: 'cta' });
+  return { set: 'song', card: 'countdownSlide', date, total, records: recs, slides };
+}
+// The post caption names NOBODY (operator, 2026-10-02): Instagram stops notifying anyone once a
+// caption mentions more than 10 accounts, and a day has up to 16. The artists are tagged on
+// their own slides and mentioned in comments, four to a comment (countdownComments). The caption
+// says what the post is and gives both asks. No scores here either.
+function countdownCarouselCaption(d) {
+  return [
+    `${DAILY_STREAM_NAME} — ${d.date}`,
+    '',
+    'The Makin’ It A&R Team rated the latest records from independent artists. Here is how they ranked, counted down to the Top Track of the Day. Swipe to see where each record placed.',
+    '',
+    'Think you should be here? Submit FREE for your chance to get ranked and qualify for the $1,000 Music Tournament.',
+    '',
+    // Comment keywords instead of links (operator's wording, 2026-10-02): a caption link is not
+    // clickable on Instagram. These two count toward the five-hashtag limit.
+    'Comment #REVIEW to Submit Music',
+    'Comment #ANR to join the A&R Team',
+    '',
+    COUNTDOWN_TAGS,
+  ].join('\n');
+}
+// The artist mentions, posted as comments under the carousel: FOUR artists a comment so every
+// mention notifies, one line each in the operator's wording (2026-10-02) — "Follow all the
+// artists who made the countdown: @a, @b, Name, @c". Names only, no ranks or song titles, in
+// carousel order (bottom up). An artist with two records on the day is mentioned once. An
+// artist with no Instagram handle on file is simply not mentioned (operator, 2026-10-02).
+const COUNTDOWN_PER_COMMENT = 4;
+const COUNTDOWN_COMMENT_LEAD = 'Follow all the artists who made the countdown:';
+function countdownComments(d) {
+  const people = [];
+  for (const r of d.records.slice().reverse()) {
+    if (!r.handle) continue;
+    const key = r.handle.toLowerCase();
+    if (people.some(p => p.key === key)) continue;
+    people.push({ key, who: r.handle });
+  }
+  const comments = [];
+  for (let i = 0; i < people.length; i += COUNTDOWN_PER_COMMENT)
+    comments.push(`${COUNTDOWN_COMMENT_LEAD} ${people.slice(i, i + COUNTDOWN_PER_COMMENT).map(p => p.who).join(', ')}`);
+  return { comments };
 }
 // The post caption: plain, the same names as the slides, handles where we have them.
 function resultsCaption(d) {
+  if (d.card === 'countdownSlide') return countdownCarouselCaption(d);
   const hero = d.slides[0].hero;
   const lists = d.slides.filter(s => s.kind === 'list').flatMap(s => s.rows);
   const lines = [];
@@ -1773,7 +1836,7 @@ function resultsCaption(d) {
     if (lists.length) lines.push('', 'Top A&Rs:', ...lists.map(r => `${r.rank}. ${r.line1}${r.line2 ? ' · ' + r.line2 : ''} · ${r.value} pts`));
     lines.push('', 'Join the A&R Team to win $500.', shareCards.JOIN_URL);
   }
-  lines.push('', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+  lines.push('', IG_TAGS);
   return lines.join('\n');
 }
 
@@ -1904,7 +1967,7 @@ function winnerCaption(d) {
     lines.push(`Grade ${d.line.grade} · ${d.line.points} points · ${d.line.bullseyes} bullseyes`);
   }
   if (d.strap) lines.push('', d.strap);
-  lines.push('', d.cta.label, d.cta.url, '', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+  lines.push('', d.cta.label, d.cta.url, '', IG_TAGS);
   return lines.join('\n');
 }
 
@@ -1996,7 +2059,8 @@ async function renderDailyGraphicsInto(session, { deadline = null } = {}) {
       const urls = [];
       for (const sl of rd.slides) {
         if (deadline && Date.now() > deadline) break;
-        urls.push(await uploadPng(`daily/${day}/results-${set}-${sl.slide}.png`, await shareCards.renderPng('resultsSlide', sl)));
+        const file = set === 'song' ? `countdown-${sl.slide}` : `results-${set}-${sl.slide}`;
+        urls.push(await uploadPng(`daily/${day}/${file}.png`, await shareCards.renderPng(rd.card, sl)));
       }
       if (urls.length === rd.slides.length) results[set].urls = JSON.stringify(urls);
     } catch (e) {
@@ -8987,7 +9051,7 @@ async function handleApi(req, res, url) {
         if (!rd) return bad(res, 'Nothing to show yet', 404);
         const sl = rd.slides.find(x => x.slide === slide);
         if (!sl) return bad(res, `This carousel has ${rd.total} slides`, 404);
-        return sendPng(await shareCards.renderPng('resultsSlide', sl), 'private, no-store');
+        return sendPng(await shareCards.renderPng(rd.card, sl), 'private, no-store');
       }
       // A winner post, rendered live (admin): ?post=track|ar with either &s=<sessionId> (the day)
       // or &week=YYYY-MM-DD (any day in the week; the Monday is derived).
@@ -9731,7 +9795,11 @@ async function handleApi(req, res, url) {
         // the slide counts so the console can render a set live slide by slide.
         results: { song: parseJsonArray(job && job.results_song_urls), ar: parseJsonArray(job && job.results_ar_urls),
           songCaption: (job && job.results_song_caption) || null, arCaption: (job && job.results_ar_caption) || null,
-          songCount: rsSong ? rsSong.total : 0, arCount: rsAr ? rsAr.total : 0 },
+          songCount: rsSong ? rsSong.total : 0, arCount: rsAr ? rsAr.total : 0,
+          // The Daily Countdown's artist mentions (comments, four a comment) and who to tag on each
+          // slide: the record's handle on a rank slide; '' on the cover, the closing slides and a record with no handle.
+          songComments: rsSong ? countdownComments(rsSong).comments : [],
+          songTags: rsSong ? rsSong.slides.map(sl => (sl.kind === 'rank' ? (sl.handle || '') : '')) : [] },
         // The winner posts (039): hosted at publish, captions, and whether each has a subject yet.
         winners: { track: (job && job.winner_track_url) || null, ar: (job && job.winner_ar_url) || null,
           trackCaption: (job && job.winner_track_caption) || null, arCaption: (job && job.winner_ar_caption) || null,
@@ -10655,6 +10723,8 @@ module.exports._countdownPostDay = countdownPostDay;
 module.exports._xLength = xLength;
 module.exports._recapDateLabel = recapDateLabel;
 module.exports._resultsCarouselData = resultsCarouselData;
+module.exports._countdownCarouselData = countdownCarouselData;
+module.exports._countdownComments = countdownComments;
 module.exports._resultsCaption = resultsCaption;
 module.exports._winnerDayData = winnerDayData;
 module.exports._winnerWeekData = winnerWeekData;

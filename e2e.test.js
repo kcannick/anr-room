@@ -2037,13 +2037,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const huc = srv._artistHeadsupContent({ title: 'My Song', artist: 'Me', streamAt: streamAtL,
     reportAt: Number((await lSess()).results_at), streamUrl: 'https://yt.example/live' }, streamAtL - 86400000);
   ok('the heads-up says the record was rated and is on tomorrow\'s Livestream Countdown',
-    /was rated/.test(huc.body) && /tomorrow's Makin' It HOT 100 Daily Countdown/.test(huc.subject), JSON.stringify(huc));
+    /was rated/.test(huc.body) && /tomorrow's Makin' It Daily Countdown/.test(huc.subject), JSON.stringify(huc));
   ok('in the operator\'s words', huc.tune === 'Tune in for results. Have your fans tune in to participate in the comments.');
   ok('and it carries no score, rank or count — the livestream is the reveal',
     !/\d\.\d|out of 9|#\d|A&Rs heard/.test(huc.body + huc.subject + huc.tune), huc.body);
   const huSms = srv._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', streamAtL, streamAtL - 86400000);
   ok('the heads-up text is plain GSM-7 inside one segment', huSms.length <= 160 && /^[\x20-\x7e]*$/.test(huSms)
-    && /tomorrow's Makin' It HOT 100 Daily Countdown/.test(huSms) && /Reply STOP/.test(huSms), huSms.length + ' ' + huSms);
+    && /tomorrow's Makin' It Daily Countdown/.test(huSms) && /Reply STOP/.test(huSms), huSms.length + ' ' + huSms);
 
   // The Livestream Countdown: the ranked graphics render, and NOTHING is revealed yet.
   ok('before the stream the graphics have not rendered',
@@ -2091,7 +2091,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // but the caption is built first and kept.
   const rjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
   ok('the publish stores the recap caption even with no Blob token',
-    !!rjob && /^Makin' It HOT 100 Daily Countdown — /.test(rjob.recap_caption || ''), JSON.stringify(rjob && rjob.recap_caption));
+    !!rjob && /^Makin' It Daily Countdown — /.test(rjob.recap_caption || ''), JSON.stringify(rjob && rjob.recap_caption));
   ok('and leaves the hosted recap URLs null rather than failing the publish',
     rjob.recap_cover_url == null && rjob.recap_thumb_url == null, JSON.stringify([rjob.recap_cover_url, rjob.recap_thumb_url]));
   const rd = await srv._recapGraphicsData(pubbed);
@@ -2159,20 +2159,52 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // hosted slide lists are null and the day published anyway — the captions are kept.
   const rjob2 = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
   ok('the publish stores both carousel captions even with no Blob token',
-    /Top Track/.test(rjob2.results_song_caption || '') && /Top A&R/.test(rjob2.results_ar_caption || ''),
+    /^Makin' It Daily Countdown — /.test(rjob2.results_song_caption || '') && /Top A&R/.test(rjob2.results_ar_caption || ''),
     JSON.stringify([rjob2.results_song_caption, rjob2.results_ar_caption]));
   ok('and leaves the hosted slide lists null rather than failing the publish',
     rjob2.results_song_urls == null && rjob2.results_ar_urls == null, JSON.stringify([rjob2.results_song_urls, rjob2.results_ar_urls]));
+  // The 'song' set is the Makin' It Daily Countdown (2026-10-02): cover · one slide per record,
+  // bottom up · the A&R Team · submit. Rank only.
   const rsSong = await srv._resultsCarouselData(pubbed, 'song');
-  ok('three records make three slides: the top record, one list slide, the call to action',
-    rsSong && rsSong.total === 3 && rsSong.slides.map(s => s.kind).join(',') === 'hero,list,cta', JSON.stringify(rsSong && rsSong.slides.map(s => s.kind)));
+  ok('three records make six countdown slides: cover, #3, #2, #1, A&R Team, submit',
+    rsSong && rsSong.card === 'countdownSlide' && rsSong.total === 6
+      && rsSong.slides.map(s => s.kind + (s.rank || '')).join(',') === 'cover,rank3,rank2,rank1,team,cta',
+    JSON.stringify(rsSong && rsSong.slides.map(s => s.kind + (s.rank || ''))));
+  const cdRows = await dDb.all("SELECT r.song_title, r.room_average, (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS nv, r.idx FROM rounds r WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL AND COALESCE(r.is_reference,0) = 0", [LDROP]);
+  cdRows.sort((a, b) => (b.room_average - a.room_average) || (b.nv - a.nv) || (a.idx - b.idx));
+  ok('#1 is the record with the highest room average, and the order matches the console countdown',
+    rsSong.records.map(r => r.title).join('|') === cdRows.map(r => r.song_title).join('|'), JSON.stringify([rsSong.records, cdRows]));
+  // The winner-post checks below read the day's top record off this.
   const topRec = await dDb.get("SELECT song_title FROM rounds WHERE session_id = ? AND status = 'ratified' AND COALESCE(is_reference,0) = 0 ORDER BY room_average DESC, idx ASC LIMIT 1", [LDROP]);
-  ok('slide 1 is the record with the highest room average', rsSong.slides[0].hero.title === topRec.song_title, JSON.stringify([rsSong.slides[0].hero, topRec]));
-  ok('the list ranks the rest from 02 and carries NO scores',
-    rsSong.slides[1].rows.length === 2 && rsSong.slides[1].rows[0].rank === '02' && rsSong.slides[1].rows.every(r => r.value === undefined),
-    JSON.stringify(rsSong.slides[1].rows));
-  ok('the song carousel closes on Submit your music, closing line B',
-    rsSong.slides[2].cta.eyebrow === 'Submit your music' && /finish, release, or promote/.test(rsSong.slides[2].cta.body), JSON.stringify(rsSong.slides[2].cta));
+  ok('the cover counts the records', rsSong.slides[0].count === 3, JSON.stringify(rsSong.slides[0]));
+  ok('NO slide and NO caption carries a score, an average or a vote count',
+    rsSong.slides.every(sl => !('room_average' in sl) && !('votes' in sl) && !('score' in sl) && !('value' in sl))
+      && !cdRows.some(r => rjob2.results_song_caption.split('\n').slice(1).join('\n').includes(Number(r.room_average).toFixed(1))) && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsSong)),
+    JSON.stringify(rsSong.slides) + rjob2.results_song_caption);
+  ok('the caption names NOBODY (Instagram stops notifying past 10 mentions) and asks by comment keyword, not link',
+    !/@/.test(rjob2.results_song_caption) && !cdRows.some(r => rjob2.results_song_caption.includes(r.song_title))
+      && /^Comment #REVIEW to Submit Music$/m.test(rjob2.results_song_caption) && /^Comment #ANR to join the A&R Team$/m.test(rjob2.results_song_caption)
+      && !/makinitmag\.com/.test(rjob2.results_song_caption),
+    rjob2.results_song_caption);
+  // Instagram allows five hashtags a post — the comment keywords count toward it.
+  const tagCount = t => (String(t || '').match(/(^|\s)#[A-Za-z]\w*/g) || []).length;
+  const igCaps = { countdown: rjob2.results_song_caption, topAr: rjob2.results_ar_caption, recap: rjob2.recap_caption,
+    winnerTrack: rjob2.winner_track_caption, winnerAr: rjob2.winner_ar_caption };
+  ok('every Instagram caption carries at most five hashtags',
+    Object.values(igCaps).every(t => t && tagCount(t) <= 5) && tagCount(igCaps.countdown) === 5,
+    JSON.stringify(Object.fromEntries(Object.entries(igCaps).map(([k, t]) => [k, tagCount(t)]))));
+  const cdc = srv._countdownComments(rsSong);
+  // This day's records carry no Instagram handles, so nobody is mentioned (the format is pinned below).
+  ok('records with no Instagram handle produce no comments', rsSong.records.every(r => !r.handle) && cdc.comments.length === 0, JSON.stringify(cdc));
+  // Ten records, two by the same artist, one with no handle: eight mentions → comments of 4, 4, 1, the repeat merged.
+  const fake = { records: Array.from({ length: 10 }, (_, i) => ({ rank: i + 1, title: 'Song ' + (i + 1), artist: 'Artist ' + (i + 1),
+    handle: i === 9 ? '@artist3' : (i === 6 ? '' : '@artist' + (i + 1)) })) };
+  const fc = srv._countdownComments(fake);
+  const lead = 'Follow all the artists who made the countdown: ';
+  ok('four artists a comment, comma-separated; an artist with two records is mentioned once',
+    fc.comments.length === 2 && fc.comments[0] === lead + '@artist3, @artist9, @artist8, @artist6'
+      && fc.comments[1] === lead + '@artist5, @artist4, @artist2, @artist1' && fc.comments.join(' ').split('@artist3').length === 2, JSON.stringify(fc));
+  ok('an artist with no Instagram handle is not mentioned at all', !fc.comments.join(' ').includes('Artist 7'), JSON.stringify(fc));
   const rsAr = await srv._resultsCarouselData(pubbed, 'ar');
   ok('the A&R carousel leads with the board leader and no photo when the profile has none',
     rsAr && rsAr.slides[0].hero.title === 'Lex' && rsAr.slides[0].hero.photo == null, JSON.stringify(rsAr && rsAr.slides[0].hero));
@@ -2186,15 +2218,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the caption preview is the same text the publish stored', rsCapTxt.status === 200 && (await rsCapTxt.text()) === rjob2.results_song_caption);
   const rs1 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=1', { headers: BOOTH });
   const rs1Buf = Buffer.from(await rs1.arrayBuffer());
-  ok('a results slide renders as a 1080x1350 PNG', rs1.status === 200 && rs1.headers.get('content-type') === 'image/png' && pngDims(rs1Buf) === '1080x1350', rs1.status + ' ' + pngDims(rs1Buf));
+  ok('a countdown slide renders as a 1080x1350 PNG', rs1.status === 200 && rs1.headers.get('content-type') === 'image/png' && pngDims(rs1Buf) === '1080x1350', rs1.status + ' ' + pngDims(rs1Buf));
+  for (const n of [2, 4, 5, 6]) {
+    const rsN = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=' + n, { headers: BOOTH });
+    ok('countdown slide ' + n + ' renders', rsN.status === 200 && pngDims(Buffer.from(await rsN.arrayBuffer())) === '1080x1350', 'got ' + rsN.status);
+  }
+  const rsA1 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=ar&slide=1', { headers: BOOTH });
+  ok('the Top A&R carousel still renders', rsA1.status === 200 && pngDims(Buffer.from(await rsA1.arrayBuffer())) === '1080x1350', 'got ' + rsA1.status);
   const rs9 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=9', { headers: BOOTH });
   ok('a slide past the end is 404, not a blank card', rs9.status === 404, 'got ' + rs9.status);
   const rsAnon = await fetch(base + '/api/card/results?s=' + LDROP + '&set=ar&slide=1');
   ok('the results render is platform-admin only', rsAnon.status === 403 || rsAnon.status === 401, 'got ' + rsAnon.status);
   const rsStatus = (await call('/api/admin/daily/status?day=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
   ok('the daily status carries the carousel captions and slide counts for the console',
-    rsStatus.cards && rsStatus.cards.results && rsStatus.cards.results.songCount === 3 && rsStatus.cards.results.arCount === 3
-      && rsStatus.cards.results.songCaption === rjob2.results_song_caption, JSON.stringify(rsStatus.cards && rsStatus.cards.results));
+    rsStatus.cards && rsStatus.cards.results && rsStatus.cards.results.songCount === 6 && rsStatus.cards.results.arCount === 3
+      && rsStatus.cards.results.songCaption === rjob2.results_song_caption
+      && Array.isArray(rsStatus.cards.results.songComments) && rsStatus.cards.results.songTags.length === 6
+      && rsStatus.cards.results.songTags.every(t => t === ''), JSON.stringify(rsStatus.cards && rsStatus.cards.results));
 
   console.log('\n— The winner posts (039): Top Track / Top A&R of the Day at publish, of the Week on demand —');
   const wjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
@@ -3364,7 +3404,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     resultsUrl: 'https://x/account#results', closesLabel: '3:00 PM ET', closesInHours: 3 };
   const dgFullHtml = srv._dailyDigestEmailHtml(dgFull), dgFullText = srv._dailyDigestEmailText(dgFull);
   ok('the results mail links the Livestream Countdown',
-    /yt\.example\/live/.test(dgFullHtml) && /Watch the Makin' It HOT 100 Daily Countdown/.test(dgFullText));
+    /yt\.example\/live/.test(dgFullHtml) && /Watch the Makin' It Daily Countdown/.test(dgFullText));
   ok('and to the A&R\'s own results on the site', /See your results/.test(dgFullHtml) && /account#results/.test(dgFullHtml) && /account#results/.test(dgFullText));
   ok('the text version is a headline too', /Points 543/.test(dgFullText) && !/A Record/.test(dgFullText) && !/Rank/.test(dgFullText), dgFullText);
   ok('and says today\'s records close in 3 hours',

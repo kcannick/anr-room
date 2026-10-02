@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily Countdown Carousel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{--ground:#0E0C1A;--panel:#171328;--line:#2E2750;--ink:#EAE9F2;--dim:#9793B4;--green:#4BB749;--gold:#F5C518}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:15px;line-height:1.5}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 16px 90px}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+h1{margin:0;font-weight:900;font-size:clamp(30px,4vw,46px);line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.lede{max-width:68ch;color:var(--dim);margin:14px 0 34px}.lede b{color:var(--ink)}
+h2{font-weight:900;font-size:22px;letter-spacing:-.04em;text-transform:uppercase;margin:44px 0 6px}
+.rule{height:2px;background:var(--green);margin:10px 0 18px}
+.row{display:grid;gap:14px;grid-template-columns:repeat(4,1fr)}
+.card{background:var(--panel);border:1px solid var(--line);padding:12px;min-width:0}
+.card img{width:100%;display:block;border:1px solid var(--line)}
+.card .l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);margin-top:8px}
+ol{max-width:76ch;padding-left:20px}ol li{margin-bottom:10px}ol b{color:var(--ink)}li{color:var(--dim)}
+.g{color:var(--gold)}
+@media (max-width:800px){.row{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<p class="eyebrow">Makin' It · promo assets · for approval · 2026-10-02</p>
+<h1>Daily Countdown carousel</h1>
+<p class="lede">Replaces the daily stream. Posted once a day: the previous day's A&amp;R Meeting, <b>ranked, no scores</b>. One slide per record, plus a cover and two closing slides (A&amp;Rs: join · artists: submit): <b>11 to 19 slides</b> for an 8 to 16 record day, inside Instagram's 20. 1080×1350, one template. Each rank slide stands on its own, so an artist can repost only theirs.</p>
+
+<h2>A sample 12-record day</h2><div class="rule"></div>
+<div class="row">
+  <div class="card"><img src="countdown-00-cover.png" alt=""><div class="l">1 · cover</div></div>
+  <div class="card"><img src="countdown-01-rank12.png" alt=""><div class="l">2 · #12</div></div>
+  <div class="card"><img src="countdown-02-rank11.png" alt=""><div class="l">3 · #11</div></div>
+  <div class="card"><img src="countdown-03-rank10.png" alt=""><div class="l">4 · #10</div></div>
+  <div class="card"><img src="countdown-04-rank09.png" alt=""><div class="l">5 · #9</div></div>
+  <div class="card"><img src="countdown-05-rank08.png" alt=""><div class="l">6 · #8</div></div>
+  <div class="card"><img src="countdown-06-rank07.png" alt=""><div class="l">7 · #7</div></div>
+  <div class="card"><img src="countdown-07-rank06.png" alt=""><div class="l">8 · #6</div></div>
+  <div class="card"><img src="countdown-08-rank05.png" alt=""><div class="l">9 · #5</div></div>
+  <div class="card"><img src="countdown-09-rank04.png" alt=""><div class="l">10 · #4</div></div>
+  <div class="card"><img src="countdown-10-rank03.png" alt=""><div class="l">11 · #3</div></div>
+  <div class="card"><img src="countdown-11-rank02.png" alt=""><div class="l">12 · #2</div></div>
+  <div class="card"><img src="countdown-12-rank01.png" alt=""><div class="l">13 · #1 · Top Track of the Day</div></div>
+  <div class="card"><img src="countdown-13-team.png" alt=""><div class="l">14 · A&amp;R Team · join</div></div>
+  <div class="card"><img src="countdown-14-cta.png" alt=""><div class="l">15 · artists · submit</div></div>
+  <div class="card"><img src="alt-team-become.png" alt=""><div class="l">ALT for slide 14 · "Become an A&amp;R"</div></div>
+</div>
+
+<h2>Stress tests</h2><div class="rule"></div>
+<div class="row">
+  <div class="card"><img src="stress-16-cover.png" alt=""><div class="l">16-record day · cover</div></div>
+  <div class="card"><img src="stress-16-rank16.png" alt=""><div class="l">16-record day · #16</div></div>
+  <div class="card"><img src="stress-16-rank11.png" alt=""><div class="l">16 · long title, artist, handle</div></div>
+  <div class="card"><img src="stress-16-rank1.png" alt=""><div class="l">16 · long copy on #1</div></div>
+  <div class="card"><img src="stress-08-cover.png" alt=""><div class="l">8-record day · cover</div></div>
+  <div class="card"><img src="stress-08-rank8.png" alt=""><div class="l">8-record day · #8</div></div>
+</div>
+
+<h2>How the system works</h2><div class="rule"></div>
+<ol>
+<li><b>The countdown blocks are the series' own mark.</b> Each rank slide counts from its own rank down to #1: #16 shows 16 → 01, #3 shows 03 02 01, #1 shows one gold block. <b>No rank slide shows how many records there were</b>, so #16 never reads as last.</li>
+<li><b>The rank is the biggest thing on the slide</b>, set in Space Mono like every number in the brand. Then the title, then the artist and handle. The submit link sits under a rule as one button, so it never competes with the rank.</li>
+<li><b class="g">#1 is the gold version of the same layout:</b> gold numeral, gold tick, a soft gold glow, and the TOP TRACK OF THE DAY block between the rank and the title. Gold only means first place and money, so it also appears on the $1,000 and nowhere else.</li>
+<li><b>The cover and both closing slides carry the large 13° green cut.</b> Each closing slide has one ask: the first thanks the A&amp;R Team and recruits more (makinitmag.com/ANR), the second sends artists to submit. Rank slides use the button instead, because the cut would run into a long title.</li>
+<li><b>Long copy fits automatically.</b> The title steps down in size to stay within two lines, the artist name stays on one line, and the handle shrinks to the width. Everything stays at least 80px from every edge.</li>
+<li><b>The date is the day the post goes up.</b> The cover drops "Today's Top N": the date says which day, and "Ranked by the Makin' It A&amp;R Team" moves up into its place. Two-digit ranks stay at full size.</li>
+<li><b>Name:</b> this is the Makin' It Daily Countdown. HOT 100 is kept for the monthly countdown post.</li>
+</ol>
+</div></body></html>
