@@ -1285,12 +1285,15 @@ function sizeOf(type) {
   if (type === 'trackPage') return TRACK_SIZE;
   return RECAP_SIZES[type] || REFER_SIZES[type] || [W, H];
 }
-async function renderPng(type, data) {
+// `outWidth` rasterises the same layout at a smaller width (a thumbnail): the element is
+// still laid out at its real size, so a thumbnail is the download, scaled — never a
+// separately designed picture that could drift from it.
+async function renderPng(type, data, outWidth) {
   if (!_satori) { const m = require('satori'); _satori = m.default || m; }
   if (!_Resvg) { _Resvg = require('@resvg/resvg-js').Resvg; }
   const [w, hgt] = sizeOf(type);
   const svg = await _satori(element(type, data), { width: w, height: hgt, fonts: fonts() });
-  const png = new _Resvg(svg, { fitTo: { mode: 'width', value: w } }).render().asPng();
+  const png = new _Resvg(svg, { fitTo: { mode: 'width', value: outWidth && outWidth < w ? outWidth : w } }).render().asPng();
   return png;
 }
 
