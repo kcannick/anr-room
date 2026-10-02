@@ -501,7 +501,9 @@ live on anr.makinitmag.com.
     in admin.html — the plan calls for removing them as the first piece of the subtraction
     pass, deliberately not done here since it touches the live console).
 
-- **The A&R Meeting Recap graphics** (036): the daily noon live stream (count down yesterday's
+- **The A&R Meeting Recap graphics** (036) — **RETIRED 2026-10-02** with the daily stream, along with
+  the countdown clip captions and the daily Top 8 cards + post caption: no longer rendered, routes
+  and console sections removed, `recap_jobs` columns left in place (additive schema). Kept for history: the daily noon live stream (count down yesterday's
   records, reveal the Top 8 A&Rs, close on the top artists) gets an Instagram Live cover
   (9:16, 1080×1920) and a YouTube thumbnail (16:9, 1920×1080) plus a caption, rendered by the
   daily publish alongside the Top 8 cards and hosted at `daily/<day>/recap-{cover,thumb}.png`
@@ -790,6 +792,10 @@ live on anr.makinitmag.com.
   countdown carries 3 more (`COUNTDOWN_TAGS`); every other IG caption uses `IG_TAGS` (5). Approved mockup:
   `public/brand/countdown/`. **"HOT 100" is for the MONTHLY countdown post only** —
   `DAILY_STREAM_NAME` is now "Makin' It Daily Countdown".
+  **Retired with it (2026-10-02):** the daily Top 8 A&Rs / Top 8 Records cards and their caption,
+  the Meeting Recap Live cover / YouTube thumbnail / caption, and the countdown clip captions. The
+  A&R digest no longer carries the Top 8 images; it links Instagram ("See the Top Tracks on
+  Instagram", @Makinit4indies) instead. The live-show post kit (Asana) still uses the Top 8 cards.
 
 - **Backfill artist contacts** (no migration, 2026-09-22): rounds from before the contact
   fields existed had no email/phone/Instagram, which is what the sales-leads project is worked

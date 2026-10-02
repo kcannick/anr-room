@@ -297,7 +297,7 @@
       </div>
 
       <div class="card" id="dlCards">
-        <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The day's graphics</h3>
+        <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Instagram posts</h3>
         <div id="dlCardBody"></div>
       </div>
     </div>
@@ -2134,44 +2134,9 @@ function renderDaily(){
   const c = d.cards || {};
   let cardHtml = '';
   const fig = (url, name, label) => `<figure style="flex:1;margin:0;min-width:0"><a href="${esc(url)}" target="_blank" rel="noopener" download="${esc(name)}"><img src="${esc(url)}" alt="${esc(label)}" style="width:100%;border-radius:12px;border:1px solid var(--line);display:block"></a><figcaption class="muted" style="font-size:11px;margin-top:4px">${esc(label)}</figcaption></figure>`;
-  if(c.ars || c.songs){
-    cardHtml += '<div class="row" style="gap:10px;align-items:flex-start">'
-      + (c.ars ? fig(c.ars, 'top8-ars.png', 'Top 8 A&Rs') : '')
-      + (c.songs ? fig(c.songs, 'top8-songs.png', 'Top 8 Records') : '')
-      + '</div>';
-  } else if(dr.async_state === 'published'){
-    cardHtml += `<div class="empty" style="color:var(--gold)">The Top 8 graphics did not render${d.blobConfigured?'':' — BLOB_READ_WRITE_TOKEN is not set'}. The day published anyway; the caption is still below.</div>`;
-  } else {
-    cardHtml += '<div class="empty">Rendered when the day publishes.</div>';
-  }
-  if(c.caption){
-    cardHtml += `<div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" onclick="dlCopyCaption()">Copy caption</button></div>`;
-  }
-  // The A&R Meeting Recap — the noon stream's Instagram Live cover (9:16) and YouTube
-  // thumbnail (16:9), dated for the day the stream airs, with the day's artists and A&Rs
-  // filled in (drop order / alphabetical — never ranked; the stream is the reveal). Hosted
-  // at publish; before that, or if hosting failed, the console renders them live off
-  // /api/card/recap-* so there is always a cover to download.
+  // Retired 2026-10-02: the Top 8 cards, the A&R Meeting Recap cover/thumbnail and the
+  // countdown clip captions. The Daily Countdown carousel below replaces all of them.
   const dateTag = (dr.dayLabel || dr.day || '').replace(/[^A-Za-z0-9]+/g,'-');
-  const recapCover = c.recapCover || dlRecapUrl('recap-cover'), recapThumb = c.recapThumb || dlRecapUrl('recap-thumb');
-  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The A&R Meeting Recap</h4>
-    <div class="row" style="gap:10px;align-items:flex-start">
-      ${fig(recapCover, 'meeting-recap-' + dateTag + '-1080x1920.png', 'Instagram Live cover · 9:16')}
-      ${fig(recapThumb, 'meeting-recap-' + dateTag + '-1920x1080.png', 'YouTube thumbnail · 16:9')}
-    </div>
-    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">${c.recapCover ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed' + (d.blobConfigured ? '' : ' — BLOB_READ_WRITE_TOKEN is not set') + '; these are rendered live instead.' : 'Rendered live from the day so far. The A&Rs column fills in once the day tallies.')}
-      Artists print in drop order and A&Rs alphabetically — nothing on the cover is ranked.</p>
-    <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost sm" onclick="dlCopyRecapCaption()">Copy recap caption</button></div>`;
-  // The countdown clip — recorded after the stream, posted everywhere. Every artist lowest to
-  // highest, ending on the Top Track, and the top 3 A&Rs. Ranked, so only once the day has
-  // tallied. Dated the day it POSTS (records that opened on the 24th post on the 27th), which
-  // the field defaults to and the operator can move.
-  const tallied = dr.async_state === 'ratified' || dr.async_state === 'published';
-  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Countdown clip captions</h4>
-    ${tallied ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><label class="muted" style="font-size:12px">Posts on <input type="date" id="dlCdDate" value="${esc(dlCdPick.sid === (DL.drop && DL.drop.id) ? dlCdPick.date : dlCountdownDefaultDay(dr.day))}" onchange="dlCdPick = { sid: DL.drop && DL.drop.id, date: this.value }" style="margin-left:6px"></label></div>
-    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn ghost sm" onclick="dlCopyCountdown('instagram')">Copy Instagram / Threads caption</button><button class="btn ghost sm" onclick="dlCopyCountdown('social')">Copy Facebook / YouTube / TikTok caption</button><button class="btn ghost sm" onclick="dlCopyCountdown('x')">Copy X caption</button></div>
-    <p class="muted" id="dlCdNote" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">Instagram and Threads use @handles. The others use names, because an Instagram handle tags the wrong account there.</p>`
-    : '<div class="empty">Available once the day tallies.</div>'}`;
   // The Makin' It Daily Countdown (set 'song', 2026-10-02 — it replaced the Top Track carousel
   // and the daily stream): cover, one slide per record from the bottom up, rank only, then the
   // A&R Team and submit slides. And the Top A&R carousel (set 'ar'). Hosted with the day's
@@ -2214,22 +2179,6 @@ function renderDaily(){
   $('#dlCardBody').innerHTML = cardHtml;
   dlWeekRedraw();
   renderBuild();
-}
-// The live-render fallback carries the admin credential as a header, which an <img> cannot
-// send, so it is fetched and shown as an object URL. Same pattern as the chart carousel.
-const dlRecapCache = {};
-function dlRecapUrl(kind){
-  const sid = DL && DL.drop && DL.drop.id; if(!sid) return '';
-  const key = kind + ':' + sid;
-  if(dlRecapCache[key]) return dlRecapCache[key];
-  dlRecapCache[key] = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-  fetch('/api/card/' + kind + '?s=' + encodeURIComponent(sid), { headers: chAuthHeaders() })
-    .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
-    .then(b => { dlRecapCache[key] = URL.createObjectURL(b);
-      document.querySelectorAll('#dlCardBody img[alt^="' + (kind === 'recap-cover' ? 'Instagram' : 'YouTube') + '"]').forEach(img => {
-        img.src = dlRecapCache[key]; img.closest('a').href = dlRecapCache[key]; }); })
-    .catch(() => { delete dlRecapCache[key]; });
-  return dlRecapCache[key];
 }
 // One results slide, rendered live with the admin credential (an <img> cannot send it), shown
 // as an object URL. Keyed by set + slide + drop so a redraw does not refetch.
@@ -2301,32 +2250,6 @@ async function dlCopyWeekCaption(post){
   if(!text){ alert('Nothing to copy yet.'); return; }
   try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
   catch(e){ alert('Could not copy the caption.'); }
-}
-// A post date the operator moved survives the status poll's redraw, for that drop only.
-let dlCdPick = { sid: null, date: '' };
-// The clip posts COUNTDOWN_POST_OFFSET_DAYS (server.js) after the records opened.
-function dlCountdownDefaultDay(day){
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return '';
-  const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 3);
-  return d.toISOString().slice(0, 10);
-}
-async function dlCopyCountdown(platform){
-  const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
-  const date = ($('#dlCdDate') && $('#dlCdDate').value) || '';
-  let d = null;
-  try{
-    const r = await fetch('/api/admin/daily/countdown-captions?s=' + encodeURIComponent(sid) + (date ? '&date=' + encodeURIComponent(date) : ''), { headers: chAuthHeaders() });
-    d = await r.json();
-    if(!r.ok){ alert(d.error || 'Could not build the caption.'); return; }
-  }catch(e){ alert('Could not build the caption.'); return; }
-  const text = d.captions && d.captions[platform];
-  if(!text){ alert('Nothing to copy yet.'); return; }
-  try{ await navigator.clipboard.writeText(text); }
-  catch(e){ alert('Could not copy the caption.'); return; }
-  let msg = 'Caption copied, dated ' + d.date + '.';
-  if(platform === 'x') msg += ' ' + d.xLength + ' of ' + d.xMax + ' characters' + (d.xLength > d.xMax ? ' — trim it before posting.' : '.');
-  if(platform === 'instagram' && d.noHandle && d.noHandle.length) msg += ' No Instagram handle on file for: ' + d.noHandle.join(', ') + '. Tag them by hand.';
-  alert(msg);
 }
 async function dlCopyCountdownComment(i){
   const list = (DL && DL.cards && DL.cards.results && DL.cards.results.songComments) || [];
@@ -2704,23 +2627,6 @@ $('#bAdd').onclick = async () => {
     $('#bTitle').focus();
   }catch(e){ $('#bErr').textContent = e.message; }
   $('#bAdd').disabled = false;
-};
-
-window.dlCopyCaption = async () => {
-  try{ await navigator.clipboard.writeText((DL.cards && DL.cards.caption) || ''); alert('Caption copied.'); }
-  catch(e){ alert('Could not copy — the caption is on the day’s recap job.'); }
-};
-// The recap caption is stored at publish; before that it is built here from the same status
-// payload so the operator can post the cover early. Same lists, same order rule.
-window.dlCopyRecapCaption = async () => {
-  const c = DL.cards || {};
-  let text = c.recapCaption;
-  if(!text){
-    try{ text = await (await fetch('/api/admin/daily/recap-caption?s=' + encodeURIComponent(DL.drop.id), { headers: chAuthHeaders() })).text(); }
-    catch(e){ text = ''; }
-  }
-  try{ await navigator.clipboard.writeText(text || ''); alert('Recap caption copied.'); }
-  catch(e){ alert('Could not copy the recap caption.'); }
 };
 
 // Fix a broken play link mid-window.

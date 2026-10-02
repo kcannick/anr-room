@@ -1522,50 +1522,14 @@ async function pushDayResults(session) {
 const DAILY_STREAM_NAME = "Makin' It Daily Countdown";
 const WEEKLY_SHOW_NAME = 'The A&R Room - Weekly Live Music Review'; // Wednesday 7PM ET
 
-// ===== THE A&R MEETING RECAP — the Livestream Countdown's graphics + caption =====
-// The operator goes live at stream_at (3PM ET, the day after the close) and counts down the day's records, reveals the Top
-// 8 A&Rs, then closes on the top artists. The stream needs an Instagram Live cover (9:16), a
-// YouTube thumbnail (16:9) and a caption, all carrying the stream DATE — the one field that
-// tells thirty near-identical videos apart — and the day's artists and A&Rs by handle.
-//
-// NOTHING HERE IS IN RANK ORDER. The stream IS the reveal: artists print in drop order and
-// the Top 8 A&Rs alphabetised, so a cover posted an hour before the stream gives away who is
-// on it, never where they placed. The Top 8 card (ranked) stays the post-stream graphic.
-//
-// THE DATE IS THE DAY IT POSTS (operator, 2026-09-27) — results_at, never drop_day and never
-// the day the countdown was recorded (stream_at): the operator records ahead and everything
-// that goes up on a day carries that day. Same rule as the countdown clip captions below
-// (drop_day + COUNTDOWN_POST_OFFSET_DAYS, which is results day on the 69-hour clock). The
-// TIME printed beside it is still the stream's own ("Daily at 3PM", off stream_at).
+// The date on a daily graphic: MM.DD.YY in ET. Graphics are dated the day they POST
+// (results_at), never drop_day (operator, 2026-09-27).
 function recapDateLabel(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
     month: '2-digit', day: '2-digit', year: '2-digit' }).formatToParts(new Date(Number(ts)));
   const g = (t) => (p.find(x => x.type === t) || {}).value || '';
   return `${g('month')}.${g('day')}.${g('year')}`;
 }
-async function recapGraphicsData(session) {
-  const rows = await db.all(
-    // Reference tracks are known records, not artists on the show — they never print.
-    `SELECT song_title, song_artist, artist_instagram FROM rounds
-      WHERE session_id = ? AND COALESCE(is_reference, 0) = 0 ORDER BY idx ASC`, [session.id]);
-  const artists = [];
-  for (const r of rows) {
-    const ig = igClean(r.artist_instagram);
-    const label = ig ? '@' + ig : (r.song_artist || r.song_title || '').trim();
-    // One artist with three records on the day prints once.
-    if (label && !artists.some(a => a.toLowerCase() === label.toLowerCase())) artists.push(label);
-  }
-  const ars = (await cardArsData({ sessionId: session.id }))
-    .map(a => (a.ig ? '@' + a.ig : (a.name || '').trim()))
-    .filter(Boolean)
-    .sort((a, b) => a.replace(/^@/, '').localeCompare(b.replace(/^@/, ''), 'en', { sensitivity: 'base' }));
-  const sched = await dailySchedule();
-  const posts = Number(session.results_at) || dropWindowFor(session.drop_day, sched).resultsAt || now();
-  return { date: recapDateLabel(posts), time: recapTimeLabel(dropStreamAt(session, sched) || posts), artists, ars };
-}
-// The stream caption: plain and direct (operator's copy voice), with the same lists as the
-// graphics. Handles where we have them, names where we do not, so the operator can see who
-// still needs tagging.
 // "Daily at 3PM" off the stream's own epoch, so the graphic and the caption follow the setting.
 function recapTimeLabel(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })
@@ -1573,106 +1537,12 @@ function recapTimeLabel(ts) {
   const g = (t) => (p.find(x => x.type === t) || {}).value || '';
   return `Daily at ${g('hour')}${g('minute') === '00' ? '' : ':' + g('minute')}${g('dayPeriod').toUpperCase()}`;
 }
-function recapCaption(d) {
-  const lines = [
-    `${DAILY_STREAM_NAME} — ${d.date}`,
-    `${d.time || shareCards.RECAP_TIME} ET`,
-    '',
-    "Today we count down every song from the A&R Meeting that closed yesterday, reveal the Top 8 A&Rs, and go over the top artists. Rate the songs with us in the comments.",
-  ];
-  if (d.artists.length) lines.push('', "Artists in today's recap:", ...d.artists);
-  if (d.ars.length) lines.push('', 'A&Rs on the board:', ...d.ars);
-  lines.push('', `Submit music: ${shareCards.RECAP_CTA[0].url}`, `Become an A&R: ${shareCards.RECAP_CTA[1].url}`,
-    '', IG_TAGS);
-  return lines.join('\n');
-}
 
-
-// ===== THE COUNTDOWN CLIP CAPTIONS — the recorded countdown, posted to every platform =====
-// After the stream the operator cuts a countdown clip of the day's records and posts it
-// everywhere. Its caption shouts out EVERY artist, lowest to highest so it reads in the
-// clip's order, ends on the Top Track, and congratulates the TOP 3 A&Rs only (operator,
-// 2026-09-27). Ranked, so it is only offered once the day has tallied.
-//
-// THE DATE IS THE DAY THE CLIP POSTS — never the day it was recorded, never drop_day. The
-// clip for the 27th is recorded on the 26th from records that opened on the 24th. The post
-// date is a console field; it defaults to drop_day + COUNTDOWN_POST_OFFSET_DAYS, which is
-// that cadence.
-//
-// Three flavours: `instagram` (@handles — Threads shares Instagram usernames, so it posts
-// this one too), `social` (Facebook / YouTube / TikTok: an Instagram handle there tags the
-// wrong account or nobody, so names only) and `x` (names, and it has to fit 280).
-const COUNTDOWN_POST_OFFSET_DAYS = 3;
-const COUNTDOWN_PLATFORMS = ['instagram', 'social', 'x'];
-const COUNTDOWN_SUBMIT_URL = 'makinitmag.com/review';
-const COUNTDOWN_JOIN_URL = 'anr.makinitmag.com';
 // Instagram allows FIVE hashtags a post (operator, 2026-10-02) — every caption the app writes
 // for Instagram stays at or under it. IG_TAGS is the standard five; COUNTDOWN_TAGS is three,
 // because the Daily Countdown caption already spends two on its comment keywords (#REVIEW, #ANR).
 const IG_TAGS = '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists';
 const COUNTDOWN_TAGS = '#MakinIt #NewMusic #UnsignedArtists';
-const X_MAX = 280, X_URL_LEN = 23;   // X counts every link as 23 characters
-function countdownPostDay(session, requested) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(requested || '')) return requested;
-  const d = new Date(String(session.drop_day) + 'T12:00:00Z');
-  d.setUTCDate(d.getUTCDate() + COUNTDOWN_POST_OFFSET_DAYS);
-  return d.toISOString().slice(0, 10);
-}
-async function countdownClipData(session, postDay) {
-  // Same order as the console's countdown sort: room average, then more ratings, then drop
-  // order — reversed so the lowest comes first. Unscored and reference records are not on it.
-  const rows = await db.all(
-    `SELECT r.idx, r.song_title, r.song_artist, r.artist_instagram, r.room_average,
-            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
-       FROM rounds r
-      WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
-        AND COALESCE(r.is_reference, 0) = 0`, [session.id]);
-  rows.sort((a, b) => (Number(b.room_average) - Number(a.room_average)) || (Number(b.votes) - Number(a.votes)) || (a.idx - b.idx));
-  const records = rows.reverse().map(r => ({
-    name: (r.song_artist || r.song_title || '').trim(), ig: igClean(r.artist_instagram),
-    title: (r.song_title || '').trim() }));
-  // An artist with two records on the day is shouted out once, at their higher placing.
-  const artists = records.filter((r, i) => !records.slice(i + 1).some(o =>
-    (r.ig && o.ig ? r.ig.toLowerCase() === o.ig.toLowerCase() : r.name.toLowerCase() === o.name.toLowerCase())));
-  const ars = await cardArsData({ sessionId: session.id }, 3);
-  const [y, m, d] = postDay.split('-');
-  return { date: `${m}.${d}.${y.slice(2)}`, artists, ars };
-}
-function xLength(text) {
-  return [...text.replace(/\b(?:https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(?:\/\S*)?/gi, 'x'.repeat(X_URL_LEN))].length;
-}
-function countdownCaption(d, platform) {
-  const handles = platform === 'instagram';
-  const who = (p) => (handles && p.ig ? '@' + p.ig : p.name);
-  const top = d.artists[d.artists.length - 1];
-  const topLine = top ? `${who(top)} — Top Track of the day${top.title ? ` with "${top.title}"` : ''}` : '';
-  const head = `${DAILY_STREAM_NAME} — ${d.date}`;
-  if (platform === 'x') {
-    // One paragraph. If it will not fit, drop the hashtag, then the song title; what is
-    // left over is the operator's to trim, and the console prints the count.
-    const rest = d.artists.slice(0, -1).map(who);
-    const build = (title, tag) => {
-      const topBit = top ? `Top Track of the day ${who(top)}${title && top.title ? ` with "${top.title}"` : ''}` : '';
-      const so = rest.length ? `S/O to ${rest.join(', ')}${topBit ? ', and ' + topBit : ''}` : (topBit ? `S/O to ${topBit}` : '');
-      return [head, so, d.ars.length ? `Top A&Rs: ${d.ars.map(who).join(', ')}` : '',
-        `Submit your music: ${COUNTDOWN_SUBMIT_URL}`, tag ? '#MakinIt' : ''].filter(Boolean).join('\n\n');
-    };
-    for (const [title, tag] of [[true, true], [true, false], [false, false]]) {
-      const t = build(title, tag);
-      if (xLength(t) <= X_MAX) return t;
-    }
-    return build(false, false);
-  }
-  const lines = [head, ''];
-  if (d.artists.length) {
-    lines.push("S/O to all the artists featured on yesterday's countdown:", '',
-      ...d.artists.slice(0, -1).map(who), topLine);
-  }
-  if (d.ars.length) lines.push('', 'Congratulations to our top A&Rs:', ...d.ars.map((a, i) => `${i + 1}. ${who(a)}`));
-  lines.push('', `Submit your music for a free review: ${COUNTDOWN_SUBMIT_URL}`, `Join the A&R Team: ${COUNTDOWN_JOIN_URL}`,
-    '', IG_TAGS);
-  return lines.join('\n');
-}
 // ===== THE A&R MEETING RESULTS CAROUSELS =====
 // Two Instagram carousels, rendered with the day's graphics and hosted on the same Blob path,
 // plus a caption each:
@@ -1969,8 +1839,8 @@ function winnerCaption(d) {
   return lines.join('\n');
 }
 
-// Publish the day: render and host the two shared cards, build the post kit caption, queue
-// the A&R digest, and flip the session to completed/published.
+// Publish the day: make sure the day's Instagram posts are rendered (the Daily Countdown, the
+// Top A&R carousel, the winner posts), queue the A&R digest, and flip the session to completed/published.
 //
 // The status flip to 'completed' is what makes playerState's recap branch fire — which is
 // why it happens at 3PM and not at the noon close. Flipping three hours early would reveal
@@ -2016,35 +1886,9 @@ async function renderDailyGraphicsInto(session, { deadline = null } = {}) {
   // Deterministic paths — uploadPng is allowOverwrite, so a re-run replaces rather than
   // accumulating a new URL every time.
   const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
-  let arsUrl = null, songsUrl = null, caption = null;
-  try {
-    const kit = await buildPostKit(session);
-    if (kit) {
-      caption = kit.caption;
-      for (const f of kit.files) {
-        if (f.kind === 'ars') arsUrl = await uploadPng(`daily/${day}/ars.png`, f.buf);
-        if (f.kind === 'songs') songsUrl = await uploadPng(`daily/${day}/songs.png`, f.buf);
-        if (deadline && Date.now() > deadline) break;
-      }
-    }
-  } catch (e) {
-    // Logged, not fatal — see the note above. The caption survives even when hosting does
-    // not, so the operator can still assemble the post by hand.
-    console.error('[daily] card render/upload failed:', e.message);
-  }
-  // The A&R Meeting Recap cover + thumbnail + caption, same contract: the caption is built
-  // first and kept even when the render or the upload fails.
-  let recapCover = null, recapThumb = null, recapText = null;
-  try {
-    const rd = await recapGraphicsData(session);
-    recapText = recapCaption(rd);
-    if (!deadline || Date.now() < deadline) {
-      recapCover = await uploadPng(`daily/${day}/recap-cover.png`, await shareCards.renderPng('recapCover', rd));
-      recapThumb = await uploadPng(`daily/${day}/recap-thumb.png`, await shareCards.renderPng('recapThumb', rd));
-    }
-  } catch (e) {
-    console.error('[daily] recap graphics failed:', e.message);
-  }
+  // Retired 2026-10-02: the Top 8 cards + their caption, and the A&R Meeting Recap cover,
+  // thumbnail and caption. Their recap_jobs columns stay (additive schema) and are no longer
+  // written; old days keep whatever they had.
   // The results carousels, same contract, one set at a time so a failure in one cannot cost
   // the other. A partly-hosted set is stored as null: the console renders the whole set live
   // rather than showing three hosted slides and a hole.
@@ -2080,12 +1924,9 @@ async function renderDailyGraphicsInto(session, { deadline = null } = {}) {
     }
   }
   await db.run(
-    `UPDATE recap_jobs SET ars_url = ?, songs_url = ?, caption = ?,
-            recap_cover_url = ?, recap_thumb_url = ?, recap_caption = ?,
-            results_song_urls = ?, results_ar_urls = ?, results_song_caption = ?, results_ar_caption = ?,
+    `UPDATE recap_jobs SET results_song_urls = ?, results_ar_urls = ?, results_song_caption = ?, results_ar_caption = ?,
             winner_track_url = ?, winner_ar_url = ?, winner_track_caption = ?, winner_ar_caption = ? WHERE session_id = ?`,
-    [arsUrl, songsUrl, caption, recapCover, recapThumb, recapText,
-     results.song.urls, results.ar.urls, results.song.caption, results.ar.caption,
+    [results.song.urls, results.ar.urls, results.song.caption, results.ar.caption,
      winners.track.url, winners.ar.url, winners.track.caption, winners.ar.caption, sessionId]);
   await db.run('UPDATE recap_jobs SET rendered_at = ? WHERE session_id = ?', [now(), sessionId]);
 }
@@ -3241,12 +3082,14 @@ function digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours }) {
   return { streamUrl: streamUrl || null, resultsUrl: resultsUrl || null, remind };
 }
 
-function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours }) {
+// The Top Tracks live on Instagram now — the Makin' It Daily Countdown carousel — so the digest
+// links there instead of carrying the retired Top 8 images (operator, 2026-10-02).
+const DIGEST_IG_URL = 'https://www.instagram.com/makinit4indies/';
+const DIGEST_IG_LABEL = 'See the Top Tracks on Instagram';
+
+function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours }) {
   const ex = digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours });
-  const imgs = [['Top 8 Songs', cards.songs], ['Top 8 A&Rs', cards.ars]].filter(([, u]) => !!u);
-  const common = imgs.map(([alt, u]) =>
-    `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="${escapeHtml(alt)}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
-  ).join('');
+  const common = `<a href="${DIGEST_IG_URL}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:4px 0 0">${DIGEST_IG_LABEL}</a>`;
 
   // The personalised half. Present for anyone who rated at least one record, ABSENT (not
   // empty) for everyone else — the audience is unconditional, the block is not.
@@ -3319,8 +3162,8 @@ function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage
         ? `Your results${name ? ', ' + escapeHtml(dispName(name)) : ''}.`
         : `The results.`}</h1>
       <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">${played
-        ? `Here is how the ${escapeHtml(dayLabel || '')} records landed, and where the A&amp;Rs finished.`
-        : `Here is how the ${escapeHtml(dayLabel || '')} records landed. You didn't rate these records, so there is nothing of your own below.`}</p>
+        ? `Here is how you did on the ${escapeHtml(dayLabel || '')} records.`
+        : `You didn't rate the ${escapeHtml(dayLabel || '')} records, so there are no results of your own this time.`}</p>
       ${common}
       ${ex.streamUrl ? `<a href="${ex.streamUrl}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:4px 0 0">Watch the ${escapeHtml(DAILY_STREAM_NAME)}</a>` : ''}
       ${arBlock}
@@ -3341,7 +3184,8 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
   lines.push(played
     ? `Your results${name ? ', ' + dispName(name) : ''}.`
     : `The results.`);
-  if (!played) lines.push('', "You didn't rate these records, so there is nothing of your own below.");
+  if (!played) lines.push('', `You didn't rate the ${dayLabel || ''} records, so there are no results of your own this time.`.replace('the  records', 'these records'));
+  lines.push('', `${DIGEST_IG_LABEL}: ${DIGEST_IG_URL}`);
   if (ex.streamUrl) lines.push('', `Watch the ${DAILY_STREAM_NAME}: ${ex.streamUrl}`);
   if (played) {
     lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Rank ${recap.rank ? '#' + recap.rank : '—'}`, '');
@@ -3472,7 +3316,7 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
       const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
       const manage = notifyManageUrl(base || publicBase(), r.uid);
       const arg = { name: (participant && participant.name) || (u && u.name) || null, dayLabel,
-        cards: { ars: job && job.ars_url, songs: job && job.songs_url }, recap, manage, playUrl, ...extras };
+        recap, manage, playUrl, ...extras };
       const out = await sendEmail(r.dest, bc.subject || 'A&R Daily',
         dailyDigestEmailHtml(arg), dailyDigestEmailText(arg));
       if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); sent++; }
@@ -8871,13 +8715,6 @@ async function handleApi(req, res, url) {
       // The A&R Meeting Recap cover (9:16) / thumbnail (16:9) for a daily drop, rendered
       // live off the day's records and board. Platform-admin: it names the day's A&Rs before
       // the stream reveals them, and a drop spans no room owner. ?s=<sessionId>.
-      if (kind === 'recap-cover' || kind === 'recap-thumb') {
-        if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
-        const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
-        if (!session) return bad(res, 'Drop not found', 404);
-        const rd = await recapGraphicsData(session);
-        return sendPng(await shareCards.renderPng(kind === 'recap-cover' ? 'recapCover' : 'recapThumb', rd), 'private, no-store');
-      }
       // One results-carousel slide, rendered live: ?s=<sessionId>&set=song|ar&slide=N.
       // Platform-admin: it ranks the day's A&Rs by name, and a drop spans no room owner.
       if (kind === 'results') {
@@ -9604,13 +9441,7 @@ async function handleApi(req, res, url) {
       // Comments ship by DEFAULT (029) and there is no unsend, so the count of what is
       // about to go out belongs here, next to the hold that is the only chance to stop it.
       comments: rounds.reduce((n, r) => n + (Number(r.comments_shared) || 0), 0),
-      cards: { ars: (job && job.ars_url) || null, songs: (job && job.songs_url) || null,
-        caption: (job && job.caption) || null, stage: (job && job.stage) || null,
-        // The A&R Meeting Recap: hosted at publish; the console falls back to a live render
-        // off /api/card/recap-* (admin-only) when these are null, so a missing Blob token
-        // never leaves the stream without a cover.
-        recapCover: (job && job.recap_cover_url) || null, recapThumb: (job && job.recap_thumb_url) || null,
-        recapCaption: (job && job.recap_caption) || null,
+      cards: { stage: (job && job.stage) || null,
         // The results carousels: hosted slide lists (JSON arrays) at publish, captions, and
         // the slide counts so the console can render a set live slide by slide.
         results: { song: parseJsonArray(job && job.results_song_urls), ar: parseJsonArray(job && job.results_ar_urls),
@@ -9674,34 +9505,6 @@ async function handleApi(req, res, url) {
       weeks.unshift({ start: data.week.start, label: data.week.label, current: data.week.start === liveStart });
     }
     return send(res, 200, Object.assign({ weeks }, data));
-  }
-
-  // The A&R Meeting Recap caption for a drop, as text — the same builder the publish stores,
-  // so the console can offer it before noon (the cover is posted ahead of the stream).
-  if (p === '/api/admin/daily/recap-caption' && method === 'GET') {
-    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
-    const sid = url.searchParams.get('s');
-    const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
-    if (!session) return bad(res, 'Drop not found', 404);
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
-    return res.end(recapCaption(await recapGraphicsData(session)));
-  }
-
-  // The countdown clip captions, all three platforms at once. Ranked, so refused until the
-  // day has tallied. ?date=YYYY-MM-DD is the day the clip POSTS (see countdownPostDay).
-  if (p === '/api/admin/daily/countdown-captions' && method === 'GET') {
-    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
-    const sid = url.searchParams.get('s');
-    const session = sid ? await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async' AND deleted_at IS NULL", [sid]) : null;
-    if (!session) return bad(res, 'Drop not found', 404);
-    if (!['ratified', 'published'].includes(session.async_state)) return bad(res, 'The day has not tallied yet', 409);
-    const postDay = countdownPostDay(session, url.searchParams.get('date'));
-    const d = await countdownClipData(session, postDay);
-    const captions = {};
-    for (const pf of COUNTDOWN_PLATFORMS) captions[pf] = countdownCaption(d, pf);
-    return send(res, 200, { postDay, date: d.date, captions, xLength: xLength(captions.x), xMax: X_MAX,
-      // Who the Instagram caption could not tag — the operator adds these by hand.
-      noHandle: d.artists.concat(d.ars).filter(a => !a.ig).map(a => a.name) });
   }
 
   // A results-carousel caption as text — the same builder the publish stores. ?set=song|ar.
@@ -10531,12 +10334,6 @@ module.exports._dailyDigestEmailHtml = dailyDigestEmailHtml;
 // and both halves (what we send, and when we stop trying) are asserted directly.
 module.exports._buildDayResults = buildDayResults;
 module.exports._pushDayResults = pushDayResults;
-module.exports._recapGraphicsData = recapGraphicsData;
-module.exports._recapCaption = recapCaption;
-module.exports._countdownCaption = countdownCaption;
-module.exports._countdownClipData = countdownClipData;
-module.exports._countdownPostDay = countdownPostDay;
-module.exports._xLength = xLength;
 module.exports._recapDateLabel = recapDateLabel;
 module.exports._resultsCarouselData = resultsCarouselData;
 module.exports._countdownCarouselData = countdownCarouselData;

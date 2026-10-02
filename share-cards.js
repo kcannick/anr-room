@@ -3,7 +3,7 @@
 // stays serverless-friendly (the whole point — see docs/multi-tenant-roadmap + the outage rule).
 //
 // Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo';
-// the artist's Track Report is 'trackPage' (see below), the daily graphics 'recap*' / 'resultsSlide' / 'countdownSlide' /
+// the artist's Track Report is 'trackPage' (see below), the daily graphics 'resultsSlide' / 'countdownSlide' /
 // 'winnerPost' (the Top Track / Top A&R of the Day and of the Week collab posts).
 // Rank-only by default; raw numbers optional. Every card carries the eyebrow "The A&R Room",
 // the big card title, the session/scope subhead, the $500 award pill, makinitmag.com/ANR, @Makinit4indies.
@@ -292,33 +292,12 @@ function bodyChartList(d) {
 
 // ---- element builders per type ----
 
-// ============ The A&R Meeting Recap — daily stream graphics ============
-// Two formats off ONE data shape { date, artists[], ars[] }:
-//   'recapCover'  1080×1920 (9:16) — the Instagram Live cover
-//   'recapThumb'  1920×1080 (16:9) — the YouTube thumbnail
-// Built to the brand (anr-brand skill): Archivo display + Space Mono data, signal green as
-// the ONLY accent (a live stream = green; nothing here is head-to-head or money), and the
-// 13° device as the block, the rule, the tick bullets and a cut on one edge of the names
-// panel. Copy is the operator's, verbatim. The approved look is the Chrome-rendered
-// public/graphics/meeting-recap.html in the main checkout; this is that design in Satori so
-// it renders on the serverless publish path with no headless browser.
-//
-// The names panel takes the day's ARTISTS in drop order and the Top 8 A&Rs ALPHABETISED:
-// the stream is a countdown that reveals the ranking, so nothing on the cover may be in
-// rank order. Empty lists render as ruled blank lines so the panel reads as intentional.
-const RECAP_SIZES = { recapCover: [1080, 1920], recapThumb: [1920, 1080] };
+// ============ Brand tokens for the Archivo cards (results, countdown, winner, refer) ============
+// The A&R Meeting Recap cover/thumbnail that first carried these was retired 2026-10-02.
 const RECAP = {
   bg: '#0e0c1a', panel: '#171328', line: '#2e2750', fg: '#eae9f2', dim: '#9793b4',
   green: '#4bb749', greenInk: '#06210b',
 };
-const RECAP_TITLE = 'The A&R Meeting Recap';
-// The Livestream Countdown's time. The fallback only: recapGraphicsData() passes d.time off the
-// day's own stream_at, so the graphic follows the schedule setting instead of this string.
-const RECAP_TIME = 'Daily at 3PM';
-const RECAP_CTA = [
-  { label: 'Submit Music', url: 'makinitmag.com/Review' },
-  { label: 'Become an A&R', url: JOIN_URL },
-];
 const SKEW = -13, TAN13 = Math.tan(13 * Math.PI / 180);
 
 let _logo = null;
@@ -337,146 +316,6 @@ function arBlock(size, fontSize) {
 function tick(w, hgt, mr) {
   return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, flexShrink: 0, marginRight: mr }, '');
 }
-function recapTitle(lines, fontSize) {
-  // "A&R" is the mark, so it takes the green; every other word stays ink.
-  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize, lineHeight: 0.88, textTransform: 'uppercase',
-    letterSpacing: -Math.round(fontSize * 0.04), ...NOWRAP };
-  return col({}, lines.map(words => row({ alignItems: 'flex-end' }, words.map((w, i) =>
-    text({ ...st, color: w === 'A&R' ? RECAP.green : RECAP.fg, marginLeft: i ? Math.round(fontSize * 0.18) : 0 }, w)))));
-}
-function recapRule(w, hgt, mt, mb) {
-  return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, marginTop: mt, marginBottom: mb, marginLeft: 4 }, '');
-}
-function recapDate(date, fontSize) {
-  return text({ fontFamily: MONO, fontWeight: 700, fontSize, lineHeight: 1, letterSpacing: -Math.round(fontSize * 0.02), color: RECAP.fg, ...NOWRAP }, date);
-}
-function recapTime(fontSize, mt, time) {
-  return text({ fontFamily: MONO, fontWeight: 700, fontSize, color: RECAP.green, textTransform: 'uppercase', letterSpacing: Math.round(fontSize * 0.18), lineHeight: 1, marginTop: mt, ...NOWRAP }, time || RECAP_TIME);
-}
-function recapCta(c, { tickW, tickH, tickMr, labelSize, labelW, urlSize, urlMl }) {
-  return row({}, [
-    tick(tickW, tickH, tickMr),
-    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: labelSize, letterSpacing: -Math.round(labelSize * 0.03), lineHeight: 1, color: RECAP.fg, ...(labelW ? { width: labelW } : {}), ...NOWRAP }, c.label),
-    text({ fontFamily: MONO, fontWeight: 400, fontSize: urlSize, lineHeight: 1, color: RECAP.dim, marginLeft: urlMl || 0, ...NOWRAP }, c.url),
-  ]);
-}
-
-// The credits panel. Think movie-poster credits: big enough to read when you go looking,
-// small enough never to compete with the title or the date. Space Mono regular (a name here
-// is a catalog string, not a headline), muted ink, no rules. ONE font size for the whole
-// block, fitted so the LONGEST name fits its column — a handle is never clipped unless it
-// would not fit even at the floor size. The panel's height fits the count, so a four-record
-// day gets a small block and a sixteen-record day a taller one, and the 13° cut on its right
-// edge (Satori has no clip-path polygon, so it is a skewed rectangle inside an overflow-
-// hidden box) only ever costs the lowest rows of the last column a little width.
-//
-// `groups` are the columns, left to right: [{ label, names }]. Equal widths.
-const CREDITS_INK = '#b9b5d2';
-const MONO_EM = 0.6;   // Space Mono advance width, in em
-function creditsPanel({ left, top, bottom, width, padT, padR, padB, padL, gap, capSize, minRows, fs: [lo, hi], groups }) {
-  const n = groups.length;
-  const colW = Math.floor((width - padL - padR - gap * (n - 1)) / n);
-  const rows = Math.max(minRows, ...groups.map(g => g.names.length));
-  const capH = capSize + Math.round(capSize * 0.7);
-  // Geometry for a candidate size; the inset only touches the LAST column.
-  const geo = (fs) => {
-    const rowH = Math.round(fs * 1.55);
-    const height = padT + capH + rows * rowH + padB;
-    const off = Math.ceil(height * TAN13);
-    const inset = (ci, i) => ci === n - 1 ? Math.ceil(off * ((padT + capH + (i + 1) * rowH) / height)) + 4 : 0;
-    return { fs, rowH, height, off, inset };
-  };
-  // Two passes: size for the longest name at the largest geometry, then settle.
-  let g = geo(hi);
-  let fit = hi;
-  groups.forEach((grp, ci) => grp.names.forEach((nm, i) => {
-    const avail = colW - g.inset(ci, i);
-    fit = Math.min(fit, avail / (MONO_EM * Math.max(1, String(nm).length)));
-  }));
-  g = geo(Math.max(lo, Math.min(hi, Math.floor(fit))));
-  const { fs, rowH, height, off, inset } = g;
-  const y = top != null ? top : bottom - height;
-  const bg = h({ position: 'absolute', top: 0, left: -off - 40, width: width + 40, height, background: RECAP.panel,
-    transform: `skewX(${SKEW}deg)`, transformOrigin: 'top left' }, '');
-  const cols = [];
-  groups.forEach((grp, ci) => {
-    if (ci) cols.push(h({ width: gap, flexShrink: 0 }, ''));
-    const lines = [];
-    for (let i = 0; i < rows; i++) {
-      const avail = colW - inset(ci, i);
-      const maxChars = Math.max(4, Math.floor(avail / (MONO_EM * fs)));
-      lines.push(h({ display: 'flex', alignItems: 'center', width: avail, height: rowH, flexShrink: 0, overflow: 'hidden' },
-        text({ fontFamily: MONO, fontWeight: 400, fontSize: fs, lineHeight: 1, color: CREDITS_INK, ...NOWRAP }, clip(grp.names[i] || '', maxChars))));
-    }
-    cols.push(col({ width: colW, height: height - padT - padB, flexShrink: 0, overflow: 'hidden' }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: capSize, textTransform: 'uppercase', letterSpacing: Math.round(capSize * 0.22),
-        color: RECAP.dim, opacity: 0.75, height: capH, ...NOWRAP }, grp.label || ''),
-      ...lines,
-    ]));
-  });
-  return h({ position: 'absolute', left, top: y, width, height, overflow: 'hidden', display: 'flex' }, [
-    bg,
-    h({ position: 'absolute', left: 0, top: 0, width, height, display: 'flex', flexDirection: 'row',
-      padding: `${padT}px ${padR}px ${padB}px ${padL}px` }, cols),
-  ]);
-}
-
-function elementRecapCover(d) {
-  const W0 = 1080, H0 = 1920;
-  const artists = d.artists || [], ars = d.ars || [];
-  // Up to 8 artists is one column beside the A&Rs. A bigger day splits the artists across
-  // two columns (drop order, top to bottom then across) so the block stays short.
-  const split = artists.length > 8;
-  const half = Math.ceil(artists.length / 2);
-  const groups = split
-    ? [{ label: 'Artists', names: artists.slice(0, half) }, { label: '', names: artists.slice(half) }, { label: 'A&Rs', names: ars }]
-    : [{ label: 'Artists', names: artists }, { label: 'A&Rs', names: ars }];
-  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
-    // head — under IG Live's top chrome (~220px)
-    h({ position: 'absolute', left: 80, right: 80, top: 250, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, [
-      arBlock(190, 78),
-      { type: 'img', props: { src: logoDataUri(), style: { height: 44, opacity: 0.94 } } },
-    ]),
-    // mid — title + date in the middle third, clear of both IG strips
-    h({ position: 'absolute', left: 80, right: 80, top: 600, display: 'flex', flexDirection: 'column' }, [
-      recapTitle([['The', 'A&R'], ['Meeting'], ['Recap']], 136),
-      recapRule(260, 12, 36, 34),
-      recapDate(d.date, 196),
-      recapTime(34, 22, d.time),
-    ]),
-    h({ position: 'absolute', left: 80, right: 80, top: 1330, display: 'flex', flexDirection: 'column', gap: 22 },
-      RECAP_CTA.map(c => recapCta(c, { tickW: 14, tickH: 34, tickMr: 22, labelSize: 46, labelW: 440, urlSize: 30 }))),
-    // credits — bottom-anchored, so a short day leaves ground rather than an empty field
-    creditsPanel({ left: 80, bottom: 1880, width: 920, padT: 26, padR: 30, padB: 26, padL: 50, gap: 30,
-      capSize: 19, minRows: 4, fs: [17, 24], groups }),
-  ]);
-}
-
-function elementRecapThumb(d) {
-  const W0 = 1920, H0 = 1080;
-  const artists = d.artists || [], ars = d.ars || [];
-  const groups = [{ label: 'Artists', names: artists }, { label: 'A&Rs', names: ars }];
-  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
-    h({ position: 'absolute', left: 90, top: 80, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 40 }, [
-      arBlock(120, 50),
-      { type: 'img', props: { src: logoDataUri(), style: { height: 38, opacity: 0.94 } } },
-    ]),
-    h({ position: 'absolute', left: 90, top: 250, width: 1140, display: 'flex', flexDirection: 'column' }, [
-      recapTitle([['The', 'A&R', 'Meeting'], ['Recap']], 118),
-      recapRule(220, 11, 30, 26),
-      recapDate(d.date, 220),
-      recapTime(30, 16, d.time),
-    ]),
-    h({ position: 'absolute', left: 90, top: 905, display: 'flex', flexDirection: 'row', gap: 70 },
-      RECAP_CTA.map(c => recapCta(c, { tickW: 12, tickH: 30, tickMr: 18, labelSize: 38, urlSize: 26, urlMl: 18 }))),
-    // credits — top-right, right of the title; the bottom-right (x>1500, y>880) stays clear
-    // for YouTube's duration badge.
-    creditsPanel({ left: 1250, top: 80, width: 600, padT: 28, padR: 30, padB: 28, padL: 34, gap: 30,
-      capSize: 18, minRows: 4, fs: [18, 26], groups }),
-  ]);
-}
-
-
 // ============ Referral graphics — the A&R's own promo set ============
 // Four per-user graphics off ONE data shape { name, category, location, photo, qrJoin, qrSubmit }
 // (photo and the two QRs are data URIs, prepared by the caller — this module never fetches):
@@ -1261,8 +1100,6 @@ function element(type, data = {}) {
   if (type === 'trackPage') return elementTrackPage(data);
   if (type === 'chartCover') return frame({ title: null, sub: null, body: bodyChartCover(data) });
   if (type === 'chartList') return frame({ titleSize: 66, title: clip(data.title, 18), sub: data.sub, body: bodyChartList(data) });
-  if (type === 'recapCover') return elementRecapCover(data);
-  if (type === 'recapThumb') return elementRecapThumb(data);
   if (type === 'referCard') return elementReferPerson(data, false);
   if (type === 'referStory') return elementReferPerson(data, true);
   if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
@@ -1283,7 +1120,7 @@ function sizeOf(type) {
   if (type === 'countdownSlide') return COUNTDOWN_SIZE;
   if (type === 'winnerPost') return WINNER_SIZE;
   if (type === 'trackPage') return TRACK_SIZE;
-  return RECAP_SIZES[type] || REFER_SIZES[type] || [W, H];
+  return REFER_SIZES[type] || [W, H];
 }
 async function renderPng(type, data) {
   if (!_satori) { const m = require('satori'); _satori = m.default || m; }
@@ -1294,4 +1131,4 @@ async function renderPng(type, data) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };
+module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };
