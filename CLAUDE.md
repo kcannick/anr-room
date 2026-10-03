@@ -495,6 +495,13 @@ live on anr.makinitmag.com.
     was unconditional, so a non-player got "Yesterday's results, <their name>." over the Top 8
     and nothing of their own. Fixed: personalise the greeting only when there is something
     personal beneath it, and say plainly why there isn't when there is not.
+  - **Banner + the Live step flow** (2026-09-30, operator's call): `/daily` carries the sponsor
+    banner at the TOP of the page (same `#adTop` box and cascade as play.html — `adSlotFor()`:
+    the drop's banner_id → Revive game zone → global banner; hidden when nothing is set), and
+    rates in the same steps as Live: Rate it → Next → Predict the Average → Lock it in (Back
+    keeps both) → note → Next record. Live adopted DAILY's wording (Rate it / Predict the
+    Average / Lock it in; Versus step 2 = "Predict the split") — "Room" vocabulary is out of
+    the rating steps. Mockup: `public/_mock-daily-banner.html`.
   - **Still open:** `sessions.live_bonus` has no value set (~300 makes one live show ≈ three
     perfect async days; without it the broadcast is decorative on the unified board), the
     scouting-points curve, and Nero retirement (`#btnNeroPull` + the scrape helper are still

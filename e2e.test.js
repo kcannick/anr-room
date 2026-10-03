@@ -1756,6 +1756,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the daily payload leaks no split', !/split/.test(dJson));
   ok('the daily payload carries NO per-record vote counts', !dState.queue.some(q => 'votes' in q || 'count' in q), dJson.slice(0, 200));
   ok('tiers are server-resolved epochs, not client maths', Array.isArray(dState.async.tiers) && dState.async.tiers[0].points === 100);
+  // The banner (2026-09-30): the same cascade as the live player. The global banner from the
+  // cascade block above is still assigned, and a drop has no banner_id of its own.
+  ok('the daily payload carries the sponsor banner', dState.banner && dState.banner.image.startsWith('/api/banner/image'), JSON.stringify(dState.banner));
+  const dInfo = (await call('/api/session/info?s=' + PDROP, null, 'GET')).d;
+  ok('the daily join screens get the banner too', dInfo.banner && dInfo.banner.id === dState.banner.id, JSON.stringify(dInfo.banner));
 
   // Two A&Rs get different running orders; the same A&R gets the same one every time.
   const dState2 = (await call('/api/me/state', null, 'GET', DH2)).d;

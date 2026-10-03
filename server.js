@@ -703,6 +703,17 @@ async function resolveBanner(session) {
   return null;
 }
 
+// The ad slot every player surface carries: the room's own banner -> the Revive zone (when
+// configured) -> the global banner. `zone` is 'lobby' or 'game'. All public data (banner
+// image URL + link, Revive zone id) — no PII.
+async function adSlotFor(session, zone) {
+  const own = session.banner_id ? await getBanner(session.banner_id) : null;
+  if (own) return { banner: own };
+  const rv = await getReviveCfg();
+  if (rv) return { revive: { base: rv.base, zone: rv[zone] } };
+  return { banner: await resolveBanner(session) }; // banner_id is null here -> global level
+}
+
 // The round that is actually "in play" right now: a live vote, a just-closed
 // tally, or the most-recently ratified result. Pending (queued) rounds are NOT
 // active — they live in the queue until the admin opens one. This is what keeps
@@ -2071,6 +2082,9 @@ async function asyncPlayerState(participant, session, count) {
     refCode: participant.ref_code || null,
     participants: count,
   };
+  // Same ad cascade as the live player. A drop is a new session every day, so in practice
+  // this is the Revive game zone or the global banner; a per-day banner_id still wins.
+  Object.assign(out, await adSlotFor(session, phase === 'waiting' ? 'lobby' : 'game'));
 
   // The scorecard. Only ever built in 'recap', which is only reachable once the day has
   // published — so this is the one place room_average is allowed to exist in a player
@@ -2211,15 +2225,7 @@ async function playerState(participant) {
   // Ad slot — EVERY phase, results and recap included (banner ads fund the show;
   // was lobby/voting/locked only until 2026-08-14).
   // Cascade: the room's own banner -> Revive zone (when configured) -> global banner.
-  {
-    const own = session.banner_id ? await getBanner(session.banner_id) : null;
-    if (own) out.banner = own;
-    else {
-      const rv = await getReviveCfg();
-      if (rv) out.revive = { base: rv.base, zone: out.phase === 'waiting' ? rv.lobby : rv.game };
-      else out.banner = await resolveBanner(session); // banner_id is null here -> global level
-    }
-  }
+  Object.assign(out, await adSlotFor(session, out.phase === 'waiting' ? 'lobby' : 'game'));
   if (session.status === 'completed') {
     out.phase = 'recap';
     out.recap = await buildRecap(participant);
@@ -5912,13 +5918,7 @@ async function handleApi(req, res, url) {
     // so the banner is on screen from the JOIN screens on — the slot is never empty
     // while ads fund the show. Pre-join counts as lobby for zone choice. All public
     // data (banner image URL + link, Revive zone id) — no PII.
-    const own = session.banner_id ? await getBanner(session.banner_id) : null;
-    if (own) out.banner = own;
-    else {
-      const rv = await getReviveCfg();
-      if (rv) out.revive = { base: rv.base, zone: rv.lobby };
-      else out.banner = await resolveBanner(session);
-    }
+    Object.assign(out, await adSlotFor(session, 'lobby'));
     return send(res, 200, out);
   }
 
