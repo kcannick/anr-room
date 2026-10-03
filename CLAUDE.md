@@ -794,7 +794,17 @@ live on anr.makinitmag.com.
   header and shown as blob URLs one at a time. `v` = `referGraphicVersion(u)`, a hash of
   what the graphic prints (uid, name, role, city, photo): a matching `v` is
   `private, max-age=86400`, anything else and the full download are `no-store`, so the
-  cache is per-A&R and a new photo shows on the next visit. Card names are the operator's:
+  cache is per-A&R and a new photo shows on the next visit.
+  **Scouting first, and bigger** (operator, 2026-10-02): referring artists to submit is the
+  secondary game — the thing an A&R is always doing outside of rating — so the Scout talent
+  panel leads (larger heading, signal border, its link inside it, the $1,000 strip) and
+  Recruit A&Rs follows, smaller; the submit flyer precedes the join flyer. Copy is the
+  operator's verbatim ("Refer artists to submit to earn bonus points. The higher their music
+  scores, the more points you get." / "Know someone with a good ear for music? Share your
+  Recruit link with them. Earn more points the better they do."). **Top talent scouts** on
+  the landing page: `/api/home.topScouts`, the top 3 by lifetime `point_events` reason
+  `scout` (complete, unblocked profiles; name/role/city/photo/points/records, nothing
+  private), hidden until someone has scouting points. Card names are the operator's:
   **"Official A&R Card - Feed" / "Official A&R Card - Story"**. Nav: home, landing and the
   play page link one "My account"; the daily page's bonus-points CTAs still go to `/refer`.
   A device holding only a per-session player token can use the account page but `/profile`
