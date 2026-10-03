@@ -1723,8 +1723,11 @@ async function dailyAsanaAdvance(session, set, st, { project, deadline, save = a
   await save();
   return st;
 }
-// The cron step: every recently rendered day that has not finished its two tasks. Only days
-// queued by the render (asana_tasks set) — older days are never back-filled. Claimed per day.
+// The cron step: every QUEUED day that has not finished its two tasks, OLDEST FIRST (operator,
+// 2026-10-03: the back-catalogue went in oldest to newest). A day is queued by its render
+// (asana_tasks = '{}'); older days only when someone queues them. When both posts are done (or
+// gave up) the JSON gets "finished":true, which is what keeps this probe small for good —
+// without it, finished days would sit at the head of an oldest-first LIMIT forever.
 async function advanceDailyAsanaTasks({ deadline }) {
   const out = { created: 0, attached: 0 };
   const project = await dailyAsanaProject();
@@ -1732,8 +1735,8 @@ async function advanceDailyAsanaTasks({ deadline }) {
   const days = await db.all(
     `SELECT s.*, j.asana_tasks FROM sessions s JOIN recap_jobs j ON j.session_id = s.id
       WHERE s.mode = 'async' AND s.deleted_at IS NULL AND s.async_state IN ('ratified', 'published')
-        AND j.asana_tasks IS NOT NULL AND s.window_opens_at > ?
-      ORDER BY s.window_opens_at DESC LIMIT 4`, [now() - 10 * 86400000]);
+        AND j.asana_tasks IS NOT NULL AND j.asana_tasks NOT LIKE '%"finished":true%'
+      ORDER BY s.window_opens_at ASC LIMIT 4`, []);
   for (const s of days) {
     if (Date.now() > deadline - 3000) break;
     let tasks = {};
@@ -1742,7 +1745,8 @@ async function advanceDailyAsanaTasks({ deadline }) {
       const st = tasks[set];
       return !(st && st.done) && !(st && (st.attempts || 0) >= DAILY_ASANA_MAX_ATTEMPTS);
     });
-    if (!owed.length) continue;
+    const save0 = () => db.run('UPDATE recap_jobs SET asana_tasks = ? WHERE session_id = ?', [JSON.stringify(tasks), s.id]);
+    if (!owed.length) { tasks.finished = true; await save0(); continue; }
     const claim = await db.run(
       'UPDATE recap_jobs SET asana_claimed_at = ? WHERE session_id = ? AND (asana_claimed_at IS NULL OR asana_claimed_at < ?)',
       [now(), s.id, now() - 10 * 60000]);
@@ -1763,6 +1767,10 @@ async function advanceDailyAsanaTasks({ deadline }) {
           await save();
           console.error(`[daily] asana ${set} task failed:`, st.error);
         }
+      }
+      if (DAILY_ASANA_SETS.every(set => tasks[set] && (tasks[set].done || (tasks[set].attempts || 0) >= DAILY_ASANA_MAX_ATTEMPTS))) {
+        tasks.finished = true;
+        await save();
       }
     } finally {
       await db.run('UPDATE recap_jobs SET asana_claimed_at = NULL WHERE session_id = ?', [s.id]);
