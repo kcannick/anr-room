@@ -2105,8 +2105,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const rsAr = await srv._resultsCarouselData(pubbed, 'ar');
   ok('the A&R carousel leads with the board leader and no photo when the profile has none',
     rsAr && rsAr.slides[0].hero.title === 'Lex' && rsAr.slides[0].hero.photo == null, JSON.stringify(rsAr && rsAr.slides[0].hero));
-  ok('the A&R list carries points; nothing carries an email or phone',
-    rsAr.slides[1].rows.every(r => typeof r.value === 'number') && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsAr)), JSON.stringify(rsAr.slides[1].rows));
+  ok('the A&R list is placement only: no points, no email or phone',
+    rsAr.slides[1].rows.every(r => r.value === undefined) && rsAr.slides.every(sl => !sl.footLeft)
+      && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsAr)) && !/pts|points/i.test(srv._resultsCaption(rsAr).replace(/\$500/, '')),
+    JSON.stringify(rsAr.slides[1].rows) + srv._resultsCaption(rsAr));
   ok('the A&R carousel closes on Join the A&R Team with the $500', rsAr.slides[2].cta.eyebrow === 'Join the A&R Team' && rsAr.slides[2].cta.head.join(' ').includes('$500'));
   ok('a fourteen-record day is five slides with the list split evenly (5/4/4)',
     JSON.stringify(srv._resultsPages(Array.from({ length: 13 }, (_, i) => i), 6).map(p => p.length)) === '[5,4,4]');
@@ -4815,6 +4817,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
     req.on('data', c => body += c);
     req.on('end', () => {
       const u = new URL(req.url, 'http://x');
+      // Attachments are multipart, not JSON: record them by the file name in the form.
+      if (req.method === 'POST' && u.pathname === '/attachments') {
+        const fname = (/filename="([^"]+)"/.exec(body) || [])[1] || null;
+        asanaCalls.push({ method: 'POST', path: '/attachments', data: { filename: fname } });
+        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ data: { gid: 'att' } }));
+      }
       const data = body ? JSON.parse(body).data : null;
       asanaCalls.push({ method: req.method, path: u.pathname, data });
       const reply = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
@@ -5031,7 +5039,39 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const ldCheck = await call('/api/admin/leads/check?pct=100&minVotes=0', null, 'GET', ADMINH);
   ok('leads/check: runs every step and times it', ldCheck.status === 200 && ldCheck.d.steps.length >= 5 && ldCheck.d.steps.every(s => typeof s.ms === 'number'), JSON.stringify(ldCheck.d).slice(0, 300));
   ok('leads/check: names a step that fails instead of hanging', ldCheck.d.steps.some(s => s.name === 'GET /users/me' && s.ok === false && /unmocked|Asana/.test(s.error)), JSON.stringify(ldCheck.d.steps[2]));
+  // A&R Daily → Asana (2026-10-02): one task per post, slides attached in carousel order.
+  console.log('\n— A&R Daily → Asana: the Daily Countdown task and the Top A&Rs task —');
+  await anDb.run("INSERT INTO settings (k, v) VALUES ('asana_project', '555') ON CONFLICT (k) DO UPDATE SET v = '555'");
+  // The published drop from the daily tests; later tests may have retired it, so bring it back for these.
+  const atWas = await anDb.get('SELECT deleted_at, async_state FROM sessions WHERE id = ?', [LDROP]);
+  await anDb.run("UPDATE sessions SET deleted_at = NULL, async_state = 'published' WHERE id = ?", [LDROP]);
+  const atBefore = asanaCalls.length;
+  const atSong = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', BOOTH);
+  const atMade = asanaCalls.slice(atBefore);
+  const atTask = atMade.find(c => c.method === 'POST' && c.path === '/tasks');
+  const atFiles = atMade.filter(c => c.path === '/attachments').map(c => c.data.filename);
+  ok('daily asana: the countdown task is made with every slide attached, in order',
+    atSong.status === 200 && atSong.d.done === true && atSong.d.attached === 6 && atFiles.length === 6
+      && /countdown-.*-01\.png$/.test(atFiles[0]) && /countdown-.*-06\.png$/.test(atFiles[5]), JSON.stringify([atSong.d, atFiles]));
+  ok('daily asana: the task is named for the post and carries the caption in its notes',
+    atTask && /^Makin' It Daily Countdown — \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
+      && /Caption \(paste as-is\)/.test(atTask.data.notes) && /Comment #REVIEW to Submit Music/.test(atTask.data.notes)
+      && /Post the 6 attached slides in order/.test(atTask.data.notes), JSON.stringify(atTask && atTask.data));
+  const atAr = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'ar' }, 'POST', BOOTH);
+  const atArTask = asanaCalls.filter(c => c.method === 'POST' && c.path === '/tasks').pop();
+  ok('daily asana: the Top A&Rs task is its own task, placement only',
+    atAr.status === 200 && atAr.d.done === true && /^Top A&Rs — /.test(atArTask.data.name) && !/pts|points/i.test(atArTask.data.notes), JSON.stringify(atArTask && atArTask.data));
+  const atResumeAt = asanaCalls.length;
+  const atResume = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song', taskId: atSong.d.taskId, next: 5 }, 'POST', BOOTH);
+  const atResumed = asanaCalls.slice(atResumeAt);
+  ok('daily asana: a follow-up press attaches only what is left and makes no second task',
+    atResume.d.done === true && atResumed.length === 1 && atResumed[0].path === '/attachments' && /-06\.png$/.test(atResumed[0].data.filename), JSON.stringify(atResumed));
+  const atAnon = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', AH);
+  ok('daily asana: platform-admin only', atAnon.status === 403, 'got ' + atAnon.status);
   delete process.env.ASANA_TOKEN;
+  const atOff = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', BOOTH);
+  ok('daily asana: refuses without ASANA_TOKEN (409)', atOff.status === 409, 'got ' + atOff.status);
+  await anDb.run('UPDATE sessions SET deleted_at = ?, async_state = ? WHERE id = ?', [atWas.deleted_at, atWas.async_state, LDROP]);
   asanaMock.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);

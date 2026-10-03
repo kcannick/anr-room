@@ -796,6 +796,12 @@ live on anr.makinitmag.com.
   the Meeting Recap Live cover / YouTube thumbnail / caption, and the countdown clip captions. The
   A&R digest no longer carries the Top 8 images; it links Instagram ("See the Top Tracks on
   Instagram", @Makinit4indies) instead. The live-show post kit (Asana) still uses the Top 8 cards.
+  **Asana (2026-10-02):** the daily console makes ONE TASK PER POST — "Makin' It Daily Countdown —
+  <date>" (slides attached in order; notes = caption, the four-artist comments, who to tag on each
+  slide) and "Top A&Rs — <date>". `POST /api/admin/daily/asana-task {s, set, taskId?, next?}`
+  attaches what fits in 20s and returns `{done, taskId, next}`; the console presses on until done.
+  Same `asana_project` setting as the live post kit. The **Top A&R carousel is the TOP 8 only,
+  PLACEMENT ONLY** — no points on the slides or in its caption (`RESULTS_MAX_ARS = 8`).
 
 - **Backfill artist contacts** (no migration, 2026-09-22): rounds from before the contact
   fields existed had no email/phone/Instagram, which is what the sales-leads project is worked
