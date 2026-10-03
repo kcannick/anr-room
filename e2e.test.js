@@ -1082,7 +1082,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the graphic is private to its owner (no-store)', /no-store/.test(cardR.headers.get('cache-control') || ''));
   // The account page (2026-10-01): thumbnails are the same render, smaller, and cacheable
   // per profile version; the labels are the operator's; /account and /refer are one page.
-  ok('the two cards carry the operator\'s names', rp.graphics[0].label === 'Official A&R Card - Feed' && rp.graphics[1].label === 'Official A&R Card - Story', JSON.stringify(rp.graphics.map(g => g.label)));
+  ok('the two cards carry the operator\'s names, and the scout flyer comes before the recruit flyer',
+    rp.graphics.map(g => g.kind).join() === 'card,story,submit,join' && rp.graphics[0].label === 'Official A&R Card - Feed' && rp.graphics[1].label === 'Official A&R Card - Story', JSON.stringify(rp.graphics.map(g => g.label)));
   ok('every graphic offers a versioned thumbnail', rp.graphics.every(g => /^\/api\/card\/refer\?kind=\w+&thumb=1&v=[0-9a-f]{12}$/.test(g.thumb)), JSON.stringify(rp.graphics.map(g => g.thumb)));
   ok('the header fields ride the payload, and no contact detail does',
     rp.me.uid && 'photoUrl' in rp.me && 'location' in rp.me && !/@|phone|email/i.test(JSON.stringify(rp.me)), JSON.stringify(rp.me));
@@ -1100,7 +1101,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('/account serves the account page, and /refer is the same page',
     acctPage.status === 200 && referPage.status === 200 && /Earn more points/.test(acctHtml) && (await referPage.text()) === acctHtml);
   ok('the account page carries the operator\'s intro and the three sections',
-    /Invite new A&amp;Rs to the platform and earn bonus points\./.test(acctHtml) && /official member of our A&amp;R Team/.test(acctHtml)
+    /Refer artists to submit to earn bonus points\./.test(acctHtml) && /official member of our A&amp;R Team/.test(acctHtml)
       && /data-sec="earn"/.test(acctHtml) && /data-sec="profile"/.test(acctHtml) && /data-sec="edit"/.test(acctHtml));
   ok('an unknown graphic is refused', (await fetch(base + '/api/card/refer?kind=poster', { headers: { 'X-Player-Token': inviterTok } })).status === 404);
   ok('no token, no graphic', (await fetch(base + '/api/card/refer?kind=join')).status === 401);
@@ -2777,6 +2778,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   await call('/api/admin/daily/tick', { at: sCloses + 5000 }, 'POST', BOOTH);
   ok('a repeat tally never pays the scout twice',
     (await dDb.all("SELECT * FROM point_events WHERE reason = 'scout' AND user_id = ?", [SCOUT_UID])).length === 2);
+  // Top talent scouts on the homepage (2026-10-02): the top 3 by lifetime scouting points,
+  // complete profiles only, name/role/city/photo/points/records and nothing private.
+  const homeNoScout = (await call('/api/home', null, 'GET')).d;
+  ok('an incomplete profile is not listed as a top scout even with points', !(homeNoScout.topScouts || []).some(r => r.id === SCOUT_UID), JSON.stringify(homeNoScout.topScouts));
+  await dDb.run("UPDATE users SET profile_complete = 1, name = 'Sam Scout', primary_category = 'Manager', location = 'Miami, FL' WHERE uid = ?", [SCOUT_UID]);
+  const homeScout = (await call('/api/home', null, 'GET')).d;
+  const topSc = (homeScout.topScouts || []).find(r => r.id === SCOUT_UID);
+  ok('the homepage lists the scout with their lifetime scouting points and record count',
+    topSc && topSc.points === 2 * srv._scoutPointsFor(8.0) && topSc.records === 2 && topSc.rank >= 1 && homeScout.topScouts.length <= 3, JSON.stringify(homeScout.topScouts));
+  ok('the listing carries no email', !/@/.test(JSON.stringify(homeScout.topScouts)));
+  ok('the account page leads with scouting, then recruiting',
+    (() => { const h = require('fs').readFileSync('public/account.html', 'utf8'); return h.indexOf('Scout talent') < h.indexOf('Recruit A&amp;Rs') && /Refer artists to submit to earn bonus points/.test(h) && /Know someone with a good ear for music/.test(h); })());
   if ((await dDb.get('SELECT async_state FROM sessions WHERE id = ?', [SDROP])).async_state === 'published') {
     const scRp2 = (await call('/api/me/referrals', null, 'GET', scH)).d;
     ok('once published, the artist lane shows the average and the points', scRp2.artists.rated === 2 && scRp2.artists.earned === 2 * srv._scoutPointsFor(8.0)

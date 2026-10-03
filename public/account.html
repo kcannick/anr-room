@@ -42,6 +42,7 @@ a{color:var(--signal);text-decoration:none}
 .eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
 .section-head{display:flex;align-items:center;gap:9px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:14px}
+.panel.lead{border-color:var(--signal-deep);box-shadow:0 0 0 1px rgba(75,183,73,.18)}
 .stack{display:flex;flex-direction:column;gap:10px}
 .note{background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;font-size:13px;color:var(--ink-dim);line-height:1.5}
 .err{color:var(--hot);font-size:13.5px;min-height:1em}
@@ -155,41 +156,22 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
       <span class="tab soon">Rounds<small>coming</small></span>
     </div>
 
-    <!-- 1. EARN POINTS: the default section. Intro copy is the operator's (2026-09-20). -->
+    <!-- 1. EARN POINTS: the default section. SCOUTING FIRST, and bigger (operator, 2026-10-02):
+         referring artists to submit is the secondary game, the thing an A&R is always doing
+         outside of rating; recruiting A&Rs is second and not on equal footing. Copy is the
+         operator's verbatim. -->
     <div class="sec on" id="sec-earn">
     <div class="stack" style="gap:8px">
       <h1 style="font-weight:900;font-size:28px;letter-spacing:-.04em;line-height:1.05">Earn more points</h1>
-      <p class="dim" style="margin:0;font-size:14.5px;line-height:1.55">Invite new A&amp;Rs to the platform and earn bonus points. Know good talent? Refer them to submit music and earn bonus points as a talent scout. Use the links below.</p>
       <p class="dim" style="margin:0;font-size:14.5px;line-height:1.55">Your A&amp;R promo graphics also contain QR codes with your link. Post/promote them to let everyone know you're an official member of our A&amp;R Team.</p>
     </div>
 
-    <div class="stack">
-      <div class="section-head"><span class="tick"></span><span class="eyebrow">Your links</span></div>
-      <label>Invite new A&amp;Rs</label>
-      <div class="linkrow"><span class="url" id="linkJoin"></span><button class="copy" data-copy="linkJoin">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
-      <label style="margin-top:4px">Refer talent to submit music</label>
-      <div class="linkrow"><span class="url" id="linkSubmit"></span><button class="copy" data-copy="linkSubmit">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
-      <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who joins or submits through your link counts as yours.</p>
-    </div>
-
-    <div class="panel">
-      <div class="section-head"><span class="tick"></span><span class="eyebrow">Refer an A&amp;R</span></div>
-      <h2 style="font-size:20px;line-height:1.15" id="arHead">Refer someone new and earn up to 240 points.</h2>
-      <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="arRule"></p>
-      <div class="stats">
-        <div class="stat"><div class="k">Referred</div><div class="v" id="arReferred">0</div></div>
-        <div class="stat"><div class="k">Active</div><div class="v" id="arActive">0</div></div>
-        <div class="stat"><div class="k">Earned</div><div class="v earned" id="arEarned">+0</div></div>
-      </div>
-      <div class="rows" id="arRows"></div>
-    </div>
-
-    <div class="panel">
-      <div class="section-head"><span class="tick"></span><span class="eyebrow">Refer an artist</span></div>
-      <h2 style="font-size:20px;line-height:1.15">Refer artists to submit their music.</h2>
+    <div class="panel lead">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Scout talent</span></div>
+      <h2 style="font-size:23px;line-height:1.12">Refer artists to submit to earn bonus points. The higher their music scores, the more points you get.</h2>
       <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="artistRule"></p>
+      <label>Your scout link</label>
+      <div class="linkrow"><span class="url" id="linkSubmit"></span><button class="copy" data-copy="linkSubmit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
       <div class="prize"><span class="tick prize"></span><span>Every artist who submits is entered in the <b>$1,000 Giveaway</b> for a $1,000 Promo Budget.</span></div>
       <div class="stats">
         <div class="stat"><div class="k">Submitted</div><div class="v" id="artSubmitted">0</div></div>
@@ -198,6 +180,21 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
       </div>
       <div class="rows" id="artRows"></div>
     </div>
+
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Recruit A&amp;Rs</span></div>
+      <h2 style="font-size:18px;line-height:1.15">Know someone with a good ear for music? Share your Recruit link with them. Earn more points the better they do.</h2>
+      <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="arRule"></p>
+      <label>Your recruit link</label>
+      <div class="linkrow"><span class="url" id="linkJoin"></span><button class="copy" data-copy="linkJoin"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Recruited</div><div class="v" id="arReferred">0</div></div>
+        <div class="stat"><div class="k">Active</div><div class="v" id="arActive">0</div></div>
+        <div class="stat"><div class="k">Earned</div><div class="v earned" id="arEarned">+0</div></div>
+      </div>
+      <div class="rows" id="arRows"></div>
+    </div>
+    <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who submits or joins through your link counts as yours.</p>
 
     <div class="stack">
       <div class="section-head"><span class="tick contest"></span><span class="eyebrow">Your A&amp;R promo graphics</span></div>
@@ -299,25 +296,24 @@ function render(d){
   $('#linkJoin').textContent = stripProto(d.links.join);
   $('#linkSubmit').textContent = stripProto(d.links.submit);
   $('#linkJoin').dataset.full = d.links.join; $('#linkSubmit').dataset.full = d.links.submit;
-  $('#arHead').textContent = 'Refer someone new and earn up to ' + r.cap + ' points.';
-  $('#arRule').textContent = 'Earn bonus points for helping grow the A&R Team. You earn ' + r.pointsPerRound + ' point for every round your referral comes within ' + r.errMax + ' of the average, for their first ' + r.windowDays + ' days.';
-  $('#artistRule').textContent = 'Earn bonus points by discovering new talent. You earn points based on the referred artist’s score: ' + r.scoutMultiplier + ' times the average. A 7.1 earns ' + Math.round(7.1 * r.scoutMultiplier) + ' points.';
+  $('#arRule').textContent = 'You earn ' + r.pointsPerRound + ' point for every round your recruit comes within ' + r.errMax + ' of the average, for their first ' + r.windowDays + ' days, up to ' + r.cap + ' points each.';
+  $('#artistRule').textContent = 'You earn ' + r.scoutMultiplier + ' times each referred record’s average. A 7.1 earns ' + Math.round(7.1 * r.scoutMultiplier) + ' points.';
   $('#arReferred').textContent = d.ars.referred; $('#arActive').textContent = d.ars.active; $('#arEarned').textContent = fmtPts(d.ars.earned);
   $('#artSubmitted').textContent = d.artists.submitted; $('#artRated').textContent = d.artists.rated; $('#artEarned').textContent = fmtPts(d.artists.earned);
   $('#arRows').innerHTML = d.ars.rows.map(x => {
     const right = !x.played ? 'joined, not yet played'
       : (x.windowOpen ? ('day ' + x.day + ' of ' + r.windowDays + ' · ') : 'window closed · ') + '<b>' + fmtPts(x.points) + '</b>';
     return '<div class="row"><span class="l">' + esc(x.name) + '</span><span class="r">' + right + '</span></div>';
-  }).join('') || '<div class="row dim"><span class="l">No one yet. Share your link.</span></div>';
+  }).join('') || '<div class="row dim"><span class="l">No one yet. Share your recruit link.</span></div>';
   $('#artRows').innerHTML = d.artists.rows.map(x => {
     const left = esc(x.artist ? (x.artist + ' · ' + x.title) : x.title);
     const right = x.rated ? (Number(x.average).toFixed(1) + ' · <b>' + fmtPts(x.points) + '</b>') : 'submitted, not yet rated';
     return '<div class="row"><span class="l">' + left + '</span><span class="r">' + right + '</span></div>';
-  }).join('') || '<div class="row dim"><span class="l">No records yet. Share your submit link.</span></div>';
+  }).join('') || '<div class="row dim"><span class="l">No records yet. Share your scout link.</span></div>';
   // Each graphic is SHOWN, not described: the thumbnail is the same render as the download
   // (432px wide), so the A&R sees their own card before deciding to save it. Tapping the
   // picture or the button downloads the full-size file.
-  const what = { card: 'both QR codes', story: 'both QR codes', join: 'your invite QR', submit: 'your talent QR' };
+  const what = { card: 'both QR codes', story: 'both QR codes', join: 'your recruit QR', submit: 'your scout QR' };
   $('#gfxList').innerHTML = d.graphics.map(g => '<div class="gcard">'
     + '<button class="gimg" data-kind="' + esc(g.kind) + '" data-url="' + esc(g.url) + '" aria-label="Download ' + esc(g.label) + '">'
     + '<div class="wait" data-thumb="' + esc(g.thumb || '') + '">Loading</div></button>'

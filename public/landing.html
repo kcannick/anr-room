@@ -317,6 +317,17 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
         <b class="mono" style="color:var(--gold);font-weight:700">$500</b>.</p>
     </div>
 
+    <!-- TOP TALENT SCOUTS (operator, 2026-10-02): scouting is the secondary game. Hidden until
+         someone has scouting points; then the top 3. Gold on #1 only. -->
+    <div style="margin-top:30px" id="scoutsWrap" class="hide">
+      <div class="sechead"><span class="tick prize"></span><span class="eyebrow">Top talent scouts</span></div>
+      <div class="board" id="scoutsBoard"></div>
+      <p class="dim" style="margin:12px 2px 0;font-size:13px;line-height:1.55">
+        <b style="color:var(--ink);font-weight:700">Refer artists to submit their music.</b>
+        The higher their records score, the more points you earn.
+        <a href="/account" style="color:var(--signal)">Get your scout link →</a></p>
+    </div>
+
     <div style="margin-top:26px" id="joinersWrap">
       <div class="sechead"><span class="tick"></span><span class="eyebrow">Just joined the team</span></div>
       <div class="chips" id="joiners"></div>
@@ -487,6 +498,24 @@ function renderProof(d){
   }).join('');
 }
 
+function renderScouts(d){
+  const list = (d.topScouts || []).slice(0, 3);
+  if(!list.length){ $('#scoutsWrap').classList.add('hide'); return; }
+  $('#scoutsWrap').classList.remove('hide');
+  $('#scoutsBoard').innerHTML = list.map(r => {
+    const first = r.rank === 1;
+    const av = r.photoUrl ? '<span class="av"><img src="' + esc(r.photoUrl) + '" alt=""></span>' : '<span class="av">' + esc(initials(r.name)) + '</span>';
+    const sub = [r.category, r.location].filter(Boolean).join(' · ');
+    const inner = '<span class="mono" style="width:20px;text-align:center;font-size:13px;font-weight:700;flex:none;color:' + (first ? 'var(--gold)' : 'var(--ink-dim)') + '">' + r.rank + '</span>'
+      + av + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:14.5px;font-weight:700;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.name) + '</div>'
+      + '<div class="dim" style="font-size:11.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sub) + (sub ? ' · ' : '') + r.records + ' scouted</div></div>'
+      + '<span class="mono" style="font-size:14px;font-weight:700;flex:none;color:' + (first ? 'var(--gold)' : 'var(--ink)') + '">' + Number(r.points).toLocaleString('en-US') + '</span>';
+    return r.id ? '<a class="brow' + (first ? ' first' : '') + '" href="/u/' + encodeURIComponent(r.id) + '" style="color:inherit;text-decoration:none">' + inner + '</a>'
+      : '<div class="brow' + (first ? ' first' : '') + '">' + inner + '</div>';
+  }).join('');
+}
+
 function renderJoiners(d){
   const list = (d.recentARs || []).slice(0, 8);
   if(!list.length){ $('#joinersWrap').classList.add('hide'); return; }
@@ -598,6 +627,7 @@ function showMember(d, me){
     renderOpenNow(d);
     renderProof(d);
     renderJoiners(d);
+    renderScouts(d);
     renderLiveBar(d);
     if(d.houseSubmitUrl) $('#submitLink').href = d.houseSubmitUrl;
   }catch(e){
