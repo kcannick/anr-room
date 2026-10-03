@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>MOCKUP · My results · The A&R Team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* ============================================================================
+   MOCKUP (2026-10-02) — the "My results" section of /account. NOT app code: static data,
+   no API. Reviewed by the operator the same day and BUILT (public/account.html,
+   /api/me/results). Decisions taken in review: Earn points stays the default tab; the
+   results email becomes a headline that links here; NO RANK anywhere on this section (the
+   weekly announcement is where rank is revealed); a missed day is listed and stays closed.
+
+   The idea it answers (operator, 2026-09-26): the results email hands an A&R everything,
+   so nothing brings them back to the site. This makes the site the place results live:
+   the open drop first (the visit should end in rating today's records), then the week,
+   then each day's records, round by round. It fills the two greyed "Sessions" / "Rounds"
+   tabs on public/account.html with ONE tab.
+
+   Shell, tokens and classes are copied from public/account.html so the build is a section
+   added to that page, not a new page. The round table is the daily page's recap table.
+
+   THE SEAL: a day shows numbers only once it is PUBLISHED. A closed day whose results are
+   not out prints what the A&R did (how many they rated) and when results land — no room
+   average, no points, no rank.
+   ============================================================================ */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:430px;margin:0 auto;padding:20px 20px 28px;display:flex;flex-direction:column;gap:16px}
+.hide{display:none !important}
+.mono{font-family:"Space Mono",ui-monospace,"SF Mono",Menlo,monospace}
+.dim{color:var(--ink-dim)}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em}
+a{color:var(--signal);text-decoration:none}
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;letter-spacing:-.02em;color:var(--bg)}
+.tick{display:block;width:3px;height:12px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.tick.contest{background:var(--accent)}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wordmark{font-weight:800;font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+.standing{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:var(--r-pill);padding:5px 11px;white-space:nowrap}
+.standing b{color:var(--ink);font-weight:700}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.section-head{display:flex;align-items:center;gap:9px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:14px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.note{background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;font-size:13px;color:var(--ink-dim);line-height:1.5}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;cursor:pointer;border:0;border-radius:13px;padding:16px;font-family:inherit;font-weight:800;font-size:15.5px;letter-spacing:-.01em;background:var(--signal);color:var(--bg);text-decoration:none}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.stats{display:flex;gap:8px}
+.stat{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 4px;text-align:center}
+.stat .k{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-dim)}
+.stat .v{font-family:"Space Mono",monospace;font-size:17px;font-weight:700;margin-top:6px;white-space:nowrap}
+.stat .v.earned{color:var(--signal)}
+.me{display:flex;align-items:center;gap:14px}
+.me .face{width:56px;height:56px;border-radius:50%;background:#221b3a;border:2px solid var(--accent);flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:19px;color:var(--accent)}
+.me .who{min-width:0}
+.me .who b{display:block;font-size:20px;font-weight:900;letter-spacing:-.03em}
+.me .who small{display:block;font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);margin-top:3px}
+.tabs{display:flex;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;padding:11px 13px 12px;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);border:0;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;cursor:default;background:none}
+.tab.on{color:var(--ink);border-bottom-color:var(--signal)}
+.sec{display:flex;flex-direction:column;gap:16px}
+
+/* ---- NEW for this section ---- */
+/* 1. the open drop: the reason the visit should end in a rating */
+.open{background:var(--panel);border:1px solid var(--signal);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:12px}
+.open h2{font-size:21px;line-height:1.12}
+.open p{margin:0;font-size:14px;line-height:1.5;color:var(--ink-dim)}
+.open p b{color:var(--ink);font-weight:700}
+.bar{height:6px;border-radius:999px;background:var(--inset);border:1px solid var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--signal)}
+.open.done{border-color:var(--line)}
+/* 2. the week */
+.pager{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pager button{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--inset);color:var(--ink);font-family:"Space Mono",monospace;font-size:16px;cursor:pointer;flex:none}
+.pager button[disabled]{opacity:.3;cursor:default}
+.pager .wk{text-align:center;min-width:0}
+.pager .wk b{display:block;font-weight:900;font-size:17px;letter-spacing:-.02em}
+.pager .wk small{display:block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);margin-top:3px}
+.wkline{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-dim);text-align:center}
+.wkline b{color:var(--ink)}
+/* 3. a day */
+.days{display:flex;flex-direction:column;gap:8px}
+.day{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.day > summary, .day > .head{display:flex;align-items:center;gap:10px;padding:14px 14px;list-style:none;cursor:pointer}
+.day > summary::-webkit-details-marker{display:none}
+.day > .head{cursor:default}
+.day .when{flex:1;min-width:0}
+.day .when b{display:block;font-size:15.5px;font-weight:800;letter-spacing:-.02em}
+.day .when small{display:block;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day .pts{font-family:"Space Mono",monospace;font-size:16px;font-weight:700;color:var(--signal);flex:none}
+.day .grade{font-family:"Space Mono",monospace;font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:8px;padding:4px 7px;flex:none;min-width:30px;text-align:center}
+.day .chev{font-family:"Space Mono",monospace;color:var(--ink-dim);flex:none;transition:transform .15s;font-size:13px}
+.day[open] .chev{transform:rotate(90deg)}
+.day .wait{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);text-align:right;flex:none;line-height:1.45}
+.day .wait b{display:block;color:var(--ink);font-weight:700}
+.day.sealed{border-style:dashed}
+.day.missed{background:transparent}
+.day.missed .when b{color:var(--ink-dim)}
+.day .body{padding:2px 14px 16px;display:flex;flex-direction:column;gap:14px;border-top:1px solid var(--line);padding-top:14px}
+.tag{display:inline-block;font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--accent);color:var(--ink);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:2px}
+/* the round table: the daily page's recap table, unchanged */
+.rt .h, .rt .r{display:flex;gap:8px;align-items:center}
+.rt .h{padding:0 0 8px}
+.rt .h span{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)}
+.rt .r{padding:10px 0;border-top:1px solid var(--line)}
+.rt .rec{flex:1;min-width:0}
+.rt .rec b{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt .rec small{display:block;font-size:11.5px;color:var(--ink-dim);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt .c{font-family:"Space Mono",monospace;font-size:13px;color:var(--ink-dim);text-align:center;flex:none}
+.rt .c.you{width:26px} .rt .c.g{width:34px} .rt .c.a{width:34px;color:var(--ink);font-weight:700} .rt .c.p{width:44px;text-align:right;font-weight:700;color:var(--ink)}
+.rt .c.p.bull{color:var(--signal)} .rt .c.p.low{color:var(--ink-dim)}
+.rt .skip .rec b{color:var(--ink-dim);font-weight:500}
+.rt .foot{display:flex;justify-content:space-between;align-items:center;padding:12px 0 0;border-top:1px solid var(--line);font-size:14px;font-weight:800}
+.rt .foot span:last-child{font-family:"Space Mono",monospace;font-size:15px;color:var(--gold)}
+.rt .foot.none span:last-child{color:var(--ink-dim);font-size:11.5px;font-weight:400}
+.legend{font-family:"Space Mono",monospace;font-size:10px;color:var(--ink-dim);line-height:1.6}
+
+/* ---- mockup chrome, not part of the page ---- */
+.mk{max-width:430px;margin:0 auto;padding:14px 20px 0;font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim)}
+.mk .lbl{letter-spacing:.14em;text-transform:uppercase;font-size:9.5px;margin:8px 0 6px}
+.mk .opts{display:flex;flex-wrap:wrap;gap:6px}
+.mk button{font-family:inherit;font-size:10.5px;background:transparent;color:var(--ink-dim);border:1px dashed var(--line);border-radius:999px;padding:5px 10px;cursor:pointer}
+.mk button.on{border-style:solid;border-color:var(--accent);color:var(--ink)}
+.mknotes{max-width:430px;margin:8px auto 40px;padding:0 20px}
+.mknotes .panel{gap:10px;font-size:13.5px;line-height:1.55;color:var(--ink-dim)}
+.mknotes b{color:var(--ink)}
+.mknotes ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px}
+</style>
+</head>
+<body>
+
+<div class="mk">
+  <div class="lbl">Mockup controls · not part of the page</div>
+  <div class="lbl">Today's drop</div>
+  <div class="opts" id="mkOpen">
+    <button data-v="started" class="on">Part way through</button>
+    <button data-v="fresh">Not started</button>
+    <button data-v="done">Finished</button>
+    <button data-v="none">Nothing open</button>
+  </div>
+  <div class="lbl">A&amp;R</div>
+  <div class="opts" id="mkWho">
+    <button data-v="active" class="on">Has results</button>
+    <button data-v="new">New, nothing yet</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="topbar">
+    <a href="#" style="display:flex;align-items:center;gap:10px;color:inherit">
+      <div class="mark"><span>A&amp;R</span></div>
+      <span class="wordmark">A&amp;R Team</span>
+    </a>
+    <div class="standing"><b>#14</b> · <b>6,480</b> pts</div>
+  </div>
+
+  <div class="me">
+    <div class="face">J</div>
+    <div class="who"><b>Jordan Reyes</b><small>Official A&amp;R · Atlanta, GA</small></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">Earn points</div>
+    <div class="tab on">My results</div>
+    <div class="tab">My profile</div>
+    <div class="tab">Edit profile</div>
+  </div>
+
+  <div class="sec" id="sec-results">
+
+    <!-- 1. THE OPEN DROP. First on the page: the visit should end in rating today's records. -->
+    <div id="openSlot"></div>
+
+    <!-- 2. THE WEEK. Monday to Sunday, by the day a drop opened. -->
+    <div class="panel" id="weekPanel">
+      <div class="pager">
+        <button id="wkPrev" aria-label="Earlier week">&lsaquo;</button>
+        <div class="wk"><b id="wkRange"></b><small id="wkLabel"></small></div>
+        <button id="wkNext" aria-label="Later week">&rsaquo;</button>
+      </div>
+      <div class="stats" id="wkStats"></div>
+      <div class="wkline" id="wkLine"></div>
+    </div>
+
+    <!-- 3. EACH DAY, newest first. Tap a day for its records. -->
+    <div class="section-head"><span class="tick"></span><span class="eyebrow">Day by day</span></div>
+    <div class="days" id="days"></div>
+    <div class="legend">YOU = your rating · GUESS = your prediction · AVG = the room average · PTS = what the guess earned</div>
+  </div>
+</div>
+
+<div class="mknotes">
+  <div class="panel">
+    <div class="section-head"><span class="tick contest"></span><span class="eyebrow">Notes for review</span></div>
+    <ol>
+      <li><b>One tab, "My results",</b> takes the place of the two greyed tabs (Sessions, Rounds). It sits second; Earn points stays the default. The results email links straight to this tab.</li>
+      <li><b>Points only, no rank.</b> Rank is revealed in the weekly announcement, so it is not shown here for a day or a week.</li>
+      <li><b>Today's drop is first.</b> The point of the visit is that they rate today's records, so that card sits above their history.</li>
+      <li><b>The week is Monday to Sunday</b>, by the day a drop opened. The arrows page back one week at a time.</li>
+      <li><b>A closed day with no results yet shows no numbers</b>: only how many records they rated and when results come out.</li>
+      <li><b>A day they missed is still listed</b>, so the gap is visible. It does not open: results are for the days they took part in.</li>
+      <li><b>A live session</b> appears in the same list with a tag.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+const DATA = {"open": {"day": "Thu Oct 1", "total": 9, "rated": 3, "closesLabel": "today at 3:00 PM ET", "resultsLabel": "Sunday at 12:00 PM ET"}, "weeks": [{"range": "Sep 28 \u2013 Oct 4", "label": "This week", "days": [{"state": "sealed", "label": "Wed Sep 30", "total": 8, "rated": 8, "resultsLabel": "Sat 12:00 PM ET"}, {"state": "published", "label": "Tue Sep 29", "total": 9, "rated": 9, "live": false, "bonus": 100, "points": 782, "grade": "A-", "bullseyes": 1, "rounds": [{"title": "Late Checkout", "artist": "Simone Achebe", "avg": 4.9, "taste": 5, "predict": 4.6, "points": 86, "tier": "sharp"}, {"title": "Paper Planes Home", "artist": "Cass & Co.", "avg": 7.8, "taste": 9, "predict": 9, "points": 55, "tier": "close"}, {"title": "No Signal", "artist": "Wes Calder", "avg": 2.9, "taste": 2, "predict": 3, "points": 95, "tier": "sharp"}, {"title": "Midtown Lights", "artist": "Rio Castellan", "avg": 6.7, "taste": 9, "predict": 8.1, "points": 50, "tier": "close"}, {"title": "Slow Burn", "artist": "Ezra Lane", "avg": 4.2, "taste": 5, "predict": 5.1, "points": 64, "tier": "close"}, {"title": "Cold Water", "artist": "Imani Shaw", "avg": 5.6, "taste": 6, "predict": 5.4, "points": 90, "tier": "sharp"}, {"title": "Second Wind", "artist": "Ty Brooks", "avg": 4.6, "taste": 6, "predict": 4.4, "points": 90, "tier": "sharp"}, {"title": "Low Tide", "artist": "PRYCE", "avg": 7.3, "taste": 4, "predict": 4.7, "points": 27, "tier": "off"}, {"title": "Glass House", "artist": "Northside Choir", "avg": 5.3, "taste": 5, "predict": 5.3, "points": 125, "tier": "bullseye"}], "openFirst": true}, {"state": "published", "label": "Mon Sep 28", "total": 7, "rated": 5, "live": false, "bonus": 0, "points": 449, "grade": "A", "bullseyes": 1, "rounds": [{"title": "Night Shift", "artist": "Nadia Park", "avg": 5.7, "taste": 6, "predict": 6.1, "points": 82, "tier": "sharp"}, {"title": "Keep the Change", "artist": "Tasha Monroe", "avg": 4.5, "taste": 4, "predict": 4.5, "points": 125, "tier": "bullseye"}, {"title": "Borrowed Time", "artist": "Dee Marlow", "avg": 7.5, "taste": 9, "predict": 8.5, "points": 61, "tier": "close"}, {"title": "Long Way Round", "artist": "Lowcountry", "avg": 3.5, "taste": 4, "predict": 3.8, "points": 86, "tier": "sharp"}, {"title": "Static", "artist": "The Ferrymen", "avg": 7.7, "taste": 8, "predict": 7.8, "points": 95, "tier": "sharp"}, {"title": "Open Road", "artist": "KOTA", "avg": 6, "skipped": true}, {"title": "Honest Work", "artist": "J. Holloway", "avg": 4.3, "skipped": true}], "openFirst": false}], "points": 1231, "played": 2, "published": 2, "bullseyes": 2, "grade": "A-", "pending": 1}, {"range": "Sep 21 \u2013 27", "label": "Last week", "days": [{"state": "published", "label": "Sun Sep 27", "total": 6, "rated": 6, "live": false, "bonus": 75, "points": 491, "grade": "B+", "bullseyes": 1, "rounds": [{"title": "Side Door", "artist": "Andre Vale", "avg": 6.1, "taste": 5, "predict": 5.6, "points": 78, "tier": "sharp"}, {"title": "Two Left Feet", "artist": "The Vine Street Band", "avg": 4.4, "taste": 5, "predict": 5.1, "points": 70, "tier": "close"}, {"title": "Before the Rain", "artist": "Mara Quinn", "avg": 5.5, "taste": 5, "predict": 5.5, "points": 125, "tier": "bullseye"}, {"title": "Fine Print", "artist": "Lena Ortiz", "avg": 5.7, "taste": 1, "predict": 1.9, "points": 15, "tier": "off"}, {"title": "Good Company", "artist": "Simone Achebe", "avg": 4, "taste": 3, "predict": 4.1, "points": 95, "tier": "sharp"}, {"title": "Half Past", "artist": "Cass & Co.", "avg": 6.8, "taste": 8, "predict": 9, "points": 33, "tier": "off"}], "openFirst": false}, {"state": "missed", "label": "Sat Sep 26", "total": 8}, {"state": "published", "label": "Fri Sep 25", "total": 10, "rated": 10, "live": false, "bonus": 100, "points": 852, "grade": "A-", "bullseyes": 1, "rounds": [{"title": "Northbound", "artist": "Wes Calder", "avg": 5.1, "taste": 5, "predict": 5.5, "points": 82, "tier": "sharp"}, {"title": "Quiet Money", "artist": "Rio Castellan", "avg": 2.8, "taste": 4, "predict": 3.2, "points": 82, "tier": "sharp"}, {"title": "Same Old Street", "artist": "Ezra Lane", "avg": 5.3, "taste": 5, "predict": 4.7, "points": 74, "tier": "close"}, {"title": "Last Call", "artist": "Imani Shaw", "avg": 6.1, "taste": 6, "predict": 6.6, "points": 78, "tier": "sharp"}, {"title": "Hold the Line", "artist": "Ty Brooks", "avg": 4.8, "taste": 3, "predict": 3.7, "points": 58, "tier": "close"}, {"title": "Daylight", "artist": "PRYCE", "avg": 6.4, "taste": 7, "predict": 7.4, "points": 61, "tier": "close"}, {"title": "Carry On", "artist": "Northside Choir", "avg": 5.3, "taste": 8, "predict": 7.6, "points": 32, "tier": "off"}, {"title": "Front Row", "artist": "Nadia Park", "avg": 3.5, "taste": 3, "predict": 3.5, "points": 125, "tier": "bullseye"}, {"title": "Blue Hour", "artist": "Tasha Monroe", "avg": 7.8, "taste": 7, "predict": 8, "points": 90, "tier": "sharp"}, {"title": "Small Hours", "artist": "Dee Marlow", "avg": 4.8, "taste": 3, "predict": 4.1, "points": 70, "tier": "close"}], "openFirst": false}, {"state": "published", "label": "Thu Sep 24", "total": 9, "rated": 9, "live": false, "bonus": 50, "points": 779, "grade": "A-", "bullseyes": 2, "rounds": [{"title": "Overtime", "artist": "Lowcountry", "avg": 4.5, "taste": 5, "predict": 4.9, "points": 82, "tier": "sharp"}, {"title": "Roll Call", "artist": "The Ferrymen", "avg": 4.7, "taste": 4, "predict": 4.7, "points": 125, "tier": "bullseye"}, {"title": "Nothing New", "artist": "KOTA", "avg": 6.3, "taste": 7, "predict": 5.5, "points": 67, "tier": "close"}, {"title": "Up Late", "artist": "J. Holloway", "avg": 4.7, "taste": 7, "predict": 6, "points": 52, "tier": "close"}, {"title": "First Light", "artist": "Andre Vale", "avg": 6.3, "taste": 6, "predict": 6.3, "points": 125, "tier": "bullseye"}, {"title": "Corner Store", "artist": "The Vine Street Band", "avg": 6.5, "taste": 6, "predict": 6.1, "points": 82, "tier": "sharp"}, {"title": "Loose Ends", "artist": "Mara Quinn", "avg": 4.7, "taste": 5, "predict": 6.1, "points": 50, "tier": "close"}, {"title": "Back Porch", "artist": "Lena Ortiz", "avg": 3.8, "taste": 5, "predict": 3.4, "points": 82, "tier": "sharp"}, {"title": "Red Clay", "artist": "Simone Achebe", "avg": 3.7, "taste": 4, "predict": 2.8, "points": 64, "tier": "close"}], "openFirst": false}, {"state": "published", "label": "Wed Sep 23", "total": 11, "rated": 9, "live": true, "bonus": 0, "points": 718, "grade": "A-", "bullseyes": 2, "rounds": [{"title": "Summer Job", "artist": "Cass & Co.", "avg": 5.3, "taste": 7, "predict": 6.7, "points": 50, "tier": "close"}, {"title": "Window Seat", "artist": "Wes Calder", "avg": 6, "taste": 7, "predict": 7, "points": 61, "tier": "close"}, {"title": "Easy Now", "artist": "Rio Castellan", "avg": 7.3, "taste": 8, "predict": 7.3, "points": 125, "tier": "bullseye"}, {"title": "Plain Sight", "artist": "Ezra Lane", "avg": 5.9, "taste": 6, "predict": 5.2, "points": 70, "tier": "close"}, {"title": "Long Division", "artist": "Imani Shaw", "avg": 5.6, "taste": 5, "predict": 5.7, "points": 95, "tier": "sharp"}, {"title": "Home Team", "artist": "Ty Brooks", "avg": 6.2, "taste": 5, "predict": 5.5, "points": 70, "tier": "close"}, {"title": "Voicemail", "artist": "PRYCE", "avg": 6, "taste": 8, "predict": 6.9, "points": 64, "tier": "close"}, {"title": "Rain Check", "artist": "Northside Choir", "avg": 6.5, "taste": 6, "predict": 6.5, "points": 125, "tier": "bullseye"}, {"title": "Top Floor", "artist": "Nadia Park", "avg": 6, "taste": 6, "predict": 7.1, "points": 58, "tier": "close"}, {"title": "Slow Lane", "artist": "Tasha Monroe", "avg": 7.4, "skipped": true}, {"title": "Off Peak", "artist": "Dee Marlow", "avg": 5.5, "skipped": true}], "openFirst": false}, {"state": "published", "label": "Wed Sep 23", "total": 8, "rated": 8, "live": false, "bonus": 100, "points": 563, "grade": "B+", "bullseyes": 0, "rounds": [{"title": "Ground Rule", "artist": "Lowcountry", "avg": 3.6, "taste": 0, "predict": 0, "points": 17, "tier": "off"}, {"title": "Sunday Best", "artist": "The Ferrymen", "avg": 3, "taste": 3, "predict": 1.7, "points": 52, "tier": "close"}, {"title": "Spare Key", "artist": "KOTA", "avg": 5.3, "taste": 2, "predict": 2.8, "points": 29, "tier": "off"}, {"title": "Wide Open", "artist": "J. Holloway", "avg": 7.8, "taste": 9, "predict": 8.8, "points": 61, "tier": "close"}, {"title": "Closing Time", "artist": "Andre Vale", "avg": 6.1, "taste": 7, "predict": 7.5, "points": 50, "tier": "close"}, {"title": "Pocket Change", "artist": "The Vine Street Band", "avg": 7, "taste": 9, "predict": 7.4, "points": 82, "tier": "sharp"}, {"title": "High Noon", "artist": "Mara Quinn", "avg": 4, "taste": 5, "predict": 3.7, "points": 86, "tier": "sharp"}, {"title": "Fair Trade", "artist": "Lena Ortiz", "avg": 5.3, "taste": 5, "predict": 5, "points": 86, "tier": "sharp"}], "openFirst": false}, {"state": "missed", "label": "Tue Sep 22", "total": 7}, {"state": "published", "label": "Mon Sep 21", "total": 8, "rated": 8, "live": false, "bonus": 100, "points": 771, "grade": "A", "bullseyes": 2, "rounds": [{"title": "Late Checkout", "artist": "Simone Achebe", "avg": 3.9, "taste": 4, "predict": 4.2, "points": 86, "tier": "sharp"}, {"title": "Paper Planes Home", "artist": "Cass & Co.", "avg": 6.7, "taste": 5, "predict": 5.8, "points": 64, "tier": "close"}, {"title": "No Signal", "artist": "Wes Calder", "avg": 6.7, "taste": 5, "predict": 5.7, "points": 61, "tier": "close"}, {"title": "Midtown Lights", "artist": "Rio Castellan", "avg": 3.3, "taste": 4, "predict": 3.1, "points": 90, "tier": "sharp"}, {"title": "Slow Burn", "artist": "Ezra Lane", "avg": 7.2, "taste": 8, "predict": 7.2, "points": 125, "tier": "bullseye"}, {"title": "Cold Water", "artist": "Imani Shaw", "avg": 4.8, "taste": 6, "predict": 5.5, "points": 70, "tier": "close"}, {"title": "Second Wind", "artist": "Ty Brooks", "avg": 7.4, "taste": 6, "predict": 7.4, "points": 125, "tier": "bullseye"}, {"title": "Low Tide", "artist": "PRYCE", "avg": 6.4, "taste": 9, "predict": 7.8, "points": 50, "tier": "close"}], "openFirst": false}], "points": 4174, "played": 6, "published": 8, "bullseyes": 8, "grade": "A-", "pending": 0}]};
+const $ = s => document.querySelector(s);
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+let openState = 'started', who = 'active', wk = 0;
+
+function renderOpen(){
+  const slot = $('#openSlot'); slot.textContent = '';
+  const o = DATA.open;
+  if (openState === 'none') {
+    const c = el('div', 'open done');
+    const h = el('div', 'section-head'); h.appendChild(el('span', 'tick')); h.appendChild(el('span', 'eyebrow', 'Next records')); c.appendChild(h);
+    c.appendChild(el('h2', null, 'The next records open today at 3:00 PM ET.'));
+    const p = el('p', null, 'We will email you when voting is open.'); c.appendChild(p);
+    slot.appendChild(c); return;
+  }
+  const rated = openState === 'fresh' ? 0 : openState === 'done' ? o.total : o.rated;
+  const c = el('div', 'open' + (openState === 'done' ? ' done' : ''));
+  const h = el('div', 'section-head'); h.appendChild(el('span', 'tick')); h.appendChild(el('span', 'eyebrow', 'Open now · ' + o.day)); c.appendChild(h);
+  if (openState === 'done') {
+    c.appendChild(el('h2', null, 'You rated all ' + o.total + ' records.'));
+    const p = el('p'); p.append('Results come out ', Object.assign(el('b'), { textContent: o.resultsLabel }), '. They will be listed below.'); c.appendChild(p);
+  } else {
+    c.appendChild(el('h2', null, openState === 'fresh' ? "Today's records are open." : 'You have ' + (o.total - rated) + ' records left to rate.'));
+    const p = el('p'); p.append(Object.assign(el('b'), { textContent: rated + ' of ' + o.total + ' rated' }), '. Voting closes ', Object.assign(el('b'), { textContent: o.closesLabel }), '.'); c.appendChild(p);
+    const bar = el('div', 'bar'); const i = el('i'); i.style.width = Math.round(100 * rated / o.total) + '%'; bar.appendChild(i); c.appendChild(bar);
+    const a = el('a', 'btn', openState === 'fresh' ? "Rate today's records" : 'Keep rating'); a.href = '#'; c.appendChild(a);
+  }
+  slot.appendChild(c);
+}
+
+function stat(k, v, cls){ const d = el('div', 'stat'); d.appendChild(el('div', 'k', k)); d.appendChild(el('div', 'v' + (cls ? ' ' + cls : ''), v)); return d; }
+const fmt = n => Number(n).toLocaleString('en-US');
+const signed = n => (n >= 0 ? '+' : '') + fmt(n);
+
+function renderDay(d){
+  if (d.state === 'missed') {
+    const c = el('div', 'day missed'); const h = el('div', 'head');
+    const w = el('div', 'when'); w.appendChild(el('b', null, d.label)); w.appendChild(el('small', null, d.total + ' records')); h.appendChild(w);
+    const r = el('div', 'wait'); r.textContent = 'Did not play'; h.appendChild(r); c.appendChild(h); return c;
+  }
+  if (d.state === 'sealed') {
+    const c = el('div', 'day sealed'); const h = el('div', 'head');
+    const w = el('div', 'when'); w.appendChild(el('b', null, d.label)); w.appendChild(el('small', null, 'You rated ' + d.rated + ' of ' + d.total)); h.appendChild(w);
+    const r = el('div', 'wait'); r.append('Results', Object.assign(el('b'), { textContent: d.resultsLabel })); h.appendChild(r); c.appendChild(h); return c;
+  }
+  const c = el('details', 'day'); if (d.openFirst) c.open = true;
+  const s = el('summary');
+  const w = el('div', 'when'); const b = el('b', null, d.label); if (d.live) b.appendChild(el('span', 'tag', 'Live session')); w.appendChild(b);
+  w.appendChild(el('small', null, d.rated + ' of ' + d.total + ' rated')); s.appendChild(w);
+  s.appendChild(el('span', 'pts', signed(d.points)));
+  s.appendChild(el('span', 'grade', d.grade));
+  s.appendChild(el('span', 'chev', '›'));
+  c.appendChild(s);
+  const body = el('div', 'body');
+  const st = el('div', 'stats');
+  st.appendChild(stat('Points', signed(d.points), 'earned')); st.appendChild(stat('Grade', d.grade));
+  st.appendChild(stat('Bullseyes', d.bullseyes));
+  body.appendChild(st);
+  const rt = el('div', 'rt');
+  const hd = el('div', 'h');
+  [['Record', 'flex:1'], ['You', 'width:26px;text-align:center'], ['Guess', 'width:34px;text-align:center'], ['Avg', 'width:34px;text-align:center'], ['Pts', 'width:44px;text-align:right']]
+    .forEach(([t, css]) => { const x = el('span', null, t); x.style.cssText = css; hd.appendChild(x); });
+  rt.appendChild(hd);
+  d.rounds.forEach(r => {
+    const row = el('div', 'r' + (r.skipped ? ' skip' : ''));
+    const rec = el('div', 'rec'); rec.appendChild(el('b', null, r.title)); rec.appendChild(el('small', null, r.artist)); row.appendChild(rec);
+    row.appendChild(el('span', 'c you', r.skipped ? '—' : r.taste));
+    row.appendChild(el('span', 'c g', r.skipped ? '—' : r.predict.toFixed(1)));
+    row.appendChild(el('span', 'c a', r.avg.toFixed(1)));
+    row.appendChild(el('span', 'c p' + (r.skipped ? ' low' : r.tier === 'bullseye' ? ' bull' : r.points < 50 ? ' low' : ''), r.skipped ? '—' : signed(r.points)));
+    rt.appendChild(row);
+  });
+  if (!d.live) {
+    const f = el('div', 'foot' + (d.bonus ? '' : ' none'));
+    f.appendChild(el('span', null, 'Completion bonus'));
+    f.appendChild(el('span', null, d.bonus ? '+' + d.bonus : 'Not earned'));
+    rt.appendChild(f);
+  }
+  body.appendChild(rt);
+  c.appendChild(body);
+  return c;
+}
+
+function renderWeek(){
+  const w = DATA.weeks[wk];
+  $('#wkRange').textContent = w.range; $('#wkLabel').textContent = w.label;
+  $('#wkPrev').disabled = wk >= DATA.weeks.length - 1 || who === 'new'; $('#wkNext').disabled = wk <= 0;
+  const st = $('#wkStats'); st.textContent = ''; const days = $('#days'); days.textContent = '';
+  if (who === 'new') {
+    st.appendChild(stat('Points', '0')); st.appendChild(stat('Played', '0')); st.appendChild(stat('Bullseyes', '0')); st.appendChild(stat('Grade', '—'));
+    $('#wkLine').textContent = '';
+    const n = el('div', 'note'); n.textContent = 'You have no results yet. Rate today\'s records and your results will be listed here when they come out.'; days.appendChild(n);
+    return;
+  }
+  st.appendChild(stat('Points', fmt(w.points), 'earned')); st.appendChild(stat('Played', w.played + ' of ' + w.published));
+  st.appendChild(stat('Bullseyes', w.bullseyes)); st.appendChild(stat('Grade', w.grade));
+  const line = $('#wkLine'); line.textContent = '';
+  line.textContent = w.pending ? w.pending + (w.pending === 1 ? ' day' : ' days') + ' still to come out' : '';
+  w.days.forEach(d => days.appendChild(renderDay(d)));
+}
+
+$('#wkPrev').onclick = () => { if (wk < DATA.weeks.length - 1) { wk++; renderWeek(); } };
+$('#wkNext').onclick = () => { if (wk > 0) { wk--; renderWeek(); } };
+function wire(id, set){ document.querySelectorAll(id + ' button').forEach(b => b.onclick = () => {
+  document.querySelectorAll(id + ' button').forEach(x => x.classList.toggle('on', x === b)); set(b.dataset.v); }); }
+wire('#mkOpen', v => { openState = v; renderOpen(); });
+wire('#mkWho', v => { who = v; wk = 0; renderWeek(); });
+renderOpen(); renderWeek();
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 // stays serverless-friendly (the whole point — see docs/multi-tenant-roadmap + the outage rule).
 //
 // Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo';
-// the artist's Track Report is 'trackPage' (see below), the daily graphics 'recap*' / 'resultsSlide' /
+// the artist's Track Report is 'trackPage' (see below), the daily graphics 'resultsSlide' / 'countdownSlide' /
 // 'winnerPost' (the Top Track / Top A&R of the Day and of the Week collab posts).
 // Rank-only by default; raw numbers optional. Every card carries the eyebrow "The A&R Room",
 // the big card title, the session/scope subhead, the $500 award pill, makinitmag.com/ANR, @Makinit4indies.
@@ -292,33 +292,12 @@ function bodyChartList(d) {
 
 // ---- element builders per type ----
 
-// ============ The A&R Meeting Recap — daily stream graphics ============
-// Two formats off ONE data shape { date, artists[], ars[] }:
-//   'recapCover'  1080×1920 (9:16) — the Instagram Live cover
-//   'recapThumb'  1920×1080 (16:9) — the YouTube thumbnail
-// Built to the brand (anr-brand skill): Archivo display + Space Mono data, signal green as
-// the ONLY accent (a live stream = green; nothing here is head-to-head or money), and the
-// 13° device as the block, the rule, the tick bullets and a cut on one edge of the names
-// panel. Copy is the operator's, verbatim. The approved look is the Chrome-rendered
-// public/graphics/meeting-recap.html in the main checkout; this is that design in Satori so
-// it renders on the serverless publish path with no headless browser.
-//
-// The names panel takes the day's ARTISTS in drop order and the Top 8 A&Rs ALPHABETISED:
-// the stream is a countdown that reveals the ranking, so nothing on the cover may be in
-// rank order. Empty lists render as ruled blank lines so the panel reads as intentional.
-const RECAP_SIZES = { recapCover: [1080, 1920], recapThumb: [1920, 1080] };
+// ============ Brand tokens for the Archivo cards (results, countdown, winner, refer) ============
+// The A&R Meeting Recap cover/thumbnail that first carried these was retired 2026-10-02.
 const RECAP = {
   bg: '#0e0c1a', panel: '#171328', line: '#2e2750', fg: '#eae9f2', dim: '#9793b4',
   green: '#4bb749', greenInk: '#06210b',
 };
-const RECAP_TITLE = 'The A&R Meeting Recap';
-// The Livestream Countdown's time. The fallback only: recapGraphicsData() passes d.time off the
-// day's own stream_at, so the graphic follows the schedule setting instead of this string.
-const RECAP_TIME = 'Daily at 3PM';
-const RECAP_CTA = [
-  { label: 'Submit Music', url: 'makinitmag.com/Review' },
-  { label: 'Become an A&R', url: JOIN_URL },
-];
 const SKEW = -13, TAN13 = Math.tan(13 * Math.PI / 180);
 
 let _logo = null;
@@ -337,146 +316,6 @@ function arBlock(size, fontSize) {
 function tick(w, hgt, mr) {
   return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, flexShrink: 0, marginRight: mr }, '');
 }
-function recapTitle(lines, fontSize) {
-  // "A&R" is the mark, so it takes the green; every other word stays ink.
-  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize, lineHeight: 0.88, textTransform: 'uppercase',
-    letterSpacing: -Math.round(fontSize * 0.04), ...NOWRAP };
-  return col({}, lines.map(words => row({ alignItems: 'flex-end' }, words.map((w, i) =>
-    text({ ...st, color: w === 'A&R' ? RECAP.green : RECAP.fg, marginLeft: i ? Math.round(fontSize * 0.18) : 0 }, w)))));
-}
-function recapRule(w, hgt, mt, mb) {
-  return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, marginTop: mt, marginBottom: mb, marginLeft: 4 }, '');
-}
-function recapDate(date, fontSize) {
-  return text({ fontFamily: MONO, fontWeight: 700, fontSize, lineHeight: 1, letterSpacing: -Math.round(fontSize * 0.02), color: RECAP.fg, ...NOWRAP }, date);
-}
-function recapTime(fontSize, mt, time) {
-  return text({ fontFamily: MONO, fontWeight: 700, fontSize, color: RECAP.green, textTransform: 'uppercase', letterSpacing: Math.round(fontSize * 0.18), lineHeight: 1, marginTop: mt, ...NOWRAP }, time || RECAP_TIME);
-}
-function recapCta(c, { tickW, tickH, tickMr, labelSize, labelW, urlSize, urlMl }) {
-  return row({}, [
-    tick(tickW, tickH, tickMr),
-    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: labelSize, letterSpacing: -Math.round(labelSize * 0.03), lineHeight: 1, color: RECAP.fg, ...(labelW ? { width: labelW } : {}), ...NOWRAP }, c.label),
-    text({ fontFamily: MONO, fontWeight: 400, fontSize: urlSize, lineHeight: 1, color: RECAP.dim, marginLeft: urlMl || 0, ...NOWRAP }, c.url),
-  ]);
-}
-
-// The credits panel. Think movie-poster credits: big enough to read when you go looking,
-// small enough never to compete with the title or the date. Space Mono regular (a name here
-// is a catalog string, not a headline), muted ink, no rules. ONE font size for the whole
-// block, fitted so the LONGEST name fits its column — a handle is never clipped unless it
-// would not fit even at the floor size. The panel's height fits the count, so a four-record
-// day gets a small block and a sixteen-record day a taller one, and the 13° cut on its right
-// edge (Satori has no clip-path polygon, so it is a skewed rectangle inside an overflow-
-// hidden box) only ever costs the lowest rows of the last column a little width.
-//
-// `groups` are the columns, left to right: [{ label, names }]. Equal widths.
-const CREDITS_INK = '#b9b5d2';
-const MONO_EM = 0.6;   // Space Mono advance width, in em
-function creditsPanel({ left, top, bottom, width, padT, padR, padB, padL, gap, capSize, minRows, fs: [lo, hi], groups }) {
-  const n = groups.length;
-  const colW = Math.floor((width - padL - padR - gap * (n - 1)) / n);
-  const rows = Math.max(minRows, ...groups.map(g => g.names.length));
-  const capH = capSize + Math.round(capSize * 0.7);
-  // Geometry for a candidate size; the inset only touches the LAST column.
-  const geo = (fs) => {
-    const rowH = Math.round(fs * 1.55);
-    const height = padT + capH + rows * rowH + padB;
-    const off = Math.ceil(height * TAN13);
-    const inset = (ci, i) => ci === n - 1 ? Math.ceil(off * ((padT + capH + (i + 1) * rowH) / height)) + 4 : 0;
-    return { fs, rowH, height, off, inset };
-  };
-  // Two passes: size for the longest name at the largest geometry, then settle.
-  let g = geo(hi);
-  let fit = hi;
-  groups.forEach((grp, ci) => grp.names.forEach((nm, i) => {
-    const avail = colW - g.inset(ci, i);
-    fit = Math.min(fit, avail / (MONO_EM * Math.max(1, String(nm).length)));
-  }));
-  g = geo(Math.max(lo, Math.min(hi, Math.floor(fit))));
-  const { fs, rowH, height, off, inset } = g;
-  const y = top != null ? top : bottom - height;
-  const bg = h({ position: 'absolute', top: 0, left: -off - 40, width: width + 40, height, background: RECAP.panel,
-    transform: `skewX(${SKEW}deg)`, transformOrigin: 'top left' }, '');
-  const cols = [];
-  groups.forEach((grp, ci) => {
-    if (ci) cols.push(h({ width: gap, flexShrink: 0 }, ''));
-    const lines = [];
-    for (let i = 0; i < rows; i++) {
-      const avail = colW - inset(ci, i);
-      const maxChars = Math.max(4, Math.floor(avail / (MONO_EM * fs)));
-      lines.push(h({ display: 'flex', alignItems: 'center', width: avail, height: rowH, flexShrink: 0, overflow: 'hidden' },
-        text({ fontFamily: MONO, fontWeight: 400, fontSize: fs, lineHeight: 1, color: CREDITS_INK, ...NOWRAP }, clip(grp.names[i] || '', maxChars))));
-    }
-    cols.push(col({ width: colW, height: height - padT - padB, flexShrink: 0, overflow: 'hidden' }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: capSize, textTransform: 'uppercase', letterSpacing: Math.round(capSize * 0.22),
-        color: RECAP.dim, opacity: 0.75, height: capH, ...NOWRAP }, grp.label || ''),
-      ...lines,
-    ]));
-  });
-  return h({ position: 'absolute', left, top: y, width, height, overflow: 'hidden', display: 'flex' }, [
-    bg,
-    h({ position: 'absolute', left: 0, top: 0, width, height, display: 'flex', flexDirection: 'row',
-      padding: `${padT}px ${padR}px ${padB}px ${padL}px` }, cols),
-  ]);
-}
-
-function elementRecapCover(d) {
-  const W0 = 1080, H0 = 1920;
-  const artists = d.artists || [], ars = d.ars || [];
-  // Up to 8 artists is one column beside the A&Rs. A bigger day splits the artists across
-  // two columns (drop order, top to bottom then across) so the block stays short.
-  const split = artists.length > 8;
-  const half = Math.ceil(artists.length / 2);
-  const groups = split
-    ? [{ label: 'Artists', names: artists.slice(0, half) }, { label: '', names: artists.slice(half) }, { label: 'A&Rs', names: ars }]
-    : [{ label: 'Artists', names: artists }, { label: 'A&Rs', names: ars }];
-  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
-    // head — under IG Live's top chrome (~220px)
-    h({ position: 'absolute', left: 80, right: 80, top: 250, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, [
-      arBlock(190, 78),
-      { type: 'img', props: { src: logoDataUri(), style: { height: 44, opacity: 0.94 } } },
-    ]),
-    // mid — title + date in the middle third, clear of both IG strips
-    h({ position: 'absolute', left: 80, right: 80, top: 600, display: 'flex', flexDirection: 'column' }, [
-      recapTitle([['The', 'A&R'], ['Meeting'], ['Recap']], 136),
-      recapRule(260, 12, 36, 34),
-      recapDate(d.date, 196),
-      recapTime(34, 22, d.time),
-    ]),
-    h({ position: 'absolute', left: 80, right: 80, top: 1330, display: 'flex', flexDirection: 'column', gap: 22 },
-      RECAP_CTA.map(c => recapCta(c, { tickW: 14, tickH: 34, tickMr: 22, labelSize: 46, labelW: 440, urlSize: 30 }))),
-    // credits — bottom-anchored, so a short day leaves ground rather than an empty field
-    creditsPanel({ left: 80, bottom: 1880, width: 920, padT: 26, padR: 30, padB: 26, padL: 50, gap: 30,
-      capSize: 19, minRows: 4, fs: [17, 24], groups }),
-  ]);
-}
-
-function elementRecapThumb(d) {
-  const W0 = 1920, H0 = 1080;
-  const artists = d.artists || [], ars = d.ars || [];
-  const groups = [{ label: 'Artists', names: artists }, { label: 'A&Rs', names: ars }];
-  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
-    h({ position: 'absolute', left: 90, top: 80, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 40 }, [
-      arBlock(120, 50),
-      { type: 'img', props: { src: logoDataUri(), style: { height: 38, opacity: 0.94 } } },
-    ]),
-    h({ position: 'absolute', left: 90, top: 250, width: 1140, display: 'flex', flexDirection: 'column' }, [
-      recapTitle([['The', 'A&R', 'Meeting'], ['Recap']], 118),
-      recapRule(220, 11, 30, 26),
-      recapDate(d.date, 220),
-      recapTime(30, 16, d.time),
-    ]),
-    h({ position: 'absolute', left: 90, top: 905, display: 'flex', flexDirection: 'row', gap: 70 },
-      RECAP_CTA.map(c => recapCta(c, { tickW: 12, tickH: 30, tickMr: 18, labelSize: 38, urlSize: 26, urlMl: 18 }))),
-    // credits — top-right, right of the title; the bottom-right (x>1500, y>880) stays clear
-    // for YouTube's duration badge.
-    creditsPanel({ left: 1250, top: 80, width: 600, padT: 28, padR: 30, padB: 28, padL: 34, gap: 30,
-      capSize: 18, minRows: 4, fs: [18, 26], groups }),
-  ]);
-}
-
-
 // ============ Referral graphics — the A&R's own promo set ============
 // Four per-user graphics off ONE data shape { name, category, location, photo, qrJoin, qrSubmit }
 // (photo and the two QRs are data URIs, prepared by the caller — this module never fetches):
@@ -740,6 +579,167 @@ function elementResultsSlide(d) {
     kids.push(text({ position: 'absolute', left: 80, bottom: 96, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, c.url || ''));
   }
   return h({ position: 'relative', display: 'flex', width: RESULTS_SIZE[0], height: RESULTS_SIZE[1], background: RECAP.bg }, kids);
+}
+
+// ============ The Makin' It Daily Countdown — one 'countdownSlide' element, 1080×1350 ============
+// The carousel that replaced the daily stream AND the Top Track results carousel (operator,
+// 2026-10-02): the day's records counted down, ONE RECORD A SLIDE, RANK ONLY — scores are
+// private to the artist's Track Report. Built to the approved mockup
+// public/brand/countdown/countdown.html; the layout numbers here are that file's.
+//   cover   Daily Countdown · the date · the countdown blocks · Ranked by the Makin' It A&R Team · Submit free
+//   rank    one per record, #N first: series · blocks · #rank · title · artist · @handle · submit strip.
+//           #1 is the gold variant with TOP TRACK OF THE DAY. Every rank slide stands ALONE — an
+//           artist reposts only theirs — and NEVER shows the size of the field: the blocks run
+//           from the slide's own rank to #1, so #16 of 16 does not read as last (operator).
+//   team    Thanks to our A&R Team · Become an A&R · makinitmag.com/ANR
+//   cta     Think your music belongs on the Countdown? · $1,000 Music Tournament · makinitmag.com/review
+// Gold = first place and money only (the #1 slide, the $1,000). Satori cannot measure a wrap,
+// so text sizes step down off character counts, the same estimate the winner post uses.
+//
+// Data shape (server.js countdownCarouselData):
+//   { kind: 'cover'|'rank'|'team'|'cta', date: '10.02.26', count (cover: how many records),
+//     rank, title, artist, handle }
+const COUNTDOWN_SIZE = [1080, 1350];
+const COUNTDOWN_COPY = {
+  series: 'Daily Countdown',
+  credit: 'Ranked by the Makin’ It A&R Team',
+  submit: 'Submit free',
+  question: 'Think you should be here?',
+  honor: 'Top Track of the Day',
+  thanks: ['Thanks to our', 'A&R Team'],
+  join: 'Become an A&R',                                          // operator, 2026-10-02
+  ask: 'Think your music belongs on the Countdown?',
+  lead: ['Submit FREE for your chance to get ranked', 'and qualify for the'],
+  prize: ['$1,000', 'Music Tournament'],
+};
+const CD_INFO_BOTTOM = 1086;
+// Satori draws a CSS radial gradient with a visible box edge, so the #1 glow is an SVG.
+let _cdGlow = null;
+function countdownGlowUri() {
+  if (!_cdGlow) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="760"><defs><radialGradient id="g" cx="50%" cy="50%" r="50%">'
+      + '<stop offset="0" stop-color="#f5c518" stop-opacity="0.16"/><stop offset="1" stop-color="#f5c518" stop-opacity="0"/></radialGradient></defs>'
+      + '<ellipse cx="450" cy="380" rx="450" ry="380" fill="url(#g)"/></svg>';
+    _cdGlow = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _cdGlow;
+}          // the record block ends above the submit strip (1350 − 80 − 150 − 34)
+// One skewed block per rank, highest first; the lit one green (gold at #1). One row always:
+// the blocks narrow as the count grows, capped so a short run doesn't turn into bricks.
+function countdownTicks(from, lit, { max, gap, h: hMax }) {
+  const w = Math.min(max, (912 - gap * (from - 1)) / from);
+  const hgt = Math.min(hMax, Math.round(w * 0.95));
+  const fs = Math.round(Math.max(17, Math.min(hMax * 0.46, w * 0.42)));
+  const kids = [];
+  for (let r = from; r >= 1; r--) {
+    const on = r === lit, col1 = r === 1 ? RESULTS_GOLD : RECAP.green;
+    kids.push(h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: w, height: hgt, marginRight: r > 1 ? gap : 0,
+      border: '2px solid ' + (on ? col1 : RECAP.line), background: on ? col1 : 'transparent', borderRadius: 5,
+      transform: `skewX(${SKEW}deg)`, flexShrink: 0 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: fs, lineHeight: 1, color: on ? RECAP.bg : RECAP.dim, transform: `skewX(${-SKEW}deg)`, ...NOWRAP },
+        String(r).padStart(2, '0')),
+    ]));
+  }
+  return kids;
+}
+function countdownMast(d, { date = true, series = true } = {}) {
+  const kids = [h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 34 } } }])];
+  if (date) kids.push(text({ position: 'absolute', right: 80, top: 78, fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.2, color: RECAP.dim, ...NOWRAP }, d.date || ''));
+  if (series) kids.push(text(RES_DISPLAY(58, RECAP.fg, { position: 'absolute', left: 80, top: 142, textTransform: 'uppercase' }), COUNTDOWN_COPY.series));
+  return kids;
+}
+// How the record's title, artist and handle fit: the title steps down until it is two lines AND
+// the block clears the numeral; past the floor it takes a third line and is clipped there.
+function countdownFit(d, minTop) {
+  const W = 920;
+  const title = '“' + clip(d.title || '—', 90) + '”';
+  const artist = String(d.artist || '').trim();
+  const handle = d.handle || '';
+  let artistFs = 34;
+  for (const s of [46, 42, 38, 34]) { if (artist.length * s * 0.52 <= W) { artistFs = s; break; } }
+  const handleFs = handle ? Math.max(22, Math.min(32, Math.floor(W / (handle.length * 0.6)))) : 0;
+  const below = 26 + artistFs * 1.1 + (handle ? 8 + handleFs * 1.3 : 0);
+  let fs = 56, lines = 3;
+  for (const s of [96, 88, 80, 72, 66, 60, 56]) {
+    const n = Math.max(1, Math.ceil(title.length * s * 0.58 / W));
+    fs = s; lines = n;
+    if (n <= 2 && minTop + n * s * 0.95 + below <= CD_INFO_BOTTOM) break;
+  }
+  lines = Math.min(lines, 3);
+  const h0 = lines * fs * 0.95 + below;
+  return { title, artist: clip(artist, Math.floor(W / (artistFs * 0.52))), handle: clip(handle, Math.floor(W / (handleFs * 0.6 || 1))),
+    fs, lines, artistFs, handleFs, top: Math.round(Math.max(minTop, CD_INFO_BOTTOM - h0)) };
+}
+function elementCountdownSlide(d) {
+  const kind = d.kind || 'rank';
+  const kids = [];
+  const field = (height) => resultsField(height, 249);         // the 13° cut, full width
+  if (kind === 'cover') {
+    kids.push(...countdownMast(d, { date: false, series: false }));
+    kids.push(col({ position: 'absolute', left: 74, top: 196 }, ['Daily', 'Countdown'].map(w =>
+      text(RES_DISPLAY(136, RECAP.fg, { lineHeight: 0.86, letterSpacing: -6, textTransform: 'uppercase' }), w))));
+    kids.push(text({ position: 'absolute', left: 80, top: 490, fontFamily: MONO, fontWeight: 700, fontSize: 104, lineHeight: 1, letterSpacing: -3, color: RECAP.fg, ...NOWRAP }, d.date || ''));
+    kids.push(row({ position: 'absolute', left: 84, top: 640 }, countdownTicks(Math.max(1, d.count || 1), 0, { max: 108, gap: 12, h: 64 })));
+    kids.push(text(RES_DISPLAY(50, RECAP.fg, { position: 'absolute', left: 80, top: 756 }), COUNTDOWN_COPY.credit));
+    kids.push(field(470));
+    kids.push(col({ position: 'absolute', left: 80, bottom: 80 }, [
+      text(RES_DISPLAY(58, RECAP.bg, { textTransform: 'uppercase' }), COUNTDOWN_COPY.submit),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 36, color: RECAP.bg, marginTop: 12, ...NOWRAP }, SUBMIT_URL),
+    ]));
+  } else if (kind === 'team') {
+    kids.push(...countdownMast(d));
+    kids.push(col({ position: 'absolute', left: 76, top: 250 }, ['Thanks to', 'our A&R', 'Team'].map(w =>
+      text(RES_DISPLAY(150, RECAP.fg, { lineHeight: 0.86, letterSpacing: -8, textTransform: 'uppercase' }), w))));
+    kids.push(field(470));
+    kids.push(col({ position: 'absolute', left: 80, bottom: 80 }, [
+      text(RES_DISPLAY(58, RECAP.bg, { textTransform: 'uppercase' }), COUNTDOWN_COPY.join),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 36, color: RECAP.bg, marginTop: 12, ...NOWRAP }, JOIN_URL),
+    ]));
+  } else if (kind === 'cta') {
+    kids.push(...countdownMast(d));
+    kids.push(text({ position: 'absolute', left: 80, top: 250, width: 920, fontFamily: DISPLAY, fontWeight: 900, fontSize: 88, lineHeight: 0.94, letterSpacing: -4, color: RECAP.fg }, COUNTDOWN_COPY.ask));
+    kids.push(col({ position: 'absolute', left: 80, top: 540 }, COUNTDOWN_COPY.lead.map(l =>
+      text({ fontFamily: SANS, fontWeight: 400, fontSize: 36, lineHeight: 1.25, color: RECAP.dim, ...NOWRAP }, l))));
+    kids.push(col({ position: 'absolute', left: 80, top: 656 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 112, lineHeight: 1, letterSpacing: -6, color: RESULTS_GOLD, ...NOWRAP }, COUNTDOWN_COPY.prize[0]),
+      text(RES_DISPLAY(76, RESULTS_GOLD, { lineHeight: 0.92, textTransform: 'uppercase', letterSpacing: -3 }), COUNTDOWN_COPY.prize[1]),
+    ]));
+    kids.push(field(360));
+    kids.push(text({ position: 'absolute', left: 80, bottom: 80, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, SUBMIT_URL));
+  } else {
+    const R = Math.max(1, d.rank || 1), top1 = R === 1;
+    const accent = top1 ? RESULTS_GOLD : RECAP.green;
+    if (top1) {
+      // The #1 glow: soft gold behind the numeral, nothing else changes shape.
+      kids.push(h({ position: 'absolute', left: -120, top: 120, display: 'flex' }, [{ type: 'img', props: { src: countdownGlowUri(), width: 900, height: 760, style: { width: 900, height: 760 } } }]));
+    }
+    kids.push(...countdownMast(d));
+    kids.push(row({ position: 'absolute', left: 84, top: 226 }, countdownTicks(R, R, { max: 78, gap: 9, h: 46 })));
+    kids.push(row({ position: 'absolute', left: 62, top: 250, alignItems: 'flex-start' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 190, lineHeight: 1, color: accent, marginTop: 92, marginRight: -8, ...NOWRAP }, '#'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 560, lineHeight: 1, letterSpacing: -22, color: top1 ? RESULTS_GOLD : RECAP.fg, ...NOWRAP }, String(R)),
+    ]));
+    const f = countdownFit(d, top1 ? 834 : 720);
+    const honor = top1 ? [h({ display: 'flex', alignSelf: 'flex-start', marginLeft: 4, marginBottom: 26, background: RESULTS_GOLD, borderRadius: 5,
+        transform: `skewX(${SKEW}deg)`, paddingLeft: 26, paddingRight: 26, paddingTop: 12, paddingBottom: 12 }, [
+        text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), COUNTDOWN_COPY.honor),
+      ])] : [];
+    kids.push(col({ position: 'absolute', left: 80, bottom: 1350 - CD_INFO_BOTTOM, width: 920 }, [
+      ...honor,
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: f.fs, lineHeight: 0.95, letterSpacing: -Math.round(f.fs * 0.04), color: RECAP.fg, width: 920 }, f.title),
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: f.artistFs, lineHeight: 1.1, letterSpacing: -1, color: RECAP.fg, marginTop: 26, ...NOWRAP }, f.artist),
+      ...(f.handle ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: f.handleFs, lineHeight: 1.3, color: RECAP.dim, marginTop: 8, ...NOWRAP }, f.handle)] : []),
+    ]));
+    // The submit strip: a rule, the question, the link, one button — under the record, never over it.
+    kids.push(h({ position: 'absolute', left: 80, top: 1120, width: 920, height: 2, background: RECAP.line }, ''));
+    kids.push(text(RES_DISPLAY(36, RECAP.fg, { position: 'absolute', left: 80, top: 1152, textTransform: 'uppercase', letterSpacing: -1 }), COUNTDOWN_COPY.question));
+    kids.push(text({ position: 'absolute', left: 80, top: 1206, fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, ...NOWRAP }, SUBMIT_URL));
+    kids.push(h({ position: 'absolute', right: 90, bottom: 80, height: 72, display: 'flex', alignItems: 'center', background: RECAP.green,
+      borderRadius: 6, paddingLeft: 32, paddingRight: 32, transform: `skewX(${SKEW}deg)` }, [
+      text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), COUNTDOWN_COPY.submit),
+    ]));
+  }
+  return h({ position: 'relative', display: 'flex', width: COUNTDOWN_SIZE[0], height: COUNTDOWN_SIZE[1], background: RECAP.bg, overflow: 'hidden' }, kids);
 }
 
 // ============ The winner posts — one 'winnerPost' element, 1080×1350 ============
@@ -1100,12 +1100,11 @@ function element(type, data = {}) {
   if (type === 'trackPage') return elementTrackPage(data);
   if (type === 'chartCover') return frame({ title: null, sub: null, body: bodyChartCover(data) });
   if (type === 'chartList') return frame({ titleSize: 66, title: clip(data.title, 18), sub: data.sub, body: bodyChartList(data) });
-  if (type === 'recapCover') return elementRecapCover(data);
-  if (type === 'recapThumb') return elementRecapThumb(data);
   if (type === 'referCard') return elementReferPerson(data, false);
   if (type === 'referStory') return elementReferPerson(data, true);
   if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
   if (type === 'resultsSlide') return elementResultsSlide(data);
+  if (type === 'countdownSlide') return elementCountdownSlide(data);
   if (type === 'winnerPost') return elementWinnerPost(data);
   throw new Error('unknown card type: ' + type);
 }
@@ -1118,9 +1117,10 @@ let _satori = null, _Resvg = null;
 // off at the QR codes (found 2026-09-20). The test suite now pins the refer sizes.
 function sizeOf(type) {
   if (type === 'resultsSlide') return RESULTS_SIZE;
+  if (type === 'countdownSlide') return COUNTDOWN_SIZE;
   if (type === 'winnerPost') return WINNER_SIZE;
   if (type === 'trackPage') return TRACK_SIZE;
-  return RECAP_SIZES[type] || REFER_SIZES[type] || [W, H];
+  return REFER_SIZES[type] || [W, H];
 }
 // `outWidth` rasterises the same layout at a smaller width (a thumbnail): the element is
 // still laid out at its real size, so a thumbnail is the download, scaled — never a
@@ -1134,4 +1134,4 @@ async function renderPng(type, data, outWidth) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA, RESULTS_PER_SLIDE, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };
+module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };

@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 041; suite green)
+## Current state (migrations through 042; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -495,13 +495,22 @@ live on anr.makinitmag.com.
     was unconditional, so a non-player got "Yesterday's results, <their name>." over the Top 8
     and nothing of their own. Fixed: personalise the greeting only when there is something
     personal beneath it, and say plainly why there isn't when there is not.
+  - **Banner + the Live step flow** (2026-09-30, operator's call): `/daily` carries the sponsor
+    banner at the TOP of the page (same `#adTop` box and cascade as play.html — `adSlotFor()`:
+    the drop's banner_id → Revive game zone → global banner; hidden when nothing is set), and
+    rates in the same steps as Live: Rate it → Next → Predict the Average → Lock it in (Back
+    keeps both) → note → Next record. Live adopted DAILY's wording (Rate it / Predict the
+    Average / Lock it in; Versus step 2 = "Predict the split") — "Room" vocabulary is out of
+    the rating steps. Mockup: `public/_mock-daily-banner.html`.
   - **Still open:** `sessions.live_bonus` has no value set (~300 makes one live show ≈ three
     perfect async days; without it the broadcast is decorative on the unified board), the
     scouting-points curve, and Nero retirement (`#btnNeroPull` + the scrape helper are still
     in admin.html — the plan calls for removing them as the first piece of the subtraction
     pass, deliberately not done here since it touches the live console).
 
-- **The A&R Meeting Recap graphics** (036): the daily noon live stream (count down yesterday's
+- **The A&R Meeting Recap graphics** (036) — **RETIRED 2026-10-02** with the daily stream, along with
+  the countdown clip captions and the daily Top 8 cards + post caption: no longer rendered, routes
+  and console sections removed, `recap_jobs` columns left in place (additive schema). Kept for history: the daily noon live stream (count down yesterday's
   records, reveal the Top 8 A&Rs, close on the top artists) gets an Instagram Live cover
   (9:16, 1080×1920) and a YouTube thumbnail (16:9, 1920×1080) plus a caption, rendered by the
   daily publish alongside the Top 8 cards and hosted at `daily/<day>/recap-{cover,thumb}.png`
@@ -767,6 +776,45 @@ live on anr.makinitmag.com.
   **Week is now Mon → Sun** (`WEEK_START_DOW = 1`, was Wed → Tue): the Sunday drop publishes
   at noon Wednesday, before the show that announces the week. `digest_daily` stays default OFF.
 
+- **The Makin' It Daily Countdown carousel** (no migration, SHIPPED 2026-10-02):
+  replaces the daily stream as the results announcement AND replaces the Top Track results
+  carousel (the `song` set — the Top A&R `ar` carousel is unchanged). One Instagram carousel,
+  **rank only — never a score, average or vote count** (scores are private to the Track Report):
+  cover · one slide per record from #N up to #1 · the A&R Team (thanks + "Become an A&R",
+  makinitmag.com/ANR) · artists (submit + $1,000 Music Tournament). 8–16 records → 11–19 slides,
+  inside Instagram's 20 (`COUNTDOWN_MAX_RECORDS = 17`). **A rank slide never shows the size of the
+  field** (operator: "3rd place isn't last unless we say only 3 were racing"): its blocks run from
+  its own rank to #1. Every rank slide stands alone, since artists repost only theirs. Order = the
+  console countdown sort (average, then ratings, then drop order). Satori element `countdownSlide`
+  (share-cards.js), data `countdownCarouselData` + caption `countdownCarouselCaption` (server.js),
+  hosted at `daily/<day>/countdown-N.png` in the existing `recap_jobs.results_song_*` columns and
+  served by the existing `/api/card/results?set=song` + `results-caption` routes. **The caption
+  names nobody** — Instagram stops notifying once a caption mentions more than 10 accounts — so
+  artists are tagged on their own slides (the console prints who under each slide) and mentioned
+  in comments, FOUR a comment, bottom up (`countdownComments`): "Follow all the artists who made
+  the countdown: @a, @b, Name, @c" — names only, no ranks or titles; an artist with two records
+  is mentioned once; an artist with no Instagram handle is not mentioned. The caption asks by
+  COMMENT KEYWORD, not link ("Comment #REVIEW to Submit Music" / "Comment #ANR to join the A&R
+  Team", operator's wording). **Instagram allows 5 hashtags a post** — the keywords count, so the
+  countdown carries 3 more (`COUNTDOWN_TAGS`); every other IG caption uses `IG_TAGS` (5). Approved mockup:
+  `public/brand/countdown/`. **"HOT 100" is for the MONTHLY countdown post only** —
+  `DAILY_STREAM_NAME` is now "Makin' It Daily Countdown".
+  **Retired with it (2026-10-02):** the daily Top 8 A&Rs / Top 8 Records cards and their caption,
+  the Meeting Recap Live cover / YouTube thumbnail / caption, and the countdown clip captions. The
+  A&R digest no longer carries the Top 8 images; it links Instagram ("See the Top Tracks on
+  Instagram", @Makinit4indies) instead. The live-show post kit (Asana) still uses the Top 8 cards.
+  **Asana (2026-10-02; AUTOMATIC from 042, 2026-10-03):** the daily cron makes ONE TASK PER POST on
+  its own once a day's slides render (`advanceDailyAsanaTasks`, queued by `recap_jobs.asana_tasks`
+  = '{}' at render/publish; days rendered before 042 are never back-filled; gid saved the moment
+  Asana returns it, so a long countdown resumes over several ticks on the SAME task; claimed via
+  `asana_claimed_at`; 12 failed attempts then it stops and the console offers the manual button).
+  The console shows each task's state with a link. The manual route makes — "Makin' It Daily Countdown —
+  <date>" (slides attached in order; notes = caption, the four-artist comments, who to tag on each
+  slide) and "Top A&Rs — <date>". `POST /api/admin/daily/asana-task {s, set, taskId?, next?}`
+  attaches what fits in 20s and returns `{done, taskId, next}`; the console presses on until done.
+  Same `asana_project` setting as the live post kit. The **Top A&R carousel is the TOP 8 only,
+  PLACEMENT ONLY** — no points on the slides or in its caption (`RESULTS_MAX_ARS = 8`).
+
 - **Backfill artist contacts** (no migration, 2026-09-22): rounds from before the contact
   fields existed had no email/phone/Instagram, which is what the sales-leads project is worked
   from. Platform panel → "Backfill artist contacts": upload a CSV (`artist, title, email,
@@ -787,8 +835,8 @@ live on anr.makinitmag.com.
   from the public `/api/profile?u=` (the same data as `/u/<uid>`). **Edit profile** is NOT
   re-implemented: the tab goes to `/profile` (join.html's edit mode — photo crop, city
   lookup, notification settings and the `#nt=` manage-link mode all live there), which shows
-  the same tab strip in edit mode so it reads as one account. "Sessions" and "Rounds" are
-  greyed "coming" tabs. **Graphics are SHOWN, not described** (operator: nobody should have
+  the same tab strip in edit mode so it reads as one account. The greyed "Sessions" and
+  "Rounds" tabs became ONE tab, **My results** (next bullet). **Graphics are SHOWN, not described** (operator: nobody should have
   to download a graphic to see it): `/api/card/refer?kind=&thumb=1&v=` is the SAME Satori
   render rasterised at 432px (`renderPng(type, data, outWidth)`), fetched with the auth
   header and shown as blob URLs one at a time. `v` = `referGraphicVersion(u)`, a hash of
@@ -809,6 +857,43 @@ live on anr.makinitmag.com.
   play page link one "My account"; the daily page's bonus-points CTAs still go to `/refer`.
   A device holding only a per-session player token can use the account page but `/profile`
   still asks for an email code (join.html's edit mode reads `rt_auth_token` only).
+
+- **My results — the results live on the site, the email points at them** (no migration,
+  2026-10-02; mockup `public/_mock-account-results.html`). **LIVE: merged to main as PR #16
+  on 2026-10-02, which carried the account page (PR #13's commits) with it.**
+  The operator's reason: the results email handed an A&R everything, so nothing brought them
+  back to the site, where today's records are waiting. Two halves:
+  - **`/account#results`** (`GET /api/me/results?week=YYYY-MM-DD`, `arResultsData`). One A&R,
+    one week (Monday to Sunday by the day a drop OPENED, `weekStartFor`/`weekWindow`). Top to
+    bottom: the OPEN drop (how many they have dealt with, when voting closes, a button into
+    `/daily?s=`), the week's four numbers (points, played, bullseyes, grade), then each day
+    newest first, opening into the daily page's record table (rating, guess, room average,
+    points, completion bonus). Arrows page a week at a time and stop at the week the account
+    was made. Earn points stays the DEFAULT tab (operator: the push is on getting people to
+    refer artists). Auth is `resolveReferUid` — either token or the signed `rf1` link — so the
+    refer-scope link now reads three things: referrals, graphics, own results.
+  - **THE SEAL:** a day carries numbers only when `async_state = 'published'` (or a completed
+    live session). A closed-but-unpublished day is already tallied in the database, so that
+    branch selects COUNTS ONLY ("You rated 5 of 5", when results come out) — never add a score
+    column to it. The open drop likewise ships a count and nothing else. Tested at each stage.
+  - **NO RANK, by decision** (operator, 2026-10-02): the section shows points; the weekly
+    announcement is where rank is REVEALED, and showing it daily would make that an
+    announcement of something already known. Not for a day, not for the week. (The header
+    pill's series rank and the daily page's own recap screen still show a rank — not changed
+    here, operator not yet asked.)
+  - **A missed day is listed and carries nothing** (operator: results are for the days an A&R
+    took part in, not a history of the platform) — no records, no averages, and it does not
+    open. Only public daily drops are listed as missed. A record they skipped on a day they
+    DID play shows its average with no points of theirs.
+  - **The digest is a HEADLINE now.** `dailyDigestEmailHtml/Text` lost the round-by-round
+    table and the Rank tile: points, grade, bullseyes, the completion bonus, one sentence, and
+    a green **See your results** button to `accountResultsUrl(base, uid)` =
+    `/account#results&rt=<rf1>` (signed per recipient so it lands logged in; plain
+    `/account#results` without `NOTIFY_LINK_SECRET`, which asks for a code). account.html
+    keeps the section when it scrubs the token from the hash. The Top 8 graphics, the stream
+    link and "Rate today's records" are unchanged. A non-player still gets no personal block.
+  - The daily page's done, sealed and recap screens link **My past results**; the edit form's
+    copy of the tab strip (join.html) carries the tab too.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed

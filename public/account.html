@@ -15,7 +15,10 @@
    with sections. "Earn points" is the default and is what /refer was (2026-09-18: two
    links, two lanes, four graphics — now with real thumbnails); "My profile" is the public
    record as anyone sees it; "Edit profile" goes to the edit form at /profile, which carries
-   the same tab strip. /refer serves this same file, so signed #rt= links still land here.
+   the same tab strip. "My results" (2026-10-02, mockup public/_mock-account-results.html) is
+   the A&R's own results a week at a time: the open drop first, then each day they played,
+   record by record. The results email links straight to it (/account#results). It shows
+   points and NO RANK — the weekly announcement is where rank is revealed. /refer serves this same file, so signed #rt= links still land here.
    Built to the approved canvas (design/refer/Main.dc.html) on the daily page's dialect:
    Archivo display, Space Mono for every number and label, gold on the $1,000 only.
    Auth is whichever token this device holds: the account token from /join, or any
@@ -80,8 +83,6 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 .tabs::-webkit-scrollbar{display:none}
 .tab{flex:none;padding:11px 13px 12px;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);border:0;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;cursor:pointer;background:none}
 .tab.on{color:var(--ink);border-bottom-color:var(--signal)}
-.tab.soon{opacity:.4;cursor:default}
-.tab.soon small{display:block;font-size:8px;letter-spacing:.1em;margin-top:2px;text-transform:none}
 .sec{display:none;flex-direction:column;gap:16px}
 .sec.on{display:flex}
 /* ---- graphics: the real thing, visible before the download ---- */
@@ -94,6 +95,59 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 .gcard .gt b{display:block;font-size:13.5px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
 .gcard .gt small{display:block;font-family:"Space Mono",monospace;font-size:10px;color:var(--ink-dim);margin-top:4px}
 .gdl{display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 11px 11px;height:40px;border-radius:10px;background:var(--signal);color:var(--bg);font-weight:800;font-size:13px}
+/* ---- my results (built to public/_mock-account-results.html) ---- */
+.stats.four{gap:8px}
+.stats.four .stat{min-width:0;padding:12px 4px}
+.stats.four .stat .k{font-size:9px;letter-spacing:.13em}
+.stats.four .stat .v{font-size:17px;margin-top:6px;white-space:nowrap}
+.open{background:var(--panel);border:1px solid var(--signal);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:12px}
+.open h2{font-size:21px;line-height:1.12}
+.open p{margin:0;font-size:14px;line-height:1.5;color:var(--ink-dim)}
+.open p b{color:var(--ink);font-weight:700}
+.open.done{border-color:var(--line)}
+.bar{height:6px;border-radius:999px;background:var(--inset);border:1px solid var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--signal)}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pager button{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--inset);color:var(--ink);font-family:"Space Mono",monospace;font-size:16px;cursor:pointer;flex:none}
+.pager button[disabled]{opacity:.3;cursor:default}
+.pager .wk{text-align:center;min-width:0}
+.pager .wk b{display:block;font-weight:900;font-size:17px;letter-spacing:-.02em}
+.pager .wk small{display:block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);margin-top:3px;min-height:12px}
+.wkline{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-dim);text-align:center}
+.days{display:flex;flex-direction:column;gap:8px}
+.day{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.day > summary,.day > .head{display:flex;align-items:center;gap:10px;padding:14px;list-style:none;cursor:pointer}
+.day > summary::-webkit-details-marker{display:none}
+.day > .head{cursor:default}
+.day .when{flex:1;min-width:0}
+.day .when b{display:block;font-size:15.5px;font-weight:800;letter-spacing:-.02em}
+.day .when small{display:block;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day .pts{font-family:"Space Mono",monospace;font-size:16px;font-weight:700;color:var(--signal);flex:none}
+.day .grade{font-family:"Space Mono",monospace;font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:8px;padding:4px 7px;flex:none;min-width:30px;text-align:center}
+.day .chev{font-family:"Space Mono",monospace;color:var(--ink-dim);flex:none;transition:transform .15s;font-size:13px}
+.day[open] .chev{transform:rotate(90deg)}
+.day .wait{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);text-align:right;flex:none;line-height:1.45}
+.day .wait b{display:block;color:var(--ink);font-weight:700}
+.day.sealed{border-style:dashed}
+.day.missed{background:transparent}
+.day.missed .when b{color:var(--ink-dim)}
+.day .body{padding:14px 14px 16px;display:flex;flex-direction:column;gap:14px;border-top:1px solid var(--line)}
+.tag{display:inline-block;font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:400;border:1px solid var(--accent);color:var(--ink);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:2px}
+.rt .h,.rt .r{display:flex;gap:8px;align-items:center}
+.rt .h{padding:0 0 8px}
+.rt .h span{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)}
+.rt .r{padding:10px 0;border-top:1px solid var(--line)}
+.rt .rec{flex:1;min-width:0}
+.rt .rec b{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt .rec small{display:block;font-size:11.5px;color:var(--ink-dim);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt .c{font-family:"Space Mono",monospace;font-size:13px;color:var(--ink-dim);text-align:center;flex:none}
+.rt .c.you{width:26px} .rt .c.g{width:34px} .rt .c.a{width:34px;color:var(--ink);font-weight:700} .rt .c.p{width:44px;text-align:right;font-weight:700;color:var(--ink)}
+.rt .c.p.bull{color:var(--signal)} .rt .c.p.low{color:var(--ink-dim)}
+.rt .skip .rec b{color:var(--ink-dim);font-weight:500}
+.rt .foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0 0;border-top:1px solid var(--line);font-size:14px;font-weight:800}
+.rt .foot span:last-child{font-family:"Space Mono",monospace;font-size:15px;color:var(--gold)}
+.rt .foot.none span:last-child{color:var(--ink-dim);font-size:11.5px;font-weight:400;text-align:right}
+.legend{font-family:"Space Mono",monospace;font-size:10px;color:var(--ink-dim);line-height:1.6}
 /* ---- my profile ---- */
 .pf-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px;padding:10px 0;border-bottom:1px solid var(--line)}
 .pf-row:last-child{border-bottom:0}
@@ -150,10 +204,9 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 
     <div class="tabs" role="tablist">
       <button class="tab on" data-sec="earn" role="tab">Earn points</button>
+      <button class="tab" data-sec="results" role="tab">My results</button>
       <button class="tab" data-sec="profile" role="tab">My profile</button>
       <button class="tab" data-sec="edit" role="tab">Edit profile</button>
-      <span class="tab soon">Sessions<small>coming</small></span>
-      <span class="tab soon">Rounds<small>coming</small></span>
     </div>
 
     <!-- 1. EARN POINTS: the default section. SCOUTING FIRST, and bigger (operator, 2026-10-02):
@@ -204,7 +257,26 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
     </div>
     </div>
 
-    <!-- 2. MY PROFILE: the public record, as anyone sees it at /u/<uid>. -->
+    <!-- 2. MY RESULTS: the open drop first (the visit should end in rating today's records),
+         then one week at a time, each day opening into its records. Points only, no rank. -->
+    <div class="sec" id="sec-results">
+      <div id="rsOpen"></div>
+      <div class="err hide" id="rsErr"></div>
+      <div class="panel">
+        <div class="pager">
+          <button id="rsPrev" aria-label="Earlier week" disabled>&lsaquo;</button>
+          <div class="wk"><b id="rsRange">&nbsp;</b><small id="rsName"></small></div>
+          <button id="rsNext" aria-label="Later week" disabled>&rsaquo;</button>
+        </div>
+        <div class="stats four" id="rsStats"></div>
+        <div class="wkline hide" id="rsLine"></div>
+      </div>
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Day by day</span></div>
+      <div class="days" id="rsDays"></div>
+      <div class="legend hide" id="rsLegend">YOU = your rating · GUESS = your prediction · AVG = the room average · PTS = what the guess earned</div>
+    </div>
+
+    <!-- 3. MY PROFILE: the public record, as anyone sees it at /u/<uid>. -->
     <div class="sec" id="sec-profile">
       <div class="note" id="pfNote"></div>
       <div class="panel" id="pfPanel" style="gap:0"></div>
@@ -231,7 +303,12 @@ function track(name, params){ try{ if(window.gtag) window.gtag('event', name, pa
 (function(){
   try{
     const m = (location.hash || '').match(/[#&]rt=([^&]+)/);
-    if(m){ sessionStorage.setItem('rt_refer_link', decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + location.search); }
+    if(m){
+      // Keep the section the link named (#results&rt=...) and drop only the token.
+      const sec = ((location.hash || '').match(/^#(profile|edit|results)\b/) || [])[1];
+      sessionStorage.setItem('rt_refer_link', decodeURIComponent(m[1]));
+      history.replaceState(null, '', location.pathname + location.search + (sec ? '#' + sec : ''));
+    }
   }catch(e){}
 })();
 // ---- which token this device holds. The account token wins; otherwise any per-session
@@ -376,11 +453,136 @@ async function loadProfile(uid){
   $('#standing').classList.remove('hide');
   $('#standing').innerHTML = (st.seriesRank ? '#' + st.seriesRank + ' · ' : '') + '<b>' + Number(st.points || 0).toLocaleString() + '</b> PTS';
 }
+// ---- My results. One week per request; the server decides what a day may show (a closed day
+// whose results are not out arrives as counts only), so this only draws what it is given.
+// Built with textContent throughout: titles and artist names are submitter-supplied.
+let RS_LOADED = false, RS_BUSY = false;
+const mk = (tag, cls, txt) => { const e = document.createElement(tag); if(cls) e.className = cls; if(txt != null) e.textContent = txt; return e; };
+const bold = (txt) => mk('b', null, txt);
+const fmtN = (n) => Number(n || 0).toLocaleString('en-US');
+function rsStat(k, v, cls){ const d = mk('div', 'stat'); d.appendChild(mk('div', 'k', k)); d.appendChild(mk('div', 'v' + (cls ? ' ' + cls : ''), v)); return d; }
+function rsOpen(d){
+  const slot = $('#rsOpen'); slot.textContent = '';
+  const head = (t) => { const h = mk('div', 'section-head'); h.appendChild(mk('span', 'tick')); h.appendChild(mk('span', 'eyebrow', t)); return h; };
+  const o = d.open;
+  if(!o || !o.total){
+    if(!d.next || !d.next.opensWhen) return;
+    const c = mk('div', 'open done'); c.appendChild(head('Next records'));
+    c.appendChild(mk('h2', null, 'The next records open ' + d.next.opensWhen + '.'));
+    slot.appendChild(c); return;
+  }
+  const left = Math.max(0, o.total - o.rated), finished = left === 0;
+  const c = mk('div', 'open' + (finished ? ' done' : ''));
+  c.appendChild(head('Open now' + (o.dayLabel ? ' · ' + o.dayLabel : '')));
+  if(finished){
+    c.appendChild(mk('h2', null, 'You rated all ' + o.total + ' records.'));
+    if(o.resultsWhen){ const p = mk('p'); p.append('Results come out ', bold(o.resultsWhen), '. They will be listed below.'); c.appendChild(p); }
+  }else{
+    c.appendChild(mk('h2', null, o.rated ? ('You have ' + left + (left === 1 ? ' record' : ' records') + ' left to rate.') : "Today's records are open."));
+    const p = mk('p'); p.append(bold(o.rated + ' of ' + o.total + ' rated'), '.');
+    if(o.closesWhen) p.append(' Voting closes ', bold(o.closesWhen), '.');
+    c.appendChild(p);
+    const bar = mk('div', 'bar'), fill = mk('i'); fill.style.width = Math.round(100 * o.rated / o.total) + '%'; bar.appendChild(fill); c.appendChild(bar);
+    const a = mk('a', 'btn', o.rated ? 'Keep rating' : "Rate today's records"); a.href = o.url;
+    a.onclick = () => track('results_open_drop', { rated: o.rated });
+    c.appendChild(a);
+  }
+  slot.appendChild(c);
+}
+function rsDay(d){
+  const when = (sub) => { const w = mk('div', 'when'); const b = mk('b', null, d.label || ''); if(d.kind === 'live') b.appendChild(mk('span', 'tag', 'Live session')); w.appendChild(b); w.appendChild(mk('small', null, sub)); return w; };
+  if(d.state === 'missed'){
+    const c = mk('div', 'day missed'), h = mk('div', 'head');
+    h.appendChild(when(d.total + (d.total === 1 ? ' record' : ' records'))); h.appendChild(mk('div', 'wait', 'Did not play'));
+    c.appendChild(h); return c;
+  }
+  if(d.state === 'sealed'){
+    const c = mk('div', 'day sealed'), h = mk('div', 'head');
+    h.appendChild(when('You rated ' + d.rated + ' of ' + d.total));
+    const r = mk('div', 'wait'); r.append('Results' + (d.resultsDay ? ' ' + d.resultsDay : ' soon')); if(d.resultsClock) r.appendChild(bold(d.resultsClock));
+    h.appendChild(r); c.appendChild(h); return c;
+  }
+  const c = mk('details', 'day'), s = mk('summary');
+  s.appendChild(when(d.rated + ' of ' + d.total + ' rated'));
+  s.appendChild(mk('span', 'pts', fmtPts(d.points)));
+  if(d.grade) s.appendChild(mk('span', 'grade', d.grade));
+  s.appendChild(mk('span', 'chev', '›'));
+  c.appendChild(s);
+  const body = mk('div', 'body'), st = mk('div', 'stats');
+  st.appendChild(rsStat('Points', fmtPts(d.points), 'earned')); st.appendChild(rsStat('Grade', d.grade || '—')); st.appendChild(rsStat('Bullseyes', d.bullseyes));
+  body.appendChild(st);
+  const rt = mk('div', 'rt'), hd = mk('div', 'h');
+  [['Record', 'flex:1'], ['You', 'width:26px;text-align:center'], ['Guess', 'width:34px;text-align:center'], ['Avg', 'width:34px;text-align:center'], ['Pts', 'width:44px;text-align:right']]
+    .forEach(([t, css]) => { const x = mk('span', null, t); x.style.cssText = css; hd.appendChild(x); });
+  rt.appendChild(hd);
+  const one = (v) => (v == null ? '—' : Number(v).toFixed(1));
+  (d.rounds || []).forEach(r => {
+    const vs = r.kind === 'versus';
+    const row = mk('div', 'r' + (r.voted ? '' : ' skip')), rec = mk('div', 'rec');
+    rec.appendChild(mk('b', null, vs ? ((r.title || 'A') + ' vs ' + (r.titleB || 'B')) : (r.title || '')));
+    rec.appendChild(mk('small', null, vs ? 'Versus · guess and average are the share for A' : (r.artist || '')));
+    row.appendChild(rec);
+    // A Versus round has a pick and a split, not a rating and an average: same columns, in percent.
+    row.appendChild(mk('span', 'c you', !r.voted ? '—' : vs ? String(r.pick || '—').toUpperCase() : (r.taste == null ? '—' : r.taste)));
+    row.appendChild(mk('span', 'c g', !r.voted ? '—' : vs ? (r.predict == null ? '—' : Math.round(r.predict) + '%') : one(r.predict)));
+    row.appendChild(mk('span', 'c a', vs ? (r.average == null ? '—' : Math.round(r.average) + '%') : one(r.average)));
+    row.appendChild(mk('span', 'c p' + (!r.voted ? ' low' : r.tier === 'bullseye' ? ' bull' : r.points < 50 ? ' low' : ''), r.voted ? fmtPts(r.points) : '—'));
+    rt.appendChild(row);
+  });
+  if(d.kind === 'daily'){
+    const f = mk('div', 'foot' + (d.bonus ? '' : ' none'));
+    f.appendChild(mk('span', null, 'Completion bonus'));
+    f.appendChild(mk('span', null, d.bonus ? '+' + d.bonus : 'Not earned'));
+    rt.appendChild(f);
+  }
+  body.appendChild(rt); c.appendChild(body);
+  c.addEventListener('toggle', () => { if(c.open) track('results_day_open', { kind: d.kind }); });
+  return c;
+}
+function rsRender(d){
+  rsOpen(d);
+  const w = d.week, st = d.stats;
+  $('#rsRange').textContent = w.range; $('#rsName').textContent = w.name || '';
+  $('#rsPrev').disabled = !w.prev; $('#rsNext').disabled = !w.next;
+  $('#rsPrev').dataset.week = w.prev || ''; $('#rsNext').dataset.week = w.next || '';
+  const box = $('#rsStats'); box.textContent = '';
+  box.appendChild(rsStat('Points', fmtN(st.points), st.points ? 'earned' : ''));
+  box.appendChild(rsStat('Played', st.published ? (st.played + ' of ' + st.published) : '0'));
+  box.appendChild(rsStat('Bullseyes', st.bullseyes)); box.appendChild(rsStat('Grade', st.grade || '—'));
+  const line = $('#rsLine');
+  line.classList.toggle('hide', !st.pending);
+  line.textContent = st.pending ? (st.pending + (st.pending === 1 ? ' day' : ' days') + ' still to come out') : '';
+  const days = $('#rsDays'); days.textContent = '';
+  d.days.forEach(x => days.appendChild(rsDay(x)));
+  if(!d.days.length){
+    days.appendChild(mk('div', 'note', w.current
+      ? 'Nothing to show for this week yet. Rate the open records and your results will be listed here when they come out.'
+      : 'You did not play that week.'));
+  }
+  // The newest day with results opens by itself, so the page is never a list of closed rows.
+  const first = days.querySelector('details.day'); if(first && w.current) first.open = true;
+  $('#rsLegend').classList.toggle('hide', !days.querySelector('details.day'));
+}
+async function loadResults(week){
+  if(RS_BUSY) return; RS_BUSY = true;
+  $('#rsErr').classList.add('hide');
+  try{
+    const d = await api('/api/me/results' + (week ? '?week=' + encodeURIComponent(week) : ''), null, authHeaders() || {});
+    RS_LOADED = true; rsRender(d);
+  }catch(e){
+    $('#rsErr').classList.remove('hide');
+    $('#rsErr').textContent = 'Could not load your results (' + e.message + '). Try again in a moment.';
+  }
+  RS_BUSY = false;
+}
+$('#rsPrev').onclick = () => { const w = $('#rsPrev').dataset.week; if(w){ loadResults(w); track('results_week', { dir: 'prev' }); } };
+$('#rsNext').onclick = () => { const w = $('#rsNext').dataset.week; if(w){ loadResults(w); track('results_week', { dir: 'next' }); } };
 // ---- sections. The hash names the section so /account#profile is linkable; "edit" is the
 // edit form's own page (photo crop, city lookup and notification settings live there).
 function showSec(k){
   if(k === 'edit'){ location.href = '/profile'; return; }
-  if(k !== 'profile') k = 'earn';
+  if(k !== 'profile' && k !== 'results') k = 'earn';
+  if(k === 'results' && !RS_LOADED) loadResults();
   document.querySelectorAll('.tab[data-sec]').forEach(t => t.classList.toggle('on', t.dataset.sec === k));
   document.querySelectorAll('.sec').forEach(x => x.classList.toggle('on', x.id === 'sec-' + k));
   try{ history.replaceState(null, '', location.pathname + location.search + (k === 'earn' ? '' : '#' + k)); }catch(e){}
@@ -419,7 +621,7 @@ async function load(){
   try{
     const d = await api('/api/me/referrals', null, h);
     render(d); show('screen-main');
-    const want = (location.hash.match(/^#(profile|edit)\b/) || [])[1];
+    const want = (location.hash.match(/^#(profile|edit|results)\b/) || [])[1];
     if(want) showSec(want);
   }catch(e){
     // ONLY a 401 means the token is dead. Any other failure keeps the token and says so —

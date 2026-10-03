@@ -1779,6 +1779,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the daily payload leaks no split', !/split/.test(dJson));
   ok('the daily payload carries NO per-record vote counts', !dState.queue.some(q => 'votes' in q || 'count' in q), dJson.slice(0, 200));
   ok('tiers are server-resolved epochs, not client maths', Array.isArray(dState.async.tiers) && dState.async.tiers[0].points === 100);
+  // The banner (2026-09-30): the same cascade as the live player. The global banner from the
+  // cascade block above is still assigned, and a drop has no banner_id of its own.
+  ok('the daily payload carries the sponsor banner', dState.banner && dState.banner.image.startsWith('/api/banner/image'), JSON.stringify(dState.banner));
+  const dInfo = (await call('/api/session/info?s=' + PDROP, null, 'GET')).d;
+  ok('the daily join screens get the banner too', dInfo.banner && dInfo.banner.id === dState.banner.id, JSON.stringify(dInfo.banner));
 
   // Two A&Rs get different running orders; the same A&R gets the same one every time.
   const dState2 = (await call('/api/me/state', null, 'GET', DH2)).d;
@@ -1970,6 +1975,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
     await call('/api/vote', { roundId: lQ[0].id, taste: 5, predict: 5.0 }, 'POST', { 'X-Player-Token': vr.d.token });
   }
 
+  // ---- /account "My results" (2026-10-02): the open drop is the first thing on the page.
+  const rsOpenLex = (await call('/api/me/results', null, 'GET', LH)).d;
+  ok('My results leads with the open drop and how far through it the A&R is',
+    rsOpenLex.open && rsOpenLex.open.id === LDROP && rsOpenLex.open.total === 3 && rsOpenLex.open.rated === 3
+      && rsOpenLex.open.url === '/daily?s=' + LDROP && /ET/.test(rsOpenLex.open.closesWhen || ''), JSON.stringify(rsOpenLex.open));
+  ok('an open day is not listed among the results', !rsOpenLex.days.some(d => d.id === LDROP), JSON.stringify(rsOpenLex.days.map(d => d.state)));
+  const zedUid = (await dDb.get('SELECT uid FROM users WHERE email = ?', ['zed@test.com'])).uid;
+  const rsOpenZed = await srv._arResultsData(zedUid);
+  ok('someone part way through sees their own count', rsOpenZed.open.rated === 1 && rsOpenZed.open.total === 3, JSON.stringify(rsOpenZed.open));
+  ok('My results needs a login', (await fetch(base + '/api/me/results')).status === 401);
+
   const closesAt = Number((await lSess()).window_closes_at);
   const tClose = await tick(closesAt + 1000);
   ok('the close tick closes and tallies the whole day', tClose.d.closed === 1 && tClose.d.ratified === 3, JSON.stringify(tClose.d));
@@ -2001,6 +2017,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and the player has NOT been shown results before the publish',
     sealedState.phase !== 'recap' && !sealedState.recap
     && !/room_average/.test(JSON.stringify(sealedState)), sealedState.phase);
+  // The day is TALLIED in the database here (averages and points exist on its rows) and not
+  // published. My results must list it with counts only.
+  const rsSealed = (await call('/api/me/results', null, 'GET', LH)).d;
+  const rsSealedDay = rsSealed.days.find(d => d.id === LDROP);
+  ok('a closed day whose results are not out is listed as sealed, with what the A&R did',
+    rsSealedDay && rsSealedDay.state === 'sealed' && rsSealedDay.rated === 3 && rsSealedDay.total === 3 && !!rsSealedDay.resultsClock,
+    JSON.stringify(rsSealedDay));
+  ok('and it carries no score of any kind before the publish',
+    !/average|points|grade|tier|bullseye|rounds|predict|taste/.test(JSON.stringify(rsSealedDay)), JSON.stringify(rsSealedDay));
+  ok('the week counts it as still to come out, not as points',
+    rsSealed.stats.pending >= 1 && !rsSealed.days.some(d => d.id === LDROP && d.points != null), JSON.stringify(rsSealed.stats));
+  ok('a closed drop is no longer offered as open', !rsSealed.open || rsSealed.open.id !== LDROP, JSON.stringify(rsSealed.open));
 
   // The artist heads-up at the close: every RATED artist with contact, once, carrying no score.
   const hu = await dDb.all('SELECT * FROM artist_headsups WHERE session_id = ?', [LDROP]);
@@ -2015,13 +2043,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const huc = srv._artistHeadsupContent({ title: 'My Song', artist: 'Me', streamAt: streamAtL,
     reportAt: Number((await lSess()).results_at), streamUrl: 'https://yt.example/live' }, streamAtL - 86400000);
   ok('the heads-up says the record was rated and is on tomorrow\'s Livestream Countdown',
-    /was rated/.test(huc.body) && /tomorrow's Makin' It HOT 100 Daily Countdown/.test(huc.subject), JSON.stringify(huc));
+    /was rated/.test(huc.body) && /tomorrow's Makin' It Daily Countdown/.test(huc.subject), JSON.stringify(huc));
   ok('in the operator\'s words', huc.tune === 'Tune in for results. Have your fans tune in to participate in the comments.');
   ok('and it carries no score, rank or count — the livestream is the reveal',
     !/\d\.\d|out of 9|#\d|A&Rs heard/.test(huc.body + huc.subject + huc.tune), huc.body);
   const huSms = srv._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', streamAtL, streamAtL - 86400000);
   ok('the heads-up text is plain GSM-7 inside one segment', huSms.length <= 160 && /^[\x20-\x7e]*$/.test(huSms)
-    && /tomorrow's Makin' It HOT 100 Daily Countdown/.test(huSms) && /Reply STOP/.test(huSms), huSms.length + ' ' + huSms);
+    && /tomorrow's Makin' It Daily Countdown/.test(huSms) && /Reply STOP/.test(huSms), huSms.length + ' ' + huSms);
 
   // The Livestream Countdown: the ranked graphics render, and NOTHING is revealed yet.
   ok('before the stream the graphics have not rendered',
@@ -2063,99 +2091,75 @@ async function startVoting(sessionId, headers, minutes = 5) {
     pubbed.status === 'completed' && pubbed.async_state === 'published' && pubbed.published_at > 0,
     pubbed.status + '/' + pubbed.async_state);
 
-  console.log('\n— The A&R Meeting Recap: the noon stream\'s cover, thumbnail and caption —');
-  // Rendered and stored by the same publish as the Top 8 cards, on the same best-effort
-  // contract: no Blob token here, so the hosted URLs are null and the day published anyway —
-  // but the caption is built first and kept.
-  const rjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
-  ok('the publish stores the recap caption even with no Blob token',
-    !!rjob && /^Makin' It HOT 100 Daily Countdown — /.test(rjob.recap_caption || ''), JSON.stringify(rjob && rjob.recap_caption));
-  ok('and leaves the hosted recap URLs null rather than failing the publish',
-    rjob.recap_cover_url == null && rjob.recap_thumb_url == null, JSON.stringify([rjob.recap_cover_url, rjob.recap_thumb_url]));
-  const rd = await srv._recapGraphicsData(pubbed);
-  ok('artists print in DROP order — the countdown is the reveal',
-    JSON.stringify(rd.artists) === JSON.stringify(['Artist 41', 'Artist 42', 'Artist 43']), JSON.stringify(rd.artists));
-  ok('A&Rs print ALPHABETISED, not by points (Lex leads the board; amber leads the list)',
-    JSON.stringify(rd.ars) === JSON.stringify(['amber', 'Lex', 'Zed']), JSON.stringify(rd.ars));
-  ok('on the 69-hour clock the results day IS the countdown clip\'s default post day — one date on everything that posts',
-    srv._etDay(srv._dropWindowFor('2026-09-24', srv._DAILY_SCHEDULE_DEFAULTS).resultsAt) === srv._countdownPostDay({ drop_day: '2026-09-24' })
-      && srv._countdownPostDay({ drop_day: '2026-09-24' }) === '2026-09-27');
-  ok('the date is the day it POSTS (results_at), as MM.DD.YY',
-    /^\d\d\.\d\d\.\d\d$/.test(rd.date) && rd.date === srv._recapDateLabel(pubbed.results_at), rd.date);
-  ok('the stored caption carries the date, every artist and every A&R',
-    rjob.recap_caption.includes(rd.date) && rd.artists.every(a => rjob.recap_caption.includes(a))
-      && rd.ars.every(a => rjob.recap_caption.includes(a)) && /makinitmag\.com\/Review/.test(rjob.recap_caption),
-    rjob.recap_caption);
-  ok('and the caption is the operator\'s wording, not a slogan', /count down every song/.test(rjob.recap_caption));
-  // A reference track is a known record, not an artist on the show.
-  await dDb.run(`INSERT INTO rounds (id, session_id, idx, status, song_title, song_artist, is_reference, created_at)
-                 VALUES ('lref', ?, 99, 'ratified', 'A Hit', 'Famous Artist', 1, ?)`, [LDROP, Date.now()]);
-  const rdRef = await srv._recapGraphicsData(pubbed);
-  ok('a reference track never prints as an artist', !rdRef.artists.includes('Famous Artist'), JSON.stringify(rdRef.artists));
-  await dDb.run("DELETE FROM rounds WHERE id = 'lref'");
-  // The live render routes, for a console with no Blob — and for posting the cover early.
+  console.log('\n— Retired 2026-10-02: the Top 8 cards, the Meeting Recap cover/thumbnail, the clip captions —');
   const pngDims = (buf) => buf.readUInt32BE(16) + 'x' + buf.readUInt32BE(20);
-  const rcov = await fetch(base + '/api/card/recap-cover?s=' + LDROP, { headers: BOOTH });
-  const rcovBuf = Buffer.from(await rcov.arrayBuffer());
-  ok('the recap cover renders as a 1080x1920 PNG', rcov.status === 200 && rcov.headers.get('content-type') === 'image/png' && pngDims(rcovBuf) === '1080x1920',
-    rcov.status + ' ' + pngDims(rcovBuf));
-  const rth = await fetch(base + '/api/card/recap-thumb?s=' + LDROP, { headers: BOOTH });
-  const rthBuf = Buffer.from(await rth.arrayBuffer());
-  ok('the recap thumbnail renders as a 1920x1080 PNG', rth.status === 200 && pngDims(rthBuf) === '1920x1080', rth.status + ' ' + pngDims(rthBuf));
-  const rcovAnon = await fetch(base + '/api/card/recap-cover?s=' + LDROP);
-  ok('the recap render is platform-admin only (it names the A&Rs before the stream does)', rcovAnon.status === 403 || rcovAnon.status === 401, 'got ' + rcovAnon.status);
-  const rcapTxt = await fetch(base + "/api/admin/daily/recap-caption?s=" + LDROP, { headers: BOOTH });
-  ok('the caption preview is the same text the publish stored', rcapTxt.status === 200 && (await rcapTxt.text()) === rjob.recap_caption);
-
-  console.log('\n— The countdown clip captions: every artist lowest to highest, top 3 A&Rs, dated the day it posts —');
-  const cdRes = await fetch(base + '/api/admin/daily/countdown-captions?s=' + LDROP + '&date=2031-01-09', { headers: BOOTH });
-  const cd = await cdRes.json();
-  ok('the countdown captions come back for a tallied day', cdRes.status === 200 && cd.captions && cd.captions.instagram && cd.captions.social && cd.captions.x, cdRes.status + ' ' + JSON.stringify(cd).slice(0, 200));
-  ok('dated the day the clip POSTS, not the drop day', cd.date === '01.09.31' && /Countdown — 01\.09\.31/.test(cd.captions.instagram), cd.date);
-  // The console's countdown order: average, then more ratings, then drop order — reversed.
-  const cdRounds = (await dDb.all("SELECT r.song_artist, r.room_average, (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS n FROM rounds r WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL AND COALESCE(r.is_reference,0) = 0 ORDER BY r.room_average ASC, n ASC, r.idx DESC", [LDROP]));
-  const cdPos = cdRounds.map(r => cd.captions.social.indexOf(r.song_artist));
-  ok('every scored artist is shouted out, lowest first', cdPos.every(i => i > 0) && cdPos.every((v, i) => i === 0 || v >= cdPos[i - 1]), JSON.stringify(cdPos));
-  const cdTop = cdRounds[cdRounds.length - 1];
-  ok('and it ends on the Top Track', cdTop && new RegExp(cdTop.song_artist.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' — Top Track of the day').test(cd.captions.social), cd.captions.social);
-  const cdArs = (cd.captions.social.split('Congratulations to our top A&Rs:')[1] || '').split('\n\n')[0].trim().split('\n');
-  ok('only the top 3 A&Rs are named', cdArs.length <= 3 && /^1\. /.test(cdArs[0] || ''), JSON.stringify(cdArs));
-  ok('the non-Instagram caption carries no @handles', !/@[A-Za-z0-9_.]/.test(cd.captions.social) && !/@[A-Za-z0-9_.]/.test(cd.captions.x), cd.captions.x);
-  ok('the X caption fits in 280 (links count 23)', cd.xLength <= 280 && cd.xLength === srv._xLength(cd.captions.x), String(cd.xLength));
-  const cdDefault = await (await fetch(base + '/api/admin/daily/countdown-captions?s=' + LDROP, { headers: BOOTH })).json();
-  const ldDay = (await dDb.get('SELECT drop_day FROM sessions WHERE id = ?', [LDROP])).drop_day;
-  ok('with no date it defaults to three days after the records opened', cdDefault.postDay === srv._countdownPostDay({ drop_day: ldDay }) && cdDefault.postDay > ldDay, cdDefault.postDay + ' vs ' + ldDay);
-  const cdAnon = await fetch(base + '/api/admin/daily/countdown-captions?s=' + LDROP);
-  ok('the countdown captions are platform-admin only', cdAnon.status === 401 || cdAnon.status === 403, 'got ' + cdAnon.status);
-  // Pure builder: the X caption drops the hashtag, then the song title, before it goes over.
-  const longDay = { date: '01.01.31', ars: [{ name: 'A', ig: 'a' }], artists: Array.from({ length: 9 }, (_, i) => ({ name: 'Artist Number ' + i, ig: null, title: 'A Fairly Long Song Title ' + i })) };
-  const xLong = srv._countdownCaption(longDay, 'x');
-  ok('a long day\'s X caption sheds the hashtag and title first', !/#MakinIt/.test(xLong) && !/ with "/.test(xLong), xLong);
+  const rjobOld = await dDb.get('SELECT ars_url, songs_url, caption, recap_cover_url, recap_thumb_url, recap_caption FROM recap_jobs WHERE session_id = ?', [LDROP]);
+  ok('the publish no longer makes the Top 8 cards, the recap cover/thumbnail or their captions',
+    rjobOld && [rjobOld.ars_url, rjobOld.songs_url, rjobOld.caption, rjobOld.recap_cover_url, rjobOld.recap_thumb_url, rjobOld.recap_caption].every(v => v == null),
+    JSON.stringify(rjobOld));
+  for (const gone of ['/api/card/recap-cover?s=', '/api/card/recap-thumb?s=', '/api/admin/daily/recap-caption?s=', '/api/admin/daily/countdown-captions?s=']) {
+    const r = await fetch(base + gone + LDROP, { headers: BOOTH });
+    ok('retired route is gone: ' + gone.split('?')[0], r.status === 404, 'got ' + r.status);
+  }
 
   console.log('\n— The A&R Meeting results carousels: rendered at publish, ranked, no scores on the records —');
   // Same publish, same best-effort contract as the recap graphics: no Blob token here, so the
   // hosted slide lists are null and the day published anyway — the captions are kept.
   const rjob2 = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
   ok('the publish stores both carousel captions even with no Blob token',
-    /Top Track/.test(rjob2.results_song_caption || '') && /Top A&R/.test(rjob2.results_ar_caption || ''),
+    /^Makin' It Daily Countdown — /.test(rjob2.results_song_caption || '') && /Top A&R/.test(rjob2.results_ar_caption || ''),
     JSON.stringify([rjob2.results_song_caption, rjob2.results_ar_caption]));
   ok('and leaves the hosted slide lists null rather than failing the publish',
     rjob2.results_song_urls == null && rjob2.results_ar_urls == null, JSON.stringify([rjob2.results_song_urls, rjob2.results_ar_urls]));
+  // The 'song' set is the Makin' It Daily Countdown (2026-10-02): cover · one slide per record,
+  // bottom up · the A&R Team · submit. Rank only.
   const rsSong = await srv._resultsCarouselData(pubbed, 'song');
-  ok('three records make three slides: the top record, one list slide, the call to action',
-    rsSong && rsSong.total === 3 && rsSong.slides.map(s => s.kind).join(',') === 'hero,list,cta', JSON.stringify(rsSong && rsSong.slides.map(s => s.kind)));
+  ok('three records make six countdown slides: cover, #3, #2, #1, A&R Team, submit',
+    rsSong && rsSong.card === 'countdownSlide' && rsSong.total === 6
+      && rsSong.slides.map(s => s.kind + (s.rank || '')).join(',') === 'cover,rank3,rank2,rank1,team,cta',
+    JSON.stringify(rsSong && rsSong.slides.map(s => s.kind + (s.rank || ''))));
+  const cdRows = await dDb.all("SELECT r.song_title, r.room_average, (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS nv, r.idx FROM rounds r WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL AND COALESCE(r.is_reference,0) = 0", [LDROP]);
+  cdRows.sort((a, b) => (b.room_average - a.room_average) || (b.nv - a.nv) || (a.idx - b.idx));
+  ok('#1 is the record with the highest room average, and the order matches the console countdown',
+    rsSong.records.map(r => r.title).join('|') === cdRows.map(r => r.song_title).join('|'), JSON.stringify([rsSong.records, cdRows]));
+  // The winner-post checks below read the day's top record off this.
   const topRec = await dDb.get("SELECT song_title FROM rounds WHERE session_id = ? AND status = 'ratified' AND COALESCE(is_reference,0) = 0 ORDER BY room_average DESC, idx ASC LIMIT 1", [LDROP]);
-  ok('slide 1 is the record with the highest room average', rsSong.slides[0].hero.title === topRec.song_title, JSON.stringify([rsSong.slides[0].hero, topRec]));
-  ok('the list ranks the rest from 02 and carries NO scores',
-    rsSong.slides[1].rows.length === 2 && rsSong.slides[1].rows[0].rank === '02' && rsSong.slides[1].rows.every(r => r.value === undefined),
-    JSON.stringify(rsSong.slides[1].rows));
-  ok('the song carousel closes on Submit your music, closing line B',
-    rsSong.slides[2].cta.eyebrow === 'Submit your music' && /finish, release, or promote/.test(rsSong.slides[2].cta.body), JSON.stringify(rsSong.slides[2].cta));
+  ok('the cover counts the records', rsSong.slides[0].count === 3, JSON.stringify(rsSong.slides[0]));
+  ok('NO slide and NO caption carries a score, an average or a vote count',
+    rsSong.slides.every(sl => !('room_average' in sl) && !('votes' in sl) && !('score' in sl) && !('value' in sl))
+      && !cdRows.some(r => rjob2.results_song_caption.split('\n').slice(1).join('\n').includes(Number(r.room_average).toFixed(1))) && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsSong)),
+    JSON.stringify(rsSong.slides) + rjob2.results_song_caption);
+  ok('the caption names NOBODY (Instagram stops notifying past 10 mentions) and asks by comment keyword, not link',
+    !/@/.test(rjob2.results_song_caption) && !cdRows.some(r => rjob2.results_song_caption.includes(r.song_title))
+      && /^Comment #REVIEW to Submit Music$/m.test(rjob2.results_song_caption) && /^Comment #ANR to join the A&R Team$/m.test(rjob2.results_song_caption)
+      && !/makinitmag\.com/.test(rjob2.results_song_caption),
+    rjob2.results_song_caption);
+  // Instagram allows five hashtags a post — the comment keywords count toward it.
+  const tagCount = t => (String(t || '').match(/(^|\s)#[A-Za-z]\w*/g) || []).length;
+  const igCaps = { countdown: rjob2.results_song_caption, topAr: rjob2.results_ar_caption,
+    winnerTrack: rjob2.winner_track_caption, winnerAr: rjob2.winner_ar_caption };
+  ok('every Instagram caption carries at most five hashtags',
+    Object.values(igCaps).every(t => t && tagCount(t) <= 5) && tagCount(igCaps.countdown) === 5,
+    JSON.stringify(Object.fromEntries(Object.entries(igCaps).map(([k, t]) => [k, tagCount(t)]))));
+  const cdc = srv._countdownComments(rsSong);
+  // This day's records carry no Instagram handles, so nobody is mentioned (the format is pinned below).
+  ok('records with no Instagram handle produce no comments', rsSong.records.every(r => !r.handle) && cdc.comments.length === 0, JSON.stringify(cdc));
+  // Ten records, two by the same artist, one with no handle: eight mentions → comments of 4, 4, 1, the repeat merged.
+  const fake = { records: Array.from({ length: 10 }, (_, i) => ({ rank: i + 1, title: 'Song ' + (i + 1), artist: 'Artist ' + (i + 1),
+    handle: i === 9 ? '@artist3' : (i === 6 ? '' : '@artist' + (i + 1)) })) };
+  const fc = srv._countdownComments(fake);
+  const lead = 'Follow all the artists who made the countdown: ';
+  ok('four artists a comment, comma-separated; an artist with two records is mentioned once',
+    fc.comments.length === 2 && fc.comments[0] === lead + '@artist3, @artist9, @artist8, @artist6'
+      && fc.comments[1] === lead + '@artist5, @artist4, @artist2, @artist1' && fc.comments.join(' ').split('@artist3').length === 2, JSON.stringify(fc));
+  ok('an artist with no Instagram handle is not mentioned at all', !fc.comments.join(' ').includes('Artist 7'), JSON.stringify(fc));
   const rsAr = await srv._resultsCarouselData(pubbed, 'ar');
   ok('the A&R carousel leads with the board leader and no photo when the profile has none',
     rsAr && rsAr.slides[0].hero.title === 'Lex' && rsAr.slides[0].hero.photo == null, JSON.stringify(rsAr && rsAr.slides[0].hero));
-  ok('the A&R list carries points; nothing carries an email or phone',
-    rsAr.slides[1].rows.every(r => typeof r.value === 'number') && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsAr)), JSON.stringify(rsAr.slides[1].rows));
+  ok('the A&R list is placement only: no points, no email or phone',
+    rsAr.slides[1].rows.every(r => r.value === undefined) && rsAr.slides.every(sl => !sl.footLeft)
+      && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsAr)) && !/pts|points/i.test(srv._resultsCaption(rsAr).replace(/\$500/, '')),
+    JSON.stringify(rsAr.slides[1].rows) + srv._resultsCaption(rsAr));
   ok('the A&R carousel closes on Join the A&R Team with the $500', rsAr.slides[2].cta.eyebrow === 'Join the A&R Team' && rsAr.slides[2].cta.head.join(' ').includes('$500'));
   ok('a fourteen-record day is five slides with the list split evenly (5/4/4)',
     JSON.stringify(srv._resultsPages(Array.from({ length: 13 }, (_, i) => i), 6).map(p => p.length)) === '[5,4,4]');
@@ -2164,15 +2168,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the caption preview is the same text the publish stored', rsCapTxt.status === 200 && (await rsCapTxt.text()) === rjob2.results_song_caption);
   const rs1 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=1', { headers: BOOTH });
   const rs1Buf = Buffer.from(await rs1.arrayBuffer());
-  ok('a results slide renders as a 1080x1350 PNG', rs1.status === 200 && rs1.headers.get('content-type') === 'image/png' && pngDims(rs1Buf) === '1080x1350', rs1.status + ' ' + pngDims(rs1Buf));
+  ok('a countdown slide renders as a 1080x1350 PNG', rs1.status === 200 && rs1.headers.get('content-type') === 'image/png' && pngDims(rs1Buf) === '1080x1350', rs1.status + ' ' + pngDims(rs1Buf));
+  for (const n of [2, 4, 5, 6]) {
+    const rsN = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=' + n, { headers: BOOTH });
+    ok('countdown slide ' + n + ' renders', rsN.status === 200 && pngDims(Buffer.from(await rsN.arrayBuffer())) === '1080x1350', 'got ' + rsN.status);
+  }
+  const rsA1 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=ar&slide=1', { headers: BOOTH });
+  ok('the Top A&R carousel still renders', rsA1.status === 200 && pngDims(Buffer.from(await rsA1.arrayBuffer())) === '1080x1350', 'got ' + rsA1.status);
   const rs9 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=9', { headers: BOOTH });
   ok('a slide past the end is 404, not a blank card', rs9.status === 404, 'got ' + rs9.status);
   const rsAnon = await fetch(base + '/api/card/results?s=' + LDROP + '&set=ar&slide=1');
   ok('the results render is platform-admin only', rsAnon.status === 403 || rsAnon.status === 401, 'got ' + rsAnon.status);
   const rsStatus = (await call('/api/admin/daily/status?day=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
   ok('the daily status carries the carousel captions and slide counts for the console',
-    rsStatus.cards && rsStatus.cards.results && rsStatus.cards.results.songCount === 3 && rsStatus.cards.results.arCount === 3
-      && rsStatus.cards.results.songCaption === rjob2.results_song_caption, JSON.stringify(rsStatus.cards && rsStatus.cards.results));
+    rsStatus.cards && rsStatus.cards.results && rsStatus.cards.results.songCount === 6 && rsStatus.cards.results.arCount === 3
+      && rsStatus.cards.results.songCaption === rjob2.results_song_caption
+      && Array.isArray(rsStatus.cards.results.songComments) && rsStatus.cards.results.songTags.length === 6
+      && rsStatus.cards.results.songTags.every(t => t === ''), JSON.stringify(rsStatus.cards && rsStatus.cards.results));
 
   console.log('\n— The winner posts (039): Top Track / Top A&R of the Day at publish, of the Week on demand —');
   const wjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
@@ -2247,6 +2259,42 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and it does not duplicate a single recipient row', rcpts2.length === rcptCount, rcptCount + ' -> ' + rcpts2.length);
   const bcCount = await dDb.get("SELECT COUNT(*) AS c FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [LDROP]);
   ok('nor a second broadcast', Number(bcCount.c) === 1, JSON.stringify(bcCount));
+
+  // ---- My results, once the day has published: record by record, points, no rank.
+  const rsPub = (await call('/api/me/results', null, 'GET', LH)).d;
+  const rsDay = rsPub.days.find(d => d.id === LDROP);
+  const lexPart = await dDb.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [LDROP, 'life@test.com']);
+  const lexBonus = await dDb.get("SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [LDROP + ':' + lexPart.user_id]);
+  ok('a published day lists every record with the A&R\'s rating, guess, the room average and points',
+    rsDay && rsDay.state === 'published' && rsDay.kind === 'daily' && rsDay.rounds.length === 3
+      && rsDay.rounds.every(r => r.voted && r.taste === 7 && r.predict === 7 && r.average != null && r.points != null && r.tier),
+    JSON.stringify(rsDay));
+  ok('the day\'s points are the votes plus the completion bonus',
+    rsDay.points === Number(lexPart.total_points) + (lexBonus ? Number(lexBonus.points) : 0) && rsDay.bonus === (lexBonus ? Number(lexBonus.points) : 0),
+    rsDay.points + ' vs ' + lexPart.total_points + ' + ' + JSON.stringify(lexBonus));
+  ok('the week adds up the days that have come out',
+    rsPub.week.current === true && rsPub.week.name === 'This week' && rsPub.stats.played >= 1 && rsPub.stats.points >= rsDay.points && !!rsPub.stats.grade,
+    JSON.stringify([rsPub.week, rsPub.stats]));
+  ok('there is NO rank anywhere in My results (the weekly announcement reveals it)',
+    !/rank|fieldSize|percentile/i.test(JSON.stringify(rsPub)), JSON.stringify(rsPub).slice(0, 300));
+  ok('and no email or phone', !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsPub)));
+  const rsZed = await srv._arResultsData(zedUid);
+  const rsZedDay = rsZed.days.find(d => d.id === LDROP);
+  ok('a record they skipped on a day they played shows the average and no points of theirs',
+    rsZedDay && rsZedDay.rated === 1 && rsZedDay.total === 3 && rsZedDay.bonus === 0
+      && rsZedDay.rounds.filter(r => !r.voted).length === 2 && rsZedDay.rounds.filter(r => !r.voted).every(r => r.average != null && r.points == null && r.taste == null),
+    JSON.stringify(rsZedDay));
+  const rsIdle = await srv._arResultsData(uidIdle);
+  const rsIdleDay = rsIdle.days.find(d => d.id === LDROP);
+  ok('a day the A&R missed is listed and carries nothing else — results are for the days they played',
+    rsIdleDay && rsIdleDay.state === 'missed' && rsIdleDay.total === 3 && !/average|points|rounds|title/.test(JSON.stringify(rsIdleDay)),
+    JSON.stringify(rsIdleDay));
+  ok('and it earns them nothing in the week', rsIdle.stats.points === 0 && rsIdle.stats.played === 0, JSON.stringify(rsIdle.stats));
+  const rsFuture = (await call('/api/me/results?week=2999-01-04', null, 'GET', LH)).d;
+  ok('a week in the future resolves to this week', rsFuture.week.start === rsPub.week.start && rsFuture.week.next === null, JSON.stringify(rsFuture.week));
+  const rsOld = (await call('/api/me/results?week=2020-01-08', null, 'GET', LH)).d;
+  ok('an old week is empty, starts on its Monday, and pages forward but not back past the account',
+    rsOld.week.start === '2020-01-06' && rsOld.days.length === 0 && rsOld.week.prev === null && rsOld.week.next === '2020-01-13', JSON.stringify(rsOld.week));
 
   // The personalised block: exactly one row per record they rated, carrying every column
   // the scorecard prints. Absent — not empty — for someone who did not play.
@@ -3074,6 +3122,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a tampered link is refused', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': rlTok.slice(0, -2) + 'xx' })).status === 401);
   ok('a manage link (np1) is not a refer link', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': tsrv._mintNotifyLink(rlUid) })).status === 401);
   ok('the link cannot reach the profile or prefs handlers', (await call('/api/me/notify-prefs', null, 'GET', { 'X-Refer-Link': rlTok })).status !== 200);
+  const rlRes = await call('/api/me/results', null, 'GET', { 'X-Refer-Link': rlTok });
+  ok('the link reads the owner\'s own results (the results email lands logged in)', rlRes.status === 200 && !!rlRes.d.week && Array.isArray(rlRes.d.days), rlRes.status + '');
+  ok('a tampered link reads no results', (await call('/api/me/results', null, 'GET', { 'X-Refer-Link': rlTok.slice(0, -2) + 'xx' })).status === 401);
+  ok('the results email\'s link opens the results section and carries the signed link',
+    tsrv._accountResultsUrl('https://x', rlUid).startsWith('https://x/account#results&rt=rf1.' + rlUid + '.'), tsrv._accountResultsUrl('https://x', rlUid));
 
   console.log('\n— Revive ad zones: phase-aware, room banners always win —');
   await call('/api/admin/settings', { reviveDeliveryUrl: 'https://ads.cannick.com/www/delivery', reviveZoneLobby: '8', reviveZoneGame: '9' }, 'POST', ADMINH);
@@ -3285,36 +3338,46 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // was unconditional, so a non-player was greeted with "Yesterday's results, <their name>."
   // and then given the Top 8 and nothing of their own. A headline claiming a block that was
   // never owed reads as a bug even though the data was right.
-  const dgArg = { dayLabel: 'Thu, Sep 3', cards: {}, manage: null, playUrl: 'https://x/' };
+  const dgArg = { dayLabel: 'Thu, Sep 3', manage: null, playUrl: 'https://x/' };
   const dgRecap = { totalPoints: 543, grade: 'A+', rank: 1, bullseyes: 0, completionBonus: 25,
     rounds: [{ song_title: 'A Record', song_artist: 'An Artist', taste: 7, predict: 6.6,
                room_average: 6.7, points: 95, tier: 'sharp' }] };
 
   const dgPlayed = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: dgRecap });
   ok('someone who played is greeted by name', /Your results, Kelby/.test(dgPlayed));
-  ok('and their round-by-round table is there', /A Record/.test(dgPlayed) && /How you did/.test(dgPlayed));
+  // The mail is a HEADLINE now (operator, 2026-10-02): it used to carry the whole table, which
+  // made it the report and gave nobody a reason to come back to the site.
+  ok('and the mail carries what the day paid', /How you did/.test(dgPlayed) && />543</.test(dgPlayed) && /A\+/.test(dgPlayed) && /Completion bonus/.test(dgPlayed));
+  ok('but NOT the round-by-round table — that lives on the site', !/A Record/.test(dgPlayed) && !/An Artist/.test(dgPlayed) && !/Off by/.test(dgPlayed), dgPlayed.slice(0, 200));
+  ok('and no rank', !/Rank/.test(dgPlayed));
 
   const dgIdle = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: null });
   ok('someone who did NOT play is not greeted as though they have results',
     !/Your results, Kelby/.test(dgIdle), dgIdle.slice(0, 300));
-  ok('the headline still names the day', /The results\./.test(dgIdle) && /Thu, Sep 3 records landed/.test(dgIdle));
+  ok('the headline still names the day', /The results\./.test(dgIdle) && /Thu, Sep 3 records/.test(dgIdle));
   ok('and it says plainly why there is nothing of their own',
-    /didn't rate these records/.test(dgIdle), dgIdle.slice(0, 400));
+    /didn't rate the Thu, Sep 3 records/.test(dgIdle), dgIdle.slice(0, 400));
+  // The Top 8 images were retired (2026-10-02); the Top Tracks are on Instagram now.
+  ok('the digest carries no Top 8 images and points to Instagram for the Top Tracks',
+    !/<img/.test(dgIdle) && !/<img/.test(dgPlayed) && /See the Top Tracks on Instagram/.test(dgIdle)
+      && /instagram\.com\/makinit4indies/.test(dgPlayed)
+      && /See the Top Tracks on Instagram: https:\/\/www\.instagram\.com\/makinit4indies\//.test(srv._dailyDigestEmailText({ ...dgArg, recap: null })));
   ok('no personal block is rendered for them', !/How you did/.test(dgIdle));
   ok('but they still get the day and the way back in',
     /Rate today's records/.test(dgIdle));
   // The 69-hour schedule's results mail (operator, 2026-09-27): the Livestream Countdown link,
   // a personal results link, and the reminder that today's ratings close in 3 hours.
   const dgFull = { ...dgArg, name: 'Kelby Cannick', recap: dgRecap, streamUrl: 'https://yt.example/live',
-    resultsUrl: 'https://x/daily?s=abc', closesLabel: '3:00 PM ET', closesInHours: 3 };
+    resultsUrl: 'https://x/account#results', closesLabel: '3:00 PM ET', closesInHours: 3 };
   const dgFullHtml = srv._dailyDigestEmailHtml(dgFull), dgFullText = srv._dailyDigestEmailText(dgFull);
   ok('the results mail links the Livestream Countdown',
-    /yt\.example\/live/.test(dgFullHtml) && /Watch the Makin' It HOT 100 Daily Countdown/.test(dgFullText));
-  ok('and the A&R\'s own results', /See your full results/.test(dgFullHtml) && /daily\?s=abc/.test(dgFullText));
+    /yt\.example\/live/.test(dgFullHtml) && /Watch the Makin' It Daily Countdown/.test(dgFullText));
+  ok('and to the A&R\'s own results on the site', /See your results/.test(dgFullHtml) && /account#results/.test(dgFullHtml) && /account#results/.test(dgFullText));
+  ok('the text version is a headline too', /Points 543/.test(dgFullText) && !/A Record/.test(dgFullText) && !/Rank/.test(dgFullText), dgFullText);
   ok('and says today\'s records close in 3 hours',
     /Today's records close at 3:00 PM ET — in 3 hours\./.test(dgFullText), dgFullText);
   ok('a non-player gets no personal results link',
-    !/See your full results/.test(srv._dailyDigestEmailHtml({ ...dgFull, recap: null })));
+    !/See your results/.test(srv._dailyDigestEmailHtml({ ...dgFull, recap: null })));
 
   // The digest's "Today's records are open" button went to /, where a daily player (who holds
   // only a per-session token) sees the sign-up pitch; /join then ended on "we'll notify you when
@@ -4863,6 +4926,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
     req.on('data', c => body += c);
     req.on('end', () => {
       const u = new URL(req.url, 'http://x');
+      // Attachments are multipart, not JSON: record them by the file name in the form.
+      if (req.method === 'POST' && u.pathname === '/attachments') {
+        const fname = (/filename="([^"]+)"/.exec(body) || [])[1] || null;
+        asanaCalls.push({ method: 'POST', path: '/attachments', data: { filename: fname } });
+        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ data: { gid: 'att' } }));
+      }
       const data = body ? JSON.parse(body).data : null;
       asanaCalls.push({ method: req.method, path: u.pathname, data });
       const reply = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
@@ -5079,7 +5148,71 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const ldCheck = await call('/api/admin/leads/check?pct=100&minVotes=0', null, 'GET', ADMINH);
   ok('leads/check: runs every step and times it', ldCheck.status === 200 && ldCheck.d.steps.length >= 5 && ldCheck.d.steps.every(s => typeof s.ms === 'number'), JSON.stringify(ldCheck.d).slice(0, 300));
   ok('leads/check: names a step that fails instead of hanging', ldCheck.d.steps.some(s => s.name === 'GET /users/me' && s.ok === false && /unmocked|Asana/.test(s.error)), JSON.stringify(ldCheck.d.steps[2]));
+  // A&R Daily → Asana (2026-10-02): one task per post, slides attached in carousel order.
+  console.log('\n— A&R Daily → Asana: the Daily Countdown task and the Top A&Rs task —');
+  await anDb.run("INSERT INTO settings (k, v) VALUES ('asana_project', '555') ON CONFLICT (k) DO UPDATE SET v = '555'");
+  // The published drop from the daily tests; later tests may have retired it, so bring it back for these.
+  const atWas = await anDb.get('SELECT deleted_at, async_state FROM sessions WHERE id = ?', [LDROP]);
+  await anDb.run("UPDATE sessions SET deleted_at = NULL, async_state = 'published' WHERE id = ?", [LDROP]);
+  const atBefore = asanaCalls.length;
+  const atSong = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', BOOTH);
+  const atMade = asanaCalls.slice(atBefore);
+  const atTask = atMade.find(c => c.method === 'POST' && c.path === '/tasks');
+  const atFiles = atMade.filter(c => c.path === '/attachments').map(c => c.data.filename);
+  ok('daily asana: the countdown task is made with every slide attached, in order',
+    atSong.status === 200 && atSong.d.done === true && atSong.d.attached === 6 && atFiles.length === 6
+      && /countdown-.*-01\.png$/.test(atFiles[0]) && /countdown-.*-06\.png$/.test(atFiles[5]), JSON.stringify([atSong.d, atFiles]));
+  ok('daily asana: the task is named for the post and carries the caption in its notes',
+    atTask && /^Makin' It Daily Countdown — \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
+      && /Caption \(paste as-is\)/.test(atTask.data.notes) && /Comment #REVIEW to Submit Music/.test(atTask.data.notes)
+      && /Post the 6 attached slides in order/.test(atTask.data.notes), JSON.stringify(atTask && atTask.data));
+  const atAr = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'ar' }, 'POST', BOOTH);
+  const atArTask = asanaCalls.filter(c => c.method === 'POST' && c.path === '/tasks').pop();
+  ok('daily asana: the Top A&Rs task is its own task, placement only',
+    atAr.status === 200 && atAr.d.done === true && /^Top A&Rs — /.test(atArTask.data.name) && !/pts|points/i.test(atArTask.data.notes), JSON.stringify(atArTask && atArTask.data));
+  const atResumeAt = asanaCalls.length;
+  const atResume = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song', taskId: atSong.d.taskId, next: 5 }, 'POST', BOOTH);
+  const atResumed = asanaCalls.slice(atResumeAt);
+  ok('daily asana: a follow-up press attaches only what is left and makes no second task',
+    atResume.d.done === true && atResumed.length === 1 && atResumed[0].path === '/attachments' && /-06\.png$/.test(atResumed[0].data.filename), JSON.stringify(atResumed));
+  // The cron makes both tasks on its own once a day is queued (rendered); then never again.
+  const queuedAtPublish = (await anDb.get('SELECT asana_tasks FROM recap_jobs WHERE session_id = ?', [LDROP])).asana_tasks;
+  ok('daily asana auto: rendering the day queues its tasks', queuedAtPublish === '{}', String(queuedAtPublish));
+  await anDb.run("UPDATE recap_jobs SET asana_tasks = NULL, asana_claimed_at = NULL WHERE session_id = ?", [LDROP]);
+  const autoNone = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  ok('daily asana auto: a day that was never queued is left alone (no back-fill)', autoNone.created === 0, JSON.stringify(autoNone));
+  await anDb.run("UPDATE recap_jobs SET asana_tasks = '{}' WHERE session_id = ?", [LDROP]);
+  await anDb.run('UPDATE recap_jobs SET asana_claimed_at = ? WHERE session_id = ?', [Date.now(), LDROP]);
+  const autoClaimed = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  ok('daily asana auto: a day another run has claimed is skipped', autoClaimed.created === 0, JSON.stringify(autoClaimed));
+  await anDb.run('UPDATE recap_jobs SET asana_claimed_at = NULL WHERE session_id = ?', [LDROP]);
+  const autoAt = asanaCalls.length;
+  const auto1 = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  const autoMade = asanaCalls.slice(autoAt);
+  const autoState = JSON.parse((await anDb.get('SELECT asana_tasks FROM recap_jobs WHERE session_id = ?', [LDROP])).asana_tasks);
+  ok('daily asana auto: the cron makes BOTH tasks and attaches every slide',
+    auto1.created === 2 && autoMade.filter(c => c.path === '/tasks').length === 2
+      && autoState.song.done && autoState.song.total === 6 && autoState.song.next === 6 && autoState.ar.done && /^\d+$/.test(autoState.song.gid),
+    JSON.stringify([auto1, autoState]));
+  ok('daily asana auto: the claim is released after', (await anDb.get('SELECT asana_claimed_at FROM recap_jobs WHERE session_id = ?', [LDROP])).asana_claimed_at == null);
+  const auto2At = asanaCalls.length;
+  const auto2 = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  ok('daily asana auto: a finished day is never posted twice', auto2.created === 0 && asanaCalls.length === auto2At, JSON.stringify(auto2));
+  // A run cut short part-way: the gid is saved, so the next run resumes on the SAME task.
+  await anDb.run("UPDATE recap_jobs SET asana_tasks = ? WHERE session_id = ?", [JSON.stringify({ song: { gid: '4242', url: 'u', next: 4, total: 6 }, ar: autoState.ar }), LDROP]);
+  const auto3At = asanaCalls.length;
+  await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  const auto3 = asanaCalls.slice(auto3At);
+  ok('daily asana auto: a half-attached task resumes on the same task, no second task',
+    auto3.length === 2 && auto3.every(c => c.path === '/attachments') && /-05\.png$/.test(auto3[0].data.filename), JSON.stringify(auto3));
+  const atStatus = (await call('/api/admin/daily/status?day=' + (await anDb.get('SELECT drop_day FROM sessions WHERE id = ?', [LDROP])).drop_day, null, 'GET', BOOTH)).d;
+  ok('daily asana auto: the console status carries the task state', atStatus.cards && atStatus.cards.asana === true && atStatus.cards.asanaTasks && atStatus.cards.asanaTasks.song.done === true, JSON.stringify(atStatus.cards && atStatus.cards.asanaTasks));
+  const atAnon = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', AH);
+  ok('daily asana: platform-admin only', atAnon.status === 403, 'got ' + atAnon.status);
   delete process.env.ASANA_TOKEN;
+  const atOff = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', BOOTH);
+  ok('daily asana: refuses without ASANA_TOKEN (409)', atOff.status === 409, 'got ' + atOff.status);
+  await anDb.run('UPDATE sessions SET deleted_at = ?, async_state = ? WHERE id = ?', [atWas.deleted_at, atWas.async_state, LDROP]);
   asanaMock.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);

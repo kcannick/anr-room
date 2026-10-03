@@ -17,7 +17,8 @@
    narrate a live show; this surface is a daily casual game for someone with
    five spare minutes, and everything that synchronises a crowd to a moment is
    deliberately absent: no live count, no join ticker, no host message, no
-   giveaway, no chime, no countdown clock, no banner, no embedded player.
+   giveaway, no chime, no countdown clock, no embedded player. (It DOES carry the
+   sponsor banner, at the top like play.html — operator's call, 2026-09-30.)
    A live session is announced by notification with a link that opens the
    stream — the room_live topic (028) already carries exactly that.
    Built to the approved design canvas: Archivo 800/900 for display, Space Mono
@@ -157,6 +158,13 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 .stat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;
   text-transform:uppercase;color:var(--ink-dim)}
 .stat .v{font-family:"Space Mono",monospace;font-size:25px;font-weight:700;margin-top:5px}
+/* the join host is an empty flex child once someone is in — drop it so it doesn't double the gap */
+#authHost:not(:has(> section:not(.hide))){display:none}
+.ad-slot{border-radius:12px;display:none;align-items:center;justify-content:center;overflow:hidden}
+.ad-slot.filled{display:flex;background:rgba(255,255,255,.02)}
+.ad-slot a,.ad-slot img{display:block;width:100%}
+.ad-slot img{width:100%;height:auto;max-height:120px;object-fit:contain;border-radius:12px}
+.ad-slot iframe{width:320px;height:100px;border:0;display:block;border-radius:12px}
 .endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
 .endorse img{height:13px;width:auto;opacity:.75}
 </style>
@@ -174,6 +182,10 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <div class="standing hide mono" id="standing"></div>
     </div>
   </div>
+
+  <!-- AD SLOT — the same cascade and box as play.html's #adTop. Hidden entirely when no
+       banner is set, so it takes no space. -->
+  <div class="ad-slot" id="adTop" aria-hidden="true"></div>
 
   <!-- the join screens are injected here by /auth.js -->
   <div id="authHost"></div>
@@ -284,16 +296,21 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
         <span style="font-size:14px;line-height:1.5" id="qNote"></span>
       </div>
 
-      <!-- RATE + PREDICT -->
+      <!-- RATE, then PREDICT — one step at a time, the same flow as play.html: Rate it →
+           Next → Predict the Average → Lock it in, with Back keeping both answers. -->
       <div id="qRate">
+        <div id="stepRate">
         <div class="steprow" style="margin-top:20px">
           <span class="stepnum">1</span><span style="font-weight:800;font-size:15px;letter-spacing:-.01em">Rate it</span>
         </div>
         <p class="dim" style="margin:7px 0 11px;font-size:12.5px;line-height:1.5">Your honest take, 0 to 9.</p>
         <div class="pips" id="pipsTop" style="margin-bottom:6px"></div>
         <div class="pips" id="pipsBot"></div>
+        <button class="btn" id="btnStepNext" style="margin-top:18px" disabled>Next →</button>
+        </div>
 
-        <div class="steprow" style="margin-top:22px">
+        <div id="stepPredict" class="hide">
+        <div class="steprow" style="margin-top:20px">
           <span class="stepnum">2</span><span style="font-weight:800;font-size:15px;letter-spacing:-.01em">Predict the Average</span>
         </div>
         <p class="dim" style="margin:7px 0 4px;font-size:12.5px;line-height:1.5">
@@ -302,6 +319,8 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
         <div class="mono" id="predVal" style="font-size:36px;font-weight:700;text-align:center;color:var(--signal);margin:8px 0 2px">4.5</div>
         <input type="range" id="pred" min="0" max="9" step="0.1" value="4.5">
         <button class="btn" id="btnLock" style="margin-top:18px" disabled>Lock it in</button>
+        <button class="btn ghost" id="btnStepBack" style="margin-top:10px">← Back</button>
+        </div>
         <div class="err" id="voteErr" style="font-size:13px;margin-top:8px"></div>
       </div>
 
@@ -344,6 +363,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <div id="doneTiers" style="text-align:left"></div>
       <div class="note" id="doneNext" style="text-align:left;margin-top:18px"></div>
       <button class="btn ghost" id="btnReview" style="margin-top:16px">Review my evaluations</button>
+      <a class="btn ghost" href="/account#results" style="margin-top:10px;text-decoration:none">My past results</a>
       <a class="btn ghost" href="/refer" style="margin-top:10px;text-decoration:none">Earn bonus points</a>
     </div>
   </section>
@@ -355,6 +375,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <h2 style="font-size:24px;margin:4px 0 0">The window is closed.</h2>
       <p class="dim" style="font-size:14px;line-height:1.55;margin:0" id="sealedSub"></p>
       <button class="btn ghost" id="btnSealedReview">Review my evaluations</button>
+      <a class="btn ghost" href="/account#results" style="text-decoration:none">My past results</a>
     </div>
   </section>
 
@@ -373,6 +394,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
     <!-- Home, not /daily: today's drop is a DIFFERENT session id, and this page only knows
          yesterday's. The homepage already resolves whichever drop is open. -->
     <a class="btn" id="btnRecapNext" href="/">Today's records are open</a>
+    <a class="btn ghost" href="/account#results" style="text-decoration:none">My past results</a>
     <a class="btn ghost" href="/refer" style="text-decoration:none">Earn bonus points</a>
   </section>
 
@@ -530,6 +552,7 @@ function isAudioUrl(href){
     el.onclick = () => {
       chosenTaste = n;
       $('#screen-queue').querySelectorAll('.pip').forEach(p => p.classList.toggle('on', +p.dataset.n === n));
+      $('#btnStepNext').disabled = false;
       maybeEnableLock();
     };
     (n <= 4 ? $('#pipsTop') : $('#pipsBot')).appendChild(el);
@@ -540,6 +563,13 @@ $('#pred').oninput = e => {
   $('#predVal').textContent = predict.toFixed(1); maybeEnableLock();
 };
 function maybeEnableLock(){ $('#btnLock').disabled = !(chosenTaste !== null && predictTouched); }
+// Same screen, same position — only the active step shows. Both inputs survive the move.
+function showStep(step){
+  $('#stepRate').classList.toggle('hide', step !== 1);
+  $('#stepPredict').classList.toggle('hide', step !== 2);
+}
+$('#btnStepNext').onclick = () => { if(chosenTaste !== null) showStep(2); };
+$('#btnStepBack').onclick = () => showStep(1);
 
 // THE RESET EDGE. This is the ONLY thing that clears the inputs, and it fires only when the
 // bound record actually changes. If a render reset unconditionally, a background refetch
@@ -550,6 +580,8 @@ function resetVoteInputs(){
   $('#screen-queue').querySelectorAll('.pip').forEach(p => p.classList.remove('on'));
   $('#pred').value = 4.5; $('#predVal').textContent = '4.5';
   $('#voteErr').textContent = '';
+  $('#btnStepNext').disabled = true;
+  showStep(1);
   maybeEnableLock();
 }
 
@@ -941,6 +973,49 @@ function renderRecap(st){
 }
 
 /* ---------------------------------------------------------------------------
+   AD SLOT — ported from play.html. First-party banner wins; else the Revive zone iframe
+   (fresh cache-buster per load, rotated on its own 15s ticker); else the slot is cleared.
+   A banner's DOM is only rebuilt when the banner itself changes, so a refetch never
+   flickers it.
+   --------------------------------------------------------------------------- */
+const AD_ROTATE_MS = 15000;
+let adMode = null, adZone = null, adLoadedAt = 0, adSt = null;
+setInterval(() => { if(adSt && adMode === 'revive') renderAd(adSt); }, 1000);
+function renderAd(st){
+  adSt = st;
+  const slot = $('#adTop'); if(!slot || !st) return;
+  if(st.banner && st.banner.image){ adMode = 'banner'; adZone = null; renderBanner(st.banner); return; }
+  if(st.revive && st.revive.base && st.revive.zone){
+    const due = adMode !== 'revive' || adZone !== st.revive.zone || (Date.now() - adLoadedAt) >= AD_ROTATE_MS;
+    adMode = 'revive';
+    if(due){
+      adZone = st.revive.zone; adLoadedAt = Date.now();
+      slot.dataset.bid = '';
+      const cb = Math.floor(Math.random() * 1e12);
+      slot.innerHTML = `<iframe src="${st.revive.base}/afr.php?zoneid=${encodeURIComponent(st.revive.zone)}&cb=${cb}" width="320" height="100" frameborder="0" scrolling="no" title="Sponsor" allow="autoplay"></iframe>`;
+      slot.classList.add('filled');
+    }
+    return;
+  }
+  adMode = null; adZone = null; renderBanner(null);
+}
+function renderBanner(banner){
+  const slot = $('#adTop'); if(!slot) return;
+  if(banner && banner.image){
+    if(slot.dataset.bid !== banner.id){
+      slot.dataset.bid = banner.id;
+      const img = `<img src="${banner.image}" alt="Sponsor">`;
+      slot.innerHTML = banner.link
+        ? `<a href="${banner.link}" target="_blank" rel="noopener noreferrer">${img}</a>`
+        : img;
+    }
+    slot.classList.add('filled');
+  }else{
+    slot.classList.remove('filled'); slot.innerHTML = ''; slot.dataset.bid = '';
+  }
+}
+
+/* ---------------------------------------------------------------------------
    POLLING. Deliberately NO Ably: a realtime connection per user per day is a paid
    connection that delivers nothing an async participant needs — nothing on a drop
    changes on a two-second timescale. A five-minute safety net, a throttled
@@ -955,6 +1030,7 @@ async function refresh(){
     ST = d;
     if(d.commentMax) COMMENT_MAX = d.commentMax;
     if(d.mode !== 'async'){ location.replace('/play?s=' + encodeURIComponent(SID)); return; }
+    renderAd(d);
     render();
   }catch(e){
     // An auth failure means the token is dead; anything else is transient and the
@@ -993,6 +1069,8 @@ window.ANRAuth.bindJoinHandlers();
     // A live-show link opened here belongs on the broadcast page, and vice versa — the
     // two surfaces are different products, so send them where they were going.
     if(info && info.mode !== 'async'){ location.replace('/play?s=' + encodeURIComponent(SID)); return; }
+    // Banner from the first paint, join screens included — same as play.html.
+    renderAd(info);
   }catch(e){
     if(e === 404){ location.replace('/'); return; }
   }
