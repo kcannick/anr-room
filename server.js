@@ -8662,6 +8662,21 @@ async function handleApi(req, res, url) {
     const arRows = await db.all(
       'SELECT uid, name, primary_category, location, photo_url FROM users WHERE profile_complete = 1 AND blocked = 0 ORDER BY first_seen DESC LIMIT 12', []);
     const recentARs = arRows.map(u => ({ id: u.uid, name: u.name, category: u.primary_category || null, location: u.location || null, photoUrl: u.photo_url || null }));
+    // Top talent scouts (operator, 2026-10-02): scouting is the secondary game and the
+    // homepage makes a big deal of who is best at it — the top 3 by lifetime scouting points
+    // (point_events reason 'scout', one row per referred record that rated), shown once anyone
+    // has some. Complete, unblocked profiles only (the listing prints name/role/city/photo).
+    // Bounded: scout rows are one per scouted record, grouped and limited.
+    const scoutRows = await db.all(
+      `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url,
+              SUM(pe.points) AS pts, COUNT(*) AS records
+         FROM point_events pe JOIN users u ON u.uid = pe.user_id
+        WHERE pe.reason = 'scout' AND u.profile_complete = 1 AND COALESCE(u.blocked, 0) = 0
+        GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
+       HAVING SUM(pe.points) > 0
+        ORDER BY pts DESC, records DESC, u.name ASC LIMIT 3`, []);
+    const topScouts = scoutRows.map((u, i) => ({ rank: i + 1, id: u.uid, name: u.name, category: u.primary_category || null,
+      location: u.location || null, photoUrl: u.photo_url || null, points: Number(u.pts) || 0, records: Number(u.records) || 0 }));
     // House submission link for the homepage's submit section when no room link applies
     // (single source of truth: the platform setting, falling back to the built-in).
     const houseSubmitUrl = (await db.get("SELECT v FROM settings WHERE k = 'house_submit_url'"))?.v || 'https://www.makinitmag.com/review';
@@ -8737,7 +8752,7 @@ async function handleApi(req, res, url) {
     const schedW = dropWindowFor(etDay(), await dailySchedule());
     const schedule = { opensLabel: etClockLabel(schedW.opensAt), closesLabel: etClockLabel(schedW.closesAt),
       streamLabel: etClockLabel(schedW.streamAt), resultsLabel: etClockLabel(schedW.resultsAt) };
-    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, houseSubmitUrl, schedule });
+    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, topScouts, houseSubmitUrl, schedule });
   }
 
 
@@ -9165,8 +9180,8 @@ async function handleApi(req, res, url) {
       graphics: [
         gfx('card', 'Official A&R Card - Feed', '1080 × 1350'),
         gfx('story', 'Official A&R Card - Story', '1080 × 1920'),
-        gfx('join', 'Join the A&R Team', '1080 × 1350'),
         gfx('submit', 'Submit your music', '1080 × 1350'),
+        gfx('join', 'Join the A&R Team', '1080 × 1350'),
       ],
     });
   }
