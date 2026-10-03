@@ -501,7 +501,9 @@ async function verifyReferLink(req, url) {
   if (u.blocked === 1 || u.blocked === true) return { error: 'account_suspended', status: 403 };
   return { uid: u.uid, user: u };
 }
-// Either token, or a refer link. Used ONLY by /api/me/referrals and /api/card/refer.
+// Either token, or a refer link. Used ONLY by /api/me/referrals, /api/card/refer and
+// /api/me/results (2026-10-02: the results email opens the account page's results section) —
+// all three read the caller's OWN account-page data and write nothing.
 async function resolveReferUid(req, url) {
   const uid = await resolveUserId(req);
   if (uid) return uid;
@@ -704,6 +706,17 @@ async function resolveBanner(session) {
     if (b) return b;
   }
   return null;
+}
+
+// The ad slot every player surface carries: the room's own banner -> the Revive zone (when
+// configured) -> the global banner. `zone` is 'lobby' or 'game'. All public data (banner
+// image URL + link, Revive zone id) — no PII.
+async function adSlotFor(session, zone) {
+  const own = session.banner_id ? await getBanner(session.banner_id) : null;
+  if (own) return { banner: own };
+  const rv = await getReviveCfg();
+  if (rv) return { revive: { base: rv.base, zone: rv[zone] } };
+  return { banner: await resolveBanner(session) }; // banner_id is null here -> global level
 }
 
 // The round that is actually "in play" right now: a live vote, a just-closed
@@ -2110,6 +2123,9 @@ async function asyncPlayerState(participant, session, count) {
     refCode: participant.ref_code || null,
     participants: count,
   };
+  // Same ad cascade as the live player. A drop is a new session every day, so in practice
+  // this is the Revive game zone or the global banner; a per-day banner_id still wins.
+  Object.assign(out, await adSlotFor(session, phase === 'waiting' ? 'lobby' : 'game'));
 
   // The scorecard. Only ever built in 'recap', which is only reachable once the day has
   // published — so this is the one place room_average is allowed to exist in a player
@@ -2250,15 +2266,7 @@ async function playerState(participant) {
   // Ad slot — EVERY phase, results and recap included (banner ads fund the show;
   // was lobby/voting/locked only until 2026-08-14).
   // Cascade: the room's own banner -> Revive zone (when configured) -> global banner.
-  {
-    const own = session.banner_id ? await getBanner(session.banner_id) : null;
-    if (own) out.banner = own;
-    else {
-      const rv = await getReviveCfg();
-      if (rv) out.revive = { base: rv.base, zone: out.phase === 'waiting' ? rv.lobby : rv.game };
-      else out.banner = await resolveBanner(session); // banner_id is null here -> global level
-    }
-  }
+  Object.assign(out, await adSlotFor(session, out.phase === 'waiting' ? 'lobby' : 'game'));
   if (session.status === 'completed') {
     out.phase = 'recap';
     out.recap = await buildRecap(participant);
@@ -2344,6 +2352,16 @@ async function creditReferralRounds(round, session) {
 // same uid to makinitmag.com/review, which hands it back on the daily push as scout.uid.
 // The uid is already public (it is the /u/<uid> profile URL), so it is safe in a link.
 const SUBMIT_REVIEW_URL = 'https://www.makinitmag.com/review';
+// The account page's thumbnail grid. 432px is 2x a ~200px card on a phone.
+const REFER_THUMB_WIDTH = 432;
+// What a referral graphic PRINTS, hashed: the cache key for its thumbnail. Per-A&R (the uid
+// is in it, so a shared device never shows the last person's card) and it moves when the
+// printed fields do, so a new photo shows on the next visit instead of a day later.
+function referGraphicVersion(u) {
+  return crypto.createHash('sha256')
+    .update([u.uid, u.name || '', u.primary_category || '', u.location || '', u.photo_url || ''].join('\u0000'))
+    .digest('hex').slice(0, 12);
+}
 function referralLinks(uid) {
   const u = encodeURIComponent(uid);
   return { join: `${publicBase()}/?ref=${u}`, submit: `${SUBMIT_REVIEW_URL}?ref=${u}` };
@@ -3092,11 +3110,6 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
 // The CTA lands correctly for free: under the 69-hour schedule the results publish at noon, three
 // hours before today's records close, so "rate today's records" is true at send time and the
 // reminder has real urgency. The recap email IS the acquisition email.
-//
-// The five tier names are exactly what tierForError() (scoring.js) emits. One map here, no
-// second source of truth for what counts as "sharp".
-const TIER_LABEL = { bullseye: 'Bullseye', sharp: 'Sharp', close: 'Close', off: 'Off', wayoff: 'Way off' };
-const TIER_COLOR = { bullseye: '#4bb749', sharp: '#4bb749', close: '#f3f0fb', off: '#a9a2c9', wayoff: '#a9a2c9' };
 
 // The day's own results link, the Livestream Countdown replay, and the reminder that TODAY's
 // records close soon (the results mail lands 3 hours before the next close by construction).
@@ -3132,52 +3145,31 @@ function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, s
   // something personal under it, and say plainly why there isn't when there is not.
   const played = !!(recap && recap.rounds && recap.rounds.length);
 
+  // A HEADLINE, NOT THE REPORT (operator, 2026-10-02). This block used to carry the whole
+  // round-by-round table, which meant the mail WAS the results and nothing brought an A&R
+  // back to the site — where today's records are waiting. It now says what the day paid and
+  // links to the account page's "My results", which holds the record-by-record detail.
+  // NO RANK here either: rank is what the weekly announcement reveals.
   let arBlock = '';
   if (played) {
-    const rows = recap.rounds.map(r => {
-      const dev = (r.taste != null && r.room_average != null)
-        ? (Math.round((r.predict - r.room_average) * 10) / 10) : null;
-      const devTxt = dev == null ? '—' : (dev > 0 ? '+' + dev.toFixed(1) : dev.toFixed(1));
-      const col = TIER_COLOR[r.tier] || '#f3f0fb';
-      return `<tr>
-        <td style="padding:9px 6px 9px 0;border-top:1px solid #2e2750;font-size:13px">
-          <div style="color:#f3f0fb">${escapeHtml(r.song_title || '')}</div>
-          <div style="color:#8c84ad;font-size:11.5px">${escapeHtml(r.song_artist || '')}</div>
-        </td>
-        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#a9a2c9;text-align:center">${r.taste == null ? '—' : r.taste}</td>
-        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#a9a2c9;text-align:center">${r.predict == null ? '—' : Number(r.predict).toFixed(1)}</td>
-        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#f3f0fb;text-align:center">${r.room_average == null ? '—' : Number(r.room_average).toFixed(1)}</td>
-        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:12px;color:${col};text-align:center">${devTxt}</td>
-        <td style="padding:9px 0 9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:${col};text-align:right">${(Number(r.points) || 0) >= 0 ? '+' : ''}${Number(r.points) || 0}</td>
-      </tr>`;
-    }).join('');
     const stat = (k, v, c) => `<td style="width:33%;padding:12px 6px;text-align:center;background:#171328;border:1px solid #2e2750;border-radius:12px">
       <div style="font-family:'Space Mono',monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:#8c84ad">${k}</div>
       <div style="font-family:'Space Mono',monospace;font-size:22px;font-weight:700;margin-top:4px;color:${c || '#f3f0fb'}">${v}</div></td>`;
+    const n = recap.rounds.length;
     arBlock = `
       <div style="height:1px;background:#2e2750;margin:26px 0 20px"></div>
       <div style="font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:#8c84ad;text-align:left">How you did</div>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="margin:10px 0 4px"><tr>
         ${stat('Points', recap.totalPoints == null ? '—' : recap.totalPoints, '#4bb749')}
         ${stat('Grade', recap.grade || '—')}
-        ${stat('Rank', recap.rank ? '#' + recap.rank : '—', recap.rank === 1 ? '#f5c518' : null)}
+        ${stat('Bullseyes', recap.bullseyes || 0)}
       </tr></table>
-      ${recap.bullseyes ? `<p style="font-size:13px;color:#a9a2c9;margin:10px 0 0;text-align:left">${recap.bullseyes} exact ${recap.bullseyes === 1 ? 'hit' : 'hits'} on the average.</p>` : ''}
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;text-align:left">
-        <tr>
-          <th align="left" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Record</th>
-          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">You</th>
-          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Guess</th>
-          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Avg</th>
-          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Off by</th>
-          <th align="right" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Pts</th>
-        </tr>
-        ${rows}
-      </table>
-      ${recap.completionBonus ? `<table role="presentation" width="100%" style="margin-top:2px"><tr>
-        <td style="padding:11px 0 0;border-top:1px solid #2e2750;font-size:13.5px;font-weight:700;color:#f3f0fb">Completion bonus</td>
+      ${recap.completionBonus ? `<table role="presentation" width="100%" style="margin-top:8px"><tr>
+        <td style="padding:11px 0 0;border-top:1px solid #2e2750;font-size:13.5px;font-weight:700;color:#f3f0fb;text-align:left">Completion bonus</td>
         <td align="right" style="padding:11px 0 0;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:#f5c518">+${recap.completionBonus}</td>
-      </tr></table>` : ''}`;
+      </tr></table>` : ''}
+      <p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:16px 0 0;text-align:left">You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.</p>
+      ${ex.resultsUrl ? `<a href="${ex.resultsUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin:14px 0 0">See your results</a>` : ''}`;
   }
 
   return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
@@ -3192,7 +3184,6 @@ function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, s
       ${common}
       ${ex.streamUrl ? `<a href="${ex.streamUrl}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:4px 0 0">Watch the ${escapeHtml(DAILY_STREAM_NAME)}</a>` : ''}
       ${arBlock}
-      ${played && ex.resultsUrl ? `<a href="${ex.resultsUrl}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:16px 0 0">See your full results</a>` : ''}
       <div style="height:1px;background:#2e2750;margin:26px 0 18px"></div>
       ${ex.remind ? `<p style="font-size:14.5px;font-weight:700;color:#f3f0fb;margin:0 0 12px">${escapeHtml(ex.remind)}</p>` : ''}
       <a href="${playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px">Rate today's records</a>
@@ -3213,12 +3204,11 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
   lines.push('', `${DIGEST_IG_LABEL}: ${DIGEST_IG_URL}`);
   if (ex.streamUrl) lines.push('', `Watch the ${DAILY_STREAM_NAME}: ${ex.streamUrl}`);
   if (played) {
-    lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Rank ${recap.rank ? '#' + recap.rank : '—'}`, '');
-    for (const r of recap.rounds) {
-      lines.push(`${r.song_title} — ${r.song_artist}: you ${r.taste}, guess ${r.predict == null ? '—' : Number(r.predict).toFixed(1)}, average ${r.room_average == null ? '—' : Number(r.room_average).toFixed(1)} → ${(Number(r.points) || 0) >= 0 ? '+' : ''}${Number(r.points) || 0} (${TIER_LABEL[r.tier] || ''})`);
-    }
+    const n = recap.rounds.length;
+    lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Bullseyes ${recap.bullseyes || 0}`);
     if (recap.completionBonus) lines.push(`Completion bonus: +${recap.completionBonus}`);
-    if (ex.resultsUrl) lines.push('', `See your full results: ${ex.resultsUrl}`);
+    lines.push('', `You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.`);
+    if (ex.resultsUrl) lines.push(`See your results: ${ex.resultsUrl}`);
   }
   lines.push('');
   if (ex.remind) lines.push(ex.remind);
@@ -3313,7 +3303,6 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
   const openCloses = openDrop ? Number(openDrop.window_closes_at) || null : null;
   const extras = {
     streamUrl: await dailyStreamUrl(),
-    resultsUrl: (base || publicBase()) + '/daily?s=' + encodeURIComponent(sessionId),
     closesLabel: openCloses && openCloses > now() ? etClockLabel(openCloses) + (etDay(openCloses) !== etDay() ? ' tomorrow' : '') : null,
     closesInHours: openCloses && openCloses > now() ? Math.round((openCloses - now()) / 3600000) || null : null,
   };
@@ -3341,7 +3330,9 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
       const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
       const manage = notifyManageUrl(base || publicBase(), r.uid);
       const arg = { name: (participant && participant.name) || (u && u.name) || null, dayLabel,
-        recap, manage, playUrl, ...extras };
+        recap, manage, playUrl, ...extras,
+        // Per recipient: it is signed for THIS A&R and lands on their own results.
+        resultsUrl: accountResultsUrl(base || publicBase(), r.uid) };
       const out = await sendEmail(r.dest, bc.subject || 'A&R Daily',
         dailyDigestEmailHtml(arg), dailyDigestEmailText(arg));
       if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); sent++; }
@@ -4057,6 +4048,174 @@ function weekWindow(day) {
 function lastCompleteWeekStart(today = etDay()) {
   const cur = weekStartFor(today);
   return cur ? etNextDay(cur, -7) : null;
+}
+
+// ===== MY RESULTS — the A&R's own results, a week at a time (2026-10-02) =====
+// The "My results" section of /account (mockup public/_mock-account-results.html). It exists
+// because the results email handed an A&R everything, so nothing brought them back to the
+// site; the email is now a headline with a link here, and this is where results live.
+//
+// ONE A&R, ONE WEEK (Monday to Sunday, by the day a drop OPENED — the same week helpers the
+// weekly report uses). Bounded: a week holds at most seven drops and the odd live session,
+// each costs three index-friendly reads, and nothing here runs anywhere but this request.
+//
+// THE SEAL. A day carries numbers only once it is PUBLISHED (`async_state = 'published'`, or
+// a completed live session, whose rounds revealed at ratify). A drop that has closed but not
+// published is tallied in the database — room averages and points already exist on its rows —
+// so that branch reads COUNTS ONLY and never selects a score. The open drop likewise ships how
+// many records the A&R has dealt with, nothing else.
+//
+// NO RANK, by decision (operator, 2026-10-02): the page shows points, and the weekly
+// announcement is where rank is revealed. Do not add a day or week rank here.
+//
+// A missed day is LISTED but carries nothing (operator: results are for the days an A&R took
+// part in, not a history of the platform) — so a missed day emits no records and no averages.
+const shortDay = (day) => {
+  const ts = etEpoch(day, 12);
+  return ts == null ? null : new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' }).format(new Date(ts));
+};
+// "today at 3:00 PM ET" / "at 3:00 PM ET tomorrow" / "on Sun, Oct 4 at 12:00 PM ET" — a whole
+// phrase rendered here, because the browser must never turn an epoch into ET wall clock.
+function whenFromToday(ts) {
+  if (!ts) return null;
+  const today = etDay();
+  return etDay(Number(ts)) === today ? 'today at ' + etClockLabel(ts) : etWhenLabel(ts, today);
+}
+async function arResultsData(uid, weekDay) {
+  const today = etDay();
+  const thisWeek = weekStartFor(today);
+  let start = /^\d{4}-\d{2}-\d{2}$/.test(String(weekDay || '')) ? weekStartFor(weekDay) : null;
+  if (!start || start > thisWeek) start = thisWeek;
+  const win = weekWindow(start);
+  const u = await db.get('SELECT first_seen FROM users WHERE uid = ?', [uid]);
+  // Paging back stops at the week the account was made: nothing of theirs is older than that.
+  const firstWeek = (u && u.first_seen && weekStartFor(etDay(Number(u.first_seen)))) || thisWeek;
+  const week = {
+    start: win.start, end: win.end, range: shortDay(win.start) + ' – ' + shortDay(win.end),
+    name: start === thisWeek ? 'This week' : (start === etNextDay(thisWeek, -7) ? 'Last week' : ''),
+    current: start === thisWeek,
+    prev: start > firstWeek ? etNextDay(start, -7) : null,
+    next: start < thisWeek ? etNextDay(start, 7) : null,
+  };
+
+  // The week's sessions: every daily drop that opened in it, plus completed live sessions.
+  const fromTs = etEpoch(win.start, 0), toTs = etEpoch(etNextDay(win.end), 0);
+  const sessions = await db.all(
+    `SELECT id, name, mode, status, async_state, drop_day, visibility, scheduled_at, created_at, results_at
+       FROM sessions
+      WHERE deleted_at IS NULL AND (
+            (mode = 'async' AND drop_day >= ? AND drop_day <= ?)
+         OR ((mode IS NULL OR mode <> 'async') AND status = 'completed'
+             AND COALESCE(scheduled_at, created_at) >= ? AND COALESCE(scheduled_at, created_at) < ?))`,
+    [win.start, win.end, fromTs, toTs]);
+  const ids = sessions.map(x => x.id);
+  const parts = ids.length ? await db.all(
+    `SELECT id, session_id FROM participants WHERE user_id = ? AND verified = 1 AND session_id IN (${ids.map(() => '?').join(',')})`,
+    [uid, ...ids]) : [];
+  const partBy = new Map(parts.map(x => [x.session_id, x.id]));
+
+  const days = [], accs = [];
+  for (const sess of sessions) {
+    const isDaily = sess.mode === 'async';
+    const day = isDaily ? sess.drop_day : etDay(Number(sess.scheduled_at || sess.created_at));
+    const base = { id: sess.id, kind: isDaily ? 'daily' : 'live', day, label: etDayLabel(day) };
+    const pid = partBy.get(sess.id) || null;
+    const listed = !sess.visibility || sess.visibility !== 'unlisted';
+    const state = isDaily ? (sess.async_state || 'scheduled') : 'published';
+
+    if (state === 'closing' || state === 'ratified') {
+      // SEALED: counts only. Do not select room_average, points, err or tier in this branch.
+      if (!pid) continue;
+      const c = await db.get(
+        `SELECT COUNT(*) AS total, COUNT(v.id) AS rated
+           FROM rounds r LEFT JOIN votes v ON v.round_id = r.id AND v.participant_id = ?
+          WHERE r.session_id = ? AND r.status IN ('voting','closed','ratified')`, [pid, sess.id]);
+      if (!Number(c.rated)) continue;
+      const rAt = Number(sess.results_at) || null;
+      days.push({ ...base, state: 'sealed', total: Number(c.total), rated: Number(c.rated),
+        resultsDay: rAt ? (etDay(rAt) === today ? 'today' : etDayLabel(etDay(rAt))) : null,
+        resultsClock: rAt ? etClockLabel(rAt) : null });
+      continue;
+    }
+    if (state !== 'published') continue;   // scheduled or open: the open drop has its own card
+
+    const rows = pid ? await db.all(
+      `SELECT r.idx, r.poll_type, r.song_title, r.song_artist, r.option_b_title, r.room_average, r.split_a,
+              v.id AS vid, v.taste, v.predict, v.pick, v.predict_split, v.points, v.err, v.tier
+         FROM rounds r LEFT JOIN votes v ON v.round_id = r.id AND v.participant_id = ?
+        WHERE r.session_id = ? AND r.status = 'ratified' ORDER BY r.idx ASC`, [pid, sess.id]) : [];
+    const mine = rows.filter(x => x.vid != null);
+    if (!mine.length) {
+      // MISSED: listed so the gap is visible, and nothing else — no records, no averages.
+      // Only public daily drops; a live session or a private room they were not in is not theirs.
+      if (isDaily && listed) {
+        const t = await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [sess.id]);
+        days.push({ ...base, state: 'missed', total: Number(t.c) || 0 });
+      }
+      continue;
+    }
+    const bonusRow = isDaily ? await db.get(
+      "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [`${sess.id}:${uid}`]) : null;
+    const bonus = bonusRow ? Number(bonusRow.points) || 0 : 0;
+    const dayAccs = mine.map(m => roundAccuracy(m.err, m.poll_type === 'binary' ? 100 : 9)).filter(a => a != null);
+    accs.push(...dayAccs);
+    const num = (v) => (v == null ? null : Number(v));
+    days.push({ ...base, state: 'published', total: rows.length, rated: mine.length,
+      points: mine.reduce((a, m) => a + (Number(m.points) || 0), 0) + bonus, bonus,
+      grade: dayAccs.length ? gradeForAccuracy(dayAccs.reduce((a, b) => a + b, 0) / dayAccs.length) : null,
+      bullseyes: mine.filter(m => m.tier === 'bullseye').length,
+      // Every record of a day they played, their own row filled where they rated it. The day is
+      // published, so the room average on a record they skipped is already public.
+      rounds: rows.map(m => {
+        const voted = m.vid != null;
+        if (m.poll_type === 'binary') return { kind: 'versus', title: m.song_title, titleB: m.option_b_title, voted,
+          pick: voted ? m.pick : null, predict: voted ? num(m.predict_split) : null, average: num(m.split_a),
+          points: voted ? Number(m.points) || 0 : null, tier: voted ? m.tier : null };
+        return { kind: 'rating', title: m.song_title, artist: m.song_artist, voted,
+          taste: voted ? m.taste : null, predict: voted ? num(m.predict) : null, average: num(m.room_average),
+          points: voted ? Number(m.points) || 0 : null, tier: voted ? m.tier : null };
+      }) });
+  }
+  days.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : (a.kind === 'live' ? -1 : 1)));
+
+  const pub = days.filter(d => d.state === 'published');
+  const stats = {
+    points: pub.reduce((a, d) => a + d.points, 0),
+    played: pub.length, published: pub.length + days.filter(d => d.state === 'missed').length,
+    bullseyes: pub.reduce((a, d) => a + d.bullseyes, 0),
+    grade: accs.length ? gradeForAccuracy(accs.reduce((a, b) => a + b, 0) / accs.length) : null,
+    pending: days.filter(d => d.state === 'sealed').length,
+  };
+
+  // The open drop, first on the page: the visit should end in rating today's records.
+  let open = null, next = null;
+  const ts = now();
+  const od = await db.get(
+    "SELECT id, drop_day, window_closes_at, results_at FROM sessions WHERE mode = 'async' AND status = 'live' AND async_state = 'open' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
+  if (od && Number(od.window_closes_at) > ts) {
+    const me = await db.get('SELECT id FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [od.id, uid]);
+    // "Dealt with" = rated OR reported, the same rule the completion bonus uses.
+    const c = await db.get(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN v.id IS NOT NULL OR rr.round_id IS NOT NULL THEN 1 ELSE 0 END) AS handled
+         FROM rounds r
+         LEFT JOIN votes v ON v.round_id = r.id AND v.participant_id = ?
+         LEFT JOIN round_reports rr ON rr.round_id = r.id AND rr.participant_id = ?
+        WHERE r.session_id = ? AND r.status IN ('voting','closed','ratified')`, [me ? me.id : '', me ? me.id : '', od.id]);
+    open = { id: od.id, url: '/daily?s=' + encodeURIComponent(od.id), dayLabel: etDayLabel(od.drop_day),
+      total: Number(c.total) || 0, rated: Number(c.handled) || 0,
+      closesWhen: whenFromToday(Number(od.window_closes_at)), resultsWhen: whenFromToday(Number(od.results_at) || null) };
+  } else {
+    const nx = await db.get(
+      "SELECT window_opens_at FROM sessions WHERE mode = 'async' AND COALESCE(async_state,'scheduled') = 'scheduled' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') AND window_opens_at > ? ORDER BY window_opens_at ASC LIMIT 1", [ts]);
+    if (nx) next = { opensWhen: whenFromToday(Number(nx.window_opens_at)) };
+  }
+  return { week, stats, days, open, next };
+}
+// The results email's link into that section: the signed refer-scope link when the secret is
+// set (lands logged in), the plain page otherwise (which asks for a code).
+function accountResultsUrl(base, uid) {
+  const tok = mintReferLink(uid);
+  return `${base}/account#results` + (tok ? `&rt=${tok}` : '');
 }
 
 // One week's report: the records ranked across every drop in the window, and the A&Rs ranked
@@ -6245,13 +6404,7 @@ async function handleApi(req, res, url) {
     // so the banner is on screen from the JOIN screens on — the slot is never empty
     // while ads fund the show. Pre-join counts as lobby for zone choice. All public
     // data (banner image URL + link, Revive zone id) — no PII.
-    const own = session.banner_id ? await getBanner(session.banner_id) : null;
-    if (own) out.banner = own;
-    else {
-      const rv = await getReviveCfg();
-      if (rv) out.revive = { base: rv.base, zone: rv.lobby };
-      else out.banner = await resolveBanner(session);
-    }
+    Object.assign(out, await adSlotFor(session, 'lobby'));
     return send(res, 200, out);
   }
 
@@ -8643,6 +8796,7 @@ async function handleApi(req, res, url) {
   // attribution survives a repost. Rendered on demand and never cached: it is one person's
   // face and links, and the photo can change.
   if (p === '/api/card/refer' && method === 'GET') {
+    // (REFER_THUMB_WIDTH / referGraphicVersion are defined beside referralLinks.)
     const uid = await resolveReferUid(req, url);
     if (!uid) return bad(res, 'Not logged in', 401);
     const kinds = { card: 'referCard', story: 'referStory', join: 'referJoin', submit: 'referSubmit' };
@@ -8657,15 +8811,22 @@ async function handleApi(req, res, url) {
         photo: await photoDataUri(u.photo_url),
         qrJoin: await qrPngDataUri(links.join), qrSubmit: await qrPngDataUri(links.submit),
       };
+      // thumb=1: the SAME render at 432px wide, for the account page's preview grid — the
+      // A&R sees the graphic before downloading it (operator, 2026-09-20). A thumbnail may
+      // sit in the browser's private cache for a day: its URL carries `v`, a hash of what
+      // the graphic prints (referGraphicVersion), so it is per-A&R and changes the moment
+      // their name, photo, city or role does. The full download stays no-store.
+      const thumb = url.searchParams.get('thumb') === '1';
       let png;
-      try { png = await shareCards.renderPng(type, data); }
+      try { png = await shareCards.renderPng(type, data, thumb ? REFER_THUMB_WIDTH : undefined); }
       catch (e) {
         // A photo the renderer cannot decode must not cost the A&R their graphic.
         if (!data.photo) throw e;
         console.error('[refer] render with photo failed, retrying without:', e.message);
-        png = await shareCards.renderPng(type, { ...data, photo: null });
+        png = await shareCards.renderPng(type, { ...data, photo: null }, thumb ? REFER_THUMB_WIDTH : undefined);
       }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store' });
+      const fresh = thumb && url.searchParams.get('v') === referGraphicVersion(u);
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': fresh ? 'private, max-age=86400' : 'private, no-store' });
       return res.end(png);
     } catch (e) {
       console.error('[refer] card render failed:', e.message);
@@ -8879,19 +9040,38 @@ async function handleApi(req, res, url) {
         points: revealed ? (scoutPts.get(r.id) || 0) : undefined,
       };
     });
+    const gv = referGraphicVersion(u);
+    const gfx = (kind, label, size) => ({ kind, label, size, url: '/api/card/refer?kind=' + kind,
+      thumb: '/api/card/refer?kind=' + kind + '&thumb=1&v=' + gv });
     return send(res, 200, {
-      me: { uid: u.uid, name: u.name || null, hasPhoto: !!u.photo_url },
+      // name / photo / city / role feed the account page's header (the A&R's own data, on
+      // a header-authenticated or signed-link route; nothing here is email or phone).
+      me: { uid: u.uid, name: u.name || null, hasPhoto: !!u.photo_url, photoUrl: u.photo_url || null,
+        location: u.location || null, primaryCategory: u.primary_category || null },
       links: referralLinks(u.uid),
       rules: { windowDays: REFERRAL.windowDays, cap: REFERRAL.cap, errMax: REFERRAL.errMax, pointsPerRound: REFERRAL.pointsPerRound, scoutMultiplier: SCOUT_MULTIPLIER },
       ars: { referred: arRows.length, active: arRows.filter(r => r.played).length, earned: arEarned, rows: arRows.slice(0, 50) },
       artists: { submitted: artistRows.length, rated: artistRows.filter(r => r.rated).length, earned: artistEarned, rows: artistRows.slice(0, 50) },
+      // Labels are the operator's (2026-09-20): "Official A&R Card - Feed" / "- Story".
       graphics: [
-        { kind: 'card', label: 'Your A&R Team card', size: '1080 × 1350', url: '/api/card/refer?kind=card' },
-        { kind: 'story', label: 'Your A&R Team story', size: '1080 × 1920', url: '/api/card/refer?kind=story' },
-        { kind: 'join', label: 'Join the A&R Team', size: '1080 × 1350', url: '/api/card/refer?kind=join' },
-        { kind: 'submit', label: 'Submit your music', size: '1080 × 1350', url: '/api/card/refer?kind=submit' },
+        gfx('card', 'Official A&R Card - Feed', '1080 × 1350'),
+        gfx('story', 'Official A&R Card - Story', '1080 × 1920'),
+        gfx('join', 'Join the A&R Team', '1080 × 1350'),
+        gfx('submit', 'Submit your music', '1080 × 1350'),
       ],
     });
+  }
+  // ---- /account "My results": the A&R's own results for one week. Same auth as the rest of
+  // the account page — either token, or the signed link the results email carries. It reads
+  // ONLY the caller's own votes; see arResultsData for the seal.
+  if (p === '/api/me/results' && method === 'GET') {
+    const uid = await resolveReferUid(req, url);
+    if (!uid) return bad(res, 'Not logged in', 401);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    const u = await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [uid]);
+    if (!u || u.blocked) return bad(res, 'Not logged in', 401);
+    return send(res, 200, await arResultsData(uid, url.searchParams.get('week')));
   }
   // QR code as SVG (self-hosted; used by the vertical overlay's "Scan to Win $500" join code).
   if (p === '/api/qr' && method === 'GET') {
@@ -10266,7 +10446,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html'); // A&R Wars prediction contest
-    if (url.pathname === '/refer') return serveStatic(res, 'refer.html'); // the A&R's referral links + graphics
+    // The A&R's account (2026-10-01): ONE page with sections — Earn points (the default;
+    // what /refer was), My profile, and a tab to the edit form. /refer serves the same file
+    // so every link already out there (email footers, the signed [card link], QR'd flyers'
+    // copy) lands on the same page and section.
+    if (url.pathname === '/account' || url.pathname === '/refer') return serveStatic(res, 'account.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // Stable submit link for QR codes: /submit?s=<session> 302s to wherever that
     // session's submission link points RIGHT NOW (Nero, review site, anything).
@@ -10428,3 +10612,5 @@ module.exports._winnerWeekData = winnerWeekData;
 module.exports._winnerCaption = winnerCaption;
 module.exports._weekStartOf = weekStartOf;
 module.exports._resultsPages = resultsPages;
+module.exports._arResultsData = arResultsData;
+module.exports._accountResultsUrl = accountResultsUrl;

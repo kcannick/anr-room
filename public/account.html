@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script async src="/analytics.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/png" href="/mark-color.png"><title>My account · The A&R Team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* ============================================================================
+   /account — the A&R's account (2026-10-01), built to public/_mock-account.html: ONE page
+   with sections. "Earn points" is the default and is what /refer was (2026-09-18: two
+   links, two lanes, four graphics — now with real thumbnails); "My profile" is the public
+   record as anyone sees it; "Edit profile" goes to the edit form at /profile, which carries
+   the same tab strip. "My results" (2026-10-02, mockup public/_mock-account-results.html) is
+   the A&R's own results a week at a time: the open drop first, then each day they played,
+   record by record. The results email links straight to it (/account#results). It shows
+   points and NO RANK — the weekly announcement is where rank is revealed. /refer serves this same file, so signed #rt= links still land here.
+   Built to the approved canvas (design/refer/Main.dc.html) on the daily page's dialect:
+   Archivo display, Space Mono for every number and label, gold on the $1,000 only.
+   Auth is whichever token this device holds: the account token from /join, or any
+   per-session player token from a daily drop (the server resolves both to the same
+   user). With neither, the page asks for an email code and mints an account token.
+   ============================================================================ */
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased;min-height:100dvh}
+.wrap{max-width:430px;margin:0 auto;padding:20px 20px calc(28px + env(safe-area-inset-bottom));min-height:100dvh;display:flex;flex-direction:column;gap:16px}
+.hide{display:none !important}
+.mono{font-family:"Space Mono",ui-monospace,"SF Mono",Menlo,monospace}
+.dim{color:var(--ink-dim)}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em}
+a{color:var(--signal);text-decoration:none}
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;letter-spacing:-.02em;color:var(--bg)}
+.tick{display:block;width:3px;height:12px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.tick.contest{background:var(--accent)} .tick.prize{background:var(--gold)}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wordmark{font-weight:800;font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+.standing{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:var(--r-pill);padding:5px 11px;white-space:nowrap}
+.standing b{color:var(--ink);font-weight:700}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.section-head{display:flex;align-items:center;gap:9px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:14px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.note{background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;font-size:13px;color:var(--ink-dim);line-height:1.5}
+.err{color:var(--hot);font-size:13.5px;min-height:1em}
+label{display:block;font-size:12.5px;font-weight:600;margin:0}
+input:not([type=checkbox]){width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:15px;padding:12px 13px;border-radius:var(--r-md);outline:none}
+input:focus{border-color:var(--accent)}
+input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34em;text-align:center}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;cursor:pointer;border:0;border-radius:13px;padding:16px;font-family:inherit;font-weight:800;font-size:15.5px;letter-spacing:-.01em;background:var(--signal);color:var(--bg);text-decoration:none}
+.btn:hover{filter:brightness(1.07)} .btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.35;cursor:default}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.linkrow{display:flex;align-items:center;gap:8px;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:8px 8px 8px 13px}
+.linkrow .url{font-family:"Space Mono",monospace;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy{display:flex;align-items:center;gap:6px;background:var(--signal);color:var(--bg);border:0;border-radius:10px;padding:0 12px;height:44px;font-family:inherit;font-weight:800;font-size:13px;cursor:pointer;flex:none}
+.copy.done{background:var(--signal-deep);color:var(--ink)}
+.stats{display:flex;gap:10px}
+.stat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 10px;text-align:center}
+.stat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim)}
+.stat .v{font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:5px}
+.stat .v.earned{color:var(--signal)}
+.rows{display:flex;flex-direction:column;gap:6px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-family:"Space Mono",monospace;font-size:12px}
+.row .l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.row .r{color:var(--ink-dim);white-space:nowrap;flex:none}
+.row .r b{color:var(--ink);font-weight:700}
+.prize{display:flex;align-items:center;gap:9px;background:rgba(245,197,24,.08);border:1px solid var(--gold);border-radius:11px;padding:10px 12px;font-size:13px;line-height:1.45}
+.prize b{font-family:"Space Mono",monospace;color:var(--gold);font-weight:700}
+/* ---- account shell ---- */
+.me{display:flex;align-items:center;gap:14px}
+.me .face{width:56px;height:56px;border-radius:50%;background:#221b3a;border:2px solid var(--accent);flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:19px;color:var(--accent);object-fit:cover}
+.me .who{min-width:0}
+.me .who b{display:block;font-size:20px;font-weight:900;letter-spacing:-.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me .who small{display:block;font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);margin-top:3px}
+.tabs{display:flex;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;padding:11px 13px 12px;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);border:0;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;cursor:pointer;background:none}
+.tab.on{color:var(--ink);border-bottom-color:var(--signal)}
+.sec{display:none;flex-direction:column;gap:16px}
+.sec.on{display:flex}
+/* ---- graphics: the real thing, visible before the download ---- */
+.gfxgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.gcard{background:var(--inset);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.gcard .gimg{display:block;width:100%;aspect-ratio:4/5;background:#07060d;padding:6px;cursor:pointer;border:0}
+.gcard .gimg img{width:100%;height:100%;object-fit:contain;display:block}
+.gcard .gimg .wait{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
+.gcard .gt{padding:10px 11px 6px;flex:1}
+.gcard .gt b{display:block;font-size:13.5px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
+.gcard .gt small{display:block;font-family:"Space Mono",monospace;font-size:10px;color:var(--ink-dim);margin-top:4px}
+.gdl{display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 11px 11px;height:40px;border-radius:10px;background:var(--signal);color:var(--bg);font-weight:800;font-size:13px}
+/* ---- my results (built to public/_mock-account-results.html) ---- */
+.stats.four{gap:8px}
+.stats.four .stat{min-width:0;padding:12px 4px}
+.stats.four .stat .k{font-size:9px;letter-spacing:.13em}
+.stats.four .stat .v{font-size:17px;margin-top:6px;white-space:nowrap}
+.open{background:var(--panel);border:1px solid var(--signal);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:12px}
+.open h2{font-size:21px;line-height:1.12}
+.open p{margin:0;font-size:14px;line-height:1.5;color:var(--ink-dim)}
+.open p b{color:var(--ink);font-weight:700}
+.open.done{border-color:var(--line)}
+.bar{height:6px;border-radius:999px;background:var(--inset);border:1px solid var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--signal)}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pager button{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--inset);color:var(--ink);font-family:"Space Mono",monospace;font-size:16px;cursor:pointer;flex:none}
+.pager button[disabled]{opacity:.3;cursor:default}
+.pager .wk{text-align:center;min-width:0}
+.pager .wk b{display:block;font-weight:900;font-size:17px;letter-spacing:-.02em}
+.pager .wk small{display:block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);margin-top:3px;min-height:12px}
+.wkline{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-dim);text-align:center}
+.days{display:flex;flex-direction:column;gap:8px}
+.day{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.day > summary,.day > .head{display:flex;align-items:center;gap:10px;padding:14px;list-style:none;cursor:pointer}
+.day > summary::-webkit-details-marker{display:none}
+.day > .head{cursor:default}
+.day .when{flex:1;min-width:0}
+.day .when b{display:block;font-size:15.5px;font-weight:800;letter-spacing:-.02em}
+.day .when small{display:block;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day .pts{font-family:"Space Mono",monospace;font-size:16px;font-weight:700;color:var(--signal);flex:none}
+.day .grade{font-family:"Space Mono",monospace;font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:8px;padding:4px 7px;flex:none;min-width:30px;text-align:center}
+.day .chev{font-family:"Space Mono",monospace;color:var(--ink-dim);flex:none;transition:transform .15s;font-size:13px}
+.day[open] .chev{transform:rotate(90deg)}
+.day .wait{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);text-align:right;flex:none;line-height:1.45}
+.day .wait b{display:block;color:var(--ink);font-weight:700}
+.day.sealed{border-style:dashed}
+.day.missed{background:transparent}
+.day.missed .when b{color:var(--ink-dim)}
+.day .body{padding:14px 14px 16px;display:flex;flex-direction:column;gap:14px;border-top:1px solid var(--line)}
+.tag{display:inline-block;font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:400;border:1px solid var(--accent);color:var(--ink);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:2px}
+.rt .h,.rt .r{display:flex;gap:8px;align-items:center}
+.rt .h{padding:0 0 8px}
+.rt .h span{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)}
+.rt .r{padding:10px 0;border-top:1px solid var(--line)}
+.rt .rec{flex:1;min-width:0}
+.rt .rec b{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt .rec small{display:block;font-size:11.5px;color:var(--ink-dim);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt .c{font-family:"Space Mono",monospace;font-size:13px;color:var(--ink-dim);text-align:center;flex:none}
+.rt .c.you{width:26px} .rt .c.g{width:34px} .rt .c.a{width:34px;color:var(--ink);font-weight:700} .rt .c.p{width:44px;text-align:right;font-weight:700;color:var(--ink)}
+.rt .c.p.bull{color:var(--signal)} .rt .c.p.low{color:var(--ink-dim)}
+.rt .skip .rec b{color:var(--ink-dim);font-weight:500}
+.rt .foot{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0 0;border-top:1px solid var(--line);font-size:14px;font-weight:800}
+.rt .foot span:last-child{font-family:"Space Mono",monospace;font-size:15px;color:var(--gold)}
+.rt .foot.none span:last-child{color:var(--ink-dim);font-size:11.5px;font-weight:400;text-align:right}
+.legend{font-family:"Space Mono",monospace;font-size:10px;color:var(--ink-dim);line-height:1.6}
+/* ---- my profile ---- */
+.pf-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px;padding:10px 0;border-bottom:1px solid var(--line)}
+.pf-row:last-child{border-bottom:0}
+.pf-row .k{color:var(--ink-dim);flex:none}
+.pf-row .v{text-align:right;min-width:0}
+.pill{display:inline-block;font-family:"Space Mono",monospace;font-size:10.5px;border:1px solid var(--line);border-radius:999px;padding:3px 9px;margin:2px 0 2px 4px;color:var(--ink)}
+.pill.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
+.endorse img{height:13px;width:auto;opacity:.75}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <a href="/" style="display:flex;align-items:center;gap:10px;color:inherit">
+      <div class="mark"><span>A&amp;R</span></div>
+      <span class="wordmark">A&amp;R Team</span>
+    </a>
+    <div class="standing hide" id="standing"></div>
+  </div>
+
+  <!-- SIGN IN: only when this device holds no token at all. -->
+  <section id="screen-login" class="stack hide">
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Sign in</span></div>
+      <h2 style="font-size:22px">Sign in to your A&amp;R account.</h2>
+      <div id="loginEmail" class="stack">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
+        <div class="err" id="emailErr"></div>
+        <button class="btn" id="btnSend">Send me a code</button>
+      </div>
+      <div id="loginCode" class="stack hide">
+        <label for="code">Enter the code we emailed to <span id="emailEcho"></span></label>
+        <input id="code" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+        <div class="note hide" id="devBox"></div>
+        <div class="err" id="codeErr"></div>
+        <button class="btn" id="btnVerify">Continue</button>
+        <button class="btn ghost" id="btnBack">Use a different email</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE PAGE -->
+  <section id="screen-main" class="stack hide" style="gap:16px">
+    <div class="err hide" id="loadErr"></div>
+
+    <!-- who you are, once, above every section -->
+    <div class="me">
+      <div class="face" id="meFace"></div>
+      <div class="who"><b id="meName"></b><small id="meSub">Official A&amp;R</small></div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab on" data-sec="earn" role="tab">Earn points</button>
+      <button class="tab" data-sec="results" role="tab">My results</button>
+      <button class="tab" data-sec="profile" role="tab">My profile</button>
+      <button class="tab" data-sec="edit" role="tab">Edit profile</button>
+    </div>
+
+    <!-- 1. EARN POINTS: the default section. Intro copy is the operator's (2026-09-20). -->
+    <div class="sec on" id="sec-earn">
+    <div class="stack" style="gap:8px">
+      <h1 style="font-weight:900;font-size:28px;letter-spacing:-.04em;line-height:1.05">Earn more points</h1>
+      <p class="dim" style="margin:0;font-size:14.5px;line-height:1.55">Invite new A&amp;Rs to the platform and earn bonus points. Know good talent? Refer them to submit music and earn bonus points as a talent scout. Use the links below.</p>
+      <p class="dim" style="margin:0;font-size:14.5px;line-height:1.55">Your A&amp;R promo graphics also contain QR codes with your link. Post/promote them to let everyone know you're an official member of our A&amp;R Team.</p>
+    </div>
+
+    <div class="stack">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Your links</span></div>
+      <label>Invite new A&amp;Rs</label>
+      <div class="linkrow"><span class="url" id="linkJoin"></span><button class="copy" data-copy="linkJoin">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <label style="margin-top:4px">Refer talent to submit music</label>
+      <div class="linkrow"><span class="url" id="linkSubmit"></span><button class="copy" data-copy="linkSubmit">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who joins or submits through your link counts as yours.</p>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Refer an A&amp;R</span></div>
+      <h2 style="font-size:20px;line-height:1.15" id="arHead">Refer someone new and earn up to 240 points.</h2>
+      <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="arRule"></p>
+      <div class="stats">
+        <div class="stat"><div class="k">Referred</div><div class="v" id="arReferred">0</div></div>
+        <div class="stat"><div class="k">Active</div><div class="v" id="arActive">0</div></div>
+        <div class="stat"><div class="k">Earned</div><div class="v earned" id="arEarned">+0</div></div>
+      </div>
+      <div class="rows" id="arRows"></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Refer an artist</span></div>
+      <h2 style="font-size:20px;line-height:1.15">Refer artists to submit their music.</h2>
+      <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="artistRule"></p>
+      <div class="prize"><span class="tick prize"></span><span>Every artist who submits is entered in the <b>$1,000 Giveaway</b> for a $1,000 Promo Budget.</span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Submitted</div><div class="v" id="artSubmitted">0</div></div>
+        <div class="stat"><div class="k">Rated</div><div class="v" id="artRated">0</div></div>
+        <div class="stat"><div class="k">Earned</div><div class="v earned" id="artEarned">+0</div></div>
+      </div>
+      <div class="rows" id="artRows"></div>
+    </div>
+
+    <div class="stack">
+      <div class="section-head"><span class="tick contest"></span><span class="eyebrow">Your A&amp;R promo graphics</span></div>
+      <p class="dim" style="margin:0;font-size:13px;line-height:1.5">Each one carries your link as a QR code. Your cards carry both. Post it, put the link in your bio, or send the link by DM.</p>
+      <div class="gfxgrid" id="gfxList"></div>
+      <div class="note" id="photoNote">Your card uses your profile photo. <a href="/profile">Add a photo</a> to use your face on it.</div>
+    </div>
+    </div>
+
+    <!-- 2. MY RESULTS: the open drop first (the visit should end in rating today's records),
+         then one week at a time, each day opening into its records. Points only, no rank. -->
+    <div class="sec" id="sec-results">
+      <div id="rsOpen"></div>
+      <div class="err hide" id="rsErr"></div>
+      <div class="panel">
+        <div class="pager">
+          <button id="rsPrev" aria-label="Earlier week" disabled>&lsaquo;</button>
+          <div class="wk"><b id="rsRange">&nbsp;</b><small id="rsName"></small></div>
+          <button id="rsNext" aria-label="Later week" disabled>&rsaquo;</button>
+        </div>
+        <div class="stats four" id="rsStats"></div>
+        <div class="wkline hide" id="rsLine"></div>
+      </div>
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Day by day</span></div>
+      <div class="days" id="rsDays"></div>
+      <div class="legend hide" id="rsLegend">YOU = your rating · GUESS = your prediction · AVG = the room average · PTS = what the guess earned</div>
+    </div>
+
+    <!-- 3. MY PROFILE: the public record, as anyone sees it at /u/<uid>. -->
+    <div class="sec" id="sec-profile">
+      <div class="note" id="pfNote"></div>
+      <div class="panel" id="pfPanel" style="gap:0"></div>
+      <div class="stats" id="pfStats"></div>
+      <a class="btn" href="/profile">Edit profile</a>
+      <a class="btn ghost" id="pfOpen" href="#" target="_blank" rel="noopener">Open public page ↗</a>
+    </div>
+  </section>
+
+  <div class="endorse">
+    <span class="mono" style="font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)">Brought to you by</span>
+    <img src="/logo.png" alt="Makin' It">
+  </div>
+</div>
+
+<script>
+(function(){
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params || {}); }catch(e){} }
+
+// ---- a signed link from an email or text (#rt=...) opens this page with no login on this
+// device. Kept in sessionStorage only and scrubbed from the URL so it never rides a Referer.
+(function(){
+  try{
+    const m = (location.hash || '').match(/[#&]rt=([^&]+)/);
+    if(m){
+      // Keep the section the link named (#results&rt=...) and drop only the token.
+      const sec = ((location.hash || '').match(/^#(profile|edit|results)\b/) || [])[1];
+      sessionStorage.setItem('rt_refer_link', decodeURIComponent(m[1]));
+      history.replaceState(null, '', location.pathname + location.search + (sec ? '#' + sec : ''));
+    }
+  }catch(e){}
+})();
+// ---- which token this device holds. The account token wins; otherwise any per-session
+// player token (a daily drop is a new session every day, so pick the newest-looking one —
+// they all resolve to the same user); otherwise the signed link.
+function authHeaders(){
+  const at = localStorage.getItem('rt_auth_token');
+  if(at) return { 'X-Auth-Token': at };
+  let best = null;
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k && k.indexOf('rt_token_') === 0 && localStorage.getItem(k)) best = localStorage.getItem(k);
+  }
+  if(best) return { 'X-Player-Token': best };
+  const rl = sessionStorage.getItem('rt_refer_link');
+  return rl ? { 'X-Refer-Link': rl } : null;
+}
+async function api(path, body, headers){
+  const h = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
+  const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: h, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok){ const e = new Error(d.error || ('Request failed (' + r.status + ')')); e.status = r.status; throw e; }
+  return d;
+}
+function show(id){ ['screen-login','screen-main'].forEach(s => $('#' + s).classList.toggle('hide', s !== id)); }
+
+// ---- sign in (email code -> account token), only when there is nothing on this device.
+$('#btnSend').onclick = async () => {
+  $('#emailErr').textContent = '';
+  const email = $('#email').value.trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return $('#emailErr').textContent = 'Enter a valid email';
+  $('#btnSend').disabled = true;
+  try{
+    const d = await api('/api/auth/request', { email });
+    $('#emailEcho').textContent = email;
+    if(d.devCode){ $('#devBox').classList.remove('hide'); $('#devBox').textContent = 'Dev mode — your code is ' + d.devCode; }
+    $('#loginEmail').classList.add('hide'); $('#loginCode').classList.remove('hide'); $('#code').focus();
+  }catch(e){ $('#emailErr').textContent = e.message; }
+  $('#btnSend').disabled = false;
+};
+$('#btnBack').onclick = () => { $('#loginCode').classList.add('hide'); $('#loginEmail').classList.remove('hide'); };
+$('#btnVerify').onclick = async () => {
+  $('#codeErr').textContent = '';
+  const code = $('#code').value.trim();
+  if(!code) return $('#codeErr').textContent = 'Enter the code';
+  $('#btnVerify').disabled = true;
+  try{
+    const d = await api('/api/auth/verify', { email: $('#emailEcho').textContent, code, ref: localStorage.getItem('rt_ref') || '' });
+    localStorage.setItem('rt_auth_token', d.token);
+    localStorage.removeItem('rt_ref');
+    $('#code').value = '';
+    await load();
+  }catch(e){ $('#codeErr').textContent = e.message; }
+  $('#btnVerify').disabled = false;
+};
+
+// ---- the page
+function stripProto(u){ return String(u || '').replace(/^https?:\/\//, ''); }
+function fmtPts(n){ return (n >= 0 ? '+' : '') + Number(n || 0).toLocaleString(); }
+function render(d){
+  const r = d.rules || {};
+  $('#linkJoin').textContent = stripProto(d.links.join);
+  $('#linkSubmit').textContent = stripProto(d.links.submit);
+  $('#linkJoin').dataset.full = d.links.join; $('#linkSubmit').dataset.full = d.links.submit;
+  $('#arHead').textContent = 'Refer someone new and earn up to ' + r.cap + ' points.';
+  $('#arRule').textContent = 'Earn bonus points for helping grow the A&R Team. You earn ' + r.pointsPerRound + ' point for every round your referral comes within ' + r.errMax + ' of the average, for their first ' + r.windowDays + ' days.';
+  $('#artistRule').textContent = 'Earn bonus points by discovering new talent. You earn points based on the referred artist’s score: ' + r.scoutMultiplier + ' times the average. A 7.1 earns ' + Math.round(7.1 * r.scoutMultiplier) + ' points.';
+  $('#arReferred').textContent = d.ars.referred; $('#arActive').textContent = d.ars.active; $('#arEarned').textContent = fmtPts(d.ars.earned);
+  $('#artSubmitted').textContent = d.artists.submitted; $('#artRated').textContent = d.artists.rated; $('#artEarned').textContent = fmtPts(d.artists.earned);
+  $('#arRows').innerHTML = d.ars.rows.map(x => {
+    const right = !x.played ? 'joined, not yet played'
+      : (x.windowOpen ? ('day ' + x.day + ' of ' + r.windowDays + ' · ') : 'window closed · ') + '<b>' + fmtPts(x.points) + '</b>';
+    return '<div class="row"><span class="l">' + esc(x.name) + '</span><span class="r">' + right + '</span></div>';
+  }).join('') || '<div class="row dim"><span class="l">No one yet. Share your link.</span></div>';
+  $('#artRows').innerHTML = d.artists.rows.map(x => {
+    const left = esc(x.artist ? (x.artist + ' · ' + x.title) : x.title);
+    const right = x.rated ? (Number(x.average).toFixed(1) + ' · <b>' + fmtPts(x.points) + '</b>') : 'submitted, not yet rated';
+    return '<div class="row"><span class="l">' + left + '</span><span class="r">' + right + '</span></div>';
+  }).join('') || '<div class="row dim"><span class="l">No records yet. Share your submit link.</span></div>';
+  // Each graphic is SHOWN, not described: the thumbnail is the same render as the download
+  // (432px wide), so the A&R sees their own card before deciding to save it. Tapping the
+  // picture or the button downloads the full-size file.
+  const what = { card: 'both QR codes', story: 'both QR codes', join: 'your invite QR', submit: 'your talent QR' };
+  $('#gfxList').innerHTML = d.graphics.map(g => '<div class="gcard">'
+    + '<button class="gimg" data-kind="' + esc(g.kind) + '" data-url="' + esc(g.url) + '" aria-label="Download ' + esc(g.label) + '">'
+    + '<div class="wait" data-thumb="' + esc(g.thumb || '') + '">Loading</div></button>'
+    + '<div class="gt"><b>' + esc(g.label) + '</b><small>' + esc(String(g.size).replace(/\s/g, '')) + ' · ' + (what[g.kind] || '') + '</small></div>'
+    + '<a class="gdl" href="#" data-kind="' + esc(g.kind) + '" data-url="' + esc(g.url) + '">Download</a></div>').join('');
+  loadThumbs();
+  $('#photoNote').classList.toggle('hide', !!(d.me && d.me.hasPhoto));
+  renderMe(d.me || {});
+}
+// Thumbnails need the token in a header, so they are fetched and shown as blob URLs, one
+// after another (four Satori renders at once is four cold renders racing). The response is
+// privately cacheable for a day under a per-profile version key, so a return visit is free.
+async function loadThumbs(){
+  for(const el of document.querySelectorAll('#gfxList .wait[data-thumb]')){
+    const u = el.dataset.thumb; if(!u) { el.textContent = ''; continue; }
+    try{
+      const r = await fetch(u, { headers: authHeaders() || {} });
+      if(!r.ok) throw 0;
+      const img = new Image(); img.alt = ''; img.src = URL.createObjectURL(await r.blob());
+      el.replaceWith(img);
+    }catch(e){ el.textContent = 'Preview unavailable'; }
+  }
+}
+// ---- the account header + My profile. The header comes from the same payload as the page;
+// the public profile (stats, socials) is the public endpoint anyone can read at /u/<uid>.
+const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
+let ME = null, PROFILE = null;
+function renderMe(me){
+  ME = me;
+  const face = $('#meFace');
+  if(me.photoUrl){ const i = new Image(); i.className = 'face'; i.id = 'meFace'; i.alt = ''; i.src = me.photoUrl; face.replaceWith(i); }
+  else face.textContent = initials(me.name);
+  $('#meName').textContent = me.name || 'Your A&R account';
+  $('#meSub').textContent = ['Official A&R', me.location].filter(Boolean).join(' · ');
+  if(me.uid) loadProfile(me.uid);
+}
+async function loadProfile(uid){
+  $('#pfOpen').href = '/u/' + encodeURIComponent(uid);
+  $('#pfNote').innerHTML = 'This is your public A&amp;R profile, as anyone sees it at <span class="mono">' + esc(location.host + '/u/' + uid) + '</span>.';
+  try{
+    const r = await fetch('/api/profile?u=' + encodeURIComponent(uid));
+    if(!r.ok) throw 0;
+    PROFILE = (await r.json()).profile;
+  }catch(e){
+    // No public profile yet (it needs a name, a role and a city) is the common case, not an error.
+    $('#pfPanel').innerHTML = '<div class="pf-row"><span class="k">Your public profile is not live yet. Add your roles and city to turn it on.</span></div>';
+    $('#pfStats').innerHTML = '';
+    return;
+  }
+  const p = PROFILE, st = p.stats || {};
+  const roles = (p.categories || []).map(c => '<span class="pill' + (c === p.primaryCategory ? ' primary' : '') + '">' + esc(c) + '</span>').join('');
+  const row = (k, v) => v ? '<div class="pf-row"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>' : '';
+  $('#pfPanel').innerHTML = row('Name', esc(p.name)) + row('Roles', roles) + row('Location', esc(p.location || ''))
+    + row('Instagram', p.instagram ? '<span class="mono">@' + esc(String(p.instagram).replace(/^@+/, '')) + '</span>' : '')
+    + row('TikTok', p.tiktok ? '<span class="mono">@' + esc(String(p.tiktok).replace(/^@+/, '')) + '</span>' : '');
+  const stat = (k, v) => '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>';
+  $('#pfStats').innerHTML = (st.seriesRank ? stat('Series rank', '#' + st.seriesRank) : '')
+    + stat('Points', Number(st.points || 0).toLocaleString()) + stat('Sessions', Number(st.sessions || 0).toLocaleString());
+  // The standing pill: rank and points, where the public profile has them.
+  $('#standing').classList.remove('hide');
+  $('#standing').innerHTML = (st.seriesRank ? '#' + st.seriesRank + ' · ' : '') + '<b>' + Number(st.points || 0).toLocaleString() + '</b> PTS';
+}
+// ---- My results. One week per request; the server decides what a day may show (a closed day
+// whose results are not out arrives as counts only), so this only draws what it is given.
+// Built with textContent throughout: titles and artist names are submitter-supplied.
+let RS_LOADED = false, RS_BUSY = false;
+const mk = (tag, cls, txt) => { const e = document.createElement(tag); if(cls) e.className = cls; if(txt != null) e.textContent = txt; return e; };
+const bold = (txt) => mk('b', null, txt);
+const fmtN = (n) => Number(n || 0).toLocaleString('en-US');
+function rsStat(k, v, cls){ const d = mk('div', 'stat'); d.appendChild(mk('div', 'k', k)); d.appendChild(mk('div', 'v' + (cls ? ' ' + cls : ''), v)); return d; }
+function rsOpen(d){
+  const slot = $('#rsOpen'); slot.textContent = '';
+  const head = (t) => { const h = mk('div', 'section-head'); h.appendChild(mk('span', 'tick')); h.appendChild(mk('span', 'eyebrow', t)); return h; };
+  const o = d.open;
+  if(!o || !o.total){
+    if(!d.next || !d.next.opensWhen) return;
+    const c = mk('div', 'open done'); c.appendChild(head('Next records'));
+    c.appendChild(mk('h2', null, 'The next records open ' + d.next.opensWhen + '.'));
+    slot.appendChild(c); return;
+  }
+  const left = Math.max(0, o.total - o.rated), finished = left === 0;
+  const c = mk('div', 'open' + (finished ? ' done' : ''));
+  c.appendChild(head('Open now' + (o.dayLabel ? ' · ' + o.dayLabel : '')));
+  if(finished){
+    c.appendChild(mk('h2', null, 'You rated all ' + o.total + ' records.'));
+    if(o.resultsWhen){ const p = mk('p'); p.append('Results come out ', bold(o.resultsWhen), '. They will be listed below.'); c.appendChild(p); }
+  }else{
+    c.appendChild(mk('h2', null, o.rated ? ('You have ' + left + (left === 1 ? ' record' : ' records') + ' left to rate.') : "Today's records are open."));
+    const p = mk('p'); p.append(bold(o.rated + ' of ' + o.total + ' rated'), '.');
+    if(o.closesWhen) p.append(' Voting closes ', bold(o.closesWhen), '.');
+    c.appendChild(p);
+    const bar = mk('div', 'bar'), fill = mk('i'); fill.style.width = Math.round(100 * o.rated / o.total) + '%'; bar.appendChild(fill); c.appendChild(bar);
+    const a = mk('a', 'btn', o.rated ? 'Keep rating' : "Rate today's records"); a.href = o.url;
+    a.onclick = () => track('results_open_drop', { rated: o.rated });
+    c.appendChild(a);
+  }
+  slot.appendChild(c);
+}
+function rsDay(d){
+  const when = (sub) => { const w = mk('div', 'when'); const b = mk('b', null, d.label || ''); if(d.kind === 'live') b.appendChild(mk('span', 'tag', 'Live session')); w.appendChild(b); w.appendChild(mk('small', null, sub)); return w; };
+  if(d.state === 'missed'){
+    const c = mk('div', 'day missed'), h = mk('div', 'head');
+    h.appendChild(when(d.total + (d.total === 1 ? ' record' : ' records'))); h.appendChild(mk('div', 'wait', 'Did not play'));
+    c.appendChild(h); return c;
+  }
+  if(d.state === 'sealed'){
+    const c = mk('div', 'day sealed'), h = mk('div', 'head');
+    h.appendChild(when('You rated ' + d.rated + ' of ' + d.total));
+    const r = mk('div', 'wait'); r.append('Results' + (d.resultsDay ? ' ' + d.resultsDay : ' soon')); if(d.resultsClock) r.appendChild(bold(d.resultsClock));
+    h.appendChild(r); c.appendChild(h); return c;
+  }
+  const c = mk('details', 'day'), s = mk('summary');
+  s.appendChild(when(d.rated + ' of ' + d.total + ' rated'));
+  s.appendChild(mk('span', 'pts', fmtPts(d.points)));
+  if(d.grade) s.appendChild(mk('span', 'grade', d.grade));
+  s.appendChild(mk('span', 'chev', '›'));
+  c.appendChild(s);
+  const body = mk('div', 'body'), st = mk('div', 'stats');
+  st.appendChild(rsStat('Points', fmtPts(d.points), 'earned')); st.appendChild(rsStat('Grade', d.grade || '—')); st.appendChild(rsStat('Bullseyes', d.bullseyes));
+  body.appendChild(st);
+  const rt = mk('div', 'rt'), hd = mk('div', 'h');
+  [['Record', 'flex:1'], ['You', 'width:26px;text-align:center'], ['Guess', 'width:34px;text-align:center'], ['Avg', 'width:34px;text-align:center'], ['Pts', 'width:44px;text-align:right']]
+    .forEach(([t, css]) => { const x = mk('span', null, t); x.style.cssText = css; hd.appendChild(x); });
+  rt.appendChild(hd);
+  const one = (v) => (v == null ? '—' : Number(v).toFixed(1));
+  (d.rounds || []).forEach(r => {
+    const vs = r.kind === 'versus';
+    const row = mk('div', 'r' + (r.voted ? '' : ' skip')), rec = mk('div', 'rec');
+    rec.appendChild(mk('b', null, vs ? ((r.title || 'A') + ' vs ' + (r.titleB || 'B')) : (r.title || '')));
+    rec.appendChild(mk('small', null, vs ? 'Versus · guess and average are the share for A' : (r.artist || '')));
+    row.appendChild(rec);
+    // A Versus round has a pick and a split, not a rating and an average: same columns, in percent.
+    row.appendChild(mk('span', 'c you', !r.voted ? '—' : vs ? String(r.pick || '—').toUpperCase() : (r.taste == null ? '—' : r.taste)));
+    row.appendChild(mk('span', 'c g', !r.voted ? '—' : vs ? (r.predict == null ? '—' : Math.round(r.predict) + '%') : one(r.predict)));
+    row.appendChild(mk('span', 'c a', vs ? (r.average == null ? '—' : Math.round(r.average) + '%') : one(r.average)));
+    row.appendChild(mk('span', 'c p' + (!r.voted ? ' low' : r.tier === 'bullseye' ? ' bull' : r.points < 50 ? ' low' : ''), r.voted ? fmtPts(r.points) : '—'));
+    rt.appendChild(row);
+  });
+  if(d.kind === 'daily'){
+    const f = mk('div', 'foot' + (d.bonus ? '' : ' none'));
+    f.appendChild(mk('span', null, 'Completion bonus'));
+    f.appendChild(mk('span', null, d.bonus ? '+' + d.bonus : 'Not earned'));
+    rt.appendChild(f);
+  }
+  body.appendChild(rt); c.appendChild(body);
+  c.addEventListener('toggle', () => { if(c.open) track('results_day_open', { kind: d.kind }); });
+  return c;
+}
+function rsRender(d){
+  rsOpen(d);
+  const w = d.week, st = d.stats;
+  $('#rsRange').textContent = w.range; $('#rsName').textContent = w.name || '';
+  $('#rsPrev').disabled = !w.prev; $('#rsNext').disabled = !w.next;
+  $('#rsPrev').dataset.week = w.prev || ''; $('#rsNext').dataset.week = w.next || '';
+  const box = $('#rsStats'); box.textContent = '';
+  box.appendChild(rsStat('Points', fmtN(st.points), st.points ? 'earned' : ''));
+  box.appendChild(rsStat('Played', st.published ? (st.played + ' of ' + st.published) : '0'));
+  box.appendChild(rsStat('Bullseyes', st.bullseyes)); box.appendChild(rsStat('Grade', st.grade || '—'));
+  const line = $('#rsLine');
+  line.classList.toggle('hide', !st.pending);
+  line.textContent = st.pending ? (st.pending + (st.pending === 1 ? ' day' : ' days') + ' still to come out') : '';
+  const days = $('#rsDays'); days.textContent = '';
+  d.days.forEach(x => days.appendChild(rsDay(x)));
+  if(!d.days.length){
+    days.appendChild(mk('div', 'note', w.current
+      ? 'Nothing to show for this week yet. Rate the open records and your results will be listed here when they come out.'
+      : 'You did not play that week.'));
+  }
+  // The newest day with results opens by itself, so the page is never a list of closed rows.
+  const first = days.querySelector('details.day'); if(first && w.current) first.open = true;
+  $('#rsLegend').classList.toggle('hide', !days.querySelector('details.day'));
+}
+async function loadResults(week){
+  if(RS_BUSY) return; RS_BUSY = true;
+  $('#rsErr').classList.add('hide');
+  try{
+    const d = await api('/api/me/results' + (week ? '?week=' + encodeURIComponent(week) : ''), null, authHeaders() || {});
+    RS_LOADED = true; rsRender(d);
+  }catch(e){
+    $('#rsErr').classList.remove('hide');
+    $('#rsErr').textContent = 'Could not load your results (' + e.message + '). Try again in a moment.';
+  }
+  RS_BUSY = false;
+}
+$('#rsPrev').onclick = () => { const w = $('#rsPrev').dataset.week; if(w){ loadResults(w); track('results_week', { dir: 'prev' }); } };
+$('#rsNext').onclick = () => { const w = $('#rsNext').dataset.week; if(w){ loadResults(w); track('results_week', { dir: 'next' }); } };
+// ---- sections. The hash names the section so /account#profile is linkable; "edit" is the
+// edit form's own page (photo crop, city lookup and notification settings live there).
+function showSec(k){
+  if(k === 'edit'){ location.href = '/profile'; return; }
+  if(k !== 'profile' && k !== 'results') k = 'earn';
+  if(k === 'results' && !RS_LOADED) loadResults();
+  document.querySelectorAll('.tab[data-sec]').forEach(t => t.classList.toggle('on', t.dataset.sec === k));
+  document.querySelectorAll('.sec').forEach(x => x.classList.toggle('on', x.id === 'sec-' + k));
+  try{ history.replaceState(null, '', location.pathname + location.search + (k === 'earn' ? '' : '#' + k)); }catch(e){}
+  track('account_section', { section: k });
+}
+document.querySelectorAll('.tab[data-sec]').forEach(t => t.onclick = () => { showSec(t.dataset.sec); window.scrollTo(0, 0); });
+document.addEventListener('click', async (ev) => {
+  const c = ev.target.closest('.copy');
+  if(c){
+    const el = $('#' + c.dataset.copy), full = el.dataset.full || el.textContent;
+    try{ await navigator.clipboard.writeText(full); c.classList.add('done'); c.lastChild.textContent = 'Copied'; setTimeout(() => { c.classList.remove('done'); c.lastChild.textContent = 'Copy'; }, 1600); }
+    catch(e){ window.prompt('Copy your link', full); }
+    track('referral_link_copy', { which: c.dataset.copy });
+    return;
+  }
+  const a = ev.target.closest('[data-url]');
+  if(a){
+    ev.preventDefault();
+    if(a.dataset.busy) return;
+    a.dataset.busy = '1'; a.style.opacity = '.5';
+    try{
+      // The graphic needs the token in a header, so fetch it and hand the bytes to a download.
+      const r = await fetch(a.dataset.url, { headers: authHeaders() || {} });
+      if(!r.ok) throw new Error('Could not build the graphic');
+      const blob = await r.blob(), u = URL.createObjectURL(blob);
+      const l = document.createElement('a'); l.href = u; l.download = 'anr-team-' + a.dataset.kind + '.png'; document.body.appendChild(l); l.click(); l.remove();
+      setTimeout(() => URL.revokeObjectURL(u), 10000);
+      track('referral_graphic_download', { kind: a.dataset.kind });
+    }catch(e){ alert(e.message); }
+    delete a.dataset.busy; a.style.opacity = '';
+  }
+});
+async function load(){
+  const h = authHeaders();
+  if(!h){ show('screen-login'); return; }
+  try{
+    const d = await api('/api/me/referrals', null, h);
+    render(d); show('screen-main');
+    const want = (location.hash.match(/^#(profile|edit|results)\b/) || [])[1];
+    if(want) showSec(want);
+  }catch(e){
+    // ONLY a 401 means the token is dead. Any other failure keeps the token and says so —
+    // the first build dropped the token on a server error, which read as being logged out
+    // and burned the one-time code on the retry.
+    if(e.status === 401){
+      if(h['X-Auth-Token']) localStorage.removeItem('rt_auth_token');
+      if(h['X-Refer-Link']) sessionStorage.removeItem('rt_refer_link');
+      show('screen-login');
+      return;
+    }
+    show('screen-main');
+    $('#arRows').innerHTML = '';
+    $('#loadErr').classList.remove('hide');
+    $('#loadErr').textContent = 'Could not load your referral page (' + e.message + '). Try again in a moment.';
+  }
+}
+load();
+})();
+</script>
+</body>
+</html>

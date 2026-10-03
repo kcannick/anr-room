@@ -495,6 +495,13 @@ live on anr.makinitmag.com.
     was unconditional, so a non-player got "Yesterday's results, <their name>." over the Top 8
     and nothing of their own. Fixed: personalise the greeting only when there is something
     personal beneath it, and say plainly why there isn't when there is not.
+  - **Banner + the Live step flow** (2026-09-30, operator's call): `/daily` carries the sponsor
+    banner at the TOP of the page (same `#adTop` box and cascade as play.html — `adSlotFor()`:
+    the drop's banner_id → Revive game zone → global banner; hidden when nothing is set), and
+    rates in the same steps as Live: Rate it → Next → Predict the Average → Lock it in (Back
+    keeps both) → note → Next record. Live adopted DAILY's wording (Rate it / Predict the
+    Average / Lock it in; Versus step 2 = "Predict the split") — "Room" vocabulary is out of
+    the rating steps. Mockup: `public/_mock-daily-banner.html`.
   - **Still open:** `sessions.live_bonus` has no value set (~300 makes one live show ≈ three
     perfect async days; without it the broadcast is decorative on the unified board), the
     scouting-points curve, and Nero retirement (`#btnNeroPull` + the scrape helper are still
@@ -666,7 +673,7 @@ live on anr.makinitmag.com.
   the landing page and join page stash `?ref=` under `rt_ref` (session-less — the old
   `rt_ref_<sid>` key died with the session, and a daily drop is a new session every day);
   auth.js sends the per-session key first, `rt_ref` second, and clears both on join.
-  **`/refer` page** (`public/refer.html`, mockup `design/refer/`): links with copy buttons, the
+  **`/refer` page** (now `public/account.html`'s Earn points section — see the account bullet; mockup `design/refer/`): links with copy buttons, the
   two lanes with totals and per-invitee / per-record rows, four graphics. Auth is EITHER token
   (`resolveUserId`) — a daily player holds only a per-session player token, so the page picks
   any `rt_token_*` on the device; with nothing it runs an email-code login. `GET
@@ -813,6 +820,65 @@ live on anr.makinitmag.com.
   artist alone (all levels merge), and fills ONLY blank fields (nothing on a round is ever overwritten; preview first;
   re-runnable). Handles the exports' quirks: leading `'`, `@`, profile URLs → handle, `1`-prefixed
   phones → 10 digits. Platform-admin only (PII across every room).
+
+- **The A&R account — one page with sections** (no migration, 2026-10-01; mockup
+  `public/_mock-account.html`). `/account` (`public/account.html`) is the A&R's home:
+  a header (photo, name, "Official A&R · city", rank/points pill) over tabs. **Earn points**
+  is the default section and IS the old referral page — `/refer` serves the same file, so
+  email footers, the signed `[card link]` (`#rt=`) and every link already out still land
+  there. Intro copy is the operator's verbatim. **My profile** renders the public record
+  from the public `/api/profile?u=` (the same data as `/u/<uid>`). **Edit profile** is NOT
+  re-implemented: the tab goes to `/profile` (join.html's edit mode — photo crop, city
+  lookup, notification settings and the `#nt=` manage-link mode all live there), which shows
+  the same tab strip in edit mode so it reads as one account. The greyed "Sessions" and
+  "Rounds" tabs became ONE tab, **My results** (next bullet). **Graphics are SHOWN, not described** (operator: nobody should have
+  to download a graphic to see it): `/api/card/refer?kind=&thumb=1&v=` is the SAME Satori
+  render rasterised at 432px (`renderPng(type, data, outWidth)`), fetched with the auth
+  header and shown as blob URLs one at a time. `v` = `referGraphicVersion(u)`, a hash of
+  what the graphic prints (uid, name, role, city, photo): a matching `v` is
+  `private, max-age=86400`, anything else and the full download are `no-store`, so the
+  cache is per-A&R and a new photo shows on the next visit. Card names are the operator's:
+  **"Official A&R Card - Feed" / "Official A&R Card - Story"**. Nav: home, landing and the
+  play page link one "My account"; the daily page's bonus-points CTAs still go to `/refer`.
+  A device holding only a per-session player token can use the account page but `/profile`
+  still asks for an email code (join.html's edit mode reads `rt_auth_token` only).
+
+- **My results — the results live on the site, the email points at them** (no migration,
+  2026-10-02; mockup `public/_mock-account-results.html`). **LIVE: merged to main as PR #16
+  on 2026-10-02, which carried the account page (PR #13's commits) with it.**
+  The operator's reason: the results email handed an A&R everything, so nothing brought them
+  back to the site, where today's records are waiting. Two halves:
+  - **`/account#results`** (`GET /api/me/results?week=YYYY-MM-DD`, `arResultsData`). One A&R,
+    one week (Monday to Sunday by the day a drop OPENED, `weekStartFor`/`weekWindow`). Top to
+    bottom: the OPEN drop (how many they have dealt with, when voting closes, a button into
+    `/daily?s=`), the week's four numbers (points, played, bullseyes, grade), then each day
+    newest first, opening into the daily page's record table (rating, guess, room average,
+    points, completion bonus). Arrows page a week at a time and stop at the week the account
+    was made. Earn points stays the DEFAULT tab (operator: the push is on getting people to
+    refer artists). Auth is `resolveReferUid` — either token or the signed `rf1` link — so the
+    refer-scope link now reads three things: referrals, graphics, own results.
+  - **THE SEAL:** a day carries numbers only when `async_state = 'published'` (or a completed
+    live session). A closed-but-unpublished day is already tallied in the database, so that
+    branch selects COUNTS ONLY ("You rated 5 of 5", when results come out) — never add a score
+    column to it. The open drop likewise ships a count and nothing else. Tested at each stage.
+  - **NO RANK, by decision** (operator, 2026-10-02): the section shows points; the weekly
+    announcement is where rank is REVEALED, and showing it daily would make that an
+    announcement of something already known. Not for a day, not for the week. (The header
+    pill's series rank and the daily page's own recap screen still show a rank — not changed
+    here, operator not yet asked.)
+  - **A missed day is listed and carries nothing** (operator: results are for the days an A&R
+    took part in, not a history of the platform) — no records, no averages, and it does not
+    open. Only public daily drops are listed as missed. A record they skipped on a day they
+    DID play shows its average with no points of theirs.
+  - **The digest is a HEADLINE now.** `dailyDigestEmailHtml/Text` lost the round-by-round
+    table and the Rank tile: points, grade, bullseyes, the completion bonus, one sentence, and
+    a green **See your results** button to `accountResultsUrl(base, uid)` =
+    `/account#results&rt=<rf1>` (signed per recipient so it lands logged in; plain
+    `/account#results` without `NOTIFY_LINK_SECRET`, which asks for a code). account.html
+    keeps the section when it scrubs the token from the hash. The Top 8 graphics, the stream
+    link and "Rate today's records" are unchanged. A non-player still gets no personal block.
+  - The daily page's done, sealed and recap screens link **My past results**; the edit form's
+    copy of the tab strip (join.html) carries the tab too.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed

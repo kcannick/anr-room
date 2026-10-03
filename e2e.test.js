@@ -1080,6 +1080,28 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const cardBuf = Buffer.from(await cardR.arrayBuffer());
   ok('the A&R Team card renders as a PNG', cardR.status === 200 && cardR.headers.get('content-type') === 'image/png' && cardBuf.slice(1, 4).toString() === 'PNG', cardR.status + ' ' + cardBuf.length);
   ok('the graphic is private to its owner (no-store)', /no-store/.test(cardR.headers.get('cache-control') || ''));
+  // The account page (2026-10-01): thumbnails are the same render, smaller, and cacheable
+  // per profile version; the labels are the operator's; /account and /refer are one page.
+  ok('the two cards carry the operator\'s names', rp.graphics[0].label === 'Official A&R Card - Feed' && rp.graphics[1].label === 'Official A&R Card - Story', JSON.stringify(rp.graphics.map(g => g.label)));
+  ok('every graphic offers a versioned thumbnail', rp.graphics.every(g => /^\/api\/card\/refer\?kind=\w+&thumb=1&v=[0-9a-f]{12}$/.test(g.thumb)), JSON.stringify(rp.graphics.map(g => g.thumb)));
+  ok('the header fields ride the payload, and no contact detail does',
+    rp.me.uid && 'photoUrl' in rp.me && 'location' in rp.me && !/@|phone|email/i.test(JSON.stringify(rp.me)), JSON.stringify(rp.me));
+  const thR = await fetch(base + rp.graphics[1].thumb, { headers: { 'X-Player-Token': inviterTok } });
+  const thBuf = Buffer.from(await thR.arrayBuffer());
+  ok('a thumbnail is the story at 432 wide, same shape as the download',
+    thR.status === 200 && thBuf.readUInt32BE(16) === 432 && thBuf.readUInt32BE(20) === 768, thBuf.readUInt32BE(16) + 'x' + thBuf.readUInt32BE(20));
+  ok('a current thumbnail may sit in the private cache for a day', thR.headers.get('cache-control') === 'private, max-age=86400', thR.headers.get('cache-control'));
+  const thStale = await fetch(base + '/api/card/refer?kind=card&thumb=1&v=000000000000', { headers: { 'X-Player-Token': inviterTok } });
+  ok('a stale version key is never cached', thStale.status === 200 && thStale.headers.get('cache-control') === 'private, no-store', thStale.headers.get('cache-control'));
+  ok('the full download is never cached', cardR.headers.get('cache-control') === 'private, no-store', cardR.headers.get('cache-control'));
+  ok('no token, no thumbnail', (await fetch(base + rp.graphics[0].thumb)).status === 401);
+  const acctPage = await fetch(base + '/account'), referPage = await fetch(base + '/refer');
+  const acctHtml = await acctPage.text();
+  ok('/account serves the account page, and /refer is the same page',
+    acctPage.status === 200 && referPage.status === 200 && /Earn more points/.test(acctHtml) && (await referPage.text()) === acctHtml);
+  ok('the account page carries the operator\'s intro and the three sections',
+    /Invite new A&amp;Rs to the platform and earn bonus points\./.test(acctHtml) && /official member of our A&amp;R Team/.test(acctHtml)
+      && /data-sec="earn"/.test(acctHtml) && /data-sec="profile"/.test(acctHtml) && /data-sec="edit"/.test(acctHtml));
   ok('an unknown graphic is refused', (await fetch(base + '/api/card/refer?kind=poster', { headers: { 'X-Player-Token': inviterTok } })).status === 404);
   ok('no token, no graphic', (await fetch(base + '/api/card/refer?kind=join')).status === 401);
 
@@ -1756,6 +1778,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the daily payload leaks no split', !/split/.test(dJson));
   ok('the daily payload carries NO per-record vote counts', !dState.queue.some(q => 'votes' in q || 'count' in q), dJson.slice(0, 200));
   ok('tiers are server-resolved epochs, not client maths', Array.isArray(dState.async.tiers) && dState.async.tiers[0].points === 100);
+  // The banner (2026-09-30): the same cascade as the live player. The global banner from the
+  // cascade block above is still assigned, and a drop has no banner_id of its own.
+  ok('the daily payload carries the sponsor banner', dState.banner && dState.banner.image.startsWith('/api/banner/image'), JSON.stringify(dState.banner));
+  const dInfo = (await call('/api/session/info?s=' + PDROP, null, 'GET')).d;
+  ok('the daily join screens get the banner too', dInfo.banner && dInfo.banner.id === dState.banner.id, JSON.stringify(dInfo.banner));
 
   // Two A&Rs get different running orders; the same A&R gets the same one every time.
   const dState2 = (await call('/api/me/state', null, 'GET', DH2)).d;
@@ -1947,6 +1974,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
     await call('/api/vote', { roundId: lQ[0].id, taste: 5, predict: 5.0 }, 'POST', { 'X-Player-Token': vr.d.token });
   }
 
+  // ---- /account "My results" (2026-10-02): the open drop is the first thing on the page.
+  const rsOpenLex = (await call('/api/me/results', null, 'GET', LH)).d;
+  ok('My results leads with the open drop and how far through it the A&R is',
+    rsOpenLex.open && rsOpenLex.open.id === LDROP && rsOpenLex.open.total === 3 && rsOpenLex.open.rated === 3
+      && rsOpenLex.open.url === '/daily?s=' + LDROP && /ET/.test(rsOpenLex.open.closesWhen || ''), JSON.stringify(rsOpenLex.open));
+  ok('an open day is not listed among the results', !rsOpenLex.days.some(d => d.id === LDROP), JSON.stringify(rsOpenLex.days.map(d => d.state)));
+  const zedUid = (await dDb.get('SELECT uid FROM users WHERE email = ?', ['zed@test.com'])).uid;
+  const rsOpenZed = await srv._arResultsData(zedUid);
+  ok('someone part way through sees their own count', rsOpenZed.open.rated === 1 && rsOpenZed.open.total === 3, JSON.stringify(rsOpenZed.open));
+  ok('My results needs a login', (await fetch(base + '/api/me/results')).status === 401);
+
   const closesAt = Number((await lSess()).window_closes_at);
   const tClose = await tick(closesAt + 1000);
   ok('the close tick closes and tallies the whole day', tClose.d.closed === 1 && tClose.d.ratified === 3, JSON.stringify(tClose.d));
@@ -1978,6 +2016,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and the player has NOT been shown results before the publish',
     sealedState.phase !== 'recap' && !sealedState.recap
     && !/room_average/.test(JSON.stringify(sealedState)), sealedState.phase);
+  // The day is TALLIED in the database here (averages and points exist on its rows) and not
+  // published. My results must list it with counts only.
+  const rsSealed = (await call('/api/me/results', null, 'GET', LH)).d;
+  const rsSealedDay = rsSealed.days.find(d => d.id === LDROP);
+  ok('a closed day whose results are not out is listed as sealed, with what the A&R did',
+    rsSealedDay && rsSealedDay.state === 'sealed' && rsSealedDay.rated === 3 && rsSealedDay.total === 3 && !!rsSealedDay.resultsClock,
+    JSON.stringify(rsSealedDay));
+  ok('and it carries no score of any kind before the publish',
+    !/average|points|grade|tier|bullseye|rounds|predict|taste/.test(JSON.stringify(rsSealedDay)), JSON.stringify(rsSealedDay));
+  ok('the week counts it as still to come out, not as points',
+    rsSealed.stats.pending >= 1 && !rsSealed.days.some(d => d.id === LDROP && d.points != null), JSON.stringify(rsSealed.stats));
+  ok('a closed drop is no longer offered as open', !rsSealed.open || rsSealed.open.id !== LDROP, JSON.stringify(rsSealed.open));
 
   // The artist heads-up at the close: every RATED artist with contact, once, carrying no score.
   const hu = await dDb.all('SELECT * FROM artist_headsups WHERE session_id = ?', [LDROP]);
@@ -2208,6 +2258,42 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and it does not duplicate a single recipient row', rcpts2.length === rcptCount, rcptCount + ' -> ' + rcpts2.length);
   const bcCount = await dDb.get("SELECT COUNT(*) AS c FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [LDROP]);
   ok('nor a second broadcast', Number(bcCount.c) === 1, JSON.stringify(bcCount));
+
+  // ---- My results, once the day has published: record by record, points, no rank.
+  const rsPub = (await call('/api/me/results', null, 'GET', LH)).d;
+  const rsDay = rsPub.days.find(d => d.id === LDROP);
+  const lexPart = await dDb.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [LDROP, 'life@test.com']);
+  const lexBonus = await dDb.get("SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [LDROP + ':' + lexPart.user_id]);
+  ok('a published day lists every record with the A&R\'s rating, guess, the room average and points',
+    rsDay && rsDay.state === 'published' && rsDay.kind === 'daily' && rsDay.rounds.length === 3
+      && rsDay.rounds.every(r => r.voted && r.taste === 7 && r.predict === 7 && r.average != null && r.points != null && r.tier),
+    JSON.stringify(rsDay));
+  ok('the day\'s points are the votes plus the completion bonus',
+    rsDay.points === Number(lexPart.total_points) + (lexBonus ? Number(lexBonus.points) : 0) && rsDay.bonus === (lexBonus ? Number(lexBonus.points) : 0),
+    rsDay.points + ' vs ' + lexPart.total_points + ' + ' + JSON.stringify(lexBonus));
+  ok('the week adds up the days that have come out',
+    rsPub.week.current === true && rsPub.week.name === 'This week' && rsPub.stats.played >= 1 && rsPub.stats.points >= rsDay.points && !!rsPub.stats.grade,
+    JSON.stringify([rsPub.week, rsPub.stats]));
+  ok('there is NO rank anywhere in My results (the weekly announcement reveals it)',
+    !/rank|fieldSize|percentile/i.test(JSON.stringify(rsPub)), JSON.stringify(rsPub).slice(0, 300));
+  ok('and no email or phone', !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsPub)));
+  const rsZed = await srv._arResultsData(zedUid);
+  const rsZedDay = rsZed.days.find(d => d.id === LDROP);
+  ok('a record they skipped on a day they played shows the average and no points of theirs',
+    rsZedDay && rsZedDay.rated === 1 && rsZedDay.total === 3 && rsZedDay.bonus === 0
+      && rsZedDay.rounds.filter(r => !r.voted).length === 2 && rsZedDay.rounds.filter(r => !r.voted).every(r => r.average != null && r.points == null && r.taste == null),
+    JSON.stringify(rsZedDay));
+  const rsIdle = await srv._arResultsData(uidIdle);
+  const rsIdleDay = rsIdle.days.find(d => d.id === LDROP);
+  ok('a day the A&R missed is listed and carries nothing else — results are for the days they played',
+    rsIdleDay && rsIdleDay.state === 'missed' && rsIdleDay.total === 3 && !/average|points|rounds|title/.test(JSON.stringify(rsIdleDay)),
+    JSON.stringify(rsIdleDay));
+  ok('and it earns them nothing in the week', rsIdle.stats.points === 0 && rsIdle.stats.played === 0, JSON.stringify(rsIdle.stats));
+  const rsFuture = (await call('/api/me/results?week=2999-01-04', null, 'GET', LH)).d;
+  ok('a week in the future resolves to this week', rsFuture.week.start === rsPub.week.start && rsFuture.week.next === null, JSON.stringify(rsFuture.week));
+  const rsOld = (await call('/api/me/results?week=2020-01-08', null, 'GET', LH)).d;
+  ok('an old week is empty, starts on its Monday, and pages forward but not back past the account',
+    rsOld.week.start === '2020-01-06' && rsOld.days.length === 0 && rsOld.week.prev === null && rsOld.week.next === '2020-01-13', JSON.stringify(rsOld.week));
 
   // The personalised block: exactly one row per record they rated, carrying every column
   // the scorecard prints. Absent — not empty — for someone who did not play.
@@ -3023,6 +3109,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a tampered link is refused', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': rlTok.slice(0, -2) + 'xx' })).status === 401);
   ok('a manage link (np1) is not a refer link', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': tsrv._mintNotifyLink(rlUid) })).status === 401);
   ok('the link cannot reach the profile or prefs handlers', (await call('/api/me/notify-prefs', null, 'GET', { 'X-Refer-Link': rlTok })).status !== 200);
+  const rlRes = await call('/api/me/results', null, 'GET', { 'X-Refer-Link': rlTok });
+  ok('the link reads the owner\'s own results (the results email lands logged in)', rlRes.status === 200 && !!rlRes.d.week && Array.isArray(rlRes.d.days), rlRes.status + '');
+  ok('a tampered link reads no results', (await call('/api/me/results', null, 'GET', { 'X-Refer-Link': rlTok.slice(0, -2) + 'xx' })).status === 401);
+  ok('the results email\'s link opens the results section and carries the signed link',
+    tsrv._accountResultsUrl('https://x', rlUid).startsWith('https://x/account#results&rt=rf1.' + rlUid + '.'), tsrv._accountResultsUrl('https://x', rlUid));
 
   console.log('\n— Revive ad zones: phase-aware, room banners always win —');
   await call('/api/admin/settings', { reviveDeliveryUrl: 'https://ads.cannick.com/www/delivery', reviveZoneLobby: '8', reviveZoneGame: '9' }, 'POST', ADMINH);
@@ -3241,7 +3332,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
 
   const dgPlayed = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: dgRecap });
   ok('someone who played is greeted by name', /Your results, Kelby/.test(dgPlayed));
-  ok('and their round-by-round table is there', /A Record/.test(dgPlayed) && /How you did/.test(dgPlayed));
+  // The mail is a HEADLINE now (operator, 2026-10-02): it used to carry the whole table, which
+  // made it the report and gave nobody a reason to come back to the site.
+  ok('and the mail carries what the day paid', /How you did/.test(dgPlayed) && />543</.test(dgPlayed) && /A\+/.test(dgPlayed) && /Completion bonus/.test(dgPlayed));
+  ok('but NOT the round-by-round table — that lives on the site', !/A Record/.test(dgPlayed) && !/An Artist/.test(dgPlayed) && !/Off by/.test(dgPlayed), dgPlayed.slice(0, 200));
+  ok('and no rank', !/Rank/.test(dgPlayed));
 
   const dgIdle = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: null });
   ok('someone who did NOT play is not greeted as though they have results',
@@ -3260,15 +3355,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The 69-hour schedule's results mail (operator, 2026-09-27): the Livestream Countdown link,
   // a personal results link, and the reminder that today's ratings close in 3 hours.
   const dgFull = { ...dgArg, name: 'Kelby Cannick', recap: dgRecap, streamUrl: 'https://yt.example/live',
-    resultsUrl: 'https://x/daily?s=abc', closesLabel: '3:00 PM ET', closesInHours: 3 };
+    resultsUrl: 'https://x/account#results', closesLabel: '3:00 PM ET', closesInHours: 3 };
   const dgFullHtml = srv._dailyDigestEmailHtml(dgFull), dgFullText = srv._dailyDigestEmailText(dgFull);
   ok('the results mail links the Livestream Countdown',
     /yt\.example\/live/.test(dgFullHtml) && /Watch the Makin' It Daily Countdown/.test(dgFullText));
-  ok('and the A&R\'s own results', /See your full results/.test(dgFullHtml) && /daily\?s=abc/.test(dgFullText));
+  ok('and to the A&R\'s own results on the site', /See your results/.test(dgFullHtml) && /account#results/.test(dgFullHtml) && /account#results/.test(dgFullText));
+  ok('the text version is a headline too', /Points 543/.test(dgFullText) && !/A Record/.test(dgFullText) && !/Rank/.test(dgFullText), dgFullText);
   ok('and says today\'s records close in 3 hours',
     /Today's records close at 3:00 PM ET — in 3 hours\./.test(dgFullText), dgFullText);
   ok('a non-player gets no personal results link',
-    !/See your full results/.test(srv._dailyDigestEmailHtml({ ...dgFull, recap: null })));
+    !/See your results/.test(srv._dailyDigestEmailHtml({ ...dgFull, recap: null })));
 
   // The digest's "Today's records are open" button went to /, where a daily player (who holds
   // only a per-session token) sees the sign-up pitch; /join then ended on "we'll notify you when
