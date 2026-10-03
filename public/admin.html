@@ -2157,11 +2157,13 @@ function renderDaily(){
   cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Daily Countdown carousel</h4>
     <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">One Instagram carousel: the cover, every record from the bottom up to #1 (rank only, no scores), then the A&amp;R Team and submit slides. Every record slide stands alone, so artists can repost theirs. ${rs.song ? 'Hosted.' : (dr.async_state === 'published' ? 'Hosting failed; rendered live instead.' : 'Rendered live from the day so far; the ranking is final once the day tallies.')}</p>
     ${slideFigs('song', rs.song, rs.songCount, 'Daily Countdown')}
-    <div class="row" style="gap:8px;margin:8px 0 6px;flex-wrap:wrap"><button class="btn sm" onclick="dlAsanaTask('song', this)" ${c.asana && tallied ? '' : 'disabled'} title="${c.asana ? (tallied ? 'One Asana task with the slides attached in order' : 'Available once the day tallies') : 'Set ASANA_TOKEN and the Asana project ID (Platform panel) first'}">Create Asana task</button><button class="btn ghost sm" onclick="dlCopyResultsCaption('song')">Copy caption</button>${(rs.songComments || []).map((t, i) => `<button class="btn ghost sm" onclick="dlCopyCountdownComment(${i})">Copy comment ${i + 1} of ${rs.songComments.length}</button>`).join('')}</div>
+    <div class="row" style="gap:8px;margin:8px 0 6px;flex-wrap:wrap"><button class="btn ghost sm" onclick="dlCopyResultsCaption('song')">Copy caption</button>${(rs.songComments || []).map((t, i) => `<button class="btn ghost sm" onclick="dlCopyCountdownComment(${i})">Copy comment ${i + 1} of ${rs.songComments.length}</button>`).join('')}</div>
+    ${dlAsanaLine('song', c, tallied)}
     <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 12px">The caption names nobody: Instagram stops notifying people when a caption mentions more than 10 accounts. Tag each artist on their own slide (shown under each slide), then post the comments, four artists each. Artists with no Instagram handle on file are not mentioned.</p>
     <h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Top A&amp;R carousel</h4>
     ${slideFigs('ar', rs.ar, rs.arCount, 'Top A&R')}
-    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn sm" onclick="dlAsanaTask('ar', this)" ${c.asana && tallied ? '' : 'disabled'} title="${c.asana ? (tallied ? 'One Asana task with the slides attached in order' : 'Available once the day tallies') : 'Set ASANA_TOKEN and the Asana project ID (Platform panel) first'}">Create Asana task</button><button class="btn ghost sm" onclick="dlCopyResultsCaption('ar')">Copy Top A&R caption</button></div>
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost sm" onclick="dlCopyResultsCaption('ar')">Copy Top A&R caption</button></div>
+    ${dlAsanaLine('ar', c, tallied)}
     <p class="muted" id="dlAsanaNote" style="font-size:11.5px;line-height:1.5;margin:8px 0 0"></p>`;
   // The winner posts (039) — one portrait post per winner, posted as a collab post with them.
   // Hosted at the 3PM publish; before that (or if hosting failed) rendered live off
@@ -2252,6 +2254,22 @@ async function dlCopyWeekCaption(post){
   if(!text){ alert('Nothing to copy yet.'); return; }
   try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
   catch(e){ alert('Could not copy the caption.'); }
+}
+// The Asana task for one post. The cron makes it on its own once the day's slides render
+// (asanaTasks on the status); this line says where that stands. The manual button is only a
+// fallback: for a day rendered before the automatic step existed, or one that gave up retrying.
+function dlAsanaLine(set, c, tallied){
+  const box = (html) => `<p class="muted" style="font-size:11.5px;line-height:1.5;margin:6px 0 10px">${html}</p>`;
+  const link = (st) => st.url ? ` — <a href="${esc(st.url)}" target="_blank" rel="noopener" style="color:var(--signal)">open in Asana</a>` : '';
+  const manual = `<button class="btn ghost sm" style="margin-left:6px" onclick="dlAsanaTask('${set}', this)">Create Asana task</button>`;
+  if(!c.asana) return box('Asana: set ASANA_TOKEN and the project ID (Platform panel) and the task is made automatically.');
+  const st = c.asanaTasks && c.asanaTasks[set];
+  if(st && st.done) return box(st.skipped ? 'Asana: nothing to post for this day.' : '✅ In Asana with ' + (st.total || 0) + ' slides' + link(st));
+  if(st && (st.attempts || 0) >= 12) return box('Asana stopped retrying: ' + esc(st.error || 'unknown error') + (st.gid ? link(st) : manual));
+  if(st && st.gid) return box('Asana task made; attaching slides (' + (st.next || 0) + ' of ' + (st.total || '?') + ')' + link(st) + '. The rest attach on the next run.');
+  if(st && st.error) return box('Asana did not take it yet (' + esc(st.error) + '). Retrying every five minutes.');
+  if(c.asanaTasks) return box('The Asana task is made automatically within a few minutes.');
+  return box(tallied ? 'This day was ready before automatic Asana tasks existed.' + manual : 'The Asana task is made automatically once the slides are ready.');
 }
 // One Asana task per post: the Daily Countdown (slides + caption + comments + who to tag) or
 // the Top A&Rs. A big countdown outruns one request, so the server attaches what fits and

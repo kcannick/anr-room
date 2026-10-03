@@ -5162,6 +5162,38 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const atResumed = asanaCalls.slice(atResumeAt);
   ok('daily asana: a follow-up press attaches only what is left and makes no second task',
     atResume.d.done === true && atResumed.length === 1 && atResumed[0].path === '/attachments' && /-06\.png$/.test(atResumed[0].data.filename), JSON.stringify(atResumed));
+  // The cron makes both tasks on its own once a day is queued (rendered); then never again.
+  const queuedAtPublish = (await anDb.get('SELECT asana_tasks FROM recap_jobs WHERE session_id = ?', [LDROP])).asana_tasks;
+  ok('daily asana auto: rendering the day queues its tasks', queuedAtPublish === '{}', String(queuedAtPublish));
+  await anDb.run("UPDATE recap_jobs SET asana_tasks = NULL, asana_claimed_at = NULL WHERE session_id = ?", [LDROP]);
+  const autoNone = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  ok('daily asana auto: a day that was never queued is left alone (no back-fill)', autoNone.created === 0, JSON.stringify(autoNone));
+  await anDb.run("UPDATE recap_jobs SET asana_tasks = '{}' WHERE session_id = ?", [LDROP]);
+  await anDb.run('UPDATE recap_jobs SET asana_claimed_at = ? WHERE session_id = ?', [Date.now(), LDROP]);
+  const autoClaimed = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  ok('daily asana auto: a day another run has claimed is skipped', autoClaimed.created === 0, JSON.stringify(autoClaimed));
+  await anDb.run('UPDATE recap_jobs SET asana_claimed_at = NULL WHERE session_id = ?', [LDROP]);
+  const autoAt = asanaCalls.length;
+  const auto1 = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  const autoMade = asanaCalls.slice(autoAt);
+  const autoState = JSON.parse((await anDb.get('SELECT asana_tasks FROM recap_jobs WHERE session_id = ?', [LDROP])).asana_tasks);
+  ok('daily asana auto: the cron makes BOTH tasks and attaches every slide',
+    auto1.created === 2 && autoMade.filter(c => c.path === '/tasks').length === 2
+      && autoState.song.done && autoState.song.total === 6 && autoState.song.next === 6 && autoState.ar.done && /^\d+$/.test(autoState.song.gid),
+    JSON.stringify([auto1, autoState]));
+  ok('daily asana auto: the claim is released after', (await anDb.get('SELECT asana_claimed_at FROM recap_jobs WHERE session_id = ?', [LDROP])).asana_claimed_at == null);
+  const auto2At = asanaCalls.length;
+  const auto2 = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  ok('daily asana auto: a finished day is never posted twice', auto2.created === 0 && asanaCalls.length === auto2At, JSON.stringify(auto2));
+  // A run cut short part-way: the gid is saved, so the next run resumes on the SAME task.
+  await anDb.run("UPDATE recap_jobs SET asana_tasks = ? WHERE session_id = ?", [JSON.stringify({ song: { gid: '4242', url: 'u', next: 4, total: 6 }, ar: autoState.ar }), LDROP]);
+  const auto3At = asanaCalls.length;
+  await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  const auto3 = asanaCalls.slice(auto3At);
+  ok('daily asana auto: a half-attached task resumes on the same task, no second task',
+    auto3.length === 2 && auto3.every(c => c.path === '/attachments') && /-05\.png$/.test(auto3[0].data.filename), JSON.stringify(auto3));
+  const atStatus = (await call('/api/admin/daily/status?day=' + (await anDb.get('SELECT drop_day FROM sessions WHERE id = ?', [LDROP])).drop_day, null, 'GET', BOOTH)).d;
+  ok('daily asana auto: the console status carries the task state', atStatus.cards && atStatus.cards.asana === true && atStatus.cards.asanaTasks && atStatus.cards.asanaTasks.song.done === true, JSON.stringify(atStatus.cards && atStatus.cards.asanaTasks));
   const atAnon = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', AH);
   ok('daily asana: platform-admin only', atAnon.status === 403, 'got ' + atAnon.status);
   delete process.env.ASANA_TOKEN;

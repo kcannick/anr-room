@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 041; suite green)
+## Current state (migrations through 042; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -803,7 +803,12 @@ live on anr.makinitmag.com.
   the Meeting Recap Live cover / YouTube thumbnail / caption, and the countdown clip captions. The
   A&R digest no longer carries the Top 8 images; it links Instagram ("See the Top Tracks on
   Instagram", @Makinit4indies) instead. The live-show post kit (Asana) still uses the Top 8 cards.
-  **Asana (2026-10-02):** the daily console makes ONE TASK PER POST — "Makin' It Daily Countdown —
+  **Asana (2026-10-02; AUTOMATIC from 042, 2026-10-03):** the daily cron makes ONE TASK PER POST on
+  its own once a day's slides render (`advanceDailyAsanaTasks`, queued by `recap_jobs.asana_tasks`
+  = '{}' at render/publish; days rendered before 042 are never back-filled; gid saved the moment
+  Asana returns it, so a long countdown resumes over several ticks on the SAME task; claimed via
+  `asana_claimed_at`; 12 failed attempts then it stops and the console offers the manual button).
+  The console shows each task's state with a link. The manual route makes — "Makin' It Daily Countdown —
   <date>" (slides attached in order; notes = caption, the four-artist comments, who to tag on each
   slide) and "Top A&Rs — <date>". `POST /api/admin/daily/asana-task {s, set, taskId?, next?}`
   attaches what fits in 20s and returns `{done, taskId, next}`; the console presses on until done.

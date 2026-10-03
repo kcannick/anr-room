@@ -1435,6 +1435,15 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       }
     } catch (e) { console.error('[daily] results callback pass failed:', e.message); }
   }
+
+  // ---- Asana: the day's two Instagram-post tasks, made once its slides are rendered ----
+  if (left() > 6000) {
+    try {
+      const a = await advanceDailyAsanaTasks({ deadline: t0 + budgetMs });
+      if (a.created) out.asanaCreated = a.created;
+      if (a.attached) out.asanaAttached = a.attached;
+    } catch (e) { console.error('[daily] asana pass failed:', e.message); }
+  }
   return out;
 }
 
@@ -1666,6 +1675,101 @@ async function countdownCarouselData(session) {
 }
 // ---- A&R Daily → Asana task content (the route is /api/admin/daily/asana-task) ----
 const DAILY_ASANA_BUDGET_MS = 20000;   // inside Vercel's 30s, with room for the task create
+const DAILY_ASANA_SETS = ['song', 'ar'];
+const DAILY_ASANA_MAX_ATTEMPTS = 12;   // */5 cron => an hour of retrying a broken project or token
+async function dailyAsanaProject() {
+  if (!process.env.ASANA_TOKEN) return null;
+  return (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null;
+}
+// Move ONE post's task forward: create it if it has no gid yet, then attach slides from `next`
+// until the deadline. `st` is { gid, url, next, total, done } and is updated in place; `save`
+// is called the moment the gid exists and after every slide, so a request or a cron tick that
+// dies part-way resumes where it stopped instead of making a second task.
+// Slides come from the hosted copies when the day has them, else they render here.
+async function dailyAsanaAdvance(session, set, st, { project, deadline, save = async () => {} }) {
+  const rd = await resultsCarouselData(session, set);
+  if (!rd) { st.done = true; st.skipped = 'nothing to post'; await save(); return st; }
+  const job = await db.get('SELECT results_song_urls, results_ar_urls, results_song_caption, results_ar_caption FROM recap_jobs WHERE session_id = ?', [session.id]);
+  const hosted = parseJsonArray(job && (set === 'song' ? job.results_song_urls : job.results_ar_urls));
+  st.total = rd.slides.length;
+  if (!st.gid) {
+    const caption = (job && (set === 'song' ? job.results_song_caption : job.results_ar_caption)) || resultsCaption(rd);
+    const t = await asanaJson('/tasks', 'POST', { name: dailyAsanaTaskName(rd), notes: dailyAsanaNotes(rd, caption), projects: [String(project)] });
+    const gid = t && t.data && t.data.gid;
+    if (!gid) throw new Error('Asana did not return a task id');
+    Object.assign(st, { gid: String(gid), url: (t.data && t.data.permalink_url) || `https://app.asana.com/0/${project}/${gid}`, next: 0 });
+    await save();
+  }
+  const prefix = set === 'song' ? 'countdown' : 'top-ars';
+  const day = String(rd.date).replace(/\./g, '-');
+  let i = Math.max(0, Math.min(rd.slides.length, parseInt(st.next, 10) || 0));
+  for (; i < rd.slides.length; i++) {
+    if (Date.now() > deadline) break;
+    let buf = null;
+    if (hosted && hosted[i]) {
+      try { const r = await fetch(hosted[i]); if (r.ok) buf = Buffer.from(await r.arrayBuffer()); } catch (e) { buf = null; }
+    }
+    if (!buf) buf = await shareCards.renderPng(rd.card, rd.slides[i]);
+    const form = new FormData();
+    form.set('parent', st.gid);
+    form.set('file', new Blob([buf], { type: 'image/png' }), `${prefix}-${day}-${String(i + 1).padStart(2, '0')}.png`);
+    await asanaFetch('/attachments', { method: 'POST', body: form });
+    st.next = i + 1;
+    await save();
+  }
+  st.next = i;
+  st.done = i >= rd.slides.length;
+  delete st.error;
+  await save();
+  return st;
+}
+// The cron step: every recently rendered day that has not finished its two tasks. Only days
+// queued by the render (asana_tasks set) — older days are never back-filled. Claimed per day.
+async function advanceDailyAsanaTasks({ deadline }) {
+  const out = { created: 0, attached: 0 };
+  const project = await dailyAsanaProject();
+  if (!project) return out;
+  const days = await db.all(
+    `SELECT s.*, j.asana_tasks FROM sessions s JOIN recap_jobs j ON j.session_id = s.id
+      WHERE s.mode = 'async' AND s.deleted_at IS NULL AND s.async_state IN ('ratified', 'published')
+        AND j.asana_tasks IS NOT NULL AND s.window_opens_at > ?
+      ORDER BY s.window_opens_at DESC LIMIT 4`, [now() - 10 * 86400000]);
+  for (const s of days) {
+    if (Date.now() > deadline - 3000) break;
+    let tasks = {};
+    try { tasks = JSON.parse(s.asana_tasks || '{}') || {}; } catch (e) { tasks = {}; }
+    const owed = DAILY_ASANA_SETS.filter(set => {
+      const st = tasks[set];
+      return !(st && st.done) && !(st && (st.attempts || 0) >= DAILY_ASANA_MAX_ATTEMPTS);
+    });
+    if (!owed.length) continue;
+    const claim = await db.run(
+      'UPDATE recap_jobs SET asana_claimed_at = ? WHERE session_id = ? AND (asana_claimed_at IS NULL OR asana_claimed_at < ?)',
+      [now(), s.id, now() - 10 * 60000]);
+    if (!claim.changes) continue;
+    const save = () => db.run('UPDATE recap_jobs SET asana_tasks = ? WHERE session_id = ?', [JSON.stringify(tasks), s.id]);
+    try {
+      for (const set of owed) {
+        if (Date.now() > deadline - 3000) break;
+        const st = tasks[set] = tasks[set] || {};
+        const hadGid = !!st.gid, before = Number(st.next) || 0;
+        try {
+          await dailyAsanaAdvance(s, set, st, { project, deadline: deadline - 2000, save });
+          if (!hadGid && st.gid) out.created++;
+          out.attached += (Number(st.next) || 0) - before;
+        } catch (e) {
+          st.attempts = (st.attempts || 0) + 1;
+          st.error = String(e.message || e).slice(0, 200);
+          await save();
+          console.error(`[daily] asana ${set} task failed:`, st.error);
+        }
+      }
+    } finally {
+      await db.run('UPDATE recap_jobs SET asana_claimed_at = NULL WHERE session_id = ?', [s.id]);
+    }
+  }
+  return out;
+}
 function dailyAsanaTaskName(rd) {
   return `${rd.set === 'song' ? DAILY_STREAM_NAME : 'Top A&Rs'} — ${rd.date}`;
 }
@@ -1967,6 +2071,9 @@ async function renderDailyGraphicsInto(session, { deadline = null } = {}) {
     [results.song.urls, results.ar.urls, results.song.caption, results.ar.caption,
      winners.track.url, winners.ar.url, winners.track.caption, winners.ar.caption, sessionId]);
   await db.run('UPDATE recap_jobs SET rendered_at = ? WHERE session_id = ?', [now(), sessionId]);
+  // Queue the day's two Asana tasks (the cron makes them). COALESCE so a re-render never
+  // resets a task that already exists.
+  await db.run("UPDATE recap_jobs SET asana_tasks = COALESCE(asana_tasks, '{}') WHERE session_id = ?", [sessionId]);
 }
 
 // The stream-time step on its own: claim, render, release the claim (the publish claims again
@@ -1984,6 +2091,8 @@ async function publishDailyDrop(session, { deadline = null } = {}) {
 
   const job = await db.get('SELECT rendered_at FROM recap_jobs WHERE session_id = ?', [sessionId]);
   if (!(job && job.rendered_at)) await renderDailyGraphicsInto(session, { deadline });
+  // A day rendered before the Asana step shipped is queued here instead.
+  await db.run("UPDATE recap_jobs SET asana_tasks = COALESCE(asana_tasks, '{}') WHERE session_id = ?", [sessionId]);
 
   try { await enqueueDailyDigest(session); }
   catch (e) { console.error('[daily] digest enqueue failed:', e.message); }
@@ -9657,7 +9766,10 @@ async function handleApi(req, res, url) {
           songComments: rsSong ? countdownComments(rsSong).comments : [],
           songTags: rsSong ? rsSong.slides.map(sl => (sl.kind === 'rank' ? (sl.handle || '') : '')) : [] },
         // The winner posts (039): hosted at publish, captions, and whether each has a subject yet.
-        asana: !!(process.env.ASANA_TOKEN && (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v),
+        asana: !!(await dailyAsanaProject()),
+        // The automatic tasks: { song: { url, next, total, done, error }, ar: {...} }, or null when
+        // this day was never queued (rendered before the step shipped).
+        asanaTasks: (() => { try { return job && job.asana_tasks ? JSON.parse(job.asana_tasks) : null; } catch (e) { return null; } })(),
         winners: { track: (job && job.winner_track_url) || null, ar: (job && job.winner_ar_url) || null,
           trackCaption: (job && job.winner_track_caption) || null, arCaption: (job && job.winner_ar_caption) || null,
           trackReady: !!wnTrack, arReady: !!wnAr, weekDefault: lastCompletedWeekStart() } },
@@ -10166,36 +10278,11 @@ async function handleApi(req, res, url) {
     const project = (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null;
     if (!project) return bad(res, 'Set the Asana project ID in the Platform panel first', 409);
     try {
-      const rd = await resultsCarouselData(session, set);
-      if (!rd) return bad(res, 'Nothing to post yet', 404);
-      const job = await db.get('SELECT results_song_urls, results_ar_urls, results_song_caption, results_ar_caption FROM recap_jobs WHERE session_id = ?', [session.id]);
-      const hosted = parseJsonArray(job && (set === 'song' ? job.results_song_urls : job.results_ar_urls));
-      let taskId = body.taskId ? String(body.taskId).replace(/\D/g, '') : null;
-      let permalink = null;
-      if (!taskId) {
-        const caption = (job && (set === 'song' ? job.results_song_caption : job.results_ar_caption)) || resultsCaption(rd);
-        const t = await asanaJson('/tasks', 'POST', { name: dailyAsanaTaskName(rd), notes: dailyAsanaNotes(rd, caption), projects: [String(project)] });
-        taskId = t && t.data && t.data.gid;
-        if (!taskId) return bad(res, 'Asana did not return a task id', 502);
-        permalink = t.data.permalink_url || null;
-      }
-      const prefix = set === 'song' ? 'countdown' : 'top-ars';
-      const day = String(rd.date).replace(/\./g, '-');
-      let i = Math.max(0, Math.min(rd.slides.length, parseInt(body.next, 10) || 0));
-      for (; i < rd.slides.length; i++) {
-        if (Date.now() - t0 > DAILY_ASANA_BUDGET_MS) break;
-        let buf = null;
-        if (hosted && hosted[i]) {
-          try { const r = await fetch(hosted[i]); if (r.ok) buf = Buffer.from(await r.arrayBuffer()); } catch (e) { buf = null; }
-        }
-        if (!buf) buf = await shareCards.renderPng(rd.card, rd.slides[i]);
-        const form = new FormData();
-        form.set('parent', taskId);
-        form.set('file', new Blob([buf], { type: 'image/png' }), `${prefix}-${day}-${String(i + 1).padStart(2, '0')}.png`);
-        await asanaFetch('/attachments', { method: 'POST', body: form });
-      }
-      return send(res, 200, { ok: true, taskId, url: permalink || `https://app.asana.com/0/${project}/${taskId}`,
-        attached: i, total: rd.slides.length, next: i, done: i >= rd.slides.length });
+      if (!(await resultsCarouselData(session, set))) return bad(res, 'Nothing to post yet', 404);
+      const st = { gid: body.taskId ? String(body.taskId).replace(/\D/g, '') : null, next: parseInt(body.next, 10) || 0 };
+      await dailyAsanaAdvance(session, set, st, { project, deadline: t0 + DAILY_ASANA_BUDGET_MS });
+      return send(res, 200, { ok: true, taskId: st.gid, url: st.url || `https://app.asana.com/0/${project}/${st.gid}`,
+        attached: st.next, total: st.total, next: st.next, done: !!st.done });
     } catch (e) {
       console.error('[asana] daily task failed:', e.message);
       return bad(res, 'Asana task failed: ' + e.message, 502);
@@ -10605,6 +10692,7 @@ module.exports._resultsCarouselData = resultsCarouselData;
 module.exports._countdownCarouselData = countdownCarouselData;
 module.exports._countdownComments = countdownComments;
 module.exports._dailyAsanaNotes = dailyAsanaNotes;
+module.exports._advanceDailyAsanaTasks = advanceDailyAsanaTasks;
 module.exports._dailyAsanaTaskName = dailyAsanaTaskName;
 module.exports._resultsCaption = resultsCaption;
 module.exports._winnerDayData = winnerDayData;

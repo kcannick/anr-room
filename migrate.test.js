@@ -416,6 +416,13 @@ async function freshDb() {
   ok('038 idempotent (not duplicated)', applied39.filter(x => x === '038_results_carousels').length === 1, JSON.stringify(applied39));
   ok('039 idempotent (not duplicated)', applied39.filter(x => x === '039_winner_posts').length === 1, JSON.stringify(applied39));
 
+  // ── 042: the daily posts go to Asana on their own ─────────────────────────────
+  const rj42 = (await db.all('PRAGMA table_info(recap_jobs)', [])).map(c => c.name);
+  for (const col of ['asana_tasks', 'asana_claimed_at']) ok('042 creates recap_jobs.' + col, rj42.includes(col), JSON.stringify(rj42));
+  await db.init();
+  const applied42 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('042 idempotent (not duplicated)', applied42.filter(x => x === '042_daily_asana_tasks').length === 1, JSON.stringify(applied42));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
