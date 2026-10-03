@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,803 passed as of 2026-10-03; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,796 passed as of 2026-10-03; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -571,26 +571,24 @@ live on anr.makinitmag.com.
   `public/brand/daily/carousel.html`. The promo brand system (marks, ads, key art, share
   graphics) lives in `public/brand/` — see `docs/promo-asset-list.md`.
 
-- **The winner posts** (039, 2026-09-18; simplified 2026-09-21; tournament names 2026-10-03): **Top
-  Track / Top A&R of the Day** and **of the Week**, one 1080×1350 portrait graphic each, posted as
-  Instagram **collab posts** so they land on the winner's own feed. One Satori element,
-  `winnerPost`, built to `public/brand/winners/winner.html` after four operator rounds ("flyers
-  look too busy" → "information overload for promotional graphics" → "branding is too big — the
-  title of the promo is TOP TRACK" → "the weekly flyers are about the person placing — that needs
-  to be BIG"). **Day cards:** the Meeting lockup as a SMALL header (S=60), TOP TRACK OF THE DAY as
-  the hero, then “Title” by Artist (@handle) + "Rated by X A&Rs" + "Submit your music free"; or
-  name + (@handle) + photo + "N points" + "Join the A&R Team". **Week cards are about the person
-  placing:** Congratulations / NAME in caps / "Selected for the next $1,000 Music Tournament"
-  (the record small under the artist) or "Selected for the A&R Wars Tournament"; no title line,
-  no numbers, photo top right. Handles in parentheses on these posts only. No date, score, grade,
-  bullseyes, city or title on any card — the caption carries the date and score. **The day pair
-  renders at the publish** (best-effort: `recap_jobs.winner_{track,ar}_url` NULL on failure,
-  captions kept) and hosts at `daily/<day>/winner-{track,ar}.png`; **the week pair renders on
-  demand** (`/api/card/winner?week=&post=`, `/api/admin/weekly/winners?week=`) and stores nothing.
-  **The week's winners ARE the weekly report's #1s** (`weeklyReportData`, Monday–Sunday — the
-  ranking the weekly live show reads on air), so the posted winner is always the announced one;
-  an unsettled week still previews, flagged `settled:false` and warned on the console. Console:
-  "Winner posts" + "Winners of the week" on the daily graphics card.
+- **The winner posts** (039, 2026-09-18; simplified 2026-09-21; weekly only 2026-10-03): **Top
+  Track / Top A&R of the Week**, one 1080×1350 portrait graphic each, posted as Instagram
+  **collab posts** so they land on the winner's own feed. One Satori element, `winnerPost`,
+  built to `public/brand/winners/winner.html` after four operator rounds. **The card is the
+  person placing:** Congratulations / NAME in caps / "Selected for the next $1,000 Music
+  Tournament" (the artist; no song title — "artist name big with Instagram is the important
+  thing") or "Selected for the A&R Wars Tournament / $500 Cash Prize!" (the A&R), the handle in
+  parentheses under the name, the profile photo top right beside the small Meeting header. No
+  date, score, grade, bullseyes, city or title on the card; the caption carries the record, the
+  numbers, the house comment keyword instead of a link, and at most five hashtags. **The
+  winners ARE the weekly report's #1s** (`weeklyReportData`, Monday–Sunday — the ranking the
+  weekly live show reads on air), so the posted winner is always the announced one; an
+  unsettled week still previews, flagged `settled:false` and warned on the console. Renders on
+  demand (`/api/card/winner?week=&post=`, `/api/admin/weekly/winners?week=`), stores nothing.
+  **The daily pair was retired 2026-10-03** (the Daily Countdown carousel centres the day's
+  winner); the publish no longer renders it, the day render returns 400, and the 039
+  `recap_jobs.winner_*` columns stay unused. Console: "Winners of the week" on the daily
+  graphics card, week picker defaulting to the last complete week.
 
 
 - **The Track Report** (no migration, 2026-09-15) — the artist's report, rebuilt around the

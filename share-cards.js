@@ -770,9 +770,10 @@ function elementCountdownSlide(d) {
 //     title, by, handle, photo? (data URI), line: { rated } | { points }, cta: { label, url },
 //     selected?: ['Selected for the next', '$1,000 Music Tournament'] (week cards only) }
 // WEEK cards (operator, 2026-09-21: "the weekly flyers are about the person placing in the
-// tournament — that needs to be BIG"): Congratulations / the NAME in caps / the selection, two
-// lines with the money in gold / the record (track) or the handle (A&R) small. The profile
-// photo sits top right beside the header so the name runs full width. No title line, no numbers.
+// tournament — that needs to be BIG"; 10-03: "artist name big with Instagram is the important
+// thing"): Congratulations / the NAME in caps / the selection, two or three lines with the money
+// in gold / the handle small. No song title (it rides in the caption), no title line, no numbers.
+// The profile photo sits top right beside the header so the name runs full width.
 const WINNER_SIZE = [1080, 1350];
 // A line with every dollar amount in gold and the rest in ink (Satori collapses leading and
 // trailing spaces, so they become non-breaking ones).
@@ -812,10 +813,7 @@ function elementWinnerWeek(d) {
   kids.push(col({ position: 'absolute', left: 80, top: 400, width: 920 }, [
     text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.92, letterSpacing: -Math.round(fs * 0.04), textTransform: 'uppercase', color: RECAP.fg }, name),
     col({ marginTop: 26 }, sel.map((l, i) => i === 0 ? text(selStyle, l) : winnerGoldLine(l, selStyle))),
-    row({ marginTop: 30, flexWrap: 'wrap', width: 920 }, [
-      ...(d.kind === 'track' ? [text({ ...small, color: RECAP.fg }, clip(d.by, 40) + '\u00A0')] : []),
-      text(small, d.handle || ''),
-    ]),
+    text({ ...small, marginTop: 30 }, d.handle || ''),
   ]));
   if (d.photo) {
     kids.push(h({ position: 'absolute', right: 80, top: 64, width: 260, height: 260, overflow: 'hidden', borderRadius: 12,
@@ -826,96 +824,9 @@ function elementWinnerWeek(d) {
   kids.push(resultsField(300, 110), winnerCta(d.cta || {}));
   return h({ position: 'relative', display: 'flex', width: WINNER_SIZE[0], height: WINNER_SIZE[1], background: RECAP.bg }, kids);
 }
-function elementWinnerPost(d) {
-  const line = d.line || {}, hasPhoto = !!d.photo, strap = 0;
-  if (d.period === 'week') return elementWinnerWeek(d);
-  const kids = [
-    h({ position: 'absolute', left: 80, top: 64, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 30 } } }]),
-    // [A&R] MEETING as a small header (S=60), not the hero
-    h({ position: 'absolute', left: 80, top: 108, display: 'flex', flexDirection: 'row', alignItems: 'center' }, [
-      arBlock(60, 24),
-      text(RES_DISPLAY(56, RECAP.fg, { textTransform: 'uppercase', marginLeft: 16 }), 'Meeting'),
-    ]),
-    // the title IS the promo: TOP TRACK / OF THE DAY
-    col({ position: 'absolute', left: 80, top: 300 }, [
-      text(RES_DISPLAY(140, RECAP.fg, { lineHeight: 0.88, textTransform: 'uppercase' }), d.label || ''),
-      text(RES_DISPLAY(72, RECAP.fg, { lineHeight: 1, textTransform: 'uppercase', marginTop: 12 }), d.sub || ''),
-    ]),
-  ];
-  if (d.strap) {
-    // The week card is a congratulations (operator, 2026-09-21): the word with the tick, then what they made it into.
-    kids.push(col({ position: 'absolute', left: 80, top: 546 }, [
-      row({ alignItems: 'center' }, [
-        tick(12, 36, 16),
-        text(RES_DISPLAY(46, RECAP.fg, { lineHeight: 1 }), d.strapHead || 'Congratulations'),
-      ]),
-      winnerGoldLine(d.strap, { fontFamily: DISPLAY, fontWeight: 700, fontSize: 32, lineHeight: 1, letterSpacing: -1, color: RECAP.fg, marginTop: 12, ...NOWRAP }),
-    ]));
-  }
-  // The person: the title steps down with its length (Satori cannot measure a wrap), and
-  // everything under it flows in the same column so a two-line title pushes the rest down.
-  const title = clip(d.title, hasPhoto ? 44 : 70);
-  const colW = hasPhoto ? 560 : 920;
-  const handleDrops = d.kind === 'track' && (clip(d.by, 26).length + (d.handle || '').length) > 34;
-  // Satori cannot measure a wrap, so the title's line count is estimated from its length
-  // (Archivo 900 runs ~0.56em a character) and the size steps down until the numbers line
-  // clears the 13° cut at its right edge (cut y = 1160 − x·tan13°), as the mockup does.
-  const numChars = d.kind === 'ar' ? String(line.points).length + 7 + (d.period === 'week' ? 10 : 0) : 9 + String(line.rated).length + 5;
-  const numRight = 80 + numChars * (hasPhoto ? 30 : 36) * 0.6;
-  const cutAt = x => 1160 - x * TAN13;
-  let fs = 58;
-  for (const size of [84, 68, 58]) {
-    const lines = Math.max(1, Math.ceil(title.length * size * 0.56 / colW));
-    const bottom = 600 + strap + lines * size * 0.96 + (d.kind === 'ar' ? 26 + 38 : 26 + 48 + (handleDrops ? 42 : 0)) + 44 + (hasPhoto ? 30 : 36);
-    if (bottom <= cutAt(numRight) - 16) { fs = size; break; }
-  }
-  // Satori collapses a leading or trailing space, so the joins are non-breaking spaces. Beside a
-  // photo the line has 620px (the photo starts at x=700), so it steps down a size there.
-  const NB = '\u00A0', numSize = hasPhoto ? 30 : 36;
-  const numStyle = { fontFamily: MONO, fontWeight: 700, fontSize: numSize, lineHeight: 1, color: RECAP.dim, ...NOWRAP };
-  const numVal = { ...numStyle, color: RECAP.fg };
-  let numbers;
-  if (d.kind === 'ar') {
-    numbers = row({ marginTop: 44, alignItems: 'center' }, [
-      text(numVal, String(line.points == null ? '' : line.points)), text(numStyle, NB + 'points' + (d.period === 'week' ? NB + 'this' + NB + 'week' : '')),
-    ]);
-  } else {
-    numbers = row({ marginTop: 44, alignItems: 'center' }, [
-      text(numStyle, 'Rated' + NB + 'by' + NB), text(numVal, String(line.rated == null ? '' : line.rated)), text(numStyle, NB + 'A&Rs'),
-    ]);
-  }
-  const subRow = d.kind === 'ar'
-    ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginTop: 26, ...NOWRAP }, d.handle || '')
-    // A long artist name and the handle would run off the edge on one line, so the handle drops
-    // under the name when the two together would not fit (as the mockup wraps it).
-    : (handleDrops
-        ? col({ marginTop: 26, alignItems: 'flex-start' }, [
-            text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, 'by ' + clip(d.by, 26)),
-            text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginTop: 10, ...NOWRAP }, d.handle || ''),
-          ])
-        : row({ marginTop: 26, alignItems: 'flex-end' }, [
-            text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, 'by ' + clip(d.by, 26)),
-            text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginLeft: 14, marginBottom: 2, ...NOWRAP }, d.handle || ''),
-          ]));
-  kids.push(col({ position: 'absolute', left: 80, top: 600 + strap, width: hasPhoto ? 560 : 920 }, [
-    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.96, letterSpacing: -Math.round(fs * 0.04), color: RECAP.fg }, title),
-    subRow,
-    numbers,
-  ]));
-  if (hasPhoto) {
-    kids.push(h({ position: 'absolute', right: 80, top: 600 + strap, width: 300, height: 300, overflow: 'hidden', borderRadius: 12,
-      background: RECAP.panel, transform: `skewX(${SKEW}deg)`, display: 'flex' }, [
-      { type: 'img', props: { src: d.photo, style: { position: 'absolute', left: -40, top: 0, width: 380, height: 300, objectFit: 'cover', transform: `skewX(${-SKEW}deg)` } } },
-    ]));
-  }
-  const cta = d.cta || {};
-  kids.push(resultsField(300, 110));
-  kids.push(col({ position: 'absolute', left: 80, bottom: 64 }, [
-    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 42, lineHeight: 1, letterSpacing: -1, color: RECAP.bg, ...NOWRAP }, cta.label || ''),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, color: RECAP.bg, marginTop: 12, ...NOWRAP }, cta.url || ''),
-  ]));
-  return h({ position: 'relative', display: 'flex', width: WINNER_SIZE[0], height: WINNER_SIZE[1], background: RECAP.bg }, kids);
-}
+// Since 2026-10-03 every winner post is a week card (the daily pair was retired for the
+// Daily Countdown carousel); the element name stays so the hosted paths and routes do.
+function elementWinnerPost(d) { return elementWinnerWeek(d); }
 
 // ============ The Track Report — the artist's report, one 'trackPage' element ============
 // Spec: docs/specs/track-report-spec.md. Design: the Room Report Redesign mockup

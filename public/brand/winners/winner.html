@@ -21,6 +21,8 @@
    no score, no grade, no bullseyes, no city or title. Same day: "branding is too big — the title
    of the promo is TOP TRACK / TOP A&R": the lockup is a small header and TOP TRACK OF THE DAY is
    the hero. Handles in parentheses, as the operator wrote them twice.
+   DAILY cards RETIRED 2026-10-03 (the Daily Countdown carousel centres the winner); the day
+   branch below is kept for reference only.
    WEEK cards (operator, 2026-09-21): "the weekly flyers are about the person placing in the
    tournament — that needs to be BIG": Congratulations / ARTIST NAME / Selected for the next
    $1,000 Music Tournament (A&R: Selected for the A&R Wars Tournament). No title line,
@@ -139,9 +141,9 @@ const igOf = v => v ? '(@' + v.replace(/^@/, '') + ')' : '';   // parentheses: o
 if (PERIOD === 'week') {
   // The person placing is the card: NAME big, then the selection (operator's lines, 2026-09-21).
   $('big').textContent = NAME;
-  $('sub').innerHTML = KIND === 'track' ? 'Selected for the next<br><b>$1,000</b> Music Tournament' : 'Selected for the<br>A&amp;R Wars Tournament';
+  $('sub').innerHTML = KIND === 'track' ? 'Selected for the next<br><b>$1,000</b> Music Tournament' : 'Selected for the<br>A&amp;R Wars Tournament<br><b>$500</b> Cash Prize!';   // operator, 2026-10-03
   const ig = g('ig', 'instagramusername');
-  $('stats').innerHTML = KIND === 'track' ? '<b>“' + esc(g('song', 'Song Title')) + '”</b> ' + esc(igOf(ig)) : esc(igOf(ig));
+  $('stats').innerHTML = esc(igOf(ig));   // no song title: "artist name big with Instagram is the important thing" (operator, 2026-10-03)
   const photo = KIND === 'ar' ? g('photo', '../assets/sample-photo.png') : '';
   if (photo) { $('photo').querySelector('img').src = photo; c.classList.add('has-photo'); }
   $('cta').innerHTML = KIND === 'track' ? 'Submit your music free<span class="url">makinitmag.com/review</span>' : 'Join the A&amp;R Team<span class="url">makinitmag.com/ANR</span>';

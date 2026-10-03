@@ -21,13 +21,11 @@ render () {  # $1 outfile  $2 query
   echo "$1"
 }
 if [ $# -eq 0 ]; then
-  render winner-track-day.png   "kind=track&period=day"
-  render winner-ar-day.png      "kind=ar&period=day"
   render winner-track-week.png  "kind=track&period=week"
   render winner-ar-week.png     "kind=ar&period=week&pts=1840"
   render winner-track-week-long.png   "kind=track&period=week&song=A%20Much%20Longer%20Song%20Title%20Here&name=A%20Much%20Longer%20Artist%20Name"
   render winner-ar-week-long.png      "kind=ar&period=week&name=A%20Much%20Longer%20A%26R%20Name"
-  render winner-ar-day-nophoto.png    "kind=ar&period=day&photo=&name=A%20Much%20Longer%20Name"
+  render winner-ar-week-nophoto.png   "kind=ar&period=week&photo=&name=A%20Much%20Longer%20Name"
   exit 0
 fi
 KIND="$1"; PERIOD="$2"; NAME="$3"
