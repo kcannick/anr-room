@@ -1080,6 +1080,28 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const cardBuf = Buffer.from(await cardR.arrayBuffer());
   ok('the A&R Team card renders as a PNG', cardR.status === 200 && cardR.headers.get('content-type') === 'image/png' && cardBuf.slice(1, 4).toString() === 'PNG', cardR.status + ' ' + cardBuf.length);
   ok('the graphic is private to its owner (no-store)', /no-store/.test(cardR.headers.get('cache-control') || ''));
+  // The account page (2026-10-01): thumbnails are the same render, smaller, and cacheable
+  // per profile version; the labels are the operator's; /account and /refer are one page.
+  ok('the two cards carry the operator\'s names', rp.graphics[0].label === 'Official A&R Card - Feed' && rp.graphics[1].label === 'Official A&R Card - Story', JSON.stringify(rp.graphics.map(g => g.label)));
+  ok('every graphic offers a versioned thumbnail', rp.graphics.every(g => /^\/api\/card\/refer\?kind=\w+&thumb=1&v=[0-9a-f]{12}$/.test(g.thumb)), JSON.stringify(rp.graphics.map(g => g.thumb)));
+  ok('the header fields ride the payload, and no contact detail does',
+    rp.me.uid && 'photoUrl' in rp.me && 'location' in rp.me && !/@|phone|email/i.test(JSON.stringify(rp.me)), JSON.stringify(rp.me));
+  const thR = await fetch(base + rp.graphics[1].thumb, { headers: { 'X-Player-Token': inviterTok } });
+  const thBuf = Buffer.from(await thR.arrayBuffer());
+  ok('a thumbnail is the story at 432 wide, same shape as the download',
+    thR.status === 200 && thBuf.readUInt32BE(16) === 432 && thBuf.readUInt32BE(20) === 768, thBuf.readUInt32BE(16) + 'x' + thBuf.readUInt32BE(20));
+  ok('a current thumbnail may sit in the private cache for a day', thR.headers.get('cache-control') === 'private, max-age=86400', thR.headers.get('cache-control'));
+  const thStale = await fetch(base + '/api/card/refer?kind=card&thumb=1&v=000000000000', { headers: { 'X-Player-Token': inviterTok } });
+  ok('a stale version key is never cached', thStale.status === 200 && thStale.headers.get('cache-control') === 'private, no-store', thStale.headers.get('cache-control'));
+  ok('the full download is never cached', cardR.headers.get('cache-control') === 'private, no-store', cardR.headers.get('cache-control'));
+  ok('no token, no thumbnail', (await fetch(base + rp.graphics[0].thumb)).status === 401);
+  const acctPage = await fetch(base + '/account'), referPage = await fetch(base + '/refer');
+  const acctHtml = await acctPage.text();
+  ok('/account serves the account page, and /refer is the same page',
+    acctPage.status === 200 && referPage.status === 200 && /Earn more points/.test(acctHtml) && (await referPage.text()) === acctHtml);
+  ok('the account page carries the operator\'s intro and the three sections',
+    /Invite new A&amp;Rs to the platform and earn bonus points\./.test(acctHtml) && /official member of our A&amp;R Team/.test(acctHtml)
+      && /data-sec="earn"/.test(acctHtml) && /data-sec="profile"/.test(acctHtml) && /data-sec="edit"/.test(acctHtml));
   ok('an unknown graphic is refused', (await fetch(base + '/api/card/refer?kind=poster', { headers: { 'X-Player-Token': inviterTok } })).status === 404);
   ok('no token, no graphic', (await fetch(base + '/api/card/refer?kind=join')).status === 401);
 
@@ -1903,7 +1925,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // this: a test must not have to wait for noon.)
   const lOpens = Date.now() - 1000, lCloses = Date.now() + 3600000;
   const lOk = await call('/api/ingest/daily', { day: today, seriesId: serId,
-    opensAt: lOpens, closesAt: lCloses, resultsAt: lCloses + 10800000,
+    opensAt: lOpens, closesAt: lCloses, streamAt: lCloses + 3600000, resultsAt: lCloses + 10800000,
     songs: [song(41, { email: 'artist41@test.com' }), song(42, { email: 'artist42@test.com' }), song(43)] }, 'POST', DTOK);
   const LDROP = lOk.d.sessionId;
   const tick = (at) => call('/api/admin/daily/tick', at != null ? { at } : {}, 'POST', BOOTH);
@@ -1922,6 +1944,21 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('EVERY record opens at once — there is no single active round', (await lRounds()).every(r => r.status === 'voting'));
   const tOpenAgain = await tick(opensAt + 2000);
   ok('a second open tick is a no-op (the claim is the lock)', tOpenAgain.d.opened === 0, JSON.stringify(tOpenAgain.d));
+  // "Voting is open" (2026-09-27): queued inside the open claim, to the daily_open audience,
+  // which is ON by default — so an A&R who never chose is on it.
+  const openBc = await dDb.all("SELECT * FROM notify_broadcasts WHERE kind = 'daily_open' AND ref_id = ?", [LDROP]);
+  ok('the open queues ONE "voting is open" broadcast', openBc.length === 1, JSON.stringify(openBc.length));
+  const openRc = await dDb.all('SELECT * FROM notify_recipients WHERE broadcast_id = ?', [openBc[0] && openBc[0].id]);
+  ok('to the A&R list, on by default', openRc.length > 0, JSON.stringify(openRc.length));
+  ok('and the open tick drained it', openRc.every(r => r.status !== 'pending'), JSON.stringify(openRc.map(r => r.status)));
+  ok('daily_open is email only — no daily text to the whole list',
+    srv._NOTIFY_TOPICS.daily_open && srv._NOTIFY_TOPICS.daily_open.channels.email === 1
+      && srv._NOTIFY_TOPICS.daily_open.channels.sms === undefined);
+  const openTxt = srv._dailyOpenEmailText({ name: 'Kelby Cannick', dayLabel: 'Mon, Sep 28', count: 12,
+    closesLabel: 'at 3:00 PM ET tomorrow', bonusLabel: 'by 9:00 PM ET', playUrl: 'https://x/daily?s=abc' }, null);
+  ok('the open email says what is open, when it closes and where to go',
+    /Kelby Cannick, today's 12 records are open for rating\./.test(openTxt) && /Rating closes at 3:00 PM ET tomorrow\./.test(openTxt)
+      && /daily\?s=abc/.test(openTxt), openTxt);
 
   // Someone plays the whole day, so the tally has real votes to score.
   const lRq = await call('/api/join/request', { sessionId: LDROP, email: 'life@test.com' });
@@ -1936,6 +1973,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const vr = await call('/api/join/verify', { sessionId: LDROP, email: em, code: rq.d.devCode, name: nm });
     await call('/api/vote', { roundId: lQ[0].id, taste: 5, predict: 5.0 }, 'POST', { 'X-Player-Token': vr.d.token });
   }
+
+  // ---- /account "My results" (2026-10-02): the open drop is the first thing on the page.
+  const rsOpenLex = (await call('/api/me/results', null, 'GET', LH)).d;
+  ok('My results leads with the open drop and how far through it the A&R is',
+    rsOpenLex.open && rsOpenLex.open.id === LDROP && rsOpenLex.open.total === 3 && rsOpenLex.open.rated === 3
+      && rsOpenLex.open.url === '/daily?s=' + LDROP && /ET/.test(rsOpenLex.open.closesWhen || ''), JSON.stringify(rsOpenLex.open));
+  ok('an open day is not listed among the results', !rsOpenLex.days.some(d => d.id === LDROP), JSON.stringify(rsOpenLex.days.map(d => d.state)));
+  const zedUid = (await dDb.get('SELECT uid FROM users WHERE email = ?', ['zed@test.com'])).uid;
+  const rsOpenZed = await srv._arResultsData(zedUid);
+  ok('someone part way through sees their own count', rsOpenZed.open.rated === 1 && rsOpenZed.open.total === 3, JSON.stringify(rsOpenZed.open));
+  ok('My results needs a login', (await fetch(base + '/api/me/results')).status === 401);
 
   const closesAt = Number((await lSess()).window_closes_at);
   const tClose = await tick(closesAt + 1000);
@@ -1968,6 +2016,48 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and the player has NOT been shown results before the publish',
     sealedState.phase !== 'recap' && !sealedState.recap
     && !/room_average/.test(JSON.stringify(sealedState)), sealedState.phase);
+  // The day is TALLIED in the database here (averages and points exist on its rows) and not
+  // published. My results must list it with counts only.
+  const rsSealed = (await call('/api/me/results', null, 'GET', LH)).d;
+  const rsSealedDay = rsSealed.days.find(d => d.id === LDROP);
+  ok('a closed day whose results are not out is listed as sealed, with what the A&R did',
+    rsSealedDay && rsSealedDay.state === 'sealed' && rsSealedDay.rated === 3 && rsSealedDay.total === 3 && !!rsSealedDay.resultsClock,
+    JSON.stringify(rsSealedDay));
+  ok('and it carries no score of any kind before the publish',
+    !/average|points|grade|tier|bullseye|rounds|predict|taste/.test(JSON.stringify(rsSealedDay)), JSON.stringify(rsSealedDay));
+  ok('the week counts it as still to come out, not as points',
+    rsSealed.stats.pending >= 1 && !rsSealed.days.some(d => d.id === LDROP && d.points != null), JSON.stringify(rsSealed.stats));
+  ok('a closed drop is no longer offered as open', !rsSealed.open || rsSealed.open.id !== LDROP, JSON.stringify(rsSealed.open));
+
+  // The artist heads-up at the close: every RATED artist with contact, once, carrying no score.
+  const hu = await dDb.all('SELECT * FROM artist_headsups WHERE session_id = ?', [LDROP]);
+  ok('each rated artist with an email gets a heads-up at the close',
+    hu.length === 2 && hu.every(h => h.channel === 'email') && hu.map(h => h.dest).sort().join() === 'artist41@test.com,artist42@test.com',
+    JSON.stringify(hu.map(h => [h.dest, h.channel])));
+  ok('and the close tick sent them', hu.every(h => h.status === 'sent'), JSON.stringify(hu.map(h => h.status)));
+  await tick(closesAt + 5000);
+  ok('a repeat tick never queues a second heads-up',
+    (await dDb.all('SELECT id FROM artist_headsups WHERE session_id = ?', [LDROP])).length === 2);
+  const streamAtL = Number((await lSess()).stream_at);
+  const huc = srv._artistHeadsupContent({ title: 'My Song', artist: 'Me', streamAt: streamAtL,
+    reportAt: Number((await lSess()).results_at), streamUrl: 'https://yt.example/live' }, streamAtL - 86400000);
+  ok('the heads-up says the record was rated and is on tomorrow\'s Livestream Countdown',
+    /was rated/.test(huc.body) && /tomorrow's Makin' It Daily Countdown/.test(huc.subject), JSON.stringify(huc));
+  ok('in the operator\'s words', huc.tune === 'Tune in for results. Have your fans tune in to participate in the comments.');
+  ok('and it carries no score, rank or count — the livestream is the reveal',
+    !/\d\.\d|out of 9|#\d|A&Rs heard/.test(huc.body + huc.subject + huc.tune), huc.body);
+  const huSms = srv._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', streamAtL, streamAtL - 86400000);
+  ok('the heads-up text is plain GSM-7 inside one segment', huSms.length <= 160 && /^[\x20-\x7e]*$/.test(huSms)
+    && /tomorrow's Makin' It Daily Countdown/.test(huSms) && /Reply STOP/.test(huSms), huSms.length + ' ' + huSms);
+
+  // The Livestream Countdown: the ranked graphics render, and NOTHING is revealed yet.
+  ok('before the stream the graphics have not rendered',
+    !((await dDb.get('SELECT rendered_at FROM recap_jobs WHERE session_id = ?', [LDROP])) || {}).rendered_at);
+  const tStream = await tick(streamAtL + 1000);
+  ok('the stream tick renders the graphics', tStream.d.rendered === 1 && tStream.d.published === 0, JSON.stringify(tStream.d));
+  ok('and records it', !!(await dDb.get('SELECT rendered_at FROM recap_jobs WHERE session_id = ?', [LDROP])).rendered_at);
+  ok('the day stays sealed through the stream', (await lSess()).async_state === 'ratified');
+  ok('a second stream tick does not render again', (await tick(streamAtL + 2000)).d.rendered == null);
 
   // Two more A&Rs with accounts but NO participation in this day: the audience is
   // unconditional, only the personalised block is conditional.
@@ -2006,7 +2096,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // but the caption is built first and kept.
   const rjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
   ok('the publish stores the recap caption even with no Blob token',
-    !!rjob && /The A&R Meeting Recap/.test(rjob.recap_caption || ''), JSON.stringify(rjob && rjob.recap_caption));
+    !!rjob && /^Makin' It Daily Countdown — /.test(rjob.recap_caption || ''), JSON.stringify(rjob && rjob.recap_caption));
   ok('and leaves the hosted recap URLs null rather than failing the publish',
     rjob.recap_cover_url == null && rjob.recap_thumb_url == null, JSON.stringify([rjob.recap_cover_url, rjob.recap_thumb_url]));
   const rd = await srv._recapGraphicsData(pubbed);
@@ -2014,7 +2104,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify(rd.artists) === JSON.stringify(['Artist 41', 'Artist 42', 'Artist 43']), JSON.stringify(rd.artists));
   ok('A&Rs print ALPHABETISED, not by points (Lex leads the board; amber leads the list)',
     JSON.stringify(rd.ars) === JSON.stringify(['amber', 'Lex', 'Zed']), JSON.stringify(rd.ars));
-  ok('the date is the day the stream AIRS (results_at), as MM.DD.YY',
+  ok('on the 69-hour clock the results day IS the countdown clip\'s default post day — one date on everything that posts',
+    srv._etDay(srv._dropWindowFor('2026-09-24', srv._DAILY_SCHEDULE_DEFAULTS).resultsAt) === srv._countdownPostDay({ drop_day: '2026-09-24' })
+      && srv._countdownPostDay({ drop_day: '2026-09-24' }) === '2026-09-27');
+  ok('the date is the day it POSTS (results_at), as MM.DD.YY',
     /^\d\d\.\d\d\.\d\d$/.test(rd.date) && rd.date === srv._recapDateLabel(pubbed.results_at), rd.date);
   ok('the stored caption carries the date, every artist and every A&R',
     rjob.recap_caption.includes(rd.date) && rd.artists.every(a => rjob.recap_caption.includes(a))
@@ -2071,20 +2164,52 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // hosted slide lists are null and the day published anyway — the captions are kept.
   const rjob2 = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
   ok('the publish stores both carousel captions even with no Blob token',
-    /Top Track/.test(rjob2.results_song_caption || '') && /Top A&R/.test(rjob2.results_ar_caption || ''),
+    /^Makin' It Daily Countdown — /.test(rjob2.results_song_caption || '') && /Top A&R/.test(rjob2.results_ar_caption || ''),
     JSON.stringify([rjob2.results_song_caption, rjob2.results_ar_caption]));
   ok('and leaves the hosted slide lists null rather than failing the publish',
     rjob2.results_song_urls == null && rjob2.results_ar_urls == null, JSON.stringify([rjob2.results_song_urls, rjob2.results_ar_urls]));
+  // The 'song' set is the Makin' It Daily Countdown (2026-10-02): cover · one slide per record,
+  // bottom up · the A&R Team · submit. Rank only.
   const rsSong = await srv._resultsCarouselData(pubbed, 'song');
-  ok('three records make three slides: the top record, one list slide, the call to action',
-    rsSong && rsSong.total === 3 && rsSong.slides.map(s => s.kind).join(',') === 'hero,list,cta', JSON.stringify(rsSong && rsSong.slides.map(s => s.kind)));
+  ok('three records make six countdown slides: cover, #3, #2, #1, A&R Team, submit',
+    rsSong && rsSong.card === 'countdownSlide' && rsSong.total === 6
+      && rsSong.slides.map(s => s.kind + (s.rank || '')).join(',') === 'cover,rank3,rank2,rank1,team,cta',
+    JSON.stringify(rsSong && rsSong.slides.map(s => s.kind + (s.rank || ''))));
+  const cdRows = await dDb.all("SELECT r.song_title, r.room_average, (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS nv, r.idx FROM rounds r WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL AND COALESCE(r.is_reference,0) = 0", [LDROP]);
+  cdRows.sort((a, b) => (b.room_average - a.room_average) || (b.nv - a.nv) || (a.idx - b.idx));
+  ok('#1 is the record with the highest room average, and the order matches the console countdown',
+    rsSong.records.map(r => r.title).join('|') === cdRows.map(r => r.song_title).join('|'), JSON.stringify([rsSong.records, cdRows]));
+  // The winner-post checks below read the day's top record off this.
   const topRec = await dDb.get("SELECT song_title FROM rounds WHERE session_id = ? AND status = 'ratified' AND COALESCE(is_reference,0) = 0 ORDER BY room_average DESC, idx ASC LIMIT 1", [LDROP]);
-  ok('slide 1 is the record with the highest room average', rsSong.slides[0].hero.title === topRec.song_title, JSON.stringify([rsSong.slides[0].hero, topRec]));
-  ok('the list ranks the rest from 02 and carries NO scores',
-    rsSong.slides[1].rows.length === 2 && rsSong.slides[1].rows[0].rank === '02' && rsSong.slides[1].rows.every(r => r.value === undefined),
-    JSON.stringify(rsSong.slides[1].rows));
-  ok('the song carousel closes on Submit your music, closing line B',
-    rsSong.slides[2].cta.eyebrow === 'Submit your music' && /finish, release, or promote/.test(rsSong.slides[2].cta.body), JSON.stringify(rsSong.slides[2].cta));
+  ok('the cover counts the records', rsSong.slides[0].count === 3, JSON.stringify(rsSong.slides[0]));
+  ok('NO slide and NO caption carries a score, an average or a vote count',
+    rsSong.slides.every(sl => !('room_average' in sl) && !('votes' in sl) && !('score' in sl) && !('value' in sl))
+      && !cdRows.some(r => rjob2.results_song_caption.split('\n').slice(1).join('\n').includes(Number(r.room_average).toFixed(1))) && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsSong)),
+    JSON.stringify(rsSong.slides) + rjob2.results_song_caption);
+  ok('the caption names NOBODY (Instagram stops notifying past 10 mentions) and asks by comment keyword, not link',
+    !/@/.test(rjob2.results_song_caption) && !cdRows.some(r => rjob2.results_song_caption.includes(r.song_title))
+      && /^Comment #REVIEW to Submit Music$/m.test(rjob2.results_song_caption) && /^Comment #ANR to join the A&R Team$/m.test(rjob2.results_song_caption)
+      && !/makinitmag\.com/.test(rjob2.results_song_caption),
+    rjob2.results_song_caption);
+  // Instagram allows five hashtags a post — the comment keywords count toward it.
+  const tagCount = t => (String(t || '').match(/(^|\s)#[A-Za-z]\w*/g) || []).length;
+  const igCaps = { countdown: rjob2.results_song_caption, topAr: rjob2.results_ar_caption, recap: rjob2.recap_caption,
+    winnerTrack: rjob2.winner_track_caption, winnerAr: rjob2.winner_ar_caption };
+  ok('every Instagram caption carries at most five hashtags',
+    Object.values(igCaps).every(t => t && tagCount(t) <= 5) && tagCount(igCaps.countdown) === 5,
+    JSON.stringify(Object.fromEntries(Object.entries(igCaps).map(([k, t]) => [k, tagCount(t)]))));
+  const cdc = srv._countdownComments(rsSong);
+  // This day's records carry no Instagram handles, so nobody is mentioned (the format is pinned below).
+  ok('records with no Instagram handle produce no comments', rsSong.records.every(r => !r.handle) && cdc.comments.length === 0, JSON.stringify(cdc));
+  // Ten records, two by the same artist, one with no handle: eight mentions → comments of 4, 4, 1, the repeat merged.
+  const fake = { records: Array.from({ length: 10 }, (_, i) => ({ rank: i + 1, title: 'Song ' + (i + 1), artist: 'Artist ' + (i + 1),
+    handle: i === 9 ? '@artist3' : (i === 6 ? '' : '@artist' + (i + 1)) })) };
+  const fc = srv._countdownComments(fake);
+  const lead = 'Follow all the artists who made the countdown: ';
+  ok('four artists a comment, comma-separated; an artist with two records is mentioned once',
+    fc.comments.length === 2 && fc.comments[0] === lead + '@artist3, @artist9, @artist8, @artist6'
+      && fc.comments[1] === lead + '@artist5, @artist4, @artist2, @artist1' && fc.comments.join(' ').split('@artist3').length === 2, JSON.stringify(fc));
+  ok('an artist with no Instagram handle is not mentioned at all', !fc.comments.join(' ').includes('Artist 7'), JSON.stringify(fc));
   const rsAr = await srv._resultsCarouselData(pubbed, 'ar');
   ok('the A&R carousel leads with the board leader and no photo when the profile has none',
     rsAr && rsAr.slides[0].hero.title === 'Lex' && rsAr.slides[0].hero.photo == null, JSON.stringify(rsAr && rsAr.slides[0].hero));
@@ -2098,15 +2223,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the caption preview is the same text the publish stored', rsCapTxt.status === 200 && (await rsCapTxt.text()) === rjob2.results_song_caption);
   const rs1 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=1', { headers: BOOTH });
   const rs1Buf = Buffer.from(await rs1.arrayBuffer());
-  ok('a results slide renders as a 1080x1350 PNG', rs1.status === 200 && rs1.headers.get('content-type') === 'image/png' && pngDims(rs1Buf) === '1080x1350', rs1.status + ' ' + pngDims(rs1Buf));
+  ok('a countdown slide renders as a 1080x1350 PNG', rs1.status === 200 && rs1.headers.get('content-type') === 'image/png' && pngDims(rs1Buf) === '1080x1350', rs1.status + ' ' + pngDims(rs1Buf));
+  for (const n of [2, 4, 5, 6]) {
+    const rsN = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=' + n, { headers: BOOTH });
+    ok('countdown slide ' + n + ' renders', rsN.status === 200 && pngDims(Buffer.from(await rsN.arrayBuffer())) === '1080x1350', 'got ' + rsN.status);
+  }
+  const rsA1 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=ar&slide=1', { headers: BOOTH });
+  ok('the Top A&R carousel still renders', rsA1.status === 200 && pngDims(Buffer.from(await rsA1.arrayBuffer())) === '1080x1350', 'got ' + rsA1.status);
   const rs9 = await fetch(base + '/api/card/results?s=' + LDROP + '&set=song&slide=9', { headers: BOOTH });
   ok('a slide past the end is 404, not a blank card', rs9.status === 404, 'got ' + rs9.status);
   const rsAnon = await fetch(base + '/api/card/results?s=' + LDROP + '&set=ar&slide=1');
   ok('the results render is platform-admin only', rsAnon.status === 403 || rsAnon.status === 401, 'got ' + rsAnon.status);
   const rsStatus = (await call('/api/admin/daily/status?day=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
   ok('the daily status carries the carousel captions and slide counts for the console',
-    rsStatus.cards && rsStatus.cards.results && rsStatus.cards.results.songCount === 3 && rsStatus.cards.results.arCount === 3
-      && rsStatus.cards.results.songCaption === rjob2.results_song_caption, JSON.stringify(rsStatus.cards && rsStatus.cards.results));
+    rsStatus.cards && rsStatus.cards.results && rsStatus.cards.results.songCount === 6 && rsStatus.cards.results.arCount === 3
+      && rsStatus.cards.results.songCaption === rjob2.results_song_caption
+      && Array.isArray(rsStatus.cards.results.songComments) && rsStatus.cards.results.songTags.length === 6
+      && rsStatus.cards.results.songTags.every(t => t === ''), JSON.stringify(rsStatus.cards && rsStatus.cards.results));
 
   console.log('\n— The winner posts (039): Top Track / Top A&R of the Day at publish, of the Week on demand —');
   const wjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
@@ -2182,6 +2315,42 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const bcCount = await dDb.get("SELECT COUNT(*) AS c FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [LDROP]);
   ok('nor a second broadcast', Number(bcCount.c) === 1, JSON.stringify(bcCount));
 
+  // ---- My results, once the day has published: record by record, points, no rank.
+  const rsPub = (await call('/api/me/results', null, 'GET', LH)).d;
+  const rsDay = rsPub.days.find(d => d.id === LDROP);
+  const lexPart = await dDb.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [LDROP, 'life@test.com']);
+  const lexBonus = await dDb.get("SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [LDROP + ':' + lexPart.user_id]);
+  ok('a published day lists every record with the A&R\'s rating, guess, the room average and points',
+    rsDay && rsDay.state === 'published' && rsDay.kind === 'daily' && rsDay.rounds.length === 3
+      && rsDay.rounds.every(r => r.voted && r.taste === 7 && r.predict === 7 && r.average != null && r.points != null && r.tier),
+    JSON.stringify(rsDay));
+  ok('the day\'s points are the votes plus the completion bonus',
+    rsDay.points === Number(lexPart.total_points) + (lexBonus ? Number(lexBonus.points) : 0) && rsDay.bonus === (lexBonus ? Number(lexBonus.points) : 0),
+    rsDay.points + ' vs ' + lexPart.total_points + ' + ' + JSON.stringify(lexBonus));
+  ok('the week adds up the days that have come out',
+    rsPub.week.current === true && rsPub.week.name === 'This week' && rsPub.stats.played >= 1 && rsPub.stats.points >= rsDay.points && !!rsPub.stats.grade,
+    JSON.stringify([rsPub.week, rsPub.stats]));
+  ok('there is NO rank anywhere in My results (the weekly announcement reveals it)',
+    !/rank|fieldSize|percentile/i.test(JSON.stringify(rsPub)), JSON.stringify(rsPub).slice(0, 300));
+  ok('and no email or phone', !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsPub)));
+  const rsZed = await srv._arResultsData(zedUid);
+  const rsZedDay = rsZed.days.find(d => d.id === LDROP);
+  ok('a record they skipped on a day they played shows the average and no points of theirs',
+    rsZedDay && rsZedDay.rated === 1 && rsZedDay.total === 3 && rsZedDay.bonus === 0
+      && rsZedDay.rounds.filter(r => !r.voted).length === 2 && rsZedDay.rounds.filter(r => !r.voted).every(r => r.average != null && r.points == null && r.taste == null),
+    JSON.stringify(rsZedDay));
+  const rsIdle = await srv._arResultsData(uidIdle);
+  const rsIdleDay = rsIdle.days.find(d => d.id === LDROP);
+  ok('a day the A&R missed is listed and carries nothing else — results are for the days they played',
+    rsIdleDay && rsIdleDay.state === 'missed' && rsIdleDay.total === 3 && !/average|points|rounds|title/.test(JSON.stringify(rsIdleDay)),
+    JSON.stringify(rsIdleDay));
+  ok('and it earns them nothing in the week', rsIdle.stats.points === 0 && rsIdle.stats.played === 0, JSON.stringify(rsIdle.stats));
+  const rsFuture = (await call('/api/me/results?week=2999-01-04', null, 'GET', LH)).d;
+  ok('a week in the future resolves to this week', rsFuture.week.start === rsPub.week.start && rsFuture.week.next === null, JSON.stringify(rsFuture.week));
+  const rsOld = (await call('/api/me/results?week=2020-01-08', null, 'GET', LH)).d;
+  ok('an old week is empty, starts on its Monday, and pages forward but not back past the account',
+    rsOld.week.start === '2020-01-06' && rsOld.days.length === 0 && rsOld.week.prev === null && rsOld.week.next === '2020-01-13', JSON.stringify(rsOld.week));
+
   // The personalised block: exactly one row per record they rated, carrying every column
   // the scorecard prints. Absent — not empty — for someone who did not play.
   const partPlayed = await dDb.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [LDROP, 'life@test.com']);
@@ -2204,7 +2373,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // full hour of rejection window instead of silently having none.
   await dDb.run("DELETE FROM artist_notices WHERE session_id = ?", [LDROP]);
   const publishedAt = Number((await lSess()).published_at);
-  // The hold is a SETTING (default 60 minutes).
+  // The hold is a SETTING (default 0 since the 69-hour schedule: the report already goes out
+  // 45 hours after the tally). Set it to an hour here so the hold itself stays covered.
+  await dDb.run("INSERT INTO settings (k, v) VALUES ('daily_artist_delay_min', '60') ON CONFLICT (k) DO UPDATE SET v = excluded.v");
+  srv._bustDailySchedule();
   await tick(publishedAt + 1000);
   const notices = await dDb.all('SELECT * FROM artist_notices WHERE session_id = ?', [LDROP]);
   ok('with a hold set, the artist notices wait after publish — 029 has no unsend, and a cron'
@@ -2215,6 +2387,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
     notices2.length > 0, JSON.stringify(notices2.length));
   ok('the artist queue is keyed on the round, never on a uid',
     notices2.every(n => n.round_id && !('uid' in n)), JSON.stringify(Object.keys(notices2[0] || {})));
+  ok('a daily drop queues the report by EMAIL only — the artist was texted at the close',
+    notices2.every(n => n.channel === 'email'), JSON.stringify(notices2.map(n => n.channel)));
+  await dDb.run("DELETE FROM settings WHERE k = 'daily_artist_delay_min'");
+  srv._bustDailySchedule();
 
   // An A&R who is ALSO an artist on the day correctly gets BOTH. Assert it, so nobody
   // later "fixes" it into a dedupe: they are two different mails about two different things.
@@ -2403,7 +2579,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const schedBad = await call('/api/admin/settings', { dailySchedule: { tiers: [{ hours: 40, points: 5 }] } }, 'POST', BOOTH);
   ok('a bad schedule is refused as a whole', schedBad.status === 400, JSON.stringify(schedBad.d));
   const schedOk = await call('/api/admin/settings',
-    { dailySchedule: { openMin: 13 * 60, closeMin: 10 * 60, resultsMin: 11 * 60, tiers: [{ hours: 3, points: 90 }], finalPoints: 10 } }, 'POST', BOOTH);
+    { dailySchedule: { openMin: 13 * 60, closeMin: 10 * 60, streamMin: 10 * 60 + 30, streamDays: 0, resultsMin: 11 * 60, resultsDays: 0, tiers: [{ hours: 3, points: 90 }], finalPoints: 10 } }, 'POST', BOOTH);
+  const schedOrder = await call('/api/admin/settings',
+    { dailySchedule: { streamMin: 12 * 60, streamDays: 1, resultsMin: 11 * 60, resultsDays: 1 } }, 'POST', BOOTH);
+  ok('results can never be set to publish before the livestream', schedOrder.status === 400, JSON.stringify(schedOrder.d));
   ok('a platform admin can change the schedule, and the cold day was re-stamped', schedOk.status === 200 && schedOk.d.restamped >= 1, JSON.stringify(schedOk.d));
   const schedView = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
   ok('the panel reads the saved schedule back with labels',
@@ -2412,14 +2591,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const handRe = await dDb.get('SELECT * FROM sessions WHERE id = ?', [handSess.id]);
   ok('the cold day now runs on the new schedule',
     Number(handRe.window_opens_at) === srv._etEpoch(handDay, 13) && Number(handRe.window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 10)
-      && Number(handRe.results_at) === srv._etEpoch(srv._etNextDay(handDay), 11),
-    JSON.stringify({ o: handRe.window_opens_at, c: handRe.window_closes_at, r: handRe.results_at }));
+      && Number(handRe.results_at) === srv._etEpoch(srv._etNextDay(handDay), 11)
+      && Number(handRe.stream_at) === srv._etEpoch(srv._etNextDay(handDay), 10, 30),
+    JSON.stringify({ o: handRe.window_opens_at, c: handRe.window_closes_at, s: handRe.stream_at, r: handRe.results_at }));
   const handReR = await dDb.get('SELECT opens_at, closes_at FROM rounds WHERE session_id = ? LIMIT 1', [handSess.id]);
   ok('and so do its records', Number(handReR.opens_at) === Number(handRe.window_opens_at) && Number(handReR.closes_at) === Number(handRe.window_closes_at));
   const schedReset = await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
   const schedBack = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
   ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 15 * 60 && schedBack.closeMin === 15 * 60
-    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 60 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 15),
+    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 0
+    && schedBack.streamDays === 1 && schedBack.resultsDays === 2 && schedBack.resultsHours === 69 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 15),
     JSON.stringify(schedBack));
 
   // MOVING a cold day. The case: the review site's noon lock-in pressed at 12:01 pushes a
@@ -2443,7 +2624,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
     mvSess.drop_day === mvTo
       && Number(mvSess.window_opens_at) === srv._etEpoch(mvTo, 15)
       && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 15)
-      && Number(mvSess.results_at) === srv._etEpoch(mvNext, 18)
+      && Number(mvSess.stream_at) === srv._etEpoch(srv._etNextDay(mvNext), 15)
+      && Number(mvSess.results_at) === srv._etEpoch(srv._etNextDay(mvNext, 2), 12)
       && Number(mvSess.scheduled_at) === Number(mvSess.window_opens_at)
       && mvSess.name === 'A&R Daily — ' + mvTo,
     JSON.stringify({ day: mvSess.drop_day, name: mvSess.name, o: mvSess.window_opens_at, c: mvSess.window_closes_at, r: mvSess.results_at }));
@@ -2983,6 +3165,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a tampered link is refused', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': rlTok.slice(0, -2) + 'xx' })).status === 401);
   ok('a manage link (np1) is not a refer link', (await call('/api/me/referrals', null, 'GET', { 'X-Refer-Link': tsrv._mintNotifyLink(rlUid) })).status === 401);
   ok('the link cannot reach the profile or prefs handlers', (await call('/api/me/notify-prefs', null, 'GET', { 'X-Refer-Link': rlTok })).status !== 200);
+  const rlRes = await call('/api/me/results', null, 'GET', { 'X-Refer-Link': rlTok });
+  ok('the link reads the owner\'s own results (the results email lands logged in)', rlRes.status === 200 && !!rlRes.d.week && Array.isArray(rlRes.d.days), rlRes.status + '');
+  ok('a tampered link reads no results', (await call('/api/me/results', null, 'GET', { 'X-Refer-Link': rlTok.slice(0, -2) + 'xx' })).status === 401);
+  ok('the results email\'s link opens the results section and carries the signed link',
+    tsrv._accountResultsUrl('https://x', rlUid).startsWith('https://x/account#results&rt=rf1.' + rlUid + '.'), tsrv._accountResultsUrl('https://x', rlUid));
 
   console.log('\n— Revive ad zones: phase-aware, room banners always win —');
   await call('/api/admin/settings', { reviveDeliveryUrl: 'https://ads.cannick.com/www/delivery', reviveZoneLobby: '8', reviveZoneGame: '9' }, 'POST', ADMINH);
@@ -3200,18 +3387,35 @@ async function startVoting(sessionId, headers, minutes = 5) {
                room_average: 6.7, points: 95, tier: 'sharp' }] };
 
   const dgPlayed = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: dgRecap });
-  ok('someone who played is greeted by name', /Yesterday's results, Kelby/.test(dgPlayed));
-  ok('and their round-by-round table is there', /A Record/.test(dgPlayed) && /How you did/.test(dgPlayed));
+  ok('someone who played is greeted by name', /Your results, Kelby/.test(dgPlayed));
+  // The mail is a HEADLINE now (operator, 2026-10-02): it used to carry the whole table, which
+  // made it the report and gave nobody a reason to come back to the site.
+  ok('and the mail carries what the day paid', /How you did/.test(dgPlayed) && />543</.test(dgPlayed) && /A\+/.test(dgPlayed) && /Completion bonus/.test(dgPlayed));
+  ok('but NOT the round-by-round table — that lives on the site', !/A Record/.test(dgPlayed) && !/An Artist/.test(dgPlayed) && !/Off by/.test(dgPlayed), dgPlayed.slice(0, 200));
+  ok('and no rank', !/Rank/.test(dgPlayed));
 
   const dgIdle = srv._dailyDigestEmailHtml({ ...dgArg, name: 'Kelby Cannick', recap: null });
   ok('someone who did NOT play is not greeted as though they have results',
-    !/Yesterday's results, Kelby/.test(dgIdle), dgIdle.slice(0, 300));
-  ok('the headline still names the day', /Yesterday's results\./.test(dgIdle));
+    !/Your results, Kelby/.test(dgIdle), dgIdle.slice(0, 300));
+  ok('the headline still names the day', /The results\./.test(dgIdle) && /Thu, Sep 3 records landed/.test(dgIdle));
   ok('and it says plainly why there is nothing of their own',
-    /didn't rate yesterday's records/.test(dgIdle), dgIdle.slice(0, 400));
+    /didn't rate these records/.test(dgIdle), dgIdle.slice(0, 400));
   ok('no personal block is rendered for them', !/How you did/.test(dgIdle));
   ok('but they still get the day and the way back in',
-    /Today's records are open/.test(dgIdle));
+    /Rate today's records/.test(dgIdle));
+  // The 69-hour schedule's results mail (operator, 2026-09-27): the Livestream Countdown link,
+  // a personal results link, and the reminder that today's ratings close in 3 hours.
+  const dgFull = { ...dgArg, name: 'Kelby Cannick', recap: dgRecap, streamUrl: 'https://yt.example/live',
+    resultsUrl: 'https://x/account#results', closesLabel: '3:00 PM ET', closesInHours: 3 };
+  const dgFullHtml = srv._dailyDigestEmailHtml(dgFull), dgFullText = srv._dailyDigestEmailText(dgFull);
+  ok('the results mail links the Livestream Countdown',
+    /yt\.example\/live/.test(dgFullHtml) && /Watch the Makin' It Daily Countdown/.test(dgFullText));
+  ok('and to the A&R\'s own results on the site', /See your results/.test(dgFullHtml) && /account#results/.test(dgFullHtml) && /account#results/.test(dgFullText));
+  ok('the text version is a headline too', /Points 543/.test(dgFullText) && !/A Record/.test(dgFullText) && !/Rank/.test(dgFullText), dgFullText);
+  ok('and says today\'s records close in 3 hours',
+    /Today's records close at 3:00 PM ET — in 3 hours\./.test(dgFullText), dgFullText);
+  ok('a non-player gets no personal results link',
+    !/See your results/.test(srv._dailyDigestEmailHtml({ ...dgFull, recap: null })));
 
   // The digest's "Today's records are open" button went to /, where a daily player (who holds
   // only a per-session token) sees the sign-up pitch; /join then ended on "we'll notify you when
@@ -3411,12 +3615,21 @@ async function startVoting(sessionId, headers, minutes = 5) {
   console.log('\n— A&R Daily: the schedule —');
   const D = server._DAILY_SCHEDULE_DEFAULTS;
   const dw = server._dropWindowFor('2026-07-04', D);
-  ok('default window: opens 3 PM, closes 3 PM next day, results 6 PM next day (the 2026-09-20 clock)',
-    dw.opensAt === at('2026-07-04', 15) && dw.closesAt === at('2026-07-05', 15) && dw.resultsAt === at('2026-07-05', 18), JSON.stringify(dw));
-  ok('artist reports hold an hour after the results by default', D.artistDelayMin === 60);
-  const sameDay = server._dropWindowFor('2026-07-04', { ...D, openMin: 9 * 60, closeMin: 21 * 60, resultsMin: 20 * 60 });
-  ok('a close later than the open is the same day, and results never publish before the close',
-    sameDay.closesAt === at('2026-07-04', 21) && sameDay.resultsAt === at('2026-07-04', 21), JSON.stringify(sameDay));
+  ok('default window: opens 3 PM, closes 3 PM next day, livestream 3 PM the day after, results noon the day after that (the 2026-09-27 clock)',
+    dw.opensAt === at('2026-07-04', 15) && dw.closesAt === at('2026-07-05', 15)
+      && dw.streamAt === at('2026-07-06', 15) && dw.resultsAt === at('2026-07-07', 12), JSON.stringify(dw));
+  ok('which is 24 / 48 / 69 hours after the open',
+    (dw.closesAt - dw.opensAt) / 3600000 === 24 && (dw.streamAt - dw.opensAt) / 3600000 === 48
+      && (dw.resultsAt - dw.opensAt) / 3600000 === 69, JSON.stringify(dw));
+  // The offsets are whole ET days, never durations: a window across the November switch
+  // still streams and publishes on the wall clock.
+  const dstW = server._dropWindowFor('2026-10-31', D);
+  ok('the stream and results stay on the ET wall clock across a DST change',
+    dstW.streamAt === at('2026-11-02', 15) && dstW.resultsAt === at('2026-11-03', 12), JSON.stringify(dstW));
+  ok('artist reports go out with the results by default — the report is 45 hours after the tally', D.artistDelayMin === 0);
+  const sameDay = server._dropWindowFor('2026-07-04', { ...D, openMin: 9 * 60, closeMin: 21 * 60, streamMin: 20 * 60, streamDays: 0, resultsMin: 20 * 60, resultsDays: 0 });
+  ok('a close later than the open is the same day, and the stream and results never land before the close',
+    sameDay.closesAt === at('2026-07-04', 21) && sameDay.streamAt === at('2026-07-04', 21) && sameDay.resultsAt === at('2026-07-04', 21), JSON.stringify(sameDay));
   const bad1 = (() => { try { server._parseDailySchedule({ tiers: [{ hours: 30, points: 100 }] }); return null; } catch (e) { return e.message; } })();
   ok('a bonus step past the close is refused', /inside the 24-hour window/.test(bad1 || ''), bad1);
   const bad2 = (() => { try { server._parseDailySchedule({ tiers: [{ hours: 6, points: 100 }, { hours: 6, points: 75 }] }); return null; } catch (e) { return e.message; } })();
@@ -3448,37 +3661,39 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a 4-record day shuffles', new Set(server._asyncQueueOrder('u', 's',
     qRounds.slice(0, 4)).map(r => r.id)).size === 4);
 
-  console.log('\n— The weekly report: Wednesday through Tuesday —');
+  console.log('\n— The weekly report: Monday through Sunday —');
   // The window is the whole feature. A week that starts on the wrong day puts a record in
   // the wrong report and hands a tournament seat to the wrong artist, so the day arithmetic
   // is asserted on its own before any data touches it.
-  ok('a Wednesday is its own week start', server._weekStartFor('2026-09-16') === '2026-09-16',
-    server._weekStartFor('2026-09-16'));
-  ok('a Tuesday closes the week that opened the Wednesday before',
-    server._weekStartFor('2026-09-15') === '2026-09-09', server._weekStartFor('2026-09-15'));
-  ok('any day inside the week resolves to the same Wednesday',
-    server._weekStartFor('2026-09-18') === '2026-09-16' && server._weekStartFor('2026-09-20') === '2026-09-16');
+  ok('a Monday is its own week start', server._weekStartFor('2026-09-14') === '2026-09-14',
+    server._weekStartFor('2026-09-14'));
+  ok('a Sunday closes the week that opened the Monday before',
+    server._weekStartFor('2026-09-13') === '2026-09-07', server._weekStartFor('2026-09-13'));
+  ok('any day inside the week resolves to the same Monday',
+    server._weekStartFor('2026-09-16') === '2026-09-14' && server._weekStartFor('2026-09-20') === '2026-09-14');
   const wWin = server._weekWindow('2026-09-11');
-  ok('the window runs Wed → Tue, seven days', wWin.start === '2026-09-09' && wWin.end === '2026-09-15',
+  ok('the window runs Mon → Sun, seven days', wWin.start === '2026-09-07' && wWin.end === '2026-09-13',
     JSON.stringify(wWin));
-  ok('and carries the label the screen reads', wWin.label === 'Wed, Sep 9 – Tue, Sep 15', wWin.label);
+  ok('and carries the label the screen reads', wWin.label === 'Mon, Sep 7 – Sun, Sep 13', wWin.label);
+  ok('the same Monday the winner-of-the-week posts use', server._weekStartOf('2026-09-11') === wWin.start,
+    server._weekStartOf('2026-09-11'));
   // The weeks that cross a DST switch are still seven ET days — the same "noon is noon"
   // rule the drop schedule lives by.
-  ok('a spring-forward week still ends on its Tuesday',
-    server._weekWindow('2026-03-08').start === '2026-03-04' && server._weekWindow('2026-03-08').end === '2026-03-10',
+  ok('a spring-forward week still ends on its Sunday',
+    server._weekWindow('2026-03-08').start === '2026-03-02' && server._weekWindow('2026-03-08').end === '2026-03-08',
     JSON.stringify(server._weekWindow('2026-03-08')));
-  ok('a fall-back week still ends on its Tuesday',
-    server._weekWindow('2026-11-01').start === '2026-10-28' && server._weekWindow('2026-11-01').end === '2026-11-03',
+  ok('a fall-back week still ends on its Sunday',
+    server._weekWindow('2026-11-01').start === '2026-10-26' && server._weekWindow('2026-11-01').end === '2026-11-01',
     JSON.stringify(server._weekWindow('2026-11-01')));
   ok('a malformed day resolves to no week', server._weekWindow('nope') === null);
-  // The show is on Wednesday and reads the week that JUST ENDED — never the one that opened
-  // at noon the same day, which is four hours old and has nothing in it.
-  ok('on show day the default week is the one that closed yesterday',
-    server._lastCompleteWeekStart('2026-09-16') === '2026-09-09', server._lastCompleteWeekStart('2026-09-16'));
+  // The show is on Wednesday and reads the PRECEDING Mon → Sun week — whose Sunday drop
+  // publishes at noon that Wednesday — never the week that started two days before.
+  ok('on show day the default week is the one that ended Sunday',
+    server._lastCompleteWeekStart('2026-09-16') === '2026-09-07', server._lastCompleteWeekStart('2026-09-16'));
   ok('mid-week the default is still the last COMPLETE week, not the one in progress',
-    server._lastCompleteWeekStart('2026-09-18') === '2026-09-09', server._lastCompleteWeekStart('2026-09-18'));
+    server._lastCompleteWeekStart('2026-09-18') === '2026-09-07', server._lastCompleteWeekStart('2026-09-18'));
 
-  // A week of drops, built directly so the ranking inputs are exact. Wed Apr 1 → Tue Apr 7
+  // A week of drops, built directly so the ranking inputs are exact. Mon Mar 30 → Sun Apr 5
   // 2026, with a drop on either side of the fence that must not appear.
   const wkNow = Date.now();
   const wkSess = async (day, state = 'published') => {
@@ -3526,25 +3741,25 @@ async function startVoting(sessionId, headers, minutes = 5) {
     return pid;
   };
 
-  const wkWed = await wkSess('2026-04-01'), wkSat = await wkSess('2026-04-04'), wkTue = await wkSess('2026-04-07');
-  const wkBefore = await wkSess('2026-03-31'), wkAfter = await wkSess('2026-04-08');
-  // Wednesday: the week's #1 (8.8), a record that ties it on score but with fewer ratings,
+  const wkMon = await wkSess('2026-03-30'), wkThu = await wkSess('2026-04-02'), wkSun = await wkSess('2026-04-05');
+  const wkBefore = await wkSess('2026-03-29'), wkAfter = await wkSess('2026-04-06');
+  // Monday: the week's #1 (8.8), a record that ties it on score but with fewer ratings,
   // and the week's top supporter sitting mid-table — money is not a placing.
-  const wkR1 = await wkRound(wkWed, { title: 'Neon Skyline', artist: 'The Verge', ig: 'thevergemusic', avg: 8.8, support: 5000 });
-  const wkR2 = await wkRound(wkWed, { title: 'Tie On Score', artist: 'Fewer Voters', avg: 8.8, support: 0 });
-  const wkR3 = await wkRound(wkWed, { title: 'Paid The Most', artist: 'Big Spender', avg: 6.1, support: 25000 });
-  // Saturday: a reference track and a Verzuz round, neither of which may ever chart, plus a
+  const wkR1 = await wkRound(wkMon, { title: 'Neon Skyline', artist: 'The Verge', ig: 'thevergemusic', avg: 8.8, support: 5000 });
+  const wkR2 = await wkRound(wkMon, { title: 'Tie On Score', artist: 'Fewer Voters', avg: 8.8, support: 0 });
+  const wkR3 = await wkRound(wkMon, { title: 'Paid The Most', artist: 'Big Spender', avg: 6.1, support: 25000 });
+  // Thursday: a reference track and a Verzuz round, neither of which may ever chart, plus a
   // record whose IG only exists in the legacy note.
-  const wkR4 = await wkRound(wkSat, { title: 'Major Label Cut', artist: 'Famous', avg: 9.9, reference: true });
-  const wkR5 = await wkRound(wkSat, { title: 'A vs B', artist: 'Verzuz', avg: 9.5, poll_type: 'binary' });
-  const wkR6 = await wkRound(wkSat, { title: 'Legacy Handle', artist: 'Old Row', ig: null, note: 'IG: @legacyhandle', avg: 7.2, support: 1000 });
-  // Tuesday: an unratified record (still open) never charts, and one with no link at all.
-  const wkR7 = await wkRound(wkTue, { title: 'Still Open', artist: 'Not Yet', avg: 9.7, status: 'voting' });
-  const wkR8 = await wkRound(wkTue, { title: 'No Link', artist: 'Broken', play_url: '', avg: 7.9, support: 0 });
+  const wkR4 = await wkRound(wkThu, { title: 'Major Label Cut', artist: 'Famous', avg: 9.9, reference: true });
+  const wkR5 = await wkRound(wkThu, { title: 'A vs B', artist: 'Verzuz', avg: 9.5, poll_type: 'binary' });
+  const wkR6 = await wkRound(wkThu, { title: 'Legacy Handle', artist: 'Old Row', ig: null, note: 'IG: @legacyhandle', avg: 7.2, support: 1000 });
+  // Sunday: an unratified record (still open) never charts, and one with no link at all.
+  const wkR7 = await wkRound(wkSun, { title: 'Still Open', artist: 'Not Yet', avg: 9.7, status: 'voting' });
+  const wkR8 = await wkRound(wkSun, { title: 'No Link', artist: 'Broken', play_url: '', avg: 7.9, support: 0 });
   // The same record pushed on two days in one week is a push mistake, not two records — and
   // the same title twice in a Top 8 read on air reads as the count being broken.
-  const wkR9 = await wkRound(wkSat, { title: 'Neon Skyline', artist: 'The Verge', avg: 7.0, support: 0 });
-  // Either side of the fence — the Tuesday BEFORE and the Wednesday AFTER. Both score higher
+  const wkR9 = await wkRound(wkThu, { title: 'Neon Skyline', artist: 'The Verge', avg: 7.0, support: 0 });
+  // Either side of the fence — the Sunday BEFORE and the Monday AFTER. Both score higher
   // than anything in the week, so if the window leaks they take #1 and this goes red.
   const wkOut1 = await wkRound(wkBefore, { title: 'Last Week', artist: 'Previously', avg: 9.6 });
   const wkOut2 = await wkRound(wkAfter, { title: 'Next Week', artist: 'Later', avg: 9.4 });
@@ -3554,32 +3769,32 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const wkIncomplete = await wkAr('incomplete', { complete: 0 });
   const wkBlocked = await wkAr('blocked', { blocked: 1 });
   const wkParts = {};
-  for (const sid of [wkWed, wkSat, wkTue, wkBefore, wkAfter]) {
+  for (const sid of [wkMon, wkThu, wkSun, wkBefore, wkAfter]) {
     wkParts[sid] = {};
     for (const uid of [...wkVoters, wkIncomplete, wkBlocked]) wkParts[sid][uid] = await wkPart(sid, uid);
   }
   // R1 gets four ratings, R2 two — same 8.8, so R1 is #1.
-  for (const uid of wkVoters.slice(0, 4)) await wkVote(wkR1, wkParts[wkWed][uid], 10, 'sharp');
-  for (const uid of wkVoters.slice(0, 2)) await wkVote(wkR2, wkParts[wkWed][uid], 10, 'close');
-  for (const uid of wkVoters.slice(0, 3)) await wkVote(wkR3, wkParts[wkWed][uid], 5, 'off');
-  for (const uid of wkVoters.slice(0, 3)) await wkVote(wkR6, wkParts[wkSat][uid], 5, 'close');
-  await wkVote(wkR8, wkParts[wkTue][wkVoters[0]], 5, 'close');
+  for (const uid of wkVoters.slice(0, 4)) await wkVote(wkR1, wkParts[wkMon][uid], 10, 'sharp');
+  for (const uid of wkVoters.slice(0, 2)) await wkVote(wkR2, wkParts[wkMon][uid], 10, 'close');
+  for (const uid of wkVoters.slice(0, 3)) await wkVote(wkR3, wkParts[wkMon][uid], 5, 'off');
+  for (const uid of wkVoters.slice(0, 3)) await wkVote(wkR6, wkParts[wkThu][uid], 5, 'close');
+  await wkVote(wkR8, wkParts[wkSun][wkVoters[0]], 5, 'close');
   // The board: 'a' leads on vote points, 'b' has the bullseyes, 'e' is carried over the line
   // by the completion bonus alone — the point of counting it.
-  await wkVote(wkR6, wkParts[wkSat][wkVoters[3]], 50, 'bullseye');
-  await wkVote(wkR1, wkParts[wkWed][wkVoters[4]], 20, 'bullseye');
-  await wkVote(wkR3, wkParts[wkWed][wkVoters[4]], 20, 'bullseye');
+  await wkVote(wkR6, wkParts[wkThu][wkVoters[3]], 50, 'bullseye');
+  await wkVote(wkR1, wkParts[wkMon][wkVoters[4]], 20, 'bullseye');
+  await wkVote(wkR3, wkParts[wkMon][wkVoters[4]], 20, 'bullseye');
   // Points from OUTSIDE the week must never reach this board.
   await wkVote(wkOut1, wkParts[wkBefore][wkVoters[0]], 9999, 'bullseye');
   await wkVote(wkOut2, wkParts[wkAfter][wkVoters[0]], 9999, 'bullseye');
   // The excluded A&Rs score plenty — they are kept out by the profile rule, not by silence.
-  await wkVote(wkR1, wkParts[wkWed][wkIncomplete], 500, 'bullseye');
-  await wkVote(wkR1, wkParts[wkWed][wkBlocked], 500, 'bullseye');
+  await wkVote(wkR1, wkParts[wkMon][wkIncomplete], 500, 'bullseye');
+  await wkVote(wkR1, wkParts[wkMon][wkBlocked], 500, 'bullseye');
   // The completion bonus is the one bonus a day owns; a referral milestone is series points
   // with no week attached and must stay out.
   await dDb.run(`INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
                  VALUES (?,?,?,?,?,?,?,?)`,
-    ['wkpe1', wkVoters[4], 100, serId, 'async_complete', wkWed + ':' + wkVoters[4], 1, wkNow]);
+    ['wkpe1', wkVoters[4], 100, serId, 'async_complete', wkMon + ':' + wkVoters[4], 1, wkNow]);
   await dDb.run(`INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
                  VALUES (?,?,?,?,?,?,?,?)`,
     ['wkpe2', wkVoters[0], 4000, serId, 'referral_milestone', 'wk_ref_' + wkVoters[0], 10, wkNow]);
@@ -3588,14 +3803,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
                  VALUES (?,?,?,?,?,?,?,?)`,
     ['wkpe3', wkVoters[0], 7000, serId, 'async_complete', wkAfter + ':' + wkVoters[0], 1, wkNow]);
 
-  const wkAnon = await call('/api/admin/weekly/status?week=2026-04-01', null, 'GET', {});
+  const wkAnon = await call('/api/admin/weekly/status?week=2026-03-30', null, 'GET', {});
   ok('the weekly report is platform-admin only — it spans every host and carries artist handles',
     wkAnon.status === 403 || wkAnon.status === 401, 'got ' + wkAnon.status);
-  const WKR = (await call('/api/admin/weekly/status?week=2026-04-03', null, 'GET', BOOTH)).d;
-  ok('a day inside the week resolves to its Wednesday',
-    WKR.week.start === '2026-04-01' && WKR.week.end === '2026-04-07', JSON.stringify(WKR.week));
+  const WKR = (await call('/api/admin/weekly/status?week=2026-04-01', null, 'GET', BOOTH)).d;
+  ok('a day inside the week resolves to its Monday',
+    WKR.week.start === '2026-03-30' && WKR.week.end === '2026-04-05', JSON.stringify(WKR.week));
   ok('only the drops inside the window are in the week',
-    WKR.drops.length === 3 && WKR.drops.map(d => d.day).join() === '2026-04-01,2026-04-04,2026-04-07',
+    WKR.drops.length === 3 && WKR.drops.map(d => d.day).join() === '2026-03-30,2026-04-02,2026-04-05',
     JSON.stringify(WKR.drops.map(d => d.day)));
   ok('the records from the weeks either side never appear',
     !WKR.songsAll.some(r => ['Last Week', 'Next Week'].includes(r.title)),
@@ -3610,9 +3825,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
     !WKR.songsAll.some(r => r.title === 'A vs B'));
   ok('a record still taking votes never charts', !WKR.songsAll.some(r => r.title === 'Still Open'));
   ok('each drop carries what actually ran that day, not what survived the dedupe',
-    WKR.drops.find(d => d.day === '2026-04-01').records === 3
-    && WKR.drops.find(d => d.day === '2026-04-04').records === 2
-    && WKR.drops.find(d => d.day === '2026-04-07').records === 1,
+    WKR.drops.find(d => d.day === '2026-03-30').records === 3
+    && WKR.drops.find(d => d.day === '2026-04-02').records === 2
+    && WKR.drops.find(d => d.day === '2026-04-05').records === 1,
     JSON.stringify(WKR.drops.map(d => [d.day, d.records])));
   ok('every charting record carries what the host reads out',
     WKR.songs.every(r => 'title' in r && 'artist' in r && 'ig' in r && 'score' in r
@@ -3673,14 +3888,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
     WKR.settled === true && WKR.pending.length === 0, JSON.stringify(WKR.pending));
 
   // A week still settling must not look finished — the seats come off these lists.
-  await dDb.run("UPDATE sessions SET async_state = 'ratified' WHERE id = ?", [wkTue]);
-  const WKR2 = (await call('/api/admin/weekly/status?week=2026-04-01', null, 'GET', BOOTH)).d;
+  await dDb.run("UPDATE sessions SET async_state = 'ratified' WHERE id = ?", [wkSun]);
+  const WKR2 = (await call('/api/admin/weekly/status?week=2026-03-30', null, 'GET', BOOTH)).d;
   ok('a week with an unpublished drop is NOT final, and names the day',
     WKR2.settled === false && WKR2.pending.length === 1, JSON.stringify(WKR2.pending));
-  await dDb.run("UPDATE sessions SET async_state = 'published' WHERE id = ?", [wkTue]);
+  await dDb.run("UPDATE sessions SET async_state = 'published' WHERE id = ?", [wkSun]);
 
   // The Top 8 is a cut of the ranking, never a different ranking.
-  const WKR8 = (await call('/api/admin/weekly/status?week=2026-04-01&limit=2', null, 'GET', BOOTH)).d;
+  const WKR8 = (await call('/api/admin/weekly/status?week=2026-03-30&limit=2', null, 'GET', BOOTH)).d;
   ok('the limit cuts the list without reordering it',
     WKR8.songs.length === 2 && WKR8.songs[0].title === WKR.songs[0].title
     && WKR8.songsAll.length === WKR.songsAll.length,
@@ -3693,8 +3908,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
     WKEmpty.drops.length === 0 && WKEmpty.songs.length === 0 && WKEmpty.ars.length === 0
     && WKEmpty.settled === false, JSON.stringify(WKEmpty.week));
   // A soft-deleted drop leaves the week, exactly as it leaves every other list.
-  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), wkWed]);
-  const WKR3 = (await call('/api/admin/weekly/status?week=2026-04-01', null, 'GET', BOOTH)).d;
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), wkMon]);
+  const WKR3 = (await call('/api/admin/weekly/status?week=2026-03-30', null, 'GET', BOOTH)).d;
   ok('a soft-deleted drop takes its records out of the week',
     WKR3.drops.length === 2 && !WKR3.songsAll.some(r => ['Tie On Score', 'Paid The Most'].includes(r.title)),
     JSON.stringify(WKR3.songsAll.map(r => r.title)));
@@ -3705,7 +3920,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     && WKR3.songsAll.find(r => r.title === 'Neon Skyline').score === 7
     && WKR3.songsAll.find(r => r.title === 'Neon Skyline').plays === 1,
     JSON.stringify(WKR3.songsAll.filter(r => r.title === 'Neon Skyline')));
-  for (const sid of [wkSat, wkTue, wkBefore, wkAfter]) {
+  for (const sid of [wkThu, wkSun, wkBefore, wkAfter]) {
     await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), sid]);
   }
 

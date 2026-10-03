@@ -274,6 +274,9 @@ function effectivePerms(user) {
 // splitting them later is one line here plus a UI row — no migration.
 const NOTIFY_TOPICS = {
   room_live:     { label: 'A room goes live', channels: { email: 1, sms: 1 } },
+  // The A&R Daily open notice (2026-09-27, operator's call: ON by default). Email only — a
+  // daily text to the whole list is a cost and an opt-out generator the operator declined.
+  daily_open:    { label: 'Daily records open', channels: { email: 1 } },
   digest_daily:  { label: 'Daily update',     channels: { email: 0 } },
   digest_weekly: { label: 'Weekly update',    channels: { email: 0 } },
 };
@@ -498,7 +501,9 @@ async function verifyReferLink(req, url) {
   if (u.blocked === 1 || u.blocked === true) return { error: 'account_suspended', status: 403 };
   return { uid: u.uid, user: u };
 }
-// Either token, or a refer link. Used ONLY by /api/me/referrals and /api/card/refer.
+// Either token, or a refer link. Used ONLY by /api/me/referrals, /api/card/refer and
+// /api/me/results (2026-10-02: the results email opens the account page's results section) —
+// all three read the caller's OWN account-page data and write nothing.
 async function resolveReferUid(req, url) {
   const uid = await resolveUserId(req);
   if (uid) return uid;
@@ -1199,9 +1204,15 @@ async function sweepCompletionBonuses(session) {
 }
 
 // ===== A&R DAILY — the lifecycle =====
-// The day runs on the clock, not on a button: it opens at noon, closes at noon the next day,
-// tallies, and publishes at 3PM (the reveal stream runs at 2PM, between the two). Driven by /api/cron/daily (and by an admin route, so the operator can
-// run it by hand and so the suite can drive it without CRON_SECRET set).
+// The day runs on the clock, not on a button (see DAILY_SCHEDULE_DEFAULTS for the times):
+//   scheduled -> open        at window_opens_at; the "voting is open" email is queued
+//   open -> closing          at window_closes_at; then tallies over as many ticks as it needs
+//   closing -> ratified      when every record has tallied; the artist heads-up is queued
+//   (ratified, graphics)     at stream_at — the ranked graphics render for the Livestream
+//                            Countdown's posts; the state does not change and nothing is revealed
+//   ratified -> published    at results_at — the seal lifts, the emails and the callback go
+// Driven by /api/cron/daily (and by an admin route, so the operator can run it by hand and so
+// the suite can drive it without CRON_SECRET set).
 //
 // EVERY TRANSITION IS A CONDITIONAL UPDATE. Vercel documents that a scheduled run can
 // occasionally be invoked more than once, and at 12:00PM two invocations would otherwise both
@@ -1216,11 +1227,12 @@ async function sweepCompletionBonuses(session) {
 // would silently produce a half-tallied day and a published-but-wrong leaderboard.
 const DROP_TICK_BUDGET_MS = 22000;   // of the 30s function ceiling
 
-// How long after the 3PM publish the artist notices are held. 029 made comments ship by
-// DEFAULT with the host rejecting the odd bad one — a model that works because a live show
-// has a wrap-up moment where the send panel prints "N comments about to go out". A cron has
-// no such moment, and there is no unsend. This hour is that checkpoint, restored.
-// (The hold length is now `artistDelayMin` in dailySchedule(); default 60.)
+// How long after the publish the artist reports are held. 029 made comments ship by DEFAULT
+// with the host rejecting the odd bad one — a model that works because a live show has a
+// wrap-up moment where the send panel prints "N comments about to go out". A cron has no such
+// moment, and there is no unsend. The hold was that checkpoint; under the 69-hour schedule the
+// report goes out 45 hours after the tally, which is the checkpoint already, so the default is
+// 0. (`artistDelayMin` in dailySchedule().)
 
 // The open step on its own: claim, then flip every record in one statement. Shared by the
 // lifecycle tick and by /api/admin/daily/move, which opens a drop the moment it lands on a
@@ -1233,6 +1245,10 @@ async function openAsyncDrop(s) {
   if (!claim.changes) return false;
   await db.run("UPDATE rounds SET status = 'voting' WHERE session_id = ? AND status = 'pending'", [s.id]);
   await realtime.publish(s.id, 'round');
+  // "Voting is open" — queued here, inside the claim, so it is queued exactly once and only
+  // for a day that actually opened. Drained by the lifecycle's drain pass. Never fatal: a
+  // failed enqueue must not un-open the day.
+  try { await enqueueDailyOpen(s); } catch (e) { console.error('[daily] open notice enqueue failed:', e.message); }
   return true;
 }
 
@@ -1243,11 +1259,15 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
   const out = { opened: 0, closed: 0, ratified: 0, sealed: 0, published: 0,
     digestSent: 0, digestFailed: 0, artistSent: 0, artistFailed: 0, artistSms: 0, budgetHit: false };
 
+  // Up to three days are in flight at once now (one open, one waiting for its stream, one
+  // waiting for its results), plus whatever has been pushed ahead. Oldest first, so a cold
+  // day pushed a week early can never crowd out the one that is due to publish.
   const due = await db.all(
     `SELECT * FROM sessions
       WHERE mode = 'async' AND deleted_at IS NULL
         AND COALESCE(async_state, 'scheduled') IN ('scheduled','open','closing','ratified')
-      ORDER BY window_opens_at ASC LIMIT 5`, []);
+      ORDER BY window_opens_at ASC LIMIT 8`, []);
+  const sched = await dailySchedule();
 
   for (const s of due) {
     if (left() < 2000) { out.budgetHit = true; break; }
@@ -1306,14 +1326,24 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       }
     }
 
-    // ---- publish: ratified -> published, at results_at (3PM) ----
+    // ---- stream: render the ranked graphics at stream_at; publish: ratified -> published ----
     const cur = await db.get('SELECT * FROM sessions WHERE id = ?', [s.id]);
-    if (cur && cur.async_state === 'ratified' && at >= Number(cur.results_at)) {
-      if (left() < 8000) { out.budgetHit = true; break; }
-      try {
-        const done = await publishDailyDrop(cur, { deadline: t0 + budgetMs });
-        if (done) out.published++;
-      } catch (e) { console.error('[daily] publish failed:', e.message); }
+    if (cur && cur.async_state === 'ratified') {
+      if (at >= Number(cur.results_at)) {
+        if (left() < 8000) { out.budgetHit = true; break; }
+        try {
+          const done = await publishDailyDrop(cur, { deadline: t0 + budgetMs });
+          if (done) out.published++;
+        } catch (e) { console.error('[daily] publish failed:', e.message); }
+      } else if (at >= dropStreamAt(cur, sched)) {
+        const job = await db.get('SELECT rendered_at FROM recap_jobs WHERE session_id = ?', [cur.id]);
+        if (!(job && job.rendered_at)) {
+          if (left() < 8000) { out.budgetHit = true; break; }
+          try {
+            if (await renderDailyGraphics(cur, { deadline: t0 + budgetMs })) out.rendered = (out.rendered || 0) + 1;
+          } catch (e) { console.error('[daily] stream graphics failed:', e.message); }
+        }
+      }
     }
 
   }
@@ -1328,6 +1358,33 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
   // window and no-ops outside it. Throughput here is governed by tick COUNT, not tick length
   // — which is why the cron is */5 and not hourly.
   if (left() > 4000) {
+    // "Voting is open", for the day that is open. Only while it is open: a notice that lands
+    // after the close is wrong, and a stale pending row is simply left behind.
+    const opens = await db.all(
+      `SELECT s.id FROM sessions s JOIN notify_broadcasts b ON b.kind = 'daily_open' AND b.ref_id = s.id
+        WHERE s.mode = 'async' AND s.async_state = 'open' AND s.deleted_at IS NULL AND b.status <> 'done'
+          AND s.window_closes_at > ? ORDER BY s.window_opens_at DESC LIMIT 2`, [at]);
+    for (const s of opens) {
+      if (left() < 4000) { out.budgetHit = true; break; }
+      try {
+        const d = await drainDailyOpen({ sessionId: s.id, limit: 60, deadline: t0 + budgetMs });
+        out.openSent = (out.openSent || 0) + d.sent;
+      } catch (e) { console.error('[daily] open notice drain failed:', e.message); }
+    }
+    // The artist heads-up ("rated, on tomorrow's Livestream Countdown"), for tallied days.
+    // Enqueue is idempotent (uniq_artist_headsup), so calling it every tick is how a failed
+    // enqueue retries. SMS obeys the ET window like every other artist text.
+    const sealedDays = await db.all(
+      `SELECT * FROM sessions WHERE mode = 'async' AND async_state = 'ratified' AND deleted_at IS NULL
+        ORDER BY window_opens_at DESC LIMIT 3`, []);
+    for (const s of sealedDays) {
+      if (left() < 4000) { out.budgetHit = true; break; }
+      try {
+        await enqueueArtistHeadsups(s.id);
+        const h = await drainArtistHeadsups({ sessionId: s.id, limit: 20, deadline: t0 + budgetMs });
+        out.headsupSent = (out.headsupSent || 0) + h.sent;
+      } catch (e) { console.error('[daily] artist heads-up failed:', e.message); }
+    }
     const pubs = await db.all(
       `SELECT * FROM sessions WHERE mode = 'async' AND async_state = 'published' AND deleted_at IS NULL
         ORDER BY published_at DESC LIMIT 3`, []);
@@ -1344,10 +1401,12 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       // to shared, an async day has no wrap-up moment where the host sees "N comments about
       // to go out", and there is NO UNSEND. Holding the artist enqueue an hour past publish
       // gives the operator a real rejection window with the count visible in the console.
-      const holdUntil = Number(s.published_at || 0) + (await dailySchedule()).artistDelayMin * 60000;
+      const holdUntil = Number(s.published_at || 0) + sched.artistDelayMin * 60000;
       if (at >= holdUntil && left() > 8000) {
         try {
-          await enqueueArtistNotices(s.id);
+          // Email only: the artist's text went out at the close as the heads-up, and a second
+          // text two days later saying the same thing is an opt-out, not a notification.
+          await enqueueArtistNotices(s.id, { sms: false });
           const a = await drainArtistEmail({ sessionId: s.id, limit: 4, deadline: t0 + budgetMs });
           out.artistSent += a.sent; out.artistFailed += a.failed;
           const sms = await drainArtistSms({ sessionId: s.id, limit: 6 });
@@ -1469,8 +1528,15 @@ async function pushDayResults(session) {
   }
 }
 
-// ===== THE A&R MEETING RECAP — the daily 2PM stream's graphics + caption =====
-// The operator goes live at 2PM and counts down the previous day's records, reveals the Top
+// The two shows, by name (operator, 2026-09-27). ONE definition: the stream caption, the
+// countdown clip captions, the artist heads-up and both results emails all read these.
+// "HOT 100" belongs to the MONTHLY countdown post only (operator, 2026-10-02); the daily is the
+// Makin' It Daily Countdown — the carousel (countdownCarouselData) and, while it still runs, the stream.
+const DAILY_STREAM_NAME = "Makin' It Daily Countdown";
+const WEEKLY_SHOW_NAME = 'The A&R Room - Weekly Live Music Review'; // Wednesday 7PM ET
+
+// ===== THE A&R MEETING RECAP — the Livestream Countdown's graphics + caption =====
+// The operator goes live at stream_at (3PM ET, the day after the close) and counts down the day's records, reveals the Top
 // 8 A&Rs, then closes on the top artists. The stream needs an Instagram Live cover (9:16), a
 // YouTube thumbnail (16:9) and a caption, all carrying the stream DATE — the one field that
 // tells thirty near-identical videos apart — and the day's artists and A&Rs by handle.
@@ -1479,8 +1545,11 @@ async function pushDayResults(session) {
 // the Top 8 A&Rs alphabetised, so a cover posted an hour before the stream gives away who is
 // on it, never where they placed. The Top 8 card (ranked) stays the post-stream graphic.
 //
-// The date is the day the stream AIRS — results_at (3PM ET, the afternoon the window closes), not
-// drop_day (when the records opened) — because the video is labelled by when it happened.
+// THE DATE IS THE DAY IT POSTS (operator, 2026-09-27) — results_at, never drop_day and never
+// the day the countdown was recorded (stream_at): the operator records ahead and everything
+// that goes up on a day carries that day. Same rule as the countdown clip captions below
+// (drop_day + COUNTDOWN_POST_OFFSET_DAYS, which is results day on the 69-hour clock). The
+// TIME printed beside it is still the stream's own ("Daily at 3PM", off stream_at).
 function recapDateLabel(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
     month: '2-digit', day: '2-digit', year: '2-digit' }).formatToParts(new Date(Number(ts)));
@@ -1503,23 +1572,31 @@ async function recapGraphicsData(session) {
     .map(a => (a.ig ? '@' + a.ig : (a.name || '').trim()))
     .filter(Boolean)
     .sort((a, b) => a.replace(/^@/, '').localeCompare(b.replace(/^@/, ''), 'en', { sensitivity: 'base' }));
-  const airs = Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now();
-  return { date: recapDateLabel(airs), artists, ars };
+  const sched = await dailySchedule();
+  const posts = Number(session.results_at) || dropWindowFor(session.drop_day, sched).resultsAt || now();
+  return { date: recapDateLabel(posts), time: recapTimeLabel(dropStreamAt(session, sched) || posts), artists, ars };
 }
 // The stream caption: plain and direct (operator's copy voice), with the same lists as the
 // graphics. Handles where we have them, names where we do not, so the operator can see who
 // still needs tagging.
+// "Daily at 3PM" off the stream's own epoch, so the graphic and the caption follow the setting.
+function recapTimeLabel(ts) {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })
+    .formatToParts(new Date(Number(ts)));
+  const g = (t) => (p.find(x => x.type === t) || {}).value || '';
+  return `Daily at ${g('hour')}${g('minute') === '00' ? '' : ':' + g('minute')}${g('dayPeriod').toUpperCase()}`;
+}
 function recapCaption(d) {
   const lines = [
-    `${shareCards.RECAP_TITLE} — ${d.date}`,
-    `${shareCards.RECAP_TIME} ET`,
+    `${DAILY_STREAM_NAME} — ${d.date}`,
+    `${d.time || shareCards.RECAP_TIME} ET`,
     '',
-    "Today we count down every song from yesterday's A&R Meeting, reveal the Top 8 A&Rs, and go over the top artists. Rate the songs with us in the comments.",
+    "Today we count down every song from the A&R Meeting that closed yesterday, reveal the Top 8 A&Rs, and go over the top artists. Rate the songs with us in the comments.",
   ];
   if (d.artists.length) lines.push('', "Artists in today's recap:", ...d.artists);
   if (d.ars.length) lines.push('', 'A&Rs on the board:', ...d.ars);
   lines.push('', `Submit music: ${shareCards.RECAP_CTA[0].url}`, `Become an A&R: ${shareCards.RECAP_CTA[1].url}`,
-    '', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+    '', IG_TAGS);
   return lines.join('\n');
 }
 
@@ -1538,12 +1615,15 @@ function recapCaption(d) {
 // Three flavours: `instagram` (@handles — Threads shares Instagram usernames, so it posts
 // this one too), `social` (Facebook / YouTube / TikTok: an Instagram handle there tags the
 // wrong account or nobody, so names only) and `x` (names, and it has to fit 280).
-const COUNTDOWN_CLIP_TITLE = "Makin' It HOT 100 Daily Countdown";
 const COUNTDOWN_POST_OFFSET_DAYS = 3;
 const COUNTDOWN_PLATFORMS = ['instagram', 'social', 'x'];
 const COUNTDOWN_SUBMIT_URL = 'makinitmag.com/review';
 const COUNTDOWN_JOIN_URL = 'anr.makinitmag.com';
-const COUNTDOWN_TAGS = '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom';
+// Instagram allows FIVE hashtags a post (operator, 2026-10-02) — every caption the app writes
+// for Instagram stays at or under it. IG_TAGS is the standard five; COUNTDOWN_TAGS is three,
+// because the Daily Countdown caption already spends two on its comment keywords (#REVIEW, #ANR).
+const IG_TAGS = '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists';
+const COUNTDOWN_TAGS = '#MakinIt #NewMusic #UnsignedArtists';
 const X_MAX = 280, X_URL_LEN = 23;   // X counts every link as 23 characters
 function countdownPostDay(session, requested) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(requested || '')) return requested;
@@ -1579,7 +1659,7 @@ function countdownCaption(d, platform) {
   const who = (p) => (handles && p.ig ? '@' + p.ig : p.name);
   const top = d.artists[d.artists.length - 1];
   const topLine = top ? `${who(top)} — Top Track of the day${top.title ? ` with "${top.title}"` : ''}` : '';
-  const head = `${COUNTDOWN_CLIP_TITLE} — ${d.date}`;
+  const head = `${DAILY_STREAM_NAME} — ${d.date}`;
   if (platform === 'x') {
     // One paragraph. If it will not fit, drop the hashtag, then the song title; what is
     // left over is the operator's to trim, and the console prints the count.
@@ -1603,15 +1683,15 @@ function countdownCaption(d, platform) {
   }
   if (d.ars.length) lines.push('', 'Congratulations to our top A&Rs:', ...d.ars.map((a, i) => `${i + 1}. ${who(a)}`));
   lines.push('', `Submit your music for a free review: ${COUNTDOWN_SUBMIT_URL}`, `Join the A&R Team: ${COUNTDOWN_JOIN_URL}`,
-    '', COUNTDOWN_TAGS);
+    '', IG_TAGS);
   return lines.join('\n');
 }
-// ===== THE A&R MEETING RESULTS CAROUSELS — posted after the 2PM reveal stream =====
-// Two Instagram carousels, rendered at the 3PM publish beside the recap cover and hosted on
-// the same Blob path (daily/<day>/results-song-N.png, results-ar-N.png), plus a caption each:
-//   song  slide 1 the top record (trophy · "Top Track" · date; title, artist, handle), then
-//         the other records RANKED WITHOUT SCORES six to a slide, then "Submit your music"
-//   ar    slide 1 the top A&R (name, city, handle, and the profile photo when there is one),
+// ===== THE A&R MEETING RESULTS CAROUSELS =====
+// Two Instagram carousels, rendered with the day's graphics and hosted on the same Blob path,
+// plus a caption each:
+//   song  the MAKIN' IT DAILY COUNTDOWN (daily/<day>/countdown-N.png) — it replaced the Top
+//         Track carousel on 2026-10-02; see countdownCarouselData below
+//   ar    (daily/<day>/results-ar-N.png) slide 1 the top A&R (name, city, handle, and the profile photo when there is one),
 //         then the other top A&Rs with the day's points, then "Join the A&R Team"
 // The list splits evenly across as many slides as it needs, so a four-record day is three
 // slides and a fourteen-record day five. Posted after the reveal, so ranking is public here.
@@ -1619,9 +1699,6 @@ function countdownCaption(d, platform) {
 // Operator decisions 2026-09-13; the approved mockup is public/brand/daily/carousel.html.
 const RESULTS_MAX_ARS = 13;   // the top A&R + two list slides of six
 const RESULTS_COPY = {
-  song: { label: 'Top Track', listLabel: 'Also played',
-    cta: { eyebrow: 'Submit your music', head: ['Free Review', 'by the A&R', 'Team'],
-      body: 'Get feedback to help finish, release, or promote your music.', url: shareCards.SUBMIT_URL } },
   ar: { label: 'Top A&R', listLabel: 'Top A&Rs',
     cta: { eyebrow: 'Join the A&R Team', head: ['Win $500 as the', 'month’s top A&R'],
       body: 'Rate the day’s records and predict the average.', url: shareCards.JOIN_URL } },
@@ -1653,51 +1730,111 @@ async function photoDataUri(url) {
     return `data:${type};base64,${buf.toString('base64')}`;
   } catch (e) { return null; }
 }
+// The 'song' set IS the Makin' It Daily Countdown since 2026-10-02 (it replaced the Top Track
+// carousel); 'ar' is still the Top A&R carousel. Each set says which card type renders it.
 async function resultsCarouselData(session, set, { photo = true } = {}) {
+  if (set === 'song') return countdownCarouselData(session);
   const copy = RESULTS_COPY[set];
   if (!copy) return null;
   const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
-  let hero, others;
-  if (set === 'song') {
-    const rows = await db.all(
-      // Reference tracks are known records, not submissions — they never chart here either.
-      `SELECT song_title, song_artist, song_note, artist_instagram FROM rounds
-        WHERE session_id = ? AND status = 'ratified' AND room_average IS NOT NULL
-          AND COALESCE(is_reference, 0) = 0
-        ORDER BY room_average DESC, idx ASC`, [session.id]);
-    if (!rows.length) return null;
-    const recs = rows.map(r => {
-      const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
-      const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
-      return { title: (r.song_title || '—').trim(), artist: (r.song_artist || '').trim(), ig };
-    });
-    hero = { label: copy.label, title: recs[0].title, sub: recs[0].artist, handle: recs[0].ig ? '@' + recs[0].ig : '' };
-    // Ranked, no scores (operator, 2026-09-13): the position is the news, not the number.
-    others = recs.slice(1).map((r, i) => ({ rank: String(i + 2).padStart(2, '0'), line1: r.title, line2: r.artist }));
-  } else {
-    const rows = await db.all(
-      `SELECT p.name AS pname, u.name AS uname, u.instagram, u.location, u.photo_url, p.total_points AS pts
-         FROM participants p LEFT JOIN users u ON p.user_id = u.uid
-        WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
-        ORDER BY pts DESC, p.created_at ASC LIMIT ?`, [session.id, RESULTS_MAX_ARS]);
-    if (!rows.length) return null;
-    const top = rows[0];
-    const ig = igClean(top.instagram);
-    hero = { label: copy.label, title: top.uname || top.pname || 'A&R', sub: (top.location || '').trim(), subDim: true,
-      handle: ig ? '@' + ig : '', photo: photo ? await photoDataUri(top.photo_url) : null };
-    others = rows.slice(1).map((r, i) => ({ rank: String(i + 2).padStart(2, '0'), line1: r.uname || r.pname || 'A&R',
-      line2: (r.location || '').trim(), value: Number(r.pts) || 0 }));
-  }
+  const rows = await db.all(
+    `SELECT p.name AS pname, u.name AS uname, u.instagram, u.location, u.photo_url, p.total_points AS pts
+       FROM participants p LEFT JOIN users u ON p.user_id = u.uid
+      WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+      ORDER BY pts DESC, p.created_at ASC LIMIT ?`, [session.id, RESULTS_MAX_ARS]);
+  if (!rows.length) return null;
+  const top = rows[0];
+  const ig = igClean(top.instagram);
+  const hero = { label: copy.label, title: top.uname || top.pname || 'A&R', sub: (top.location || '').trim(), subDim: true,
+    handle: ig ? '@' + ig : '', photo: photo ? await photoDataUri(top.photo_url) : null };
+  const others = rows.slice(1).map((r, i) => ({ rank: String(i + 2).padStart(2, '0'), line1: r.uname || r.pname || 'A&R',
+    line2: (r.location || '').trim(), value: Number(r.pts) || 0 }));
   const pages = resultsPages(others, shareCards.RESULTS_PER_SLIDE);
   const total = 1 + pages.length + 1;
   const slides = [{ set, slide: 1, total, date, kind: 'hero', hero }];
   pages.forEach((rows, i) => slides.push({ set, slide: i + 2, total, date, kind: 'list', listLabel: copy.listLabel, rows,
     footLeft: set === 'ar' ? `Points today · ${i + 2} / ${total}` : null }));
   slides.push({ set, slide: total, total, date, kind: 'cta', cta: copy.cta });
-  return { set, date, total, slides };
+  return { set, card: 'resultsSlide', date, total, slides };
+}
+
+// ===== THE MAKIN' IT DAILY COUNTDOWN — the carousel that replaced the daily stream =====
+// Operator, 2026-10-02: the day's records counted down on Instagram, ONE RECORD A SLIDE, RANK
+// ONLY — never a score, an average or a vote count; scores are private to the artist's Track
+// Report. cover · #N … #1 · the A&R Team (thanks + Become an A&R) · artists (submit + $1,000).
+// The day has 8–16 records; Instagram takes 20 images, so at most COUNTDOWN_MAX_RECORDS rank
+// slides (the cover and two closing slides take the other three).
+// A rank slide NEVER shows how many records there were — "3rd place isn't last unless we say
+// only 3 were racing" — so it carries its own rank and the blocks from there to #1, nothing else.
+// Order matches the console's countdown sort and the clip captions: room average, then more
+// ratings, then drop order. Reference tracks and unscored records are not on it.
+// Dated the day it POSTS (results_at), like every graphic the day makes.
+// Public surface: song title, artist name, Instagram handle. Never email, phone or a score.
+const COUNTDOWN_MAX_RECORDS = 17;
+async function countdownCarouselData(session) {
+  const rows = await db.all(
+    `SELECT r.idx, r.song_title, r.song_artist, r.song_note, r.artist_instagram, r.room_average,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
+       FROM rounds r
+      WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
+        AND COALESCE(r.is_reference, 0) = 0`, [session.id]);
+  if (!rows.length) return null;
+  rows.sort((a, b) => (Number(b.room_average) - Number(a.room_average)) || (Number(b.votes) - Number(a.votes)) || (a.idx - b.idx));
+  const recs = rows.slice(0, COUNTDOWN_MAX_RECORDS).map((r, i) => {
+    const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+    const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
+    return { rank: i + 1, title: (r.song_title || '—').trim(), artist: (r.song_artist || '').trim(), handle: ig ? '@' + ig : '' };
+  });
+  const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  const n = recs.length, total = n + 3;
+  const slides = [{ slide: 1, total, date, kind: 'cover', count: n }];
+  recs.slice().reverse().forEach((r, i) => slides.push({ slide: i + 2, total, date, kind: 'rank', ...r }));
+  slides.push({ slide: n + 2, total, date, kind: 'team' }, { slide: n + 3, total, date, kind: 'cta' });
+  return { set: 'song', card: 'countdownSlide', date, total, records: recs, slides };
+}
+// The post caption names NOBODY (operator, 2026-10-02): Instagram stops notifying anyone once a
+// caption mentions more than 10 accounts, and a day has up to 16. The artists are tagged on
+// their own slides and mentioned in comments, four to a comment (countdownComments). The caption
+// says what the post is and gives both asks. No scores here either.
+function countdownCarouselCaption(d) {
+  return [
+    `${DAILY_STREAM_NAME} — ${d.date}`,
+    '',
+    'The Makin’ It A&R Team rated the latest records from independent artists. Here is how they ranked, counted down to the Top Track of the Day. Swipe to see where each record placed.',
+    '',
+    'Think you should be here? Submit FREE for your chance to get ranked and qualify for the $1,000 Music Tournament.',
+    '',
+    // Comment keywords instead of links (operator's wording, 2026-10-02): a caption link is not
+    // clickable on Instagram. These two count toward the five-hashtag limit.
+    'Comment #REVIEW to Submit Music',
+    'Comment #ANR to join the A&R Team',
+    '',
+    COUNTDOWN_TAGS,
+  ].join('\n');
+}
+// The artist mentions, posted as comments under the carousel: FOUR artists a comment so every
+// mention notifies, one line each in the operator's wording (2026-10-02) — "Follow all the
+// artists who made the countdown: @a, @b, Name, @c". Names only, no ranks or song titles, in
+// carousel order (bottom up). An artist with two records on the day is mentioned once. An
+// artist with no Instagram handle on file is simply not mentioned (operator, 2026-10-02).
+const COUNTDOWN_PER_COMMENT = 4;
+const COUNTDOWN_COMMENT_LEAD = 'Follow all the artists who made the countdown:';
+function countdownComments(d) {
+  const people = [];
+  for (const r of d.records.slice().reverse()) {
+    if (!r.handle) continue;
+    const key = r.handle.toLowerCase();
+    if (people.some(p => p.key === key)) continue;
+    people.push({ key, who: r.handle });
+  }
+  const comments = [];
+  for (let i = 0; i < people.length; i += COUNTDOWN_PER_COMMENT)
+    comments.push(`${COUNTDOWN_COMMENT_LEAD} ${people.slice(i, i + COUNTDOWN_PER_COMMENT).map(p => p.who).join(', ')}`);
+  return { comments };
 }
 // The post caption: plain, the same names as the slides, handles where we have them.
 function resultsCaption(d) {
+  if (d.card === 'countdownSlide') return countdownCarouselCaption(d);
   const hero = d.slides[0].hero;
   const lists = d.slides.filter(s => s.kind === 'list').flatMap(s => s.rows);
   const lines = [];
@@ -1710,7 +1847,7 @@ function resultsCaption(d) {
     if (lists.length) lines.push('', 'Top A&Rs:', ...lists.map(r => `${r.rank}. ${r.line1}${r.line2 ? ' · ' + r.line2 : ''} · ${r.value} pts`));
     lines.push('', 'Join the A&R Team to win $500.', shareCards.JOIN_URL);
   }
-  lines.push('', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+  lines.push('', IG_TAGS);
   return lines.join('\n');
 }
 
@@ -1841,7 +1978,7 @@ function winnerCaption(d) {
     lines.push(`Grade ${d.line.grade} · ${d.line.points} points · ${d.line.bullseyes} bullseyes`);
   }
   if (d.strap) lines.push('', d.strap);
-  lines.push('', d.cta.label, d.cta.url, '', '#ARMeeting #MakinIt #ANR #NewMusic #UnsignedArtists #ARRoom');
+  lines.push('', d.cta.label, d.cta.url, '', IG_TAGS);
   return lines.join('\n');
 }
 
@@ -1866,11 +2003,11 @@ function winnerCaption(d) {
 // anyone who actually played, the substance of that mail is the round-by-round table, not
 // the graphics. The console's daily status surfaces the missing cards so a re-render is a
 // visible piece of work rather than a silent degradation.
-async function publishDailyDrop(session, { deadline = null } = {}) {
-  const sessionId = session.id;
-  // The claim. Vercel can double-invoke a scheduled run, and two publishers would queue two
-  // broadcasts. recap_jobs.claimed_at is the token; a claim older than 10 minutes is treated
-  // as abandoned so a crashed render cannot wedge the day forever.
+// The recap_jobs claim. Vercel can double-invoke a scheduled run, and two renderers or two
+// publishers would both do the work (two broadcasts, two sets of uploads). claimed_at is the
+// token; a claim older than 10 minutes is treated as abandoned so a crashed render cannot
+// wedge the day forever.
+async function claimRecapJob(sessionId) {
   const stale = now() - 10 * 60000;
   await db.run(
     'INSERT INTO recap_jobs (session_id, created_at, stage, claimed_at) VALUES (?,?,?,?) ON CONFLICT (session_id) DO NOTHING',
@@ -1878,8 +2015,17 @@ async function publishDailyDrop(session, { deadline = null } = {}) {
   const claim = await db.run(
     "UPDATE recap_jobs SET claimed_at = ?, stage = 'daily' WHERE session_id = ? AND (claimed_at IS NULL OR claimed_at < ?)",
     [now(), sessionId, stale]);
-  if (!claim.changes) return false;                       // another invocation owns this publish
+  return !!claim.changes;
+}
 
+// Every graphic the day produces, rendered and hosted into recap_jobs. Runs at stream_at so
+// the Livestream Countdown's clips and carousels can be posted after the stream, and again
+// inside the publish if the stream step never ran (a day in flight across a deploy).
+//
+// THE SEAL: these are hosted before the results publish, which is fine only because the
+// livestream has already revealed them — do not move this step ahead of stream_at.
+async function renderDailyGraphicsInto(session, { deadline = null } = {}) {
+  const sessionId = session.id;
   // Deterministic paths — uploadPng is allowOverwrite, so a re-run replaces rather than
   // accumulating a new URL every time.
   const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
@@ -1924,7 +2070,8 @@ async function publishDailyDrop(session, { deadline = null } = {}) {
       const urls = [];
       for (const sl of rd.slides) {
         if (deadline && Date.now() > deadline) break;
-        urls.push(await uploadPng(`daily/${day}/results-${set}-${sl.slide}.png`, await shareCards.renderPng('resultsSlide', sl)));
+        const file = set === 'song' ? `countdown-${sl.slide}` : `results-${set}-${sl.slide}`;
+        urls.push(await uploadPng(`daily/${day}/${file}.png`, await shareCards.renderPng(rd.card, sl)));
       }
       if (urls.length === rd.slides.length) results[set].urls = JSON.stringify(urls);
     } catch (e) {
@@ -1953,6 +2100,24 @@ async function publishDailyDrop(session, { deadline = null } = {}) {
     [arsUrl, songsUrl, caption, recapCover, recapThumb, recapText,
      results.song.urls, results.ar.urls, results.song.caption, results.ar.caption,
      winners.track.url, winners.ar.url, winners.track.caption, winners.ar.caption, sessionId]);
+  await db.run('UPDATE recap_jobs SET rendered_at = ? WHERE session_id = ?', [now(), sessionId]);
+}
+
+// The stream-time step on its own: claim, render, release the claim (the publish claims again
+// later). Returns false when another invocation owns the job.
+async function renderDailyGraphics(session, { deadline = null } = {}) {
+  if (!(await claimRecapJob(session.id))) return false;
+  try { await renderDailyGraphicsInto(session, { deadline }); }
+  finally { await db.run('UPDATE recap_jobs SET claimed_at = NULL WHERE session_id = ?', [session.id]); }
+  return true;
+}
+
+async function publishDailyDrop(session, { deadline = null } = {}) {
+  const sessionId = session.id;
+  if (!(await claimRecapJob(sessionId))) return false;    // another invocation owns this publish
+
+  const job = await db.get('SELECT rendered_at FROM recap_jobs WHERE session_id = ?', [sessionId]);
+  if (!(job && job.rendered_at)) await renderDailyGraphicsInto(session, { deadline });
 
   try { await enqueueDailyDigest(session); }
   catch (e) { console.error('[daily] digest enqueue failed:', e.message); }
@@ -2062,7 +2227,17 @@ async function asyncPlayerState(participant, session, count) {
     async: { day, opens_at: opens, closes_at: closes, results_at: results, tiers,
       dayLabel: etDayLabel(day), opensLabel: etClockLabel(opens),
       closesLabel: etClockLabel(closes), resultsLabel: etClockLabel(results),
-      closesWhen: etWhenLabel(closes, day), resultsWhen: etWhenLabel(results, day) },
+      closesWhen: etWhenLabel(closes, day), resultsWhen: etWhenLabel(results, day),
+      // The Livestream Countdown between the close and the results, and when the next set of
+      // records opens — no longer the same moment as the results, so the page says both.
+      // Relative to TODAY, not the drop day ("tomorrow" must mean tomorrow for the reader), and
+      // absent once it has passed — a sealed page is read the day after the drop opened.
+      ...(await (async () => {
+        const sc = await dailySchedule();
+        const fut = (t) => (t && t > ts ? etWhenLabel(t, etDay(ts)) : null);
+        return { streamWhen: fut(dropStreamAt(session, sc)), streamName: DAILY_STREAM_NAME,
+          nextOpensWhen: day ? fut(dropWindowFor(etNextDay(day), sc).opensAt) : null };
+      })()) },
     phase,
     progress: { voted, total, handled, reported: reportsTotal,
       // A short day still pays; only a 1-2 record day (a mis-push or a dry pool) does not.
@@ -2311,6 +2486,16 @@ async function creditReferralRounds(round, session) {
 // same uid to makinitmag.com/review, which hands it back on the daily push as scout.uid.
 // The uid is already public (it is the /u/<uid> profile URL), so it is safe in a link.
 const SUBMIT_REVIEW_URL = 'https://www.makinitmag.com/review';
+// The account page's thumbnail grid. 432px is 2x a ~200px card on a phone.
+const REFER_THUMB_WIDTH = 432;
+// What a referral graphic PRINTS, hashed: the cache key for its thumbnail. Per-A&R (the uid
+// is in it, so a shared device never shows the last person's card) and it moves when the
+// printed fields do, so a new photo shows on the next visit instead of a day later.
+function referGraphicVersion(u) {
+  return crypto.createHash('sha256')
+    .update([u.uid, u.name || '', u.primary_category || '', u.location || '', u.photo_url || ''].join('\u0000'))
+    .digest('hex').slice(0, 12);
+}
 function referralLinks(uid) {
   const u = encodeURIComponent(uid);
   return { join: `${publicBase()}/?ref=${u}`, submit: `${SUBMIT_REVIEW_URL}?ref=${u}` };
@@ -3056,16 +3241,21 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
 // cannot be given a signed manage link (np1.<uid>.<exp> is uid-scoped). Their footer and
 // their compliance basis are different. That is the real reason the two mails are separate.
 //
-// The CTA lands correctly for free: today's drop opened at noon, three hours before results publish,
-// so "today's records are open" is true at send time. The recap email IS the acquisition
-// email — the best thing about the schedule.
-//
-// The five tier names are exactly what tierForError() (scoring.js) emits. One map here, no
-// second source of truth for what counts as "sharp".
-const TIER_LABEL = { bullseye: 'Bullseye', sharp: 'Sharp', close: 'Close', off: 'Off', wayoff: 'Way off' };
-const TIER_COLOR = { bullseye: '#4bb749', sharp: '#4bb749', close: '#f3f0fb', off: '#a9a2c9', wayoff: '#a9a2c9' };
+// The CTA lands correctly for free: under the 69-hour schedule the results publish at noon, three
+// hours before today's records close, so "rate today's records" is true at send time and the
+// reminder has real urgency. The recap email IS the acquisition email.
 
-function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage, playUrl }) {
+// The day's own results link, the Livestream Countdown replay, and the reminder that TODAY's
+// records close soon (the results mail lands 3 hours before the next close by construction).
+function digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours }) {
+  const remind = closesLabel
+    ? `Today's records close at ${closesLabel}${closesInHours ? ` — in ${closesInHours} ${closesInHours === 1 ? 'hour' : 'hours'}` : ''}.`
+    : null;
+  return { streamUrl: streamUrl || null, resultsUrl: resultsUrl || null, remind };
+}
+
+function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours }) {
+  const ex = digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours });
   const imgs = [['Top 8 Songs', cards.songs], ['Top 8 A&Rs', cards.ars]].filter(([, u]) => !!u);
   const common = imgs.map(([alt, u]) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="${escapeHtml(alt)}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
@@ -3087,88 +3277,73 @@ function dailyDigestEmailHtml({ name, dayLabel, cards = {}, recap = null, manage
   // something personal under it, and say plainly why there isn't when there is not.
   const played = !!(recap && recap.rounds && recap.rounds.length);
 
+  // A HEADLINE, NOT THE REPORT (operator, 2026-10-02). This block used to carry the whole
+  // round-by-round table, which meant the mail WAS the results and nothing brought an A&R
+  // back to the site — where today's records are waiting. It now says what the day paid and
+  // links to the account page's "My results", which holds the record-by-record detail.
+  // NO RANK here either: rank is what the weekly announcement reveals.
   let arBlock = '';
   if (played) {
-    const rows = recap.rounds.map(r => {
-      const dev = (r.taste != null && r.room_average != null)
-        ? (Math.round((r.predict - r.room_average) * 10) / 10) : null;
-      const devTxt = dev == null ? '—' : (dev > 0 ? '+' + dev.toFixed(1) : dev.toFixed(1));
-      const col = TIER_COLOR[r.tier] || '#f3f0fb';
-      return `<tr>
-        <td style="padding:9px 6px 9px 0;border-top:1px solid #2e2750;font-size:13px">
-          <div style="color:#f3f0fb">${escapeHtml(r.song_title || '')}</div>
-          <div style="color:#8c84ad;font-size:11.5px">${escapeHtml(r.song_artist || '')}</div>
-        </td>
-        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#a9a2c9;text-align:center">${r.taste == null ? '—' : r.taste}</td>
-        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#a9a2c9;text-align:center">${r.predict == null ? '—' : Number(r.predict).toFixed(1)}</td>
-        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;color:#f3f0fb;text-align:center">${r.room_average == null ? '—' : Number(r.room_average).toFixed(1)}</td>
-        <td style="padding:9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:12px;color:${col};text-align:center">${devTxt}</td>
-        <td style="padding:9px 0 9px 6px;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:${col};text-align:right">${(Number(r.points) || 0) >= 0 ? '+' : ''}${Number(r.points) || 0}</td>
-      </tr>`;
-    }).join('');
     const stat = (k, v, c) => `<td style="width:33%;padding:12px 6px;text-align:center;background:#171328;border:1px solid #2e2750;border-radius:12px">
       <div style="font-family:'Space Mono',monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:#8c84ad">${k}</div>
       <div style="font-family:'Space Mono',monospace;font-size:22px;font-weight:700;margin-top:4px;color:${c || '#f3f0fb'}">${v}</div></td>`;
+    const n = recap.rounds.length;
     arBlock = `
       <div style="height:1px;background:#2e2750;margin:26px 0 20px"></div>
       <div style="font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:#8c84ad;text-align:left">How you did</div>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="margin:10px 0 4px"><tr>
         ${stat('Points', recap.totalPoints == null ? '—' : recap.totalPoints, '#4bb749')}
         ${stat('Grade', recap.grade || '—')}
-        ${stat('Rank', recap.rank ? '#' + recap.rank : '—', recap.rank === 1 ? '#f5c518' : null)}
+        ${stat('Bullseyes', recap.bullseyes || 0)}
       </tr></table>
-      ${recap.bullseyes ? `<p style="font-size:13px;color:#a9a2c9;margin:10px 0 0;text-align:left">${recap.bullseyes} exact ${recap.bullseyes === 1 ? 'hit' : 'hits'} on the average.</p>` : ''}
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;text-align:left">
-        <tr>
-          <th align="left" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Record</th>
-          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">You</th>
-          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Guess</th>
-          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Avg</th>
-          <th style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Off by</th>
-          <th align="right" style="font-family:'Space Mono',monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#8c84ad;padding-bottom:6px">Pts</th>
-        </tr>
-        ${rows}
-      </table>
-      ${recap.completionBonus ? `<table role="presentation" width="100%" style="margin-top:2px"><tr>
-        <td style="padding:11px 0 0;border-top:1px solid #2e2750;font-size:13.5px;font-weight:700;color:#f3f0fb">Completion bonus</td>
+      ${recap.completionBonus ? `<table role="presentation" width="100%" style="margin-top:8px"><tr>
+        <td style="padding:11px 0 0;border-top:1px solid #2e2750;font-size:13.5px;font-weight:700;color:#f3f0fb;text-align:left">Completion bonus</td>
         <td align="right" style="padding:11px 0 0;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:#f5c518">+${recap.completionBonus}</td>
-      </tr></table>` : ''}`;
+      </tr></table>` : ''}
+      <p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:16px 0 0;text-align:left">You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.</p>
+      ${ex.resultsUrl ? `<a href="${ex.resultsUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin:14px 0 0">See your results</a>` : ''}`;
   }
 
   return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
     <div style="max-width:400px;margin:0 auto;text-align:center">
       <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily${dayLabel ? ' · ' + escapeHtml(dayLabel) : ''}</div>
       <h1 style="font-size:22px;margin:8px 0 4px">${played
-        ? `Yesterday's results${name ? ', ' + escapeHtml(dispName(name)) : ''}.`
-        : `Yesterday's results.`}</h1>
+        ? `Your results${name ? ', ' + escapeHtml(dispName(name)) : ''}.`
+        : `The results.`}</h1>
       <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">${played
-        ? 'Here is how the records landed, and where the A&amp;Rs finished.'
-        : "Here is how the records landed. You didn't rate yesterday's records, so there is nothing of your own below."}</p>
+        ? `Here is how the ${escapeHtml(dayLabel || '')} records landed, and where the A&amp;Rs finished.`
+        : `Here is how the ${escapeHtml(dayLabel || '')} records landed. You didn't rate these records, so there is nothing of your own below.`}</p>
       ${common}
+      ${ex.streamUrl ? `<a href="${ex.streamUrl}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:4px 0 0">Watch the ${escapeHtml(DAILY_STREAM_NAME)}</a>` : ''}
       ${arBlock}
       <div style="height:1px;background:#2e2750;margin:26px 0 18px"></div>
-      <a href="${playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px">Today's records are open</a>
+      ${ex.remind ? `<p style="font-size:14.5px;font-weight:700;color:#f3f0fb;margin:0 0 12px">${escapeHtml(ex.remind)}</p>` : ''}
+      <a href="${playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px">Rate today's records</a>
       <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
       ${manage ? notifyFooterHtml(manage) : ''}
     </div>
   </div>`;
 }
 
-function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl }) {
+function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours }) {
+  const ex = digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours });
   const lines = [`A&R Daily${dayLabel ? ' — ' + dayLabel : ''}`, ''];
   const played = !!(recap && recap.rounds && recap.rounds.length);
   lines.push(played
-    ? `Yesterday's results${name ? ', ' + dispName(name) : ''}.`
-    : `Yesterday's results.`);
-  if (!played) lines.push('', "You didn't rate yesterday's records, so there is nothing of your own below.");
+    ? `Your results${name ? ', ' + dispName(name) : ''}.`
+    : `The results.`);
+  if (!played) lines.push('', "You didn't rate these records, so there is nothing of your own below.");
+  if (ex.streamUrl) lines.push('', `Watch the ${DAILY_STREAM_NAME}: ${ex.streamUrl}`);
   if (played) {
-    lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Rank ${recap.rank ? '#' + recap.rank : '—'}`, '');
-    for (const r of recap.rounds) {
-      lines.push(`${r.song_title} — ${r.song_artist}: you ${r.taste}, guess ${r.predict == null ? '—' : Number(r.predict).toFixed(1)}, average ${r.room_average == null ? '—' : Number(r.room_average).toFixed(1)} → ${(Number(r.points) || 0) >= 0 ? '+' : ''}${Number(r.points) || 0} (${TIER_LABEL[r.tier] || ''})`);
-    }
+    const n = recap.rounds.length;
+    lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Bullseyes ${recap.bullseyes || 0}`);
     if (recap.completionBonus) lines.push(`Completion bonus: +${recap.completionBonus}`);
+    lines.push('', `You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.`);
+    if (ex.resultsUrl) lines.push(`See your results: ${ex.resultsUrl}`);
   }
-  lines.push('', `Today's records are open: ${playUrl}`);
+  lines.push('');
+  if (ex.remind) lines.push(ex.remind);
+  lines.push(`Rate today's records: ${playUrl}`);
   if (manage) lines.push('', notifyFooterText(manage));
   return lines.join('\n');
 }
@@ -3190,25 +3365,31 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl }) {
 // for those who played and is absent for those who didn't. Someone who missed a day is
 // exactly who a "today's records are open" CTA is for.
 async function enqueueDailyDigest(session) {
-  const a = notifyAudience('digest_daily', 'email');
-  if (!a) return { broadcastId: null, queued: 0 };
   const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
-  const subject = `A&R Daily — ${etDayLabel(day) || 'yesterday'}'s results`;
+  return enqueueDayBroadcast(session, 'digest_daily',
+    `A&R Daily — ${etDayLabel(day) || 'the'} results`, `A&R Daily results for ${day}`);
+}
+
+// ONE broadcast row per (kind, day), fanned out set-based to a topic's email audience. Shared
+// by the results digest (digest_daily) and the open notice (daily_open); kind == topic.
+async function enqueueDayBroadcast(session, kind, subject, message) {
+  const a = notifyAudience(kind, 'email');
+  if (!a) return { broadcastId: null, queued: 0 };
   // uniq_broadcast_kind_ref is a PARTIAL unique index, and a bare ON CONFLICT (kind, ref_id)
   // does not match one without repeating its predicate — a dialect detail not worth encoding
   // in the statement. Let the index throw and re-read instead: the index is the real guard,
   // exactly as it is for two simultaneous daily pushes racing on uniq_session_drop_day.
   let existing = await db.get(
-    "SELECT id FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [session.id]);
+    'SELECT id FROM notify_broadcasts WHERE kind = ? AND ref_id = ?', [kind, session.id]);
   let bcId = existing ? existing.id : id(9);
   if (!existing) {
     try {
       await db.run(
         `INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id)
          VALUES (?,?,?,?,?,?,?,?,?)`,
-        [bcId, subject, `A&R Daily results for ${day}`, 'email', null, 'sending', now(), 'digest_daily', session.id]);
+        [bcId, subject, message, 'email', null, 'sending', now(), kind, session.id]);
     } catch (e) { /* another invocation won the index — fall through and adopt its row */ }
-    existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [session.id]);
+    existing = await db.get('SELECT id FROM notify_broadcasts WHERE kind = ? AND ref_id = ?', [kind, session.id]);
     if (!existing) return { broadcastId: null, queued: 0 };
     bcId = existing.id;
   }
@@ -3247,6 +3428,15 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
   const day = session && session.drop_day;
   const dayLabel = etDayLabel(day);
   const playUrl = await openDropUrl(base || publicBase());
+  // "Today's records close at 3:00 PM ET — in 3 hours": the drop that is open as this sends.
+  const openDrop = await db.get(
+    "SELECT window_closes_at, drop_day FROM sessions WHERE mode = 'async' AND status = 'live' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
+  const openCloses = openDrop ? Number(openDrop.window_closes_at) || null : null;
+  const extras = {
+    streamUrl: await dailyStreamUrl(),
+    closesLabel: openCloses && openCloses > now() ? etClockLabel(openCloses) + (etDay(openCloses) !== etDay() ? ' tomorrow' : '') : null,
+    closesInHours: openCloses && openCloses > now() ? Math.round((openCloses - now()) / 3600000) || null : null,
+  };
   const rows = await db.all(
     "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [broadcastId, limit]);
   let sent = 0, failed = 0;
@@ -3271,7 +3461,9 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
       const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
       const manage = notifyManageUrl(base || publicBase(), r.uid);
       const arg = { name: (participant && participant.name) || (u && u.name) || null, dayLabel,
-        cards: { ars: job && job.ars_url, songs: job && job.songs_url }, recap, manage, playUrl };
+        cards: { ars: job && job.ars_url, songs: job && job.songs_url }, recap, manage, playUrl, ...extras,
+        // Per recipient: it is signed for THIS A&R and lands on their own results.
+        resultsUrl: accountResultsUrl(base || publicBase(), r.uid) };
       const out = await sendEmail(r.dest, bc.subject || 'A&R Daily',
         dailyDigestEmailHtml(arg), dailyDigestEmailText(arg));
       if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); sent++; }
@@ -3282,6 +3474,82 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
   }
   const remaining = Number((await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [broadcastId])).c) || 0;
   if (!remaining) await db.run("UPDATE notify_broadcasts SET status = 'done' WHERE id = ?", [broadcastId]);
+  return { sent, failed, remaining };
+}
+
+// ===== A&R DAILY — "voting is open" =====
+// Queued by openAsyncDrop() inside its claim, drained by the lifecycle while the day is open.
+// Nothing sealed can ride this mail: it goes out before a single rating exists, and it names
+// only what the player surface already shows at the open (the count, the close, the bonus).
+async function enqueueDailyOpen(session) {
+  return enqueueDayBroadcast(session, 'daily_open',
+    "A&R Daily — today's records are open", `A&R Daily open for ${session.drop_day || ''}`);
+}
+
+function dailyOpenEmailContent({ name, count, closesLabel, bonusLabel, playUrl }) {
+  const who = name ? dispName(name) + ', t' : 'T';
+  const lead = `${who}oday's ${count ? count + ' ' : ''}${count === 1 ? 'record is' : 'records are'} open for rating.`;
+  const how = 'Rate each one and predict the room average.';
+  const when = closesLabel ? `Rating closes ${closesLabel}.` : '';
+  const bonus = bonusLabel ? `Finish every record ${bonusLabel} for the full completion bonus.` : '';
+  return { lead, lines: [how, when, bonus].filter(Boolean), playUrl };
+}
+function dailyOpenEmailHtml(arg, manage) {
+  const c = dailyOpenEmailContent(arg);
+  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
+    <div style="max-width:400px;margin:0 auto;text-align:center">
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily${arg.dayLabel ? ' · ' + escapeHtml(arg.dayLabel) : ''}</div>
+      <h1 style="font-size:22px;margin:8px 0 10px">${escapeHtml(c.lead)}</h1>
+      ${c.lines.map(l => `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 8px">${escapeHtml(l)}</p>`).join('')}
+      <a href="${c.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:18px">Rate today's records</a>
+      <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
+      ${manage ? notifyFooterHtml(manage) : ''}
+    </div>
+  </div>`;
+}
+function dailyOpenEmailText(arg, manage) {
+  const c = dailyOpenEmailContent(arg);
+  const lines = [`A&R Daily${arg.dayLabel ? ' — ' + arg.dayLabel : ''}`, '', c.lead, ...c.lines, '', `Rate today's records: ${c.playUrl}`];
+  if (manage) lines.push('', notifyFooterText(manage));
+  return lines.join('\n');
+}
+
+async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = null } = {}) {
+  const bc = await db.get("SELECT * FROM notify_broadcasts WHERE kind = 'daily_open' AND ref_id = ?", [sessionId]);
+  if (!bc) return { sent: 0, failed: 0, remaining: 0 };
+  const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+  if (!session) return { sent: 0, failed: 0, remaining: 0 };
+  const root = base || publicBase();
+  const count = Number((await db.get(
+    "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [sessionId])).c) || 0;
+  const tiers = completionTiers(session, await dailySchedule());
+  const top = tiers.length > 1 ? tiers[0] : null;
+  const shared = { dayLabel: etDayLabel(session.drop_day), count,
+    closesLabel: etWhenLabel(Number(session.window_closes_at), session.drop_day),
+    bonusLabel: top && top.label ? 'by ' + top.label : null,
+    playUrl: root + '/daily?s=' + encodeURIComponent(sessionId) };
+  const rows = await db.all(
+    "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [bc.id, limit]);
+  let sent = 0, failed = 0;
+  for (const r of rows) {
+    if (deadline && Date.now() > deadline) break;
+    const claim = await db.run(
+      "UPDATE notify_recipients SET status = 'sending' WHERE broadcast_id = ? AND uid = ? AND channel = ? AND status = 'pending'",
+      [bc.id, r.uid, r.channel]);
+    if (!claim.changes) continue;
+    try {
+      const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
+      const manage = notifyManageUrl(root, r.uid);
+      const arg = { ...shared, name: u && u.name };
+      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily', dailyOpenEmailHtml(arg, manage), dailyOpenEmailText(arg, manage));
+      if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), bc.id, r.uid, r.channel]); sent++; }
+      else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), bc.id, r.uid, r.channel]); failed++; }
+    } catch (e) {
+      await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(e.message || 'error').slice(0, 200), bc.id, r.uid, r.channel]); failed++;
+    }
+  }
+  const remaining = Number((await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bc.id])).c) || 0;
+  if (!remaining) await db.run("UPDATE notify_broadcasts SET status = 'done' WHERE id = ?", [bc.id]);
   return { sent, failed, remaining };
 }
 
@@ -3390,30 +3658,43 @@ function etWhenLabel(ts, fromDay) {
 // The daily schedule, as ET minutes-of-day. Defaults, not hardcodes: the drop builder takes
 // explicit overrides so a test can run a 60-second window instead of waiting for noon.
 // ===== A&R DAILY — the schedule, TUNABLE from the platform panel =====
-// Defaults (operator, 2026-09-20 — moved from noon/noon/3PM, the 2026-09-15 clock): records
-// open at 3:00 PM ET, rating closes 3:00 PM ET the next day (a 24-hour window), results
-// publish at 6:00 PM ET — the operator runs a livestream reveal at 5PM, between the close and
-// the publish, off the console's post-tally scores — and the
-// Daily Blast (A&R digest) goes at publish and the artist results emails an hour later
-// (artistDelayMin 60, operator's call 2026-09-15) — the hold is the comment-rejection
-// checkpoint 029 needs, and it is tunable.
-// Completion bonus: 100 for finishing every record within 6 hours of the open, 75 within 12,
-// 50 within 18, 25 any time before the close. The tiers are HOURS AFTER THE OPEN, not ET
-// clock times, so they follow the open when it moves (they did, on 2026-09-20: 9PM/3AM/9AM).
-// The afternoon clock is the operator's: a full working afternoon on the deadline day,
-// day-of urgency for the reminder, results live in the evening.
+// Defaults (operator, 2026-09-27 — "more production time and notification between events"),
+// as hours after the open:
+//   -1  the review site locks the day's track list (Drupal's side; nothing here enforces it)
+//    0  3:00 PM ET — records open, and A&Rs are emailed that voting is open (daily_open)
+//   24  3:00 PM ET next day — rating closes and tallies; each rated artist is told the record
+//       appears on TOMORROW's Livestream Countdown (email + SMS, artist_headsups)
+//   48  3:00 PM ET the day after — the Livestream Countdown (stream_at). The ranked graphics
+//       render here so clips and carousels can be posted after the stream.
+//   69  12:00 PM ET the day after that — RESULTS: the seal lifts on /daily, the A&R results
+//       email and the artists' Track Reports go out, makinitmag gets the results callback.
+//       "Today's ratings close in 3 hours" in that email is true by construction.
+// So at 3 PM every day one drop opens, one closes and one streams, and three are in flight.
+// The seal holds through the stream on purpose: the page must not spoil the countdown.
 //
-// Overrides live in `settings` (daily_open_min / daily_close_min / daily_results_min as ET
-// minutes-of-day, daily_bonus_tiers as JSON) and are read through dailySchedule(), cached
-// per instance for 30s. A closing time at or before the opening time means the NEXT day.
-// Results never publish before the close: results_at is clamped to closes_at.
+// The stream and results are a DAY OFFSET after the close day plus an ET minute-of-day, never
+// "close + 24h": the window crosses DST (see etEpoch), and a duration would drift an hour.
+// Completion bonus: 100 for finishing every record within 6 hours of the open, 75 within 12,
+// 50 within 18, 25 any time before the close. The tiers are HOURS AFTER THE OPEN.
+//
+// Overrides live in `settings` (daily_open_min / daily_close_min / daily_stream_min /
+// daily_results_min as ET minutes-of-day, daily_stream_days / daily_results_days as days after
+// the close day, daily_bonus_tiers as JSON) and are read through dailySchedule(), cached per
+// instance for 30s. A closing time at or before the opening time means the NEXT day. Order is
+// clamped: close <= stream <= results.
 const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
-  openMin: 15 * 60, closeMin: 15 * 60, resultsMin: 18 * 60,
+  openMin: 15 * 60, closeMin: 15 * 60,
+  streamMin: 15 * 60, streamDays: 1,      // the Livestream Countdown, the day after the close
+  resultsMin: 12 * 60, resultsDays: 2,    // results, two days after the close (69h)
   tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 12, points: 75 }, { hours: 18, points: 50 }]),
   finalPoints: 25,
-  artistDelayMin: 60,  // minutes after publish before artist reports/texts queue
+  // Minutes after publish before artist reports queue. Was 60 — the comment-rejection
+  // checkpoint 029 needs — but the report now goes out 45 hours after the tally, which is
+  // that checkpoint many times over. Kept as a setting so it can come back.
+  artistDelayMin: 0,
 });
-const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_results_min', 'daily_bonus_tiers', 'daily_artist_delay_min'];
+const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_stream_min', 'daily_stream_days',
+  'daily_results_min', 'daily_results_days', 'daily_bonus_tiers', 'daily_artist_delay_min'];
 
 // Validate + normalize a schedule. Throws a readable message; returns { cfg, windowHours }.
 // null/undefined input means "back to the defaults".
@@ -3425,11 +3706,22 @@ function parseDailySchedule(inp) {
     if (!Number.isInteger(n) || n < 0 || n > 1439) throw new Error(`${name} must be a time of day (0–1439 minutes)`);
     return n;
   };
+  const days = (v, name) => {
+    const n = Number(v == null || v === '' ? NaN : v);
+    if (!Number.isInteger(n) || n < 0 || n > 3) throw new Error(`${name} must be 0–3 days after the close`);
+    return n;
+  };
   const cfg = {
     openMin: min(inp.openMin ?? D.openMin, 'openMin'),
     closeMin: min(inp.closeMin ?? D.closeMin, 'closeMin'),
+    streamMin: min(inp.streamMin ?? D.streamMin, 'streamMin'),
+    streamDays: days(inp.streamDays ?? D.streamDays, 'streamDays'),
     resultsMin: min(inp.resultsMin ?? D.resultsMin, 'resultsMin'),
+    resultsDays: days(inp.resultsDays ?? D.resultsDays, 'resultsDays'),
   };
+  if (cfg.resultsDays * 1440 + cfg.resultsMin < cfg.streamDays * 1440 + cfg.streamMin) {
+    throw new Error('Results cannot publish before the livestream');
+  }
   const windowHours = ((cfg.closeMin > cfg.openMin ? cfg.closeMin : cfg.closeMin + 1440) - cfg.openMin) / 60;
   if (windowHours < 1) throw new Error('The window must be at least one hour');
   const rawTiers = inp.tiers === undefined ? D.tiers : inp.tiers;
@@ -3467,25 +3759,46 @@ async function dailySchedule() {
     let tiers = D.tiers, finalPoints = D.finalPoints;
     if (m.daily_bonus_tiers) { const j = JSON.parse(m.daily_bonus_tiers); tiers = j.tiers; finalPoints = j.finalPoints; }
     const parsed = parseDailySchedule({ openMin: m.daily_open_min ?? D.openMin, closeMin: m.daily_close_min ?? D.closeMin,
-      resultsMin: m.daily_results_min ?? D.resultsMin, tiers, finalPoints,
-      artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin });
+      streamMin: m.daily_stream_min ?? D.streamMin, streamDays: m.daily_stream_days ?? D.streamDays,
+      resultsMin: m.daily_results_min ?? D.resultsMin, resultsDays: m.daily_results_days ?? D.resultsDays,
+      tiers, finalPoints, artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin });
     if (parsed.cfg) cfg = parsed.cfg;
   } catch (e) { console.error('[daily] schedule setting unreadable, using defaults:', e.message); }
   _dailySched = { at: Date.now(), cfg };
   return cfg;
 }
 
+// The stream and results epochs for a day that closed at `closesAt`, under a schedule.
+// Split out because a day already past its close keeps the close it had (the panel save and
+// the lifecycle both re-derive only what comes after it).
+function dropAfterClose(closesAt, sched = DAILY_SCHEDULE_DEFAULTS) {
+  if (closesAt == null) return { streamAt: null, resultsAt: null };
+  const closeDay = etDay(Number(closesAt));
+  const hm = (n) => [Math.floor(n / 60), n % 60];
+  let streamAt = etEpoch(etNextDay(closeDay, sched.streamDays ?? 0), ...hm(sched.streamMin ?? sched.closeMin));
+  let resultsAt = etEpoch(etNextDay(closeDay, sched.resultsDays ?? 0), ...hm(sched.resultsMin));
+  if (streamAt < closesAt) streamAt = closesAt;
+  if (resultsAt < streamAt) resultsAt = streamAt;
+  return { streamAt, resultsAt };
+}
+
 // A day's window under a schedule: opens on `day`, closes the same day when the close is
-// later than the open and the NEXT day otherwise, publishes on the close day and never
-// before the close.
+// later than the open and the NEXT day otherwise; the stream and the results follow the close
+// by whole days, never before it.
 function dropWindowFor(day, sched = DAILY_SCHEDULE_DEFAULTS) {
   const hm = (n) => [Math.floor(n / 60), n % 60];
   const closeDay = sched.closeMin > sched.openMin ? day : etNextDay(day);
   const opensAt = etEpoch(day, ...hm(sched.openMin));
   const closesAt = etEpoch(closeDay, ...hm(sched.closeMin));
-  let resultsAt = etEpoch(closeDay, ...hm(sched.resultsMin));
-  if (resultsAt != null && closesAt != null && resultsAt < closesAt) resultsAt = closesAt;
-  return { opensAt, closesAt, resultsAt };
+  return { opensAt, closesAt, ...dropAfterClose(closesAt, sched) };
+}
+
+// A day's livestream epoch: the stored column, else derived (a day created before 041).
+function dropStreamAt(session, sched = DAILY_SCHEDULE_DEFAULTS) {
+  if (session && session.stream_at != null) return Number(session.stream_at);
+  const closes = Number(session && session.window_closes_at) || null;
+  if (closes) return dropAfterClose(closes, sched).streamAt;
+  return session && session.drop_day ? dropWindowFor(session.drop_day, sched).streamAt : null;
 }
 
 // The bonus steps for ONE day as resolved epochs + labels, for the player surface. Steps that
@@ -3505,10 +3818,15 @@ function dailyScheduleView(sched) {
   const day = etDay();
   const w = dropWindowFor(day, sched);
   const windowHours = ((sched.closeMin > sched.openMin ? sched.closeMin : sched.closeMin + 1440) - sched.openMin) / 60;
-  const lab = (t) => etClockLabel(t) + (etDay(t) !== day ? ' next day' : '');
+  const after = (t) => { const n = Math.round((etEpoch(etDay(t), 12) - etEpoch(day, 12)) / 86400000);
+    return n === 0 ? '' : n === 1 ? ' next day' : ` ${n} days later`; };
+  const lab = (t) => etClockLabel(t) + after(t);
+  const hrs = (t) => Math.round((t - w.opensAt) / 360000) / 10;
   const tiers = completionTiers({ drop_day: day, window_opens_at: w.opensAt, window_closes_at: w.closesAt }, sched);
   return { ...sched, windowHours, defaults: DAILY_SCHEDULE_DEFAULTS,
-    opensLabel: lab(w.opensAt), closesLabel: lab(w.closesAt), resultsLabel: lab(w.resultsAt),
+    opensLabel: lab(w.opensAt), closesLabel: lab(w.closesAt), streamLabel: lab(w.streamAt), resultsLabel: lab(w.resultsAt),
+    lockLabel: etClockLabel(w.opensAt - 3600000),
+    streamHours: hrs(w.streamAt), resultsHours: hrs(w.resultsAt),
     tierLabels: tiers.map(t => `${t.points} before ${t.label.replace(' tomorrow', ' next day')}`) };
 }
 // A day is 4 random free records plus UP TO 12 paid, so its size is VARIABLE (4-16) and only
@@ -3717,7 +4035,7 @@ async function stageDailyDrop(res, body) {
   let out;
   try {
     out = await createAsyncDrop({ day, name: body.name, seriesId, songs: recs,
-      opensAt: body.opensAt, closesAt: body.closesAt, resultsAt: body.resultsAt });
+      opensAt: body.opensAt, closesAt: body.closesAt, resultsAt: body.resultsAt, streamAt: body.streamAt });
   } catch (e) {
     // The partial unique index on drop_day is the REAL guard: two simultaneous pushes race
     // on the constraint, not on the SELECT above, and the loser lands here.
@@ -3738,22 +4056,28 @@ async function stageDailyDrop(res, body) {
 //
 // Rounds are created 'pending'; the lifecycle cron flips them all to 'voting' in one statement
 // at the open. Ingest stays dumb and the open stays atomic.
-async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, resultsAt }) {
-  const dflt = dropWindowFor(day, await dailySchedule());
+async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, resultsAt, streamAt }) {
+  const sched = await dailySchedule();
+  const dflt = dropWindowFor(day, sched);
   const wo = opensAt != null ? Number(opensAt) : dflt.opensAt;
   const wc = closesAt != null ? Number(closesAt) : dflt.closesAt;
-  const rp = resultsAt != null ? Number(resultsAt) : dflt.resultsAt;
+  const after = dropAfterClose(wc, sched);
+  const rp = resultsAt != null ? Number(resultsAt) : after.resultsAt;
+  // An explicit results time with no stream time (a test, a hand-timed day) streams at the
+  // close, so the graphics step can never land after the publish it feeds.
+  let sa = streamAt != null ? Number(streamAt) : (resultsAt != null ? wc : after.streamAt);
+  if (sa > rp) sa = rp;
   const sid = id(9), ts = now();
   await db.tx(async (tx) => {
     await tx.run(
       `INSERT INTO sessions (id, name, admin_token, owner_uid, status, mode, drop_day, async_state,
-         window_opens_at, window_closes_at, results_at, scheduled_at, default_minutes, poll_type,
+         window_opens_at, window_closes_at, results_at, stream_at, scheduled_at, default_minutes, poll_type,
          series_id, ingest_auto, created_at)
-       VALUES (?,?,?,?, 'upcoming', 'async', ?, 'scheduled', ?,?,?,?, 5, 'rating', ?, 0, ?)`,
+       VALUES (?,?,?,?, 'upcoming', 'async', ?, 'scheduled', ?,?,?,?,?, 5, 'rating', ?, 0, ?)`,
       // owner_uid NULL is deliberate: canAdminSession then admits only a platform admin, and
       // this batch carries every artist's email and phone. Same reasoning that tightened
       // /api/admin/ingest/latest.
-      [sid, name || `A&R Daily — ${day}`, id(12), null, day, wo, wc, rp, wo, seriesId || null, ts]);
+      [sid, name || `A&R Daily — ${day}`, id(12), null, day, wo, wc, rp, sa, wo, seriesId || null, ts]);
     let i = 0;
     for (const s of songs) {
       i++;
@@ -3766,7 +4090,7 @@ async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, 
          s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, s.supportCents, wo, wc, ts]);
     }
   });
-  return { sessionId: sid, day, rounds: songs.length, opensAt: wo, closesAt: wc, resultsAt: rp };
+  return { sessionId: sid, day, rounds: songs.length, opensAt: wo, closesAt: wc, streamAt: sa, resultsAt: rp };
 }
 
 // Append one record to a day that has not opened yet. Deliberately the SAME insert as
@@ -3816,14 +4140,15 @@ function topSupportCents(rows) {
   return top > 0 ? top : null;
 }
 
-// ===== THE WEEK — Wednesday through Tuesday =====
-// The weekly live show reads back the week of drops that has just ended. A "week" here is
-// keyed on drop_day (the day a record OPENED), not on when it published: the Tuesday drop
-// publishes at 3PM Wednesday, hours before the Wednesday show, so the window the operator
-// reads on air is Wed → Tue by the day records dropped. Everything below is admin-triggered
+// ===== THE WEEK — Monday through Sunday =====
+// The Wednesday night show announces the PRECEDING week's top records, A&Rs and winners
+// (operator, 2026-09-27; was Wed → Tue). A "week" is keyed on drop_day (the day a record
+// OPENED), not on when it published: the Sunday drop closes Monday, streams Tuesday and
+// publishes at noon Wednesday, hours before the show, so Mon → Sun by drop day is exactly the
+// set that has fully settled by show time. Same Monday the winner-of-the-week posts use. Everything below is admin-triggered
 // and scales with the week's rounds — it must never become reachable from a boot or poll
 // path (CLAUDE.md #1 rule).
-const WEEK_START_DOW = 3;               // 3 = Wednesday, in JS getDay() terms
+const WEEK_START_DOW = 1;               // 1 = Monday, in JS getDay() terms
 const ET_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 // The weekday of an ET calendar day, read off the ET-noon instant so a DST day can never
 // answer with the day either side of itself.
@@ -3835,7 +4160,7 @@ function etWeekday(day) {
   const i = ET_DOW.indexOf(s);
   return i < 0 ? null : i;
 }
-// The Wednesday on or before `day`. Any day inside a week resolves to the same window, so
+// The Monday on or before `day`. Any day inside a week resolves to the same window, so
 // the operator can hand this a Friday and still get that Friday's week.
 function weekStartFor(day) {
   const dow = etWeekday(day);
@@ -3850,10 +4175,178 @@ function weekWindow(day) {
     label: etDayLabel(start) + ' – ' + etDayLabel(end) };
 }
 // The week the screen OPENS on: the last one that has fully ended. On Wednesday — show day —
-// that is the seven drops the show is about, not the week that started at noon the same day.
+// that is the seven drops the show is about (Mon → Sun), not the week that started Monday.
 function lastCompleteWeekStart(today = etDay()) {
   const cur = weekStartFor(today);
   return cur ? etNextDay(cur, -7) : null;
+}
+
+// ===== MY RESULTS — the A&R's own results, a week at a time (2026-10-02) =====
+// The "My results" section of /account (mockup public/_mock-account-results.html). It exists
+// because the results email handed an A&R everything, so nothing brought them back to the
+// site; the email is now a headline with a link here, and this is where results live.
+//
+// ONE A&R, ONE WEEK (Monday to Sunday, by the day a drop OPENED — the same week helpers the
+// weekly report uses). Bounded: a week holds at most seven drops and the odd live session,
+// each costs three index-friendly reads, and nothing here runs anywhere but this request.
+//
+// THE SEAL. A day carries numbers only once it is PUBLISHED (`async_state = 'published'`, or
+// a completed live session, whose rounds revealed at ratify). A drop that has closed but not
+// published is tallied in the database — room averages and points already exist on its rows —
+// so that branch reads COUNTS ONLY and never selects a score. The open drop likewise ships how
+// many records the A&R has dealt with, nothing else.
+//
+// NO RANK, by decision (operator, 2026-10-02): the page shows points, and the weekly
+// announcement is where rank is revealed. Do not add a day or week rank here.
+//
+// A missed day is LISTED but carries nothing (operator: results are for the days an A&R took
+// part in, not a history of the platform) — so a missed day emits no records and no averages.
+const shortDay = (day) => {
+  const ts = etEpoch(day, 12);
+  return ts == null ? null : new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' }).format(new Date(ts));
+};
+// "today at 3:00 PM ET" / "at 3:00 PM ET tomorrow" / "on Sun, Oct 4 at 12:00 PM ET" — a whole
+// phrase rendered here, because the browser must never turn an epoch into ET wall clock.
+function whenFromToday(ts) {
+  if (!ts) return null;
+  const today = etDay();
+  return etDay(Number(ts)) === today ? 'today at ' + etClockLabel(ts) : etWhenLabel(ts, today);
+}
+async function arResultsData(uid, weekDay) {
+  const today = etDay();
+  const thisWeek = weekStartFor(today);
+  let start = /^\d{4}-\d{2}-\d{2}$/.test(String(weekDay || '')) ? weekStartFor(weekDay) : null;
+  if (!start || start > thisWeek) start = thisWeek;
+  const win = weekWindow(start);
+  const u = await db.get('SELECT first_seen FROM users WHERE uid = ?', [uid]);
+  // Paging back stops at the week the account was made: nothing of theirs is older than that.
+  const firstWeek = (u && u.first_seen && weekStartFor(etDay(Number(u.first_seen)))) || thisWeek;
+  const week = {
+    start: win.start, end: win.end, range: shortDay(win.start) + ' – ' + shortDay(win.end),
+    name: start === thisWeek ? 'This week' : (start === etNextDay(thisWeek, -7) ? 'Last week' : ''),
+    current: start === thisWeek,
+    prev: start > firstWeek ? etNextDay(start, -7) : null,
+    next: start < thisWeek ? etNextDay(start, 7) : null,
+  };
+
+  // The week's sessions: every daily drop that opened in it, plus completed live sessions.
+  const fromTs = etEpoch(win.start, 0), toTs = etEpoch(etNextDay(win.end), 0);
+  const sessions = await db.all(
+    `SELECT id, name, mode, status, async_state, drop_day, visibility, scheduled_at, created_at, results_at
+       FROM sessions
+      WHERE deleted_at IS NULL AND (
+            (mode = 'async' AND drop_day >= ? AND drop_day <= ?)
+         OR ((mode IS NULL OR mode <> 'async') AND status = 'completed'
+             AND COALESCE(scheduled_at, created_at) >= ? AND COALESCE(scheduled_at, created_at) < ?))`,
+    [win.start, win.end, fromTs, toTs]);
+  const ids = sessions.map(x => x.id);
+  const parts = ids.length ? await db.all(
+    `SELECT id, session_id FROM participants WHERE user_id = ? AND verified = 1 AND session_id IN (${ids.map(() => '?').join(',')})`,
+    [uid, ...ids]) : [];
+  const partBy = new Map(parts.map(x => [x.session_id, x.id]));
+
+  const days = [], accs = [];
+  for (const sess of sessions) {
+    const isDaily = sess.mode === 'async';
+    const day = isDaily ? sess.drop_day : etDay(Number(sess.scheduled_at || sess.created_at));
+    const base = { id: sess.id, kind: isDaily ? 'daily' : 'live', day, label: etDayLabel(day) };
+    const pid = partBy.get(sess.id) || null;
+    const listed = !sess.visibility || sess.visibility !== 'unlisted';
+    const state = isDaily ? (sess.async_state || 'scheduled') : 'published';
+
+    if (state === 'closing' || state === 'ratified') {
+      // SEALED: counts only. Do not select room_average, points, err or tier in this branch.
+      if (!pid) continue;
+      const c = await db.get(
+        `SELECT COUNT(*) AS total, COUNT(v.id) AS rated
+           FROM rounds r LEFT JOIN votes v ON v.round_id = r.id AND v.participant_id = ?
+          WHERE r.session_id = ? AND r.status IN ('voting','closed','ratified')`, [pid, sess.id]);
+      if (!Number(c.rated)) continue;
+      const rAt = Number(sess.results_at) || null;
+      days.push({ ...base, state: 'sealed', total: Number(c.total), rated: Number(c.rated),
+        resultsDay: rAt ? (etDay(rAt) === today ? 'today' : etDayLabel(etDay(rAt))) : null,
+        resultsClock: rAt ? etClockLabel(rAt) : null });
+      continue;
+    }
+    if (state !== 'published') continue;   // scheduled or open: the open drop has its own card
+
+    const rows = pid ? await db.all(
+      `SELECT r.idx, r.poll_type, r.song_title, r.song_artist, r.option_b_title, r.room_average, r.split_a,
+              v.id AS vid, v.taste, v.predict, v.pick, v.predict_split, v.points, v.err, v.tier
+         FROM rounds r LEFT JOIN votes v ON v.round_id = r.id AND v.participant_id = ?
+        WHERE r.session_id = ? AND r.status = 'ratified' ORDER BY r.idx ASC`, [pid, sess.id]) : [];
+    const mine = rows.filter(x => x.vid != null);
+    if (!mine.length) {
+      // MISSED: listed so the gap is visible, and nothing else — no records, no averages.
+      // Only public daily drops; a live session or a private room they were not in is not theirs.
+      if (isDaily && listed) {
+        const t = await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [sess.id]);
+        days.push({ ...base, state: 'missed', total: Number(t.c) || 0 });
+      }
+      continue;
+    }
+    const bonusRow = isDaily ? await db.get(
+      "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [`${sess.id}:${uid}`]) : null;
+    const bonus = bonusRow ? Number(bonusRow.points) || 0 : 0;
+    const dayAccs = mine.map(m => roundAccuracy(m.err, m.poll_type === 'binary' ? 100 : 9)).filter(a => a != null);
+    accs.push(...dayAccs);
+    const num = (v) => (v == null ? null : Number(v));
+    days.push({ ...base, state: 'published', total: rows.length, rated: mine.length,
+      points: mine.reduce((a, m) => a + (Number(m.points) || 0), 0) + bonus, bonus,
+      grade: dayAccs.length ? gradeForAccuracy(dayAccs.reduce((a, b) => a + b, 0) / dayAccs.length) : null,
+      bullseyes: mine.filter(m => m.tier === 'bullseye').length,
+      // Every record of a day they played, their own row filled where they rated it. The day is
+      // published, so the room average on a record they skipped is already public.
+      rounds: rows.map(m => {
+        const voted = m.vid != null;
+        if (m.poll_type === 'binary') return { kind: 'versus', title: m.song_title, titleB: m.option_b_title, voted,
+          pick: voted ? m.pick : null, predict: voted ? num(m.predict_split) : null, average: num(m.split_a),
+          points: voted ? Number(m.points) || 0 : null, tier: voted ? m.tier : null };
+        return { kind: 'rating', title: m.song_title, artist: m.song_artist, voted,
+          taste: voted ? m.taste : null, predict: voted ? num(m.predict) : null, average: num(m.room_average),
+          points: voted ? Number(m.points) || 0 : null, tier: voted ? m.tier : null };
+      }) });
+  }
+  days.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : (a.kind === 'live' ? -1 : 1)));
+
+  const pub = days.filter(d => d.state === 'published');
+  const stats = {
+    points: pub.reduce((a, d) => a + d.points, 0),
+    played: pub.length, published: pub.length + days.filter(d => d.state === 'missed').length,
+    bullseyes: pub.reduce((a, d) => a + d.bullseyes, 0),
+    grade: accs.length ? gradeForAccuracy(accs.reduce((a, b) => a + b, 0) / accs.length) : null,
+    pending: days.filter(d => d.state === 'sealed').length,
+  };
+
+  // The open drop, first on the page: the visit should end in rating today's records.
+  let open = null, next = null;
+  const ts = now();
+  const od = await db.get(
+    "SELECT id, drop_day, window_closes_at, results_at FROM sessions WHERE mode = 'async' AND status = 'live' AND async_state = 'open' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
+  if (od && Number(od.window_closes_at) > ts) {
+    const me = await db.get('SELECT id FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [od.id, uid]);
+    // "Dealt with" = rated OR reported, the same rule the completion bonus uses.
+    const c = await db.get(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN v.id IS NOT NULL OR rr.round_id IS NOT NULL THEN 1 ELSE 0 END) AS handled
+         FROM rounds r
+         LEFT JOIN votes v ON v.round_id = r.id AND v.participant_id = ?
+         LEFT JOIN round_reports rr ON rr.round_id = r.id AND rr.participant_id = ?
+        WHERE r.session_id = ? AND r.status IN ('voting','closed','ratified')`, [me ? me.id : '', me ? me.id : '', od.id]);
+    open = { id: od.id, url: '/daily?s=' + encodeURIComponent(od.id), dayLabel: etDayLabel(od.drop_day),
+      total: Number(c.total) || 0, rated: Number(c.handled) || 0,
+      closesWhen: whenFromToday(Number(od.window_closes_at)), resultsWhen: whenFromToday(Number(od.results_at) || null) };
+  } else {
+    const nx = await db.get(
+      "SELECT window_opens_at FROM sessions WHERE mode = 'async' AND COALESCE(async_state,'scheduled') = 'scheduled' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') AND window_opens_at > ? ORDER BY window_opens_at ASC LIMIT 1", [ts]);
+    if (nx) next = { opensWhen: whenFromToday(Number(nx.window_opens_at)) };
+  }
+  return { week, stats, days, open, next };
+}
+// The results email's link into that section: the signed refer-scope link when the secret is
+// set (lands logged in), the plain page otherwise (which asks for a code).
+function accountResultsUrl(base, uid) {
+  const tok = mintReferLink(uid);
+  return `${base}/account#results` + (tok ? `&rt=${tok}` : '');
 }
 
 // One week's report: the records ranked across every drop in the window, and the A&Rs ranked
@@ -4033,7 +4526,7 @@ const artistEmailText = (d) => `Your Track Report — ${d.title}\n\n`
   + `${d.decision}\n\n`
   + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}. `
   + `Official track rating: ${d.mean} out of 9 (${d.bandLabel}).\n\n`
-  + (d.watchUrl ? `Watch the room hear your record: ${d.watchUrl}\n\n` : '')
+  + (d.watchUrl ? `${d.watchLabel || 'Watch the room hear your record'}: ${d.watchUrl}\n\n` : '')
   + artistCommentsText(d.comments)
   + `Your Track Report is attached as ${d.pages.length} images. Share them as one Instagram carousel, `
   + `add @Makinit4indies as a collaborator, and tag ${d.hashtag}.\n\n`
@@ -4068,14 +4561,14 @@ const artistCommentsText = (comments) => (!comments || !comments.length) ? ''
     + comments.map(c => `"${c.body}"\n— ${c.name}${[c.role, c.location].filter(Boolean).length ? ' (' + [c.role, c.location].filter(Boolean).join(', ') + ')' : ''}`).join('\n\n')
     + `\n\nComments are the personal opinions of individual A&Rs who scored the record.\n\n`;
 
-function artistEmailHtml({ title, artist, mean, bandLabel, decision, votes, what, dateLabel, watchUrl, pages, comments, hashtag }) {
+function artistEmailHtml({ title, artist, mean, bandLabel, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag }) {
   what = what || 'A&R Meeting';
   hashtag = hashtag || (what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting');
   const pageBlock = (pages || []).filter(Boolean).map((u, i) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Track Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:10px;display:block;margin:0 auto 10px;border:1px solid #2C2F34"></a>`
   ).join('');
   const watchBlock = watchUrl ? `
-      <p style="margin:6px 0 4px;"><a href="${watchUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">Watch the room hear your record</a></p>
+      <p style="margin:6px 0 4px;"><a href="${watchUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">${escapeHtml(watchLabel || 'Watch the room hear your record')}</a></p>
       <p style="font-size:12px;line-height:1.55;color:#8A94A6;margin:0 0 14px;">Go to your record in the replay. Short clips of the live response are the easiest thing to post.</p>` : '';
   const first = artist ? escapeHtml(String(artist).split(/\s+/)[0]) : '';
   return `<div style="background:#17191D;padding:26px 12px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#F6F7FB;">
@@ -4141,7 +4634,10 @@ async function sendArtistReportEmail(round, session, dest) {
   const decision = d.band.headline.join(' ');
   const common = {
     title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, decision, votes: d.votes,
-    what: d.what, dateLabel: d.dateLabel, watchUrl: isAsync(session) ? null : (session.watch_url || null),
+    what: d.what, dateLabel: d.dateLabel,
+    // A daily record was heard on the Livestream Countdown, so that is the replay to send.
+    watchUrl: isAsync(session) ? await dailyStreamUrl() : (session.watch_url || null),
+    watchLabel: isAsync(session) ? `Watch the ${DAILY_STREAM_NAME}` : null,
     pages, comments: d.comments, hashtag: d.what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting',
   };
   const html = artistEmailHtml(common);
@@ -4193,7 +4689,7 @@ async function drainArtistSms({ sessionId = null, roundId = null, limit = 10 } =
 // at wrap-up on a live show; A&R Daily's publisher calls it from the cron. Nothing about
 // the artist's mail changes between the two: it is the same template, the same queue and
 // the same 026 shape. Only the trigger differs.
-async function enqueueArtistNotices(sessionId) {
+async function enqueueArtistNotices(sessionId, { sms = true } = {}) {
   const rounds = await db.all(ARTIST_ELIGIBLE_SQL, [sessionId]);
   let queuedEmail = 0, queuedSms = 0;
   for (const r of rounds) {
@@ -4203,13 +4699,134 @@ async function enqueueArtistNotices(sessionId) {
         [id(12), sessionId, r.id, em, now()]);
       if (ins && ins.changes) queuedEmail++;
     }
-    if (ph) {
+    if (ph && sms) {
       const ins = await db.run("INSERT INTO artist_notices (id, session_id, round_id, channel, dest, status, created_at) VALUES (?,?,?, 'sms', ?, 'pending', ?) ON CONFLICT (round_id, channel) DO NOTHING",
         [id(12), sessionId, r.id, ph, now()]);
       if (ins && ins.changes) queuedSms++;
     }
   }
   return { queuedEmail, queuedSms };
+}
+
+// ===== A&R DAILY — the artist heads-up at the close =====
+// Operator, 2026-09-27: when rating closes, each rated artist hears that the record "was rated
+// and will appear on tomorrow's Livestream Countdown", with the operator's own line: "Tune in
+// for results... have your fans tune in to participate in the comments." Email + SMS.
+//
+// THE SEAL: nothing here carries a score, a rank or a vote count. The stream is the reveal
+// and the Track Report follows at results_at; this mail only says the record was rated.
+// Eligibility is ARTIST_ELIGIBLE_SQL — the same "rated" the report uses — so a record behind
+// a dead link that nobody rated is never told it was.
+async function dailyStreamUrl() {
+  const row = await db.get("SELECT v FROM settings WHERE k = 'daily_stream_url'");
+  return (row && cleanUrl(row.v)) || null;
+}
+
+async function enqueueArtistHeadsups(sessionId) {
+  const rounds = await db.all(ARTIST_ELIGIBLE_SQL, [sessionId]);
+  let queued = 0;
+  for (const r of rounds) {
+    for (const [channel, dest] of [['email', (r.artist_email || '').trim()], ['sms', (r.artist_phone || '').trim()]]) {
+      if (!dest) continue;
+      const ins = await db.run(
+        "INSERT INTO artist_headsups (id, session_id, round_id, channel, dest, status, created_at) VALUES (?,?,?,?,?, 'pending', ?) ON CONFLICT (round_id, channel) DO NOTHING",
+        [id(12), sessionId, r.id, channel, dest, now()]);
+      if (ins && ins.changes) queued++;
+    }
+  }
+  return { queued };
+}
+
+// "tomorrow's Livestream Countdown" when it is tomorrow as the message SENDS (an SMS held
+// overnight by the window can go the morning of the stream), else "today's", else the date.
+function headsupWhen(streamAt, ts = now()) {
+  const d = etDay(Number(streamAt)), today = etDay(ts);
+  if (d === today) return { word: "today's", day: null };
+  if (d === etNextDay(today)) return { word: "tomorrow's", day: null };
+  return { word: 'the', day: etDayLabel(d) };
+}
+function artistHeadsupSmsBody(title, streamAt, ts = now()) {
+  const w = headsupWhen(streamAt, ts);
+  const clock = recapTimeLabel(streamAt).replace(/^Daily at /, '');
+  const frame = (t) => `"${t}" was rated by the A&R Team. It's on ${w.word} ${DAILY_STREAM_NAME}${w.day ? ' on ' + w.day : ''}, ${clock} ET. Tune in for results. Reply STOP to opt out.`;
+  return frame(fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame('').length));
+}
+function artistHeadsupContent({ title, artist, streamAt, reportAt, streamUrl }, ts = now()) {
+  const w = headsupWhen(streamAt, ts);
+  const when = `${etDayLabel(etDay(Number(streamAt)))} at ${etClockLabel(streamAt)}`;
+  return {
+    subject: `“${title}” was rated — it will appear on ${w.word} ${DAILY_STREAM_NAME}`,
+    lead: 'Your song was rated.',
+    body: `“${title}”${artist ? ' by ' + artist : ''} was rated by the A&R Team and will appear on ${w.word} ${DAILY_STREAM_NAME}, ${when}.`,
+    tune: 'Tune in for results. Have your fans tune in to participate in the comments.',
+    report: reportAt ? `Your full Track Report arrives by email on ${etDayLabel(etDay(Number(reportAt)))}.` : '',
+    streamUrl,
+  };
+}
+function artistHeadsupHtml(c) {
+  return `<div style="background:#17191D;padding:26px 12px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#F6F7FB;">
+    <div style="max-width:600px;margin:0 auto;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0D0E12" style="background:#0D0E12;border-radius:12px 12px 0 0;">
+        <tr><td align="center" style="padding:20px 16px 18px;">
+          <img src="https://makinitmag.com/sites/all/themes/mim2/images/mim-logo-email.png" alt="Makin' It Magazine" width="190" style="display:block;border:0;width:190px;max-width:70%;height:auto;margin:0 auto;">
+          <p style="margin:14px 0 0;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#4BB749;font-weight:bold;">The A&amp;R Meeting</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#17191D" style="background:#17191D;border:1px solid #2C2F34;border-top:0;border-radius:0 0 12px 12px;">
+        <tr><td style="padding:22px 18px 24px;text-align:center;">
+          <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F6F7FB;">${escapeHtml(c.lead)}</h1>
+          <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0 0 12px;">${escapeHtml(c.body)}</p>
+          <p style="font-size:14px;line-height:1.6;color:#F6F7FB;font-weight:bold;margin:0 0 16px;">${escapeHtml(c.tune)}</p>
+          ${c.streamUrl ? `<p style="margin:6px 0 14px;"><a href="${c.streamUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">Watch the ${escapeHtml(DAILY_STREAM_NAME)}</a></p>` : ''}
+          ${c.report ? `<p style="font-size:12.5px;line-height:1.55;color:#8A94A6;margin:0;">${escapeHtml(c.report)}</p>` : ''}
+          <p style="font-size:12.5px;color:#8A94A6;margin:20px 0 0;">Submit another record → <a href="https://${shareCards.SUBMIT_URL}" style="color:#4BB749;text-decoration:none;">${shareCards.SUBMIT_URL}</a></p>
+        </td></tr>
+      </table>
+    </div>
+  </div>`;
+}
+const artistHeadsupText = (c) => [c.lead, '', c.body, '', c.tune,
+  ...(c.streamUrl ? ['', `Watch the ${DAILY_STREAM_NAME}: ${c.streamUrl}`] : []),
+  ...(c.report ? ['', c.report] : []), '', `Submit another record: https://${shareCards.SUBMIT_URL}`].join('\n');
+
+// Same claim discipline as drainArtistEmail / drainArtistSms: pending -> sending before the
+// send, an unknown outcome parks as failed, never back to pending. SMS holds outside the ET
+// window (the row stays pending and a later tick sends it).
+async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = {}) {
+  const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+  if (!session) return { sent: 0, failed: 0 };
+  const sched = await dailySchedule();
+  const streamAt = dropStreamAt(session, sched);
+  // The stream has happened: "will appear on tomorrow's Livestream Countdown" is no longer
+  // true, and the report is on its way. Anything still pending is left, not sent late.
+  if (!streamAt || now() >= streamAt) return { sent: 0, failed: 0, stale: true };
+  const smsOk = withinSmsWindow();
+  const rows = await db.all(
+    `SELECT h.*, r.song_title, r.song_artist FROM artist_headsups h JOIN rounds r ON r.id = h.round_id
+      WHERE h.session_id = ? AND h.status = 'pending' ${smsOk ? '' : "AND h.channel = 'email'"}
+      ORDER BY h.created_at ASC LIMIT ?`, [sessionId, limit]);
+  const streamUrl = await dailyStreamUrl();
+  let sent = 0, failed = 0;
+  for (const row of rows) {
+    if (deadline && Date.now() > deadline) break;
+    const claim = await db.run("UPDATE artist_headsups SET status = 'sending' WHERE id = ? AND status = 'pending'", [row.id]);
+    if (!claim.changes) continue;
+    try {
+      const title = row.song_title || 'your record';
+      const r = row.channel === 'sms'
+        ? await sendSms(row.dest, artistHeadsupSmsBody(title, streamAt))
+        : await (async () => {
+            const c = artistHeadsupContent({ title, artist: row.song_artist, streamAt,
+              reportAt: Number(session.results_at) || null, streamUrl });
+            return sendEmail(row.dest, c.subject, artistHeadsupHtml(c), artistHeadsupText(c));
+          })();
+      if (r.ok) { await db.run("UPDATE artist_headsups SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
+      else { await db.run("UPDATE artist_headsups SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
+    } catch (e) {
+      await db.run("UPDATE artist_headsups SET status = 'failed', error = ? WHERE id = ?", [(e.message || 'error').slice(0, 300), row.id]); failed++;
+    }
+  }
+  return { sent, failed };
 }
 
 // The email half of the artist queue, with a CLAIM — the sibling of drainArtistSms.
@@ -7240,7 +7857,8 @@ async function handleApi(req, res, url) {
         reviveZoneLobby: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_lobby'"))?.v || null,
         reviveZoneGame: (await db.get("SELECT v FROM settings WHERE k = 'revive_zone_game'"))?.v || null,
         asanaProject: (await db.get("SELECT v FROM settings WHERE k = 'asana_project'"))?.v || null,
-        asanaLeadsProject: (await db.get("SELECT v FROM settings WHERE k = 'asana_leads_project'"))?.v || null },
+        asanaLeadsProject: (await db.get("SELECT v FROM settings WHERE k = 'asana_leads_project'"))?.v || null,
+        dailyStreamUrl: await dailyStreamUrl() },
       dailySchedule: dailyScheduleView(await dailySchedule()),
       smsProvider: (process.env.SMS_PROVIDER || 'none'),
       // The PAT itself is an env var and never leaves the server — only whether it's set.
@@ -7266,6 +7884,9 @@ async function handleApi(req, res, url) {
     if ('reviveZoneLobby' in body) await setOrClear('revive_zone_lobby', String(parseInt(body.reviveZoneLobby, 10) || '') || null);
     if ('reviveZoneGame' in body) await setOrClear('revive_zone_game', String(parseInt(body.reviveZoneGame, 10) || '') || null);
     // Asana project gid for the post kit (digits; the PAT itself is ASANA_TOKEN in env).
+    // The Livestream Countdown link that rides the artist heads-up, the Track Report email and
+    // the A&R results email (a channel's /live link works: it resolves to whichever stream is on).
+    if ('dailyStreamUrl' in body) await setOrClear('daily_stream_url', cleanUrl(body.dailyStreamUrl));
     if ('asanaProject' in body) await setOrClear('asana_project', (body.asanaProject || '').toString().trim().replace(/\D/g, '').slice(0, 30) || null);
     // The sales-leads project (040). Clearing it makes the next sync create a fresh one; the
     // remembered field gids go with it because they are read back off the project anyway.
@@ -7291,7 +7912,10 @@ async function handleApi(req, res, url) {
         const c = parsed.cfg;
         await setOrClear('daily_open_min', String(c.openMin));
         await setOrClear('daily_close_min', String(c.closeMin));
+        await setOrClear('daily_stream_min', String(c.streamMin));
+        await setOrClear('daily_stream_days', String(c.streamDays));
         await setOrClear('daily_results_min', String(c.resultsMin));
+        await setOrClear('daily_results_days', String(c.resultsDays));
         await setOrClear('daily_bonus_tiers', JSON.stringify({ tiers: c.tiers, finalPoints: c.finalPoints }));
         await setOrClear('daily_artist_delay_min', String(c.artistDelayMin));
       }
@@ -7302,24 +7926,22 @@ async function handleApi(req, res, url) {
            AND COALESCE(async_state, 'scheduled') = 'scheduled' AND drop_day IS NOT NULL`, []);
       for (const d of cold) {
         const w = dropWindowFor(d.drop_day, sched);
-        await db.run('UPDATE sessions SET window_opens_at = ?, window_closes_at = ?, results_at = ?, scheduled_at = ? WHERE id = ?',
-          [w.opensAt, w.closesAt, w.resultsAt, w.opensAt, d.id]);
+        await db.run('UPDATE sessions SET window_opens_at = ?, window_closes_at = ?, results_at = ?, stream_at = ?, scheduled_at = ? WHERE id = ?',
+          [w.opensAt, w.closesAt, w.resultsAt, w.streamAt, w.opensAt, d.id]);
         await db.run('UPDATE rounds SET opens_at = ?, closes_at = ? WHERE session_id = ?', [w.opensAt, w.closesAt, d.id]);
         restamped++;
       }
-      // A day that has CLOSED but not published follows the new results time too: nothing
-      // has been revealed yet, so moving the publish is safe in both directions (an earlier
-      // time simply publishes on the next tick). Only results_at moves — the window is history.
+      // A day that has OPENED but not published follows the new stream and results times
+      // too: nothing has been revealed yet, so moving them is safe in both directions (an
+      // earlier time simply fires on the next tick). The window itself is history and stays.
+      // This is also how a day already in flight when the schedule changes picks it up.
       const sealed = await db.all(
         `SELECT id, drop_day, window_closes_at FROM sessions WHERE mode = 'async' AND deleted_at IS NULL
            AND async_state IN ('open','closing','ratified') AND drop_day IS NOT NULL`, []);
       for (const d of sealed) {
-        const w = dropWindowFor(d.drop_day, sched);
-        const closes = Number(d.window_closes_at) || w.closesAt;
-        const hm = [Math.floor(sched.resultsMin / 60), sched.resultsMin % 60];
-        let r = etEpoch(etDay(closes), ...hm);
-        if (r < closes) r = closes;
-        await db.run('UPDATE sessions SET results_at = ? WHERE id = ?', [r, d.id]);
+        const closes = Number(d.window_closes_at) || dropWindowFor(d.drop_day, sched).closesAt;
+        const a = dropAfterClose(closes, sched);
+        await db.run('UPDATE sessions SET results_at = ?, stream_at = ? WHERE id = ?', [a.resultsAt, a.streamAt, d.id]);
         restamped++;
       }
     }
@@ -8135,7 +8757,8 @@ async function handleApi(req, res, url) {
     // schedule is a platform-panel setting (it moved from noon to 3PM on 2026-09-20) and the
     // page must follow it without an edit. Today's window under the CURRENT setting.
     const schedW = dropWindowFor(etDay(), await dailySchedule());
-    const schedule = { opensLabel: etClockLabel(schedW.opensAt), closesLabel: etClockLabel(schedW.closesAt), resultsLabel: etClockLabel(schedW.resultsAt) };
+    const schedule = { opensLabel: etClockLabel(schedW.opensAt), closesLabel: etClockLabel(schedW.closesAt),
+      streamLabel: etClockLabel(schedW.streamAt), resultsLabel: etClockLabel(schedW.resultsAt) };
     return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, houseSubmitUrl, schedule });
   }
 
@@ -8304,6 +8927,7 @@ async function handleApi(req, res, url) {
   // attribution survives a repost. Rendered on demand and never cached: it is one person's
   // face and links, and the photo can change.
   if (p === '/api/card/refer' && method === 'GET') {
+    // (REFER_THUMB_WIDTH / referGraphicVersion are defined beside referralLinks.)
     const uid = await resolveReferUid(req, url);
     if (!uid) return bad(res, 'Not logged in', 401);
     const kinds = { card: 'referCard', story: 'referStory', join: 'referJoin', submit: 'referSubmit' };
@@ -8318,15 +8942,22 @@ async function handleApi(req, res, url) {
         photo: await photoDataUri(u.photo_url),
         qrJoin: await qrPngDataUri(links.join), qrSubmit: await qrPngDataUri(links.submit),
       };
+      // thumb=1: the SAME render at 432px wide, for the account page's preview grid — the
+      // A&R sees the graphic before downloading it (operator, 2026-09-20). A thumbnail may
+      // sit in the browser's private cache for a day: its URL carries `v`, a hash of what
+      // the graphic prints (referGraphicVersion), so it is per-A&R and changes the moment
+      // their name, photo, city or role does. The full download stays no-store.
+      const thumb = url.searchParams.get('thumb') === '1';
       let png;
-      try { png = await shareCards.renderPng(type, data); }
+      try { png = await shareCards.renderPng(type, data, thumb ? REFER_THUMB_WIDTH : undefined); }
       catch (e) {
         // A photo the renderer cannot decode must not cost the A&R their graphic.
         if (!data.photo) throw e;
         console.error('[refer] render with photo failed, retrying without:', e.message);
-        png = await shareCards.renderPng(type, { ...data, photo: null });
+        png = await shareCards.renderPng(type, { ...data, photo: null }, thumb ? REFER_THUMB_WIDTH : undefined);
       }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store' });
+      const fresh = thumb && url.searchParams.get('v') === referGraphicVersion(u);
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': fresh ? 'private, max-age=86400' : 'private, no-store' });
       return res.end(png);
     } catch (e) {
       console.error('[refer] card render failed:', e.message);
@@ -8420,7 +9051,7 @@ async function handleApi(req, res, url) {
         if (!rd) return bad(res, 'Nothing to show yet', 404);
         const sl = rd.slides.find(x => x.slide === slide);
         if (!sl) return bad(res, `This carousel has ${rd.total} slides`, 404);
-        return sendPng(await shareCards.renderPng('resultsSlide', sl), 'private, no-store');
+        return sendPng(await shareCards.renderPng(rd.card, sl), 'private, no-store');
       }
       // A winner post, rendered live (admin): ?post=track|ar with either &s=<sessionId> (the day)
       // or &week=YYYY-MM-DD (any day in the week; the Monday is derived).
@@ -8547,19 +9178,38 @@ async function handleApi(req, res, url) {
         points: revealed ? (scoutPts.get(r.id) || 0) : undefined,
       };
     });
+    const gv = referGraphicVersion(u);
+    const gfx = (kind, label, size) => ({ kind, label, size, url: '/api/card/refer?kind=' + kind,
+      thumb: '/api/card/refer?kind=' + kind + '&thumb=1&v=' + gv });
     return send(res, 200, {
-      me: { uid: u.uid, name: u.name || null, hasPhoto: !!u.photo_url },
+      // name / photo / city / role feed the account page's header (the A&R's own data, on
+      // a header-authenticated or signed-link route; nothing here is email or phone).
+      me: { uid: u.uid, name: u.name || null, hasPhoto: !!u.photo_url, photoUrl: u.photo_url || null,
+        location: u.location || null, primaryCategory: u.primary_category || null },
       links: referralLinks(u.uid),
       rules: { windowDays: REFERRAL.windowDays, cap: REFERRAL.cap, errMax: REFERRAL.errMax, pointsPerRound: REFERRAL.pointsPerRound, scoutMultiplier: SCOUT_MULTIPLIER },
       ars: { referred: arRows.length, active: arRows.filter(r => r.played).length, earned: arEarned, rows: arRows.slice(0, 50) },
       artists: { submitted: artistRows.length, rated: artistRows.filter(r => r.rated).length, earned: artistEarned, rows: artistRows.slice(0, 50) },
+      // Labels are the operator's (2026-09-20): "Official A&R Card - Feed" / "- Story".
       graphics: [
-        { kind: 'card', label: 'Your A&R Team card', size: '1080 × 1350', url: '/api/card/refer?kind=card' },
-        { kind: 'story', label: 'Your A&R Team story', size: '1080 × 1920', url: '/api/card/refer?kind=story' },
-        { kind: 'join', label: 'Join the A&R Team', size: '1080 × 1350', url: '/api/card/refer?kind=join' },
-        { kind: 'submit', label: 'Submit your music', size: '1080 × 1350', url: '/api/card/refer?kind=submit' },
+        gfx('card', 'Official A&R Card - Feed', '1080 × 1350'),
+        gfx('story', 'Official A&R Card - Story', '1080 × 1920'),
+        gfx('join', 'Join the A&R Team', '1080 × 1350'),
+        gfx('submit', 'Submit your music', '1080 × 1350'),
       ],
     });
+  }
+  // ---- /account "My results": the A&R's own results for one week. Same auth as the rest of
+  // the account page — either token, or the signed link the results email carries. It reads
+  // ONLY the caller's own votes; see arResultsData for the seal.
+  if (p === '/api/me/results' && method === 'GET') {
+    const uid = await resolveReferUid(req, url);
+    if (!uid) return bad(res, 'Not logged in', 401);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    const u = await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [uid]);
+    if (!u || u.blocked) return bad(res, 'Not logged in', 401);
+    return send(res, 200, await arResultsData(uid, url.searchParams.get('week')));
   }
   // QR code as SVG (self-hosted; used by the vertical overlay's "Scan to Win $500" join code).
   if (p === '/api/qr' && method === 'GET') {
@@ -8889,7 +9539,7 @@ async function handleApi(req, res, url) {
       let out;
       try {
         out = await createAsyncDrop({ day, name: body.name, seriesId: ser.seriesId, songs: [rec],
-          opensAt: body.opensAt, closesAt: body.closesAt, resultsAt: body.resultsAt });
+          opensAt: body.opensAt, closesAt: body.closesAt, resultsAt: body.resultsAt, streamAt: body.streamAt });
       } catch (e) {
         // Two admins starting the same day at once race on uniq_session_drop_day; the loser
         // adopts the winner's day rather than erroring at a person who did nothing wrong.
@@ -8957,8 +9607,8 @@ async function handleApi(req, res, url) {
         // step flips it to live. This undoes a stray "go live" pressed on the live-show side.
         await tx.run(
           `UPDATE sessions SET drop_day = ?, name = ?, window_opens_at = ?, window_closes_at = ?, results_at = ?,
-             scheduled_at = ?, status = 'upcoming' WHERE id = ?`,
-          [toDay, name, win.opensAt, win.closesAt, win.resultsAt, win.opensAt, session.id]);
+             stream_at = ?, scheduled_at = ?, status = 'upcoming' WHERE id = ?`,
+          [toDay, name, win.opensAt, win.closesAt, win.resultsAt, win.streamAt, win.opensAt, session.id]);
         await tx.run('UPDATE rounds SET opens_at = ?, closes_at = ? WHERE session_id = ?', [win.opensAt, win.closesAt, session.id]);
       });
     } catch (e) {
@@ -8973,8 +9623,9 @@ async function handleApi(req, res, url) {
       opened = await openAsyncDrop(fresh);
     }
     return send(res, 200, { ok: true, moved: true, opened, sessionId: session.id, day: toDay, from: session.drop_day,
-      opensAt: win.opensAt, closesAt: win.closesAt, resultsAt: win.resultsAt,
-      opensLabel: etClockLabel(win.opensAt), closesLabel: etWhenLabel(win.closesAt, toDay), resultsLabel: etWhenLabel(win.resultsAt, toDay) });
+      opensAt: win.opensAt, closesAt: win.closesAt, streamAt: win.streamAt, resultsAt: win.resultsAt,
+      opensLabel: etClockLabel(win.opensAt), closesLabel: etWhenLabel(win.closesAt, toDay),
+      streamLabel: etWhenLabel(win.streamAt, toDay), resultsLabel: etWhenLabel(win.resultsAt, toDay) });
   }
 
   // ---- The daily console's one status call. ----
@@ -9103,7 +9754,8 @@ async function handleApi(req, res, url) {
         published_at: session.published_at ? Number(session.published_at) : null,
         opensLabel: etClockLabel(session.window_opens_at),
         closesLabel: etClockLabel(session.window_closes_at),
-        resultsLabel: etClockLabel(session.results_at),
+        resultsLabel: etWhenLabel(Number(session.results_at), day),
+        streamLabel: etWhenLabel(dropStreamAt(session, await dailySchedule()), day),
         // Untagged means the day's points never reach the $500 board — the whole
         // unification premise, failing silently. The console paints this red.
         series_id: session.series_id || null,
@@ -9143,7 +9795,11 @@ async function handleApi(req, res, url) {
         // the slide counts so the console can render a set live slide by slide.
         results: { song: parseJsonArray(job && job.results_song_urls), ar: parseJsonArray(job && job.results_ar_urls),
           songCaption: (job && job.results_song_caption) || null, arCaption: (job && job.results_ar_caption) || null,
-          songCount: rsSong ? rsSong.total : 0, arCount: rsAr ? rsAr.total : 0 },
+          songCount: rsSong ? rsSong.total : 0, arCount: rsAr ? rsAr.total : 0,
+          // The Daily Countdown's artist mentions (comments, four a comment) and who to tag on each
+          // slide: the record's handle on a rank slide; '' on the cover, the closing slides and a record with no handle.
+          songComments: rsSong ? countdownComments(rsSong).comments : [],
+          songTags: rsSong ? rsSong.slides.map(sl => (sl.kind === 'rank' ? (sl.handle || '') : '')) : [] },
         // The winner posts (039): hosted at publish, captions, and whether each has a subject yet.
         winners: { track: (job && job.winner_track_url) || null, ar: (job && job.winner_ar_url) || null,
           trackCaption: (job && job.winner_track_caption) || null, arCaption: (job && job.winner_ar_caption) || null,
@@ -9159,14 +9815,14 @@ async function handleApi(req, res, url) {
   }
 
   // ===== THE WEEKLY REPORT — what the Wednesday show reads on air =====
-  // One window (Wed → Tue), two ranked lists, one call. Platform-admin only for the same
+  // One window (Mon → Sun), two ranked lists, one call. Platform-admin only for the same
   // reason the daily status is: it spans every host's drops and carries the artists'
   // Instagram handles and what they paid.
   if (p === '/api/admin/weekly/status' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const wantWeek = (url.searchParams.get('week') || '').trim();
     // Any day inside a week resolves to that week, so a picked Friday still lands on its
-    // Wednesday. With nothing asked for, the screen opens on the last COMPLETE week — the
+    // Monday. With nothing asked for, the screen opens on the last COMPLETE week — the
     // one the show is about.
     const anchor = weekWindow(wantWeek) ? wantWeek : lastCompleteWeekStart();
     const limit = parseInt(url.searchParams.get('limit'), 10);
@@ -9905,7 +10561,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html'); // A&R Wars prediction contest
-    if (url.pathname === '/refer') return serveStatic(res, 'refer.html'); // the A&R's referral links + graphics
+    // The A&R's account (2026-10-01): ONE page with sections — Earn points (the default;
+    // what /refer was), My profile, and a tab to the edit form. /refer serves the same file
+    // so every link already out there (email footers, the signed [card link], QR'd flyers'
+    // copy) lands on the same page and section.
+    if (url.pathname === '/account' || url.pathname === '/refer') return serveStatic(res, 'account.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // Stable submit link for QR codes: /submit?s=<session> 302s to wherever that
     // session's submission link points RIGHT NOW (Nero, review site, anything).
@@ -10020,6 +10680,17 @@ module.exports._etEpoch = etEpoch;
 module.exports._etNextDay = etNextDay;
 module.exports._weekWindow = weekWindow;
 module.exports._weekStartFor = weekStartFor;
+module.exports._dailyDigestEmailText = dailyDigestEmailText;
+module.exports._DAILY_STREAM_NAME = DAILY_STREAM_NAME;
+module.exports._WEEKLY_SHOW_NAME = WEEKLY_SHOW_NAME;
+module.exports._bustDailySchedule = () => { _dailySched.at = 0; };
+module.exports._dropAfterClose = dropAfterClose;
+module.exports._dropStreamAt = dropStreamAt;
+module.exports._artistHeadsupSmsBody = artistHeadsupSmsBody;
+module.exports._artistHeadsupContent = artistHeadsupContent;
+module.exports._dailyOpenEmailText = dailyOpenEmailText;
+module.exports._enqueueDailyOpen = enqueueDailyOpen;
+module.exports._NOTIFY_TOPICS = NOTIFY_TOPICS;
 module.exports._lastCompleteWeekStart = lastCompleteWeekStart;
 module.exports._weeklyReportData = weeklyReportData;
 module.exports._etDay = etDay;
@@ -10052,9 +10723,13 @@ module.exports._countdownPostDay = countdownPostDay;
 module.exports._xLength = xLength;
 module.exports._recapDateLabel = recapDateLabel;
 module.exports._resultsCarouselData = resultsCarouselData;
+module.exports._countdownCarouselData = countdownCarouselData;
+module.exports._countdownComments = countdownComments;
 module.exports._resultsCaption = resultsCaption;
 module.exports._winnerDayData = winnerDayData;
 module.exports._winnerWeekData = winnerWeekData;
 module.exports._winnerCaption = winnerCaption;
 module.exports._weekStartOf = weekStartOf;
 module.exports._resultsPages = resultsPages;
+module.exports._arResultsData = arResultsData;
+module.exports._accountResultsUrl = accountResultsUrl;

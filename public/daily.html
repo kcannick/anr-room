@@ -363,6 +363,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <div id="doneTiers" style="text-align:left"></div>
       <div class="note" id="doneNext" style="text-align:left;margin-top:18px"></div>
       <button class="btn ghost" id="btnReview" style="margin-top:16px">Review my evaluations</button>
+      <a class="btn ghost" href="/account#results" style="margin-top:10px;text-decoration:none">My past results</a>
       <a class="btn ghost" href="/refer" style="margin-top:10px;text-decoration:none">Earn bonus points</a>
     </div>
   </section>
@@ -374,6 +375,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <h2 style="font-size:24px;margin:4px 0 0">The window is closed.</h2>
       <p class="dim" style="font-size:14px;line-height:1.55;margin:0" id="sealedSub"></p>
       <button class="btn ghost" id="btnSealedReview">Review my evaluations</button>
+      <a class="btn ghost" href="/account#results" style="text-decoration:none">My past results</a>
     </div>
   </section>
 
@@ -392,6 +394,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
     <!-- Home, not /daily: today's drop is a DIFFERENT session id, and this page only knows
          yesterday's. The homepage already resolves whichever drop is open. -->
     <a class="btn" id="btnRecapNext" href="/">Today's records are open</a>
+    <a class="btn ghost" href="/account#results" style="text-decoration:none">My past results</a>
     <a class="btn ghost" href="/refer" style="text-decoration:none">Earn bonus points</a>
   </section>
 
@@ -849,9 +852,7 @@ function render(){
 
   if(st.phase === 'sealed'){
     $('#sealedDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
-    $('#sealedSub').textContent = as.resultsWhen
-      ? ('Everything is being tallied. Results land ' + as.resultsWhen + ', and so does the next drop.')
-      : 'Everything is being tallied. Results and the next drop land together.';
+    $('#sealedSub').textContent = afterLines(as, 'Rating is closed.');
     show('sealed'); return;
   }
 
@@ -891,9 +892,18 @@ function renderDone(st){
     row.appendChild(l); row.appendChild(v); tiers.appendChild(row);
   });
 
-  $('#doneNext').textContent = as.resultsWhen
-    ? ('Results land ' + as.resultsWhen + ', and so does the next drop.')
-    : 'Results and the next drop land together.';
+  $('#doneNext').textContent = afterLines(as, '');
+}
+
+// What happens after the close, in order: the next records, the Livestream Countdown, the
+// results. Every time is a server-rendered label (never the browser's clock).
+function afterLines(as, lead){
+  const out = lead ? [lead] : [];
+  if(as.nextOpensWhen) out.push('The next records open ' + as.nextOpensWhen + '.');
+  const show = as.streamName || 'daily countdown';
+  if(as.streamWhen) out.push('These records are counted down on the ' + show + ' ' + as.streamWhen + '.');
+  out.push(as.resultsWhen ? ('Your results land ' + as.resultsWhen + '.') : ('Your results land after the ' + show + '.'));
+  return out.join(' ');
 }
 
 function renderRecap(st){
