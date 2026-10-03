@@ -5198,6 +5198,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const auto2At = asanaCalls.length;
   const auto2 = await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
   ok('daily asana auto: a finished day is never posted twice', auto2.created === 0 && asanaCalls.length === auto2At, JSON.stringify(auto2));
+  ok('daily asana auto: a finished day is marked so the oldest-first probe moves past it', autoState.finished === true, JSON.stringify(autoState));
   // A run cut short part-way: the gid is saved, so the next run resumes on the SAME task.
   await anDb.run("UPDATE recap_jobs SET asana_tasks = ? WHERE session_id = ?", [JSON.stringify({ song: { gid: '4242', url: 'u', next: 4, total: 6 }, ar: autoState.ar }), LDROP]);
   const auto3At = asanaCalls.length;
