@@ -503,6 +503,17 @@ function resultsField(height, cutTop) {
       transform: 'skewY(-13deg)' }, ''),
   ]);
 }
+// The Top A&R carousel's footer: the ask WITH the link (operator, 2026-10-03 — a bare URL on
+// the green field had no call to action), and the page count on the right.
+function resultsJoinFoot(pageTxt) {
+  return h({ position: 'absolute', left: 80, right: 80, bottom: 72, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }, [
+    col({}, [
+      text(RES_DISPLAY(40, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1 }), 'Join the A&R Team'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.bg, marginTop: 8, ...NOWRAP }, RESULTS_URL),
+    ]),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 1, color: RECAP.bg, ...NOWRAP }, pageTxt || ''),
+  ]);
+}
 function resultsFoot(leftTxt, rightTxt) {
   const st = { fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 1, color: RECAP.bg, ...NOWRAP };
   return h({ position: 'absolute', left: 80, right: 80, bottom: 72, display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }, [
@@ -557,7 +568,7 @@ function elementResultsSlide(d) {
         { type: 'img', props: { src: hero.photo, style: { position: 'absolute', left: -40, top: 0, width: 380, height: 300, objectFit: 'cover', transform: 'skewX(13deg)' } } },
       ]));
     }
-    kids.push(resultsField(300, 120), resultsFoot('1 / ' + d.total, RESULTS_URL));
+    kids.push(resultsField(300, 120), resultsJoinFoot('1 / ' + d.total));
   } else if (kind === 'list') {
     kids.push(resultsEyebrow((d.listLabel || 'Also played') + ' · ' + (d.date || '')), resultsPager(d.slide, d.total));
     const rows = (d.rows || []).map(r => row({ paddingTop: 16, paddingBottom: 16, borderBottom: '1px solid ' + RECAP.line, width: 920 }, [
@@ -569,7 +580,7 @@ function elementResultsSlide(d) {
       text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, color: RECAP.fg, marginLeft: 18, flexShrink: 0, ...NOWRAP }, r.value == null ? '' : String(r.value)),
     ]));
     kids.push(col({ position: 'absolute', left: 80, top: 490, width: 920 }, rows));
-    kids.push(resultsField(250, 90), resultsFoot(d.footLeft || (d.slide + ' / ' + d.total), RESULTS_URL));
+    kids.push(resultsField(250, 90), resultsJoinFoot(d.slide + ' / ' + d.total));
   } else {
     const c = d.cta || {};
     kids.push(resultsEyebrow(c.eyebrow || ''), resultsPager(d.slide, d.total));

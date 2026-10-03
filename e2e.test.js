@@ -2107,7 +2107,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // hosted slide lists are null and the day published anyway — the captions are kept.
   const rjob2 = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
   ok('the publish stores both carousel captions even with no Blob token',
-    /^Makin' It Daily Countdown — /.test(rjob2.results_song_caption || '') && /Top A&R/.test(rjob2.results_ar_caption || ''),
+    /^Makin' It Daily Countdown — /.test(rjob2.results_song_caption || '') && /^Top 8 A&Rs · /.test(rjob2.results_ar_caption || ''),
     JSON.stringify([rjob2.results_song_caption, rjob2.results_ar_caption]));
   ok('and leaves the hosted slide lists null rather than failing the publish',
     rjob2.results_song_urls == null && rjob2.results_ar_urls == null, JSON.stringify([rjob2.results_song_urls, rjob2.results_ar_urls]));
@@ -2160,6 +2160,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
     rsAr.slides[1].rows.every(r => r.value === undefined) && rsAr.slides.every(sl => !sl.footLeft)
       && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsAr)) && !/pts|points/i.test(srv._resultsCaption(rsAr).replace(/\$500/, '')),
     JSON.stringify(rsAr.slides[1].rows) + srv._resultsCaption(rsAr));
+  const arCap = srv._resultsCaption(rsAr);
+  ok('the Top A&R caption is the top 8 in placement order, by Instagram name where there is one, no points',
+    /^Top 8 A&Rs · /.test(arCap) && /\n1\. /.test(arCap) && !/pts|points/i.test(arCap.replace(/\$500/, '')) && !/·\s*\d+\s*$/m.test(arCap), arCap);
+  const arNotes = srv._dailyAsanaNotes(rsAr, arCap);
+  ok('the Top A&Rs task says who to collab with', /Collab: invite @|has no Instagram handle on file, so there is no collab/.test(arNotes), arNotes);
   ok('the A&R carousel closes on Join the A&R Team with the $500', rsAr.slides[2].cta.eyebrow === 'Join the A&R Team' && rsAr.slides[2].cta.head.join(' ').includes('$500'));
   ok('a fourteen-record day is five slides with the list split evenly (5/4/4)',
     JSON.stringify(srv._resultsPages(Array.from({ length: 13 }, (_, i) => i), 6).map(p => p.length)) === '[5,4,4]');
@@ -5173,6 +5178,15 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const atResumeAt = asanaCalls.length;
   const atResume = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song', taskId: atSong.d.taskId, next: 5 }, 'POST', BOOTH);
   const atResumed = asanaCalls.slice(atResumeAt);
+  // A task made with old content is replaced: the old one is deleted first, then a new one made.
+  const rplWas = (await anDb.get('SELECT asana_tasks FROM recap_jobs WHERE session_id = ?', [LDROP])).asana_tasks;
+  await anDb.run("UPDATE recap_jobs SET asana_tasks = ? WHERE session_id = ?", [JSON.stringify({ song: { done: true }, ar: { replaceGid: '999001' } }), LDROP]);
+  const rplAt = asanaCalls.length;
+  await srv._advanceDailyAsanaTasks({ deadline: Date.now() + 20000 });
+  const rpl = asanaCalls.slice(rplAt);
+  ok('daily asana: replacing a task deletes the old one, then makes the new one',
+    rpl[0] && rpl[0].method === 'DELETE' && rpl[0].path === '/tasks/999001' && rpl.some(c => c.method === 'POST' && c.path === '/tasks'), JSON.stringify(rpl.slice(0, 3)));
+  await anDb.run('UPDATE recap_jobs SET asana_tasks = ? WHERE session_id = ?', [rplWas, LDROP]);
   ok('daily asana: a follow-up press attaches only what is left and makes no second task',
     atResume.d.done === true && atResumed.length === 1 && atResumed[0].path === '/attachments' && /-06\.png$/.test(atResumed[0].data.filename), JSON.stringify(atResumed));
   // The cron makes both tasks on its own once a day is queued (rendered); then never again.
