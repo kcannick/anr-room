@@ -1594,23 +1594,6 @@ function resultsPages(list, per) {
   for (let i = 0, at = 0; i < pages; i++) { const n = base + (i < extra ? 1 : 0); out.push(list.slice(at, at + n)); at += n; }
   return out;
 }
-// The profile photo as a data URI for Satori (which cannot fetch), best-effort: a slow or
-// oversized image, or a host that is down, costs the photo and nothing else.
-async function photoDataUri(url) {
-  if (!url || !/^https?:\/\//i.test(url)) return null;
-  try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 4000);
-    const r = await fetch(url, { signal: ctl.signal });
-    clearTimeout(t);
-    if (!r.ok) return null;
-    const type = (r.headers.get('content-type') || '').split(';')[0].trim();
-    if (!/^image\/(png|jpeg|webp)$/.test(type)) return null;
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.length > 3 * 1024 * 1024) return null;
-    return `data:${type};base64,${buf.toString('base64')}`;
-  } catch (e) { return null; }
-}
 // The 'song' set IS the Makin' It Daily Countdown since 2026-10-02 (it replaced the Top Track
 // carousel); 'ar' is still the Top A&R carousel. Each set says which card type renders it.
 async function resultsCarouselData(session, set, { photo = true } = {}) {
