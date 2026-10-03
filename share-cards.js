@@ -503,15 +503,15 @@ function resultsField(height, cutTop) {
       transform: 'skewY(-13deg)' }, ''),
   ]);
 }
-// The Top A&R carousel's footer: the ask WITH the link (operator, 2026-10-03 — a bare URL on
-// the green field had no call to action), and the page count on the right.
+// The Top A&R carousel's footer: the page count bottom-left, and the ask WITH the link
+// right-justified (operator, 2026-10-03 — a bare URL on the green field had no call to action).
 function resultsJoinFoot(pageTxt) {
   return h({ position: 'absolute', left: 80, right: 80, bottom: 72, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }, [
-    col({}, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 1, color: RECAP.bg, ...NOWRAP }, pageTxt || ''),
+    col({ alignItems: 'flex-end' }, [
       text(RES_DISPLAY(40, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1 }), 'Join the A&R Team'),
       text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.bg, marginTop: 8, ...NOWRAP }, RESULTS_URL),
     ]),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 1, color: RECAP.bg, ...NOWRAP }, pageTxt || ''),
   ]);
 }
 function resultsFoot(leftTxt, rightTxt) {
