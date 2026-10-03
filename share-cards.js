@@ -757,15 +757,22 @@ function elementCountdownSlide(d) {
 // One portrait graphic per person, posted as an Instagram COLLAB post so it lands on their
 // feed too (operator, 2026-09-18). Four posts off one element: Top Track / Top A&R of the Day
 // (the daily #1s from the recap) and of the Week (with a strap saying what the week earns).
-// Built to the approved mockup public/brand/winners/winner.html AFTER it was stripped
-// ("flyers look too busy"): the lockup, the stacked title with its date, the person, ONE
-// line of numbers, the field. No trophy, no labelled cells, no rank (TOP TRACK already says
-// #1). The letter grade sits in the block device. Gold on the money only.
+// Built to the approved mockup public/brand/winners/winner.html after two strips ("flyers
+// look too busy" 2026-09-18; "information overload for promotional graphics" 2026-09-21):
+// the lockup, the stacked title, the person, ONE line, the field. No trophy, no date, no
+// score, no grade, no city. A track says "Rated by X A&Rs"; an A&R says "N points". Same day,
+// "branding is too big — the title of the promo is TOP TRACK / TOP A&R": the lockup is a small
+// header and TOP TRACK OF THE DAY is the hero. Handles print in parentheses, as the operator
+// wrote them (twice).
 //
 // Data shape (server.js winnerDayData / winnerWeekData):
-//   { kind: 'track'|'ar', period: 'day'|'week', label, sub: 'of the Day', date: '09.12.26' or a range,
-//     strap: null | 'Placed in the next $1,000 Tournament', title, by, handle, photo? (data URI),
-//     line: { score?, drop? } | { grade, points, bullseyes }, cta: { label, url } }
+//   { kind: 'track'|'ar', period: 'day'|'week', label, sub: 'of the Day', date (caption only),
+//     title, by, handle, photo? (data URI), line: { rated } | { points }, cta: { label, url },
+//     selected?: ['Selected for the next', '$1,000 Music Tournament'] (week cards only) }
+// WEEK cards (operator, 2026-09-21: "the weekly flyers are about the person placing in the
+// tournament — that needs to be BIG"): Congratulations / the NAME in caps / the selection, two
+// lines with the money in gold / the record (track) or the handle (A&R) small. The profile
+// photo sits top right beside the header so the name runs full width. No title line, no numbers.
 const WINNER_SIZE = [1080, 1350];
 // A line with every dollar amount in gold and the rest in ink (Satori collapses leading and
 // trailing spaces, so they become non-breaking ones).
@@ -774,24 +781,75 @@ function winnerGoldLine(str, style) {
   return row({ alignItems: 'flex-end' }, String(str).split(/(\$[\d,]+)/).filter(Boolean).map(part =>
     text({ ...style, color: /^\$[\d,]+$/.test(part) ? RESULTS_GOLD : style.color }, keep(part))));
 }
+function winnerHeader() {
+  return [
+    h({ position: 'absolute', left: 80, top: 64, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 30 } } }]),
+    h({ position: 'absolute', left: 80, top: 108, display: 'flex', flexDirection: 'row', alignItems: 'center' }, [
+      arBlock(60, 24),
+      text(RES_DISPLAY(56, RECAP.fg, { textTransform: 'uppercase', marginLeft: 16 }), 'Meeting'),
+    ]),
+  ];
+}
+function winnerCta(cta) {
+  return col({ position: 'absolute', left: 80, bottom: 64 }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 42, lineHeight: 1, letterSpacing: -1, color: RECAP.bg, ...NOWRAP }, cta.label || ''),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, color: RECAP.bg, marginTop: 12, ...NOWRAP }, cta.url || ''),
+  ]);
+}
+function elementWinnerWeek(d) {
+  const kids = winnerHeader();
+  kids.push(row({ position: 'absolute', left: 80, top: 300, alignItems: 'center' }, [
+    tick(16, 50, 22),
+    text(RES_DISPLAY(64, RECAP.fg, { lineHeight: 1, letterSpacing: -2 }), 'Congratulations'),
+  ]));
+  // The name in caps, at most two lines: the size steps down with the length (Archivo 900 caps ~0.62em a character).
+  const name = clip(d.title, 40);
+  let fs = 76;
+  for (const size of [140, 112, 92, 76]) { if (Math.ceil(name.length / Math.floor(920 / (size * 0.62))) <= 2) { fs = size; break; } }
+  const sel = d.selected || [];
+  const selStyle = { fontFamily: DISPLAY, fontWeight: 700, fontSize: 56, lineHeight: 1.12, letterSpacing: -2, color: RECAP.fg, ...NOWRAP };
+  const small = { fontFamily: MONO, fontWeight: 700, fontSize: 36, lineHeight: 1.3, color: RECAP.dim };
+  kids.push(col({ position: 'absolute', left: 80, top: 400, width: 920 }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.92, letterSpacing: -Math.round(fs * 0.04), textTransform: 'uppercase', color: RECAP.fg }, name),
+    col({ marginTop: 26 }, sel.map((l, i) => i === 0 ? text(selStyle, l) : winnerGoldLine(l, selStyle))),
+    row({ marginTop: 30, flexWrap: 'wrap', width: 920 }, [
+      ...(d.kind === 'track' ? [text({ ...small, color: RECAP.fg }, clip(d.by, 40) + '\u00A0')] : []),
+      text(small, d.handle || ''),
+    ]),
+  ]));
+  if (d.photo) {
+    kids.push(h({ position: 'absolute', right: 80, top: 64, width: 260, height: 260, overflow: 'hidden', borderRadius: 12,
+      background: RECAP.panel, transform: `skewX(${SKEW}deg)`, display: 'flex' }, [
+      { type: 'img', props: { src: d.photo, style: { position: 'absolute', left: -35, top: 0, width: 330, height: 260, objectFit: 'cover', transform: `skewX(${-SKEW}deg)` } } },
+    ]));
+  }
+  kids.push(resultsField(300, 110), winnerCta(d.cta || {}));
+  return h({ position: 'relative', display: 'flex', width: WINNER_SIZE[0], height: WINNER_SIZE[1], background: RECAP.bg }, kids);
+}
 function elementWinnerPost(d) {
-  const line = d.line || {}, hasPhoto = !!d.photo, strap = d.strap ? 64 : 0;
+  const line = d.line || {}, hasPhoto = !!d.photo, strap = 0;
+  if (d.period === 'week') return elementWinnerWeek(d);
   const kids = [
-    h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 36 } } }]),
-    resultsLockup(),
-    // the title, stacked: TOP TRACK / of the Day · 09.12.26
-    col({ position: 'absolute', left: 80, top: 430 }, [
-      text(RES_DISPLAY(104, RECAP.fg, { lineHeight: 0.88, textTransform: 'uppercase' }), d.label || ''),
-      row({ marginTop: 16, alignItems: 'flex-end' }, [
-        text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 46, lineHeight: 1, letterSpacing: -1, color: RECAP.dim, ...NOWRAP }, d.sub || ''),
-        text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1, color: RECAP.dim, marginLeft: 10, marginBottom: 4, ...NOWRAP }, d.date ? '· ' + d.date : ''),
-      ]),
+    h({ position: 'absolute', left: 80, top: 64, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 30 } } }]),
+    // [A&R] MEETING as a small header (S=60), not the hero
+    h({ position: 'absolute', left: 80, top: 108, display: 'flex', flexDirection: 'row', alignItems: 'center' }, [
+      arBlock(60, 24),
+      text(RES_DISPLAY(56, RECAP.fg, { textTransform: 'uppercase', marginLeft: 16 }), 'Meeting'),
+    ]),
+    // the title IS the promo: TOP TRACK / OF THE DAY
+    col({ position: 'absolute', left: 80, top: 300 }, [
+      text(RES_DISPLAY(140, RECAP.fg, { lineHeight: 0.88, textTransform: 'uppercase' }), d.label || ''),
+      text(RES_DISPLAY(72, RECAP.fg, { lineHeight: 1, textTransform: 'uppercase', marginTop: 12 }), d.sub || ''),
     ]),
   ];
   if (d.strap) {
-    kids.push(row({ position: 'absolute', left: 80, top: 616 }, [
-      tick(10, 30, 16),
-      winnerGoldLine(d.strap, { fontFamily: DISPLAY, fontWeight: 700, fontSize: 35, lineHeight: 1, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }),
+    // The week card is a congratulations (operator, 2026-09-21): the word with the tick, then what they made it into.
+    kids.push(col({ position: 'absolute', left: 80, top: 546 }, [
+      row({ alignItems: 'center' }, [
+        tick(12, 36, 16),
+        text(RES_DISPLAY(46, RECAP.fg, { lineHeight: 1 }), d.strapHead || 'Congratulations'),
+      ]),
+      winnerGoldLine(d.strap, { fontFamily: DISPLAY, fontWeight: 700, fontSize: 32, lineHeight: 1, letterSpacing: -1, color: RECAP.fg, marginTop: 12, ...NOWRAP }),
     ]));
   }
   // The person: the title steps down with its length (Satori cannot measure a wrap), and
@@ -802,14 +860,13 @@ function elementWinnerPost(d) {
   // Satori cannot measure a wrap, so the title's line count is estimated from its length
   // (Archivo 900 runs ~0.56em a character) and the size steps down until the numbers line
   // clears the 13° cut at its right edge (cut y = 1160 − x·tan13°), as the mockup does.
-  const numChars = d.kind === 'ar' ? 4 + String(line.points).length + 8 + 3 + String(line.bullseyes).length + 10
-    : (line.score != null ? 6 + String(line.score).length : 0) + (line.drop ? 3 + 8 + String(line.drop).length : 0);
-  const numRight = 80 + numChars * (hasPhoto ? 30 : 36) * 0.6 + (d.kind === 'ar' ? 110 : 0);
+  const numChars = d.kind === 'ar' ? String(line.points).length + 7 + (d.period === 'week' ? 10 : 0) : 9 + String(line.rated).length + 5;
+  const numRight = 80 + numChars * (hasPhoto ? 30 : 36) * 0.6;
   const cutAt = x => 1160 - x * TAN13;
   let fs = 58;
   for (const size of [84, 68, 58]) {
     const lines = Math.max(1, Math.ceil(title.length * size * 0.56 / colW));
-    const bottom = 640 + strap + lines * size * 0.96 + 26 + 48 + (handleDrops ? 42 : 0) + 44 + (hasPhoto ? 30 : 36);
+    const bottom = 600 + strap + lines * size * 0.96 + (d.kind === 'ar' ? 26 + 38 : 26 + 48 + (handleDrops ? 42 : 0)) + 44 + (hasPhoto ? 30 : 36);
     if (bottom <= cutAt(numRight) - 16) { fs = size; break; }
   }
   // Satori collapses a leading or trailing space, so the joins are non-breaking spaces. Beside a
@@ -820,24 +877,15 @@ function elementWinnerPost(d) {
   let numbers;
   if (d.kind === 'ar') {
     numbers = row({ marginTop: 44, alignItems: 'center' }, [
-      h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: hasPhoto ? 72 : 84, height: hasPhoto ? 58 : 68, background: RECAP.green,
-        borderRadius: 4, transform: `skewX(${SKEW}deg)`, marginRight: hasPhoto ? 22 : 30, flexShrink: 0 },
-        text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: hasPhoto ? 44 : 50, letterSpacing: -2, color: RECAP.greenInk, lineHeight: 1 }, line.grade || '')),
-      text(numVal, String(line.points == null ? '' : line.points)), text(numStyle, NB + 'points'),
-      text(numStyle, NB + '·' + NB),
-      text(numVal, String(line.bullseyes == null ? '' : line.bullseyes)), text(numStyle, NB + 'bullseyes'),
+      text(numVal, String(line.points == null ? '' : line.points)), text(numStyle, NB + 'points' + (d.period === 'week' ? NB + 'this' + NB + 'week' : '')),
     ]);
   } else {
-    const bits = [];
-    if (line.score != null && line.score !== '') bits.push(text(numStyle, 'Score' + NB), text(numVal, String(line.score)));
-    if (line.drop) { if (bits.length) bits.push(text(numStyle, NB + '·' + NB)); bits.push(text(numStyle, 'Dropped' + NB), text(numVal, line.drop)); }
-    numbers = bits.length ? row({ marginTop: 44, alignItems: 'center' }, bits) : text({}, '');
+    numbers = row({ marginTop: 44, alignItems: 'center' }, [
+      text(numStyle, 'Rated' + NB + 'by' + NB), text(numVal, String(line.rated == null ? '' : line.rated)), text(numStyle, NB + 'A&Rs'),
+    ]);
   }
   const subRow = d.kind === 'ar'
-    ? row({ marginTop: 26, alignItems: 'flex-end' }, [
-        text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, clip(d.by, 22)),
-        text({ fontFamily: DISPLAY, fontWeight: 500, fontSize: 42, lineHeight: 1.15, color: RECAP.dim, ...NOWRAP }, d.handle ? '\u00A0· ' + clip(d.handle, 24) : ''),
-      ])
+    ? text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginTop: 26, ...NOWRAP }, d.handle || '')
     // A long artist name and the handle would run off the edge on one line, so the handle drops
     // under the name when the two together would not fit (as the mockup wraps it).
     : (handleDrops
@@ -849,13 +897,13 @@ function elementWinnerPost(d) {
             text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, 'by ' + clip(d.by, 26)),
             text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginLeft: 14, marginBottom: 2, ...NOWRAP }, d.handle || ''),
           ]));
-  kids.push(col({ position: 'absolute', left: 80, top: 640 + strap, width: hasPhoto ? 560 : 920 }, [
+  kids.push(col({ position: 'absolute', left: 80, top: 600 + strap, width: hasPhoto ? 560 : 920 }, [
     text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.96, letterSpacing: -Math.round(fs * 0.04), color: RECAP.fg }, title),
     subRow,
     numbers,
   ]));
   if (hasPhoto) {
-    kids.push(h({ position: 'absolute', right: 80, top: 640 + strap, width: 300, height: 300, overflow: 'hidden', borderRadius: 12,
+    kids.push(h({ position: 'absolute', right: 80, top: 600 + strap, width: 300, height: 300, overflow: 'hidden', borderRadius: 12,
       background: RECAP.panel, transform: `skewX(${SKEW}deg)`, display: 'flex' }, [
       { type: 'img', props: { src: d.photo, style: { position: 'absolute', left: -40, top: 0, width: 380, height: 300, objectFit: 'cover', transform: `skewX(${-SKEW}deg)` } } },
     ]));

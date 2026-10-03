@@ -2,9 +2,8 @@
 # Render the winner posts (4.15), 1080x1350 portrait, for Instagram collab posts.
 #
 #   ./render.sh                                  -> the four sample posts + two variants
-#   ./render.sh track day|week "Artist" "Song" ig 2026-09-12 [rank] [score] [drop-date, week only]
-#   date = the drop day (day) or the FIRST day of the week it tracks (week)
-#   ./render.sh ar day "A&R Name" "Producer" "Atlanta, GA" 2026-09-12 [grade] [pts] [bulls] [photo-url]
+#   ./render.sh track day|week "Artist" "Song" ig [rated]
+#   ./render.sh ar day|week "A&R Name" [pts] [photo-url]
 #   period is day | week
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -22,19 +21,20 @@ render () {  # $1 outfile  $2 query
   echo "$1"
 }
 if [ $# -eq 0 ]; then
-  render winner-track-day.png   "kind=track&period=day&score=8.4"
+  render winner-track-day.png   "kind=track&period=day"
   render winner-ar-day.png      "kind=ar&period=day"
-  render winner-track-week.png  "kind=track&period=week&score=8.4"
-  render winner-ar-week.png     "kind=ar&period=week"
+  render winner-track-week.png  "kind=track&period=week"
+  render winner-ar-week.png     "kind=ar&period=week&pts=1840"
   render winner-track-week-long.png   "kind=track&period=week&song=A%20Much%20Longer%20Song%20Title%20Here&name=A%20Much%20Longer%20Artist%20Name"
+  render winner-ar-week-long.png      "kind=ar&period=week&name=A%20Much%20Longer%20A%26R%20Name"
   render winner-ar-day-nophoto.png    "kind=ar&period=day&photo=&name=A%20Much%20Longer%20Name"
   exit 0
 fi
 KIND="$1"; PERIOD="$2"; NAME="$3"
 if [ "$KIND" = track ]; then
-  q="kind=track&period=$PERIOD&name=$(enc "$NAME")&song=$(enc "${4:-}")&ig=$(enc "${5:-}")&date=${6:-}&rank=${7:-1}&score=${8:-}&drop=${9:-}"
+  q="kind=track&period=$PERIOD&name=$(enc "$NAME")&song=$(enc "${4:-}")&ig=$(enc "${5:-}")&rated=${6:-}"
 else
-  q="kind=ar&period=$PERIOD&name=$(enc "$NAME")&title=$(enc "${4:-}")&city=$(enc "${5:-}")&date=${6:-}&grade=${7:-}&pts=${8:-}&bulls=${9:-}&photo=$(enc "${10:-}")"
+  q="kind=ar&period=$PERIOD&name=$(enc "$NAME")&pts=${4:-}&photo=$(enc "${5:-}")"
 fi
 slug=$(python3 -c 'import sys,re;print(re.sub(r"[^a-z0-9]+","-",sys.argv[1].lower()).strip("-"))' "$NAME")
 render "winner-$KIND-$PERIOD-$slug.png" "$q"

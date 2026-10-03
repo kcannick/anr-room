@@ -2199,28 +2199,46 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and leaves the hosted post URLs null rather than failing the publish',
     wjob.winner_track_url == null && wjob.winner_ar_url == null, JSON.stringify([wjob.winner_track_url, wjob.winner_ar_url]));
   const wdTrack = await srv._winnerDayData(pubbed, 'track');
-  ok('Top Track of the Day is the record with the highest room average, dated by the DROP day',
+  // Dated by the REVEAL day, the same date the results carousel it ships beside carries.
+  // This fixture's explicit epochs put the publish on the open day, so the two coincide here —
+  // compare against revealDayOf rather than a hardcoded drop_day so the assertion still means
+  // something on a normal noon-to-noon day (and cannot go flaky when the window crosses midnight).
+  ok('Top Track of the Day is the record with the highest room average, dated by the REVEAL day',
     wdTrack && wdTrack.title === '“' + topRec.song_title + '”' && wdTrack.period === 'day' && wdTrack.strap == null
       && wdTrack.date === srv._recapDateLabel(srv._etEpoch(pubbed.drop_day, 12)), JSON.stringify(wdTrack));
-  ok('the day card carries the score and no rank (TOP TRACK already says #1)',
-    /^\d\.\d$/.test(String(wdTrack.line.score)) && wdTrack.line.drop === undefined && !('rank' in wdTrack.line), JSON.stringify(wdTrack.line));
+  ok('the day card says how many A&Rs rated it, and nothing else (no rank, no grade; the score stays in the data for the caption)',
+    typeof wdTrack.line.rated === 'number' && wdTrack.line.rated > 0 && /^\d\.\d$/.test(String(wdTrack.line.score)) && wdTrack.line.drop === undefined && !('rank' in wdTrack.line),
+    JSON.stringify(wdTrack.line));
   const wdAr = await srv._winnerDayData(pubbed, 'ar');
-  ok('Top A&R of the Day is the board leader with a letter grade, points and a bullseye count',
-    wdAr && wdAr.title === 'Lex' && typeof wdAr.line.points === 'number' && typeof wdAr.line.bullseyes === 'number'
-      && /^[A-F][+-]?$/.test(wdAr.line.grade) && wdAr.photo == null, JSON.stringify(wdAr));
+  ok('Top A&R of the Day is the board leader with the points only: no grade, no bullseyes, no city, no title',
+    wdAr && wdAr.title === 'Lex' && typeof wdAr.line.points === 'number' && !('grade' in wdAr.line) && !('bullseyes' in wdAr.line)
+      && wdAr.by === '' && /^(\(@[A-Za-z0-9_.]+\))?$/.test(wdAr.handle) && wdAr.photo == null, JSON.stringify(wdAr));
+  ok('a record handle prints in parentheses, as the operator wrote it', /^(\(@[A-Za-z0-9_.]+\))?$/.test(wdTrack.handle), wdTrack.handle);
+  ok('the captions carry the Rated by line and the simplified CTA',
+    /Rated by \d+ A&Rs/.test(wjob.winner_track_caption) && /Submit your music free/.test(wjob.winner_track_caption) && /\d+ points/.test(wjob.winner_ar_caption),
+    JSON.stringify([wjob.winner_track_caption, wjob.winner_ar_caption]));
   ok('the winner data never carries an email or phone', !/@test\.com|\+1\d{9}/.test(JSON.stringify([wdTrack, wdAr])));
   ok('the captions match the stored ones', srv._winnerCaption(wdTrack) === wjob.winner_track_caption && srv._winnerCaption(wdAr) === wjob.winner_ar_caption);
   ok('a week starts on Monday', srv._weekStartOf('2026-09-16') === '2026-09-14' && srv._weekStartOf('2026-09-14') === '2026-09-14' && srv._weekStartOf('2026-09-20') === '2026-09-14',
     [srv._weekStartOf('2026-09-16'), srv._weekStartOf('2026-09-14'), srv._weekStartOf('2026-09-20')].join(','));
   const wkStart = srv._weekStartOf(pubbed.drop_day);
+  // The week's winners are the WEEKLY REPORT's #1s — the week spans every drop in it (other
+  // tests' days included), and its A&R list is qualified profiles only, so qualify this
+  // drop's players and compare against the report rather than against one day's top record.
+  await dDb.run('UPDATE users SET profile_complete = 1 WHERE uid IN (SELECT user_id FROM participants WHERE session_id = ?)', [LDROP]);
+  const wrep = await srv._weeklyReportData(pubbed.drop_day, { limit: 1 });
   const wwTrack = await srv._winnerWeekData(pubbed.drop_day, 'track');
-  ok('Top Track of the Week spans the published drops of that week and carries the strap, the range and the drop day',
-    wwTrack && wwTrack.title === '“' + topRec.song_title + '”' && wwTrack.period === 'week' && /\$1,000 Tournament/.test(wwTrack.strap)
-      && wwTrack.date.includes(' – ') && wwTrack.line.drop === srv._recapDateLabel(srv._etEpoch(pubbed.drop_day, 12)) && wwTrack.week.start === wkStart,
+  ok('Top Track of the Week is about the ARTIST placing: the artist is the name, the record the small line, the selection in the operator\'s words',
+    wwTrack && wrep.songs[0] && wwTrack.title === wrep.songs[0].artist && wwTrack.by === '“' + wrep.songs[0].title + '”' && wwTrack.period === 'week'
+      && wwTrack.selected.join(' ') === 'Selected for the next $1,000 Music Tournament'
+      && wwTrack.date.includes(' – ') && wwTrack.line.drop === srv._recapDateLabel(srv._etEpoch(wrep.songs[0].day, 12)) && wwTrack.week.start === wkStart,
     JSON.stringify(wwTrack));
   const wwAr = await srv._winnerWeekData(pubbed.drop_day, 'ar');
-  ok('Top A&R of the Week is the most points across the week with the A&R Wars strap',
-    wwAr && wwAr.title === 'Lex' && /A&R Wars/.test(wwAr.strap) && /\$500/.test(wwAr.strap) && wwAr.line.points === wdAr.line.points, JSON.stringify(wwAr));
+  ok('Top A&R of the Week is the weekly report\'s #1 A&R (what the show announces), selected for the A&R Wars Tournament',
+    wwAr && wrep.ars[0] && wwAr.title === wrep.ars[0].name && wwAr.line.points === wrep.ars[0].points
+      && wwAr.selected.join(' ') === 'Selected for the A&R Wars Tournament', JSON.stringify([wwAr, wrep.ars[0]]));
+  ok('the week data says whether the week has settled, for the console', typeof wwTrack.week.settled === 'boolean' && Array.isArray(wwTrack.week.pending));
+  ok('the day cards carry no selection line', wdTrack.selected == null && wdAr.selected == null);
   ok('a week with no published drops has no winners', (await srv._winnerWeekData('2020-01-06', 'track')) === null);
   const wp1 = await fetch(base + '/api/card/winner?s=' + LDROP + '&post=track', { headers: BOOTH });
   const w1Buf = Buffer.from(await wp1.arrayBuffer());

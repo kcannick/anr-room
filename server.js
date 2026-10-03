@@ -1861,131 +1861,106 @@ function resultsCaption(d) {
 
 // ---- The winner posts (039): Top Track / Top A&R of the Day and of the Week ----------------
 // One portrait graphic per winner, posted as an Instagram COLLAB post with them (operator,
-// 2026-09-18). The daily pair renders at the 3PM publish off the same data as the results
-// carousels; the weekly pair renders on demand for a Monday-to-Sunday week and stores nothing.
-//
-// THE WEEKLY RULE (a default, not yet the operator's word — 2026-09-18): Top Track of the Week
-// is the record with the highest room average across the week's PUBLISHED drops (ties: more
-// votes, then the earlier day, then drop order); Top A&R of the Week is the A&R with the most
-// points summed across those drops (ties: name). The week's grade and bullseyes are computed
-// over that A&R's votes in those drops, the same way the score card does it for one day.
-// A week card is dated by the week it TRACKS (first day – last day), never the announce day.
+// 2026-09-18). The daily pair renders at the publish; the weekly pair renders on demand.
+// SIMPLIFIED through four operator rounds (2026-09-21): the card carries no date, score, grade,
+// bullseyes, city or title. A day track is “Title” by Artist (@handle) + "Rated by X A&Rs"; a
+// day A&R is name + (@handle) + photo + "N points". THE WEEK CARDS ARE ABOUT THE PERSON PLACING:
+// Congratulations / NAME / "Selected for the next $1,000 Music Tournament" or "Selected for the
+// A&R Wars Tournament" (the operator's tournament names, 2026-10-03), the record small under the
+// artist. Handles print in parentheses here (the operator wrote "(@instagram)" twice).
+// THE WEEK'S WINNERS ARE THE WEEKLY REPORT'S #1s (weeklyReportData: Monday–Sunday, the ranking
+// the weekly live show reads on air), so the posted winner is always the announced winner. A
+// week that has not settled still renders for preview; `week.settled` says so and the console
+// warns, because the seats are handed out off a settled week only.
 const WINNER_COPY = {
-  track: { label: 'Top Track', strap: 'Placed in the next $1,000 Tournament',
-    cta: { label: 'Submit music to the A&R Team', url: shareCards.SUBMIT_URL } },
-  ar:    { label: 'Top A&R', strap: 'Placed in the A&R Wars tournament for $500 Cash',
+  track: { label: 'Top Track', selected: ['Selected for the next', '$1,000 Music Tournament'],
+    cta: { label: 'Submit your music free', url: shareCards.SUBMIT_URL } },
+  ar:    { label: 'Top A&R', selected: ['Selected for the', 'A&R Wars Tournament'],
     cta: { label: 'Join the A&R Team', url: shareCards.JOIN_URL } },
 };
 const dayLabel = day => recapDateLabel(etEpoch(day, 12));
-// The Monday of the ET week that holds `day`.
-function weekStartOf(day) {
-  const ts = etEpoch(day, 12);
-  if (ts == null) return null;
-  const dow = new Date(ts).getUTCDay();                       // noon ET is the same calendar day in UTC
-  return etNextDay(day, -((dow + 6) % 7));
-}
-// The most recent week whose Sunday has passed: the one the console offers by default.
-const lastCompletedWeekStart = () => etNextDay(weekStartOf(etDay()), -7);
-// Grade and bullseyes over a set of vote rows ({ err, tier, poll_type }), as buildRecap does it.
-function gradeAndBullseyes(rows) {
-  const scaleFor = pt => (pt === 'binary' ? 100 : 9);
-  const acc = rows.length ? Math.round((rows.reduce((a, m) => a + roundAccuracy(m.err, scaleFor(m.poll_type)), 0) / rows.length) * 100) / 100 : null;
-  return { grade: gradeForAccuracy(acc), bullseyes: rows.filter(m => m.tier === 'bullseye').length };
-}
-function winnerShape(post, period, date, strap, person, extra) {
+// The week helpers are the weekly report's (Monday-based); the older names stay as aliases so
+// the routes, the console's default week and the tests read the same Monday the show does.
+const weekStartOf = day => weekStartFor(day);
+const lastCompletedWeekStart = () => lastCompleteWeekStart();
+const paren = ig => (ig ? '(@' + ig + ')' : '');
+function winnerShape(post, period, date, person, extra) {
   const copy = WINNER_COPY[post];
   return { kind: post, period, label: copy.label, sub: 'of the ' + (period === 'week' ? 'Week' : 'Day'), date,
-    strap: period === 'week' ? copy.strap : null, ...person, ...extra, cta: copy.cta };
+    selected: period === 'week' ? copy.selected : null, ...person, ...extra, cta: copy.cta };
 }
-async function winnerTrackRow(sessionIds, { idx = true } = {}) {
-  const ph = sessionIds.map(() => '?').join(',');
-  return db.get(
-    `SELECT r.song_title, r.song_artist, r.song_note, r.artist_instagram, r.room_average, s.drop_day,
-            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS nv
-       FROM rounds r JOIN sessions s ON s.id = r.session_id
-      WHERE r.session_id IN (${ph}) AND r.status = 'ratified' AND r.room_average IS NOT NULL
-        AND COALESCE(r.is_reference, 0) = 0
-      ORDER BY r.room_average DESC, nv DESC, s.drop_day ASC, r.idx ASC LIMIT 1`, sessionIds);
-}
-function trackPerson(r) {
-  const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
-  const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
-  return { title: '“' + (r.song_title || '—').trim() + '”', by: (r.song_artist || '').trim(), handle: ig ? '@' + ig : '' };
-}
-async function arPerson(u, { photo }) {
-  return { title: u.name || 'A&R', by: (u.primary_category || '').trim(), handle: (u.location || '').trim(),
-    photo: photo ? await photoDataUri(u.photo_url) : null };
-}
-// The day's pair: the top record (with its room average) and the board leader (with the
-// score card's grade and bullseye count). Public surface: display name, category, city, points.
+// The day's pair: the top record (with how many A&Rs rated it) and the board leader (with the
+// points). Public surface: display name, handle, photo, points; the record's title, artist, handle.
 async function winnerDayData(session, post, { photo = true } = {}) {
   if (!WINNER_COPY[post]) return null;
   const date = dayLabel(session.drop_day);
   if (post === 'track') {
-    const r = await winnerTrackRow([session.id]);
+    const r = await db.get(
+      `SELECT r.song_title, r.song_artist, r.song_note, r.artist_instagram, r.room_average,
+              (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS nv
+         FROM rounds r
+        WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
+          AND COALESCE(r.is_reference, 0) = 0
+        ORDER BY r.room_average DESC, nv DESC, r.idx ASC LIMIT 1`, [session.id]);
     if (!r) return null;
-    return winnerShape('track', 'day', date, null, trackPerson(r), { line: { score: Number(r.room_average).toFixed(1) } });
+    const m = /(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(r.song_note || '');
+    const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
+    return winnerShape('track', 'day', date,
+      { title: '“' + (r.song_title || '—').trim() + '”', by: (r.song_artist || '').trim(), handle: paren(ig) },
+      { line: { rated: Number(r.nv) || 0, score: Number(r.room_average).toFixed(1) } });
   }
   const top = await db.get(
-    `SELECT p.id AS pid, p.name AS pname, u.name, u.primary_category, u.location, u.photo_url, p.total_points AS pts
+    `SELECT p.name AS pname, u.name, u.instagram, u.photo_url, p.total_points AS pts
        FROM participants p LEFT JOIN users u ON p.user_id = u.uid
       WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
       ORDER BY pts DESC, p.created_at ASC LIMIT 1`, [session.id]);
   if (!top) return null;
-  const votes = await db.all(
-    `SELECT v.err, v.tier, r.poll_type FROM votes v JOIN rounds r ON r.id = v.round_id
-      WHERE v.participant_id = ? AND r.status = 'ratified'`, [top.pid]);
-  const gb = gradeAndBullseyes(votes);
-  return winnerShape('ar', 'day', date, null, await arPerson({ ...top, name: top.name || top.pname }, { photo }),
-    { line: { grade: gb.grade || '—', points: Number(top.pts) || 0, bullseyes: gb.bullseyes } });
+  return winnerShape('ar', 'day', date,
+    { title: top.name || top.pname || 'A&R', by: '', handle: paren(igClean(top.instagram)), photo: photo ? await photoDataUri(top.photo_url) : null },
+    { line: { points: Number(top.pts) || 0 } });
 }
-// The week's pair, over the PUBLISHED drops dated Monday..Sunday from `weekStart`.
+// The week's pair: the weekly report's #1 record and #1 A&R for the week holding `weekStart`.
 async function winnerWeekData(weekStart, post, { photo = true } = {}) {
   if (!WINNER_COPY[post]) return null;
-  const start = weekStartOf(weekStart);
-  if (!start) return null;
-  const end = etNextDay(start, 6);
-  const drops = await db.all(
-    `SELECT id, drop_day FROM sessions WHERE mode = 'async' AND async_state = 'published' AND deleted_at IS NULL
-        AND drop_day BETWEEN ? AND ? ORDER BY drop_day ASC`, [start, end]);
-  if (!drops.length) return null;
-  const ids = drops.map(d => d.id), ph = ids.map(() => '?').join(',');
-  const date = dayLabel(start) + ' – ' + dayLabel(end);
+  const rep = await weeklyReportData(weekStart, { limit: 1 });
+  if (!rep || !rep.drops.length) return null;
+  const week = { start: rep.week.start, end: rep.week.end, drops: rep.drops.length, settled: rep.settled, pending: rep.pending };
+  const date = dayLabel(rep.week.start) + ' – ' + dayLabel(rep.week.end);
   if (post === 'track') {
-    const r = await winnerTrackRow(ids);
+    const r = rep.songs[0];
     if (!r) return null;
-    return winnerShape('track', 'week', date, WINNER_COPY.track.strap, trackPerson(r),
-      { line: { score: Number(r.room_average).toFixed(1), drop: dayLabel(r.drop_day) }, week: { start, end, drops: drops.length } });
+    // On the week card the ARTIST is the name and the record is the small line.
+    return winnerShape('track', 'week', date,
+      { title: r.artist || r.title, by: '“' + r.title + '”', handle: paren(r.ig) },
+      { line: { rated: r.votes, score: Number(r.score).toFixed(1), drop: dayLabel(r.day) }, week });
   }
-  const top = await db.get(
-    `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(p.total_points) AS pts
-       FROM participants p JOIN users u ON p.user_id = u.uid
-      WHERE p.session_id IN (${ph}) AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
-      GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
-      ORDER BY pts DESC, u.name ASC LIMIT 1`, ids);
-  if (!top) return null;
-  const votes = await db.all(
-    `SELECT v.err, v.tier, r.poll_type FROM votes v JOIN participants p ON p.id = v.participant_id
-       JOIN rounds r ON r.id = v.round_id
-      WHERE p.user_id = ? AND p.session_id IN (${ph}) AND r.status = 'ratified'`, [top.uid, ...ids]);
-  const gb = gradeAndBullseyes(votes);
-  return winnerShape('ar', 'week', date, WINNER_COPY.ar.strap, await arPerson(top, { photo }),
-    { line: { grade: gb.grade || '—', points: Number(top.pts) || 0, bullseyes: gb.bullseyes }, week: { start, end, drops: drops.length } });
+  const a = rep.ars[0];
+  if (!a) return null;
+  const u = photo ? await db.get('SELECT photo_url FROM users WHERE uid = ?', [a.id]) : null;
+  return winnerShape('ar', 'week', date,
+    { title: a.name, by: '', handle: paren(a.ig), photo: u ? await photoDataUri(u.photo_url) : null },
+    { line: { points: a.points }, week });
 }
-// The collab post's caption: plain, the same words as the card.
+// The collab post's caption: plain, the same words as the card, plus the date and score the
+// card leaves off.
 function winnerCaption(d) {
   const lines = [`${d.label} ${d.sub} · ${d.date}`];
-  if (d.kind === 'track') {
+  if (d.selected) {
+    lines.push(`Congratulations ${d.title}${d.handle ? ' ' + d.handle : ''}`, d.selected.join(' '));
+    if (d.kind === 'track') lines.push(d.by);
+  } else if (d.kind === 'track') {
     lines.push(`${d.title} by ${d.by}${d.handle ? ' ' + d.handle : ''}`.trim());
-    const bits = [];
-    if (d.line && d.line.score) bits.push('Score ' + d.line.score);
-    if (d.line && d.line.drop) bits.push('Dropped ' + d.line.drop);
-    if (bits.length) lines.push(bits.join(' · '));
   } else {
-    lines.push(`${d.title}${d.by ? ' · ' + d.by : ''}${d.handle ? ' · ' + d.handle : ''}`);
-    lines.push(`Grade ${d.line.grade} · ${d.line.points} points · ${d.line.bullseyes} bullseyes`);
+    lines.push(`${d.title}${d.handle ? ' ' + d.handle : ''}`);
   }
-  if (d.strap) lines.push('', d.strap);
+  if (d.kind === 'track') {
+    const bits = [`Rated by ${d.line.rated} A&Rs`];
+    if (d.line.score) bits.push('Score ' + d.line.score);
+    if (d.line.drop) bits.push('Dropped ' + d.line.drop);
+    lines.push(bits.join(' · '));
+  } else {
+    lines.push(`${d.line.points} points${d.period === 'week' ? ' this week' : ''}`);
+  }
   lines.push('', d.cta.label, d.cta.url, '', IG_TAGS);
   return lines.join('\n');
 }
@@ -9880,7 +9855,8 @@ async function handleApi(req, res, url) {
     const out = { week: { start, end: etNextDay(start, 6), label: dayLabel(start) + ' – ' + dayLabel(etNextDay(start, 6)) } };
     for (const post of ['track', 'ar']) {
       const wd = await winnerWeekData(start, post, { photo: false });
-      out[post] = wd ? { title: wd.title, by: wd.by, handle: wd.handle, line: wd.line, drops: wd.week.drops, caption: winnerCaption(wd) } : null;
+      out[post] = wd ? { title: wd.title, by: wd.by, handle: wd.handle, line: wd.line, drops: wd.week.drops,
+        settled: wd.week.settled, pending: wd.week.pending, caption: winnerCaption(wd) } : null;
     }
     return send(res, 200, out);
   }
