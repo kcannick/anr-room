@@ -434,22 +434,22 @@
       <div id="ratingFlow">
       <!-- STEP 1: RATE -->
       <div id="stepRate" style="margin-top:22px">
-        <div class="step-head"><span class="step-num">①</span> Evaluate</div>
-        <div class="step-help">Score the record from 0–9 based on its overall strength.</div>
+        <div class="step-head"><span class="step-num">①</span> Rate it</div>
+        <div class="step-help">Your honest take, 0 to 9.</div>
         <div class="rate-row" id="rateTop"></div>
         <div class="rate-row two" id="rateBot"></div>
         <button class="btn" id="btnNext" style="margin-top:22px" disabled>Next →</button>
       </div>
 
-      <!-- STEP 2: READ THE ROOM -->
+      <!-- STEP 2: PREDICT THE AVERAGE -->
       <div id="stepPredict" class="hide" style="margin-top:22px">
-        <div class="step-head"><span class="step-num">②</span> Predict the Room</div>
-        <div class="step-help">Predict the room's final average score.</div>
+        <div class="step-head"><span class="step-num">②</span> Predict the Average</div>
+        <div class="step-help">What will every other A&amp;R average it at? The closer you land, the more you score. <b style="color:var(--ink)">Evaluations are final.</b></div>
         <div class="slider-val mono" id="predVal" style="margin-top:14px">–.–</div>
         <input id="pred" type="range" min="0" max="9" step="0.1" value="4.5">
         <div class="scale-ends"><span>0.0 Low</span><span>9.0 Exceptional</span></div>
         <div style="margin-top:22px">
-          <button class="btn" id="btnLock" style="width:100%" disabled>Submit evaluation</button>
+          <button class="btn" id="btnLock" style="width:100%" disabled>Lock it in</button>
           <button class="btn ghost" id="btnPredBack" style="width:100%;margin-top:10px">← Back</button>
         </div>
       </div>
@@ -474,10 +474,10 @@
         <button class="btn" id="btnPickNext" style="margin-top:22px" disabled>Next →</button>
       </div>
 
-      <!-- STEP 2: READ THE ROOM (the split) -->
+      <!-- STEP 2: PREDICT THE SPLIT -->
       <div id="stepSplit" class="hide" style="margin-top:22px">
-        <div class="step-head"><span class="step-num">②</span> Predict the Room</div>
-        <div class="step-help">Predict how the room's evaluations will split between the two records.</div>
+        <div class="step-head"><span class="step-num">②</span> Predict the split</div>
+        <div class="step-help">How will every other A&amp;R split between the two records? The closer you land, the more you score. <b style="color:var(--ink)">Evaluations are final.</b></div>
         <div class="split-readout">
           <div><div class="side" id="splitLabelA">A</div></div>
           <div style="text-align:right"><span class="pct" id="splitPctA">–</span><span class="side"> / </span><span class="pct" id="splitPctB" style="color:var(--cool)">–</span></div>
@@ -486,7 +486,7 @@
         <input id="split" type="range" min="0" max="100" step="1" value="50" style="margin-top:8px">
         <div class="scale-ends"><span id="splitEndA">all A</span><span id="splitEndB">all B</span></div>
         <div style="margin-top:22px">
-          <button class="btn" id="btnLockBin" style="width:100%" disabled>Submit evaluation</button>
+          <button class="btn" id="btnLockBin" style="width:100%" disabled>Lock it in</button>
           <button class="btn ghost" id="btnSplitBack" style="width:100%;margin-top:10px">← Back</button>
         </div>
       </div>
@@ -902,12 +902,12 @@ function maybeEnableNext(){ $('#btnNext').disabled = (chosenTaste===null); }
 // Binary equivalents.
 function maybeEnableLockBin(){ $('#btnLockBin').disabled = !(chosenPick!==null && splitTouched); }
 function maybeEnablePickNext(){ $('#btnPickNext').disabled = (chosenPick===null); }
-// Swap the binary widget between step 1 (Pick) and step 2 (Read the Room / split).
+// Swap the binary widget between step 1 (Pick) and step 2 (Predict the split).
 function showStepBinary(step){
   $('#stepPick').classList.toggle('hide', step!==1);
   $('#stepSplit').classList.toggle('hide', step!==2);
 }
-// Swap the widget between step 1 (Rate) and step 2 (Read the Room). Same screen,
+// Swap the widget between step 1 (Rate it) and step 2 (Predict the Average). Same screen,
 // same position — only the active step shows. Both inputs are preserved across moves.
 function showStep(step){
   $('#stepRate').classList.toggle('hide', step!==1);
@@ -929,7 +929,7 @@ window.ANRAuth.bindJoinHandlers();
   }
 })();
 $('#pred').oninput=e=>{predict=parseFloat(e.target.value);predictTouched=true;$('#predVal').textContent=predict.toFixed(1);$('#pred').classList.add('touched');maybeEnableLock();};
-// Step navigation: Rate → (Next) → Read the Room → (Back) → Rate. Inputs preserved.
+// Step navigation: Rate it → (Next) → Predict the Average → (Back) → Rate it. Inputs preserved.
 $('#btnNext').onclick=()=>{ if(chosenTaste===null)return; showStep(2); };
 $('#btnPredBack').onclick=()=>{ showStep(1); };
 
@@ -1329,17 +1329,17 @@ function maybeShowHowTo(st){
   if(howToShown || localStorage.getItem('rt_howto_seen')==='1' || !st) return;
   howToShown=true;
   const isBin=(st.poll_type==='binary'), g=st.giveaway;
-  $('#htTitle').textContent = isBin ? 'Compare the records. Predict the room.' : 'Prove your ear. Build your ranking.';
+  $('#htTitle').textContent = isBin ? 'Compare the records. Predict the split.' : 'Prove your ear. Build your ranking.';
   if(isBin){
     $('#htS1t').textContent='Select the stronger record';
     $('#htS1d').textContent='Compare two records and choose the one that makes the stronger case.';
-    $('#htS2t').textContent='Predict the consensus';
-    $('#htS2d').textContent='Predict how the room will split between the records. Points reward how accurately you read the consensus.';
+    $('#htS2t').textContent='Predict the split';
+    $('#htS2d').textContent='Predict how every other A&R will split between the records. Points reward how accurately you read the consensus.';
   }else{
-    $('#htS1t').textContent='Evaluate the record 0–9';
+    $('#htS1t').textContent='Rate it 0–9';
     $('#htS1d').textContent='Score its overall strength. 0 is lowest; 9 is exceptional.';
-    $('#htS2t').textContent='Predict the consensus';
-    $('#htS2d').textContent='Predict the room’s final average. Points reward precision—not whether your personal score matches the crowd.';
+    $('#htS2t').textContent='Predict the Average';
+    $('#htS2d').textContent='Predict what every other A&R will average it at. Points reward precision—not whether your personal score matches the crowd.';
   }
   if(g){
     $('#htS3t').textContent='Compete for the '+(g.prize||'$500')+' A&R Award';
