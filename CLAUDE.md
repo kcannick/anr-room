@@ -814,6 +814,11 @@ live on anr.makinitmag.com.
   attaches what fits in 20s and returns `{done, taskId, next}`; the console presses on until done.
   Same `asana_project` setting as the live post kit. The **Top A&R carousel is the TOP 8 only,
   PLACEMENT ONLY** — no points on the slides or in its caption (`RESULTS_MAX_ARS = 8`).
+  Its caption lists the 8 by INSTAGRAM NAME (display name when there is no handle), and the post
+  is a COLLAB with the #1 A&R with the other seven tagged — the Asana task's notes say who
+  (operator, 2026-10-03). The slides' footer reads "Join the A&R Team" over makinitmag.com/ANR (a
+  bare URL had no call to action). An Asana task state can carry `replaceGid`: the engine deletes
+  that task (Asana trash) before making the new one — how tasks made with old content are redone.
 
 - **Backfill artist contacts** (no migration, 2026-09-22): rounds from before the contact
   fields existed had no email/phone/Instagram, which is what the sales-leads project is worked

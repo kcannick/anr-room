@@ -503,6 +503,17 @@ function resultsField(height, cutTop) {
       transform: 'skewY(-13deg)' }, ''),
   ]);
 }
+// The Top A&R carousel's footer: the page count bottom-left, and the ask WITH the link
+// right-justified (operator, 2026-10-03 — a bare URL on the green field had no call to action).
+function resultsJoinFoot(pageTxt) {
+  return h({ position: 'absolute', left: 80, right: 80, bottom: 72, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 1, color: RECAP.bg, ...NOWRAP }, pageTxt || ''),
+    col({ alignItems: 'flex-end' }, [
+      text(RES_DISPLAY(40, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1 }), 'Join the A&R Team'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.bg, marginTop: 8, ...NOWRAP }, RESULTS_URL),
+    ]),
+  ]);
+}
 function resultsFoot(leftTxt, rightTxt) {
   const st = { fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 1, color: RECAP.bg, ...NOWRAP };
   return h({ position: 'absolute', left: 80, right: 80, bottom: 72, display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }, [
@@ -557,7 +568,7 @@ function elementResultsSlide(d) {
         { type: 'img', props: { src: hero.photo, style: { position: 'absolute', left: -40, top: 0, width: 380, height: 300, objectFit: 'cover', transform: 'skewX(13deg)' } } },
       ]));
     }
-    kids.push(resultsField(300, 120), resultsFoot('1 / ' + d.total, RESULTS_URL));
+    kids.push(resultsField(300, 120), resultsJoinFoot('1 / ' + d.total));
   } else if (kind === 'list') {
     kids.push(resultsEyebrow((d.listLabel || 'Also played') + ' · ' + (d.date || '')), resultsPager(d.slide, d.total));
     const rows = (d.rows || []).map(r => row({ paddingTop: 16, paddingBottom: 16, borderBottom: '1px solid ' + RECAP.line, width: 920 }, [
@@ -569,14 +580,14 @@ function elementResultsSlide(d) {
       text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, color: RECAP.fg, marginLeft: 18, flexShrink: 0, ...NOWRAP }, r.value == null ? '' : String(r.value)),
     ]));
     kids.push(col({ position: 'absolute', left: 80, top: 490, width: 920 }, rows));
-    kids.push(resultsField(250, 90), resultsFoot(d.footLeft || (d.slide + ' / ' + d.total), RESULTS_URL));
+    kids.push(resultsField(250, 90), resultsJoinFoot(d.slide + ' / ' + d.total));
   } else {
     const c = d.cta || {};
     kids.push(resultsEyebrow(c.eyebrow || ''), resultsPager(d.slide, d.total));
     kids.push(col({ position: 'absolute', left: 80, top: 470, width: 920 }, (c.head || []).map(line => resultsHeadLine(line, 104))));
-    kids.push(text({ position: 'absolute', left: 80, top: 880, width: 760, fontFamily: SANS, fontWeight: 400, fontSize: 36, lineHeight: 1.3, color: RECAP.dim }, c.body || ''));
-    kids.push(resultsField(440, 240));
-    kids.push(text({ position: 'absolute', left: 80, bottom: 96, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, c.url || ''));
+    // The body sits right under however many headline lines there are (108px a line at 104).
+    kids.push(text({ position: 'absolute', left: 80, top: 470 + (c.head || []).length * 108 + 34, width: 920, fontFamily: DISPLAY, fontWeight: 800, fontSize: 46, lineHeight: 1.2, letterSpacing: -1, color: RECAP.dim }, c.body || ''));
+    kids.push(resultsField(440, 240), resultsJoinFoot(d.slide + ' / ' + d.total));
   }
   return h({ position: 'relative', display: 'flex', width: RESULTS_SIZE[0], height: RESULTS_SIZE[1], background: RECAP.bg }, kids);
 }
