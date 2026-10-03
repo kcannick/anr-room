@@ -1581,8 +1581,9 @@ const TOP_AR_TAGS = '#ARMeeting #MakinIt #NewMusic #UnsignedArtists';
 const RESULTS_MAX_ARS = 8;    // the Top 8 A&Rs — the top A&R + seven more
 const RESULTS_COPY = {
   ar: { label: 'Top A&R', listLabel: 'Top A&Rs',
-    cta: { eyebrow: 'Join the A&R Team', head: ['Win $500 as the', 'month’s top A&R'],
-      body: 'Rate the day’s records and predict the average.', url: shareCards.JOIN_URL } },
+    // Operator's wording, verbatim (2026-10-03).
+    cta: { eyebrow: 'Join the A&R Team', head: ['Qualify to win', '$500 Cash!'],
+      body: 'Rate records and Predict the hits', url: shareCards.JOIN_URL } },
 };
 // Split a list across as few pages of `per` as possible, evenly, so no page is left with one.
 function parseJsonArray(v) { try { const a = JSON.parse(v || 'null'); return Array.isArray(a) ? a : null; } catch (e) { return null; } }
