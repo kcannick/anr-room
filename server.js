@@ -1862,7 +1862,7 @@ function resultsCaption(d) {
 // ---- The winner posts (039): Top Track / Top A&R of the WEEK -------------------------------
 // One portrait graphic per weekly winner, posted as an Instagram COLLAB post with them. The
 // card is about THE PERSON PLACING (operator, 2026-09-21 → 10-03): Congratulations / NAME in
-// caps + (@handle) / "Selected for the next $1,000 Music Tournament" or "Selected for the A&R
+// caps + @handle with the Instagram glyph / "Selected for the next $1,000 Music Tournament" or "Selected for the A&R
 // Wars Tournament · $500 Cash Prize!". No title line, no numbers, no song title (the record
 // is in the caption), the profile photo top right. THE WINNERS ARE THE WEEKLY REPORT'S #1s
 // (weeklyReportData, Monday–Sunday — the ranking the weekly live show reads on air), so the
@@ -1881,7 +1881,7 @@ const dayLabel = day => recapDateLabel(etEpoch(day, 12));
 // the routes, the console's default week and the tests read the same Monday the show does.
 const weekStartOf = day => weekStartFor(day);
 const lastCompletedWeekStart = () => lastCompleteWeekStart();
-const paren = ig => (ig ? '(@' + ig + ')' : '');
+const paren = ig => (ig ? '@' + ig : '');   // the card draws the Instagram glyph beside it; no parentheses (operator, 2026-10-03)
 // The week's pair: the weekly report's #1 record (its ARTIST is the name) and #1 A&R.
 // Public surface: display name, handle, photo; the record's artist, title (caption) and handle.
 async function winnerWeekData(weekStart, post, { photo = true } = {}) {

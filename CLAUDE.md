@@ -577,8 +577,9 @@ live on anr.makinitmag.com.
   built to `public/brand/winners/winner.html` after four operator rounds. **The card is the
   person placing:** Congratulations / NAME in caps / "Selected for the next $1,000 Music
   Tournament" (the artist; no song title — "artist name big with Instagram is the important
-  thing") or "Selected for the A&R Wars Tournament / $500 Cash Prize!" (the A&R), the handle in
-  parentheses under the name, the profile photo top right beside the small Meeting header. No
+  thing") or "Selected for the A&R Wars Tournament / $500 Cash Prize!" (the A&R), "@handle" with a drawn
+  Instagram glyph under the name (no parentheses), the profile photo top right beside the small
+  Meeting header. No
   date, score, grade, bullseyes, city or title on the card; the caption carries the record, the
   numbers, the house comment keyword instead of a link, and at most five hashtags. **The
   winners ARE the weekly report's #1s** (`weeklyReportData`, Monday–Sunday — the ranking the

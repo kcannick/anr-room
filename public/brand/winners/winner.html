@@ -68,7 +68,8 @@ html,body{margin:0;background:var(--ground)}
 .week .photo{top:64px;width:260px;height:260px}            /* top right, beside the header: the name runs full width */
 .week .photo img{left:-35px;width:330px;height:260px}
 .week.has-photo .big,.week.has-photo .sub{right:var(--pad)}
-.week .stats{font-size:36px;display:block;white-space:normal;line-height:1.3;right:var(--pad)}
+.week .stats{font-size:36px;display:flex;align-items:center;gap:14px;white-space:normal;line-height:1.3;right:var(--pad)}
+.week .stats .igi{width:40px;height:40px;flex:none}
 
 /* the person */
 .big{position:absolute;left:var(--pad);right:var(--pad);top:var(--big-top,600px);font-weight:900;font-size:84px;line-height:.96;letter-spacing:-.04em}
@@ -137,13 +138,14 @@ if (PERIOD === 'week') $('hero').textContent = 'Congratulations';
 const strap = 0;
 set('big-top', PERIOD === 'week' ? 400 : 600);
 
-const igOf = v => v ? '(@' + v.replace(/^@/, '') + ')' : '';   // parentheses: operator's notation, twice
+const igOf = v => v ? '@' + v.replace(/^@/, '') : '';   // no parentheses; the Instagram glyph sits beside it (operator, 2026-10-03)
+const IG_SVG = '<svg class="igi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1" fill="currentColor" stroke="none"/></svg>';
 if (PERIOD === 'week') {
   // The person placing is the card: NAME big, then the selection (operator's lines, 2026-09-21).
   $('big').textContent = NAME;
   $('sub').innerHTML = KIND === 'track' ? 'Selected for the next<br><b>$1,000</b> Music Tournament' : 'Selected for the<br>A&amp;R Wars Tournament<br><b>$500</b> Cash Prize!';   // operator, 2026-10-03
   const ig = g('ig', 'instagramusername');
-  $('stats').innerHTML = esc(igOf(ig));   // no song title: "artist name big with Instagram is the important thing" (operator, 2026-10-03)
+  $('stats').innerHTML = ig ? IG_SVG + esc(igOf(ig)) : '';   // no song title: "artist name big with Instagram is the important thing" (operator, 2026-10-03)
   const photo = KIND === 'ar' ? g('photo', '../assets/sample-photo.png') : '';
   if (photo) { $('photo').querySelector('img').src = photo; c.classList.add('has-photo'); }
   $('cta').innerHTML = KIND === 'track' ? 'Submit your music free<span class="url">makinitmag.com/review</span>' : 'Join the A&amp;R Team<span class="url">makinitmag.com/ANR</span>';

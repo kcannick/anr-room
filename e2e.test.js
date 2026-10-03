@@ -2207,7 +2207,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     wwTrack && wrep.songs[0] && wwTrack.title === wrep.songs[0].artist && wwTrack.by === '' && wwTrack.record === '“' + wrep.songs[0].title + '”'
       && wwTrack.selected.join(' ') === 'Selected for the next $1,000 Music Tournament'
       && wwTrack.date.includes(' – ') && wwTrack.week.start === wkStart, JSON.stringify(wwTrack));
-  ok('a handle prints in parentheses, as the operator wrote it', /^(\(@[A-Za-z0-9_.]+\))?$/.test(wwTrack.handle), wwTrack.handle);
+  ok('a handle prints as @name, no parentheses (the card draws the Instagram glyph beside it)', /^(@[A-Za-z0-9_.]+)?$/.test(wwTrack.handle), wwTrack.handle);
   const wwAr = await srv._winnerWeekData(pubbed.drop_day, 'ar');
   ok('Top A&R of the Week is the weekly report\'s #1 A&R (what the show announces), selected for A&R Wars with the $500 Cash Prize line',
     wwAr && wrep.ars[0] && wwAr.title === wrep.ars[0].name && wwAr.line.points === wrep.ars[0].points

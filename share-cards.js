@@ -772,7 +772,8 @@ function elementCountdownSlide(d) {
 // WEEK cards (operator, 2026-09-21: "the weekly flyers are about the person placing in the
 // tournament — that needs to be BIG"; 10-03: "artist name big with Instagram is the important
 // thing"): Congratulations / the NAME in caps / the selection, two or three lines with the money
-// in gold / the handle small. No song title (it rides in the caption), no title line, no numbers.
+// in gold / "@handle" with the Instagram glyph, no parentheses. No song title (it rides in the
+// caption), no title line, no numbers.
 // The profile photo sits top right beside the header so the name runs full width.
 const WINNER_SIZE = [1080, 1350];
 // A line with every dollar amount in gold and the rest in ink (Satori collapses leading and
@@ -797,6 +798,17 @@ function winnerCta(cta) {
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, color: RECAP.bg, marginTop: 12, ...NOWRAP }, cta.url || ''),
   ]);
 }
+// The Instagram glyph on the 24 grid, stroked in the handle's colour: the brand draws icons, never emoji.
+const _igIcons = {};
+function igIconDataUri(color) {
+  if (!_igIcons[color]) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="' + color
+      + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+      + '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1" fill="' + color + '" stroke="none"/></svg>';
+    _igIcons[color] = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _igIcons[color];
+}
 function elementWinnerWeek(d) {
   const kids = winnerHeader();
   kids.push(row({ position: 'absolute', left: 80, top: 300, alignItems: 'center' }, [
@@ -813,7 +825,11 @@ function elementWinnerWeek(d) {
   kids.push(col({ position: 'absolute', left: 80, top: 400, width: 920 }, [
     text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.92, letterSpacing: -Math.round(fs * 0.04), textTransform: 'uppercase', color: RECAP.fg }, name),
     col({ marginTop: 26 }, sel.map((l, i) => i === 0 ? text(selStyle, l) : winnerGoldLine(l, selStyle))),
-    text({ ...small, marginTop: 30 }, d.handle || ''),
+    // "@handle" with the Instagram glyph, no parentheses (operator, 2026-10-03)
+    d.handle ? row({ marginTop: 30, alignItems: 'center' }, [
+      { type: 'img', props: { src: igIconDataUri(RECAP.dim), style: { width: 40, height: 40, marginRight: 14 } } },
+      text(small, d.handle),
+    ]) : text({}, ''),
   ]));
   if (d.photo) {
     kids.push(h({ position: 'absolute', right: 80, top: 64, width: 260, height: 260, overflow: 'hidden', borderRadius: 12,
