@@ -1774,6 +1774,7 @@ async function advanceDailyAsanaTasks({ deadline }) {
 function dailyAsanaTaskName(rd) {
   return `${rd.set === 'song' ? DAILY_STREAM_NAME : 'Top A&Rs'} — ${rd.date}`;
 }
+const TOP_AR_COLLAB = '@makinitmusicreview';
 function dailyAsanaNotes(rd, caption) {
   const out = ['Caption (paste as-is):', '', caption, ''];
   if (rd.set === 'song') {
@@ -1789,7 +1790,9 @@ function dailyAsanaNotes(rd, caption) {
     // Collab with the #1 A&R, tag the other seven (operator, 2026-10-03).
     const hero = rd.slides[0].hero || {};
     const rest = rd.slides.filter(sl => sl.kind === 'list').flatMap(sl => sl.rows).map(r => r.handle).filter(Boolean);
-    out.push('—', hero.handle ? `Collab: invite ${hero.handle} (#1) as a collaborator.` : `The #1 A&R (${hero.title}) has no Instagram handle on file, so there is no collab.`);
+    // @makinitmusicreview is always a collaborator too (operator, 2026-10-03).
+    out.push('—', hero.handle ? `Collab: invite ${TOP_AR_COLLAB} and ${hero.handle} (#1) as collaborators.`
+      : `Collab: invite ${TOP_AR_COLLAB} as a collaborator. The #1 A&R (${hero.title}) has no Instagram handle on file, so they are not a collaborator.`);
     if (rest.length) out.push(`Tag the other top A&Rs: ${rest.join(', ')}`);
     out.push('A&Rs with no Instagram handle on file are not tagged.', '');
   }
