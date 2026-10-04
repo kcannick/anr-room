@@ -1670,12 +1670,10 @@ async function dailyAsanaProject() {
 // until the deadline. `st` is { gid, url, next, total, done } and is updated in place; `save`
 // is called the moment the gid exists and after every slide, so a request or a cron tick that
 // dies part-way resumes where it stopped instead of making a second task.
-// Slides come from the hosted copies when the day has them, else they render here.
+// Slides and caption are built here every time, never the copies stored at render.
 async function dailyAsanaAdvance(session, set, st, { project, deadline, save = async () => {} }) {
   const rd = await resultsCarouselData(session, set);
   if (!rd) { st.done = true; st.skipped = 'nothing to post'; await save(); return st; }
-  const job = await db.get('SELECT results_song_urls, results_ar_urls FROM recap_jobs WHERE session_id = ?', [session.id]);
-  const hosted = parseJsonArray(job && (set === 'song' ? job.results_song_urls : job.results_ar_urls));
   st.total = rd.slides.length;
   if (st.replaceGid) {
     try { await asanaFetch(`/tasks/${st.replaceGid}`, { method: 'DELETE' }); }
@@ -1698,11 +1696,9 @@ async function dailyAsanaAdvance(session, set, st, { project, deadline, save = a
   let i = Math.max(0, Math.min(rd.slides.length, parseInt(st.next, 10) || 0));
   for (; i < rd.slides.length; i++) {
     if (Date.now() > deadline) break;
-    let buf = null;
-    if (hosted && hosted[i]) {
-      try { const r = await fetch(hosted[i]); if (r.ok) buf = Buffer.from(await r.arrayBuffer()); } catch (e) { buf = null; }
-    }
-    if (!buf) buf = await shareCards.renderPng(rd.card, rd.slides[i]);
+    // Rendered fresh, like the caption: the hosted copies keep whatever the slides looked like
+    // when the day rendered (the 09.03–10.01 back-catalogue went out as 13 A&Rs with points).
+    const buf = await shareCards.renderPng(rd.card, rd.slides[i]);
     const form = new FormData();
     form.set('parent', st.gid);
     form.set('file', new Blob([buf], { type: 'image/png' }), `${prefix}-${day}-${String(i + 1).padStart(2, '0')}.png`);
