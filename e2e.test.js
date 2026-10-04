@@ -2136,8 +2136,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     rjob2.results_song_caption);
   // Instagram allows five hashtags a post — the comment keywords count toward it.
   const tagCount = t => (String(t || '').match(/(^|\s)#[A-Za-z]\w*/g) || []).length;
-  const igCaps = { countdown: rjob2.results_song_caption, topAr: rjob2.results_ar_caption,
-    winnerTrack: rjob2.winner_track_caption, winnerAr: rjob2.winner_ar_caption };
+  const igCaps = { countdown: rjob2.results_song_caption, topAr: rjob2.results_ar_caption };
   ok('every Instagram caption carries at most five hashtags',
     Object.values(igCaps).every(t => t && tagCount(t) <= 5) && tagCount(igCaps.countdown) === 5,
     JSON.stringify(Object.fromEntries(Object.entries(igCaps).map(([k, t]) => [k, tagCount(t)]))));
@@ -2191,58 +2190,51 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && Array.isArray(rsStatus.cards.results.songComments) && rsStatus.cards.results.songTags.length === 6
       && rsStatus.cards.results.songTags.every(t => t === ''), JSON.stringify(rsStatus.cards && rsStatus.cards.results));
 
-  console.log('\n— The winner posts (039): Top Track / Top A&R of the Day at publish, of the Week on demand —');
+  console.log('\n— The winner posts (039): Top Track / Top A&R of the WEEK, the weekly report\'s #1s, on demand —');
+  // The daily pair was retired 2026-10-03: the publish stores nothing for it any more.
   const wjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
-  ok('the publish stores both winner captions even with no Blob token',
-    /^Top Track of the Day/.test(wjob.winner_track_caption || '') && /^Top A&R of the Day/.test(wjob.winner_ar_caption || ''),
-    JSON.stringify([wjob.winner_track_caption, wjob.winner_ar_caption]));
-  ok('and leaves the hosted post URLs null rather than failing the publish',
-    wjob.winner_track_url == null && wjob.winner_ar_url == null, JSON.stringify([wjob.winner_track_url, wjob.winner_ar_url]));
-  const wdTrack = await srv._winnerDayData(pubbed, 'track');
-  ok('Top Track of the Day is the record with the highest room average, dated by the DROP day',
-    wdTrack && wdTrack.title === '“' + topRec.song_title + '”' && wdTrack.period === 'day' && wdTrack.strap == null
-      && wdTrack.date === srv._recapDateLabel(srv._etEpoch(pubbed.drop_day, 12)), JSON.stringify(wdTrack));
-  ok('the day card carries the score and no rank (TOP TRACK already says #1)',
-    /^\d\.\d$/.test(String(wdTrack.line.score)) && wdTrack.line.drop === undefined && !('rank' in wdTrack.line), JSON.stringify(wdTrack.line));
-  const wdAr = await srv._winnerDayData(pubbed, 'ar');
-  ok('Top A&R of the Day is the board leader with a letter grade, points and a bullseye count',
-    wdAr && wdAr.title === 'Lex' && typeof wdAr.line.points === 'number' && typeof wdAr.line.bullseyes === 'number'
-      && /^[A-F][+-]?$/.test(wdAr.line.grade) && wdAr.photo == null, JSON.stringify(wdAr));
-  ok('the winner data never carries an email or phone', !/@test\.com|\+1\d{9}/.test(JSON.stringify([wdTrack, wdAr])));
-  ok('the captions match the stored ones', srv._winnerCaption(wdTrack) === wjob.winner_track_caption && srv._winnerCaption(wdAr) === wjob.winner_ar_caption);
+  ok('the publish no longer renders daily winner posts', wjob.winner_track_url == null && wjob.winner_track_caption == null && wjob.winner_ar_caption == null);
   ok('a week starts on Monday', srv._weekStartOf('2026-09-16') === '2026-09-14' && srv._weekStartOf('2026-09-14') === '2026-09-14' && srv._weekStartOf('2026-09-20') === '2026-09-14',
     [srv._weekStartOf('2026-09-16'), srv._weekStartOf('2026-09-14'), srv._weekStartOf('2026-09-20')].join(','));
   const wkStart = srv._weekStartOf(pubbed.drop_day);
+  // The week's winners are the WEEKLY REPORT's #1s — the week spans every drop in it (other
+  // tests' days included), and its A&R list is qualified profiles only, so qualify this
+  // drop's players and compare against the report.
+  await dDb.run('UPDATE users SET profile_complete = 1 WHERE uid IN (SELECT user_id FROM participants WHERE session_id = ?)', [LDROP]);
+  const wrep = await srv._weeklyReportData(pubbed.drop_day, { limit: 1 });
   const wwTrack = await srv._winnerWeekData(pubbed.drop_day, 'track');
-  ok('Top Track of the Week spans the published drops of that week and carries the strap, the range and the drop day',
-    wwTrack && wwTrack.title === '“' + topRec.song_title + '”' && wwTrack.period === 'week' && /\$1,000 Tournament/.test(wwTrack.strap)
-      && wwTrack.date.includes(' – ') && wwTrack.line.drop === srv._recapDateLabel(srv._etEpoch(pubbed.drop_day, 12)) && wwTrack.week.start === wkStart,
-    JSON.stringify(wwTrack));
+  ok('Top Track of the Week is about the ARTIST placing: the artist is the name, no song title on the card, the selection in the operator\'s words',
+    wwTrack && wrep.songs[0] && wwTrack.title === wrep.songs[0].artist && wwTrack.by === '' && wwTrack.record === '“' + wrep.songs[0].title + '”'
+      && wwTrack.selected.join(' ') === 'Selected for the next $1,000 Music Tournament'
+      && wwTrack.date.includes(' – ') && wwTrack.week.start === wkStart, JSON.stringify(wwTrack));
+  ok('a handle prints as @name, no parentheses (the card draws the Instagram glyph beside it)', /^(@[A-Za-z0-9_.]+)?$/.test(wwTrack.handle), wwTrack.handle);
   const wwAr = await srv._winnerWeekData(pubbed.drop_day, 'ar');
-  ok('Top A&R of the Week is the most points across the week with the A&R Wars strap',
-    wwAr && wwAr.title === 'Lex' && /A&R Wars/.test(wwAr.strap) && /\$500/.test(wwAr.strap) && wwAr.line.points === wdAr.line.points, JSON.stringify(wwAr));
+  ok('Top A&R of the Week is the weekly report\'s #1 A&R (what the show announces), selected for A&R Wars with the $500 Cash Prize line',
+    wwAr && wrep.ars[0] && wwAr.title === wrep.ars[0].name && wwAr.line.points === wrep.ars[0].points
+      && wwAr.selected.join(' ') === 'Selected for the A&R Wars Tournament $500 Cash Prize!' && !('grade' in wwAr.line), JSON.stringify([wwAr, wrep.ars[0]]));
+  ok('the week data says whether the week has settled, for the console', typeof wwTrack.week.settled === 'boolean' && Array.isArray(wwTrack.week.pending));
+  ok('the winner data never carries an email or phone', !/@test\.com|\+1\d{9}/.test(JSON.stringify([wwTrack, wwAr])));
+  const wcap = srv._winnerCaption(wwTrack), wcapAr = srv._winnerCaption(wwAr);
+  ok('the captions follow the house Instagram rules: the record, the comment keyword instead of a link, at most five hashtags',
+    wcap.includes(wwTrack.record) && /Comment #REVIEW to Submit Music/.test(wcap) && !/makinitmag\.com/.test(wcap) && tagCount(wcap) <= 5
+      && /Comment #ANR to join the A&R Team/.test(wcapAr) && tagCount(wcapAr) <= 5, wcap + '\n---\n' + wcapAr);
   ok('a week with no published drops has no winners', (await srv._winnerWeekData('2020-01-06', 'track')) === null);
-  const wp1 = await fetch(base + '/api/card/winner?s=' + LDROP + '&post=track', { headers: BOOTH });
-  const w1Buf = Buffer.from(await wp1.arrayBuffer());
-  ok('a day post renders as a 1080x1350 PNG', wp1.status === 200 && wp1.headers.get('content-type') === 'image/png' && pngDims(w1Buf) === '1080x1350', wp1.status + ' ' + pngDims(w1Buf));
   const wp2 = await fetch(base + '/api/card/winner?week=' + pubbed.drop_day + '&post=ar', { headers: BOOTH });
-  const w2Buf = Buffer.from(await wp2.arrayBuffer());
-  ok('a week post renders as a 1080x1350 PNG', wp2.status === 200 && pngDims(w2Buf) === '1080x1350', wp2.status + ' ' + pngDims(w2Buf));
+  const wp2Buf = Buffer.from(await wp2.arrayBuffer());
+  ok('a week post renders as a 1080x1350 PNG', wp2.status === 200 && wp2.headers.get('content-type') === 'image/png' && pngDims(wp2Buf) === '1080x1350', wp2.status + ' ' + pngDims(wp2Buf));
   const wp3 = await fetch(base + '/api/card/winner?week=2020-01-06&post=track', { headers: BOOTH });
   ok('an empty week is 404, not a blank card', wp3.status === 404, 'got ' + wp3.status);
-  const wpAnon = await fetch(base + '/api/card/winner?s=' + LDROP + '&post=ar');
+  const wp1 = await fetch(base + '/api/card/winner?s=' + LDROP + '&post=track', { headers: BOOTH });
+  ok('the daily render is gone: a day request is refused, not rendered', wp1.status === 400, 'got ' + wp1.status);
+  const wpAnon = await fetch(base + '/api/card/winner?week=' + pubbed.drop_day + '&post=ar');
   ok('the winner render is platform-admin only', wpAnon.status === 403 || wpAnon.status === 401, 'got ' + wpAnon.status);
-  const wpCap = await fetch(base + '/api/admin/daily/winner-caption?s=' + LDROP + '&post=ar', { headers: BOOTH });
-  ok('the caption preview is the same text the publish stored', wpCap.status === 200 && (await wpCap.text()) === wjob.winner_ar_caption);
   const wpWeek = (await call('/api/admin/weekly/winners?week=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
-  ok('the weekly endpoint names both winners with captions and the week label',
+  ok('the weekly endpoint names both winners with captions, the week label and whether it settled',
     wpWeek && wpWeek.week && wpWeek.week.start === wkStart && wpWeek.track && wpWeek.ar && /^Top A&R of the Week/.test(wpWeek.ar.caption)
-      && !/@test\.com|\+1\d{9}/.test(JSON.stringify(wpWeek)), JSON.stringify(wpWeek));
+      && typeof wpWeek.track.settled === 'boolean' && !/@test\.com|\+1\d{9}/.test(JSON.stringify(wpWeek)), JSON.stringify(wpWeek));
   const wpStatus = (await call('/api/admin/daily/status?day=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
-  ok('the daily status carries the winner captions, readiness and the default week for the console',
-    wpStatus.cards && wpStatus.cards.winners && wpStatus.cards.winners.trackReady === true && wpStatus.cards.winners.arReady === true
-      && wpStatus.cards.winners.trackCaption === wjob.winner_track_caption && /^\d{4}-\d{2}-\d{2}$/.test(wpStatus.cards.winners.weekDefault),
-    JSON.stringify(wpStatus.cards && wpStatus.cards.winners));
+  ok('the daily status carries the default week for the console and nothing daily', wpStatus.cards && wpStatus.cards.winners
+      && /^\d{4}-\d{2}-\d{2}$/.test(wpStatus.cards.winners.weekDefault) && !('trackReady' in wpStatus.cards.winners), JSON.stringify(wpStatus.cards && wpStatus.cards.winners));
 
   // 7a — the A&R digest. This is notifyAudience()'s FIRST production caller, and the
   // assertion that its {sql, params} fragment really does compose into an INSERT...SELECT.
