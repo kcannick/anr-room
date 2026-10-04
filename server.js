@@ -1854,7 +1854,7 @@ function resultsCaption(d) {
     const top8 = [{ title: hero.title, handle: hero.handle }, ...lists.map(r => ({ title: r.line1, handle: r.handle }))];
     lines.push(`Top 8 A&Rs · ${d.date}`, '', ...top8.map((p, i) => `${i + 1}. ${p.handle || p.title}`));
     // No points and no URL (operator, 2026-10-03): the one ask, in the operator's words.
-    lines.push('', 'Comment or DM ANR to Join the A&R Team', '', TOP_AR_TAGS);
+    lines.push('', 'Comment or DM "ANR" to Join the A&R Team and the chance to get paid $500 Cash!', '', TOP_AR_TAGS);
     return lines.join('\n');
   }
   lines.push('', IG_TAGS);
