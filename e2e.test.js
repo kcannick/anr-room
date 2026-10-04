@@ -2162,8 +2162,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const arCap = srv._resultsCaption(rsAr);
   ok('the Top A&R caption is the top 8 in placement order, by Instagram name where there is one, no points',
     /^Top 8 A&Rs · /.test(arCap) && /\n1\. /.test(arCap) && !/pts|points/i.test(arCap.replace(/\$500/, '')) && !/·\s*\d+\s*$/m.test(arCap), arCap);
+  ok('the Top A&R caption has no URL and asks to comment or DM ANR',
+    !/https?:|\.com/i.test(arCap) && /^Comment or DM "ANR" to Join the A&R Team and the chance to get paid \$500 Cash!$/m.test(arCap), arCap);
   const arNotes = srv._dailyAsanaNotes(rsAr, arCap);
-  ok('the Top A&Rs task says who to collab with', /Collab: invite @|has no Instagram handle on file, so there is no collab/.test(arNotes), arNotes);
+  ok('the Top A&Rs task says who to collab with', /Collab: invite @makinitmusicreview( and @\S+ \(#1\) as collaborators| as a collaborator)/.test(arNotes), arNotes);
   ok('the A&R carousel closes on Join the A&R Team with the $500', rsAr.slides[2].cta.eyebrow === 'Join the A&R Team' && rsAr.slides[2].cta.head.join(' ').includes('$500'));
   ok('a fourteen-record day is five slides with the list split evenly (5/4/4)',
     JSON.stringify(srv._resultsPages(Array.from({ length: 13 }, (_, i) => i), 6).map(p => p.length)) === '[5,4,4]');

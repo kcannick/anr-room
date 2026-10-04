@@ -1674,7 +1674,7 @@ async function dailyAsanaProject() {
 async function dailyAsanaAdvance(session, set, st, { project, deadline, save = async () => {} }) {
   const rd = await resultsCarouselData(session, set);
   if (!rd) { st.done = true; st.skipped = 'nothing to post'; await save(); return st; }
-  const job = await db.get('SELECT results_song_urls, results_ar_urls, results_song_caption, results_ar_caption FROM recap_jobs WHERE session_id = ?', [session.id]);
+  const job = await db.get('SELECT results_song_urls, results_ar_urls FROM recap_jobs WHERE session_id = ?', [session.id]);
   const hosted = parseJsonArray(job && (set === 'song' ? job.results_song_urls : job.results_ar_urls));
   st.total = rd.slides.length;
   if (st.replaceGid) {
@@ -1684,7 +1684,9 @@ async function dailyAsanaAdvance(session, set, st, { project, deadline, save = a
     await save();
   }
   if (!st.gid) {
-    const caption = (job && (set === 'song' ? job.results_song_caption : job.results_ar_caption)) || resultsCaption(rd);
+    // Built live, never the caption stored at render: a day rendered before a copy change
+    // would otherwise post the old wording (it did — points and a URL on the Top A&Rs task).
+    const caption = resultsCaption(rd);
     const t = await asanaJson('/tasks', 'POST', { name: dailyAsanaTaskName(rd), notes: dailyAsanaNotes(rd, caption), projects: [String(project)] });
     const gid = t && t.data && t.data.gid;
     if (!gid) throw new Error('Asana did not return a task id');
@@ -1772,6 +1774,7 @@ async function advanceDailyAsanaTasks({ deadline }) {
 function dailyAsanaTaskName(rd) {
   return `${rd.set === 'song' ? DAILY_STREAM_NAME : 'Top A&Rs'} — ${rd.date}`;
 }
+const TOP_AR_COLLAB = '@makinitmusicreview';
 function dailyAsanaNotes(rd, caption) {
   const out = ['Caption (paste as-is):', '', caption, ''];
   if (rd.set === 'song') {
@@ -1787,7 +1790,9 @@ function dailyAsanaNotes(rd, caption) {
     // Collab with the #1 A&R, tag the other seven (operator, 2026-10-03).
     const hero = rd.slides[0].hero || {};
     const rest = rd.slides.filter(sl => sl.kind === 'list').flatMap(sl => sl.rows).map(r => r.handle).filter(Boolean);
-    out.push('—', hero.handle ? `Collab: invite ${hero.handle} (#1) as a collaborator.` : `The #1 A&R (${hero.title}) has no Instagram handle on file, so there is no collab.`);
+    // @makinitmusicreview is always a collaborator too (operator, 2026-10-03).
+    out.push('—', hero.handle ? `Collab: invite ${TOP_AR_COLLAB} and ${hero.handle} (#1) as collaborators.`
+      : `Collab: invite ${TOP_AR_COLLAB} as a collaborator. The #1 A&R (${hero.title}) has no Instagram handle on file, so they are not a collaborator.`);
     if (rest.length) out.push(`Tag the other top A&Rs: ${rest.join(', ')}`);
     out.push('A&Rs with no Instagram handle on file are not tagged.', '');
   }
@@ -1851,8 +1856,8 @@ function resultsCaption(d) {
     // inside Instagram's ten. No handle on file = the display name, untagged.
     const top8 = [{ title: hero.title, handle: hero.handle }, ...lists.map(r => ({ title: r.line1, handle: r.handle }))];
     lines.push(`Top 8 A&Rs · ${d.date}`, '', ...top8.map((p, i) => `${i + 1}. ${p.handle || p.title}`));
-    // A comment keyword, not a link (Instagram captions do not link); it is one of the five tags.
-    lines.push('', 'Join the A&R Team to win $500.', 'Comment #ANR to join the A&R Team', '', TOP_AR_TAGS);
+    // No points and no URL (operator, 2026-10-03): the one ask, in the operator's words.
+    lines.push('', 'Comment or DM "ANR" to Join the A&R Team and the chance to get paid $500 Cash!', '', TOP_AR_TAGS);
     return lines.join('\n');
   }
   lines.push('', IG_TAGS);
@@ -9689,7 +9694,9 @@ async function handleApi(req, res, url) {
         // The results carousels: hosted slide lists (JSON arrays) at publish, captions, and
         // the slide counts so the console can render a set live slide by slide.
         results: { song: parseJsonArray(job && job.results_song_urls), ar: parseJsonArray(job && job.results_ar_urls),
-          songCaption: (job && job.results_song_caption) || null, arCaption: (job && job.results_ar_caption) || null,
+          // Live, like the Asana task: a stored caption keeps whatever wording was current at render.
+          songCaption: rsSong ? resultsCaption(rsSong) : ((job && job.results_song_caption) || null),
+          arCaption: rsAr ? resultsCaption(rsAr) : ((job && job.results_ar_caption) || null),
           songCount: rsSong ? rsSong.total : 0, arCount: rsAr ? rsAr.total : 0,
           // The Daily Countdown's artist mentions (comments, four a comment) and who to tag on each
           // slide: the record's handle on a rank slide; '' on the cover, the closing slides and a record with no handle.
