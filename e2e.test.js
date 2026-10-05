@@ -5153,6 +5153,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The published drop from the daily tests; later tests may have retired it, so bring it back for these.
   const atWas = await anDb.get('SELECT deleted_at, async_state FROM sessions WHERE id = ?', [LDROP]);
   await anDb.run("UPDATE sessions SET deleted_at = NULL, async_state = 'published' WHERE id = ?", [LDROP]);
+  // Results two days after the close, as under the 69-hour clock, so the two dates differ.
+  await anDb.run('UPDATE sessions SET results_at = window_closes_at + 2 * 86400000 WHERE id = ?', [LDROP]);
   const atBefore = asanaCalls.length;
   const atSong = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', BOOTH);
   const atMade = asanaCalls.slice(atBefore);
@@ -5165,6 +5167,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
     atTask && /^Makin' It Daily Countdown — \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
       && /Caption \(paste as-is\)/.test(atTask.data.notes) && /Comment #REVIEW to Submit Music/.test(atTask.data.notes)
       && /Post the 6 attached slides in order/.test(atTask.data.notes), JSON.stringify(atTask && atTask.data));
+  // A daily set is named for the day it CLOSES, never the results day (the Oct 2 / Oct 3 posts
+  // went out dated 10.04 / 10.05 under the 69-hour clock).
+  const atWin = await anDb.get('SELECT window_closes_at, results_at FROM sessions WHERE id = ?', [LDROP]);
+  const atCloseLbl = require('./server')._recapDateLabel(Number(atWin.window_closes_at));
+  ok('daily asana: the task and the slides are dated by the close, not the results day',
+    atTask && atTask.data.name.endsWith('— ' + atCloseLbl), JSON.stringify([atTask && atTask.data.name, atCloseLbl]));
   const atAr = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'ar' }, 'POST', BOOTH);
   const atArTask = asanaCalls.filter(c => c.method === 'POST' && c.path === '/tasks').pop();
   ok('daily asana: the Top A&Rs task is its own task, placement only',

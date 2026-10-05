@@ -1552,6 +1552,13 @@ function recapDateLabel(ts) {
   const g = (t) => (p.find(x => x.type === t) || {}).value || '';
   return `${g('month')}.${g('day')}.${g('year')}`;
 }
+// A daily set is NAMED FOR THE DAY IT CLOSES (operator, 2026-10-03): it opens the day before,
+// closes on the named date and is posted the day after, like a sports result. Never results_at —
+// under the 69-hour clock that is two days after the close, and the posts for the Oct 2 and Oct 3
+// closes went out dated 10.04 and 10.05.
+async function dailySetDate(session) {
+  return recapDateLabel(Number(session.window_closes_at) || dropWindowFor(session.drop_day, await dailySchedule()).closesAt || now());
+}
 // "Daily at 3PM" off the stream's own epoch, so the graphic and the caption follow the setting.
 function recapTimeLabel(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })
@@ -1601,7 +1608,7 @@ async function resultsCarouselData(session, set, { photo = true } = {}) {
   if (set === 'song') return countdownCarouselData(session);
   const copy = RESULTS_COPY[set];
   if (!copy) return null;
-  const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  const date = await dailySetDate(session);
   const rows = await db.all(
     `SELECT p.name AS pname, u.name AS uname, u.instagram, u.location, u.photo_url, p.total_points AS pts
        FROM participants p LEFT JOIN users u ON p.user_id = u.uid
@@ -1651,7 +1658,7 @@ async function countdownCarouselData(session) {
     const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
     return { rank: i + 1, title: (r.song_title || '—').trim(), artist: (r.song_artist || '').trim(), handle: ig ? '@' + ig : '' };
   });
-  const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  const date = await dailySetDate(session);
   const n = recs.length, total = n + 3;
   const slides = [{ slide: 1, total, date, kind: 'cover', count: n }];
   recs.slice().reverse().forEach((r, i) => slides.push({ slide: i + 2, total, date, kind: 'rank', ...r }));
