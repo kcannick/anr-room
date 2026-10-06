@@ -242,3 +242,22 @@ say the word and I'll do it.
 
 Text queue stuck? Vercel → **Settings** → **Cron Jobs** → **View Logs**. A healthy run outside the
 window logs `{"skipped":"outside the ET send window"}` — that's correct, not an error.
+
+## Email engagement gate (043, 2026-10-06)
+
+- The daily "records are open" notice goes to **active** accounts only by default (signed in or
+  rated within 30 days, or joined within 14). An A&R turns it on under Notifications to keep it
+  regardless. The platform panel's topic readout shows the live audience size.
+- Everyone else gets the **weekly update** (Wednesday afternoon, last complete week: top records
+  and A&Rs by name, today's records). After four unanswered weeklies the sends stop; the
+  preference stays on their profile for them to turn back on.
+- Addresses the provider rejects (hard bounce, invalid, spam report, provider-side unsubscribe)
+  are stamped `users.email_bounced_at` and never mailed again. To re-enable a fixed address,
+  clear that column by hand.
+- Every mail to an A&R carries one-click unsubscribe headers. It needs `NOTIFY_LINK_SECRET` (the
+  same secret as the manage links); without it the header is omitted and only the footer link
+  works.
+- Mandrill: each send is tagged by stream (`daily_open`, `digest_weekly`, `announcement`, ...),
+  so Mandrill → Reports → Tags splits opens and clicks per stream from now on.
+- Mass announcements default to the active list. "Everyone on the list" is a choice on the
+  composer, for the message that must reach every account.

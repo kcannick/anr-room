@@ -24,36 +24,67 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
-async function sendViaResend(to, subject, html, text) {
+// ----- per-send options (2026-10-06) -----
+// opts.tag          one word naming the STREAM (daily_open, digest_daily, otp, ...). Goes to the
+//                   provider as a tag, so its own reporting can split opens by stream — the
+//                   October audit had to join on subject lines because nothing was tagged.
+// opts.unsubscribe  a URL that unsubscribes with ONE POST and no page. Sent as the
+//                   List-Unsubscribe / List-Unsubscribe-Post headers Gmail and Yahoo require of
+//                   bulk senders; the inbox shows its own Unsubscribe button and the complaint
+//                   never becomes a spam report. Transactional mail (codes, artist reports)
+//                   passes none.
+function sendHeaders(opts) {
+  const h = {};
+  if (opts && opts.unsubscribe) {
+    h['List-Unsubscribe'] = `<${opts.unsubscribe}>`;
+    h['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+  }
+  return h;
+}
+const TAG_RE = /^[a-z0-9_-]{1,50}$/;
+
+async function sendViaResend(to, subject, html, text, opts = {}) {
+  const body = { from: FROM, to: [to], subject, html, text };
+  const headers = sendHeaders(opts);
+  if (Object.keys(headers).length) body.headers = headers;
+  if (opts.tag && TAG_RE.test(opts.tag)) body.tags = [{ name: 'stream', value: opts.tag }];
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from: FROM, to: [to], subject, html, text }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`);
   return true;
 }
 
-async function sendViaMandrill(to, subject, html, text) {
-  const res = await fetch('https://mandrillapp.com/api/1.0/messages/send.json', {
+// Mandrill answers a send with the address's fate: `rejected` + reject_reason when the
+// address is on its rejection list (hard-bounce, spam, unsub, invalid ...). That reason is
+// the only bounce signal this app gets (no webhook), so it rides the thrown error as
+// `.reject` for sendEmail to hand back.
+async function sendViaMandrill(to, subject, html, text, opts = {}) {
+  const message = {
+    from_email: (FROM.match(/<(.+)>/) || [null, FROM])[1],
+    from_name: (FROM.match(/^(.*?)</) || [null, 'The A&R Room'])[1].trim(),
+    to: [{ email: to, type: 'to' }],
+    subject, html, text,
+  };
+  const headers = sendHeaders(opts);
+  if (Object.keys(headers).length) message.headers = headers;
+  if (opts.tag && TAG_RE.test(opts.tag)) message.tags = [opts.tag];
+  const res = await fetch((process.env.MANDRILL_API_BASE || 'https://mandrillapp.com/api/1.0/') + 'messages/send.json', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      key: process.env.MANDRILL_API_KEY,
-      message: {
-        from_email: (FROM.match(/<(.+)>/) || [null, FROM])[1],
-        from_name: (FROM.match(/^(.*?)</) || [null, 'The A&R Room'])[1].trim(),
-        to: [{ email: to, type: 'to' }],
-        subject, html, text,
-      },
-    }),
+    body: JSON.stringify({ key: process.env.MANDRILL_API_KEY, message }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || (Array.isArray(data) && data[0] && data[0].status === 'rejected')) {
-    throw new Error(`Mandrill error: ${JSON.stringify(data)}`);
+  const first = Array.isArray(data) ? data[0] : null;
+  if (!res.ok || (first && (first.status === 'rejected' || first.status === 'invalid'))) {
+    const err = new Error(`Mandrill error: ${JSON.stringify(data)}`);
+    err.reject = first ? (first.status === 'invalid' ? 'invalid' : (first.reject_reason || 'rejected')) : null;
+    throw err;
   }
   return true;
 }
@@ -68,8 +99,8 @@ async function sendOtp(to, code, sessionName) {
     return { ok: true, devCode: code };
   }
   try {
-    if (PROVIDER === 'resend') await sendViaResend(to, subject, html, text);
-    else if (PROVIDER === 'mandrill') await sendViaMandrill(to, subject, html, text);
+    if (PROVIDER === 'resend') await sendViaResend(to, subject, html, text, { tag: 'otp' });
+    else if (PROVIDER === 'mandrill') await sendViaMandrill(to, subject, html, text, { tag: 'otp' });
     else throw new Error(`Unknown EMAIL_PROVIDER: ${PROVIDER}`);
     console.log(`[OTP] sent to ${to} via ${PROVIDER}`);
     return { ok: true };
@@ -83,24 +114,33 @@ async function sendOtp(to, code, sessionName) {
 }
 
 // ----- generic transactional send (used by go-live notifications) -----
-// Returns { ok } or { ok:false, error }. Non-fatal by contract — callers log + continue.
-async function sendEmail(to, subject, html, text) {
+// Returns { ok } or { ok:false, error, reject }. Non-fatal by contract — callers log + continue.
+// `reject` is the provider's reason when the ADDRESS was refused (hard-bounce, invalid, spam,
+// unsub, ...) as opposed to the request failing; callers use it to stop mailing that address.
+// opts: { tag, unsubscribe } — see sendHeaders().
+async function sendEmail(to, subject, html, text, opts = {}) {
   if (PROVIDER === 'console') {
-    console.log(`\n[EMAIL] ${to} :: ${subject}\n`);
+    console.log(`\n[EMAIL] ${to} :: ${subject}${opts.tag ? ` [${opts.tag}]` : ''}\n`);
     return { ok: true };
   }
   try {
-    if (PROVIDER === 'resend') await sendViaResend(to, subject, html, text);
-    else if (PROVIDER === 'mandrill') await sendViaMandrill(to, subject, html, text);
+    if (PROVIDER === 'resend') await sendViaResend(to, subject, html, text, opts);
+    else if (PROVIDER === 'mandrill') await sendViaMandrill(to, subject, html, text, opts);
     else throw new Error(`Unknown EMAIL_PROVIDER: ${PROVIDER}`);
     return { ok: true };
   } catch (e) {
     console.error(`[EMAIL] send failed via ${PROVIDER}: ${e.message}`);
-    return { ok: false, error: e.message };
+    return { ok: false, error: e.message, reject: e.reject || null };
   }
 }
+// Reject reasons that mean "this address is dead or does not want us" — the ones that set
+// users.email_bounced_at. soft-bounce and rule/custom rejections are NOT here: a full inbox
+// comes back. Mandrill's `unsub` is a provider-side unsubscribe we never saw happen; it is
+// treated as one, and the person's profile is still the way back.
+const DEAD_REJECTS = new Set(['hard-bounce', 'invalid', 'spam', 'unsub']);
+function isDeadAddress(reject) { return !!reject && DEAD_REJECTS.has(String(reject)); }
 
-module.exports = { sendOtp, PROVIDER, sendFeedback, sendEmail, escapeHtml };
+module.exports = { sendOtp, PROVIDER, sendFeedback, sendEmail, escapeHtml, isDeadAddress, sendHeaders };
 
 // ----- feedback email (best-effort; optional screenshot attachment) -----
 // payload: { message, sessionName, sessionId, fromName, fromEmail, userAgent,
