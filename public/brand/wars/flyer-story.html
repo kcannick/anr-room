@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R Wars — story flyer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   A&R Wars — the weekly seat flyer, 1080x1920 (story). flyer-feed.html re-cut for 9:16:
+   the same masthead and lockup, the big slot for the week's qualifier (photo left, the
+   person right), the eight seats in one row with the unfilled seats as numbered silhouettes,
+   the green field with the 13° cut carrying the call to action.
+
+     ?filled=N (1..8) · ?stage=final · ?stage=champion   (see flyer-feed.html)
+
+   Safe zones: the top 250px and the bottom 250px are kept clear (Instagram's own UI sits
+   there); the call to action ends above y = 1670. The cut runs (0,1549) → (1080,1300); the
+   seats end at 1300 and the CTA sits below the cut's left end, so no type touches the cut.
+   Colour: purple = the contest (the block, the seat tags, the question mark), gold = $500
+   and the champion, green = the date and the LIVE call to action. Flex + absolute boxes only.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;width:1080px;height:1920px;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;--pad:72px}
+
+/* masthead — below the 250px top safe zone */
+.logo{position:absolute;left:var(--pad);top:262px;height:34px;width:auto}
+.num{position:absolute;right:var(--pad);top:258px;font-family:'Space Mono',monospace;font-weight:700;font-size:32px;line-height:40px;color:var(--dim);letter-spacing:.02em}
+.lock{position:absolute;left:var(--pad);top:330px;display:flex;align-items:center;height:140px;--S:140px}
+.lock img{height:var(--S);width:auto;flex:none}
+.lock .w{font-weight:900;font-size:calc(var(--S) * .9375);line-height:1;letter-spacing:-.04em;text-transform:uppercase;margin-left:calc(var(--S) * .16);color:var(--ink);white-space:nowrap}
+
+.eye{position:absolute;left:var(--pad);right:var(--pad);top:520px;font-family:'Space Mono',monospace;font-weight:700;font-size:30px;line-height:1;color:var(--green);letter-spacing:-.01em;white-space:nowrap;display:flex;align-items:center}
+.eye .live{display:inline-block;background:var(--green);color:var(--ground);transform:skewX(-13deg);border-radius:4px;padding:0 12px;height:38px;line-height:38px;font-size:22px;letter-spacing:.06em;margin-right:16px}
+.eye .live span{display:inline-block;transform:skewX(13deg)}
+.head{position:absolute;left:var(--pad);right:var(--pad);top:572px;font-weight:900;font-size:66px;line-height:1;letter-spacing:-.04em;white-space:nowrap}
+.head b{font-weight:900;color:var(--gold)}
+
+/* the big slot */
+.big{position:absolute;left:var(--pad);right:var(--pad);top:700px;display:flex;align-items:center}
+.big .ph{position:relative;width:380px;height:380px;border-radius:50%;overflow:hidden;background:var(--panel);flex:none}
+.big .ph img{position:absolute;left:0;top:0;width:380px;height:380px;object-fit:cover}
+.big .ph .qm{position:absolute;left:0;top:0;width:380px;height:380px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-weight:700;font-size:240px;line-height:1;color:var(--purple)}
+.big .tx{margin-left:44px;display:flex;flex-direction:column;align-items:flex-start;min-width:0}
+.big .nm{font-weight:900;font-size:58px;line-height:.95;letter-spacing:-.04em}
+.big .ig{margin-top:14px;display:flex;align-items:center;gap:10px;font-family:'Space Mono',monospace;font-weight:700;font-size:28px;line-height:1;color:var(--dim);white-space:nowrap}
+.big .ig:empty{display:none}
+.big .ig .igi{width:32px;height:32px;flex:none}
+.big .tag{margin-top:22px;background:var(--purple);color:var(--ink);transform:skewX(-13deg);border-radius:4px;padding:0 18px;height:44px;line-height:44px;font-weight:900;font-size:23px;letter-spacing:-.01em;text-transform:uppercase;white-space:nowrap;margin-left:6px}
+.big .tag span{display:inline-block;transform:skewX(13deg)}
+.big .premise{margin-top:20px;font-weight:500;font-size:26px;line-height:1.3;color:var(--ink);letter-spacing:-.01em;white-space:normal;max-width:512px;}
+.champion .prize{display:none}
+.big .who{display:none;font-weight:900;font-size:60px;line-height:1;letter-spacing:-.04em;white-space:nowrap}
+.big .who b{color:var(--gold)}
+.big .when{display:none;margin-top:22px;font-family:'Space Mono',monospace;font-weight:700;font-size:46px;line-height:1.15;color:var(--green);letter-spacing:-.02em;white-space:nowrap}
+.final .big .nm,.final .big .ig,.final .big .tag{display:none}
+.final .big .when{display:block}
+.final .big .ph{border:4px dashed var(--purple)}
+.champion .big .ph{outline:8px solid var(--gold)}
+.champion .big .nm{color:var(--gold)}
+.champion .big .tag{background:var(--gold);color:var(--ground)}
+
+/* the eight seats, one row: ends at y = 1300, above the cut at its highest */
+.seats{position:absolute;left:var(--pad);right:var(--pad);top:1136px;display:flex;justify-content:space-between}
+.seat{width:112px;display:flex;flex-direction:column;align-items:center;position:relative}
+.seat .ph{position:relative;width:104px;height:104px;border-radius:50%;overflow:hidden;background:var(--panel);flex:none}
+.seat .ph img{position:absolute;left:0;top:0;width:104px;height:104px;object-fit:cover}
+.seat .ph svg{position:absolute;left:0;top:0;width:104px;height:104px}
+.seat .nm{margin-top:10px;font-weight:800;font-size:19px;line-height:1.05;letter-spacing:-.03em;text-align:center;width:112px}
+.seat.empty .ph{border:2px dashed var(--line)}
+.seat.empty .nm{font-family:'Space Mono',monospace;font-weight:700;font-size:16px;color:var(--dim);letter-spacing:.02em}
+.seat.star .ph{outline:4px solid var(--purple)}
+.champion .seat.star .ph{outline-color:var(--gold)}
+.champion .seat.star .nm{color:var(--gold)}
+
+/* the field: cut (0,1549) → (1080,1300); CTA below the cut's left end, above the bottom 250px */
+.field{position:absolute;left:0;right:0;bottom:0;height:620px;background:var(--green);clip-path:polygon(0 249px,100% 0,100% 100%,0 100%)}
+.cta{position:absolute;left:var(--pad);bottom:262px;color:var(--ground);font-weight:900;font-size:52px;line-height:1;letter-spacing:-.03em}
+.cta .url{display:block;font-family:'Space Mono',monospace;font-weight:700;font-size:40px;letter-spacing:-.01em;margin-top:14px}
+.prize{position:absolute;right:var(--pad);bottom:268px;text-align:right;color:var(--ground);font-family:'Space Mono',monospace;font-weight:700;font-size:30px;line-height:1.2;letter-spacing:-.01em}
+.prize b{display:block;font-size:72px;line-height:1;letter-spacing:-.04em;color:var(--ground)}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <div class="num" id="num"></div>
+  <div class="lock"><img src="../mark/anr-mark-purple.svg" alt="A&amp;R"><span class="w">Wars</span></div>
+  <div class="eye" id="eye"></div>
+  <div class="head" id="head"></div>
+  <div class="big" id="big"></div>
+  <div class="seats" id="seats"></div>
+  <div class="field"></div>
+  <div class="cta" id="cta"></div>
+  <div class="prize" id="prize"></div>
+</div>
+<script>
+/* ---- DATA: the same block sits at the top of flyer-feed, flyer-story and thumb so the three
+   cannot disagree. PLACEHOLDERS: every competitor is invented, the photos are pravatar stand-ins.
+   `competitors` are the SEATS in the order they qualified (seat 1 = week 1). `winner` is a seat
+   number (1..8) or null. `week` is the label printed on that seat's flyer (defaults to "Week N"). ---- */
+const DATA = {
+  name: 'A&R Wars', number: '#1', date: 'Sunday, October 25', time: '7:00 PM ET',
+  prize: '$500 Cash Prize', watch: 'makinitmag.com/ANR',
+  competitors: [
+    { name: 'Taliyah Rae',    handle: 'taliyahrae',      city: 'Atlanta, GA',     photo: 'https://i.pravatar.cc/300?img=47' },
+    { name: 'Marcus Lane',    handle: 'marcuslanemusic', city: 'Houston, TX',     photo: 'https://i.pravatar.cc/300?img=12' },
+    { name: 'Deja Simone',    handle: 'dejasimone',      city: 'Chicago, IL',     photo: 'https://i.pravatar.cc/300?img=32' },
+    { name: 'Bryce Holloway', handle: '',                city: 'Charlotte, NC',   photo: 'https://i.pravatar.cc/300?img=52' },
+    { name: 'Nia Monroe',     handle: 'niamonroe',       city: 'Memphis, TN',     photo: 'https://i.pravatar.cc/300?img=25' },
+    { name: 'Andre Mitchell', handle: 'andremitchell',   city: 'Detroit, MI',     photo: 'https://i.pravatar.cc/300?img=60' },
+    { name: 'Kiana Ross',     handle: 'kianarossmusic',  city: 'Los Angeles, CA', photo: 'https://i.pravatar.cc/300?img=44' },
+    { name: 'Jordyn Price',   handle: 'jordynprice',     city: 'Brooklyn, NY',    photo: 'https://i.pravatar.cc/300?img=16' },
+  ],
+  winner: 3,
+};
+const q = new URLSearchParams(location.search);
+const STAGE = q.get('stage') === 'final' ? 'final' : q.get('stage') === 'champion' ? 'champion' : 'week';
+const FILLED = STAGE === 'week' ? Math.max(1, Math.min(8, parseInt(q.get('filled') || '1', 10) || 1)) : 8;
+const seat = n => DATA.competitors[n - 1];
+const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const handleOf = c => (c && c.handle ? '@' + String(c.handle).replace(/^@/, '') : '');
+const weekOf = n => (seat(n) && seat(n).week) || ('Week ' + n);
+const STAR = STAGE === 'week' ? FILLED : STAGE === 'champion' ? DATA.winner : null;
+const IG_SVG = '<svg class="igi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1" fill="currentColor" stroke="none"/></svg>';
+const SIL = '<svg viewBox="0 0 100 100" fill="none" stroke="#9793B4" stroke-width="3" stroke-linecap="round"><circle cx="50" cy="38" r="17"/><path d="M19 96c3-20 16-30 31-30s28 10 31 30"/></svg>';
+const PREMISE = '8 A&Rs play the songs they scouted. You vote on every matchup. The winner takes the cash prize.';   // operator's premise line; "the cash prize" here so the $500 prints ONCE per graphic (the field block, or the champion headline)
+/* ---- end DATA ---- */
+
+const $ = id => document.getElementById(id);
+const c = $('c'); c.className = STAGE;
+const star = STAR ? seat(STAR) : null;
+$('num').textContent = DATA.name + ' ' + DATA.number;
+const event = esc(DATA.name) + ' ' + esc(DATA.number) + ' · ' + esc(DATA.date) + ' · ' + esc(DATA.time);
+if (STAGE === 'week') { $('eye').innerHTML = event; $('head').innerHTML = esc(star.name) + ' qualified.'; }
+else if (STAGE === 'final') { $('eye').innerHTML = '<span class="live"><span>LIVE</span></span>' + esc(DATA.name) + ' ' + esc(DATA.number); $('head').innerHTML = 'Who has the Best Ear?'; }   // operator's wording, verbatim
+else { $('eye').innerHTML = event; $('head').innerHTML = esc(star.name) + ' wins <b>$500</b>.'; }
+
+if (star) {
+  const tag = STAGE === 'champion' ? 'Champion' : 'Qualified · ' + weekOf(STAR);   // the champion headline carries the one $500
+  $('big').innerHTML = `<div class="ph"><img src="${esc(star.photo)}" alt=""></div>
+    <div class="tx"><div class="nm">${esc(star.name)}</div>
+    <div class="ig">${star.handle ? IG_SVG + esc(handleOf(star)) : ''}</div>
+    <div class="tag"><span>${esc(tag)}</span></div>
+    <div class="premise">${esc(PREMISE)}</div></div>`;
+} else {
+  $('big').innerHTML = `<div class="ph"><div class="qm">?</div></div>
+    <div class="tx"><div class="when">${esc(DATA.date)}<br>${esc(DATA.time)}</div>
+    <div class="premise">${esc(PREMISE)}</div></div>`;
+}
+$('seats').innerHTML = [1, 2, 3, 4, 5, 6, 7, 8].map(n => {
+  const p = n <= FILLED ? seat(n) : null;
+  if (!p) return `<div class="seat empty"><div class="ph">${SIL}</div><div class="nm">Seat ${n}</div></div>`;
+  return `<div class="seat${n === STAR ? ' star' : ''}"><div class="ph"><img src="${esc(p.photo)}" alt=""></div><div class="nm">${esc(p.name)}</div></div>`;
+}).join('');
+$('cta').innerHTML = (STAGE === 'champion' ? 'Watch the replay' : STAGE === 'final' ? 'Vote live at' : 'Watch live at') + '<span class="url">' + esc(DATA.watch) + '</span>';
+$('prize').innerHTML = '<b>' + esc(DATA.prize.split(' ')[0]) + '</b>' + esc(DATA.prize.split(' ').slice(1).join(' '));
+
+const fit = (el, max, min) => { let fs = parseFloat(getComputedStyle(el).fontSize); while (el.scrollWidth > max && fs > min) { fs -= 1; el.style.fontSize = fs + 'px'; } };
+document.fonts.ready.then(() => requestAnimationFrame(() => {
+  fit($('head'), 936, 36);
+  for (const el of document.querySelectorAll('.big .nm, .big .ig, .big .who, .big .when')) fit(el, 936 - 380 - 44, 24);
+}));
+document.title = 'A&R Wars — story flyer — ' + (STAGE === 'week' ? 'week ' + FILLED : STAGE);
+</script>
+</body>
+</html>

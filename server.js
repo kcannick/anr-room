@@ -910,6 +910,11 @@ async function ratifyAndPublish(round, session) {
   // Needs room_average, so it can only fire here — after the tally.
   try { await creditScoutPoints(await db.get('SELECT * FROM rounds WHERE id = ?', [round.id]), session); }
   catch (e) { console.error('[scout] credit failed:', e.message); }
+  // A tournament poll: the side with more votes advances in the bracket (045).
+  if (round.tournament_match_id) {
+    try { await tournaments.onRoundRatified(round); }
+    catch (e) { console.error('[tournament] advance failed:', e.message); }
+  }
   // Compute the public series board ONCE here and push it as payload, so every connected
   // homepage applies it directly instead of each re-fetching + recomputing (O(1) at scale).
   let lbData = null;
@@ -1529,6 +1534,14 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       if (a.created) out.asanaCreated = a.created;
       if (a.attached) out.asanaAttached = a.attached;
     } catch (e) { console.error('[daily] asana pass failed:', e.message); }
+  }
+
+  // ---- Tournament reminders (045): the list's one email, remind_min before the event ----
+  if (left() > 3000) {
+    try {
+      const r = await tournaments.drainReminders({ deadline: Date.now() + Math.min(6000, left() - 1000), ts: at });
+      if (r.sent) out.tournamentReminders = r.sent;
+    } catch (e) { console.error('[daily] tournament reminders failed:', e.message); }
   }
 
   // ---- Brevo: artists + A&Rs onto their lists, once a day (044) ----
@@ -6053,9 +6066,109 @@ async function sidebetResults(pack, limit = SIDEBET_RESULT_LIMIT) {
 }
 
 // ---------- routes ----------
+// Queue (or open) a round in a live session. Shared by the console's queue form and the
+// tournament's "Queue matchup" (045), so a tournament poll is an ordinary binary round that
+// also remembers which match it belongs to (tournament_match_id).
+// Returns { ok, payload } or { ok:false, error, status }.
+async function queueRound(session, body) {
+  const { song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type,
+    artist_email, artist_phone, roundId, pack_song_a, pack_song_b, tournamentMatchId } = body;
+  const sessionId = session.id;
+  const fail = (error, status = 400) => ({ ok: false, error, status });
+  {
+    // A drop's records arrive as one approved batch from Drupal and are numbered at insert.
+    // Hand-adding here would either auto-open into a running window or land a pending round
+    // the lifecycle never picks up — and either way it breaks the day's idx sequence.
+    if (isAsync(session)) return fail('A&R Daily records come from the approved daily push, not the queue form', 409);
+    // `roundId` = "this form is already a queued round" — the console sends it when the form
+    // was auto-filled from a review-site push, which stages the record server-side. Without
+    // it, pressing Add would queue a SECOND copy of the song already sitting on deck. Scoped
+    // to PENDING rounds in this room, so it can never rewrite one that's playing or ratified;
+    // an unknown/stale id falls through to a normal insert rather than erroring at the host
+    // mid-show. Everything below (open-if-idle, poll-type resolution) is shared.
+    let bound = null;
+    if (roundId) bound = await db.get("SELECT * FROM rounds WHERE id = ? AND session_id = ? AND status = 'pending'", [roundId, sessionId]);
+    // Poll type is PER-ROUND now. Resolve it: explicit body value → the session's most
+    // recent round's type (so it persists round-to-round) → the session default → rating.
+    let pt = poll_type === 'binary' ? 'binary' : (poll_type === 'rating' ? 'rating' : null);
+    if (!pt) {
+      const last = await db.get('SELECT poll_type FROM rounds WHERE session_id = ? ORDER BY created_at DESC LIMIT 1', [sessionId]);
+      pt = (last && last.poll_type) || (session.poll_type === 'binary' ? 'binary' : 'rating');
+    }
+    const isBinary = pt === 'binary';
+    // Sidebet (033): a binary matchup queued FROM the service pack carries the two
+    // pack_song ids, which is what lets the played set derive at settle instead of the
+    // host re-ticking 18 boxes. Validated against the pack actually linked to THIS room
+    // — an id from another pack would silently mark the wrong song as played, and that
+    // decides a cash prize. A round is never rejected over this: an unrecognised id is
+    // dropped and the host confirms by hand, which the settle checklist already expects.
+    let packA = null, packB = null;
+    if (isBinary && (pack_song_a || pack_song_b)) {
+      const linked = await db.get("SELECT id FROM packs WHERE session_id = ? AND status <> 'settled' ORDER BY created_at DESC LIMIT 1", [sessionId]);
+      if (linked) {
+        const okSong = async (sid) => {
+          if (!sid) return null;
+          const r = await db.get('SELECT id FROM pack_songs WHERE id = ? AND pack_id = ?', [sid, linked.id]);
+          return r ? r.id : null;
+        };
+        packA = await okSong(pack_song_a);
+        packB = await okSong(pack_song_b);
+      }
+    }
+    if (!song_title || !song_title.trim()) return fail(isBinary ? 'Song A title required' : 'Song title required');
+    // Binary rounds need both sides; Song A reuses song_title/song_artist.
+    if (isBinary && (!option_b_title || !option_b_title.trim())) return fail('Song B title required');
+    // Queued songs don't get a round number (idx) until they're actually opened —
+    // they're played in queue order, which may differ from the order added.
+    const rid = bound ? bound.id : id(9);
+    if (bound) {
+      // Same fields, written over the record already on deck — the host's edits win over what
+      // the review site pushed. queue_pos is left alone so a reordered queue stays reordered.
+      await db.run(
+        `UPDATE rounds SET poll_type = ?, song_title = ?, song_artist = ?, song_note = ?, giveaway = ?,
+           option_b_title = ?, option_b_artist = ?, artist_email = ?, artist_phone = ?,
+           pack_song_a = ?, pack_song_b = ?, tournament_match_id = COALESCE(?, tournament_match_id) WHERE id = ?`,
+        [pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
+         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, tournamentMatchId || null, rid]
+      );
+    } else {
+      const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
+      await db.run(
+        `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, pack_song_a, pack_song_b, tournament_match_id, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
+        [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
+         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, tournamentMatchId || null, now()]
+      );
+    }
+    // Straight to open unless a round is already in play — then it waits in the queue.
+    // Removes the mandatory add-then-open two-step for the common case. As of 030 "open"
+    // means LISTENING: the record goes up and the room hears it, and the host presses
+    // Advance to start the clock. Opening straight into voting would start a countdown
+    // before anyone had heard the song, which is the thing staging exists to prevent.
+    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed')", [sessionId]);
+    if (!inPlay) {
+      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed','ratified')", [sessionId])).c;
+      await db.run("UPDATE rounds SET status = 'listening', idx = ?, opens_at = ?, closes_at = NULL WHERE id = ?",
+        [Number(started) + 1, now(), rid]);
+      if (session.status === 'upcoming') await db.run("UPDATE sessions SET status = 'live', scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?", [now(), sessionId]);
+      await realtime.publish(sessionId, 'round');
+      return { ok: true, payload: { roundId: rid, opened: true, status: 'listening' } };
+    }
+    return { ok: true, payload: { roundId: rid, opened: false } };
+  }
+}
+
 async function handleApi(req, res, url) {
   const p = url.pathname;
   const method = req.method;
+
+  // Tournaments (045): public page data + the reminder list, and the admin dashboard.
+  if (p === '/api/tournament' || p.startsWith('/api/tournament/') || p.startsWith('/api/admin/tournament')) {
+    const handled = await tournaments.handle(req, res, url);
+    if (handled !== false) return;
+  }
 
   // ----- create session (admin bootstrap) -----
   if (p === '/api/session' && method === 'POST') {
@@ -8501,91 +8614,12 @@ async function handleApi(req, res, url) {
   }
 
   if (p === '/api/admin/round' && method === 'POST') {
-    const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type,
-      artist_email, artist_phone, roundId, pack_song_a, pack_song_b } = await readBody(req);
-    const session = await canAdminSession(req, sessionId);
+    const body = await readBody(req);
+    const session = await canAdminSession(req, body.sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
-    // A drop's records arrive as one approved batch from Drupal and are numbered at insert.
-    // Hand-adding here would either auto-open into a running window or land a pending round
-    // the lifecycle never picks up — and either way it breaks the day's idx sequence.
-    if (isAsync(session)) return bad(res, 'A&R Daily records come from the approved daily push, not the queue form', 409);
-    // `roundId` = "this form is already a queued round" — the console sends it when the form
-    // was auto-filled from a review-site push, which stages the record server-side. Without
-    // it, pressing Add would queue a SECOND copy of the song already sitting on deck. Scoped
-    // to PENDING rounds in this room, so it can never rewrite one that's playing or ratified;
-    // an unknown/stale id falls through to a normal insert rather than erroring at the host
-    // mid-show. Everything below (open-if-idle, poll-type resolution) is shared.
-    let bound = null;
-    if (roundId) bound = await db.get("SELECT * FROM rounds WHERE id = ? AND session_id = ? AND status = 'pending'", [roundId, sessionId]);
-    // Poll type is PER-ROUND now. Resolve it: explicit body value → the session's most
-    // recent round's type (so it persists round-to-round) → the session default → rating.
-    let pt = poll_type === 'binary' ? 'binary' : (poll_type === 'rating' ? 'rating' : null);
-    if (!pt) {
-      const last = await db.get('SELECT poll_type FROM rounds WHERE session_id = ? ORDER BY created_at DESC LIMIT 1', [sessionId]);
-      pt = (last && last.poll_type) || (session.poll_type === 'binary' ? 'binary' : 'rating');
-    }
-    const isBinary = pt === 'binary';
-    // Sidebet (033): a binary matchup queued FROM the service pack carries the two
-    // pack_song ids, which is what lets the played set derive at settle instead of the
-    // host re-ticking 18 boxes. Validated against the pack actually linked to THIS room
-    // — an id from another pack would silently mark the wrong song as played, and that
-    // decides a cash prize. A round is never rejected over this: an unrecognised id is
-    // dropped and the host confirms by hand, which the settle checklist already expects.
-    let packA = null, packB = null;
-    if (isBinary && (pack_song_a || pack_song_b)) {
-      const linked = await db.get("SELECT id FROM packs WHERE session_id = ? AND status <> 'settled' ORDER BY created_at DESC LIMIT 1", [sessionId]);
-      if (linked) {
-        const okSong = async (sid) => {
-          if (!sid) return null;
-          const r = await db.get('SELECT id FROM pack_songs WHERE id = ? AND pack_id = ?', [sid, linked.id]);
-          return r ? r.id : null;
-        };
-        packA = await okSong(pack_song_a);
-        packB = await okSong(pack_song_b);
-      }
-    }
-    if (!song_title || !song_title.trim()) return bad(res, (isBinary ? 'Song A title required' : 'Song title required'));
-    // Binary rounds need both sides; Song A reuses song_title/song_artist.
-    if (isBinary && (!option_b_title || !option_b_title.trim())) return bad(res, 'Song B title required');
-    // Queued songs don't get a round number (idx) until they're actually opened —
-    // they're played in queue order, which may differ from the order added.
-    const rid = bound ? bound.id : id(9);
-    if (bound) {
-      // Same fields, written over the record already on deck — the host's edits win over what
-      // the review site pushed. queue_pos is left alone so a reordered queue stays reordered.
-      await db.run(
-        `UPDATE rounds SET poll_type = ?, song_title = ?, song_artist = ?, song_note = ?, giveaway = ?,
-           option_b_title = ?, option_b_artist = ?, artist_email = ?, artist_phone = ?,
-           pack_song_a = ?, pack_song_b = ? WHERE id = ?`,
-        [pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
-         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
-         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, rid]
-      );
-    } else {
-      const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
-      await db.run(
-        `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, pack_song_a, pack_song_b, status, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
-        [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
-         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
-         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, now()]
-      );
-    }
-    // Straight to open unless a round is already in play — then it waits in the queue.
-    // Removes the mandatory add-then-open two-step for the common case. As of 030 "open"
-    // means LISTENING: the record goes up and the room hears it, and the host presses
-    // Advance to start the clock. Opening straight into voting would start a countdown
-    // before anyone had heard the song, which is the thing staging exists to prevent.
-    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed')", [sessionId]);
-    if (!inPlay) {
-      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed','ratified')", [sessionId])).c;
-      await db.run("UPDATE rounds SET status = 'listening', idx = ?, opens_at = ?, closes_at = NULL WHERE id = ?",
-        [Number(started) + 1, now(), rid]);
-      if (session.status === 'upcoming') await db.run("UPDATE sessions SET status = 'live', scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?", [now(), sessionId]);
-      await realtime.publish(sessionId, 'round');
-      return send(res, 200, { roundId: rid, opened: true, status: 'listening' });
-    }
-    return send(res, 200, { roundId: rid, opened: false });
+    const r = await queueRound(session, body);
+    if (!r.ok) return bad(res, r.error, r.status || 400);
+    return send(res, 200, r.payload);
   }
 
   // ---- the staged advance: one action drives the whole show ----
@@ -9258,7 +9292,9 @@ async function handleApi(req, res, url) {
     const schedW = dropWindowFor(etDay(), await dailySchedule());
     const schedule = { opensLabel: etClockLabel(schedW.opensAt), closesLabel: etClockLabel(schedW.closesAt),
       streamLabel: etClockLabel(schedW.streamAt), resultsLabel: etClockLabel(schedW.resultsAt) };
-    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, topScouts, houseSubmitUrl, schedule });
+    let winners = [];
+    try { winners = await tournaments.homeWinners(); } catch (e) { console.error('[home] winners failed:', e.message); }
+    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners, recentARs, topScouts, houseSubmitUrl, schedule });
   }
 
 
@@ -9471,6 +9507,7 @@ async function handleApi(req, res, url) {
     const seriesId = url.searchParams.get('series');
     const sendPng = (buf, cache) => { res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': cache }); return res.end(buf); };
     try {
+      if (kind === 'tournament') return await tournaments.card(req, res, url);
       if (kind === 'promo') {
         return sendPng(await shareCards.renderPng('promo', {}), 'public, max-age=86400');
       }
@@ -11055,6 +11092,15 @@ function serveStatic(res, file) {
   fs.createReadStream(full).pipe(res);
 }
 
+// ═══ TOURNAMENTS — A&R Wars + the $1,000 Music Review Tournament (045) ══════════════════
+// Routes, data and graphics live in tournament.js; it is handed the helpers it needs here so
+// the module stays testable and this file grows by a handful of lines.
+const tournaments = require('./tournament')({
+  db, id, now, send, bad, readBody, platformAdmin, realtime, shareCards, photoDataUri, uploadPng,
+  sendEmail, escapeHtml, asanaFetch, asanaProject: dailyAsanaProject, weeklyReportData,
+  lastCompleteWeekStart, etNextDay, etClockLabel, etEpoch, igClean, publicBase, queueRound, canAdminSession,
+});
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -11075,6 +11121,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html'); // A&R Wars prediction contest
+    // Tournament landing pages (045): /wars = the latest A&R Wars, /tournament/<slug> = any.
+    if (url.pathname === '/wars' || url.pathname === '/tournament' || url.pathname.startsWith('/tournament/')) return serveStatic(res, 'tournament.html');
     // The A&R's account (2026-10-01): ONE page with sections — Earn points (the default;
     // what /refer was), My profile, and a tab to the edit form. /refer serves the same file
     // so every link already out there (email footers, the signed [card link], QR'd flyers'
@@ -11254,3 +11302,4 @@ module.exports._weekStartOf = weekStartOf;
 module.exports._resultsPages = resultsPages;
 module.exports._arResultsData = arResultsData;
 module.exports._accountResultsUrl = accountResultsUrl;
+module.exports._tournaments = tournaments;

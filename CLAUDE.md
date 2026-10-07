@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 044; suite green)
+## Current state (migrations through 045; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -944,14 +944,43 @@ live on anr.makinitmag.com.
   Aug/Sep broadcasts cancelled, the 7 bouncing addresses stamped, explicit OFF prefs written
   for the 132 accounts with zero opens and no play.
 
+- **Tournament tooling — A&R Wars + the $1,000 Music Review Tournament** (045, 2026-10-07;
+  REVERSES the 2026-07-01 "no bracket layer" decision — the operator asked for the layer).
+  ONE model keyed on `tournaments.kind` (`ar` | `artist`): `tournament_competitors` (a ROW copied
+  from the profile, editable, never written back; `seat` = order filled, drives the weekly
+  flyers; `seed` = the bracket), `tournament_matches` (7 rows, 1v8 4v5 3v6 2v7),
+  `tournament_subscribers` (the landing page's reminder list — email only, no account, one-click
+  unsubscribe), `rounds.tournament_match_id`. Pure bracket rules in `bracket.js` (tested); data +
+  routes in `tournament.js`, installed by server.js with the helpers it needs. **A matchup is an
+  ordinary binary round** queued by `queueRound()` (the queue-form route refactored into it) with
+  `pack_song_a/b` stamped for a pack pick, so Pick the Hits settles off the same rows; **ratify
+  decides the match** (`split_a > 50` = A; a 50 or a zero-vote poll leaves it to the host's
+  Decide button; a host decision is sticky; override clears everything downstream); the final is
+  `final_polls` (3) decided at a majority but the console still asks for poll 3 (the side bet
+  needs 18 songs); the final's winner sets `status='complete'` + `winner_competitor_id`, and
+  `/api/home.winners` (hardcoded `[]` until now) lists complete tournaments. **The seal holds
+  on the public page**: a poll's `split_a` is null until ratified, only the count ships.
+  **Graphics are a WEEKLY qualifier series** (operator): one big slot (that week's qualifier) +
+  8 small seats (everyone picked so far, silhouettes for the rest); final promo = all 8 filled,
+  big slot a question mark + "Who has the Best Ear?" (operator's wording); champion set after;
+  $500 printed ONCE per graphic; a one-line premise on every state. Satori elements
+  `tournamentFeed/Story/Thumb/Bracket` (purple lockup block — head-to-head), rendered live and
+  admin-only at `/api/card/tournament?t=&kind=&filled=&stage=`; Publish hosts to Blob at
+  `tournaments/<slug>/<key>-<kind>.png` and makes one Asana task per row (caption per the SEO
+  rule, no topic hashtags, ≤4 mentions a comment). Public page `/wars` (latest Wars) and
+  `/tournament/<slug>` (`public/tournament.html`, 15s refetch while live, no Ably); reminder
+  sent by the daily cron `remind_min` before `event_at` (claimed rows, tagged
+  `tournament_reminder`) or by hand. Console: the Tournaments mode (setup · field with
+  weekly-winner candidates + search · live bracket with Queue matchup / Decide / Override ·
+  graphics rows · reminder list + CSV · wrap). Platform-admin only. Spec + API contract:
+  **docs/specs/tournament-spec.md**; mockups `public/_mock-tournament*.html`,
+  `public/brand/wars/`. Dev seed: `scripts/dev-seed-tournament.js`.
+
 ## What's next (roadmap order)
-1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
-   (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count
-   for the cut), but NONE of the tournament machinery is built: the 8-competitor bracket +
-   seeding (top-N from the series board + invited Tastemakers), the matchup→advancement flow
-   wiring binary-poll outcomes to the bracket, the service-pack / scouting workflow, and a
-   **winners model** (the homepage `winners[]` is still an empty array — nothing writes it).
-   This is the largest remaining build; not started.
+1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
+   bracket for the stream; the Promo Budget crediting for the artist tournament; the Series
+   `qualify_count` cut is superseded by weekly seats and left as is; Brevo list for the
+   reminder subscribers (operator undecided).
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
 3. **Digest senders** — both shipped: `digest_daily` (033, opt-in) and `digest_weekly` (043,
