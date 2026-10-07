@@ -5529,6 +5529,215 @@ async function startVoting(sessionId, headers, minutes = 5) {
   await egDb.run("DELETE FROM users WHERE uid LIKE 'eg_%'");
   await egDb.run("DELETE FROM notify_prefs WHERE uid LIKE 'eg_%'");
 
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.log('\n— tournaments: A&R Wars dashboard, bracket, polls, landing page (045) —');
+  // ═══════════════════════════════════════════════════════════════════════════
+  const tnDb = require('./db');
+  ok('tournament: nothing scheduled is a 404', (await call('/api/tournament?kind=ar', null, 'GET')).status === 404);
+  ok('tournament: /wars serves the landing page', /tournament/i.test(await (await fetch(base + '/wars')).text()));
+  ok('tournament: a non-admin cannot create one', (await call('/api/admin/tournament', { kind: 'ar', number: 1 }, 'POST', CHHOST)).status === 403);
+  const tnBadKind = await call('/api/admin/tournament', { number: 1 }, 'POST', BOOTH);
+  ok('tournament: kind is required', tnBadKind.status === 400, JSON.stringify(tnBadKind.d));
+  const tnMake = await call('/api/admin/tournament', { kind: 'ar', number: 1, eventLocal: '2030-10-25T19:00', remindMin: 120 }, 'POST', BOOTH);
+  ok('tournament: created as a draft with a derived slug', tnMake.status === 200 && tnMake.d.id && tnMake.d.slug === 'wars-1', JSON.stringify(tnMake.d));
+  const TN = tnMake.d.id;
+  let tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: detail reads back the setup', tnd.tournament.status === 'draft' && tnd.tournament.kind === 'ar' && tnd.tournament.filled === 0
+    && tnd.tournament.dateLabel === 'Friday, October 25' && tnd.tournament.timeLabel === '7:00 PM ET' && tnd.tournament.eventLocal === '2030-10-25T19:00'
+    && tnd.tournament.prizeText === '$500 Cash Prize' && tnd.tournament.lockupWord === 'WARS', JSON.stringify(tnd.tournament));
+  ok('tournament: 11 graphic rows, none ready yet', tnd.graphics.length === 11 && tnd.graphics.every(g => !g.ready), JSON.stringify(tnd.graphics.map(g => g.key)));
+  ok('tournament: a draft is not public', (await call('/api/tournament?slug=wars-1', null, 'GET')).status === 404);
+  ok('tournament: cannot open promo with an empty field', (await call('/api/admin/tournament/status', { tournamentId: TN, status: 'promo' }, 'POST', BOOTH)).status === 409);
+
+  // the field: two A&Rs from the user table, six typed in
+  await tnDb.run("UPDATE users SET profile_complete = 1, instagram = '@maya.ig', location = 'Atlanta, GA' WHERE email = 'a@test.com'");
+  const tnSearch = (await call(`/api/admin/tournament/search?id=${TN}&q=maya`, null, 'GET', BOOTH)).d;
+  ok('tournament: search finds a complete profile with the handle cleaned', tnSearch.results.length >= 1 && tnSearch.results[0].handle === 'maya.ig', JSON.stringify(tnSearch));
+  const mayaUid = tnSearch.results[0].userId;
+  const tnAdd1 = await call('/api/admin/tournament/competitor', { tournamentId: TN, userId: mayaUid, name: 'Maya', qualifiedLabel: 'Week 1' }, 'POST', BOOTH);
+  ok('tournament: seat 1 filled from the profile (handle + city copied)', tnAdd1.status === 200 && tnAdd1.d.seat === 1 && tnAdd1.d.seed === 1, JSON.stringify(tnAdd1.d));
+  ok('tournament: the same A&R cannot be seated twice', (await call('/api/admin/tournament/competitor', { tournamentId: TN, userId: mayaUid, name: 'Maya' }, 'POST', BOOTH)).status === 409);
+  const TNC = [tnAdd1.d.competitorId];
+  for (const [i, nm] of ['Theo', 'Iris', 'Dana', 'Jalen', 'Priya', 'Terrence'].entries()) {
+    const r = await call('/api/admin/tournament/competitor', { tournamentId: TN, name: nm, handle: i % 2 ? '' : '@' + nm.toLowerCase(), city: 'Houston, TX', qualifiedLabel: `Week ${i + 2}` }, 'POST', BOOTH);
+    TNC.push(r.d.competitorId);
+  }
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: 7 seats, no bracket yet', tnd.tournament.filled === 7 && tnd.tournament.matches.length === 0);
+  ok('tournament: name is required on a seat', (await call('/api/admin/tournament/competitor', { tournamentId: TN, name: '' }, 'POST', BOOTH)).status === 400);
+  const tnAdd8 = await call('/api/admin/tournament/competitor', { tournamentId: TN, name: 'Simone', handle: 'simone', qualifiedLabel: 'Week 8' }, 'POST', BOOTH);
+  TNC.push(tnAdd8.d.competitorId);
+  ok('tournament: a ninth seat is refused', (await call('/api/admin/tournament/competitor', { tournamentId: TN, name: 'Nine' }, 'POST', BOOTH)).status === 409);
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  const tnSeat1 = tnd.tournament.competitors.find(c => c.id === TNC[0]);
+  ok('tournament: a profile seat carries the profile photo/handle/city', tnSeat1 && tnSeat1.handle === 'maya.ig' && tnSeat1.city === 'Atlanta, GA' && tnSeat1.qualifiedLabel === 'Week 1', JSON.stringify(tnSeat1));
+  const tn_r1 = tnd.tournament.matches.filter(m => m.round_no === 1);
+  ok('tournament: the 8th seat builds the bracket (7 matches)', tnd.tournament.matches.length === 7, 'got ' + tnd.tournament.matches.length);
+  ok('tournament: round 1 is 1v8 4v5 3v6 2v7 by seed', tn_r1.map(m => [m.a_id, m.b_id]).join('|') === [[TNC[0], TNC[7]], [TNC[3], TNC[4]], [TNC[2], TNC[5]], [TNC[1], TNC[6]]].join('|'));
+  ok('tournament: graphic rows seat1..8 + final are ready, champion/bracket not', tnd.graphics.filter(g => g.ready).map(g => g.key).join(',') === 'seat1,seat2,seat3,seat4,seat5,seat6,seat7,seat8,final,bracket', tnd.graphics.filter(g => g.ready).map(g => g.key).join(','));
+
+  // reseed: the order given becomes the seeding, the bracket is rebuilt
+  const tnOrder = [...TNC].reverse();
+  const tnSeed = await call('/api/admin/tournament/seed', { tournamentId: TN, order: tnOrder }, 'POST', BOOTH);
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: reseeding rebuilds round 1', tnSeed.status === 200 && tnd.tournament.matches.find(m => m.round_no === 1 && m.slot === 1).a_id === tnOrder[0], JSON.stringify(tnSeed.d));
+  ok('tournament: a seed order missing someone is refused', (await call('/api/admin/tournament/seed', { tournamentId: TN, order: tnOrder.slice(1) }, 'POST', BOOTH)).status === 400);
+  await call('/api/admin/tournament/seed', { tournamentId: TN, order: TNC }, 'POST', BOOTH);
+  const tnCap = (await call(`/api/admin/tournament/caption?id=${TN}&key=seat3`, null, 'GET', BOOTH)).d;
+  ok('tournament: the seat-3 caption names the qualifier, no hashtags, comments carry the earlier seats', /^Iris qualified for A&R Wars #1 \(Week 3\)\./.test(tnCap.caption) && !/#\w/.test(tnCap.caption.replace('#1', '').replace('#ANR', ''))
+    && tnCap.comments.length === 1 && /@maya\.ig/.test(tnCap.comments[0]) && /@theo/.test(tnCap.comments[0]), JSON.stringify(tnCap));
+  ok('tournament: the final caption asks the question', /Who has the Best Ear\?/.test((await call(`/api/admin/tournament/caption?id=${TN}&key=final`, null, 'GET', BOOTH)).d.caption));
+
+  // promo: the page goes public, the reminder list opens
+  const tnPromo = await call('/api/admin/tournament/status', { tournamentId: TN, status: 'promo' }, 'POST', BOOTH);
+  ok('tournament: promo opens with 8 seats and a date', tnPromo.status === 200, JSON.stringify(tnPromo.d));
+  const tnPub = (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament;
+  ok('tournament: public shape (promo) — 8 competitors, no matches, no champion, premise + question', tnPub && tnPub.competitors.length === 8 && tnPub.matches.length === 0 && tnPub.champion === null
+    && /Best Ear/.test(tnPub.question) && /8 A&Rs play/.test(tnPub.premise) && tnPub.subscribers === 0, JSON.stringify(tnPub && { c: tnPub.competitors.length, m: tnPub.matches.length }));
+  ok('tournament: public competitors carry no private fields', tnPub.competitors.every(c => !('email' in c) && !('user_id' in c) && !('userId' in c)));
+  ok('tournament: ?kind=ar resolves the latest', (await call('/api/tournament?kind=ar', null, 'GET')).d.tournament.id === TN);
+  ok('tournament: remind rejects a bad address', (await call('/api/tournament/remind', { slug: 'wars-1', email: 'nope' })).status === 400);
+  const tnRem = await call('/api/tournament/remind', { slug: 'wars-1', email: 'TnFan@Test.com', name: 'Fan' });
+  ok('tournament: remind adds the email', tnRem.status === 200 && tnRem.d.ok, JSON.stringify(tnRem.d));
+  await call('/api/tournament/remind', { slug: 'wars-1', email: 'tnfan@test.com' });
+  await call('/api/tournament/remind', { slug: 'wars-1', email: 'a@test.com' });
+  ok('tournament: one row per email, case-blind', Number((await tnDb.get('SELECT COUNT(*) AS c FROM tournament_subscribers WHERE tournament_id = ?', [TN])).c) === 2);
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: the console counts the list and how many are A&Rs', tnd.subscribers.count === 2 && tnd.subscribers.ars === 1 && tnd.subscribers.reminded === 0, JSON.stringify(tnd.subscribers));
+  ok('tournament: reminder time = event − remind_min', tnd.tournament.remindAt === tnd.tournament.eventAt - 120 * 60000);
+  const tnCsv = await (await fetch(base + `/api/admin/tournament/subscribers?id=${TN}&format=csv`, { headers: BOOTH })).text();
+  ok('tournament: CSV export has the rows', /^email,name,joined/.test(tnCsv) && /tnfan@test\.com/.test(tnCsv) && /a@test\.com/.test(tnCsv), tnCsv.slice(0, 80));
+  ok('tournament: not due yet, the cron sends nothing', (await srv._tournaments.drainReminders({ ts: Date.now() })).sent === 0);
+  const tnEvent = tnd.tournament.eventAt;
+  ok('tournament: due inside the window, the cron sends to the list once', (await srv._tournaments.drainReminders({ ts: tnEvent - 60 * 60000 })).sent === 2
+    && (await srv._tournaments.drainReminders({ ts: tnEvent - 30 * 60000 })).sent === 0);
+  const tnTok = (await tnDb.get("SELECT unsub_token FROM tournament_subscribers WHERE email = 'tnfan@test.com'")).unsub_token;
+  const tnUnsub = await fetch(base + '/api/tournament/unsubscribe?u=' + encodeURIComponent(tnTok));
+  ok('tournament: one-click unsubscribe', tnUnsub.status === 200 && (await tnDb.get("SELECT unsubscribed_at FROM tournament_subscribers WHERE email = 'tnfan@test.com'")).unsubscribed_at != null);
+  ok('tournament: the public count drops the unsubscribed', (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament.subscribers === 1);
+  ok('tournament: remind-now has nobody left', (await call('/api/admin/tournament/remind-now', { tournamentId: TN }, 'POST', BOOTH)).d.remaining === 0);
+
+  // event night: a Versus session + a pack to pick from
+  const tnSess = await call('/api/session', { name: 'Wars Night', pollType: 'binary' }, 'POST', BOOTH);
+  const TSID = tnSess.d.sessionId, TAH = { 'X-Admin-Token': tnSess.d.adminToken };
+  ok('tournament: cannot go live without a session', (await call('/api/admin/tournament/status', { tournamentId: TN, status: 'live' }, 'POST', BOOTH)).status === 409);
+  const tnPack = await call('/api/admin/sidebet', { name: 'Wars Pack', picksRequired: 6, warsAt: Date.now() + 7 * 86400000, closesAt: Date.now() + 6 * 86400000, status: 'draft', sessionId: TSID }, 'POST', ADMINH);
+  const TPACK = tnPack.d.id;
+  await call('/api/admin/sidebet/songs', { packId: TPACK, songs: [1, 2, 3, 4, 5, 6].map(n => ({ title: 'Pack Song ' + n, artist: 'Artist ' + n })) }, 'POST', ADMINH);
+  const tnLink = await call('/api/admin/tournament', { id: TN, sessionId: TSID, packId: TPACK, watchUrl: 'https://youtube.com/live/x' }, 'POST', BOOTH);
+  ok('tournament: linked to the session and the pack', tnLink.status === 200, JSON.stringify(tnLink.d));
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: the pack songs are offered for the matchup pickers', tnd.packSongs.length === 6 && tnd.packSongs.every(s => !s.played), JSON.stringify(tnd.packSongs.length));
+  const tnLive = await call('/api/admin/tournament/status', { tournamentId: TN, status: 'live' }, 'POST', BOOTH);
+  ok('tournament: live', tnLive.status === 200 && (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament.liveSession.id === TSID, JSON.stringify(tnLive.d));
+  ok('tournament: the reminder form closes once live-ish (event in the future still accepts)', (await call('/api/tournament/remind', { slug: 'wars-1', email: 'late@test.com' })).status === 200);
+
+  // three voters in the Wars session
+  async function tnJoin(email, name) {
+    const rq = await call('/api/join/request', { sessionId: TSID, email });
+    return (await call('/api/join/verify', { sessionId: TSID, email, code: rq.d.devCode, name })).d.token;
+  }
+  const tn_w1 = await tnJoin('tn_w1@test.com', 'W One'), tn_w2 = await tnJoin('tn_w2@test.com', 'W Two'), tn_w3 = await tnJoin('tn_w3@test.com', 'W Three');
+  const tnMatches = () => tnd.tournament.matches;
+  const mAt = (rn, sl) => tnMatches().find(m => m.round_no === rn && m.slot === sl);
+  async function tnRefresh() { tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d; }
+  async function tnPlay(rn, sl, picks, songs) {
+    await tnRefresh();
+    const m = mAt(rn, sl);
+    const q = await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: m.id, a: songs ? songs[0] : { title: `R${rn}S${sl} A`, artist: 'x' }, b: songs ? songs[1] : { title: `R${rn}S${sl} B`, artist: 'y' } }, 'POST', BOOTH);
+    if (q.status !== 200) return q;
+    await startVoting(TSID, TAH);
+    for (const [tok, pick] of picks) await call('/api/vote', { pick, predict_split: 50 }, 'POST', { 'X-Player-Token': tok });
+    const rat = await call('/api/admin/round/ratify', { sessionId: TSID, roundId: q.d.roundId }, 'POST', TAH);
+    await tnRefresh();
+    return { q, rat, roundId: q.d.roundId };
+  }
+  ok('tournament: the final cannot be queued before both sides are in', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: mAt(3, 1).id, a: { title: 'x' }, b: { title: 'y' } }, 'POST', BOOTH)).status === 409);
+  ok('tournament: a matchup needs a song on each side', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: mAt(1, 1).id, a: { title: 'x' }, b: {} }, 'POST', BOOTH)).status === 400);
+  // tn_r1 slot 1 from the pack — A takes it 2–1
+  const tn_p11 = await tnPlay(1, 1, [[tn_w1, 'A'], [tn_w2, 'A'], [tn_w3, 'B']], [{ packSongId: tnd.packSongs[0].id }, { packSongId: tnd.packSongs[1].id }]);
+  ok('tournament: the matchup opened as a binary round in the session', tn_p11.q.d.opened === true && tn_p11.rat.status === 200, JSON.stringify(tn_p11.q.d) + JSON.stringify(tn_p11.rat.d));
+  const tnRound = await tnDb.get('SELECT tournament_match_id, pack_song_a, pack_song_b, poll_type FROM rounds WHERE id = ?', [tn_p11.roundId]);
+  ok('tournament: the round remembers its match and stamps the pack songs', tnRound.tournament_match_id === mAt(1, 1).id && tnRound.pack_song_a === tnd.packSongs[0].id && tnRound.poll_type === 'binary', JSON.stringify(tnRound));
+  ok('tournament: ratify decides the match for side A and seats them in the semifinal', mAt(1, 1).winner_id === mAt(1, 1).a_id && mAt(1, 1).decided_by === 'polls' && mAt(2, 1).a_id === mAt(1, 1).a_id, JSON.stringify(mAt(2, 1)));
+  ok('tournament: the played pack songs are marked', tnd.packSongs.filter(s => s.played).length === 2);
+  ok('tournament: a decided match cannot be queued again', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: mAt(1, 1).id, a: { title: 'x' }, b: { title: 'y' } }, 'POST', BOOTH)).status === 409);
+  // the seal: while slot 2 is voting the public page shows the count, never the split
+  const tn_m12 = mAt(1, 2);
+  const tn_q12 = await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: tn_m12.id, a: { title: 'Open A', artist: '' }, b: { title: 'Open B', artist: '' } }, 'POST', BOOTH);
+  await startVoting(TSID, TAH);
+  await call('/api/vote', { pick: 'B', predict_split: 50 }, 'POST', { 'X-Player-Token': tn_w1 });
+  await call('/api/vote', { pick: 'B', predict_split: 50 }, 'POST', { 'X-Player-Token': tn_w2 });
+  let tnPubLive = (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament;
+  let pm12 = tnPubLive.matches.find(m => m.id === tn_m12.id);
+  ok('tournament: SEALED — an open poll shows votes but split_a is null', pm12.live === true && pm12.polls.length === 1 && pm12.polls[0].votes === 2 && pm12.polls[0].split_a === null && pm12.winner_id === null, JSON.stringify(pm12));
+  ok('tournament: a second poll cannot be queued while one is open', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: tn_m12.id, a: { title: 'x' }, b: { title: 'y' } }, 'POST', BOOTH)).status === 409);
+  await call('/api/admin/round/ratify', { sessionId: TSID, roundId: tn_q12.d.roundId }, 'POST', TAH);
+  tnPubLive = (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament;
+  pm12 = tnPubLive.matches.find(m => m.id === tn_m12.id);
+  ok('tournament: after ratify the split is public and B advances', pm12.polls[0].split_a === 0 && pm12.winner_id === tn_m12.b_id && tnPubLive.matches.find(m => m.round_no === 2 && m.slot === 1).b_id === tn_m12.b_id, JSON.stringify(pm12));
+  ok('tournament: the loser is marked out on the public field', tnPubLive.competitors.find(c => c.id === tn_m12.a_id).out === true && tnPubLive.competitors.find(c => c.id === tn_m12.b_id).out === false);
+  // a tie goes to the host
+  const tn_p13 = await tnPlay(1, 3, [[tn_w1, 'A'], [tn_w2, 'B']]);
+  ok('tournament: a 50/50 poll leaves the match undecided', tn_p13.rat.status === 200 && mAt(1, 3).winner_id === null, JSON.stringify(mAt(1, 3)));
+  ok('tournament: the host cannot pick someone outside the match', (await call('/api/admin/tournament/decide', { tournamentId: TN, matchId: mAt(1, 3).id, winnerId: TNC[0] }, 'POST', BOOTH)).status === 400);
+  await call('/api/admin/tournament/decide', { tournamentId: TN, matchId: mAt(1, 3).id, winnerId: mAt(1, 3).b_id }, 'POST', BOOTH);
+  await tnRefresh();
+  ok('tournament: host decides the tie, recorded as such, seated in semi 2', mAt(1, 3).winner_id === mAt(1, 3).b_id && mAt(1, 3).decided_by === 'host' && mAt(2, 2).a_id === mAt(1, 3).b_id);
+  ok('tournament: seats and seeding lock once a match is decided', (await call('/api/admin/tournament/seed', { tournamentId: TN, byPoints: true }, 'POST', BOOTH)).status === 409
+    && (await call('/api/admin/tournament/competitor/remove', { tournamentId: TN, competitorId: TNC[7] }, 'POST', BOOTH)).status === 409);
+  // override: clearing a decided match empties everything downstream
+  await call('/api/admin/tournament/decide', { tournamentId: TN, matchId: mAt(1, 1).id, winnerId: null }, 'POST', BOOTH);
+  await tnRefresh();
+  ok('tournament: clearing a match empties its semifinal seat', mAt(1, 1).winner_id === null && mAt(2, 1).a_id === null && mAt(2, 1).b_id === tn_m12.b_id);
+  await call('/api/admin/tournament/decide', { tournamentId: TN, matchId: mAt(1, 1).id, winnerId: mAt(1, 1).b_id }, 'POST', BOOTH);
+  await tnRefresh();
+  ok('tournament: the host can hand it to the other side', mAt(1, 1).winner_id === mAt(1, 1).b_id && mAt(1, 1).decided_by === 'host' && mAt(2, 1).a_id === mAt(1, 1).b_id);
+  // the rest of the night
+  const tn_p14 = await tnPlay(1, 4, [[tn_w1, 'A'], [tn_w2, 'A']]);
+  ok('tournament: round 1 complete', tn_p14.rat.status === 200 && tnMatches().filter(m => m.round_no === 1).every(m => m.winner_id));
+  ok('tournament: the bracket graphic row is ready', tnd.graphics.find(g => g.key === 'bracket').ready === true);
+  const tn_p21 = await tnPlay(2, 1, [[tn_w1, 'A'], [tn_w2, 'A'], [tn_w3, 'B']]);
+  const tn_p22 = await tnPlay(2, 2, [[tn_w1, 'B'], [tn_w2, 'B']]);
+  await tnRefresh();
+  ok('tournament: the final is set', tn_p21.rat.status === 200 && tn_p22.rat.status === 200 && mAt(3, 1).a_id === mAt(2, 1).winner_id && mAt(3, 1).b_id === mAt(2, 2).winner_id, JSON.stringify(mAt(3, 1)));
+  ok('tournament: still live, no champion', tnd.tournament.status === 'live' && tnd.tournament.champion === null);
+  const tn_f1 = await tnPlay(3, 1, [[tn_w1, 'A'], [tn_w2, 'B'], [tn_w3, 'A']]);
+  await tnRefresh();
+  ok('tournament: final poll 1 alone decides nothing (best of 3)', tn_f1.rat.status === 200 && mAt(3, 1).winner_id === null && mAt(3, 1).polls.length === 1);
+  const tn_f2 = await tnPlay(3, 1, [[tn_w1, 'A'], [tn_w2, 'A']]);
+  await tnRefresh();
+  ok('tournament: 2 of 3 decides the final → champion, status complete', tn_f2.rat.status === 200 && mAt(3, 1).winner_id === mAt(3, 1).a_id && tnd.tournament.status === 'complete'
+    && tnd.tournament.champion && tnd.tournament.champion.id === mAt(3, 1).a_id, JSON.stringify(tnd.tournament.champion));
+  ok('tournament: the third poll can still be played (Pick the Hits needs all 18)', (await tnPlay(3, 1, [[tn_w1, 'B']])).q.status === 200);
+  await tnRefresh();
+  ok('tournament: a 4th final poll is refused', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: mAt(3, 1).id, a: { title: 'x' }, b: { title: 'y' } }, 'POST', BOOTH)).status === 409);
+  ok('tournament: champion + bracket graphics ready', tnd.graphics.find(g => g.key === 'champion').ready && tnd.graphics.find(g => g.key === 'bracket').ready);
+  const tnHome = (await call('/api/home', null, 'GET')).d;
+  ok('tournament: the homepage winners strip carries the champion (name/handle/photo only)', tnHome.winners.length === 1 && tnHome.winners[0].champion.name === tnd.tournament.champion.name
+    && tnHome.winners[0].slug === 'wars-1' && !('email' in tnHome.winners[0].champion), JSON.stringify(tnHome.winners));
+  ok('tournament: the finished page says so', (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament.status === 'complete');
+  ok('tournament: the reminder form is closed once finished', (await call('/api/tournament/remind', { slug: 'wars-1', email: 'late2@test.com' })).status === 409);
+  ok('tournament: ?kind=ar falls back to the latest complete one', (await call('/api/tournament?kind=ar', null, 'GET')).d.tournament.id === TN);
+  const tnChampCap = (await call(`/api/admin/tournament/caption?id=${TN}&key=champion`, null, 'GET', BOOTH)).d;
+  ok('tournament: the champion caption', new RegExp('^' + tnd.tournament.champion.name + ' wins A&R Wars #1 and the \\$500 Cash Prize\\.').test(tnChampCap.caption), tnChampCap.caption);
+  // graphics render live (admin only) and publish without Blob still returns the caption
+  const tnCard = await fetch(base + `/api/card/tournament?t=${TN}&kind=feed&filled=4`, { headers: BOOTH });
+  ok('tournament: the feed flyer renders', tnCard.status === 200 && tnCard.headers.get('content-type') === 'image/png', 'got ' + tnCard.status);
+  ok('tournament: the bracket renders', (await fetch(base + `/api/card/tournament?t=${TN}&kind=bracket`, { headers: BOOTH })).status === 200);
+  ok('tournament: the story + thumb render', (await fetch(base + `/api/card/tournament?t=${TN}&kind=story&stage=final`, { headers: BOOTH })).status === 200
+    && (await fetch(base + `/api/card/tournament?t=${TN}&kind=thumb&stage=champion`, { headers: BOOTH })).status === 200);
+  ok('tournament: graphics are admin only', (await fetch(base + `/api/card/tournament?t=${TN}&kind=feed`)).status === 403);
+  const tnPubl = await call('/api/admin/tournament/publish', { tournamentId: TN, key: 'seat2' }, 'POST', BOOTH);
+  ok('tournament: publish without Blob keeps the caption and records the row', tnPubl.status === 200 && tnPubl.d.hosted === false && /Theo qualified/.test(tnPubl.d.caption)
+    && (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d.graphics.find(g => g.key === 'seat2').publishedAt != null, JSON.stringify(tnPubl.d).slice(0, 200));
+  ok('tournament: the list is in the admin index', (await call('/api/admin/tournaments', null, 'GET', BOOTH)).d.tournaments.some(t => t.id === TN && t.champion && t.filled === 8));
+  // the artist kind reuses everything with its own words
+  const tnArt = await call('/api/admin/tournament', { kind: 'artist', number: 1, eventLocal: '2030-11-22T19:00' }, 'POST', BOOTH);
+  ok('tournament: the artist tournament gets its own name, slug, prize and premise', tnArt.d.slug === 'artist-1' && (await call(`/api/admin/tournament?id=${tnArt.d.id}`, null, 'GET', BOOTH)).d.tournament.prizeText === '$1,000 Promo Budget'
+    && /Music Review Tournament/.test((await call(`/api/admin/tournament?id=${tnArt.d.id}`, null, 'GET', BOOTH)).d.tournament.name));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();
   process.exit(fail ? 1 : 0);

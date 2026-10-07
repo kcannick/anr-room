@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script async src="/analytics.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/png" href="/mark-color.png">
+<title>The A&R Team</title>
+<meta name="description" id="metaDesc" content="">
+<meta property="og:title" id="ogTitle" content="The A&R Team">
+<meta property="og:description" id="ogDesc" content="">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* Built as a sibling of landing.html — same shell, bar, buttons, panel, 13° device.
+   Structure, copy and styling follow the approved mockup public/_mock-tournament.html. */
+*{box-sizing:border-box} html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:clip}
+a{color:var(--signal);text-decoration:none}
+.mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+.dim{color:var(--ink-dim)}
+h1,h2,h3{margin:0}
+.shell{max-width:1120px;margin:0 auto}
+.pad{padding:0 20px} @media(min-width:900px){.pad{padding:0 56px}}
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;color:var(--bg)}
+.tick{display:block;width:3px;height:13px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.tick.contest{background:var(--accent)} .tick.prize{background:var(--gold)}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.eyebrow.go{color:var(--signal)} .eyebrow.contest{color:var(--accent)}
+.sechead{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+@media(min-width:900px){.bar{padding:22px 56px}}
+.wordmark{font-weight:800;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;border:0;border-radius:13px;padding:18px 26px;font-family:inherit;font-weight:800;font-size:17px;background:var(--signal);color:var(--bg);text-align:center}
+.btn.sm{padding:9px 15px;font-size:12px;border-radius:9px}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.btn.contest{background:var(--accent);color:#fff}
+.btn.block{display:flex;width:100%}
+.btn[disabled]{opacity:.6;cursor:default}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:19px}
+@media(min-width:900px){.panel{padding:26px}}
+input{width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:15px;padding:13px 14px;border-radius:11px;outline:none}
+input:focus{border-color:var(--signal)}
+
+/* lockup */
+.lockup{display:flex;align-items:center;gap:10px}
+.lockup .blk{width:54px;height:54px;background:var(--signal);transform:skewX(-13deg);display:flex;align-items:center;justify-content:center}
+.lockup .blk span{transform:skewX(13deg);font-weight:900;font-size:20px;letter-spacing:-.04em;color:var(--bg)}
+.lockup .word{font-weight:900;font-size:44px;letter-spacing:-.04em;line-height:1}
+@media(min-width:900px){.lockup .blk{width:72px;height:72px}.lockup .blk span{font-size:27px}.lockup .word{font-size:64px}}
+
+.hero{padding:40px 0 30px;display:flex;flex-direction:column;gap:28px}
+@media(min-width:900px){.hero{padding:70px 0 54px;flex-direction:row;gap:56px;align-items:flex-start}}
+.hero-copy{flex:1;min-width:0}
+.hero h1{font-weight:900;font-size:clamp(28px,8vw,56px);line-height:1;letter-spacing:-.05em;margin-top:22px;text-wrap:balance}
+.hero p.lede{margin:18px 0 0;font-size:16px;line-height:1.5;color:var(--ink-dim);max-width:46ch}
+@media(min-width:900px){.hero p.lede{font-size:18px}}
+.when{display:flex;gap:10px;margin-top:24px;flex-wrap:wrap}
+.cell{flex:1 1 auto;min-width:120px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:13px 12px}
+.cell .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim)}
+.cell .v{font-family:"Space Mono",monospace;font-size:18px;font-weight:700;margin-top:5px;white-space:nowrap}
+.cell .v.go{color:var(--signal)} .cell .v.prize{color:var(--gold)}
+.hero-aside{width:100%;flex:none} @media(min-width:900px){.hero-aside{width:400px}}
+.remind h3{font-weight:800;font-size:21px;letter-spacing:-.03em;margin-bottom:6px}
+.remind p{margin:0 0 14px;font-size:14px;line-height:1.5;color:var(--ink-dim)}
+.remind .fine{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:10px;line-height:1.5}
+.remind .err{font-size:13px;line-height:1.4;color:#ff7a7a;margin-top:8px}
+.remind .done{font-weight:800;font-size:17px;color:var(--signal);padding:10px 0 2px}
+.remind .champ{display:flex;align-items:center;gap:12px;margin-top:6px}
+.remind .champ img,.remind .champ .sil{width:48px;height:48px;border-radius:50%;object-fit:cover;flex:none}
+.remind .champ .nm{font-weight:800;font-size:17px;letter-spacing:-.02em}
+.remind .champ .ig{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-dim);display:block;margin-top:3px}
+.or{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--ink-dim);font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.15em;text-transform:uppercase}
+.or:before,.or:after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* the 8 */
+.field{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(min-width:700px){.field{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}}
+.comp{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 14px;text-align:center;position:relative}
+.comp .seed{position:absolute;top:10px;left:12px;font-family:"Space Mono",monospace;font-size:11px;color:var(--accent);font-weight:700}
+.comp img,.comp .sil{width:84px;height:84px;border-radius:50%;object-fit:cover;background:#222;display:block;margin:6px auto 10px}
+.comp .nm{font-weight:800;font-size:16px;letter-spacing:-.02em;line-height:1.15;overflow-wrap:anywhere}
+.comp .ig{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-dim);margin-top:5px;display:block;overflow-wrap:anywhere}
+.comp .city{font-size:12px;color:var(--ink-dim);margin-top:3px}
+.comp .city.noig{margin-top:8px}
+.comp.out{opacity:.42}
+.comp.champ{border-color:var(--gold)} .comp.champ .seed{color:var(--gold)}
+.comp .tag{display:inline-block;margin-top:8px;font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;padding:3px 8px;border-radius:6px;border:1px solid var(--accent);color:var(--accent)}
+.comp .tag.gold{border-color:var(--gold);color:var(--gold)}
+.sil{color:#5a5670}
+
+/* bracket (public) */
+.br{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:700px){.br{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.br h4{margin:0 0 8px;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.bm{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.bm .s{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px}
+.bm .s img,.bm .s .sil{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none}
+.bm .s .n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bm .s .p{font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-dim)}
+.bm .s.w .n{color:var(--signal);font-weight:800} .bm .s.w .p{color:var(--signal)}
+.bm .s.l{opacity:.45} .bm .s.tbd .n{color:var(--ink-dim);font-style:italic;padding-left:34px}
+.bm .vs{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--accent);text-align:center}
+.bm.live{border-color:var(--signal)}
+.bm .st{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+.bm .st.go{color:var(--signal)}
+.bm .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+.bm .chip{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.08em;padding:3px 7px;border-radius:6px;border:1px solid var(--line);color:var(--ink-dim)}
+.bm .chip.go{border-color:var(--signal);color:var(--signal)}
+
+.steps{display:flex;flex-direction:column;gap:12px}
+@media(min-width:900px){.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}}
+.step .n{font-family:"Space Mono",monospace;color:var(--accent);font-size:12px;font-weight:700}
+.step h3{font-weight:800;font-size:18px;letter-spacing:-.02em;margin:6px 0 6px}
+.step p{margin:0;font-size:14px;line-height:1.5;color:var(--ink-dim)}
+section{padding:34px 0} @media(min-width:900px){section{padding:50px 0}}
+.closer{background:linear-gradient(180deg,var(--panel),#1C1733);border:1px solid var(--line);border-radius:18px;padding:26px;display:flex;flex-direction:column;gap:16px}
+@media(min-width:900px){.closer{flex-direction:row;align-items:center;gap:40px;padding:34px}}
+.closer h2{font-weight:900;font-size:28px;letter-spacing:-.04em;line-height:1.05}
+.closer p{margin:8px 0 0;color:var(--ink-dim);font-size:15px;line-height:1.5}
+.livebar{display:none;background:var(--signal);color:var(--bg);padding:12px 20px;font-weight:800;text-align:center}
+.livebar.on{display:block}
+.livebar a{color:var(--bg);text-decoration:underline}
+foot{display:block;padding:30px 0 50px;color:var(--ink-dim);font-size:12.5px}
+.hidden{display:none !important}
+.empty{padding:70px 0 40px;max-width:46ch}
+.empty h1{font-weight:900;font-size:clamp(28px,8vw,48px);line-height:1;letter-spacing:-.05em}
+.empty p{margin:18px 0 24px;font-size:16px;line-height:1.5;color:var(--ink-dim)}
+</style>
+</head>
+<body>
+
+<div class="livebar" id="livebar"></div>
+
+<div class="bar">
+  <div style="display:flex;align-items:center;gap:10px"><span class="mark"><span>A&amp;R</span></span><span class="wordmark">The A&amp;R Team</span></div>
+  <a class="btn sm" href="/join">Join the A&amp;R Team</a>
+</div>
+
+<div class="shell pad">
+
+<div id="empty" class="empty hidden">
+  <h1>No tournament is scheduled</h1>
+  <p>Check back for the next one. A&amp;Rs vote on every matchup and score points on the night.</p>
+  <a class="btn" href="/join">Join the A&amp;R Team</a>
+</div>
+
+<div id="page" class="hidden">
+
+<div class="hero">
+  <div class="hero-copy">
+    <div class="eyebrow">Makin' It Magazine presents</div>
+    <div class="lockup" style="margin-top:14px"><div class="blk"><span>A&amp;R</span></div><div class="word" id="lockupWord">WARS</div></div>
+    <h1 id="h1">Who has the Best Ear?</h1>
+    <p class="lede" id="lede"></p>
+    <div class="when">
+      <div class="cell"><div class="k">When</div><div class="v go" id="dateLabel"></div></div>
+      <div class="cell"><div class="k">Time</div><div class="v go" id="timeLabel"></div></div>
+      <div class="cell"><div class="k">Prize</div><div class="v prize" id="prizeLabel"></div></div>
+    </div>
+  </div>
+
+  <div class="hero-aside">
+    <div class="panel remind">
+      <h3 id="remindHead">Get a reminder when it starts</h3>
+      <p id="remindCopy">One email, with the link to watch and vote, before we go live.</p>
+      <div id="remindBody"></div>
+      <div class="or">or</div>
+      <a class="btn ghost block" href="/join">Join the A&amp;R Team to vote</a>
+      <div class="fine">A&amp;Rs vote on every matchup and score points on the night. Free to join.</div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="sechead"><span class="tick contest"></span><span class="eyebrow contest" id="fieldHead">The field · 8 A&amp;Rs</span></div>
+  <div class="field" id="field"></div>
+</section>
+
+<section>
+  <div class="sechead"><span class="tick"></span><span class="eyebrow go">How it works</span></div>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><h3>Eight A&amp;Rs, one bracket</h3><p>Single elimination: 8, then 4, then 2, then the champion. Three rounds in one night.</p></div>
+    <div class="step"><div class="n">2</div><h3>Each one plays a song</h3><p id="step2p">Every matchup is two songs, one picked by each A&amp;R from this month's A&amp;R Service Pack.</p></div>
+    <div class="step"><div class="n">3</div><h3>The A&amp;R Team votes</h3><p>Vote for the better song on every matchup. Most votes wins, and the A&amp;R who played it advances.</p></div>
+  </div>
+</section>
+
+<section id="bracketSec" class="hidden">
+  <div class="sechead"><span class="tick contest"></span><span class="eyebrow contest">Bracket</span></div>
+  <div class="br" id="bracket"></div>
+</section>
+
+<section id="packSec" class="hidden">
+  <div class="closer">
+    <div style="flex:1">
+      <div class="eyebrow" style="color:var(--gold)" id="packEyebrow">Pick the Hits</div>
+      <h2>Which 18 songs will get played?</h2>
+      <p id="packCopy"></p>
+    </div>
+    <a class="btn ghost" href="/sidebet">Make your picks</a>
+  </div>
+</section>
+
+<section id="submitSec" class="hidden">
+  <div class="closer">
+    <div style="flex:1">
+      <div class="eyebrow" style="color:var(--gold)">The A&amp;R Meeting</div>
+      <h2>Submit your music to the A&amp;R Meeting</h2>
+      <p>The A&amp;R Team rates records from independent artists every day. The week's top track takes a seat in the next tournament.</p>
+    </div>
+    <a class="btn ghost" href="/submit">Submit your music</a>
+  </div>
+</section>
+
+<section>
+  <div class="closer">
+    <div style="flex:1">
+      <div class="eyebrow go">The A&amp;R Team</div>
+      <h2>Your vote decides it. Join the A&amp;R Team.</h2>
+      <p>A&amp;Rs rate records every day, predict the average, and score points toward $500 a month. On tournament night they vote every matchup. Free to join.</p>
+    </div>
+    <a class="btn" href="/join">Join the A&amp;R Team</a>
+  </div>
+</section>
+
+<foot id="foot"></foot>
+
+</div><!-- #page -->
+</div><!-- .shell -->
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+
+  // ---- what to show, from the URL ----------------------------------------------------
+  var qs = new URLSearchParams(location.search);
+  var path = location.pathname;
+  var m = path.match(/^\/tournament\/([^\/?#]+)/);
+  var query;
+  if (qs.get('slug')) query = 'slug=' + encodeURIComponent(qs.get('slug'));
+  else if (m) query = 'slug=' + encodeURIComponent(decodeURIComponent(m[1]));
+  else if (qs.get('kind')) query = 'kind=' + encodeURIComponent(qs.get('kind'));
+  else query = 'kind=ar';   // /wars and a bare /tournament
+  var MOCK = qs.get('mock') === '1';
+
+  // ---- inline sample matching the §10 contract (live state), for ?mock=1 --------------
+  var SAMPLE = { tournament: {
+    id: 1, kind: 'ar', name: 'A&R Wars #1', number: 1, slug: 'wars-1', prizeText: '$500 Cash Prize',
+    prizeAmount: '$500', lockupWord: 'WARS', status: 'live', eventAt: 1761433200000,
+    dateLabel: 'Sunday, October 25', timeLabel: '7:00 PM ET', watchUrl: null, finalPolls: 3,
+    premise: '8 A&Rs play the songs they scouted. You vote on every matchup, live. The winner takes $500.',
+    filled: 8, packOpen: { slug: 'pack-12', prize: '$150', closesLabel: 'Sunday at 6:00 PM ET' },
+    liveSession: { id: 'abc123', url: '/?s=abc123' },
+    competitors: [
+      { id: 11, seed: 1, seat: 1, name: 'Marcus Hale', handle: 'marcushale', city: 'Atlanta, GA', photoUrl: 'https://i.pravatar.cc/200?img=12', qualifiedLabel: 'Week 1', out: false },
+      { id: 12, seed: 2, seat: 2, name: 'Dana Okafor', handle: 'dana.okafor', city: 'Houston, TX', photoUrl: 'https://i.pravatar.cc/200?img=32', qualifiedLabel: 'Week 2', out: false },
+      { id: 13, seed: 3, seat: 3, name: 'Jalen Brooks', handle: 'jalenbrooks', city: 'Chicago, IL', photoUrl: 'https://i.pravatar.cc/200?img=5', qualifiedLabel: 'Week 3', out: false },
+      { id: 14, seed: 4, seat: 4, name: 'Priya Natarajan', handle: 'priya.n', city: 'Newark, NJ', photoUrl: 'https://i.pravatar.cc/200?img=47', qualifiedLabel: 'Week 4', out: true },
+      { id: 15, seed: 5, seat: 5, name: 'Terrence Mills', handle: 'tmills', city: 'Memphis, TN', photoUrl: 'https://i.pravatar.cc/200?img=15', qualifiedLabel: 'Selected', out: true },
+      { id: 16, seed: 6, seat: 6, name: 'Keisha Lang', handle: 'keishalang', city: 'Charlotte, NC', photoUrl: 'https://i.pravatar.cc/200?img=44', qualifiedLabel: 'Selected', out: true },
+      { id: 17, seed: 7, seat: 7, name: 'Andre Villanueva', handle: null, city: 'Miami, FL', photoUrl: null, qualifiedLabel: 'Selected', out: true },
+      { id: 18, seed: 8, seat: 8, name: 'Simone Reyes', handle: 'simone.reyes', city: 'Brooklyn, NY', photoUrl: 'https://i.pravatar.cc/200?img=20', qualifiedLabel: 'Selected', out: true }
+    ],
+    matches: [
+      { id: 1, round_no: 1, slot: 1, a_id: 11, b_id: 18, winner_id: 11, decided_by: 'polls', live: false, polls: [{ status: 'ratified', votes: 240, split_a: 58 }] },
+      { id: 2, round_no: 1, slot: 2, a_id: 14, b_id: 15, winner_id: 15, decided_by: 'polls', live: false, polls: [{ status: 'ratified', votes: 231, split_a: 47 }] },
+      { id: 3, round_no: 1, slot: 3, a_id: 13, b_id: 16, winner_id: 13, decided_by: 'host', live: false, polls: [{ status: 'ratified', votes: 228, split_a: 50 }] },
+      { id: 4, round_no: 1, slot: 4, a_id: 12, b_id: 17, winner_id: 12, decided_by: 'polls', live: false, polls: [{ status: 'ratified', votes: 219, split_a: 64 }] },
+      { id: 5, round_no: 2, slot: 1, a_id: 11, b_id: 15, winner_id: 11, decided_by: 'polls', live: false, polls: [{ status: 'ratified', votes: 210, split_a: 55 }] },
+      { id: 6, round_no: 2, slot: 2, a_id: 13, b_id: 12, winner_id: null, decided_by: null, live: true, polls: [{ status: 'voting', votes: 163, split_a: null }] },
+      { id: 7, round_no: 3, slot: 1, a_id: 11, b_id: null, winner_id: null, decided_by: null, live: false, polls: [] }
+    ],
+    champion: null, subscribers: 214 } };
+
+  // ---- helpers -------------------------------------------------------------------------
+  var SIL = function (cls) {
+    return '<svg class="sil ' + (cls || '') + '" viewBox="0 0 84 84" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">' +
+      '<circle cx="42" cy="42" r="42" fill="#222"/>' +
+      '<circle cx="42" cy="34" r="14" fill="currentColor"/>' +
+      '<path d="M14 74c3-15 14-23 28-23s25 8 28 23a42 42 0 0 1-56 0z" fill="currentColor"/></svg>';
+  };
+  var photo = function (c, alt) {
+    return c && c.photoUrl ? '<img src="' + esc(c.photoUrl) + '" alt="' + esc(alt || c.name || '') + '" loading="lazy">' : SIL();
+  };
+  var igUrl = function (h) { return 'https://instagram.com/' + encodeURIComponent(String(h).replace(/^@/, '')); };
+
+  var T = null;            // current tournament
+  var byId = {};           // competitor id → competitor
+  var sentFor = null;      // slug we already subscribed on this page (keeps "You're on the list." across re-renders)
+
+  function render(t) {
+    T = t;
+    byId = {};
+    (t.competitors || []).forEach(function (c) { byId[c.id] = c; });
+    var isAr = t.kind !== 'artist';
+    var live = t.status === 'live';
+    var done = t.status === 'complete';
+    var watch = t.watchUrl || (t.liveSession && t.liveSession.url) || '/';
+
+    document.title = t.name + ' — The A&R Team';
+    $('metaDesc').setAttribute('content', t.premise || '');
+    $('ogTitle').setAttribute('content', t.name + ' — The A&R Team');
+    $('ogDesc').setAttribute('content', t.premise || '');
+
+    // live bar
+    var lb = $('livebar');
+    lb.classList.toggle('on', live);
+    lb.innerHTML = live ? 'LIVE NOW · ' + esc(t.name) + ' · <a href="' + esc(watch) + '">Watch and vote</a>' : '';
+
+    // hero
+    $('lockupWord').textContent = t.lockupWord || (isAr ? 'WARS' : 'TOURNAMENT');
+    $('h1').textContent = isAr ? 'Who has the Best Ear?' : t.name;
+    $('lede').textContent = t.premise || '';
+    $('dateLabel').textContent = t.dateLabel || '';
+    $('timeLabel').textContent = t.timeLabel || '';
+    $('prizeLabel').textContent = isAr ? ((t.prizeAmount || '') + ' Cash') : (t.prizeText || t.prizeAmount || '');
+
+    // reminder panel
+    var head = $('remindHead'), copy = $('remindCopy'), body = $('remindBody');
+    if (done) {
+      head.textContent = 'This tournament has finished';
+      copy.textContent = t.champion ? 'The champion:' : 'Thanks to everyone who voted.';
+      body.innerHTML = t.champion
+        ? '<div class="champ">' + photo(t.champion) + '<div><div class="nm">' + esc(t.champion.name) + '</div>' +
+          (t.champion.handle ? '<a class="ig" href="' + igUrl(t.champion.handle) + '" target="_blank" rel="noopener">@' + esc(t.champion.handle) + '</a>' : '') +
+          '</div></div>'
+        : '';
+    } else if (live) {
+      head.textContent = "It's live now";
+      copy.textContent = 'Watch the matchups and vote on every one.';
+      body.innerHTML = '<a class="btn block" href="' + esc(watch) + '">Watch and vote</a>';
+    } else {
+      head.textContent = 'Get a reminder when it starts';
+      copy.textContent = 'One email, with the link to watch and vote, before we go live.';
+      if (sentFor === t.slug) {
+        body.innerHTML = '<div class="done">You\'re on the list.</div>';
+      } else if (!body.querySelector('form')) {
+        body.innerHTML =
+          '<form id="remindForm" style="display:flex;flex-direction:column;gap:10px">' +
+            '<input type="email" name="email" placeholder="Email address" required autocomplete="email">' +
+            '<input type="text" name="name" placeholder="First name (optional)" autocomplete="given-name">' +
+            '<button class="btn block" type="submit">Remind me</button>' +
+          '</form>' +
+          '<div class="err hidden" id="remindErr"></div>' +
+          '<div class="fine">No account needed. One email for this tournament, unsubscribe in one click.</div>';
+        $('remindForm').addEventListener('submit', onRemind);
+      }
+    }
+
+    // the field
+    var r1w = {}, r2w = {};
+    (t.matches || []).forEach(function (mt) {
+      if (!mt.winner_id) return;
+      if (mt.round_no === 1) r1w[mt.winner_id] = true;
+      if (mt.round_no === 2) r2w[mt.winner_id] = true;
+    });
+    var champId = t.champion ? t.champion.id : null;
+    var comps = (t.competitors || []).slice().sort(function (a, b) { return (a.seat || 0) - (b.seat || 0); });
+    $('fieldHead').innerHTML = 'The field · ' + comps.length + (isAr ? ' A&amp;Rs' : ' artists');
+    $('field').innerHTML = comps.map(function (c) {
+      var isChamp = champId != null && c.id === champId;
+      var tag = '';
+      if (isChamp) tag = '<span class="tag gold">Champion</span>';
+      else if (r2w[c.id]) tag = '<span class="tag">Final 2</span>';
+      else if (r1w[c.id]) tag = '<span class="tag">Final 4</span>';
+      return '<div class="comp' + (c.out && !isChamp ? ' out' : '') + (isChamp ? ' champ' : '') + '">' +
+        '<span class="seed">#' + esc(c.seed) + '</span>' + photo(c) +
+        '<div class="nm">' + esc(c.name) + '</div>' +
+        (c.handle ? '<a class="ig" href="' + igUrl(c.handle) + '" target="_blank" rel="noopener">@' + esc(c.handle) + '</a>' : '') +
+        (c.city ? '<div class="city' + (c.handle ? '' : ' noig') + '">' + esc(c.city) + '</div>' : '') +
+        tag + '</div>';
+    }).join('');
+
+    // how it works
+    $('step2p').innerHTML = isAr
+      ? 'Every matchup is two songs, one picked by each A&amp;R from this month\'s A&amp;R Service Pack.'
+      : 'Every matchup is two songs, one from each artist\'s own catalog.';
+
+    // bracket
+    var matches = t.matches || [];
+    $('bracketSec').classList.toggle('hidden', !matches.length);
+    if (matches.length) renderBracket(t, matches, watch);
+
+    // closers
+    var pack = isAr && t.packOpen;
+    $('packSec').classList.toggle('hidden', !pack);
+    if (pack) {
+      $('packEyebrow').textContent = 'Pick the Hits' + (t.packOpen.prize ? ' · ' + t.packOpen.prize : '');
+      $('packCopy').textContent = 'Pick the top 18 songs from this month\'s A&R Service Pack. The person with the most right picks wins' +
+        (t.packOpen.prize ? ' ' + t.packOpen.prize : '') + '.' + (t.packOpen.closesLabel ? ' Closes ' + t.packOpen.closesLabel + '.' : '');
+    }
+    $('submitSec').classList.toggle('hidden', isAr);
+
+    $('foot').textContent = 'Makin\' It Magazine · makinitmag.com/ANR · Free to enter. The ' + (t.prizeText || 'prize') + ' is won by vote.';
+
+    $('empty').classList.add('hidden');
+    $('page').classList.remove('hidden');
+  }
+
+  function side(c, cls, pct, tbdText) {
+    if (!c) return '<div class="s tbd"><span class="n">' + esc(tbdText) + '</span></div>';
+    return '<div class="s' + (cls ? ' ' + cls : '') + '">' + photo(c) + '<span class="n">' + esc(c.name) + '</span>' +
+      (pct != null ? '<span class="p">' + esc(pct) + '%</span>' : '') + '</div>';
+  }
+
+  function matchCard(mt, tbdA, tbdB, watch, isFinal) {
+    var a = byId[mt.a_id], b = byId[mt.b_id];
+    var polls = mt.polls || [];
+    var open = polls.filter(function (p) { return p.status !== 'ratified' && p.split_a == null; });
+    var ratified = polls.filter(function (p) { return p.split_a != null; });
+    var pa = null, pb = null;
+    if (!isFinal && ratified.length) { pa = ratified[0].split_a; pb = 100 - pa; }
+    var ca = '', cb = '';
+    if (mt.winner_id) {
+      ca = mt.winner_id === mt.a_id ? 'w' : 'l';
+      cb = mt.winner_id === mt.b_id ? 'w' : 'l';
+    }
+    var html = '<div class="bm' + (mt.live ? ' live' : '') + '">' +
+      side(a, ca, pa, tbdA) + '<div class="vs">VS</div>' + side(b, cb, pb, tbdB);
+    if (isFinal && polls.length) {
+      html += '<div class="chips">' + polls.map(function (p, i) {
+        var n = 'Poll ' + (i + 1);
+        if (p.split_a != null) return '<span class="chip">' + n + ' · ' + esc(p.split_a) + '–' + esc(100 - p.split_a) + '</span>';
+        return '<span class="chip go">' + n + ' · voting · ' + esc(p.votes || 0) + ' votes</span>';
+      }).join('') + '</div>';
+    }
+    if (mt.live && open.length) {
+      var votes = open.reduce(function (s, p) { return s + (p.votes || 0); }, 0);
+      html += '<div class="st go">Voting now · ' + votes + ' votes · <a href="' + esc(watch) + '">vote</a></div>';
+    } else if (mt.winner_id && mt.decided_by === 'host') {
+      html += '<div class="st">Tie · decided by the host</div>';
+    }
+    return html + '</div>';
+  }
+
+  function renderBracket(t, matches, watch) {
+    var find = function (r, s) { return matches.filter(function (x) { return x.round_no === r && x.slot === s; })[0]; };
+    var r1 = [1, 2, 3, 4].map(function (s) {
+      var mt = find(1, s) || { round_no: 1, slot: s, polls: [] };
+      return matchCard(mt, 'seat ' + (2 * s - 1), 'seat ' + (2 * s), watch, false);
+    }).join('');
+    var r2 = [1, 2].map(function (s) {
+      var mt = find(2, s) || { round_no: 2, slot: s, polls: [] };
+      return matchCard(mt, 'winner of round 1 match ' + (2 * s - 1), 'winner of round 1 match ' + (2 * s), watch, false);
+    }).join('');
+    var fm = find(3, 1) || { round_no: 3, slot: 1, polls: [] };
+    var fin = matchCard(fm, 'winner of semifinal 1', 'winner of semifinal 2', watch, true);
+    var n = t.finalPolls || 3;
+    $('bracket').innerHTML =
+      '<div><h4>Round 1</h4>' + r1 + '</div>' +
+      '<div><h4>Semifinals</h4>' + r2 + '</div>' +
+      '<div><h4>Final · best of ' + esc(n) + '</h4>' + fin + '</div>';
+  }
+
+  function showEmpty() {
+    $('page').classList.add('hidden');
+    $('empty').classList.remove('hidden');
+    $('livebar').classList.remove('on');
+    document.title = 'No tournament is scheduled — The A&R Team';
+  }
+
+  // ---- reminder --------------------------------------------------------------------------
+  function onRemind(ev) {
+    ev.preventDefault();
+    var form = ev.target, errEl = $('remindErr');
+    var email = (form.email.value || '').trim(), name = (form.name.value || '').trim();
+    if (!email || !T) return;
+    var btn = form.querySelector('button');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    errEl.classList.add('hidden');
+    var done = function () {
+      sentFor = T.slug;
+      $('remindBody').innerHTML = '<div class="done">You\'re on the list.</div>';
+    };
+    var fail = function (msg) {
+      btn.disabled = false; btn.textContent = 'Remind me';
+      errEl.textContent = msg || 'Could not sign you up. Try again.';
+      errEl.classList.remove('hidden');
+    };
+    if (MOCK) { setTimeout(done, 300); return; }
+    fetch('/api/tournament/remind', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: T.slug, email: email, name: name || undefined })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (r.ok && j.ok !== false) done();
+        else fail(j.error || j.message || ('Could not sign you up (' + r.status + ').'));
+      });
+    }).catch(function () { fail('Could not reach the server. Try again.'); });
+  }
+
+  // ---- load + live refresh -----------------------------------------------------------------
+  var timer = null;
+  function schedule() {
+    clearTimeout(timer);
+    if (T && T.status === 'live') timer = setTimeout(load, 15000);
+  }
+  function load() {
+    if (MOCK) { render(SAMPLE.tournament); return; }
+    fetch('/api/tournament?' + query, { cache: 'no-store' }).then(function (r) {
+      if (r.status === 404) { showEmpty(); return null; }
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (!j) return;
+      if (!j.tournament) { showEmpty(); return; }
+      render(j.tournament);
+      schedule();
+    }).catch(function () {
+      if (!T) showEmpty(); else schedule();
+    });
+  }
+  load();
+})();
+</script>
+</body>
+</html>

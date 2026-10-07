@@ -194,6 +194,92 @@
   .uactions{display:flex;gap:6px;flex:none}
   .ufilters{display:flex;gap:8px;flex-wrap:wrap}
   .ufilters select,.ufilters input{flex:1;min-width:130px;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:9px 10px;border-radius:9px}
+  /* ---- Tournaments console (A&R Wars + the $1,000 Music Review Tournament) ----
+     Scoped under #tournaments so none of these names can collide with the rest of the file. */
+  #tournaments h3.sec{margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:"Space Mono",monospace;font-weight:700}
+  #tournaments .steps{display:flex;gap:6px;flex-wrap:wrap}
+  #tournaments .step{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px;color:var(--ink-faint);background:var(--inset)}
+  #tournaments .step b{display:block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:3px}
+  #tournaments .step.done{border-color:var(--signal);color:var(--ink)} #tournaments .step.done b{color:var(--signal)}
+  #tournaments .step.now{border-color:var(--accent);color:var(--ink);background:rgba(109,95,224,.10)} #tournaments .step.now b{color:var(--accent)}
+  #tournaments .seats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  @media(max-width:700px){#tournaments .seats{grid-template-columns:1fr}}
+  #tournaments .seat{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:var(--inset);flex-wrap:wrap}
+  #tournaments .seat .n{width:40px;flex:none;font-family:"Space Mono",monospace;font-weight:700;color:var(--accent);text-align:center;font-size:14px;padding:5px 2px;border-radius:8px}
+  #tournaments .seat img.av,#tournaments .seat .ph{width:40px;height:40px;border-radius:50%;flex:none}
+  #tournaments .seat img.av{object-fit:cover;background:#222}
+  #tournaments .seat .ph{border:1.5px dashed var(--gold);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--gold);font-family:"Space Mono",monospace}
+  #tournaments .seat .who{flex:1;min-width:0}
+  #tournaments .seat .nm{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .seat .sub{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .seat .src{font-size:10.5px;color:var(--ink-faint);font-family:"Space Mono",monospace;letter-spacing:.08em;text-transform:uppercase;flex:none}
+  #tournaments .seat .ed{background:none;border:0;color:var(--ink-faint);cursor:pointer;font-size:12px;padding:4px;flex:none}
+  #tournaments .seat .ed:hover{color:var(--ink)}
+  #tournaments .seat .ed[disabled]{opacity:.3;cursor:default}
+  #tournaments .seat.empty{border-style:dashed;justify-content:center;color:var(--ink-faint);font-size:13px;min-height:60px}
+  #tournaments .seat .edit{flex-basis:100%;border-top:1px dashed var(--line);margin-top:6px;padding-top:9px}
+  #tournaments .seat .edit input{font-size:13px;padding:8px 10px}
+  #tournaments .picks{border:1px solid var(--line);border-radius:12px;background:var(--inset);max-height:260px;overflow-y:auto}
+  #tournaments .pk{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #1a1530;font-size:13.5px;cursor:pointer}
+  #tournaments .pk:last-child{border-bottom:0}
+  #tournaments .pk.off{cursor:default;opacity:.6}
+  #tournaments .pk .box{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line);flex:none}
+  #tournaments .pk.on .box{background:var(--signal);border-color:var(--signal)}
+  #tournaments .pk img,#tournaments .pk .ph{width:28px;height:28px;border-radius:50%;object-fit:cover;flex:none;background:#222}
+  #tournaments .pk .ph{border:1.5px dashed var(--gold)}
+  #tournaments .pk .lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .pk .wk{margin-left:auto;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-faint);flex:none}
+  #tournaments .pk .rep{color:var(--gold);font-size:11px;flex:none}
+  #tournaments .bracket{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  @media(max-width:700px){#tournaments .bracket{grid-template-columns:1fr}}
+  #tournaments .rnd h4{margin:0 0 8px;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  #tournaments .m{border:1px solid var(--line);border-radius:12px;background:var(--inset);padding:10px;margin-bottom:10px}
+  #tournaments .m .side{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13.5px}
+  #tournaments .m .side img,#tournaments .m .side .ph{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;background:#222}
+  #tournaments .m .side .ph{border:1.5px dashed var(--gold)}
+  #tournaments .m .side .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .m .side .pct{font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-faint)}
+  #tournaments .m .side.w .nm{color:var(--signal);font-weight:700} #tournaments .m .side.w .pct{color:var(--signal)}
+  #tournaments .m .side.l{opacity:.45}
+  #tournaments .m .side.tbd .nm{color:var(--ink-faint);font-style:italic;padding-left:34px}
+  #tournaments .m .vs{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--accent);text-align:center;padding:1px 0}
+  #tournaments .m .song{font-size:11.5px;color:var(--ink-faint);padding-left:34px;margin-top:-4px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .m .foot{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #1a1530;font-size:12px;color:var(--ink-faint);flex-wrap:wrap}
+  #tournaments .m .foot .pill{font-size:11px;padding:3px 9px}
+  #tournaments .m .foot .pill.tie{border-color:var(--gold);color:var(--gold)}
+  #tournaments .m.live{border-color:var(--signal);box-shadow:0 0 0 2px rgba(75,183,73,.15)}
+  #tournaments .m.next{border-color:var(--accent)}
+  #tournaments .m.final .side.w .nm{color:var(--gold)} #tournaments .m.final .side.w .pct{color:var(--gold)}
+  #tournaments .polls{display:flex;gap:5px;margin:6px 0 0 34px;flex-wrap:wrap}
+  #tournaments .polls span{font-family:"Space Mono",monospace;font-size:10.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;color:var(--ink-faint)}
+  #tournaments .polls span.a{border-color:var(--signal);color:var(--signal)} #tournaments .polls span.b{border-color:var(--accent);color:var(--accent)}
+  #tournaments .polls span.open{border-color:var(--gold);color:var(--gold)}
+  #tournaments .qf{border-top:1px dashed var(--line);margin-top:8px;padding-top:9px;display:flex;flex-direction:column;gap:7px}
+  #tournaments .qf .qt{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  #tournaments .qf label{margin-bottom:3px}
+  #tournaments .qf select,#tournaments .qf input{font-size:13px;padding:8px 10px}
+  #tournaments .gfx{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  @media(max-width:700px){#tournaments .gfx{grid-template-columns:repeat(2,1fr)}}
+  #tournaments .g{border:1px solid var(--line);border-radius:12px;background:var(--inset);padding:8px;text-align:center}
+  #tournaments .g img{width:100%;border-radius:8px;display:block;background:#222;min-height:80px}
+  #tournaments .g .t{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin:7px 0 2px}
+  #tournaments .g .s{font-size:11.5px;color:var(--ink-dim)}
+  #tournaments .tnstat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-width:0}
+  #tournaments .tnstat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-faint)}
+  #tournaments .tnstat .v{font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .tnstat .v.ok{color:var(--signal)} #tournaments .tnstat .v.gold{color:var(--gold)}
+  #tournaments table.list{width:100%;border-collapse:collapse}
+  #tournaments .list tr td{padding:8px 10px;border-bottom:1px solid #1a1530;font-size:13.5px}
+  #tournaments .list tr:last-child td{border-bottom:0}
+  #tournaments .list tr.sel td{background:rgba(109,95,224,.10)}
+  #tournaments .list tr.pick{cursor:pointer}
+  #tournaments .warnbox{background:rgba(245,197,24,.06);border:1px solid var(--gold);border-radius:10px;padding:11px 13px;font-size:13px;line-height:1.5}
+  #tournaments .warnbox b{color:var(--gold)}
+  #tournaments .out{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-dim);white-space:pre-wrap;line-height:1.5;margin-top:10px;border-left:2px solid var(--line);padding-left:9px}
+  #tournaments .out a{color:var(--signal)}
+  #tournaments a.lnk{color:var(--signal);text-decoration:none}
+  #tournaments a.lnk:hover{text-decoration:underline}
+  #tournaments .srch{border:1px solid var(--line);border-radius:12px;background:var(--inset);margin:0 0 10px}
 </style>
 </head>
 <body>
@@ -233,6 +319,7 @@
         <button class="on" id="mdDaily">A&amp;R Daily</button>
         <button id="mdWeekly">Weekly</button>
         <button id="mdLive">Live show</button>
+        <button id="mdTournaments">Tournaments</button>
         <button id="mdPlatform">Platform</button>
       </div>
       <div class="row" style="gap:8px;flex:0 0 auto">
@@ -409,6 +496,7 @@
         <button id="wkDaily">A&amp;R Daily</button>
         <button class="on" id="wkWeekly">Weekly</button>
         <button id="wkLive">Live show</button>
+        <button id="wkTournaments">Tournaments</button>
         <button id="wkPlatform">Platform</button>
       </div>
       <div class="row" style="gap:8px;flex:0 0 auto">
@@ -494,6 +582,193 @@
   </div>
 </div>
 
+<!-- ===== TOURNAMENTS — A&R Wars and the $1,000 Music Review Tournament =====
+     One screen runs both kinds: pick the field, seed the bracket, run the night off the
+     linked Versus session, publish the weekly qualifier graphics, send the reminder. Built
+     to public/_mock-tournament-admin.html against docs/specs/tournament-spec.md §10. Every
+     id here is prefixed tn. The bracket never shows a split before the poll is ratified
+     (the seal) — it prints the vote count and "split sealed until ratify" while it is open. -->
+<div id="tournaments" class="grid hide">
+  <div class="stack" style="grid-column:1/-1;max-width:980px;margin:30px auto 0;gap:14px">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div class="modeswitch">
+        <button id="tnDaily">A&amp;R Daily</button>
+        <button id="tnWeekly">Weekly</button>
+        <button id="tnLive">Live show</button>
+        <button class="on" id="tnTournaments">Tournaments</button>
+        <button id="tnPlatform">Platform</button>
+      </div>
+      <div class="row" style="gap:8px;flex:0 0 auto">
+        <select id="tnSel" title="Which tournament to show"
+          style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;max-width:300px"></select>
+        <button class="btn ghost sm" id="btnTnNew">+ New tournament</button>
+        <button class="btn ghost sm" id="btnTnRefresh">Refresh</button>
+      </div>
+    </div>
+
+    <div id="tnNone" class="card hide" style="border-color:var(--hot)">
+      <h3 style="margin:0 0 8px;color:var(--hot);font-size:13px;letter-spacing:.16em;text-transform:uppercase">Nothing to show</h3>
+      <p id="tnNoneMsg" style="margin:0;font-size:14px;line-height:1.55"></p>
+    </div>
+
+    <div id="tnBody" class="stack hide" style="gap:14px">
+
+      <!-- 1. where it is -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          <div style="min-width:0">
+            <div id="tnTitle" style="font-size:22px;font-weight:800;letter-spacing:-.02em"></div>
+            <div id="tnSub" class="mono" style="font-size:12px;color:var(--ink-dim);margin-top:4px"></div>
+          </div>
+          <div class="row" style="gap:8px;flex:0 0 auto">
+            <button class="btn ghost sm hide" id="btnTnConsole">Open the live console</button>
+            <button class="btn ghost sm" id="btnTnEditSetup">Edit setup</button>
+          </div>
+        </div>
+        <div class="steps" id="tnSteps"></div>
+      </div>
+
+      <!-- 2. setup (collapsed once past draft; "Edit setup" opens it) -->
+      <div class="card" id="tnSetupCard">
+        <h3 class="sec">Setup</h3>
+        <div class="stack">
+          <div class="row">
+            <div><label>Tournament</label>
+              <select id="tnKind">
+                <option value="ar">A&amp;R Wars (A&amp;Rs · $500 Cash Prize · plays the Service Pack)</option>
+                <option value="artist">$1,000 Music Review Tournament (artists · $1,000 Promo Budget · plays own catalog)</option>
+              </select></div>
+            <div><label>Number</label><input id="tnNumber" inputmode="numeric" placeholder="1"></div>
+            <div><label>Prize line <span class="muted">(printed on the graphics)</span></label><input id="tnPrize" placeholder="$500 Cash Prize"></div>
+          </div>
+          <div class="row">
+            <div><label>Event date &amp; time (ET)</label><input id="tnEvent" type="datetime-local" step="300"></div>
+            <div><label>Live session <span class="muted">(the Versus room the polls run in)</span></label><select id="tnSession"></select></div>
+          </div>
+          <div class="row">
+            <div id="tnPackWrap"><label>Service Pack <span class="muted">(A&amp;R Wars only — the songs competitors pick from)</span></label><select id="tnPack"></select></div>
+            <div><label>Watch link <span class="muted">(shown on the landing page when live)</span></label><input id="tnWatch" placeholder="https://www.youtube.com/@makinitmag/live"></div>
+          </div>
+          <div class="row">
+            <div><label>Polls in the final</label><input id="tnFinalPolls" inputmode="numeric" placeholder="3"><div class="hint">4 + 2 + 3 = 9 polls = 18 songs, the number Pick the Hits counts on.</div></div>
+            <div><label>Reminder email goes out</label>
+              <select id="tnRemind">
+                <option value="120">2 hours before</option>
+                <option value="60">1 hour before</option>
+                <option value="1440">24 hours before</option>
+                <option value="0">Off — send by hand</option>
+              </select></div>
+            <div><label>Landing page</label><input id="tnLanding" disabled value="—">
+              <div class="hint">/wars always shows the latest A&amp;R Wars; <span id="tnLandingHint">/tournament/&lt;slug&gt;</span> is this one.</div></div>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn sm" id="btnTnSave" style="flex:0 0 auto">Save</button>
+            <button class="btn ghost sm hide" id="btnTnPromo" style="flex:0 0 auto" title="Needs 8 seats and a date">Open promo</button>
+            <button class="btn ghost sm hide" id="btnTnMarkLive" style="flex:0 0 auto" title="Needs a live session">Mark live</button>
+            <button class="btn ghost sm hide" id="btnTnDraft" style="flex:0 0 auto">Back to draft</button>
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn ghost sm hide" id="btnTnCopyLink2" style="flex:0 0 auto">Copy link</button>
+            <a class="btn ghost sm hide" id="tnOpenLanding2" target="_blank" rel="noopener" style="flex:0 0 auto">Open</a>
+          </div>
+          <p class="hint" id="tnSetupHint" style="margin:0"></p>
+        </div>
+      </div>
+
+      <!-- 3. the field -->
+      <div class="card" id="tnFieldCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <h3 class="sec" style="margin:0" id="tnFieldHead">The field</h3>
+          <div class="row" style="gap:8px;flex:0 0 auto">
+            <button class="btn ghost sm" id="btnTnSeedPoints">Seed by Series points</button>
+            <button class="btn ghost sm" id="btnTnRebuild" title="Rebuild the bracket from the seeds">Rebuild bracket</button>
+          </div>
+        </div>
+        <div class="seats" id="tnSeats"></div>
+        <p class="hint" style="margin-top:8px">Seed numbers are editable on each row, and the arrows move a row up or down. The pencil edits name, handle, city, the qualified label and the photo — a competitor row is a copy of the profile, so a fix here never touches the A&amp;R's account. A dashed <span style="color:var(--gold)">no photo</span> ring means the graphic will print a placeholder until one is added. Seeds lock once a match is decided.</p>
+
+        <div style="margin-top:14px">
+          <h3 class="sec">Add competitors</h3>
+          <div id="tnAddAr">
+            <div class="row" style="margin-bottom:8px">
+              <input id="tnSearch" placeholder="Search A&amp;Rs by name (complete profiles only)" autocomplete="off">
+            </div>
+            <div id="tnSearchOut" class="srch hide"></div>
+          </div>
+          <div id="tnAddArtist" class="hide">
+            <label>Add an artist</label>
+            <div class="row" style="margin-bottom:8px">
+              <input id="tnArtName" placeholder="Artist name">
+              <input id="tnArtIg" placeholder="Instagram (without @)">
+              <input id="tnArtCity" placeholder="City">
+              <button class="btn ghost sm" id="btnTnAddArtist" style="flex:0 0 auto">Add</button>
+            </div>
+            <p class="hint" style="margin:0 0 10px">Artists have no photo on file — add one with the pencil on the seat once they are in.</p>
+          </div>
+          <label id="tnCandLbl">From the weekly winners <span class="muted">(last 8 complete weeks · tick to seat)</span></label>
+          <div class="picks" id="tnCands"></div>
+          <p class="hint" id="tnCandHint"></p>
+        </div>
+      </div>
+
+      <!-- 4. the bracket — the live control -->
+      <div class="card" id="tnBracketCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+          <h3 class="sec" style="margin:0" id="tnBracketHead">Bracket</h3>
+          <span class="pill" id="tnBracketPill"></span>
+        </div>
+        <p class="hint" style="margin:0 0 12px">Each matchup is one binary poll in the live session. <b>Queue matchup</b> fills the room's queue; the night then runs on the normal Advance button (listening → voting → ratify). When a poll ratifies, the winner moves into the next slot on its own. The split stays sealed until ratify, same as every poll — only the vote count shows while it is open.</p>
+        <div class="bracket" id="tnBracket"></div>
+      </div>
+
+      <!-- 5. graphics — one row per seat, then the final promo, then the champion -->
+      <div class="card" id="tnGfxCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+          <h3 class="sec" style="margin:0">Graphics · weekly qualifier series</h3>
+          <div class="row" style="gap:8px;flex:0 0 auto">
+            <button class="btn ghost sm" id="btnTnCaption">Copy caption</button>
+            <button class="btn sm" id="btnTnPublish">Publish + make Asana task</button>
+          </div>
+        </div>
+        <p class="hint" style="margin:0 0 12px">One set per seat as it fills: the qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?"). After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
+        <div class="gfx" id="tnGfx"></div>
+        <table class="list" id="tnGfxList" style="margin-top:12px"></table>
+        <div id="tnPubOut" class="out hide"></div>
+        <p class="hint">A seat added by hand (not a weekly winner) still gets a row: the series is "one flyer per seat", whatever week it was filled.</p>
+      </div>
+
+      <!-- 6. landing page + reminder list -->
+      <div class="card" id="tnLandCard">
+        <h3 class="sec">Landing page &amp; reminder list</h3>
+        <div class="row" style="gap:8px;margin-bottom:12px" id="tnStats"></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <a class="btn ghost sm" id="tnOpenLanding" target="_blank" rel="noopener" style="flex:0 0 auto">Open the landing page</a>
+          <button class="btn ghost sm" id="btnTnCopyLink" style="flex:0 0 auto">Copy link</button>
+          <button class="btn ghost sm" id="btnTnRemind" style="flex:0 0 auto">Send the reminder now</button>
+          <button class="btn ghost sm" id="btnTnCsv" style="flex:0 0 auto">Download the list (CSV)</button>
+        </div>
+        <div id="tnLandOut" class="out hide"></div>
+        <p class="hint">The list is email + name, no account — anyone can join it from the landing page. The reminder is one email with the watch link and a one-click unsubscribe. A&amp;Rs with "when a session goes live" on get the normal go-live text and email as well. The page is public once the tournament is in promo; a draft answers 404.</p>
+      </div>
+
+      <!-- 7. wrap — shown once the final is decided -->
+      <div class="card hide" id="tnWrapCard" style="border-color:var(--gold);background:rgba(245,197,24,.04)">
+        <h3 class="sec" style="color:var(--gold)">Wrap · after the final</h3>
+        <div class="warnbox" style="margin-bottom:10px" id="tnWrapMsg"></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button class="btn sm" id="btnTnPubChampion" style="flex:0 0 auto">Publish champion set + bracket</button>
+          <button class="btn ghost sm" id="btnTnSidebet" style="flex:0 0 auto">Open Pick the Hits settle checklist</button>
+          <button class="btn ghost sm" id="btnTnEndSession" style="flex:0 0 auto">End the session</button>
+        </div>
+        <div id="tnWrapOut" class="out hide"></div>
+        <p class="hint">Settling Pick the Hits stays on the Sidebet screen (it reads the played songs off the same polls). Ending the session is done on the live console. The payout is outside the app.</p>
+      </div>
+
+      <div class="err" id="tnErr"></div>
+    </div>
+  </div>
+</div>
+
 <div id="picker" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:640px;margin:40px auto 0">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -502,6 +777,7 @@
         <button class="btn ghost sm hide" id="btnAnalytics">Analytics</button>
         <button class="btn ghost sm hide" id="btnCharts">Charts</button>
         <button class="btn ghost sm hide" id="btnSidebet">Sidebet</button>
+        <button class="btn ghost sm hide" id="btnTournaments">Tournaments</button>
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
         <button class="btn ghost sm" id="btnHostDefaults">Defaults</button>
@@ -2006,7 +2282,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','daily','weekly','picker','create','console','series','users','platform','analytics','charts','sidebet'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','daily','weekly','tournaments','picker','create','console','series','users','platform','analytics','charts','sidebet'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -2593,6 +2869,775 @@ $('#btnWkCopyArs').onclick = () => {
     + '\n\n#1 takes a seat in A&R Wars.');
 };
 
+/* ===== TOURNAMENTS — A&R Wars and the $1,000 Music Review Tournament =====
+   Built against docs/specs/tournament-spec.md §10. One payload (GET /api/admin/tournament?id=)
+   feeds every card; every action re-reads it, so the screen never computes bracket state on
+   its own — the server owns who won. The split of a poll is shown ONLY once split_a is
+   non-null (ratified); while a poll is open the card prints the vote count and nothing else.
+   While the tournament is live the detail is re-read every 10s, but never while the operator
+   has a field focused on this screen (a refresh would eat a half-filled queue form). */
+let TNL = [];                 // GET /api/admin/tournaments → tournaments[]
+let TN = null;                // the selected tournament's detail payload
+let tnId = '';                // selected id ('' = none / new)
+let tnNew = false;            // "+ New tournament": setup card only, nothing saved yet
+let tnTimer = null;           // the 10s live poll
+let tnEditId = null;          // competitor row with the inline edit form open
+let tnGfxKey = '';            // selected graphics row
+let tnSetupOpen = false;      // setup card shown past draft
+const tnImgCache = {};        // card url → object URL
+const TN_PX = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+const TN_KIND_NAME = { ar: 'A&R Wars', artist: '$1,000 Music Review Tournament' };
+const TN_KIND_PRIZE = { ar: '$500 Cash Prize', artist: '$1,000 Promo Budget' };
+
+function tnStopPoll(){ if(tnTimer){ clearInterval(tnTimer); tnTimer = null; } }
+function tnErr(msg){ $('#tnErr').textContent = msg || ''; }
+function tnShort(label){ // 'Sunday, October 25' → 'Sun Oct 25'
+  const m = /^(\w{3})\w*,?\s+(\w{3})\w*\s+(\d+)/.exec(label || '');
+  return m ? `${m[1]} ${m[2]} ${m[3]}` : (label || 'no date');
+}
+function tnListLabel(t){ return `${t.name || TN_KIND_NAME[t.kind] || 'Tournament'}${t.number ? ' #' + t.number : ''} · ${tnShort(t.dateLabel)} · ${t.status}`; }
+function tnLandingPath(t){ return t && t.slug ? '/tournament/' + t.slug : ''; }
+function tnLandingUrl(t){ return tnLandingPath(t) ? location.origin + tnLandingPath(t) : ''; }
+function tnKind(){ return TN ? TN.kind : $('#tnKind').value; }
+function tnSeated(){ return ((TN && TN.competitors) || []).slice().sort((a, b) => (a.seed || 99) - (b.seed || 99)); }
+function tnComp(id){ return ((TN && TN.competitors) || []).find(c => c.id === id) || null; }
+function tnLocked(){ return ((TN && TN.matches) || []).some(m => m.winner_id); }
+function tnAvatar(c, px){
+  return c && c.photoUrl
+    ? `<img class="av" src="${esc(c.photoUrl)}" alt="" style="width:${px}px;height:${px}px">`
+    : `<div class="ph" style="width:${px}px;height:${px}px" title="No photo yet">${px >= 40 ? 'no photo' : ''}</div>`;
+}
+// 'YYYY-MM-DDTHH:MM' in ET for the datetime-local field. The server labels every time in
+// ET; this is the one place the console turns an epoch back into a wall clock, and it asks
+// Intl for the ET parts rather than guessing an offset.
+function tnEventLocal(t){
+  if(!t) return '';
+  if(t.eventLocal) return t.eventLocal;
+  if(!t.eventAt) return '';
+  try{
+    const p = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric',
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      .formatToParts(new Date(+t.eventAt)).forEach(x => { p[x.type] = x.value; });
+    return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
+  }catch(e){ return ''; }
+}
+
+async function openTournaments(){
+  showScreen('tournaments');
+  tnStopPoll();
+  tnErr('');
+  try{
+    const d = await api('/api/admin/tournaments', null, 'GET');
+    TNL = d.tournaments || [];
+  }catch(e){
+    TNL = [];
+    $('#tnBody').classList.add('hide'); $('#tnNone').classList.remove('hide');
+    $('#tnNoneMsg').textContent = e.message; renderTnPicker(); return;
+  }
+  if(!tnNew && !TNL.some(t => t.id === tnId)) tnId = TNL.length ? TNL[0].id : '';
+  renderTnPicker();
+  if(tnNew || !tnId){ TN = null; tnNew = tnNew || !TNL.length; renderTournament(); return; }
+  await tnLoad();
+}
+async function tnLoad(quiet){
+  if(!tnId) return;
+  try{
+    const d = await api('/api/admin/tournament?id=' + encodeURIComponent(tnId), null, 'GET');
+    const pub = d.tournament || {};
+    TN = Object.assign({}, pub, { sessions: d.sessions || [], packs: d.packs || [],
+      candidates: d.candidates || [],
+      subscribers: d.subscribers || (typeof pub.subscribers === 'number' ? { count: pub.subscribers } : {}),
+      graphics: d.graphics || [],
+      packSongs: d.packSongs || (d.tournament && d.tournament.packSongs) || [] });
+    tnNew = false;
+    renderTournament();
+  }catch(e){
+    if(quiet) return;
+    TN = null;
+    $('#tnBody').classList.add('hide'); $('#tnNone').classList.remove('hide');
+    $('#tnNoneMsg').textContent = e.message;
+  }
+}
+function renderTnPicker(){
+  const sel = $('#tnSel');
+  sel.innerHTML = TNL.map(t => `<option value="${esc(t.id)}">${esc(tnListLabel(t))}</option>`).join('')
+    + (tnNew ? '<option value="">New tournament</option>' : '')
+    + (!TNL.length && !tnNew ? '<option value="">No tournaments yet</option>' : '');
+  sel.value = tnNew ? '' : tnId;
+}
+$('#tnSel').onchange = () => { tnNew = false; tnId = $('#tnSel').value; tnSetupOpen = false; tnGfxKey = ''; tnEditId = null; openTournaments(); };
+$('#btnTnRefresh').onclick = () => openTournaments();
+$('#btnTnNew').onclick = () => { tnNew = true; TN = null; tnEditId = null; renderTnPicker(); renderTournament(); };
+$('#tnTournaments').onclick = () => openTournaments();
+$('#tnDaily').onclick = () => { tnStopPoll(); openDaily(); };
+$('#tnWeekly').onclick = () => { tnStopPoll(); openWeekly(); };
+$('#tnLive').onclick = () => { tnStopPoll(); openPicker(); };
+$('#tnPlatform').onclick = () => { tnStopPoll(); if(typeof openPlatform === 'function') openPlatform(); };
+$('#mdTournaments').onclick = () => openTournaments();
+$('#wkTournaments').onclick = () => openTournaments();
+$('#btnTournaments') && ($('#btnTournaments').onclick = () => openTournaments());
+
+function renderTournament(){
+  $('#tnNone').classList.add('hide');
+  $('#tnBody').classList.remove('hide');
+  tnErr('');
+  const t = TN;
+  const isNew = !t;
+  const show = (id, on) => $('#' + id).classList.toggle('hide', !on);
+  show('tnFieldCard', !isNew); show('tnBracketCard', !isNew); show('tnGfxCard', !isNew);
+  show('tnLandCard', !isNew); show('tnWrapCard', !isNew && t.status === 'complete');
+  show('btnTnConsole', !isNew && !!t.sessionId);
+
+  // 1. where it is
+  if(isNew){
+    $('#tnTitle').textContent = 'New tournament';
+    $('#tnSub').textContent = 'Pick the kind, the number and the date, then Save. The field, the bracket and the graphics open once it exists.';
+    $('#btnTnEditSetup').classList.add('hide');
+    $('#tnSteps').innerHTML = tnSteps(null);
+  }else{
+    $('#tnTitle').innerHTML = `${esc(t.name || TN_KIND_NAME[t.kind])}${t.number ? ' #' + esc(t.number) : ''} <span class="pill ${tnPillClass(t.status)}" style="vertical-align:middle;margin-left:6px">${esc(t.status)}</span>`;
+    $('#tnSub').innerHTML = [t.dateLabel, t.timeLabel, t.prizeText].filter(Boolean).map(esc).join(' · ')
+      + (t.slug ? ` · <a class="lnk" href="${esc(tnLandingPath(t))}" target="_blank" rel="noopener">${esc(location.host + tnLandingPath(t))}</a>` : '');
+    $('#btnTnEditSetup').classList.remove('hide');
+    $('#tnSteps').innerHTML = tnSteps(t);
+  }
+  // 2. setup: open for a draft or a new one, collapsed otherwise until "Edit setup"
+  const setupOn = isNew || t.status === 'draft' || tnSetupOpen;
+  show('tnSetupCard', setupOn);
+  $('#btnTnEditSetup').textContent = setupOn && !isNew && t.status !== 'draft' ? 'Hide setup' : 'Edit setup';
+  renderTnSetup();
+  if(isNew){ tnStopPoll(); return; }
+
+  renderTnField();
+  renderTnBracket();
+  renderTnGfx();
+  renderTnLanding();
+  renderTnWrap();
+
+  // the live poll: re-read every 10s while the event runs and this screen is on
+  tnStopPoll();
+  if(t.status === 'live'){
+    tnTimer = setInterval(() => {
+      if($('#tournaments').classList.contains('hide')){ tnStopPoll(); return; }
+      const a = document.activeElement;
+      if(tnEditId || (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.closest('#tournaments'))) return;
+      tnLoad(true);
+    }, 10000);
+  }
+}
+function tnPillClass(s){ return s === 'live' ? 'live' : s === 'promo' ? 'upcoming' : s === 'complete' ? 'completed' : ''; }
+function tnSteps(t){
+  const st = t ? t.status : 'draft';
+  const filled = t ? (t.filled || tnSeated().length) : 0;
+  const subs = t && t.subscribers ? (t.subscribers.count || 0) : 0;
+  const pub = t ? (t.graphics || []).filter(g => g.publishedAt).length : 0;
+  const order = ['draft', 'promo', 'live', 'complete'];
+  const at = order.indexOf(st);
+  const matches = t ? (t.matches || []) : [];
+  const rnd = matches.filter(m => m.winner_id).length >= 6 ? 3 : matches.filter(m => m.winner_id).length >= 4 ? 2 : 1;
+  const steps = [
+    { k: '1 · Setup', s: t && t.eventAt ? 'done' : 'now', v: t && t.eventAt ? 'Date, prize, pack, session' : 'Date, prize, pack, session — not saved yet' },
+    { k: '2 · Field', s: filled >= 8 ? 'done' : (t && t.eventAt ? 'now' : ''), v: `${filled} of 8 seats filled` },
+    { k: '3 · Promo', s: at > 1 ? 'done' : st === 'promo' ? 'now' : '', v: `${pub} set${pub === 1 ? '' : 's'} published · ${subs} on the list` },
+    { k: '4 · Event', s: st === 'complete' ? 'done' : st === 'live' ? 'now' : '', v: st === 'live' ? `Round ${rnd} of 3 in play` : st === 'complete' ? 'Final decided' : (t && t.dateLabel ? `${t.dateLabel} · ${t.timeLabel || ''}` : 'Date not set') },
+    { k: '5 · Wrap', s: st === 'complete' ? 'now' : '', v: 'Champion · winner graphics · archive' }
+  ];
+  return steps.map(s => `<div class="step ${s.s}"><b>${esc(s.k)}</b>${esc(s.v)}</div>`).join('');
+}
+
+/* ---- 2. setup ---- */
+function renderTnSetup(){
+  const t = TN;
+  const kind = t ? t.kind : ($('#tnKind').value || 'ar');
+  $('#tnKind').value = kind;
+  $('#tnKind').disabled = !!t;                   // the kind is set at creation; the slug derives from it
+  $('#tnNumber').value = t && t.number != null ? t.number : '';
+  $('#tnPrize').value = t ? (t.prizeText || '') : '';
+  $('#tnPrize').placeholder = TN_KIND_PRIZE[kind];
+  $('#tnEvent').value = tnEventLocal(t);
+  $('#tnWatch').value = t ? (t.watchUrl || '') : '';
+  $('#tnFinalPolls').value = t && t.finalPolls != null ? t.finalPolls : '';
+  $('#tnRemind').value = String(t && t.remindMin != null ? t.remindMin : 120);
+  const sessions = t ? t.sessions : [];
+  $('#tnSession').innerHTML = '<option value="">— none yet —</option>'
+    + sessions.map(s => `<option value="${esc(s.id)}">${esc(s.name || s.id)} · ${esc(s.status || '')}</option>`).join('');
+  $('#tnSession').value = t && t.sessionId ? t.sessionId : '';
+  $('#tnPackWrap').classList.toggle('hide', kind !== 'ar');
+  const packs = t ? t.packs : [];
+  $('#tnPack').innerHTML = '<option value="">— none —</option>'
+    + packs.map(p => `<option value="${esc(p.id)}">${esc(p.name || p.id)} · ${esc(p.status || '')}</option>`).join('');
+  $('#tnPack').value = t && t.packId ? t.packId : '';
+  $('#tnLanding').value = t && t.slug ? tnLandingPath(t) : '—';
+  $('#tnLandingHint').textContent = t && t.slug ? tnLandingPath(t) : '/tournament/<slug>';
+  const st = t ? t.status : null;
+  $('#btnTnPromo').classList.toggle('hide', st !== 'draft');
+  $('#btnTnMarkLive').classList.toggle('hide', st !== 'promo');
+  $('#btnTnDraft').classList.toggle('hide', !(st === 'promo' || st === 'live'));
+  $('#btnTnCopyLink2').classList.toggle('hide', !(t && t.slug));
+  $('#tnOpenLanding2').classList.toggle('hide', !(t && t.slug));
+  if(t && t.slug) $('#tnOpenLanding2').href = tnLandingPath(t);
+  $('#tnSetupHint').textContent = !t ? 'Save first — the live session and Service Pack lists load once the tournament exists.'
+    : st === 'draft' ? 'Open promo once all 8 seats are filled and the date is set: the landing page goes public and the reminder list opens.'
+    : st === 'promo' ? 'Mark live on event day once the linked session is live (the console also flips it when the session goes live).'
+    : st === 'live' ? 'The event is running. The bracket card is the control.'
+    : 'Complete — the final is decided.';
+}
+$('#tnKind').onchange = () => { if(!TN){ $('#tnPackWrap').classList.toggle('hide', $('#tnKind').value !== 'ar'); $('#tnPrize').placeholder = TN_KIND_PRIZE[$('#tnKind').value]; } };
+$('#btnTnEditSetup').onclick = () => { tnSetupOpen = !tnSetupOpen; renderTournament(); };
+$('#btnTnSave').onclick = async () => {
+  const b = $('#btnTnSave'); b.disabled = true; tnErr('');
+  try{
+    const body = {
+      kind: $('#tnKind').value,
+      number: +($('#tnNumber').value || 0) || undefined,
+      prizeText: $('#tnPrize').value.trim() || undefined,
+      eventLocal: $('#tnEvent').value || undefined,
+      sessionId: $('#tnSession').value || null,
+      packId: $('#tnKind').value === 'ar' ? ($('#tnPack').value || null) : null,
+      watchUrl: $('#tnWatch').value.trim() || null,
+      finalPolls: +($('#tnFinalPolls').value || 0) || undefined,
+      remindMin: +$('#tnRemind').value
+    };
+    if(TN) body.id = TN.id;
+    const d = await api('/api/admin/tournament', body);
+    tnId = d.id || (TN && TN.id); tnNew = false;
+    await openTournaments();
+  }catch(e){ tnErr(e.message); }
+  finally{ b.disabled = false; }
+};
+async function tnSetStatus(status, btn){
+  if(!TN) return;
+  if(btn) btn.disabled = true; tnErr('');
+  try{ await api('/api/admin/tournament/status', { tournamentId: TN.id, status }); await openTournaments(); }
+  catch(e){ tnErr(e.message); }
+  finally{ if(btn) btn.disabled = false; }
+}
+$('#btnTnPromo').onclick = (e) => tnSetStatus('promo', e.target);
+$('#btnTnMarkLive').onclick = (e) => tnSetStatus('live', e.target);
+$('#btnTnDraft').onclick = (e) => { if(confirm('Back to draft? The landing page stops answering until promo is opened again.')) tnSetStatus('draft', e.target); };
+function tnCopyLink(){ if(TN && TN.slug) wkCopy(tnLandingUrl(TN)); }
+$('#btnTnCopyLink2').onclick = tnCopyLink;
+$('#btnTnCopyLink').onclick = tnCopyLink;
+$('#btnTnConsole').onclick = () => { if(TN && TN.sessionId){ tnStopPoll(); window.loadSession(TN.sessionId); } };
+
+/* ---- 3. the field ---- */
+function renderTnField(){
+  const t = TN, kind = t.kind;
+  const seated = tnSeated(), locked = tnLocked();
+  $('#tnFieldHead').textContent = `The field · ${seated.length} of 8`;
+  $('#btnTnSeedPoints').classList.toggle('hide', kind !== 'ar');
+  $('#btnTnSeedPoints').disabled = locked || seated.length < 2;
+  $('#btnTnRebuild').disabled = locked || seated.length < 8;
+  $('#btnTnRebuild').title = locked ? 'Locked once a match is decided' : seated.length < 8 ? 'Needs 8 seats' : 'Rebuild the bracket from the seeds';
+  const rows = [];
+  seated.forEach((c, i) => {
+    const sub = (c.handle ? '@' + c.handle : '— no Instagram') + (c.city ? ' · ' + c.city : '');
+    const edit = tnEditId === c.id ? `
+      <div class="edit stack" style="gap:8px">
+        <div class="row">
+          <div><label>Name</label><input class="e-name" value="${esc(c.name || '')}"></div>
+          <div><label>Instagram</label><input class="e-handle" value="${esc(c.handle || '')}" placeholder="without @"></div>
+        </div>
+        <div class="row">
+          <div><label>City</label><input class="e-city" value="${esc(c.city || '')}"></div>
+          <div><label>Qualified label</label><input class="e-ql" value="${esc(c.qualifiedLabel || '')}" placeholder="Week 3 · Selected"></div>
+        </div>
+        <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
+          <div><label>Photo</label><input class="e-photo" type="file" accept="image/*"></div>
+          <button class="btn sm e-save" style="flex:0 0 auto">Save</button>
+          <button class="btn ghost sm e-cancel" style="flex:0 0 auto">Cancel</button>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn danger sm e-remove" style="flex:0 0 auto"${locked ? ' disabled title="Locked once a match is decided"' : ''}>Remove</button>
+        </div>
+      </div>` : '';
+    rows.push(`<div class="seat" data-id="${esc(c.id)}">
+      <input class="n seedn" type="number" min="1" max="8" value="${c.seed || i + 1}"${locked ? ' disabled' : ''} title="Seed — type a number to move the row">
+      ${tnAvatar(c, 40)}
+      <div class="who"><div class="nm">${esc(c.name || '—')}</div><div class="sub">${esc(sub)}</div></div>
+      <span class="src">${esc(c.qualifiedLabel || (c.source === 'weekly' ? 'weekly' : 'picked'))}</span>
+      <button class="ed mv" data-dir="-1" title="Move up"${locked || i === 0 ? ' disabled' : ''}>▲</button>
+      <button class="ed mv" data-dir="1" title="Move down"${locked || i === seated.length - 1 ? ' disabled' : ''}>▼</button>
+      <button class="ed pen" title="Edit this row">✎</button>
+      ${edit}
+    </div>`);
+  });
+  for(let i = seated.length; i < 8; i++) rows.push(`<div class="seat empty">Seat ${i + 1} · open</div>`);
+  $('#tnSeats').innerHTML = rows.join('');
+
+  // add: search (ar) or type an artist in (artist)
+  $('#tnAddAr').classList.toggle('hide', kind !== 'ar');
+  $('#tnAddArtist').classList.toggle('hide', kind !== 'artist');
+  $('#tnCandLbl').innerHTML = kind === 'ar'
+    ? 'From the weekly winners <span class="muted">(last 8 complete weeks · tick to seat)</span>'
+    : 'From the weekly top tracks <span class="muted">(last 8 complete weeks · tick to seat the artist)</span>';
+  const cands = t.candidates || [];
+  $('#tnCands').innerHTML = cands.length ? cands.map((c, i) => {
+    const score = kind === 'ar'
+      ? (c.points != null ? (+c.points).toLocaleString('en-US') + ' pts' : '')
+      : (c.score != null ? (+c.score).toFixed(1) : '');
+    const what = kind === 'artist' && c.record ? ` · "${c.record}"` : '';
+    return `<div class="pk${c.seated ? ' on off' : ''}" data-i="${i}" title="${c.seated ? 'Already seated' : 'Seat this ' + (kind === 'ar' ? 'A&R' : 'artist')}">
+      <span class="box"></span>
+      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : '<span class="ph"></span>'}
+      <span class="lbl">${esc(c.name || '—')}${esc(what)}${score ? ' · ' + esc(score) : ''}</span>
+      ${c.repeat ? '<span class="rep">repeat winner — the seat passes to that week\'s #2</span>' : ''}
+      <span class="wk">${esc(c.label || c.week || '')}</span>
+    </div>`;
+  }).join('') : '<div class="empty">No complete weeks to draw from yet.</div>';
+  $('#tnCandHint').textContent = kind === 'ar'
+    ? 'A repeat winner is flagged in gold: the seat passes to that week\'s runner-up, who is listed in its place when the server offers one.'
+    : 'The weekly #1 record\'s artist, with the Instagram off the record. Artists have no photo on file — add one on the seat.';
+}
+async function tnPostSeed(body){
+  if(!TN) return; tnErr('');
+  try{ await api('/api/admin/tournament/seed', Object.assign({ tournamentId: TN.id }, body)); await tnLoad(); }
+  catch(e){ tnErr(e.message); }
+}
+function tnReorder(cid, pos){
+  const ids = tnSeated().map(c => c.id);
+  const i = ids.indexOf(cid); if(i < 0) return;
+  ids.splice(i, 1);
+  ids.splice(Math.max(0, Math.min(ids.length, pos - 1)), 0, cid);
+  return tnPostSeed({ order: ids });
+}
+$('#btnTnSeedPoints').onclick = () => { if(confirm('Seed by Series points? Seats re-order highest first and the bracket is rebuilt.')) tnPostSeed({ byPoints: true }); };
+$('#btnTnRebuild').onclick = () => tnPostSeed({ order: tnSeated().map(c => c.id) });
+
+$('#tnSeats').addEventListener('change', (e) => {
+  const seat = e.target.closest('.seat'); if(!seat) return;
+  if(e.target.classList.contains('seedn')){
+    const pos = +e.target.value; if(!(pos >= 1 && pos <= 8)) return renderTnField();
+    tnReorder(seat.dataset.id, pos);
+  }
+});
+$('#tnSeats').addEventListener('click', async (e) => {
+  const seat = e.target.closest('.seat'); if(!seat) return;
+  const cid = seat.dataset.id, c = tnComp(cid); if(!c) return;
+  const b = e.target.closest('button'); if(!b || b.disabled) return;
+  if(b.classList.contains('mv')){
+    const i = tnSeated().findIndex(x => x.id === cid);
+    return tnReorder(cid, i + 1 + (+b.dataset.dir));
+  }
+  if(b.classList.contains('pen')){ tnEditId = tnEditId === cid ? null : cid; return renderTnField(); }
+  if(b.classList.contains('e-cancel')){ tnEditId = null; return renderTnField(); }
+  if(b.classList.contains('e-remove')){
+    if(!confirm(`Remove ${c.name} from the field?`)) return;
+    tnErr('');
+    try{ await api('/api/admin/tournament/competitor/remove', { tournamentId: TN.id, competitorId: cid }); tnEditId = null; await tnLoad(); }
+    catch(err){ tnErr(err.message); }
+    return;
+  }
+  if(b.classList.contains('e-save')){
+    b.disabled = true; tnErr('');
+    try{
+      await api('/api/admin/tournament/competitor', { tournamentId: TN.id, competitorId: cid,
+        name: seat.querySelector('.e-name').value.trim(),
+        handle: seat.querySelector('.e-handle').value.trim().replace(/^@/, '') || null,
+        city: seat.querySelector('.e-city').value.trim() || null,
+        qualifiedLabel: seat.querySelector('.e-ql').value.trim() || null });
+      const f = seat.querySelector('.e-photo').files[0];
+      if(f){
+        const image = await tnResizeImage(f, 600);
+        await api('/api/admin/tournament/competitor/photo', { tournamentId: TN.id, competitorId: cid, image });
+      }
+      tnEditId = null; await tnLoad();
+    }catch(err){ tnErr(err.message); b.disabled = false; }
+  }
+});
+// A photo off the operator's phone is 3–5MB; the graphic prints it at 600px at most.
+function tnResizeImage(file, max){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * s)), h = Math.max(1, Math.round(img.height * s));
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(cv.toDataURL('image/jpeg', 0.86));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not an image the browser can read.')); };
+    img.src = url;
+  });
+}
+async function tnAddCompetitor(body){
+  if(!TN) return; tnErr('');
+  if(tnSeated().length >= 8){ tnErr('All 8 seats are filled. Remove someone first.'); return; }
+  try{ await api('/api/admin/tournament/competitor', Object.assign({ tournamentId: TN.id }, body)); await tnLoad(); }
+  catch(e){ tnErr(e.message); }
+}
+$('#tnCands').addEventListener('click', (e) => {
+  const row = e.target.closest('.pk'); if(!row || !TN) return;
+  const c = (TN.candidates || [])[+row.dataset.i]; if(!c || c.seated) return;
+  tnAddCompetitor({ userId: c.userId || null, name: c.name, handle: c.handle || null, city: c.city || null,
+    photoUrl: c.photoUrl || null, qualifiedLabel: c.qualifiedLabel || c.label || null, week: c.week, source: 'weekly' });
+});
+let tnSearchT = null, tnSearchSeq = 0;
+$('#tnSearch').oninput = () => {
+  clearTimeout(tnSearchT);
+  const q = $('#tnSearch').value.trim();
+  if(q.length < 2){ $('#tnSearchOut').classList.add('hide'); return; }
+  tnSearchT = setTimeout(async () => {
+    const seq = ++tnSearchSeq;
+    try{
+      const d = await api('/api/admin/tournament/search?id=' + encodeURIComponent(TN.id) + '&q=' + encodeURIComponent(q), null, 'GET');
+      if(seq !== tnSearchSeq) return;
+      const seatedUids = new Set(tnSeated().map(c => c.user_id || c.userId).filter(Boolean));
+      const res = d.results || [];
+      $('#tnSearchOut').innerHTML = res.length ? res.map((r, i) => `<div class="pk${seatedUids.has(r.userId) ? ' on off' : ''}" data-i="${i}">
+          ${r.photoUrl ? `<img src="${esc(r.photoUrl)}" alt="">` : '<span class="ph"></span>'}
+          <span class="lbl">${esc(r.name)}${r.handle ? ' · @' + esc(r.handle) : ''}${r.city ? ' · ' + esc(r.city) : ''}${r.points != null ? ' · ' + esc((+r.points).toLocaleString('en-US')) + ' pts' : ''}</span>
+          <button class="btn ghost sm" style="margin-left:auto;flex:0 0 auto"${seatedUids.has(r.userId) ? ' disabled' : ''}>${seatedUids.has(r.userId) ? 'Seated' : 'Add'}</button>
+        </div>`).join('') : '<div class="empty">No complete profile matches that.</div>';
+      $('#tnSearchOut').dataset.res = JSON.stringify(res);
+      $('#tnSearchOut').classList.remove('hide');
+    }catch(e){ tnErr(e.message); }
+  }, 250);
+};
+$('#tnSearchOut').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if(!b || b.disabled) return;
+  const row = e.target.closest('.pk'); if(!row) return;
+  const r = JSON.parse($('#tnSearchOut').dataset.res || '[]')[+row.dataset.i]; if(!r) return;
+  $('#tnSearch').value = ''; $('#tnSearchOut').classList.add('hide');
+  tnAddCompetitor({ userId: r.userId, name: r.name, handle: r.handle || null, city: r.city || null,
+    photoUrl: r.photoUrl || null, qualifiedLabel: 'Selected', source: 'search' });
+});
+$('#btnTnAddArtist').onclick = async () => {
+  const name = $('#tnArtName').value.trim(); if(!name){ tnErr('The artist needs a name.'); return; }
+  await tnAddCompetitor({ name, handle: $('#tnArtIg').value.trim().replace(/^@/, '') || null,
+    city: $('#tnArtCity').value.trim() || null, qualifiedLabel: 'Selected', source: 'typed' });
+  $('#tnArtName').value = ''; $('#tnArtIg').value = ''; $('#tnArtCity').value = '';
+};
+
+/* ---- 4. the bracket ---- */
+function tnMatchState(m){
+  const polls = m.polls || [];
+  const need = m.round_no === 3 ? (+TN.finalPolls || 3) : 1;
+  const ratified = polls.filter(p => p.status === 'ratified' || p.split_a != null);
+  const open = polls.find(p => p.status && p.status !== 'ratified' && p.split_a == null) || null;
+  const votes = ratified.reduce((s, p) => s + (+p.votes || 0), 0);
+  const last = ratified[ratified.length - 1] || null;
+  let wa = 0, wb = 0;
+  ratified.forEach(p => { if(p.split_a > 50) wa++; else if(p.split_a != null && p.split_a < 50) wb++; });
+  const pct = last && last.split_a != null && m.round_no < 3 ? { a: Math.round(+last.split_a), b: 100 - Math.round(+last.split_a) } : null;
+  return { polls, need, ratified, open, votes, pct, wa, wb, played: ratified.length };
+}
+function tnFeeder(m, side){
+  if(m.round_no === 1) return 'seat open';
+  const slot = (m.slot - 1) * 2 + (side === 'a' ? 1 : 2);
+  return 'winner of ' + (m.round_no === 2 ? 'quarterfinal ' : 'semifinal ') + slot;
+}
+function tnSideHtml(m, c, which, st){
+  const cls = ['side'];
+  if(!c) cls.push('tbd'); else if(m.winner_id) cls.push(m.winner_id === c.id ? 'w' : 'l');
+  const pct = st.pct ? (which === 'a' ? st.pct.a : st.pct.b) : null;
+  const lbl = c ? (m.round_no === 1 && c.seed ? c.seed + ' · ' : '') + (c.name || '—') : tnFeeder(m, which);
+  const tail = pct != null ? `<span class="pct">${pct}%</span>`
+    : (m.round_no === 3 && c && st.played ? `<span class="pct">${which === 'a' ? st.wa : st.wb}</span>` : (st.open && c ? '<span class="pct">—</span>' : ''));
+  // the song under a side is optional — the server may or may not name it on the poll
+  const p = st.open || st.ratified[st.ratified.length - 1] || null;
+  const song = p && (which === 'a' ? (p.songA || p.a_title) : (p.songB || p.b_title));
+  return `<div class="${cls.join(' ')}">${c ? tnAvatar(c, 26) : ''}<span class="nm">${esc(lbl)}</span>${tail}</div>`
+    + (song ? `<div class="song">${esc(song)}</div>` : '');
+}
+function tnQueueForm(m, a, b, st){
+  const kind = TN.kind;
+  const title = m.round_no === 3 && st.need > 1 ? `Queue matchup · poll ${st.played + 1} of ${st.need}` : 'Queue matchup';
+  if(!TN.sessionId) return `<div class="qf"><div class="qt">${esc(title)}</div><span class="muted" style="font-size:12px">Link a live session in Setup first.</span></div>`;
+  const pick = (who) => kind === 'ar'
+    ? `<select class="q-${who}"><option value="">— pick a pack song —</option>${(TN.packSongs || []).map(s =>
+        `<option value="${esc(s.id)}"${s.played ? ' disabled' : ''}>${esc(s.title)} — ${esc(s.artist || '')}${s.played ? ' · played' : ''}</option>`).join('')}</select>`
+    : `<div class="row" style="gap:6px"><input class="q-${who}-title" placeholder="Song title"><input class="q-${who}-artist" placeholder="Artist" value="${esc((who === 'a' ? a : b).name || '')}"></div>`;
+  return `<div class="qf" data-m="${esc(m.id)}">
+    <div class="qt">${esc(title)}</div>
+    <div><label>${esc(a.name)} plays</label>${pick('a')}</div>
+    <div><label>${esc(b.name)} plays</label>${pick('b')}</div>
+    <button class="btn sm tnq" style="align-self:flex-start">Queue matchup</button>
+    ${kind === 'ar' && !(TN.packSongs || []).length ? '<span class="muted" style="font-size:12px">No Service Pack linked, or the pack has no songs — set it in Setup.</span>' : ''}
+  </div>`;
+}
+function renderTnBracket(){
+  const t = TN, matches = (t.matches || []).slice().sort((x, y) => x.round_no - y.round_no || x.slot - y.slot);
+  const decided = matches.filter(m => m.winner_id).length;
+  const rnd = t.status === 'complete' ? 'decided' : decided >= 6 ? 'the final' : decided >= 4 ? 'round 2 of 3' : 'round 1 of 3';
+  $('#tnBracketHead').textContent = matches.length ? `Bracket · ${rnd}` : 'Bracket';
+  const pill = $('#tnBracketPill');
+  if(t.status === 'live'){ pill.className = 'pill live'; pill.textContent = 'session live' + (t.liveSession && t.liveSession.ars != null ? ` · ${t.liveSession.ars} A&Rs in` : ''); }
+  else if(t.status === 'complete'){ pill.className = 'pill completed'; pill.textContent = 'complete'; }
+  else { pill.className = 'pill'; pill.textContent = matches.length ? 'not started' : 'no bracket yet'; }
+  if(!matches.length){
+    $('#tnBracket').innerHTML = '<div class="empty" style="grid-column:1/-1">The bracket is generated from the seeds once 8 seats are filled.</div>';
+    return;
+  }
+  const heads = ['Round 1 · quarterfinals', 'Round 2 · semifinals', `Final · best of ${+t.finalPolls || 3} poll${(+t.finalPolls || 3) === 1 ? '' : 's'}`];
+  const cols = [1, 2, 3].map(r => {
+    const ms = matches.filter(m => m.round_no === r);
+    return `<div class="rnd"><h4>${esc(heads[r - 1])}</h4>${ms.map(m => tnMatchHtml(m)).join('')}</div>`;
+  });
+  // A queue form half filled when the 10s live refresh lands must come back as it was —
+  // the host picks two songs, looks up at the stream, and presses Queue; the refresh in
+  // between must not have emptied the selects under them.
+  const kept = {};
+  $('#tnBracket').querySelectorAll('.qf').forEach(f => {
+    const mid = f.dataset.m; if(!mid) return;
+    kept[mid] = {};
+    f.querySelectorAll('select, input').forEach(el => { if(el.className && el.value) kept[mid][el.className] = el.value; });
+  });
+  $('#tnBracket').innerHTML = cols.join('');
+  $('#tnBracket').querySelectorAll('.qf').forEach(f => {
+    const k = kept[f.dataset.m]; if(!k) return;
+    f.querySelectorAll('select, input').forEach(el => { if(k[el.className] != null) el.value = k[el.className]; });
+  });
+}
+function tnMatchHtml(m){
+  const a = tnComp(m.a_id), b = tnComp(m.b_id), st = tnMatchState(m);
+  const cls = ['m']; if(m.round_no === 3) cls.push('final');
+  let foot = '', chips = '';
+  if(m.round_no === 3 && st.need > 1){
+    chips = '<div class="polls">' + Array.from({ length: Math.max(st.need, st.polls.length) }, (_, i) => {
+      const p = st.polls[i];
+      const c = !p ? '' : (p.split_a == null ? 'open' : p.split_a > 50 ? 'a' : p.split_a < 50 ? 'b' : 'tie');
+      return `<span class="${c}" title="${p ? (p.split_a == null ? 'open · ' + (p.votes || 0) + ' votes' : p.split_a + '% / ' + (100 - p.split_a) + '%') : 'not played yet'}">poll ${i + 1}</span>`;
+    }).join('') + '</div>';
+  }
+  if(m.winner_id){
+    const w = tnComp(m.winner_id);
+    const score = m.round_no === 3 && st.need > 1 ? ` ${st.wa}–${st.wb}` : '';
+    foot = m.decided_by === 'host'
+      ? `<span class="pill tie">${st.ratified.length ? 'tie · ' : ''}host decided</span><span>${esc(w ? w.name : '')}</span>`
+      : `<span class="pill done">decided${score} · ${st.votes.toLocaleString('en-US')} votes</span>`;
+    if(st.open) foot += `<span class="pill live">poll open · ${st.open.votes || 0} votes</span>`;
+    foot += `<button class="btn ghost sm tn-override" data-m="${esc(m.id)}" style="margin-left:auto">Override</button>`;
+  }else if(st.open){
+    cls.push('live');
+    foot = `<span class="pill live">${esc(st.open.status)} · ${(+st.open.votes || 0).toLocaleString('en-US')} votes</span><span class="muted">split sealed until ratify</span>`;
+  }else if(a && b && st.played >= st.need){
+    foot = `<span class="pill tie">tie · pick the winner</span>`
+      + `<button class="btn ghost sm tn-decide" data-m="${esc(m.id)}" data-w="${esc(a.id)}" style="margin-left:auto">${esc(a.name)} wins</button>`
+      + `<button class="btn ghost sm tn-decide" data-m="${esc(m.id)}" data-w="${esc(b.id)}">${esc(b.name)} wins</button>`;
+  }else if(a && b){
+    cls.push('next');
+    foot = `<span class="muted">${st.played ? `${st.played} of ${st.need} polls played · ` : ''}next: queue the matchup</span>`;
+  }else{
+    foot = '<span class="muted">Queue opens when both sides are in</span>';
+  }
+  const queue = a && b && !m.winner_id && !st.open && st.played < st.need ? tnQueueForm(m, a, b, st) : '';
+  return `<div class="${cls.join(' ')}" data-m="${esc(m.id)}">
+    ${tnSideHtml(m, a, 'a', st)}<div class="vs">VS</div>${tnSideHtml(m, b, 'b', st)}
+    ${chips}<div class="foot">${foot}</div>${queue}</div>`;
+}
+$('#tnBracket').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if(!b || !TN) return;
+  const mid = b.dataset.m || (b.closest('[data-m]') || {}).dataset?.m, m = (TN.matches || []).find(x => x.id === mid); if(!m) return;
+  if(b.classList.contains('tn-decide')){
+    const w = tnComp(b.dataset.w);
+    if(!confirm(`${w ? w.name : 'This side'} wins this matchup?`)) return;
+    b.disabled = true; tnErr('');
+    try{ await api('/api/admin/tournament/decide', { tournamentId: TN.id, matchId: mid, winnerId: b.dataset.w }); await tnLoad(); }
+    catch(err){ tnErr(err.message); b.disabled = false; }
+    return;
+  }
+  if(b.classList.contains('tn-override')){
+    const other = m.winner_id === m.a_id ? tnComp(m.b_id) : tnComp(m.a_id);
+    if(!other) return;
+    if(!confirm(`Override: ${other.name} wins this matchup instead? Everything downstream of it is cleared.`)) return;
+    b.disabled = true; tnErr('');
+    try{ await api('/api/admin/tournament/decide', { tournamentId: TN.id, matchId: mid, winnerId: other.id }); await tnLoad(); }
+    catch(err){ tnErr(err.message); b.disabled = false; }
+    return;
+  }
+  if(b.classList.contains('tnq')){
+    const f = b.closest('.qf'); if(!f) return;
+    const side = (who) => {
+      if(TN.kind === 'ar'){ const v = f.querySelector('.q-' + who).value; return v ? { packSongId: v } : null; }
+      const title = f.querySelector(`.q-${who}-title`).value.trim(), artist = f.querySelector(`.q-${who}-artist`).value.trim();
+      return title ? { title, artist } : null;
+    };
+    const A = side('a'), B = side('b');
+    if(!A || !B){ tnErr(TN.kind === 'ar' ? 'Pick a pack song for each side.' : 'Each side needs a song title.'); return; }
+    b.disabled = true; tnErr('');
+    try{
+      await api('/api/admin/tournament/queue', { tournamentId: TN.id, matchId: mid, a: A, b: B });
+      await tnLoad();
+    }catch(err){ tnErr(err.message); b.disabled = false; }
+  }
+});
+
+/* ---- 5. graphics ---- */
+function tnCardUrl(key, kind){
+  const t = TN; if(!t) return '';
+  let q = '/api/card/tournament?t=' + encodeURIComponent(t.id) + '&kind=' + kind;
+  const seat = /^seat(\d+)$/.exec(key);
+  if(kind === 'bracket') return q;
+  if(seat) q += '&filled=' + seat[1] + '&stage=seat';
+  else if(key === 'final') q += '&filled=8&stage=final';
+  else if(key === 'champion') q += '&stage=champion';
+  return q;
+}
+// An <img> cannot send the admin token, so the card is fetched into an object URL. Each
+// url is fetched once per page load; a re-render after Publish reuses it.
+function tnLoadImgs(root){
+  root.querySelectorAll('img[data-tnsrc]').forEach(img => {
+    const u = img.dataset.tnsrc;
+    if(tnImgCache[u]){ img.src = tnImgCache[u]; const a = img.closest('a'); if(a) a.href = tnImgCache[u]; return; }
+    fetch(u, { headers: chAuthHeaders() })
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
+      .then(bl => { tnImgCache[u] = URL.createObjectURL(bl);
+        root.querySelectorAll('img[data-tnsrc]').forEach(i => { if(i.dataset.tnsrc !== u) return; i.src = tnImgCache[u]; const a = i.closest('a'); if(a) a.href = tnImgCache[u]; }); })
+      .catch(() => { const d = document.createElement('div'); d.className = 'empty'; d.textContent = 'Could not render'; img.replaceWith(d); });
+  });
+}
+function renderTnGfx(){
+  const t = TN, rows = t.graphics || [];
+  if(!rows.some(g => g.key === tnGfxKey)){
+    const ready = rows.filter(g => g.ready);
+    const pick = ready.filter(g => !g.publishedAt).pop() || ready[ready.length - 1] || rows[0];
+    tnGfxKey = pick ? pick.key : '';
+  }
+  const g = rows.find(x => x.key === tnGfxKey) || null;
+  $('#btnTnPublish').textContent = g ? `Publish ${g.label} + make Asana task` : 'Publish + make Asana task';
+  $('#btnTnPublish').disabled = !g || !g.ready;
+  $('#btnTnCaption').disabled = !g;
+  $('#tnGfxList').innerHTML = rows.length ? rows.map(x => {
+    const state = x.publishedAt ? `published ${esc(x.publishedLabel || tnWhen(x.publishedAt))}` : x.ready ? 'ready, not published' : (x.note || x.hint || (x.key === 'final' ? 'unlocks with seat 8' : x.key === 'champion' ? 'after the final' : x.key === 'bracket' ? 'event night' : 'seat not filled'));
+    const files = x.urls ? Object.keys(x.urls).length + ' file' + (Object.keys(x.urls).length === 1 ? '' : 's') : (x.ready ? 'renders live' : '');
+    return `<tr class="pick${x.key === tnGfxKey ? ' sel' : ''}" data-key="${esc(x.key)}">
+      <td class="mono" style="color:${x.key === tnGfxKey ? 'var(--accent)' : 'var(--ink-faint)'};width:120px">${esc(x.label)}</td>
+      <td${x.ready ? '' : ' class="muted"'}>${x.who ? esc(x.who) + ' · ' : ''}${state}${x.asanaUrl ? ` · <a class="lnk" href="${esc(x.asanaUrl)}" target="_blank" rel="noopener">Asana task</a>` : ''}</td>
+      <td class="mono" style="text-align:right;color:var(--ink-faint)">${esc(files)}</td></tr>`;
+  }).join('') : '<tr><td class="muted">No graphics rows yet — they appear as seats fill.</td></tr>';
+  const box = $('#tnGfx');
+  if(!g || !g.ready){
+    box.innerHTML = `<div class="empty" style="grid-column:1/-1">${g ? esc(g.label) + ' is not ready to render yet.' : 'Nothing to render yet.'}</div>`;
+    return;
+  }
+  const tile = (kind, title, sub) => {
+    const u = (g.urls && g.urls[kind]) || tnCardUrl(g.key, kind);
+    const live = !(g.urls && g.urls[kind]);
+    return `<div class="g"><a href="${live ? '#' : esc(u)}" target="_blank" rel="noopener">${live
+      ? `<img data-tnsrc="${esc(u)}" src="${TN_PX}" alt="${esc(title)}">`
+      : `<img src="${esc(u)}" alt="${esc(title)}">`}</a><div class="t">${esc(title)}</div><div class="s">${esc(sub)}</div></div>`;
+  };
+  const sub = g.label + (g.who ? ' · ' + g.who : '');
+  box.innerHTML = g.key === 'bracket'
+    ? tile('bracket', 'Bracket · 1080×1350', sub)
+    : tile('feed', 'Feed · 1080×1350', sub) + tile('story', 'Story · 1080×1920', g.label) + tile('thumb', 'Thumbnail · 1920×1080', g.label);
+  tnLoadImgs(box);
+}
+function tnWhen(ms){ try{ return fmtET(ms, { month: 'short', day: 'numeric' }); }catch(e){ return ''; } }
+$('#tnGfxList').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr.pick'); if(!tr || e.target.closest('a')) return;
+  tnGfxKey = tr.dataset.key; $('#tnPubOut').classList.add('hide'); renderTnGfx();
+});
+$('#btnTnCaption').onclick = async () => {
+  if(!TN || !tnGfxKey) return; tnErr('');
+  try{
+    const d = await api('/api/admin/tournament/caption?id=' + encodeURIComponent(TN.id) + '&key=' + encodeURIComponent(tnGfxKey), null, 'GET');
+    const text = (d.caption || '') + (d.comments && d.comments.length ? '\n\n— comments —\n' + d.comments.join('\n\n') : '');
+    wkCopy(text);
+  }catch(e){ tnErr(e.message); }
+};
+async function tnPublish(key, out, btn){
+  if(!TN) return null;
+  if(btn) btn.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = 'Rendering and hosting ' + key + '…';
+  try{
+    const d = await api('/api/admin/tournament/publish', { tournamentId: TN.id, key });
+    const urls = d.urls || {};
+    const lines = [];
+    Object.keys(urls).forEach(k => lines.push(k + ': ' + (urls[k] ? `<a href="${esc(urls[k])}" target="_blank" rel="noopener">${esc(urls[k])}</a>` : 'not hosted (BLOB_READ_WRITE_TOKEN unset?)')));
+    if(!Object.keys(urls).length) lines.push('urls: none hosted (BLOB_READ_WRITE_TOKEN unset?)');
+    lines.push(d.asana && d.asana.url ? `Asana: <a href="${esc(d.asana.url)}" target="_blank" rel="noopener">${esc(d.asana.url)}</a>` : 'Asana: no task made' + (d.asanaError ? ' — ' + esc(d.asanaError) : ''));
+    if(d.error || d.errors) lines.push('errors: ' + esc(JSON.stringify(d.error || d.errors)));
+    if(d.caption) lines.push('\n' + esc(d.caption));
+    out.innerHTML = lines.join('\n');
+    return d;
+  }catch(e){ out.textContent = 'Publish failed: ' + e.message; return null; }
+  finally{ if(btn) btn.disabled = false; }
+}
+$('#btnTnPublish').onclick = async (e) => {
+  if(!tnGfxKey) return;
+  const k = tnGfxKey;
+  await tnPublish(k, $('#tnPubOut'), e.target);
+  await tnLoad(true); tnGfxKey = k; renderTnGfx();
+};
+
+/* ---- 6. landing page + reminder list ---- */
+function renderTnLanding(){
+  const t = TN, s = t.subscribers || {};
+  const stat = (k, v, cls, hint) => `<div class="tnstat"><div class="k">${esc(k)}</div><div class="v${cls ? ' ' + cls : ''}">${esc(String(v))}</div>${hint ? `<div class="hint" style="margin:0">${esc(hint)}</div>` : ''}</div>`;
+  const remind = +t.remindMin === 0 ? 'off' : (t.remindLabel || '—');
+  const remindHint = +t.remindMin === 0 ? 'send by hand' : (s.reminded ? `${s.reminded} sent` : 'automatic');
+  $('#tnStats').innerHTML = stat('On the list', s.count || 0)
+    + stat('Of them A&Rs', s.ars != null ? s.ars : '—', 'ok')
+    + stat('Reminder', remind, '', remindHint)
+    + (t.kind === 'ar' && t.packOpen ? stat('Pick the Hits', t.packOpen.entries != null ? t.packOpen.entries : 'open', 'gold', t.packOpen.closesLabel ? 'closes ' + t.packOpen.closesLabel : 'entries') : '');
+  const a = $('#tnOpenLanding');
+  a.href = tnLandingPath(t) || '#';
+  a.classList.toggle('hide', !t.slug);
+  a.title = t.status === 'draft' ? 'A draft answers 404 until promo is opened' : '';
+  $('#btnTnCopyLink').disabled = !t.slug;
+  $('#btnTnRemind').disabled = !(s.count > 0);
+  $('#btnTnCsv').disabled = !(s.count > 0);
+}
+$('#btnTnRemind').onclick = async (e) => {
+  if(!TN) return;
+  const s = TN.subscribers || {};
+  if(!confirm(`Send the reminder now to ${s.count || 0} on the list?`)) return;
+  const b = e.target, out = $('#tnLandOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = 'Sending…';
+  let sent = 0, guard = 0;
+  try{
+    for(;;){
+      const d = await api('/api/admin/tournament/remind-now', { tournamentId: TN.id });
+      sent += d.sent || 0;
+      out.textContent = `Sent ${sent}` + (d.remaining ? ` · ${d.remaining} to go…` : '');
+      if(!d.remaining || ++guard > 200) break;
+    }
+    out.textContent = `Reminder sent to ${sent}.`;
+    await tnLoad(true);
+  }catch(err){ out.textContent = `Stopped after ${sent}: ${err.message}`; }
+  finally{ b.disabled = false; }
+};
+$('#btnTnCsv').onclick = async (e) => {
+  if(!TN) return;
+  const b = e.target; b.disabled = true; tnErr('');
+  try{
+    const r = await fetch('/api/admin/tournament/subscribers?id=' + encodeURIComponent(TN.id) + '&format=csv', { headers: chAuthHeaders() });
+    if(!r.ok) throw new Error('Could not download the list (' + r.status + ')');
+    const bl = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(bl); a.download = (TN.slug || 'tournament') + '-reminder-list.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }catch(err){ tnErr(err.message); }
+  finally{ b.disabled = false; }
+};
+
+/* ---- 7. wrap ---- */
+function renderTnWrap(){
+  const t = TN; if(t.status !== 'complete') return;
+  const c = t.champion, fin = (t.matches || []).find(m => m.round_no === 3);
+  const st = fin ? tnMatchState(fin) : null;
+  const how = fin && fin.decided_by === 'host' ? 'Decided by the host' : st && st.need > 1 ? `Decided ${st.wa}–${st.wb} in the final` : 'Decided in the final';
+  const when = fin && fin.decided_at ? ' at ' + fmtET(fin.decided_at, { hour: 'numeric', minute: '2-digit' }) + ' ET' : '';
+  $('#tnWrapMsg').innerHTML = `<b>Champion: ${esc(c ? c.name : '—')}${c && c.handle ? ' (@' + esc(c.handle) + ')' : ''}.</b> ${esc(how + when)}. The Champion set and the bracket graphic render on their own; publish them from here. The homepage winners strip and the landing page show the champion as soon as the final is decided.`;
+  $('#btnTnSidebet').classList.toggle('hide', t.kind !== 'ar');
+  $('#btnTnEndSession').classList.toggle('hide', !t.sessionId);
+}
+$('#btnTnPubChampion').onclick = async (e) => {
+  const out = $('#tnWrapOut');
+  const a = await tnPublish('champion', out, e.target);
+  const first = out.innerHTML;
+  const b = await tnPublish('bracket', out, e.target);
+  out.innerHTML = '<b>Champion set</b>\n' + first + '\n\n<b>Bracket</b>\n' + out.innerHTML;
+  if(a || b){ await tnLoad(true); }
+};
+$('#btnTnSidebet').onclick = () => { tnStopPoll(); openSidebet(); };
+$('#btnTnEndSession').onclick = () => { if(TN && TN.sessionId){ tnStopPoll(); window.loadSession(TN.sessionId); } };
+
 /* ---- Build the next drop, a record at a time ---- */
 function renderBuild(){
   const b = (DL && DL.building) || null;
@@ -2918,6 +3963,7 @@ async function openPicker(){
   $('#btnCharts').classList.toggle('hide',!isAdmin());
   $('#btnBackToDaily').classList.toggle('hide',!isAdmin());
   $('#btnSidebet').classList.toggle('hide',!isAdmin());
+  $('#btnTournaments').classList.toggle('hide',!isAdmin());
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');

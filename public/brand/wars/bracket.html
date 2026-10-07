@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R Wars — bracket</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   A&R Wars — the bracket, 1080x1350. Single elimination 8 → 4 → 2 → 1, drawn left to right:
+   the draw (1v8, 4v5, 3v6, 2v7) in the first column with photos and names, the winners
+   filling in from DATA.rounds / DATA.winner, empty slots as dashed purple boxes.
+
+     ?stage=field|final4|final2|champion   (see flyer-feed.html)
+
+   Colour: purple = the bracket (the lines, the empty slots, the lockup block); gold on the
+   champion slot and the $500 ONLY; green = the date and the vote call to action.
+   The connectors are absolute 2px boxes positioned by the script, no SVG, so the Satori
+   rebuild can draw them the same way. Flex + absolute boxes only.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;--pad:60px}
+
+/* masthead: the lockup as a header, the date beside it */
+.logo{position:absolute;left:var(--pad);top:60px;height:30px;width:auto}
+.num{position:absolute;right:var(--pad);top:56px;font-family:'Space Mono',monospace;font-weight:700;font-size:30px;line-height:38px;color:var(--dim);letter-spacing:.02em}
+.lock{position:absolute;left:var(--pad);top:116px;display:flex;align-items:center;height:100px;--S:100px}
+.lock img{height:var(--S);width:auto;flex:none}
+.lock .w{font-weight:900;font-size:calc(var(--S) * .9375);line-height:1;letter-spacing:-.04em;text-transform:uppercase;margin-left:calc(var(--S) * .16);color:var(--ink);white-space:nowrap}
+.title{position:absolute;left:var(--pad);top:244px;font-weight:900;font-size:40px;line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.when{position:absolute;right:var(--pad);top:244px;text-align:right;font-family:'Space Mono',monospace;font-weight:700;font-size:28px;line-height:1.25;color:var(--green);letter-spacing:-.02em;white-space:nowrap}
+
+/* round labels: skewed blocks, the series' tick device */
+.rl{position:absolute;top:316px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid var(--line);border-radius:4px;transform:skewX(-13deg)}
+.rl span{transform:skewX(13deg);font-family:'Space Mono',monospace;font-weight:700;font-size:17px;color:var(--dim);line-height:1;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.rl.on{background:var(--purple);border-color:var(--purple)}
+.rl.on span{color:var(--ink)}
+.rl.gold{background:var(--gold);border-color:var(--gold)}
+.rl.gold span{color:var(--ground)}
+
+/* slots */
+.slot{position:absolute;height:76px;border-radius:8px;background:var(--panel);border:2px solid var(--line);display:flex;align-items:center;padding:0 14px}
+.slot .ph{position:relative;width:52px;height:52px;border-radius:50%;overflow:hidden;background:var(--line);flex:none}
+.slot .ph img{position:absolute;left:0;top:0;width:52px;height:52px;object-fit:cover}
+.slot .tx{margin-left:12px;display:flex;flex-direction:column;align-items:flex-start;min-width:0}  /* flex-start: each line is its own width, so the fit loop measures text, not a stretched box */
+.slot .nm{font-weight:800;font-size:24px;line-height:1;letter-spacing:-.03em;white-space:nowrap}
+.slot .sd{margin-top:6px;font-family:'Space Mono',monospace;font-weight:700;font-size:16px;line-height:1;color:var(--dim);white-space:nowrap}
+.slot.empty{background:transparent;border:2px dashed var(--purple);justify-content:center}
+.slot.empty .lb{font-family:'Space Mono',monospace;font-weight:700;font-size:16px;color:var(--purple);letter-spacing:.04em;text-transform:uppercase}
+.slot.out{opacity:.4}
+.slot.won{border-color:var(--purple)}
+/* the champion slot: gold, and the only gold on the page besides the $500 */
+.slot.final{height:120px;flex-direction:column;justify-content:center;align-items:center;padding:0 10px}
+.slot.final.empty .lb{color:var(--purple)}
+.slot.final .money{font-family:'Space Mono',monospace;font-weight:700;font-size:40px;line-height:1;letter-spacing:-.05em;color:var(--gold);margin-top:8px}
+.slot.champ{background:var(--gold);border-color:var(--gold);color:var(--ground);height:200px}
+.slot.champ .ph{width:72px;height:72px}
+.slot.champ .ph img{width:72px;height:72px}
+.slot.champ .ch{margin-top:10px;font-weight:900;font-size:18px;line-height:1;letter-spacing:.02em;text-transform:uppercase}
+.slot.champ .nm{margin-top:8px;font-weight:900;font-size:26px;line-height:1;letter-spacing:-.03em;text-align:center;white-space:nowrap}
+.slot.champ .money{color:var(--ground);font-size:34px;margin-top:8px}
+
+/* connectors */
+.ln{position:absolute;background:var(--purple)}
+.ln.dim{opacity:.35}
+
+/* the call to action */
+.foot{position:absolute;left:var(--pad);right:var(--pad);bottom:60px;border-top:2px solid var(--line);padding-top:28px;display:flex;align-items:flex-end;justify-content:space-between}
+.foot .k{font-weight:900;font-size:36px;line-height:1;letter-spacing:-.03em;text-transform:uppercase}
+.foot .u{font-family:'Space Mono',monospace;font-weight:700;font-size:30px;line-height:1;color:var(--green);margin-top:12px}
+.foot .p{text-align:right;font-family:'Space Mono',monospace;font-weight:700;font-size:24px;line-height:1.2;color:var(--dim)}
+.foot .p b{display:block;font-size:52px;line-height:1;letter-spacing:-.05em;color:var(--gold)}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <div class="num" id="num"></div>
+  <div class="lock"><img src="../mark/anr-mark-purple.svg" alt="A&amp;R"><span class="w">Wars</span></div>
+  <div class="title">Bracket</div>
+  <div class="when" id="when"></div>
+  <div id="b"></div>
+  <div class="foot">
+    <div><div class="k" id="k">Vote live</div><div class="u" id="u"></div></div>
+    <div class="p" id="p"></div>
+  </div>
+</div>
+<script>
+/* ---- DATA: the same block sits at the top of every piece in the set (flyer-feed, flyer-story,
+   thumb, bracket) so the four graphics cannot disagree. PLACEHOLDERS: every competitor is
+   invented and the photos are pravatar stand-ins. Seeds pair 1v8, 4v5, 3v6, 2v7.
+   `advanced` = who is still in (8 = the field, 4 = Final 4, 2 = Final 2); `winner` = the champion;
+   `rounds` = [[round-1 winners],[round-2 winners]] (only the bracket reads it). ---- */
+const DATA = {
+  name: 'A&R Wars', number: '#1', date: 'Sunday, October 25', time: '7:00 PM ET',
+  prize: '$500 Cash Prize', watch: 'makinitmag.com/ANR',
+  competitors: [
+    { seed: 1, name: 'Taliyah Rae',    handle: 'taliyahrae',      city: 'Atlanta, GA',     photo: 'https://i.pravatar.cc/300?img=47' },
+    { seed: 2, name: 'Marcus Lane',    handle: 'marcuslanemusic', city: 'Houston, TX',     photo: 'https://i.pravatar.cc/300?img=12' },
+    { seed: 3, name: 'Deja Simone',    handle: 'dejasimone',      city: 'Chicago, IL',     photo: 'https://i.pravatar.cc/300?img=32' },
+    { seed: 4, name: 'Bryce Holloway', handle: '',                city: 'Charlotte, NC',   photo: 'https://i.pravatar.cc/300?img=52' },
+    { seed: 5, name: 'Nia Monroe',     handle: 'niamonroe',       city: 'Memphis, TN',     photo: 'https://i.pravatar.cc/300?img=25' },
+    { seed: 6, name: 'Andre Mitchell', handle: 'andremitchell',   city: 'Detroit, MI',     photo: 'https://i.pravatar.cc/300?img=60' },
+    { seed: 7, name: 'Kiana Ross',     handle: 'kianarossmusic',  city: 'Los Angeles, CA', photo: 'https://i.pravatar.cc/300?img=44' },
+    { seed: 8, name: 'Jordyn Price',   handle: 'jordynprice',     city: 'Brooklyn, NY',    photo: 'https://i.pravatar.cc/300?img=16' },
+  ],
+  advanced: [1, 2, 3, 4, 5, 6, 7, 8], rounds: [], winner: null,
+};
+const MATCHUPS = [[1, 8], [4, 5], [3, 6], [2, 7]];
+const STAGES = {
+  field:    { advanced: [1, 2, 3, 4, 5, 6, 7, 8], rounds: [],                     winner: null },
+  final4:   { advanced: [1, 5, 3, 7],             rounds: [[1, 5, 3, 7]],         winner: null },
+  final2:   { advanced: [5, 3],                   rounds: [[1, 5, 3, 7], [5, 3]], winner: null },
+  champion: { advanced: [3],                      rounds: [[1, 5, 3, 7], [5, 3]], winner: 3 },
+};
+const STAGE = (s => STAGES[s] ? s : 'field')(new URLSearchParams(location.search).get('stage'));
+Object.assign(DATA, STAGES[STAGE]);
+const bySeed = s => DATA.competitors.find(c => c.seed === s);
+const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const handleOf = c => (c && c.handle ? '@' + String(c.handle).replace(/^@/, '') : '');
+/* ---- end DATA ---- */
+
+const $ = id => document.getElementById(id);
+$('num').textContent = DATA.name + ' ' + DATA.number;
+$('when').innerHTML = esc(DATA.date) + '<br>' + esc(DATA.time);
+$('u').textContent = DATA.watch;
+$('p').innerHTML = '<b>' + esc(DATA.prize.split(' ')[0]) + '</b>' + esc(DATA.prize.split(' ').slice(1).join(' '));
+if (DATA.winner != null) $('k').textContent = 'Watch the replay';
+
+// Round results, in draw order. rounds[0] = the 4 round-1 winners (one per MATCHUPS entry),
+// rounds[1] = the 2 round-2 winners (one per pair of matchups). Missing = not played yet.
+const r1 = DATA.rounds[0] || [], r2 = DATA.rounds[1] || [];
+const r1Win = i => (r1.length ? r1.find(s => MATCHUPS[i].includes(s)) : null) ?? null;
+const r2Win = i => (r2.length ? r2.find(s => [r1Win(2 * i), r1Win(2 * i + 1)].includes(s)) : null) ?? null;
+const lostIn = seed => (r1.length && !r1.includes(seed)) || (r2.length && r1.includes(seed) && !r2.includes(seed)) || (DATA.winner != null && seed !== DATA.winner);
+
+// Geometry. Columns: the draw (wide, with photos), the Final 4, the Final 2, the champion.
+const X = [{ x: 60, w: 280 }, { x: 372, w: 190 }, { x: 594, w: 190 }, { x: 816, w: 204 }];
+const H = 76, PAIR = 12, GAP = 34, TOP = 372;
+const y1 = [];                                   // the 8 draw slots, top y
+for (let i = 0; i < 8; i++) y1.push(TOP + i * H + Math.floor(i / 2) * (GAP - PAIR) + i * PAIR);
+const mid = y => y + H / 2;
+const y2 = [0, 1, 2, 3].map(i => (mid(y1[2 * i]) + mid(y1[2 * i + 1])) / 2 - H / 2);
+const y3 = [0, 1].map(i => (mid(y2[2 * i]) + mid(y2[2 * i + 1])) / 2 - H / 2);
+const yF = (mid(y3[0]) + mid(y3[1])) / 2;
+
+const b = $('b');
+const box = (cls, x, y, w, inner, h) => b.insertAdjacentHTML('beforeend', `<div class="slot ${cls}" style="left:${x}px;top:${y}px;width:${w}px${h ? ';height:' + h + 'px' : ''}">${inner}</div>`);
+const person = (c, won) => `<div class="ph"><img src="${esc(c.photo)}" alt=""></div><div class="tx"><div class="nm">${esc(c.name)}</div><div class="sd">${'#' + c.seed}${won ? ' · ' + won : ''}</div></div>`;
+const line = (x, y, w, h, dim) => b.insertAdjacentHTML('beforeend', `<div class="ln${dim ? ' dim' : ''}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"></div>`);
+
+// Round labels over each column
+const labels = [['Round 1', 0], ['Final 4', 1], ['Final 2', 2], ['Champion', 3]];
+const live = DATA.winner != null ? 3 : r2.length ? 2 : r1.length ? 1 : 0;
+for (const [t, i] of labels) {
+  const cls = i === 3 && DATA.winner != null ? 'gold' : i === live ? 'on' : '';
+  b.insertAdjacentHTML('beforeend', `<div class="rl ${cls}" style="left:${X[i].x + 6}px;width:${X[i].w - 12}px"><span>${t}</span></div>`);
+}
+
+// Column 1: the draw
+MATCHUPS.forEach((m, i) => m.forEach((seed, j) => {
+  const c = bySeed(seed);
+  box(lostIn(seed) ? 'out' : (r1.includes(seed) ? 'won' : ''), X[0].x, y1[2 * i + j], X[0].w, person(c, c.handle ? handleOf(c) : c.city));
+}));
+// Column 2: the Final 4
+for (let i = 0; i < 4; i++) {
+  const w = r1Win(i);
+  if (w == null) box('empty', X[1].x, y2[i], X[1].w, `<div class="lb">${MATCHUPS[i][0]}v${MATCHUPS[i][1]}</div>`);
+  else box(lostIn(w) ? 'out' : (r2.includes(w) ? 'won' : ''), X[1].x, y2[i], X[1].w, person(bySeed(w), ''));
+}
+// Column 3: the Final 2
+for (let i = 0; i < 2; i++) {
+  const w = r2Win(i);
+  if (w == null) box('empty', X[2].x, y3[i], X[2].w, `<div class="lb">TBD</div>`);
+  else box(lostIn(w) ? 'out' : (DATA.winner === w ? 'won' : ''), X[2].x, y3[i], X[2].w, person(bySeed(w), ''));
+}
+// Column 4: the champion — gold only here and on the $500
+if (DATA.winner == null) {
+  box('final empty', X[3].x, yF - 60, X[3].w, `<div class="lb">Champion</div><div class="money">$500</div>`);
+} else {
+  const c = bySeed(DATA.winner);
+  box('final champ', X[3].x, yF - 100, X[3].w, `<div class="ph"><img src="${esc(c.photo)}" alt=""></div><div class="ch">Champion</div><div class="nm">${esc(c.name)}</div><div class="money">$500</div>`);
+}
+
+// Connectors: each pair joins at the gap's centre line, then runs into the next slot.
+// A line past a decided match stays full purple; the rest dim so the eye follows the result.
+const T = 3;
+const join = (col, ys, nextY, i, decided) => {
+  const x1 = X[col].x + X[col].w, xm = x1 + (X[col + 1].x - x1) / 2, x2 = X[col + 1].x;
+  const a = mid(ys[2 * i]), c = mid(ys[2 * i + 1]), m = (a + c) / 2;
+  line(x1, a - T / 2, xm - x1, T, !decided);
+  line(x1, c - T / 2, xm - x1, T, !decided);
+  line(xm - T / 2, a, T, c - a, !decided);
+  line(xm, m - T / 2, x2 - xm, T, !decided);
+};
+for (let i = 0; i < 4; i++) join(0, y1, y2, i, r1Win(i) != null);
+for (let i = 0; i < 2; i++) join(1, y2, y3, i, r2Win(i) != null);
+join(2, y3, [yF - H / 2], 0, DATA.winner != null);
+
+document.fonts.ready.then(() => requestAnimationFrame(() => {
+  for (const nm of document.querySelectorAll('.slot .nm, .slot .sd')) {
+    const max = nm.closest('.slot').clientWidth - (nm.closest('.champ') ? 20 : 96);
+    let fs = parseFloat(getComputedStyle(nm).fontSize);
+    while (nm.scrollWidth > max && fs > 12) { fs -= 1; nm.style.fontSize = fs + 'px'; }
+  }
+}));
+document.title = 'A&R Wars — bracket — ' + STAGE;
+</script>
+</body>
+</html>

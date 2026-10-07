@@ -4,7 +4,8 @@
 //
 // Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo';
 // the artist's Track Report is 'trackPage' (see below), the daily graphics 'resultsSlide' / 'countdownSlide' /
-// 'winnerPost' (the Top Track / Top A&R of the Day and of the Week collab posts).
+// 'winnerPost' (the Top Track / Top A&R of the Day and of the Week collab posts), and the A&R Wars
+// set 'tournamentFeed' / 'tournamentStory' / 'tournamentThumb' / 'tournamentBracket'.
 // Rank-only by default; raw numbers optional. Every card carries the eyebrow "The A&R Room",
 // the big card title, the session/scope subhead, the $500 award pill, makinitmag.com/ANR, @Makinit4indies.
 //
@@ -844,6 +845,438 @@ function elementWinnerWeek(d) {
 // Daily Countdown carousel); the element name stays so the hosted paths and routes do.
 function elementWinnerPost(d) { return elementWinnerWeek(d); }
 
+// ============ A&R Wars — the tournament graphics: feed / story / thumb / bracket ============
+// Spec: docs/specs/tournament-spec.md §5 (what each state says) and §10 "Satori data shapes".
+// Ported from the approved mockups in public/brand/wars/ (flyer-feed.html, flyer-story.html,
+// thumb.html, bracket.html) — every number below is that file's CSS, so the Satori render and
+// the Chrome preview in public/brand/wars/preview/ are the same picture.
+//
+// The weekly seat flyer: ONE BIG slot (that week's qualifier) and EIGHT SMALL seats (everyone
+// picked so far; unfilled seats are numbered silhouettes). `big: null` is the final promo's
+// question mark ("Who has the Best Ear?", the date and time big). After the event the champion
+// takes the big slot with the gold ring. Colour has a job: PURPLE = the contest (the lockup
+// block, the tags, the qualifier ring, the question mark, the bracket), GOLD = the prize amount
+// and the champion ONLY, GREEN = the date, LIVE and the call to action. The prize prints ONCE
+// per graphic (the field block, or the champion headline — the champion state hides the block).
+//
+//   tournamentFeed    1080×1350   tournamentStory   1080×1920
+//   tournamentThumb   1920×1080   tournamentBracket 1080×1350
+//
+// Data (feed / story / thumb):
+//   { lockupWord, eyebrow, dateLabel, timeLabel, stage: 'seat'|'final'|'champion', headline,
+//     premise, prizeAmount, prizeLabel,
+//     big: { name, handle|null, photo|null, tag|null } | null,
+//     seats: [{ n, name|null, photo|null, filled, ring: 'qualifier'|'champion'|null }] ×8,
+//     cta: { label, url } }
+// Data (bracket):
+//   { lockupWord, eyebrow, dateLabel, timeLabel, prizeAmount, prizeLabel?,
+//     r1: [{ a: { name, seed, sub, photo }, b, winner: 'a'|'b'|null }] ×4,
+//     r2: [{ a|null, b|null, winner }] ×2, final: { a|null, b|null, winner },
+//     champion: { name, photo } | null, cta }
+// Photos are data URIs prepared by the caller (null → the silhouette); this module never fetches.
+const TOURNAMENT_SIZES = { tournamentFeed: [1080, 1350], tournamentStory: [1080, 1920], tournamentThumb: [1920, 1080], tournamentBracket: [1080, 1350] };
+const WARS = { ...RECAP, purple: '#6d5fe0', gold: RESULTS_GOLD };
+const WARS_PRIZE_LABEL = 'Cash Prize';
+
+// The silhouette: a head and shoulders drawn as stroke SVG in the dim ink — never an emoji.
+let _silhouette = null;
+function silhouetteDataUri() {
+  if (!_silhouette) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" stroke="' + WARS.dim
+      + '" stroke-width="3" stroke-linecap="round"><circle cx="50" cy="38" r="17"/><path d="M19 96c3-20 16-30 31-30s28 10 31 30"/></svg>';
+    _silhouette = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _silhouette;
+}
+// Type that must stay on one line steps down a size until the estimate fits (Archivo mixed case
+// ~0.58em a character, caps ~0.62em, Space Mono exactly 0.6em).
+function warsFit(str, maxFs, minFs, maxW, em = 0.58) {
+  const n = String(str == null ? '' : str).length;
+  let fs = maxFs;
+  while (fs > minFs && n * fs * em > maxW) fs -= 1;
+  return fs;
+}
+function warsImg(src, size, extra = {}) {
+  return { type: 'img', props: { src, width: size, height: size, style: { width: size, height: size, objectFit: 'cover', ...extra } } };
+}
+// A round slot. `photo` fills it; without one it carries the silhouette on a dim DASHED circle,
+// or (`qm`) the purple question mark on a purple dashed circle. `ring` draws OUTSIDE the photo
+// (the mockup's `outline`) — negative margins keep the layout where the photo alone would sit.
+function warsCircle(size, { photo = null, qm = false, ring = null, ringWidth = 4, dashWidth = 2 } = {}) {
+  const dashed = !photo;
+  const dashColor = qm ? WARS.purple : WARS.line;
+  const dw = dashed ? dashWidth : 0;
+  const inner = size - 2 * dw;
+  let child;
+  if (photo) child = warsImg(photo, size);
+  else if (qm) child = text({ fontFamily: MONO, fontWeight: 700, fontSize: Math.round(size * 0.65), lineHeight: 1, color: WARS.purple, marginTop: Math.round(size * -0.04) }, '?');
+  else child = warsImg(silhouetteDataUri(), inner);
+  const face = h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: size, height: size,
+    borderRadius: size, overflow: 'hidden', background: WARS.panel,
+    ...(dashed ? { border: `${dw}px dashed ${dashColor}` } : {}) }, [child]);
+  if (!ring) return face;
+  const rw = ringWidth, outer = size + 2 * rw;
+  return h({ display: 'flex', flexShrink: 0, width: outer, height: outer, borderRadius: outer, border: `${rw}px solid ${ring}`,
+    margin: -rw }, [face]);
+}
+// The [A&R] WARS lockup: the CONTEST PURPLE block (the mark master is purple here, not green)
+// with the word in Archivo 900 at build.py's lockup geometry (.9375S, −.04em, .16S past the block).
+function warsLockup(S, word) {
+  const fs = Math.round(S * 0.39);
+  return row({}, [
+    h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: S, height: S, background: WARS.purple,
+      borderRadius: Math.round(S * 0.075), transform: `skewX(${SKEW}deg)` },
+      text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, letterSpacing: -Math.round(fs * 0.05), color: WARS.fg, lineHeight: 1 }, 'A&R')),
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: Math.round(S * 0.9375), lineHeight: 1, letterSpacing: -Math.round(S * 0.9375 * 0.04),
+      textTransform: 'uppercase', color: WARS.fg, marginLeft: Math.round(S * 0.16), ...NOWRAP }, word || 'Wars'),
+  ]);
+}
+// The LIVE badge: a green skewed block, the word un-skewed inside it, in the ground colour.
+function warsLive(hgt, fs, padX, mr, radius = 4) {
+  return h({ display: 'flex', alignItems: 'center', flexShrink: 0, height: hgt, background: WARS.green, borderRadius: radius,
+    paddingLeft: padX, paddingRight: padX, marginRight: mr, transform: `skewX(${SKEW}deg)` }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: fs, letterSpacing: Math.round(fs * 0.06), lineHeight: 1, color: WARS.bg, transform: `skewX(${-SKEW}deg)`, ...NOWRAP }, 'LIVE'),
+  ]);
+}
+// The seat tag: "QUALIFIED · WEEK 4" on purple, "CHAMPION" on gold with the ground ink.
+function warsTag(label, { fill, ink, hgt, fs, mt = 0, ml = 0 }) {
+  return h({ display: 'flex', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0, height: hgt, background: fill, borderRadius: 4,
+    paddingLeft: 18, paddingRight: 18, marginTop: mt, marginLeft: ml, transform: `skewX(${SKEW}deg)` }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, letterSpacing: -Math.round(fs * 0.01), lineHeight: 1, textTransform: 'uppercase', color: ink, transform: `skewX(${-SKEW}deg)`, ...NOWRAP }, label),
+  ]);
+}
+// A one-line headline with the prize amount in gold and the rest in ink, stepped down to fit.
+function warsHeadline(str, prize, maxFs, minFs, maxW, extra = {}) {
+  const line = clip(str, 60);
+  const fs = warsFit(line, maxFs, minFs, maxW);
+  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 1, letterSpacing: -Math.round(fs * 0.04), color: WARS.fg, ...NOWRAP };
+  const keep = t => t.replace(/^ /, ' ').replace(/ $/, ' ');
+  const parts = prize ? line.split(prize) : [line];
+  const kids = [];
+  parts.forEach((part, i) => {
+    if (i) kids.push(text({ ...st, color: WARS.gold }, prize));
+    if (part) kids.push(text(st, keep(part)));
+  });
+  return row({ alignItems: 'flex-end', ...extra }, kids);
+}
+// The 13° green field at the foot of a portrait graphic (height, and where the cut meets the
+// left edge, measured from the field's top). Same shear as resultsField, any canvas height.
+function warsField(Hd, height, cutTop) {
+  const boxH = height * 2 + 300;
+  return h({ position: 'absolute', left: 0, top: Hd - height, width: 1080, height, overflow: 'hidden', display: 'flex' }, [
+    h({ position: 'absolute', left: 0, top: cutTop - Math.round(540 * TAN13), width: 1080, height: boxH, background: WARS.green, transform: 'skewY(-13deg)' }, ''),
+  ]);
+}
+// The eight seats in one row, in the order they qualified; an unfilled seat is a numbered silhouette.
+function warsSeats(d, g) {
+  const seats = (d.seats || []).slice(0, 8);
+  while (seats.length < 8) seats.push({ n: seats.length + 1, filled: false });
+  return seats.map((s, i) => {
+    const n = s.n || i + 1;
+    const filled = !!s.filled;
+    const ring = s.ring === 'champion' ? WARS.gold : s.ring === 'qualifier' ? WARS.purple : null;
+    // Satori ignores textAlign on a nowrap box, so every label is a nowrap line the column
+    // centres. A two-word name wider than the seat breaks at a space on the portrait pieces
+    // (the thumbnail keeps one line and steps the size down instead).
+    const label = filled ? clip(s.name || '', 24) : 'Seat ' + n;
+    const words = label.split(' ');
+    let lines = [label];
+    if (filled && !g.nowrap && words.length > 1 && label.length * g.nameFs * 0.55 > g.w) {
+      const k = Math.max(1, Math.round(words.length / 2));
+      lines = [words.slice(0, k).join(' '), words.slice(k).join(' ')];
+    }
+    const maxW = g.nameMax || g.w + 8;
+    const nameFs = Math.min(...lines.map(l => warsFit(l, g.nameFs, 12, maxW, 0.55)));
+    const lineStyle = filled
+      ? { fontFamily: DISPLAY, fontWeight: 800, fontSize: nameFs, lineHeight: 1.05, letterSpacing: -Math.round(nameFs * 0.03),
+          color: s.ring === 'champion' ? WARS.gold : WARS.fg, ...NOWRAP }
+      : { fontFamily: MONO, fontWeight: 700, fontSize: g.seatFs, lineHeight: 1.05, letterSpacing: 1, color: WARS.dim, ...NOWRAP };
+    return col({ width: g.w, alignItems: 'center', flexShrink: 0 }, [
+      warsCircle(g.ph, { photo: filled ? s.photo : null, ring, ringWidth: g.ring, dashWidth: g.dash }),
+      col({ marginTop: g.nameMt, alignItems: 'center' }, lines.map(l => text(lineStyle, l))),
+    ]);
+  });
+}
+// The big slot laid as a ROW (feed + story): the photo left, the person right. A null `big` is
+// the final promo: the question mark, then the date and time big, then the premise.
+function warsBigRow(d, g) {
+  const champion = d.stage === 'champion';
+  const big = d.big;
+  const premise = text({ fontFamily: SANS, fontWeight: 400, fontSize: 26, lineHeight: 1.3, letterSpacing: -0.3, color: WARS.fg, marginTop: 20, width: g.premiseW }, d.premise || '');
+  let photo, tx;
+  if (!big) {
+    photo = warsCircle(g.ph, { qm: true, dashWidth: 4 });
+    tx = [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.when, lineHeight: 1.15, letterSpacing: -Math.round(g.when * 0.02), color: WARS.green, ...NOWRAP }, d.dateLabel || ''),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.when, lineHeight: 1.15, letterSpacing: -Math.round(g.when * 0.02), color: WARS.green, ...NOWRAP }, d.timeLabel || ''),
+      premise,
+    ];
+  } else {
+    photo = warsCircle(g.ph, { photo: big.photo, ring: champion ? WARS.gold : null, ringWidth: 8 });
+    const name = clip(big.name || '', 30);
+    const nameFs = warsFit(name, g.nm, 24, g.txW, 0.6);
+    tx = [text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: nameFs, lineHeight: 0.95, letterSpacing: -Math.round(nameFs * 0.04), color: champion ? WARS.gold : WARS.fg, ...NOWRAP }, name)];
+    if (big.handle) {
+      const handle = '@' + String(big.handle).replace(/^@/, '');
+      const hFs = warsFit(handle, g.ig, 18, g.txW - g.igi - 10, 0.6);
+      tx.push(row({ marginTop: 14 }, [
+        { type: 'img', props: { src: igIconDataUri(WARS.dim), style: { width: g.igi, height: g.igi, marginRight: 10, flexShrink: 0 } } },
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: hFs, lineHeight: 1, color: WARS.dim, ...NOWRAP }, handle),
+      ]));
+    }
+    if (big.tag) tx.push(warsTag(clip(big.tag, 28), champion ? { fill: WARS.gold, ink: WARS.bg, hgt: g.tagH, fs: g.tagFs, mt: 22, ml: 6 } : { fill: WARS.purple, ink: WARS.fg, hgt: g.tagH, fs: g.tagFs, mt: 22, ml: 6 }));
+    tx.push(premise);
+  }
+  return row({ position: 'absolute', left: g.pad, top: g.top, width: g.W - 2 * g.pad }, [
+    photo,
+    col({ marginLeft: 44, alignItems: 'flex-start' }, tx),
+  ]);
+}
+// The masthead shared by the three promo pieces: the logo, the event number, the lockup.
+function warsMast(d, g) {
+  return [
+    h({ position: 'absolute', left: g.pad, top: g.logoTop, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: g.logoH } } }]),
+    text({ position: 'absolute', ...(g.numLeft ? { left: g.pad } : { right: g.pad }), top: g.numTop, fontFamily: MONO, fontWeight: 700, fontSize: g.numFs, lineHeight: 1.2, letterSpacing: 0.6, color: WARS.dim, ...NOWRAP }, clip(d.eyebrow || '', 24)),
+    h({ position: 'absolute', left: g.pad, top: g.lockTop, display: 'flex' }, [warsLockup(g.S, d.lockupWord)]),
+  ];
+}
+// The event line under the lockup: the LIVE badge + the event on the final promo, else
+// "<event> · <date> · <time>" in green mono.
+function warsEye(d, g) {
+  const st = { fontFamily: MONO, fontWeight: 700, fontSize: 30, lineHeight: 1, letterSpacing: -0.3, color: WARS.green, ...NOWRAP };
+  const kids = d.stage === 'final'
+    ? [warsLive(38, 22, 12, 16), text(st, clip(d.eyebrow || '', 40))]
+    : [text(st, clip([d.eyebrow, d.dateLabel, d.timeLabel].filter(Boolean).join(' · '), 50))];
+  return row({ position: 'absolute', left: g.pad, top: g.eyeTop, height: 38 }, kids);
+}
+// The foot of the portrait pieces: the call to action bottom-left on the green field, the
+// prize bottom-right (hidden on the champion graphic, whose headline carries the amount).
+function warsFoot(d, g) {
+  const cta = d.cta || {};
+  const kids = [
+    col({ position: 'absolute', left: g.pad, bottom: g.ctaBottom }, [
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: g.ctaFs, lineHeight: 1, letterSpacing: -Math.round(g.ctaFs * 0.03), color: WARS.bg, ...NOWRAP }, clip(cta.label || '', 24)),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.urlFs, lineHeight: 1, letterSpacing: -0.3, color: WARS.bg, marginTop: g.urlMt, ...NOWRAP }, clip(cta.url || '', 28)),
+    ]),
+  ];
+  if (d.stage !== 'champion' && d.prizeAmount) {
+    kids.push(col({ position: 'absolute', right: g.pad, bottom: g.prizeBottom, alignItems: 'flex-end' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.prizeFs, lineHeight: 1, letterSpacing: -Math.round(g.prizeFs * 0.04), color: WARS.bg, ...NOWRAP }, d.prizeAmount),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.prizeLabelFs, lineHeight: 1.2, letterSpacing: -0.3, color: WARS.bg, marginTop: 4, ...NOWRAP }, d.prizeLabel || WARS_PRIZE_LABEL),
+    ]));
+  }
+  return kids;
+}
+// Feed and story share one build; `g` carries the geometry that differs between 4:5 and 9:16
+// (the story keeps Instagram's top and bottom 250px clear).
+function elementTournamentPortrait(d, story) {
+  const [Wd, Hd] = story ? TOURNAMENT_SIZES.tournamentStory : TOURNAMENT_SIZES.tournamentFeed;
+  const g = story
+    ? { W: Wd, pad: 72, logoTop: 262, logoH: 34, numTop: 258, numFs: 32, lockTop: 330, S: 140, eyeTop: 520, headTop: 572, headFs: 66,
+        top: 700, ph: 380, nm: 58, ig: 28, igi: 32, tagH: 44, tagFs: 23, when: 46, premiseW: 512, txW: 936 - 380 - 44,
+        seatsTop: 1136, seat: { w: 112, ph: 104, nameFs: 19, nameMt: 10, seatFs: 16, ring: 4, dash: 2 },
+        field: [620, 249], ctaBottom: 262, ctaFs: 52, urlFs: 40, urlMt: 14, prizeBottom: 268, prizeFs: 72, prizeLabelFs: 30 }
+    : { W: Wd, pad: 72, logoTop: 64, logoH: 32, numTop: 60, numFs: 32, lockTop: 128, S: 120, eyeTop: 288, headTop: 338, headFs: 64,
+        top: 440, ph: 340, nm: 60, ig: 30, igi: 34, tagH: 44, tagFs: 24, when: 44, premiseW: 552, txW: 936 - 340 - 44,
+        seatsTop: 820, seat: { w: 112, ph: 100, nameFs: 19, nameMt: 10, seatFs: 16, ring: 4, dash: 2 },
+        field: [300, 110], ctaBottom: 64, ctaFs: 42, urlFs: 34, urlMt: 12, prizeBottom: 72, prizeFs: 64, prizeLabelFs: 28 };
+  const kids = warsMast(d, g);
+  kids.push(warsEye(d, g));
+  kids.push(warsHeadline(d.headline || '', d.prizeAmount, g.headFs, 36, Wd - 2 * g.pad, { position: 'absolute', left: g.pad, top: g.headTop }));
+  kids.push(warsBigRow(d, g));
+  kids.push(row({ position: 'absolute', left: g.pad, top: g.seatsTop, width: Wd - 2 * g.pad, justifyContent: 'space-between', alignItems: 'flex-start' }, warsSeats(d, g.seat)));
+  kids.push(warsField(Hd, g.field[0], g.field[1]));
+  kids.push(...warsFoot(d, g));
+  return h({ position: 'relative', display: 'flex', width: Wd, height: Hd, background: WARS.bg, overflow: 'hidden' }, kids);
+}
+// The livestream thumbnail, 16:9, designed to read at 180px: the lockup, the big face (or the
+// question mark), the prize, the date, and a row of eight circles survive; the names are small.
+function elementTournamentThumb(d) {
+  const [Wd, Hd] = TOURNAMENT_SIZES.tournamentThumb;
+  const pad = 96, champion = d.stage === 'champion', big = d.big;
+  const kids = warsMast(d, { pad, logoTop: 64, logoH: 40, numTop: 124, numFs: 30, numLeft: true, lockTop: 180, S: 220 });
+  // the date, green, with the LIVE badge until the event has happened
+  const whenSt = { fontFamily: MONO, fontWeight: 700, fontSize: 56, lineHeight: 1, letterSpacing: -2, color: WARS.green, ...NOWRAP };
+  kids.push(row({ position: 'absolute', left: pad, top: 440, height: 64 }, [
+    ...(champion ? [] : [warsLive(64, 36, 20, 24, 6)]),
+    text(whenSt, clip([d.dateLabel, d.timeLabel].filter(Boolean).join(' · '), 40)),
+  ]));
+  kids.push(warsHeadline(d.headline || '', d.prizeAmount, 76, 40, 1260, { position: 'absolute', left: pad, top: 530 }));
+  if (!champion && d.prizeAmount) {
+    kids.push(row({ position: 'absolute', left: pad, top: 620, alignItems: 'flex-end' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 120, lineHeight: 1, letterSpacing: -7, color: WARS.gold, ...NOWRAP }, d.prizeAmount),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, letterSpacing: 3, textTransform: 'uppercase', color: WARS.gold, marginLeft: 22, marginBottom: 6, ...NOWRAP }, d.prizeLabel || WARS_PRIZE_LABEL),
+    ]));
+  }
+  kids.push(text({ position: 'absolute', left: pad, top: champion ? 640 : 752, width: 1260, fontFamily: SANS, fontWeight: 400, fontSize: 27, lineHeight: 1.3, letterSpacing: -0.4, color: WARS.fg }, d.premise || ''));
+  // the big slot, top right: the photo, then the person under it
+  const bigKids = [];
+  if (!big) bigKids.push(warsCircle(420, { qm: true, dashWidth: 5 }));
+  else {
+    bigKids.push(warsCircle(420, { photo: big.photo, ring: champion ? WARS.gold : null, ringWidth: 10 }));
+    const name = clip(big.name || '', 30);
+    const nameFs = warsFit(name, 48, 24, 460, 0.6);
+    bigKids.push(text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: nameFs, lineHeight: 1, letterSpacing: -Math.round(nameFs * 0.04), textAlign: 'center', color: champion ? WARS.gold : WARS.fg, marginTop: 22, ...NOWRAP }, name));
+    if (big.handle) {
+      const handle = '@' + String(big.handle).replace(/^@/, '');
+      const hFs = warsFit(handle, 26, 16, 460 - 36, 0.6);
+      bigKids.push(row({ marginTop: 10 }, [
+        { type: 'img', props: { src: igIconDataUri(WARS.dim), style: { width: 28, height: 28, marginRight: 8, flexShrink: 0 } } },
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: hFs, lineHeight: 1, color: WARS.dim, ...NOWRAP }, handle),
+      ]));
+    }
+    if (big.tag) bigKids.push(warsTag(clip(big.tag, 28), champion ? { fill: WARS.gold, ink: WARS.bg, hgt: 42, fs: 22, mt: 16 } : { fill: WARS.purple, ink: WARS.fg, hgt: 42, fs: 22, mt: 16 }));
+  }
+  kids.push(col({ position: 'absolute', right: pad, top: 96, width: 460, alignItems: 'center' }, bigKids));
+  // the eight seats along the bottom
+  kids.push(row({ position: 'absolute', left: pad, bottom: 56, width: Wd - 2 * pad, justifyContent: 'space-between', alignItems: 'flex-start' },
+    warsSeats(d, { w: 190, ph: 150, nameFs: 24, nameMt: 12, seatFs: 20, ring: 5, dash: 3, nowrap: true, nameMax: 200 })));
+  return h({ position: 'relative', display: 'flex', width: Wd, height: Hd, background: WARS.bg, overflow: 'hidden' }, kids);
+}
+// The bracket: 8 → 4 → 2 → 1 drawn left to right. The draw column carries photos, names and
+// "#seed · handle-or-city"; later columns the name and seed; empty slots are dashed purple
+// boxes; a competitor who lost dims to 40%; a winner's slot takes the purple border. Gold on
+// the champion slot and the prize only. Connectors are plain boxes: full purple past a decided
+// match, dimmed before it, so the eye follows the result.
+function elementTournamentBracket(d) {
+  const [Wd, Hd] = TOURNAMENT_SIZES.tournamentBracket;
+  const pad = 60;
+  const r1 = (d.r1 || []).slice(0, 4), r2 = (d.r2 || []).slice(0, 2), fin = d.final || {}, champ = d.champion || null;
+  while (r1.length < 4) r1.push({ a: null, b: null, winner: null });
+  while (r2.length < 2) r2.push({ a: null, b: null, winner: null });
+  const kids = [
+    h({ position: 'absolute', left: pad, top: 60, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 30 } } }]),
+    text({ position: 'absolute', right: pad, top: 56, fontFamily: MONO, fontWeight: 700, fontSize: 30, lineHeight: 1.27, letterSpacing: 0.6, color: WARS.dim, ...NOWRAP }, clip(d.eyebrow || '', 24)),
+    h({ position: 'absolute', left: pad, top: 116, display: 'flex' }, [warsLockup(100, d.lockupWord)]),
+    text({ position: 'absolute', left: pad, top: 244, fontFamily: DISPLAY, fontWeight: 900, fontSize: 40, lineHeight: 1, letterSpacing: -1.6, textTransform: 'uppercase', color: WARS.fg, ...NOWRAP }, 'Bracket'),
+    col({ position: 'absolute', right: pad, top: 244, alignItems: 'flex-end' }, [d.dateLabel, d.timeLabel].filter(Boolean).map(l =>
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, lineHeight: 1.25, letterSpacing: -0.6, color: WARS.green, ...NOWRAP }, clip(l, 30)))),
+  ];
+  // Geometry (bracket.html): the draw (wide, with photos), the Final 4, the Final 2, the champion.
+  const X = [{ x: 60, w: 280 }, { x: 372, w: 190 }, { x: 594, w: 190 }, { x: 816, w: 204 }];
+  const SH = 76, PAIR = 12, GAP = 34, TOP = 372;
+  const y1 = [];
+  for (let i = 0; i < 8; i++) y1.push(TOP + i * SH + Math.floor(i / 2) * (GAP - PAIR) + i * PAIR);
+  const mid = y => y + SH / 2;
+  const y2 = [0, 1, 2, 3].map(i => (mid(y1[2 * i]) + mid(y1[2 * i + 1])) / 2 - SH / 2);
+  const y3 = [0, 1].map(i => (mid(y2[2 * i]) + mid(y2[2 * i + 1])) / 2 - SH / 2);
+  const yF = (mid(y3[0]) + mid(y3[1])) / 2;
+  // Round labels over each column: the live round on purple, the champion label gold once there is one.
+  const live = champ ? 3 : (fin.a || fin.b) ? 2 : r2.some(m => m.a || m.b) ? 1 : 0;
+  [['Round 1', 0], ['Final 4', 1], ['Final 2', 2], ['Champion', 3]].forEach(([t, i]) => {
+    const gold = i === 3 && champ, on = i === live;
+    kids.push(h({ position: 'absolute', left: X[i].x + 6, top: 316, width: X[i].w - 12, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      border: `2px solid ${gold ? WARS.gold : on ? WARS.purple : WARS.line}`, background: gold ? WARS.gold : on ? WARS.purple : 'transparent',
+      borderRadius: 4, transform: `skewX(${SKEW}deg)` }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, lineHeight: 1, letterSpacing: 0.7, textTransform: 'uppercase', color: gold ? WARS.bg : on ? WARS.fg : WARS.dim, transform: `skewX(${-SKEW}deg)`, ...NOWRAP }, t),
+    ]));
+  });
+  // A slot: a person (state '' | 'won' | 'out'), or an empty dashed box with a label.
+  const slot = (x, y, w, state, inner, hgt = SH, extra = {}) => h({ position: 'absolute', left: x, top: y, width: w, height: hgt, display: 'flex', alignItems: 'center',
+    borderRadius: 8, background: WARS.panel, border: `2px solid ${state === 'won' ? WARS.purple : WARS.line}`, paddingLeft: 14, paddingRight: 14,
+    opacity: state === 'out' ? 0.4 : 1, ...extra }, inner);
+  const empty = (x, y, w, label, hgt = SH, inner = null) => h({ position: 'absolute', left: x, top: y, width: w, height: hgt, display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: `2px dashed ${WARS.purple}` }, inner || [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 16, lineHeight: 1, letterSpacing: 0.6, textTransform: 'uppercase', color: WARS.purple, ...NOWRAP }, label),
+  ]);
+  const person = (c, w, withSub) => {
+    const name = clip(c.name || '', 26);
+    const nameFs = warsFit(name, 24, 12, w - 96, 0.55);
+    const seed = c.seed != null ? '#' + c.seed : '';
+    const sub = withSub && c.sub ? seed + ' · ' + c.sub : seed;
+    const subFs = warsFit(sub, 16, 11, w - 96, 0.6);
+    return [
+      warsCircle(52, { photo: c.photo, dashWidth: 0 }),
+      col({ marginLeft: 12, alignItems: 'flex-start' }, [
+        text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: nameFs, lineHeight: 1, letterSpacing: -Math.round(nameFs * 0.03), color: WARS.fg, ...NOWRAP }, name),
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: subFs, lineHeight: 1, color: WARS.dim, marginTop: 6, ...NOWRAP }, sub),
+      ]),
+    ];
+  };
+  // Everyone a decided match went against, by seed — a loser dims in EVERY column they
+  // appear in, so a finalist who lost dims all the way back to the draw (the mockup's lostIn).
+  const outSeeds = new Set();
+  for (const m of [...r1, ...r2, fin]) {
+    if (!m || !m.winner) continue;
+    const loser = m[m.winner === 'a' ? 'b' : 'a'];
+    if (loser && loser.seed != null) outSeeds.add(loser.seed);
+  }
+  const stateOf = (m, side) => {
+    const c = m && m[side];
+    if (c && outSeeds.has(c.seed)) return 'out';
+    return m && m.winner === side ? 'won' : '';
+  };
+  // Column 1: the draw
+  r1.forEach((m, i) => ['a', 'b'].forEach((side, j) => {
+    const c = m[side];
+    const y = y1[2 * i + j];
+    if (!c) { kids.push(empty(X[0].x, y, X[0].w, 'TBD')); return; }
+    kids.push(slot(X[0].x, y, X[0].w, stateOf(m, side), person(c, X[0].w, true)));
+  }));
+  // Column 2: the Final 4 (the winner of each draw matchup; the empty label names the matchup by seed)
+  for (let i = 0; i < 4; i++) {
+    const m = r2[Math.floor(i / 2)], side = i % 2 ? 'b' : 'a';
+    const c = m[side];
+    if (!c) {
+      const a = r1[i].a, b = r1[i].b;
+      kids.push(empty(X[1].x, y2[i], X[1].w, a && b && a.seed != null && b.seed != null ? a.seed + 'v' + b.seed : 'TBD'));
+      continue;
+    }
+    kids.push(slot(X[1].x, y2[i], X[1].w, stateOf(m, side), person(c, X[1].w, false)));
+  }
+  // Column 3: the Final 2
+  for (let i = 0; i < 2; i++) {
+    const side = i ? 'b' : 'a', c = fin[side];
+    if (!c) { kids.push(empty(X[2].x, y3[i], X[2].w, 'TBD')); continue; }
+    kids.push(slot(X[2].x, y3[i], X[2].w, stateOf(fin, side), person(c, X[2].w, false)));
+  }
+  // Column 4: the champion — gold only here and on the prize
+  const prize = d.prizeAmount || '';
+  if (!champ) {
+    kids.push(empty(X[3].x, yF - 60, X[3].w, 'Champion', 120, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 16, lineHeight: 1, letterSpacing: 0.6, textTransform: 'uppercase', color: WARS.purple, ...NOWRAP }, 'Champion'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, lineHeight: 1, letterSpacing: -2, color: WARS.gold, marginTop: 8, ...NOWRAP }, prize),
+    ]));
+  } else {
+    const name = clip(champ.name || '', 26);
+    const nameFs = warsFit(name, 26, 12, X[3].w - 20, 0.55);
+    kids.push(h({ position: 'absolute', left: X[3].x, top: yF - 100, width: X[3].w, height: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      borderRadius: 8, background: WARS.gold, border: `2px solid ${WARS.gold}`, paddingLeft: 10, paddingRight: 10 }, [
+      champ.photo ? warsImg(champ.photo, 72, { borderRadius: 72 }) : h({ display: 'flex', width: 72, height: 72, borderRadius: 72, background: 'rgba(14,12,26,0.18)' }, ''),
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 18, lineHeight: 1, letterSpacing: 0.4, textTransform: 'uppercase', color: WARS.bg, marginTop: 10, ...NOWRAP }, 'Champion'),
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: nameFs, lineHeight: 1, letterSpacing: -Math.round(nameFs * 0.03), color: WARS.bg, marginTop: 8, ...NOWRAP }, name),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, letterSpacing: -1.7, color: WARS.bg, marginTop: 8, ...NOWRAP }, prize),
+    ]));
+  }
+  // Connectors: each pair joins at the gap's centre line, then runs into the next slot.
+  const T = 3;
+  const line = (x, y, w, hgt, dim) => kids.push(h({ position: 'absolute', left: x, top: y, width: w, height: hgt, background: WARS.purple, opacity: dim ? 0.35 : 1 }, ''));
+  const join = (colIdx, ys, i, decided) => {
+    const x1 = X[colIdx].x + X[colIdx].w, xm = x1 + (X[colIdx + 1].x - x1) / 2, x2 = X[colIdx + 1].x;
+    const a = mid(ys[2 * i]), c = mid(ys[2 * i + 1]), m = (a + c) / 2;
+    line(x1, a - T / 2, xm - x1, T, !decided);
+    line(x1, c - T / 2, xm - x1, T, !decided);
+    line(xm - T / 2, a, T, c - a, !decided);
+    line(xm, m - T / 2, x2 - xm, T, !decided);
+  };
+  for (let i = 0; i < 4; i++) join(0, y1, i, !!r1[i].winner);
+  for (let i = 0; i < 2; i++) join(1, y2, i, !!r2[i].winner);
+  join(2, y3, 0, !!fin.winner);
+  // The call to action over a rule, the prize right
+  const cta = d.cta || {};
+  kids.push(h({ position: 'absolute', left: pad, right: pad, bottom: 60, borderTop: `2px solid ${WARS.line}`, paddingTop: 28, display: 'flex', flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }, [
+    col({ alignItems: 'flex-start' }, [
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 36, lineHeight: 1, letterSpacing: -1, textTransform: 'uppercase', color: WARS.fg, ...NOWRAP }, clip(cta.label || '', 24)),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, lineHeight: 1, color: WARS.green, marginTop: 12, ...NOWRAP }, clip(cta.url || '', 28)),
+    ]),
+    col({ alignItems: 'flex-end' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 52, lineHeight: 1, letterSpacing: -2.6, color: WARS.gold, ...NOWRAP }, prize),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, lineHeight: 1.2, color: WARS.dim, marginTop: 2, ...NOWRAP }, d.prizeLabel || WARS_PRIZE_LABEL),
+    ]),
+  ]));
+  return h({ position: 'relative', display: 'flex', width: Wd, height: Hd, background: WARS.bg, overflow: 'hidden' }, kids);
+}
+
 // ============ The Track Report — the artist's report, one 'trackPage' element ============
 // Spec: docs/specs/track-report-spec.md. Design: the Room Report Redesign mockup
 // (mim repo docs/mockups/anr-room-report-v2.html) — the report opens with a DECISION and every
@@ -1092,6 +1525,10 @@ function element(type, data = {}) {
   if (type === 'resultsSlide') return elementResultsSlide(data);
   if (type === 'countdownSlide') return elementCountdownSlide(data);
   if (type === 'winnerPost') return elementWinnerPost(data);
+  if (type === 'tournamentFeed') return elementTournamentPortrait(data, false);
+  if (type === 'tournamentStory') return elementTournamentPortrait(data, true);
+  if (type === 'tournamentThumb') return elementTournamentThumb(data);
+  if (type === 'tournamentBracket') return elementTournamentBracket(data);
   throw new Error('unknown card type: ' + type);
 }
 
@@ -1106,6 +1543,7 @@ function sizeOf(type) {
   if (type === 'countdownSlide') return COUNTDOWN_SIZE;
   if (type === 'winnerPost') return WINNER_SIZE;
   if (type === 'trackPage') return TRACK_SIZE;
+  if (TOURNAMENT_SIZES[type]) return TOURNAMENT_SIZES[type];
   return REFER_SIZES[type] || [W, H];
 }
 // `outWidth` rasterises the same layout at a smaller width (a thumbnail): the element is
@@ -1120,4 +1558,4 @@ async function renderPng(type, data, outWidth) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };
+module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
