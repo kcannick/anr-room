@@ -4294,7 +4294,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('room_live email defaults ON', fp.status === 200 && fp.d.topics.room_live.channels.email === true, JSON.stringify(fp.d.topics));
   ok('room_live sms defaults ON', fp.d.topics.room_live.channels.sms === true, JSON.stringify(fp.d.topics.room_live));
   ok('daily digest defaults OFF', fp.d.topics.digest_daily.channels.email === false, JSON.stringify(fp.d.topics.digest_daily));
-  ok('weekly digest defaults OFF', fp.d.topics.digest_weekly.channels.email === false, JSON.stringify(fp.d.topics.digest_weekly));
+  // Flipped 2026-10-06: the weekly update is the cadence for everyone the daily notice no
+  // longer reaches, so it is ON by default (non-engaged by default; see the gate tests).
+  ok('weekly update defaults ON', fp.d.topics.digest_weekly.channels.email === true, JSON.stringify(fp.d.topics.digest_weekly));
   ok('SMS not offered for a digest', fp.d.topics.digest_daily.channels.sms === undefined, JSON.stringify(fp.d.topics.digest_daily.channels));
   // THE no-backfill assertion: those defaults came from the catalog, not from rows.
   const freshRows = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [freshUid])).c);
@@ -5410,6 +5412,122 @@ async function startVoting(sessionId, headers, minutes = 5) {
   delete process.env.BREVO_API_KEY;
   await anDb.run('UPDATE rounds SET is_reference = ?, artist_email = ? WHERE id = ?', [brvRefWas.is_reference, brvRefWas.artist_email, brvRounds[2]]);
   brevoMock.close();
+
+  // ===================== EMAIL ENGAGEMENT GATE (043, 2026-10-06) =====================
+  // The audit: the daily notice went to every address (766/day), 4% clicked. The audience
+  // now gates on activity; the weekly update takes everyone else and sunsets; bounced
+  // addresses are out everywhere; every A&R mail carries a one-click unsubscribe.
+  console.log('\n— email engagement gate: daily notice reaches the active, the new, and the explicit —');
+  process.env.NOTIFY_LINK_SECRET = 'test-notify-link-secret';
+  const egDb = require('./db');
+  const egNow = Date.now(), DAY = 86400000;
+  const egUser = async (uid, email, first, last) => egDb.run(
+    'INSERT INTO users (uid, email, name, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,0,0)',
+    [uid, email, uid, egNow - first * DAY, egNow - last * DAY]);
+  await egUser('eg_stale', 'eg-stale@test.com', 90, 60);        // inactive for 60 days
+  await egUser('eg_active', 'eg-active@test.com', 90, 3);        // seen 3 days ago
+  await egUser('eg_new', 'eg-new@test.com', 2, 2);               // joined 2 days ago, never back
+  await egUser('eg_explicit', 'eg-explicit@test.com', 90, 60);   // stale, but asked for the daily
+  await egUser('eg_bounced', 'eg-bounced@test.com', 90, 1);      // active, but the address is dead
+  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_explicit','daily_open','email',1," + egNow + ")");
+  await egDb.run('UPDATE users SET email_bounced_at = ? WHERE uid = ?', [egNow, 'eg_bounced']);
+  const audOf = async (topic) => { const a = srv._notifyAudience(topic, 'email'); return new Set((await egDb.all(`SELECT u.uid ${a.sql}`, a.params)).map(r => r.uid)); };
+  const dailyAud = await audOf('daily_open');
+  ok('gate: an A&R seen within 30 days gets the daily notice', dailyAud.has('eg_active'));
+  ok('gate: an account under 14 days old gets it (habit window)', dailyAud.has('eg_new'));
+  ok('gate: an explicit ON gets it however stale', dailyAud.has('eg_explicit'));
+  ok('gate: a stale account on the default does NOT', !dailyAud.has('eg_stale'));
+  ok('gate: a bounced address is out even when active', !dailyAud.has('eg_bounced'));
+  ok('gate: the constants are the ones the copy quotes (30 / 14 / 4)',
+    srv._ENGAGED.ENGAGED_DAYS === 30 && srv._ENGAGED.NEW_ACCOUNT_DAYS === 14 && srv._ENGAGED.WEEKLY_SUNSET_SENDS === 4, JSON.stringify(srv._ENGAGED));
+
+  console.log('\n— the weekly update: the non-engaged by default, the explicit always, sunset after 4 —');
+  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_active','digest_weekly','email',1," + egNow + ")");
+  let weeklyAud = await audOf('digest_weekly');
+  ok('weekly: a stale account on the default is on it', weeklyAud.has('eg_stale'));
+  ok('weekly: a new account is NOT (it gets the daily)', !weeklyAud.has('eg_new'));
+  ok('weekly: an active account that chose Weekly is on it', weeklyAud.has('eg_active'));
+  ok('weekly: a bounced address is out', !weeklyAud.has('eg_bounced'));
+  // Sunset: four sent weeklies since they were last seen = stop. One sent BEFORE their last
+  // activity does not count against them.
+  for (let i = 0; i < 4; i++) {
+    await egDb.run("INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id) VALUES (?,?,?,?,?,?,?,?,?)",
+      ['eg_w' + i, 'w', 'w', 'email', null, 'done', egNow, 'digest_weekly', '2026-0' + (5 + i) + '-01']);
+    await egDb.run("INSERT INTO notify_recipients (broadcast_id, uid, channel, dest, status, sent_at) VALUES (?,?,?,?,?,?)",
+      ['eg_w' + i, 'eg_stale', 'email', 'eg-stale@test.com', 'sent', i === 0 ? egNow - 70 * DAY : egNow - (10 - i) * DAY]);
+  }
+  weeklyAud = await audOf('digest_weekly');
+  ok('sunset: three unanswered weeklies since last seen is not yet four — still on it', weeklyAud.has('eg_stale'));
+  await egDb.run("INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id) VALUES ('eg_w4','w','w','email',NULL,'done',?, 'digest_weekly','2026-09-01')", [egNow]);
+  await egDb.run("INSERT INTO notify_recipients (broadcast_id, uid, channel, dest, status, sent_at) VALUES ('eg_w4','eg_stale','email','eg-stale@test.com','sent',?)", [egNow - 2 * DAY]);
+  weeklyAud = await audOf('digest_weekly');
+  ok('sunset: the fourth unanswered weekly ends it', !weeklyAud.has('eg_stale'));
+  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_stale','digest_weekly','email',1," + egNow + ")");
+  ok('sunset: an explicit ON is never sunset', (await audOf('digest_weekly')).has('eg_stale'));
+  await egDb.run("DELETE FROM notify_prefs WHERE uid = 'eg_stale'");
+  await egDb.run("UPDATE users SET last_seen = ? WHERE uid = 'eg_stale'", [egNow - DAY]);
+  ok('sunset: coming back (last_seen moves past the sends) restarts the count — and the daily takes over',
+    !(await audOf('digest_weekly')).has('eg_stale') && (await audOf('daily_open')).has('eg_stale'));
+  await egDb.run("UPDATE users SET last_seen = ? WHERE uid = 'eg_stale'", [egNow - 60 * DAY]);
+
+  console.log('\n— the weekly sender: one broadcast per week, drained, names only —');
+  const wq = await srv._enqueueWeeklyUpdate('2026-09-21');
+  ok('weekly: enqueues a broadcast with recipients', wq.broadcastId && wq.queued > 0, JSON.stringify(wq));
+  const wq2 = await srv._enqueueWeeklyUpdate('2026-09-21');
+  ok('weekly: a second enqueue for the same week adopts the same broadcast', wq2.broadcastId === wq.broadcastId, JSON.stringify([wq, wq2]));
+  const wbc = await egDb.all("SELECT * FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = '2026-09-21'");
+  ok('weekly: exactly one broadcast row for the week', wbc.length === 1 && /week of Mon, Sep 21/.test(wbc[0].subject), JSON.stringify(wbc.map(b => b.subject)));
+  const wd = await srv._drainWeeklyUpdate({ broadcastId: wq.broadcastId, limit: 100, base: 'https://x' });
+  ok('weekly: the drain sends them all and marks the broadcast done', wd.remaining === 0 && wd.failed === 0 && wd.sent === wq.queued
+    && (await egDb.get("SELECT status FROM notify_broadcasts WHERE id = ?", [wq.broadcastId])).status === 'done', JSON.stringify(wd));
+  const wc = { weekLabel: 'Mon, Sep 21 – Sun, Sep 27', records: [{ title: 'Song A', artist: 'Artist A' }], ars: [{ name: 'Kelby Cannick', location: 'Atlanta, GA' }],
+    totals: { records: 40, ars: 25, ratings: 300 }, openCount: 8, closesLabel: 'at 3:00 PM ET tomorrow', playUrl: 'https://x/daily?s=abc' };
+  const wh = srv._weeklyUpdateEmailHtml(wc, 'https://x/profile#nt=t'), wt = srv._weeklyUpdateEmailText(wc, 'https://x/profile#nt=t');
+  ok('weekly mail: ranks, names, the open day and the CTA — no score anywhere',
+    /1\. <b>Song A<\/b> — Artist A/.test(wh) && /Kelby Cannick/.test(wh) && /8 records are open/.test(wh) && /Rate today's records/.test(wh)
+      && !/\d\.\d/.test(wt) && /Rating closes at 3:00 PM ET tomorrow/.test(wt) && /Top records:\n1\. Song A — Artist A/.test(wt) && /Manage your notifications/.test(wt), wt);
+  ok('weekly: not due on a non-Wednesday', (await srv._weeklyUpdateDue(Date.parse('2026-10-05T18:00:00Z'))) === null);
+  const dueW = await srv._weeklyUpdateDue(Date.parse('2026-10-07T18:00:00Z')); // Wed 2PM ET
+  ok('weekly: due on Wednesday after 1PM ET, for the last complete week', dueW === '2026-09-28', String(dueW));
+  ok('weekly: not due on Wednesday morning', (await srv._weeklyUpdateDue(Date.parse('2026-10-07T14:00:00Z'))) === null);
+
+  console.log('\n— bounces: a dead address is noted once and mailed never again —');
+  ok('bounce: a hard bounce stamps email_bounced_at', (await srv._noteEmailOutcome('EG-Active@test.com', { ok: false, error: 'x', reject: 'hard-bounce' })) === true
+    && (await egDb.get("SELECT email_bounced_at FROM users WHERE uid = 'eg_active'")).email_bounced_at != null);
+  ok('bounce: a soft bounce (full inbox) does not', (await srv._noteEmailOutcome('eg-new@test.com', { ok: false, error: 'x', reject: 'soft-bounce' })) === false
+    && (await egDb.get("SELECT email_bounced_at FROM users WHERE uid = 'eg_new'")).email_bounced_at == null);
+  ok('bounce: a successful send never does', (await srv._noteEmailOutcome('eg-new@test.com', { ok: true })) === false);
+  ok('bounce: the bounced active A&R is out of the daily audience now', !(await audOf('daily_open')).has('eg_active'));
+  await egDb.run("UPDATE users SET email_bounced_at = NULL WHERE uid = 'eg_active'");
+
+  console.log('\n— announcements default to the active list; everyone is a choice —');
+  const egAud = (await call('/api/admin/notify/audience', null, 'GET', BOOTH)).d;
+  ok('audience readout carries both counts', egAud.engaged && egAud.engaged.email < egAud.email && egAud.engagedDays === 30, JSON.stringify(egAud));
+  const egBc = await call('/api/admin/notify/start', { subject: 'Hi', message: 'Hello', email: true }, 'POST', BOOTH);
+  const egRows = new Set((await egDb.all('SELECT uid FROM notify_recipients WHERE broadcast_id = ?', [egBc.d.broadcastId])).map(r => r.uid));
+  ok('announcement: the default audience is the active list', egRows.has('eg_active') && egRows.has('eg_new') && !egRows.has('eg_stale') && !egRows.has('eg_bounced'), JSON.stringify([...egRows].filter(u => u.startsWith('eg_'))));
+  const egBcAll = await call('/api/admin/notify/start', { subject: 'Hi', message: 'Hello', email: true, audience: 'all' }, 'POST', BOOTH);
+  const egRowsAll = new Set((await egDb.all('SELECT uid FROM notify_recipients WHERE broadcast_id = ?', [egBcAll.d.broadcastId])).map(r => r.uid));
+  ok('announcement: "all" reaches the stale account too, but still not a bounced one', egRowsAll.has('eg_stale') && !egRowsAll.has('eg_bounced'));
+
+  console.log('\n— one-click unsubscribe (List-Unsubscribe-Post) —');
+  const egTok = srv._mintNotifyLink('eg_new');
+  const unsubBad = await fetch(base + '/api/notify/unsubscribe?nt=np1.eg_new.9999999999.nope', { method: 'POST' });
+  ok('unsubscribe: a bad token is refused', unsubBad.status === 401, 'got ' + unsubBad.status);
+  const unsubGet = await fetch(base + '/api/notify/unsubscribe?nt=' + encodeURIComponent(egTok), { redirect: 'manual' });
+  ok('unsubscribe: a browser GET lands on the contact center with the token', unsubGet.status === 302 && /\/profile#nt=/.test(unsubGet.headers.get('location') || ''), unsubGet.status + ' ' + unsubGet.headers.get('location'));
+  ok('unsubscribe: still subscribed after the GET', Number((await egDb.get("SELECT COALESCE(email_opt_out,0) AS o FROM users WHERE uid = 'eg_new'")).o) === 0);
+  const unsubPost = await fetch(base + '/api/notify/unsubscribe?nt=' + encodeURIComponent(egTok), { method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' });
+  ok('unsubscribe: the POST sets the global kill switch', unsubPost.status === 200 && Number((await egDb.get("SELECT COALESCE(email_opt_out,0) AS o FROM users WHERE uid = 'eg_new'")).o) === 1, 'got ' + unsubPost.status);
+  ok('unsubscribe: and the daily audience drops them', !(await audOf('daily_open')).has('eg_new'));
+  ok('send options: the unsubscribe URL rides the header for a registered A&R', /\/api\/notify\/unsubscribe\?nt=np1\./.test(srv._notifyUnsubscribeUrl('https://x', 'eg_new')));
+  delete process.env.NOTIFY_LINK_SECRET;
+  ok('send options: no secret, no header (null URL)', srv._notifyUnsubscribeUrl('https://x', 'eg_new') === null);
+  await egDb.run("DELETE FROM notify_recipients WHERE uid LIKE 'eg_%'");
+  await egDb.run("DELETE FROM notify_broadcasts WHERE id LIKE 'eg_w%'");
+  await egDb.run("DELETE FROM users WHERE uid LIKE 'eg_%'");
+  await egDb.run("DELETE FROM notify_prefs WHERE uid LIKE 'eg_%'");
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();

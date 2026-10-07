@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 043; suite green)
+## Current state (migrations through 044; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -917,6 +917,32 @@ live on anr.makinitmag.com.
   (≥23h apart, after 4AM ET; continues on later ticks while `remaining`; failures retry hourly).
   Brevo allows one SMS number per contact, so a phone already claimed (A&Rs first) is left off
   the next contact. `BREVO_API_KEY` env; `BREVO_API_BASE` is the test mock. Doc: docs/brevo-sync.md.
+- **Email engagement gate** (043, 2026-10-06). The audit (Mandrill activity export joined to
+  users/prefs/votes, per-address table kept local in `docs/reports/`, gitignored): the daily
+  "records are open" notice went to every address (~766/day), 4% clicked, 607 of 776 recipients
+  had neither clicked nor rated in 30 days. Now: **`daily_open` is default-ON for ENGAGED
+  accounts only** — `users.last_seen` within `ENGAGED_DAYS` (30; stamped at login AND at vote)
+  or `first_seen` within `NEW_ACCOUNT_DAYS` (14) — an explicit ON keeps it regardless
+  (`engagedSql()` composed into `notifyAudience`; `(p.enabled = 1 OR gate)`). **`digest_weekly`
+  flipped to default ON with a real sender** (`enqueueWeeklyUpdate`/`drainWeeklyUpdate`, kind
+  `digest_weekly`, ref_id = the Monday; queued by the daily cron on Wednesday ≥1PM ET for the
+  last complete week; names/ranks only, no scores): by default it goes to the NON-engaged only
+  and **sunsets after `WEEKLY_SUNSET_SENDS` (4) sent weeklies with no activity since**
+  (counted via `notify_recipients.sent_at > users.last_seen`, index `idx_notify_rcpt_uid`); an
+  explicit ON is never sunset. **`users.email_bounced_at`** is set by `noteEmailOutcome` when
+  the provider rejects an ADDRESS (hard-bounce/invalid/spam/unsub — `isDeadAddress` in
+  email.js; soft bounces never) and every email audience skips it; nothing clears it (email
+  is the identity key) — the operator clears by hand. **Every A&R mail carries
+  `List-Unsubscribe` + `List-Unsubscribe-Post: One-Click`** → `POST /api/notify/unsubscribe?nt=
+  <np1>` sets `email_opt_out` (the global switch — that is what the inbox button means); GET
+  redirects into `/profile#nt=`. **Sends are tagged** per stream in Mandrill/Resend
+  (`sendEmail(..., { tag, unsubscribe })`: daily_open, digest_daily, digest_weekly,
+  announcement, room_live, recap, otp, artist_report, artist_headsup) so provider reporting can
+  split by stream. **Mass announcements default to the engaged audience** (`audience:
+  'engaged'|'all'` on `notify/start`; the composer's "Send to" select; `notify/audience` reports
+  both counts). One-off data pass run against prod the same day: stale pending rows from the
+  Aug/Sep broadcasts cancelled, the 7 bouncing addresses stamped, explicit OFF prefs written
+  for the 132 accounts with zero opens and no play.
 
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
@@ -928,10 +954,8 @@ live on anr.makinitmag.com.
    This is the largest remaining build; not started.
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
-3. **Digest senders** — the DAILY one shipped with A&R Daily (033): `digest_daily` now has a
-   real sender, a chunked drain and a `*/5` cron, and is `notifyAudience()`'s first production
-   caller. **`digest_weekly` still has nothing behind it** — same shape, no sender. Its default
-   is OFF and should stay off until there is one. Web push is a third channel on the same
+3. **Digest senders** — both shipped: `digest_daily` (033, opt-in) and `digest_weekly` (043,
+   default ON for the non-engaged, sunsets after 4). Web push is a third channel on the same
    table, still gated behind the PWA shell.
 4. **PWA install + iOS web push** — DEFERRED behind a branding / site facelift pass (which
    gates the install prompt work).

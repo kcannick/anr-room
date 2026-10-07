@@ -22,7 +22,7 @@ const path = require('path');
 })();
 
 const db = require('./db');
-const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
+const { sendOtp, sendFeedback, sendEmail, isDeadAddress, escapeHtml } = require('./email');
 const { sendSms, PROVIDER: SMS_PROVIDER, smsSegments, isGsm7, SMS_SINGLE_SEGMENT, normalize: smsNormalize } = require('./sms');
 const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy } = require('./scoring');
@@ -276,10 +276,30 @@ const NOTIFY_TOPICS = {
   room_live:     { label: 'A room goes live', channels: { email: 1, sms: 1 } },
   // The A&R Daily open notice (2026-09-27, operator's call: ON by default). Email only — a
   // daily text to the whole list is a cost and an opt-out generator the operator declined.
-  daily_open:    { label: 'Daily records open', channels: { email: 1 } },
+  // `engaged` (2026-10-06): the DEFAULT reaches only active accounts (see engagedSql); an
+  // explicit ON keeps a daily mail regardless. The October audit: 766 sends a day, 4% clicked,
+  // 607 of 776 recipients had neither clicked nor rated in 30 days.
+  daily_open:    { label: 'Daily records open', channels: { email: 1 }, engaged: true },
   digest_daily:  { label: 'Daily update',     channels: { email: 0 } },
-  digest_weekly: { label: 'Weekly update',    channels: { email: 0 } },
+  // The weekly update (2026-10-06) is the cadence for everyone the daily notice no longer
+  // reaches: ON by default, `nudge` = the default goes to the NON-engaged only (the engaged
+  // already hear from us daily) and stops after WEEKLY_SUNSET_SENDS unanswered sends. An
+  // explicit ON gets it every week regardless. Sender: enqueueWeeklyUpdate / drainWeeklyUpdate.
+  digest_weekly: { label: 'Weekly update',    channels: { email: 1 }, nudge: true },
 };
+// "Engaged" = signed in or rated within ENGAGED_DAYS (users.last_seen is stamped at both), or
+// an account younger than NEW_ACCOUNT_DAYS (a new A&R gets the daily mail for two weeks to
+// form the habit). WEEKLY_SUNSET_SENDS weekly mails with no activity since = stop sending;
+// the preference stays for them to turn back on.
+const ENGAGED_DAYS = 30;
+const NEW_ACCOUNT_DAYS = 14;
+const WEEKLY_SUNSET_SENDS = 4;
+// A FRAGMENT with its params, over users aliased `u`. Composes into audience queries by string
+// append, so its '?'s bind by position in the final string (the toPg() rule).
+function engagedSql(at = now()) {
+  return { sql: '(u.last_seen >= ? OR u.first_seen >= ?)',
+    params: [at - ENGAGED_DAYS * 86400000, at - NEW_ACCOUNT_DAYS * 86400000] };
+}
 const NOTIFY_CHANNELS = ['email', 'sms'];
 
 // Is (topic, channel) a real, offered pair? Everything that writes prefs goes through this
@@ -321,14 +341,32 @@ function notifyAudience(topic, channel) {
       LEFT JOIN notify_prefs p
              ON p.uid = u.uid AND p.topic = ? AND p.channel = '${channel}'`;
   if (channel === 'email') {
-    return {
-      sql: `${join}
+    const t = NOTIFY_TOPICS[topic];
+    const eng = engagedSql();
+    // email_bounced_at (043): the provider refused this address for good; no topic mails it.
+    let sql = `${join}
      WHERE COALESCE(u.blocked, 0) = 0
        AND COALESCE(u.email_opt_out, 0) = 0
+       AND u.email_bounced_at IS NULL
        AND u.email IS NOT NULL AND u.email != ''
-       AND COALESCE(p.enabled, ${def}) = 1`,
-      params: [topic],
-    };
+       AND COALESCE(p.enabled, ${def}) = 1`;
+    const params = [topic];
+    // `(p.enabled = 1 OR x)`: NULL OR false is NULL, which WHERE treats as false — so a
+    // default-on row is gated by x and an explicit ON row passes. Exactly the intent.
+    if (t.engaged) { sql += `
+       AND (p.enabled = 1 OR ${eng.sql})`; params.push(...eng.params); }
+    if (t.nudge) {
+      sql += `
+       AND (p.enabled = 1 OR NOT ${eng.sql})`; params.push(...eng.params);
+      // Sunset: sent weekly rows since the person was last seen. A row that went out BEFORE
+      // their last activity does not count — they came back, the count starts over.
+      sql += `
+       AND (p.enabled = 1 OR (SELECT COUNT(*) FROM notify_recipients r JOIN notify_broadcasts b ON b.id = r.broadcast_id
+                WHERE r.uid = u.uid AND r.channel = 'email' AND r.status = 'sent' AND b.kind = ?
+                  AND COALESCE(r.sent_at, 0) > COALESCE(u.last_seen, 0)) < ${WEEKLY_SUNSET_SENDS})`;
+      params.push(topic);
+    }
+    return { sql, params };
   }
   if (channel === 'sms') {
     return {
@@ -344,6 +382,19 @@ function notifyAudience(topic, channel) {
 }
 // How many A&Rs would receive (topic, channel) right now. Bounded aggregate, admin-only
 // callers — never on the boot or poll path.
+// The mass announcement's audience, per channel, as {sql, params} fragments over `u`. The
+// channel gates are the ones notifyAudience() uses (kept byte-equivalent on purpose); the
+// 'engaged' flavour adds the activity gate. Bounced addresses are out of both.
+function announcementAudience(which = 'engaged') {
+  const eng = engagedSql();
+  const gate = which === 'all' ? { sql: '', params: [] } : { sql: ` AND ${eng.sql}`, params: eng.params };
+  return {
+    email: { sql: `FROM users u WHERE COALESCE(u.blocked,0) = 0 AND COALESCE(u.email_opt_out,0) = 0 AND u.email_bounced_at IS NULL
+            AND u.email IS NOT NULL AND u.email != ''${gate.sql}`, params: gate.params },
+    sms: { sql: `FROM users u WHERE COALESCE(u.blocked,0) = 0 AND u.sms_marketing_consent = 1 AND u.phone IS NOT NULL AND LENGTH(u.phone) >= 7${gate.sql}`, params: gate.params },
+  };
+}
+
 async function notifyAudienceCount(topic, channel) {
   const a = notifyAudience(topic, channel);
   if (!a) return null;
@@ -438,6 +489,29 @@ function mintNotifyLink(uid) {
 function notifyManageUrl(base, uid) {
   const tok = mintNotifyLink(uid);
   return tok ? `${base}/profile#nt=${tok}` : `${base}/profile`;
+}
+// One-click unsubscribe target for the List-Unsubscribe header (2026-10-06): the inbox POSTs
+// here with no page in between, so it must work with the token alone. Null when links are
+// unconfigured — then the header is simply omitted and the footer link does the job.
+function notifyUnsubscribeUrl(base, uid) {
+  const tok = mintNotifyLink(uid);
+  return tok ? `${base}/api/notify/unsubscribe?nt=${tok}` : null;
+}
+// Per-stream send options for a registered A&R's mail. `tag` names the stream to the provider.
+function notifySendOpts(base, uid, tag) {
+  return { tag, unsubscribe: notifyUnsubscribeUrl(base, uid) };
+}
+// The provider refused the ADDRESS (hard bounce, invalid, spam report, provider-side unsub):
+// stamp users.email_bounced_at so every audience query skips it from now on. Best-effort and
+// case-blind. Nothing clears it automatically (the email is the account's identity key and is
+// not editable on the profile); the operator clears it by hand when an address is fixed.
+async function noteEmailOutcome(dest, out) {
+  if (!out || out.ok || !isDeadAddress(out.reject) || !dest) return false;
+  try {
+    const r = await db.run('UPDATE users SET email_bounced_at = ? WHERE LOWER(email) = LOWER(?) AND email_bounced_at IS NULL', [now(), String(dest)]);
+    if (r.changes) console.warn(`[EMAIL] ${out.reject}: ${maskEmail(dest)} marked bounced`);
+    return !!r.changes;
+  } catch (e) { console.error('[EMAIL] bounce note failed:', e.message); return false; }
 }
 
 // Verify, cheapest-and-most-decisive first. Returns { uid } or { error, status }.
@@ -1371,6 +1445,18 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
         out.openSent = (out.openSent || 0) + d.sent;
       } catch (e) { console.error('[daily] open notice drain failed:', e.message); }
     }
+    // The weekly update: queued once on Wednesday afternoon, then drained like the others.
+    // Only broadcasts still 'sending' are looked at, so a finished week costs one indexed read.
+    try {
+      const dueWeek = left() > 4000 ? await weeklyUpdateDue(at) : null;
+      if (dueWeek) { const q = await enqueueWeeklyUpdate(dueWeek); out.weeklyQueued = q.queued; }
+      const weeklies = await db.all("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND status <> 'done' ORDER BY created_at DESC LIMIT 2");
+      for (const b of weeklies) {
+        if (left() < 4000) { out.budgetHit = true; break; }
+        const d = await drainWeeklyUpdate({ broadcastId: b.id, limit: 60, deadline: t0 + budgetMs });
+        out.weeklySent = (out.weeklySent || 0) + d.sent;
+      }
+    } catch (e) { console.error('[daily] weekly update failed:', e.message); }
     // The artist heads-up ("rated, on tomorrow's Livestream Countdown"), for tallied days.
     // Enqueue is idempotent (uniq_artist_headsup), so calling it every tick is how a failed
     // enqueue retries. SMS obeys the ET window like every other artist text.
@@ -3383,7 +3469,8 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
         // Per recipient: it is signed for THIS A&R and lands on their own results.
         resultsUrl: accountResultsUrl(base || publicBase(), r.uid) };
       const out = await sendEmail(r.dest, bc.subject || 'A&R Daily',
-        dailyDigestEmailHtml(arg), dailyDigestEmailText(arg));
+        dailyDigestEmailHtml(arg), dailyDigestEmailText(arg), notifySendOpts(base || publicBase(), r.uid, 'digest_daily'));
+      await noteEmailOutcome(r.dest, out);
       if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); sent++; }
       else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); failed++; }
     } catch (e) {
@@ -3432,6 +3519,131 @@ function dailyOpenEmailText(arg, manage) {
   return lines.join('\n');
 }
 
+// ===== THE WEEKLY UPDATE (2026-10-06) =====
+// The cadence for everyone the daily notice no longer reaches (digest_weekly, default ON,
+// non-engaged by default, sunset after WEEKLY_SUNSET_SENDS unanswered — see NOTIFY_TOPICS).
+// ONE broadcast per week: kind 'digest_weekly', ref_id = the Monday of the week it reports,
+// guarded by uniq_broadcast_kind_ref. Queued by the lifecycle on WEEKLY_SEND_DOW at or after
+// WEEKLY_SEND_HOUR ET (Wednesday 1PM: the Sunday drop publishes at noon Wednesday, so the
+// week is complete), drained by the same tick. Content is names and ranks only — never a
+// score (scores are the Track Report's) — plus today's records, which is the point of the mail.
+const WEEKLY_SEND_DOW = 3;    // Wednesday, JS getDay() terms
+const WEEKLY_SEND_HOUR = 13;  // 1:00 PM ET
+async function weeklyUpdateDue(at = now()) {
+  const day = etDay(at);
+  if (etWeekday(day) !== WEEKLY_SEND_DOW || etHour(at) < WEEKLY_SEND_HOUR) return null;
+  const week = lastCompleteWeekStart(day);
+  if (!week) return null;
+  const existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
+  return existing ? null : week;
+}
+async function enqueueWeeklyUpdate(week) {
+  const a = notifyAudience('digest_weekly', 'email');
+  if (!a || !week) return { broadcastId: null, queued: 0 };
+  const win = weekWindow(week);
+  const subject = `A&R Daily — the week of ${win ? win.startLabel : week}`;
+  let existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
+  let bcId = existing ? existing.id : id(9);
+  if (!existing) {
+    try {
+      await db.run(
+        `INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [bcId, subject, `Weekly update for the week of ${week}`, 'email', null, 'sending', now(), 'digest_weekly', week]);
+    } catch (e) { /* the unique index won — adopt the row */ }
+    existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
+    if (!existing) return { broadcastId: null, queued: 0 };
+    bcId = existing.id;
+  }
+  await db.run(
+    `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
+       SELECT ?, u.uid, 'email', u.email
+       ${a.sql}
+     ON CONFLICT (broadcast_id, uid, channel) DO NOTHING`,
+    [bcId, ...a.params]);
+  const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
+  return { broadcastId: bcId, queued: Number(q) || 0 };
+}
+// Shared per-broadcast content: last week's top records and A&Rs (names and ranks, no
+// scores), the open day's count and close, and where to rate.
+async function weeklyUpdateContent(week, base) {
+  const rep = await weeklyReportData(week, { limit: 3 }).catch(() => null);
+  const win = weekWindow(week);
+  const open = await db.get(
+    "SELECT id, window_closes_at, drop_day FROM sessions WHERE mode = 'async' AND status = 'live' AND async_state = 'open' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
+  const openCount = open ? Number((await db.get(
+    "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [open.id])).c) || 0 : 0;
+  return {
+    weekLabel: win ? win.label : week,
+    records: ((rep && rep.songs) || []).map(r => ({ title: r.title, artist: r.artist || null })),
+    ars: ((rep && rep.ars) || []).map(a => ({ name: a.name, location: a.location || null })),
+    totals: rep && rep.totals ? { records: rep.totals.records, ars: rep.totals.ars, ratings: rep.totals.ratings } : null,
+    openCount,
+    closesLabel: open && Number(open.window_closes_at) > now() ? etWhenLabel(Number(open.window_closes_at), open.drop_day) : null,
+    playUrl: await openDropUrl(base),
+  };
+}
+function weeklyUpdateEmailHtml(c, manage) {
+  const li = (rows, f) => rows.map((r, i) => `<li style="margin:0 0 6px">${i + 1}. ${f(r)}</li>`).join('');
+  const sec = (title, inner) => inner ? `<p style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;margin:22px 0 8px">${title}</p>${inner}` : '';
+  const recs = c.records.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.records, r => `<b>${escapeHtml(r.title)}</b>${r.artist ? ' — ' + escapeHtml(r.artist) : ''}`)}</ol>` : '';
+  const ars = c.ars.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.ars, a => `<b>${escapeHtml(dispName(a.name) || 'A&R')}</b>${a.location ? ' · ' + escapeHtml(a.location) : ''}`)}</ol>` : '';
+  const totals = c.totals && c.totals.records ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0">${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.</p>` : '';
+  const today = c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + escapeHtml(c.closesLabel) + '.' : ''}` : 'New records open for rating every day at 3:00 PM ET.';
+  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
+    <div style="max-width:420px;margin:0 auto">
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily · Weekly update</div>
+      <h1 style="font-size:22px;margin:8px 0 10px">The week of ${escapeHtml(c.weekLabel)}</h1>
+      ${totals}
+      ${sec('Top records', recs)}
+      ${sec('Top A&amp;Rs', ars)}
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:22px 0 0">${today}</p>
+      <a href="${c.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:14px;text-align:center">Rate today's records</a>
+      <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
+      ${manage ? notifyFooterHtml(manage) : ''}
+    </div>
+  </div>`;
+}
+function weeklyUpdateEmailText(c, manage) {
+  const lines = [`A&R Daily — weekly update`, `The week of ${c.weekLabel}`, ''];
+  if (c.totals && c.totals.records) lines.push(`${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.`, '');
+  if (c.records.length) { lines.push('Top records:'); c.records.forEach((r, i) => lines.push(`${i + 1}. ${r.title}${r.artist ? ' — ' + r.artist : ''}`)); lines.push(''); }
+  if (c.ars.length) { lines.push('Top A&Rs:'); c.ars.forEach((a, i) => lines.push(`${i + 1}. ${dispName(a.name) || 'A&R'}${a.location ? ' · ' + a.location : ''}`)); lines.push(''); }
+  lines.push(c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + c.closesLabel + '.' : ''}` : 'New records open for rating every day at 3:00 PM ET.');
+  lines.push(`Rate today's records: ${c.playUrl}`);
+  if (manage) lines.push('', notifyFooterText(manage));
+  return lines.join('\n');
+}
+async function drainWeeklyUpdate({ broadcastId, limit = 40, deadline = null, base = null } = {}) {
+  const bc = await db.get("SELECT * FROM notify_broadcasts WHERE id = ? AND kind = 'digest_weekly'", [broadcastId]);
+  if (!bc) return { sent: 0, failed: 0, remaining: 0 };
+  const root = base || publicBase();
+  const content = await weeklyUpdateContent(bc.ref_id, root);
+  const rows = await db.all(
+    "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [bc.id, limit]);
+  let sent = 0, failed = 0;
+  for (const r of rows) {
+    if (deadline && Date.now() > deadline) break;
+    const claim = await db.run(
+      "UPDATE notify_recipients SET status = 'sending' WHERE broadcast_id = ? AND uid = ? AND channel = ? AND status = 'pending'",
+      [bc.id, r.uid, r.channel]);
+    if (!claim.changes) continue;
+    try {
+      const manage = notifyManageUrl(root, r.uid);
+      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily — weekly update', weeklyUpdateEmailHtml(content, manage), weeklyUpdateEmailText(content, manage),
+        notifySendOpts(root, r.uid, 'digest_weekly'));
+      await noteEmailOutcome(r.dest, out);
+      if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), bc.id, r.uid, r.channel]); sent++; }
+      else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), bc.id, r.uid, r.channel]); failed++; }
+    } catch (e) {
+      await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(e.message || 'error').slice(0, 200), bc.id, r.uid, r.channel]); failed++;
+    }
+  }
+  const remaining = Number((await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bc.id])).c) || 0;
+  if (!remaining) await db.run("UPDATE notify_broadcasts SET status = 'done' WHERE id = ?", [bc.id]);
+  return { sent, failed, remaining };
+}
+
 async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = null } = {}) {
   const bc = await db.get("SELECT * FROM notify_broadcasts WHERE kind = 'daily_open' AND ref_id = ?", [sessionId]);
   if (!bc) return { sent: 0, failed: 0, remaining: 0 };
@@ -3459,7 +3671,9 @@ async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = n
       const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
       const manage = notifyManageUrl(root, r.uid);
       const arg = { ...shared, name: u && u.name };
-      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily', dailyOpenEmailHtml(arg, manage), dailyOpenEmailText(arg, manage));
+      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily', dailyOpenEmailHtml(arg, manage), dailyOpenEmailText(arg, manage),
+        notifySendOpts(root, r.uid, 'daily_open'));
+      await noteEmailOutcome(r.dest, out);
       if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), bc.id, r.uid, r.channel]); sent++; }
       else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), bc.id, r.uid, r.channel]); failed++; }
     } catch (e) {
@@ -4560,7 +4774,7 @@ async function sendArtistReportEmail(round, session, dest) {
   };
   const html = artistEmailHtml(common);
   const text = artistEmailText(common);
-  const r = await sendEmail(dest, `Track Report: “${d.title}” — ${decision}`, html, text);
+  const r = await sendEmail(dest, `Track Report: “${d.title}” — ${decision}`, html, text, { tag: 'artist_report' });
   return r.ok ? { ok: true, pages } : { ok: false, error: r.error };
 }
 
@@ -4736,7 +4950,7 @@ async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = 
         : await (async () => {
             const c = artistHeadsupContent({ title, artist: row.song_artist, streamAt,
               reportAt: Number(session.results_at) || null, streamUrl });
-            return sendEmail(row.dest, c.subject, artistHeadsupHtml(c), artistHeadsupText(c));
+            return sendEmail(row.dest, c.subject, artistHeadsupHtml(c), artistHeadsupText(c), { tag: 'artist_headsup' });
           })();
       if (r.ok) { await db.run("UPDATE artist_headsups SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
       else { await db.run("UPDATE artist_headsups SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
@@ -5754,7 +5968,8 @@ async function dispatchGoLiveNotifications(session, base, channels) {
     <p><a href="${url}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none">Enter the evaluation →</a></p>
     <p style="color:#666;font-size:13px">${url}</p>
     ${notifyFooterHtml(manage)}</div>`;
-      const r = await sendEmail(p.email, subject, html, `${text}\n\n${notifyFooterText(manage)}`);
+      const r = await sendEmail(p.email, subject, html, `${text}\n\n${notifyFooterText(manage)}`, notifySendOpts(base, p.user_id, 'room_live'));
+      await noteEmailOutcome(p.email, r);
       await logNotify(sessionId, p, 'email', p.email, r.ok ? 'sent' : 'failed', r.error);
       r.ok ? sent++ : failed++;
     }
@@ -6367,6 +6582,27 @@ async function handleApi(req, res, url) {
     return { user: v.user, viaLink: true };
   }
 
+  // One-click unsubscribe (2026-10-06): the target of the List-Unsubscribe header on every
+  // mail to a registered A&R. Gmail/Yahoo POST `List-Unsubscribe=One-Click` here with no
+  // page in between, so the signed `nt` token is the whole identity. It sets the GLOBAL
+  // kill switch (email_opt_out) — the person pressed Unsubscribe on a mail from us, and
+  // turning off one topic while the others keep coming is not what that button means.
+  // A browser GET lands on the contact center with the same token, where the choice is finer.
+  // Same scope rule as the manage link: never resolveUserId, never a session.
+  if (p === '/api/notify/unsubscribe' && (method === 'POST' || method === 'GET')) {
+    const v = await verifyNotifyLink(req, url);
+    res.setHeader('Cache-Control', 'no-store');
+    if (v.error) {
+      if (method === 'GET') { res.writeHead(302, { Location: '/profile' }); return res.end(); }
+      return bad(res, v.error, v.status);
+    }
+    if (method === 'GET') {
+      res.writeHead(302, { Location: '/profile#nt=' + encodeURIComponent(url.searchParams.get('nt') || '') });
+      return res.end();
+    }
+    await db.run('UPDATE users SET email_opt_out = 1 WHERE uid = ?', [v.uid]);
+    return send(res, 200, { ok: true, unsubscribed: true });
+  }
   if (p === '/api/me/notify-prefs' && (method === 'GET' || method === 'POST')) {
     const actor = await resolveNotifyActor(req, url);
     if (actor.error) return bad(res, actor.error, actor.status);
@@ -7813,9 +8049,12 @@ async function handleApi(req, res, url) {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     // email_opt_out (028) is the global kill switch every unsubscribe link sets. Without
     // it here, an A&R who unsubscribed would still be counted — and still be mailed.
-    const em = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND COALESCE(email_opt_out,0) = 0 AND email IS NOT NULL AND email != ''")).c;
-    const sm = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7")).c;
-    return send(res, 200, { email: Number(em) || 0, sms: Number(sm) || 0 });
+    // Both audiences are reported so the composer can show what each choice reaches.
+    const count = async (frag) => Number((await db.get(`SELECT COUNT(*) AS c ${frag.sql}`, frag.params)).c) || 0;
+    const all = announcementAudience('all'), eng = announcementAudience('engaged');
+    return send(res, 200, { email: await count(all.email), sms: await count(all.sms),
+      engaged: { email: await count(eng.email), sms: await count(eng.sms) },
+      engagedDays: ENGAGED_DAYS, newAccountDays: NEW_ACCOUNT_DAYS });
   }
 
   // Subscription readout for the Platform panel (028): who would actually receive each
@@ -7845,21 +8084,22 @@ async function handleApi(req, res, url) {
     const message = (body.message || '').toString().trim().slice(0, NOTIFY_MESSAGE_MAX);
     const subject = (body.subject || '').toString().trim().slice(0, 150);
     const wantEmail = !!body.email, wantSms = !!body.sms;
+    // Audience (2026-10-06): 'engaged' (the default — active within ENGAGED_DAYS or new) or
+    // 'all'. Everyone is a deliberate choice on the composer, not what a blast does by itself.
+    const audience = body.audience === 'all' ? 'all' : 'engaged';
     if (!message) return bad(res, 'Write the message first');
     if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
     if (wantEmail && !subject) return bad(res, 'Email needs a subject');
     const bcId = id(9);
     await db.run('INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at) VALUES (?,?,?,?,?,?,?)',
       [bcId, subject || null, message, [wantEmail && 'email', wantSms && 'sms'].filter(Boolean).join('+'), admin.uid, 'sending', now()]);
+    const aud = announcementAudience(audience);
     if (wantEmail) await db.run(
       `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
-         SELECT ?, uid, 'email', email FROM users
-          WHERE COALESCE(blocked,0) = 0 AND COALESCE(email_opt_out,0) = 0
-            AND email IS NOT NULL AND email != ''`, [bcId]);
+         SELECT ?, u.uid, 'email', u.email ${aud.email.sql}`, [bcId, ...aud.email.params]);
     if (wantSms) await db.run(
       `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
-         SELECT ?, uid, 'sms', phone FROM users
-          WHERE COALESCE(blocked,0) = 0 AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7`, [bcId]);
+         SELECT ?, u.uid, 'sms', u.phone ${aud.sms.sql}`, [bcId, ...aud.sms.params]);
     const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
     return send(res, 200, { broadcastId: bcId, queued: Number(q) || 0 });
   }
@@ -7910,8 +8150,9 @@ async function handleApi(req, res, url) {
     for (const r of batch) {
       const m = await renderAnnouncement(bc, r.uid, base);
       const out = r.channel === 'email'
-        ? await sendEmail(r.dest, m.subject, m.html, m.text)
+        ? await sendEmail(r.dest, m.subject, m.html, m.text, notifySendOpts(base, r.uid, 'announcement'))
         : await sendSms(r.dest, m.sms);
+      if (r.channel === 'email') await noteEmailOutcome(r.dest, out);
       if (out.ok) { sentN++; await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); }
       else { failedN++; await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); }
     }
@@ -9527,7 +9768,9 @@ async function handleApi(req, res, url) {
         const scoreUrl = await uploadPng(`recap/${sessionId}/score-${row.participant_id}.png`, await shareCards.renderPng('score', d));
         const manage = notifyManageUrl(publicBaseFromReq(req), participant && participant.user_id);
         const html = recapEmailHtml({ name: d.name, sessionName: session.name, rank: d.rank, total: d.total, cards: { score: scoreUrl, songs: job.songs_url, ars: job.ars_url, promo: job.promo_url }, manage });
-        const r = await sendEmail(row.email, `Your A&R Room session record — ${session.name}`, html, recapEmailText(d, session.name, manage));
+        const r = await sendEmail(row.email, `Your A&R Room session record — ${session.name}`, html, recapEmailText(d, session.name, manage),
+          notifySendOpts(base, row.user_id, 'recap'));
+        await noteEmailOutcome(row.email, r);
         if (r.ok) { await db.run("UPDATE recap_emails SET status = 'sent', score_url = ?, sent_at = ?, error = NULL WHERE id = ?", [scoreUrl, now(), row.id]); sent++; }
         else { await db.run("UPDATE recap_emails SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
       } catch (e) {
@@ -10961,6 +11204,16 @@ module.exports._artistHeadsupContent = artistHeadsupContent;
 module.exports._dailyOpenEmailText = dailyOpenEmailText;
 module.exports._enqueueDailyOpen = enqueueDailyOpen;
 module.exports._NOTIFY_TOPICS = NOTIFY_TOPICS;
+module.exports._notifyAudience = notifyAudience;
+module.exports._announcementAudience = announcementAudience;
+module.exports._enqueueWeeklyUpdate = enqueueWeeklyUpdate;
+module.exports._drainWeeklyUpdate = drainWeeklyUpdate;
+module.exports._weeklyUpdateDue = weeklyUpdateDue;
+module.exports._weeklyUpdateEmailHtml = weeklyUpdateEmailHtml;
+module.exports._weeklyUpdateEmailText = weeklyUpdateEmailText;
+module.exports._noteEmailOutcome = noteEmailOutcome;
+module.exports._notifyUnsubscribeUrl = notifyUnsubscribeUrl;
+module.exports._ENGAGED = { ENGAGED_DAYS, NEW_ACCOUNT_DAYS, WEEKLY_SUNSET_SENDS };
 module.exports._lastCompleteWeekStart = lastCompleteWeekStart;
 module.exports._weeklyReportData = weeklyReportData;
 module.exports._etDay = etDay;
