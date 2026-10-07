@@ -906,7 +906,7 @@ live on anr.makinitmag.com.
   operator: round names are unreliable — plus ONE number, `ARTIST_TOP_SCORE`, for segmenting
   good artists: the best room average among records with ≥ `brevo_score_min_ratings`
   ratings, default **5**, NO fallback below the floor (blank = unproven); daily scores only once
-  the day is PUBLISHED (the seal)) and **A&Rs** (existing list **11**; every `users` row with an email, **opt-outs
+  the day is PUBLISHED (the seal)) and **A&Rs** (existing list **111**; every `users` row with an email, **opt-outs
   and blocked NOT filtered** — operator's call, Brevo's unsubscribe governs; those states ride
   as `ANR_*` boolean attributes along with the full profile). `brevo_sync` ledger holds a payload
   hash per (list, contact) so only new/changed contacts go; `POST /contacts/import` with

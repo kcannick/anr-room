@@ -5240,7 +5240,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // lists. Brevo is a mock on BREVO_API_BASE (set at the top of this file).
   console.log('\n— Brevo contacts —');
   const brevoCalls = [];
-  const brevoState = { folders: [], lists: [], attrs: ['FIRSTNAME', 'LASTNAME', 'SMS'], nextId: 500 };   // clear of the real list ids (11, 119)
+  const brevoState = { folders: [], lists: [], attrs: ['FIRSTNAME', 'LASTNAME', 'SMS'], nextId: 500 };   // clear of the real list ids (111, 119)
   const brevoMock = require('http').createServer((req, res) => {
     let body = '';
     req.on('data', c => body += c);
@@ -5310,7 +5310,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('brevo: the API key rides the api-key header', brevoCalls.slice(brv1From).every(c => c.key === 'test-brevo-key'));
   ok('brevo: the A&R profile attributes are created', ['ANR_NAME', 'ANR_CITY', 'ANR_POINTS', 'ANR_JOINED'].every(a => brevoState.attrs.includes(a)), brevoState.attrs.join(','));
   const brvArtistsId = 119;
-  const brvArsId = 11;
+  const brvArsId = 111;
   const brvSb1Id = brevoState.lists[0].id;
   const brvImp = imports(brv1From);
   const brvArt = brvImp.filter(c => c.data.listIds[0] === brvArtistsId).flatMap(c => c.data.jsonBody);
