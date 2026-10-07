@@ -1475,6 +1475,25 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('re-login reflects role=host', hVer.d.role === 'host', JSON.stringify(hVer.d));
   const roleForbidden = await call('/api/admin/users/role', { uid: hostUser.id, role: 'player' }, 'POST', HOSTH);
   ok('a host cannot assign roles', roleForbidden.status === 403, 'got ' + roleForbidden.status);
+
+  console.log('\n— admin edits an A&R profile (same rules as the self-serve save) —');
+  const apGet = await call('/api/admin/users/profile?uid=' + encodeURIComponent(hostUser.id), null, 'GET', ADMINH);
+  ok('admin reads a user profile with email + categories catalog', apGet.status === 200 && apGet.d.profile.email === 'host@test.com' && Array.isArray(apGet.d.categoriesAvailable), JSON.stringify(apGet.d));
+  const apGetForbidden = await call('/api/admin/users/profile?uid=' + encodeURIComponent(hostUser.id), null, 'GET', HOSTH);
+  ok('a host cannot read another user profile via the admin route', apGetForbidden.status === 403, 'got ' + apGetForbidden.status);
+  const apMissing = await call('/api/admin/users/profile?uid=nope', null, 'GET', ADMINH);
+  ok('unknown uid is a 404', apMissing.status === 404, 'got ' + apMissing.status);
+  const apSave = await call('/api/admin/users/profile', { uid: hostUser.id, name: 'Host Edited', categories: ['DJ', 'Bogus', 'Producer'], primaryCategory: 'Producer', location: 'Atlanta, GA', instagram: '@hostig', tiktok: '' }, 'POST', ADMINH);
+  ok('admin saves a profile and it becomes complete', apSave.status === 200 && apSave.d.complete === true, JSON.stringify(apSave.d));
+  const apAfter = (await call('/api/admin/users/profile?uid=' + encodeURIComponent(hostUser.id), null, 'GET', ADMINH)).d.profile;
+  ok('saved fields round-trip; unknown category dropped; @ stripped', apAfter.name === 'Host Edited' && apAfter.categories.join(',') === 'DJ,Producer' && apAfter.primaryCategory === 'Producer' && apAfter.location === 'Atlanta, GA' && apAfter.instagram === 'hostig' && apAfter.complete === true, JSON.stringify(apAfter));
+  const pubAfter = (await call('/api/profile?u=' + encodeURIComponent(hostUser.id), null, 'GET')).d;
+  ok('public profile reflects the admin edit', pubAfter.profile && pubAfter.profile.name === 'Host Edited' && pubAfter.profile.location === 'Atlanta, GA', JSON.stringify(pubAfter));
+  const apSaveForbidden = await call('/api/admin/users/profile', { uid: hostUser.id, name: 'Nope' }, 'POST', HOSTH);
+  ok('a host cannot write a profile via the admin route', apSaveForbidden.status === 403, 'got ' + apSaveForbidden.status);
+  const apIncomplete = await call('/api/admin/users/profile', { uid: hostUser.id, categories: [], location: '' }, 'POST', ADMINH);
+  ok('clearing roles/location makes the profile incomplete again', apIncomplete.status === 200 && apIncomplete.d.complete === false, JSON.stringify(apIncomplete.d));
+  await call('/api/admin/users/profile', { uid: hostUser.id, categories: ['DJ'], primaryCategory: 'DJ', location: 'Atlanta, GA' }, 'POST', ADMINH);
   // A host viewing their OWN session sees engagement but no contact PII; admin sees email.
   const hs = await call('/api/session', { name: 'Host Redact' }, 'POST', HOSTH);
   const HS = hs.d.sessionId;

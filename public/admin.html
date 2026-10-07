@@ -1744,6 +1744,31 @@
   </div>
 </div>
 
+<!-- ADMIN EDIT PROFILE: fix an A&R's profile on their behalf (same fields as /profile). -->
+<div id="userEditModal" class="modal-scrim" style="z-index:30">
+  <div class="card" style="max-width:480px;width:100%;max-height:92vh;overflow:auto">
+    <div style="display:flex;align-items:center;gap:11px;margin-bottom:6px"><span id="ueAv"></span><div style="min-width:0"><h2 style="margin:0">Edit profile</h2><div class="muted" style="font-size:12px;color:var(--ink-dim)"><span id="ueEmail"></span> · <span id="uePhone"></span></div></div></div>
+    <div id="ueComplete" style="font-size:12px;margin:0 0 10px"></div>
+    <label>Display name</label>
+    <input id="ueName" maxlength="32" autocomplete="off">
+    <label>Roles <span class="muted" style="font-weight:400">(tap to toggle)</span></label>
+    <div id="ueCats" class="permrow" style="margin:4px 0 10px"></div>
+    <label>Primary role</label>
+    <select id="uePrimary"></select>
+    <label>Location</label>
+    <input id="ueLocation" maxlength="120" placeholder="City, State" autocomplete="off">
+    <label>Instagram</label>
+    <input id="ueInstagram" maxlength="60" placeholder="handle, no @" autocomplete="off">
+    <label>TikTok</label>
+    <input id="ueTiktok" maxlength="60" placeholder="handle, no @" autocomplete="off">
+    <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:10px 0 0">Email and phone are not editable here. The photo is changed by the A&amp;R on their own profile page.</p>
+    <button class="btn" id="ueSave" style="width:100%;margin-top:12px">Save profile</button>
+    <a class="btn ghost" id="ueOpen" target="_blank" rel="noopener" style="width:100%;margin-top:9px;display:block;text-align:center;box-sizing:border-box">Open public profile</a>
+    <button class="btn ghost" id="ueCancel" style="width:100%;margin-top:9px">Cancel</button>
+    <div class="err" id="ueErr"></div>
+  </div>
+</div>
+
 <!-- HOST WELCOME: first-run "you're a host" how-to, once per device. Host-role only. -->
 <div id="hostIntroModal" class="modal-scrim" style="z-index:40">
   <div class="card" style="max-width:470px;width:100%">
@@ -4637,10 +4662,11 @@ async function loadUsers(){
       const av=u.photoUrl?`<img class="uav" src="${esc(u.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(u.name||u.email))}</div>`;
       const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.role==='host'?'<span class="badge host">Host</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', (!u.blocked&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
       const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', u.seriesParticipated?(u.seriesParticipated+' series'):'', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
-      const actions=u.role==='admin'?'<span class="muted" style="font-size:12px">protected</span>':
+      const editBtn=`<button class="btn ghost sm" onclick="openUserEdit('${u.id}')">Edit profile</button>`;
+      const actions=editBtn+(u.role==='admin'?'<span class="muted" style="font-size:12px">protected</span>':
         `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
         `<button class="btn ${u.blocked?'ghost':'warn'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
-        `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
+        `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`);
       // Per-host feature toggles (only for hosts). None granted by default. The giveaway
       // chip (distinct accent) controls whether this host's sessions count toward $500.
       const permRow=u.role==='host'&&u.perms
@@ -4651,7 +4677,7 @@ async function loadUsers(){
           +`<button class="permchip give${u.giveaway?' on':''}" title="Count this host's series-tagged rooms toward the monthly $500" onclick="toggleGiveaway('${u.id}',${u.giveaway?0:1})">💵 $500</button>`
           +'</div>'
         : '';
-      return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname">${esc(u.name||'(no name)')}${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
+      return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname"><a href="/u/${esc(u.id)}" target="_blank" rel="noopener" title="Open public profile" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--ink-faint)">${esc(u.name||'(no name)')}</a>${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
     }).join('');
   }catch(e){box.innerHTML='<div class="err">'+e.message+'</div>';}
 }
@@ -4667,6 +4693,41 @@ window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='
 $('#udConfirm').oninput=function(){$('#udDelete').disabled=this.value!==udState.name;};
 $('#udCancel').onclick=()=>{$('#userDelModal').style.display='none';};
 $('#udDelete').onclick=async()=>{$('#udErr').textContent='';try{await api('/api/admin/users/delete',{uid:udState.id,confirmName:$('#udConfirm').value});$('#userDelModal').style.display='none';await loadUsers();}catch(e){$('#udErr').textContent=e.message;}};
+// edit-profile modal (admin): same fields + same server rules as the A&R's own /profile.
+let ueState={id:null,cats:[],primary:''};
+function ueRenderCats(){
+  const avail=usersCats.length?usersCats:[];
+  $('#ueCats').innerHTML=avail.map(c=>`<button type="button" class="permchip${ueState.cats.includes(c)?' on':''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
+  $('#ueCats').querySelectorAll('button').forEach(b=>b.onclick=()=>{const c=b.dataset.c;if(ueState.cats.includes(c)){ueState.cats=ueState.cats.filter(x=>x!==c);if(ueState.primary===c)ueState.primary=ueState.cats[0]||'';}else ueState.cats.push(c);ueRenderCats();});
+  $('#uePrimary').innerHTML='<option value="">— pick a primary role —</option>'+ueState.cats.map(c=>`<option value="${esc(c)}"${ueState.primary===c?' selected':''}>${esc(c)}</option>`).join('');
+}
+window.openUserEdit=async(uid)=>{
+  $('#ueErr').textContent='';$('#ueSave').disabled=false;
+  try{
+    const d=await api('/api/admin/users/profile?uid='+encodeURIComponent(uid),null,'GET');
+    const pr=d.profile; if(d.categoriesAvailable&&!usersCats.length)usersCats=d.categoriesAvailable;
+    ueState={id:pr.id,cats:(pr.categories||[]).slice(),primary:pr.primaryCategory||''};
+    $('#ueName').value=pr.name||'';$('#ueLocation').value=pr.location||'';$('#ueInstagram').value=pr.instagram||'';$('#ueTiktok').value=pr.tiktok||'';
+    $('#ueEmail').textContent=pr.email||'';$('#uePhone').textContent=pr.phone?pr.phone:'no phone on file';
+    $('#ueAv').innerHTML=pr.photoUrl?`<img class="uav" src="${esc(pr.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(pr.name||pr.email))}</div>`;
+    $('#ueOpen').href='/u/'+encodeURIComponent(pr.id);
+    $('#ueComplete').textContent=pr.complete?'Profile complete':'Profile incomplete — needs a name, at least one role with a primary, and a location';
+    $('#ueComplete').style.color=pr.complete?'var(--signal)':'var(--ink-faint)';
+    ueRenderCats();
+    $('#userEditModal').style.display='flex';$('#ueName').focus();
+  }catch(e){alert(e.message);}
+};
+$('#uePrimary').onchange=function(){ueState.primary=this.value;};
+$('#ueCancel').onclick=()=>{$('#userEditModal').style.display='none';};
+$('#ueSave').onclick=async()=>{
+  $('#ueErr').textContent='';$('#ueSave').disabled=true;
+  try{
+    const d=await api('/api/admin/users/profile',{uid:ueState.id,name:$('#ueName').value,categories:ueState.cats,primaryCategory:ueState.primary||(ueState.cats[0]||''),location:$('#ueLocation').value,instagram:$('#ueInstagram').value,tiktok:$('#ueTiktok').value});
+    $('#userEditModal').style.display='none';
+    await loadUsers();
+    if(!d.complete)alert('Saved. This profile is still incomplete (needs a name, at least one role with a primary, and a location), so the A&R does not qualify for the board yet.');
+  }catch(e){$('#ueErr').textContent=e.message;$('#ueSave').disabled=false;}
+};
 
 // ---- Analytics (admin): cross-session engagement + retention ----
 let anData=null;
