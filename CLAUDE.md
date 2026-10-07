@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 042; suite green)
+## Current state (migrations through 044; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -901,6 +901,22 @@ live on anr.makinitmag.com.
   - The daily page's done, sealed and recap screens link **My past results**; the edit form's
     copy of the tab strip (join.html) carries the tab too.
 
+- **Brevo contact sync** (044, 2026-10-06): two Brevo lists — **Artists** (the operator's
+  existing list **119**, `BREVO_LISTS.artists.defaultId`; a setting overrides it) — every played artist, reference tracks out; **email + phone ONLY**,
+  operator: round names are unreliable — plus ONE number, `ARTIST_TOP_SCORE`, for segmenting
+  good artists: the best room average among records with ≥ `brevo_score_min_ratings`
+  ratings, default **5**, NO fallback below the floor (blank = unproven); daily scores only once
+  the day is PUBLISHED (the seal)) and **A&Rs** (existing list **11**; every `users` row with an email, **opt-outs
+  and blocked NOT filtered** — operator's call, Brevo's unsubscribe governs; those states ride
+  as `ANR_*` boolean attributes along with the full profile). `brevo_sync` ledger holds a payload
+  hash per (list, contact) so only new/changed contacts go; `POST /contacts/import` with
+  `emptyContactsAttributes:false`; never removes anyone. Plus a **"Side Bet #N"** list per sidebet iteration
+  (email only; N = creation order among packs with entries; created in folder "A&R Program" when
+  its first entrant syncs; id in `brevo_list_sidebet_<packId>`). First **Sync now** (Platform
+  panel card) creates the attributes; then `runAsyncDropLifecycle` runs it once a day
+  (≥23h apart, after 4AM ET; continues on later ticks while `remaining`; failures retry hourly).
+  Brevo allows one SMS number per contact, so a phone already claimed (A&Rs first) is left off
+  the next contact. `BREVO_API_KEY` env; `BREVO_API_BASE` is the test mock. Doc: docs/brevo-sync.md.
 - **Email engagement gate** (043, 2026-10-06). The audit (Mandrill activity export joined to
   users/prefs/votes, per-address table kept local in `docs/reports/`, gitignored): the daily
   "records are open" notice went to every address (~766/day), 4% clicked, 607 of 776 recipients
