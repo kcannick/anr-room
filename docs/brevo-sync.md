@@ -5,7 +5,7 @@ The platform keeps these Brevo lists up to date:
 | List | Who | What is sent |
 |---|---|---|
 | **Artists** (your existing list **119**) | Every artist whose record was played (live shows and the daily drop; reference tracks left out) | Email, phone and their best score (below) — never a name: the name on a submission is whatever was typed |
-| **A&Rs** (your existing list **11**) | Every registered account with an email — blocked and opted-out accounts included | Email, phone, first/last name, and the profile (see below) |
+| **A&Rs** (your existing list **111**) | Every registered account with an email — blocked and opted-out accounts included | Email, phone, first/last name, and the profile (see below) |
 | **Side Bet #1, #2, …** (one per sidebet iteration, created automatically) | Everyone who entered that Side Bet | Email only — they are A&Rs, so their profile is already on the contact |
 
 Opt-outs are **not** a filter. Brevo's own unsubscribe governs Brevo's sends. Whether an A&R
@@ -18,13 +18,13 @@ has turned off our emails, is blocked, or has SMS consent is sent as data
 2. In Vercel → anr-room → Settings → Environment Variables: add **`BREVO_API_KEY`** (Production), then redeploy.
 3. Console → **Platform** → **Brevo contacts** card → **Sync now**.
    The first press adds the attributes and sends everyone: artists to list **119**, A&Rs to list
-   **11**. A **Side Bet #N** list is created (in a folder called **A&R Program**) when that
+   **111**. A **Side Bet #N** list is created (in a folder called **A&R Program**) when that
    iteration's first entrant is synced — numbered by the order the Side Bets were created. It keeps pressing by itself until everything is sent.
 
 After that it runs **once a day** on its own (from the daily cron, after 4 AM ET) and sends only
 contacts that are new or have changed. Nobody is ever removed from a list.
 
-To point artists or A&Rs at a different list, type its ID on the card and press **Save** (blank goes back to 119 / 11). A
+To point artists or A&Rs at a different list, type its ID on the card and press **Save** (blank goes back to 119 / 111). A
 changed list is sent in full on the next sync.
 
 ## Artist score

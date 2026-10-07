@@ -5469,7 +5469,7 @@ const BREVO_FOLDER = 'A&R Program';
 const BREVO_LISTS = {
   // The operator's existing artists list (2026-10-06). A setting overrides it; blank returns here.
   artists: { setting: 'brevo_list_artists', name: 'A&R Program — Artists', defaultId: '119' },
-  ars: { setting: 'brevo_list_ars', name: 'A&R Program — A&Rs', defaultId: '11' },
+  ars: { setting: 'brevo_list_ars', name: 'A&R Program — A&Rs', defaultId: '111' },
 };
 // The A&R profile as Brevo attributes. FIRSTNAME / LASTNAME / SMS are Brevo's built-ins;
 // the rest are created on the first sync if missing.
@@ -5687,7 +5687,10 @@ async function brevoPending() {
   for (const t of targets) {
     const items = t.items.map(it => ({ ...it, hash: brevoHash(it.contact) }));
     t.total = items.length;
-    t.pending = items.filter(it => ledger.get(t.list + '|' + it.key) !== it.hash);
+    // The ledger is keyed by list AND id: pointing a list somewhere else (a setting, or a new
+    // default in code) means nothing has been sent THERE yet, so everyone goes again.
+    t.ledgerKey = t.list + '@' + t.id;
+    t.pending = items.filter(it => ledger.get(t.ledgerKey + '|' + it.key) !== it.hash);
     delete t.items;
   }
   return targets;
@@ -5699,6 +5702,7 @@ async function syncContactsToBrevo({ budgetMs = BREVO_BUDGET_MS, ts = Date.now()
   await ensureBrevoAttributes();
   const targets = await brevoPending();
   await ensureBrevoLists(targets);
+  for (const t of targets) t.ledgerKey = t.list + '@' + t.id;   // a list made just now has its id only now
   const out = { sent: {}, total: {}, remaining: 0, processIds: [] };
   for (const t of targets) {
     out.sent[t.list] = 0;
@@ -5715,7 +5719,7 @@ async function syncContactsToBrevo({ budgetMs = BREVO_BUDGET_MS, ts = Date.now()
       for (const it of chunk) {
         await db.run(`INSERT INTO brevo_sync (list, contact_key, hash, synced_at) VALUES (?, ?, ?, ?)
           ON CONFLICT (list, contact_key) DO UPDATE SET hash = excluded.hash, synced_at = excluded.synced_at`,
-          [t.list, it.key, it.hash, at]);
+          [t.ledgerKey, it.key, it.hash, at]);
       }
       out.sent[t.list] += chunk.length;
     }
@@ -8365,15 +8369,13 @@ async function handleApi(req, res, url) {
       // A different project is a fresh start: the ledger describes tasks in the old one.
       if (next !== prev) await db.run('DELETE FROM asana_leads');
     }
-    // Brevo list ids (044). Blank = the next sync creates the list. A different list is a fresh
-    // start: the ledger describes what the OLD list holds, so it is cleared for that list.
+    // Brevo list ids (044). Blank = back to the default list. A different list is a fresh start
+    // with no clearing needed: the ledger is keyed by list id, so nothing reads as sent there.
     for (const [field, list] of [['brevoListArtists', 'artists'], ['brevoListArs', 'ars']]) {
       if (!(field in body)) continue;
       const k = BREVO_LISTS[list].setting;
       const next = (body[field] || '').toString().trim().replace(/\D/g, '').slice(0, 20) || null;
-      const prev = await brevoListId(list);
       await setOrClear(k, next);
-      if ((await brevoListId(list)) !== prev) await db.run('DELETE FROM brevo_sync WHERE list = ?', [list]);
     }
     // The ratings a record needs before its score goes on the artist's Brevo contact.
     if ('brevoScoreMinRatings' in body) {
