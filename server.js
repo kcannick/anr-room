@@ -23,7 +23,7 @@ const path = require('path');
 
 const db = require('./db');
 const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
-const { sendSms, PROVIDER: SMS_PROVIDER, smsSegments, isGsm7, SMS_SINGLE_SEGMENT } = require('./sms');
+const { sendSms, PROVIDER: SMS_PROVIDER, smsSegments, isGsm7, SMS_SINGLE_SEGMENT, normalize: smsNormalize } = require('./sms');
 const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy } = require('./scoring');
 const shareCards = require('./share-cards');
@@ -1443,6 +1443,14 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       if (a.created) out.asanaCreated = a.created;
       if (a.attached) out.asanaAttached = a.attached;
     } catch (e) { console.error('[daily] asana pass failed:', e.message); }
+  }
+
+  // ---- Brevo: artists + A&Rs onto their lists, once a day (044) ----
+  if (left() > 9000) {
+    try {
+      const b = await brevoDailySync({ budgetMs: Math.min(8000, left() - 1000), ts: at });
+      if (b) out.brevoSent = Object.values(b.sent).reduce((x, n) => x + n, 0);
+    } catch (e) { console.error('[daily] brevo sync failed:', e.message); }
   }
   return out;
 }
@@ -5226,6 +5234,313 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs =
   return out;
 }
 
+// ===== BREVO CONTACT SYNC (044) =====
+// Two Brevo lists fed from the platform: every ARTIST whose record has been played (email +
+// phone + their best score — never a name: the name on a round is whatever the submitter
+// typed, so it is not sent), and
+// every registered A&R with as much of their profile as we hold. Opt-outs here are NOT a
+// filter (operator, 2026-10-05): Brevo's own unsubscribe governs its sends; the A&R's
+// opt-out state rides along as an attribute so it can be segmented on.
+//
+// Key in BREVO_API_KEY (env, never the settings table — the platform GET echoes settings).
+// The list ids are settings: created on the first sync, pasteable on the Platform panel.
+// The ledger (brevo_sync) holds a hash per contact, so a run sends only what changed and the
+// daily cron is cheap. Nothing is ever removed from a list.
+const BREVO_API = process.env.BREVO_API_BASE || 'https://api.brevo.com/v3';
+const BREVO_CALL_TIMEOUT_MS = Number(process.env.BREVO_CALL_TIMEOUT_MS) || 8000;
+const BREVO_CHUNK = 2000;               // contacts per import call (~1MB, far under the 8MB limit)
+const BREVO_BUDGET_MS = 16000;           // per press / per cron tick, like the leads sync
+const BREVO_DAILY_GAP_MS = 23 * 3600000; // the cron's once-a-day spacing
+const BREVO_FOLDER = 'A&R Program';
+const BREVO_LISTS = {
+  // The operator's existing artists list (2026-10-06). A setting overrides it; blank returns here.
+  artists: { setting: 'brevo_list_artists', name: 'A&R Program — Artists', defaultId: '119' },
+  ars: { setting: 'brevo_list_ars', name: 'A&R Program — A&Rs', defaultId: '11' },
+};
+// The A&R profile as Brevo attributes. FIRSTNAME / LASTNAME / SMS are Brevo's built-ins;
+// the rest are created on the first sync if missing.
+const BREVO_ATTRS = {
+  ANR_NAME: 'text', ANR_UID: 'text', ANR_PROFILE_URL: 'text', ANR_ROLE: 'text', ANR_CITY: 'text',
+  ANR_INSTAGRAM: 'text', ANR_TIKTOK: 'text', ANR_CATEGORIES: 'text', ANR_PRIMARY_CATEGORY: 'text',
+  ANR_PROFILE_COMPLETE: 'boolean', ANR_POINTS: 'float', ANR_SESSIONS_PLAYED: 'float',
+  ANR_ROUNDS_VOTED: 'float', ANR_JOINED: 'date', ANR_LAST_SEEN: 'date',
+  ANR_SMS_CONSENT: 'boolean', ANR_EMAIL_OPT_OUT: 'boolean', ANR_BLOCKED: 'boolean',
+  // On ARTIST contacts: ONE number, their best record's score, to segment good artists for
+  // select opportunities (operator, 2026-10-05: a single value, nothing else).
+  ARTIST_TOP_SCORE: 'float',
+};
+// A record's score counts only with at least this many ratings (operator, 2026-10-05: default
+// 5) — a 9.0 from one A&R is not "good music". An artist with no record over the floor gets NO
+// score, not a weaker one: the field is for filtering offers, so blank must mean "unproven".
+// Setting `brevo_score_min_ratings` (the Brevo card); changing it changes the payloads, so the
+// next sync re-sends exactly the contacts whose score moved.
+const BREVO_SCORE_MIN_RATINGS = 5;
+async function brevoScoreFloor() {
+  const v = parseInt(await settingGet('brevo_score_min_ratings'), 10);
+  return Number.isFinite(v) && v >= 1 ? v : BREVO_SCORE_MIN_RATINGS;
+}
+
+async function brevoFetch(path, opts = {}) {
+  const key = process.env.BREVO_API_KEY;
+  if (!key) throw new Error('Brevo not configured (set BREVO_API_KEY)');
+  let r;
+  try {
+    r = await fetch(BREVO_API + path, {
+      ...opts,
+      headers: { 'api-key': key, accept: 'application/json', ...(opts.body ? { 'content-type': 'application/json' } : {}), ...(opts.headers || {}) },
+      signal: AbortSignal.timeout(BREVO_CALL_TIMEOUT_MS),
+    });
+  } catch (e) {
+    const where = `${opts.method || 'GET'} ${path.split('?')[0]}`;
+    if (e.name === 'TimeoutError') throw new Error(`Brevo did not answer ${where} within ${BREVO_CALL_TIMEOUT_MS / 1000}s`);
+    throw new Error(`Could not reach Brevo for ${where} (${(e.cause && e.cause.code) || e.message})`);
+  }
+  const body = await r.text();
+  if (!r.ok) {
+    let msg = `Brevo ${r.status}`;
+    try { const j = JSON.parse(body); if (j.message) msg += ': ' + j.message; } catch (e) {}
+    throw new Error(msg);
+  }
+  try { return JSON.parse(body); } catch (e) { return {}; }
+}
+const brevoJson = (path, method, data) => brevoFetch(path, { method, body: JSON.stringify(data) });
+const settingGet = async (k) => (await db.get('SELECT v FROM settings WHERE k = ?', [k]))?.v || null;
+const brevoListId = async (list) => (await settingGet(BREVO_LISTS[list].setting)) || BREVO_LISTS[list].defaultId || null;
+const settingSet = (k, v) => db.run('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v', [k, v]);
+
+// E.164 or nothing. Stored phones come in three shapes (raw form input, backfilled bare
+// digits, +E.164); Brevo rejects anything that is not a full international number.
+function brevoPhone(raw) {
+  if (!raw) return null;
+  const n = smsNormalize(raw);
+  return n && /^\+\d{8,15}$/.test(n) ? n : null;
+}
+function brevoEmail(raw) {
+  const e = (raw || '').toString().trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null;
+}
+
+// Every list the sync writes to: the two fixed lists, plus one per sidebet iteration
+// ("Side Bet #1", "Side Bet #2", … — operator, 2026-10-06), numbered by the order the packs were
+// created among those that have entries. A sidebet list's id is remembered per pack
+// (`brevo_list_sidebet_<packId>`), so its name and number are fixed once it exists.
+async function brevoTargets(sets) {
+  const targets = [];
+  for (const [k, l] of Object.entries(BREVO_LISTS)) {
+    targets.push({ list: k, name: l.name, setting: l.setting, id: await brevoListId(k), items: sets[k] });
+  }
+  const packs = await db.all(
+    `SELECT p.id FROM packs p WHERE EXISTS (SELECT 1 FROM sidebet_entries e WHERE e.pack_id = p.id)
+      ORDER BY p.created_at, p.id`);
+  for (const [i, pk] of packs.entries()) {
+    const setting = 'brevo_list_sidebet_' + pk.id;
+    targets.push({ list: 'sidebet:' + pk.id, name: `Side Bet #${i + 1}`, setting, packId: pk.id,
+      id: await settingGet(setting), items: sets.sidebets.get(pk.id) || [] });
+  }
+  return targets;
+}
+
+// Create any list that has no id yet (in the "A&R Program" folder); ids remembered in settings.
+async function ensureBrevoLists(targets) {
+  let folderId = null;
+  for (const t of targets) {
+    if (t.id) continue;
+    if (!folderId) {
+      const folders = (await brevoFetch('/contacts/folders?limit=50&offset=0')).folders || [];
+      folderId = (folders.find(f => f.name === BREVO_FOLDER) || {}).id;
+      if (!folderId) folderId = (await brevoJson('/contacts/folders', 'POST', { name: BREVO_FOLDER })).id;
+    }
+    const made = await brevoJson('/contacts/lists', 'POST', { name: t.name, folderId });
+    t.id = String(made.id);
+    await settingSet(t.setting, t.id);
+  }
+}
+
+async function ensureBrevoAttributes() {
+  // The flag is the attribute set itself, so adding an attribute re-runs this once.
+  const want = Object.keys(BREVO_ATTRS).join(',');
+  if ((await settingGet('brevo_attrs_ok')) === want) return;
+  const have = new Set(((await brevoFetch('/contacts/attributes')).attributes || []).map(a => a.name));
+  for (const [name, type] of Object.entries(BREVO_ATTRS)) {
+    if (have.has(name)) continue;
+    await brevoJson(`/contacts/attributes/normal/${name}`, 'POST', { type });
+  }
+  await settingSet('brevo_attrs_ok', want);
+}
+
+// Both contact sets, deduped, phone collisions resolved. Each item: { key, list, contact }.
+// Full scan of users + played rounds — admin- or cron-triggered only (rule #1).
+async function brevoContacts() {
+  const users = await db.all(
+    `SELECT uid, email, name, role, phone, location, instagram, tiktok, categories, primary_category,
+            profile_complete, lifetime_points, sessions_played, rounds_voted, first_seen, last_seen,
+            sms_marketing_consent, sms_optout_at, email_opt_out, blocked
+       FROM users WHERE email IS NOT NULL AND email <> '' ORDER BY first_seen, uid`);
+  // The score is read only where it is public: a ratified rating round, and for a daily drop
+  // only once the day has PUBLISHED — a tallied-but-sealed day must not leak through Brevo.
+  const rounds = await db.all(
+    `SELECT r.artist_email, r.artist_phone,
+            CASE WHEN r.status = 'ratified' AND r.room_average IS NOT NULL AND COALESCE(r.poll_type,'rating') <> 'binary'
+                  AND (COALESCE(s.mode,'') <> 'async' OR s.async_state = 'published')
+                 THEN r.room_average END AS score,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS ratings
+       FROM rounds r JOIN sessions s ON s.id = r.session_id
+      WHERE s.deleted_at IS NULL AND COALESCE(r.is_reference, 0) = 0
+        AND ((r.artist_email IS NOT NULL AND r.artist_email <> '') OR (r.artist_phone IS NOT NULL AND r.artist_phone <> ''))
+      ORDER BY r.created_at, r.id`);
+  // Brevo holds ONE contact per SMS number. A number claimed by two emails stays on the first
+  // claimant (A&Rs first, then artists in submission order) and is left off the others, so
+  // the whole row is not rejected over it.
+  const phoneOwner = new Map();
+  const claim = (phone, owner) => {
+    if (!phone) return null;
+    if (!phoneOwner.has(phone)) phoneOwner.set(phone, owner);
+    return phoneOwner.get(phone) === owner ? phone : null;
+  };
+  const base = publicBase();
+  const ars = [];
+  for (const u of users) {
+    const email = brevoEmail(u.email);
+    if (!email) continue;
+    const name = (u.name || '').trim();
+    const sp = name.indexOf(' ');
+    let cats = [];
+    try { cats = JSON.parse(u.categories || '[]'); } catch (e) {}
+    const attrs = {
+      FIRSTNAME: sp > 0 ? name.slice(0, sp) : name, LASTNAME: sp > 0 ? name.slice(sp + 1) : '',
+      ANR_NAME: name, ANR_UID: u.uid, ANR_PROFILE_URL: `${base}/u/${u.uid}`, ANR_ROLE: u.role || 'player',
+      ANR_CITY: u.location || '', ANR_INSTAGRAM: u.instagram ? '@' + u.instagram.replace(/^@+/, '') : '',
+      ANR_TIKTOK: u.tiktok ? '@' + u.tiktok.replace(/^@+/, '') : '',
+      ANR_CATEGORIES: Array.isArray(cats) ? cats.join(', ') : '', ANR_PRIMARY_CATEGORY: u.primary_category || '',
+      ANR_PROFILE_COMPLETE: !!Number(u.profile_complete), ANR_POINTS: Number(u.lifetime_points) || 0,
+      ANR_SESSIONS_PLAYED: Number(u.sessions_played) || 0, ANR_ROUNDS_VOTED: Number(u.rounds_voted) || 0,
+      ANR_SMS_CONSENT: !!Number(u.sms_marketing_consent) && !u.sms_optout_at,
+      ANR_EMAIL_OPT_OUT: !!Number(u.email_opt_out), ANR_BLOCKED: !!Number(u.blocked),
+    };
+    if (u.first_seen) attrs.ANR_JOINED = etDay(Number(u.first_seen));
+    if (u.last_seen) attrs.ANR_LAST_SEEN = etDay(Number(u.last_seen));
+    // Blank text is dropped rather than sent: with emptyContactsAttributes off it would be a
+    // no-op anyway, and it keeps the hash stable.
+    for (const k of Object.keys(attrs)) if (attrs[k] === '') delete attrs[k];
+    const phone = claim(brevoPhone(u.phone), 'e:' + email);
+    if (phone) attrs.SMS = phone;
+    ars.push({ key: 'e:' + email, list: 'ars', contact: { email, attributes: attrs } });
+  }
+  // Artists: one contact per email; the latest non-blank phone on any of their records wins,
+  // and the best score over the ratings floor rides along as ARTIST_TOP_SCORE.
+  const byEmail = new Map(), phoneOnly = new Map();
+  const floor = await brevoScoreFloor();
+  const note = (c, r) => {
+    if (r.score == null || (Number(r.ratings) || 0) < floor) return;
+    if (c.best == null || Number(r.score) > c.best) c.best = Number(r.score);
+  };
+  for (const r of rounds) {
+    const email = brevoEmail(r.artist_email), phone = brevoPhone(r.artist_phone);
+    if (email) { const c = byEmail.get(email) || { phone: null }; if (phone) c.phone = phone; note(c, r); byEmail.set(email, c); }
+    else if (phone) { const c = phoneOnly.get(phone) || {}; note(c, r); phoneOnly.set(phone, c); }
+  }
+  const scoreAttrs = (c) => c.best != null ? { ARTIST_TOP_SCORE: Math.round(c.best * 10) / 10 } : {};
+  const artists = [];
+  for (const [email, c] of byEmail) {
+    const phone = claim(c.phone, 'e:' + email);
+    artists.push({ key: 'e:' + email, list: 'artists', contact: { email, attributes: { ...(phone ? { SMS: phone } : {}), ...scoreAttrs(c) } } });
+  }
+  for (const [phone, c] of phoneOnly) {
+    if (phoneOwner.has(phone)) continue;   // already on someone's email contact
+    phoneOwner.set(phone, 's:' + phone);
+    artists.push({ key: 's:' + phone, list: 'artists', contact: { attributes: { SMS: phone, ...scoreAttrs(c) } } });
+  }
+  // Sidebet entrants, per iteration. Email only: every entrant is a users row, so their profile
+  // already rides the A&Rs list — this just puts the same contact on that Side Bet's list.
+  const entries = await db.all(
+    `SELECT e.pack_id, u.email FROM sidebet_entries e JOIN users u ON u.uid = e.user_id
+      WHERE u.email IS NOT NULL AND u.email <> '' ORDER BY e.pack_id, e.created_at`);
+  const sidebets = new Map();
+  for (const e of entries) {
+    const email = brevoEmail(e.email);
+    if (!email) continue;
+    if (!sidebets.has(e.pack_id)) sidebets.set(e.pack_id, []);
+    sidebets.get(e.pack_id).push({ key: 'e:' + email, list: 'sidebet:' + e.pack_id, contact: { email } });
+  }
+  return { ars, artists, sidebets };
+}
+const brevoHash = (c) => crypto.createHash('sha256').update(JSON.stringify(c)).digest('hex').slice(0, 32);
+
+// What would go on the next sync, per list — the console's readout and the sync's plan.
+async function brevoPending() {
+  const targets = await brevoTargets(await brevoContacts());
+  const ledger = new Map((await db.all('SELECT list, contact_key, hash FROM brevo_sync')).map(r => [r.list + '|' + r.contact_key, r.hash]));
+  for (const t of targets) {
+    const items = t.items.map(it => ({ ...it, hash: brevoHash(it.contact) }));
+    t.total = items.length;
+    t.pending = items.filter(it => ledger.get(t.list + '|' + it.key) !== it.hash);
+    delete t.items;
+  }
+  return targets;
+}
+
+// One budgeted pass. Re-runnable: whatever Brevo accepted is in the ledger, the rest goes next time.
+async function syncContactsToBrevo({ budgetMs = BREVO_BUDGET_MS, ts = Date.now() } = {}) {
+  const t0 = Date.now();
+  await ensureBrevoAttributes();
+  const targets = await brevoPending();
+  await ensureBrevoLists(targets);
+  const out = { sent: {}, total: {}, remaining: 0, processIds: [] };
+  for (const t of targets) {
+    out.sent[t.list] = 0;
+    out.total[t.list] = t.total;
+    for (let i = 0; i < t.pending.length; i += BREVO_CHUNK) {
+      if (Date.now() - t0 > budgetMs) { out.remaining += t.pending.length - i; break; }
+      const chunk = t.pending.slice(i, i + BREVO_CHUNK);
+      const r = await brevoJson('/contacts/import', 'POST', {
+        jsonBody: chunk.map(it => it.contact), listIds: [Number(t.id)],
+        updateExistingContacts: true, emptyContactsAttributes: false,
+      });
+      if (r.processId) out.processIds.push({ list: t.list, name: t.name, processId: r.processId, count: chunk.length });
+      const at = now();
+      for (const it of chunk) {
+        await db.run(`INSERT INTO brevo_sync (list, contact_key, hash, synced_at) VALUES (?, ?, ?, ?)
+          ON CONFLICT (list, contact_key) DO UPDATE SET hash = excluded.hash, synced_at = excluded.synced_at`,
+          [t.list, it.key, it.hash, at]);
+      }
+      out.sent[t.list] += chunk.length;
+    }
+  }
+  const last = { at: ts, sent: out.sent, total: out.total, remaining: out.remaining,
+    processIds: out.processIds.length ? out.processIds : (JSON.parse((await settingGet('brevo_last_sync')) || '{}').processIds || []), error: null };
+  await settingSet('brevo_last_sync', JSON.stringify(last));
+  return out;
+}
+
+// The settings-row lock (the asana_leads_lock pattern): one sync at a time, platform-wide.
+async function withBrevoLock(fn) {
+  const lockUntil = String(Date.now() + 26000);
+  await db.run("INSERT INTO settings (k, v) VALUES ('brevo_sync_lock', '0') ON CONFLICT (k) DO NOTHING");
+  const claim = await db.run("UPDATE settings SET v = ? WHERE k = 'brevo_sync_lock' AND v < ?", [lockUntil, String(Date.now())]);
+  if (!claim.changes) return { locked: true };
+  try { return await fn(); }
+  finally { await db.run("UPDATE settings SET v = '0' WHERE k = 'brevo_sync_lock' AND v = ?", [lockUntil]); }
+}
+
+// Cron: once a day (and onward on later ticks while a big first load still has `remaining`).
+// Silent until BREVO_API_KEY is set. Creates a new Side Bet list itself when an iteration
+// gets its first entrant.
+async function brevoDailySync({ budgetMs = 8000, ts = Date.now() } = {}) {
+  if (!process.env.BREVO_API_KEY) return null;
+  const last = JSON.parse((await settingGet('brevo_last_sync')) || '{}');
+  const due = !last.at || last.remaining > 0 || last.error || (ts - last.at >= BREVO_DAILY_GAP_MS && etHour(ts) >= 4);
+  if (!due) return null;
+  // A failing Brevo retries once an hour, not on every 5-minute tick.
+  if (last.error && last.errorAt && ts - last.errorAt < 3600000) return null;
+  try {
+    const r = await withBrevoLock(() => syncContactsToBrevo({ budgetMs, ts }));
+    return r.locked ? null : r;
+  } catch (e) {
+    await settingSet('brevo_last_sync', JSON.stringify({ ...last, error: e.message, errorAt: ts }));
+    throw e;
+  }
+}
+
 async function adminState(session, opts = {}) {
   // Hosts (non-admin owners) see engagement — names, points, counts, socials — but NEVER
   // contact PII (email/phone). Only the platform admin (Makin' It) sees emails.
@@ -7773,6 +8088,7 @@ async function handleApi(req, res, url) {
       smsProvider: (process.env.SMS_PROVIDER || 'none'),
       // The PAT itself is an env var and never leaves the server — only whether it's set.
       asanaToken: !!process.env.ASANA_TOKEN,
+      brevoKey: !!process.env.BREVO_API_KEY,
       cronConfigured: !!process.env.CRON_SECRET,
     });
   }
@@ -7807,6 +8123,21 @@ async function handleApi(req, res, url) {
       await db.run("DELETE FROM settings WHERE k = 'asana_leads_fields'");
       // A different project is a fresh start: the ledger describes tasks in the old one.
       if (next !== prev) await db.run('DELETE FROM asana_leads');
+    }
+    // Brevo list ids (044). Blank = the next sync creates the list. A different list is a fresh
+    // start: the ledger describes what the OLD list holds, so it is cleared for that list.
+    for (const [field, list] of [['brevoListArtists', 'artists'], ['brevoListArs', 'ars']]) {
+      if (!(field in body)) continue;
+      const k = BREVO_LISTS[list].setting;
+      const next = (body[field] || '').toString().trim().replace(/\D/g, '').slice(0, 20) || null;
+      const prev = await brevoListId(list);
+      await setOrClear(k, next);
+      if ((await brevoListId(list)) !== prev) await db.run('DELETE FROM brevo_sync WHERE list = ?', [list]);
+    }
+    // The ratings a record needs before its score goes on the artist's Brevo contact.
+    if ('brevoScoreMinRatings' in body) {
+      const n = parseInt(body.brevoScoreMinRatings, 10);
+      await setOrClear('brevo_score_min_ratings', Number.isFinite(n) && n >= 1 ? String(Math.min(n, 100000)) : null);
     }
     // A&R Daily schedule. Saved values are validated as a whole; null puts the defaults back.
     // Every drop that has NOT opened is re-stamped to the new window here, because a cold day
@@ -10087,6 +10418,42 @@ async function handleApi(req, res, url) {
       await db.run("UPDATE settings SET v = '0' WHERE k = 'asana_leads_lock' AND v = ?", [lockUntil]);
     }
   }
+  // ---- Brevo contacts (044) ----
+  // Readout: key set, list ids, contacts per list, how many the next sync would send, the last
+  // run and the state of its import jobs (Brevo imports asynchronously — a rejected batch only
+  // shows up there).
+  if (p === '/api/admin/brevo' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const plan = await brevoPending();
+    const last = JSON.parse((await settingGet('brevo_last_sync')) || 'null');
+    const lists = {};
+    for (const t of plan) lists[t.list] = { id: t.id || null, name: t.name, total: t.total, pending: t.pending.length, sidebet: !!t.packId };
+    let imports = [];
+    if (process.env.BREVO_API_KEY && last && last.processIds) {
+      for (const pr of last.processIds.slice(-4)) {
+        try { const d = await brevoFetch(`/processes/${pr.processId}`); imports.push({ ...pr, status: d.status || null, report: d.export_url || null }); }
+        catch (e) { imports.push({ ...pr, status: 'unknown', error: e.message }); }
+      }
+    }
+    return send(res, 200, { configured: !!process.env.BREVO_API_KEY, lists, last, imports, scoreMinRatings: await brevoScoreFloor() });
+  }
+  // One budgeted pass; the console loops while `remaining` > 0. The first press creates the
+  // folder, both lists and the A&R attributes.
+  if (p === '/api/admin/brevo/sync' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    if (!process.env.BREVO_API_KEY) return bad(res, 'Brevo not configured (set BREVO_API_KEY)', 409);
+    try {
+      const r = await withBrevoLock(() => syncContactsToBrevo());
+      if (r.locked) return bad(res, 'A Brevo sync is already running. Wait for it to finish, then press again.', 409);
+      return send(res, 200, { ok: true, ...r });
+    } catch (e) {
+      console.error('[brevo] sync failed:', e.message);
+      const last = JSON.parse((await settingGet('brevo_last_sync')) || '{}');
+      await settingSet('brevo_last_sync', JSON.stringify({ ...last, error: e.message, errorAt: Date.now() }));
+      return bad(res, 'Brevo sync failed: ' + e.message, 502);
+    }
+  }
+
   // Create the project (once) and write the tasks. Bounded per press; the console loops
   // while `remaining` > 0.
   if (p === '/api/admin/leads/asana' && method === 'POST') {
@@ -10565,6 +10932,7 @@ module.exports._artistNoticeSmsBody = artistNoticeSmsBody;
 module.exports._goLiveSmsBody = goLiveSmsBody;
 module.exports._fitSmsTitle = fitSmsTitle;
 module.exports._syncLeadsToAsana = syncLeadsToAsana;
+module.exports._brevoDailySync = brevoDailySync;
 module.exports._leadGroups = leadGroups;
 module.exports._parseLeadRef = parseLeadRef;
 module.exports._etHour = etHour;

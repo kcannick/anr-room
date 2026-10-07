@@ -12,7 +12,8 @@ process.env.INGEST_TOKEN = 'test-ingest-secret';
 process.env.DAILY_INGEST_TOKEN = 'test-daily-secret';
 process.env.ANALYTICS_TOKEN = 'test-analytics-secret';
 process.env.ASANA_API_BASE = 'http://localhost:3997';   // a mock Asana, started by the leads tests
-process.env.ASANA_CALL_TIMEOUT_MS = '500';               // so a deliberately stalled call fails fast
+process.env.ASANA_CALL_TIMEOUT_MS = '500';
+process.env.BREVO_API_BASE = 'http://localhost:3995';   // a mock Brevo, started by the Brevo tests               // so a deliberately stalled call fails fast
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
 try { fs.unlinkSync('./test.db-wal'); } catch {}
@@ -5231,6 +5232,184 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('daily asana: refuses without ASANA_TOKEN (409)', atOff.status === 409, 'got ' + atOff.status);
   await anDb.run('UPDATE sessions SET deleted_at = ?, async_state = ? WHERE id = ?', [atWas.deleted_at, atWas.async_state, LDROP]);
   asanaMock.close();
+
+  // ======================================================================
+  // Brevo contacts (044): artists (email + phone only) and every A&R (full profile) onto two
+  // lists. Brevo is a mock on BREVO_API_BASE (set at the top of this file).
+  console.log('\n— Brevo contacts —');
+  const brevoCalls = [];
+  const brevoState = { folders: [], lists: [], attrs: ['FIRSTNAME', 'LASTNAME', 'SMS'], nextId: 500 };   // clear of the real list ids (11, 119)
+  const brevoMock = require('http').createServer((req, res) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      const u = new URL(req.url, 'http://x');
+      const data = body ? JSON.parse(body) : null;
+      brevoCalls.push({ method: req.method, path: u.pathname, data, key: req.headers['api-key'] });
+      const reply = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(obj == null ? '' : JSON.stringify(obj)); };
+      let m;
+      if (req.method === 'GET' && u.pathname === '/contacts/folders') return reply(200, { folders: brevoState.folders, count: brevoState.folders.length });
+      if (req.method === 'POST' && u.pathname === '/contacts/folders') { const f = { id: brevoState.nextId++, name: data.name }; brevoState.folders.push(f); return reply(201, { id: f.id }); }
+      if (req.method === 'POST' && u.pathname === '/contacts/lists') { const l = { id: brevoState.nextId++, ...data }; brevoState.lists.push(l); return reply(201, { id: l.id }); }
+      if (req.method === 'GET' && u.pathname === '/contacts/attributes') return reply(200, { attributes: brevoState.attrs.map(name => ({ name, category: 'normal' })) });
+      if (req.method === 'POST' && (m = /^\/contacts\/attributes\/normal\/(\w+)$/.exec(u.pathname))) { brevoState.attrs.push(m[1]); return reply(201, null); }
+      if (req.method === 'POST' && u.pathname === '/contacts/import') return reply(202, { processId: brevoState.nextId++ });
+      if (req.method === 'GET' && (m = /^\/processes\/(\d+)$/.exec(u.pathname))) return reply(200, { id: Number(m[1]), status: 'completed' });
+      reply(500, { message: 'unmocked ' + req.method + ' ' + u.pathname });
+    });
+  });
+  await new Promise(r => brevoMock.listen(3995, r));
+  const imports = (from) => brevoCalls.slice(from).filter(c => c.path === '/contacts/import');
+
+  const brvHost = await call('/api/admin/brevo', null, 'GET', AH);
+  ok('brevo: platform-admin only (a host token gets 403)', brvHost.status === 403, 'got ' + brvHost.status);
+  const brvOff = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  ok('brevo: sync refuses without BREVO_API_KEY (409)', brvOff.status === 409, 'got ' + brvOff.status);
+
+  // Fixtures: an A&R who is blocked and opted out (still goes — opt-outs are not a filter here),
+  // an artist whose phone is the A&R's, an artist with only a phone, a reference track.
+  const brvNow = Date.now();
+  await anDb.run('INSERT INTO users (uid, email, name, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,0,0)',
+    ['bvuser1', 'BV.Ar@Example.com', 'Dana Q Public', brvNow, brvNow]);
+  await anDb.run("UPDATE users SET phone = '(305) 555-0199', location = 'Miami, FL', instagram = 'danaq', categories = ?, primary_category = 'Producer', blocked = 1, email_opt_out = 1 WHERE uid = 'bvuser1'", [JSON.stringify(['Producer', 'DJ'])]);
+  const brvRounds = (await anDb.all("SELECT r.id FROM rounds r JOIN sessions s ON s.id = r.session_id WHERE s.deleted_at IS NULL AND COALESCE(r.is_reference,0) = 0 ORDER BY r.created_at LIMIT 3")).map(r => r.id);
+  await anDb.run("UPDATE rounds SET artist_email = 'Shared.Artist@x.com', artist_phone = '305-555-0199' WHERE id = ?", [brvRounds[0]]);
+  await anDb.run("UPDATE rounds SET artist_email = NULL, artist_phone = '1 (305) 555-0177' WHERE id = ?", [brvRounds[1]]);
+  const brvRefWas = await anDb.get('SELECT is_reference, artist_email FROM rounds WHERE id = ?', [brvRounds[2]]);
+  await anDb.run("UPDATE rounds SET is_reference = 1, artist_email = 'reference@x.com' WHERE id = ?", [brvRounds[2]]);
+  // Scores: an artist with a 6.4 over the ratings floor and a 9.1 under it (only the 6.4 counts),
+  // an artist with only an under-floor record (no score at all), and an artist whose record sits
+  // in a daily drop that has not published (no score until it does).
+  const brvRated = await anDb.all(`SELECT r.id, r.session_id, (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS n
+      FROM rounds r JOIN sessions s ON s.id = r.session_id
+     WHERE s.deleted_at IS NULL AND COALESCE(s.mode,'') <> 'async' AND COALESCE(r.is_reference,0) = 0 AND COALESCE(r.poll_type,'rating') <> 'binary'
+     ORDER BY n DESC, r.id`);
+  const brvFree = brvRated.filter(r => !brvRounds.includes(r.id));
+  const brvMany = brvFree.find(r => r.n >= 3);
+  const brvSealed = brvFree.find(r => r.n >= 3 && r.session_id !== brvMany.session_id);
+  const brvUnder = brvFree.filter(r => r.n >= 1 && r.n < 3 && r.session_id !== brvSealed.session_id);
+  const [brvFew, brvLone] = brvUnder;
+  const brvDefault = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: the score floor defaults to 5 ratings', brvDefault.d.scoreMinRatings === 5, JSON.stringify(brvDefault.d.scoreMinRatings));
+  await call('/api/admin/settings', { brevoScoreMinRatings: 3 }, 'POST', ADMINH);
+  await anDb.run("UPDATE rounds SET artist_email = 'scored.artist@x.com', artist_phone = NULL, status = 'ratified', room_average = 6.4 WHERE id = ?", [brvMany.id]);
+  await anDb.run("UPDATE rounds SET artist_email = 'scored.artist@x.com', artist_phone = NULL, status = 'ratified', room_average = 9.1 WHERE id = ?", [brvFew.id]);
+  await anDb.run("UPDATE rounds SET artist_email = 'unproven.artist@x.com', artist_phone = NULL, status = 'ratified', room_average = 8.8 WHERE id = ?", [brvLone.id]);
+  await anDb.run("UPDATE rounds SET artist_email = 'sealed.artist@x.com', artist_phone = NULL, status = 'ratified', room_average = 9.9 WHERE id = ?", [brvSealed.id]);
+  const brvSealWas = await anDb.get('SELECT mode, async_state FROM sessions WHERE id = ?', [brvSealed.session_id]);
+  await anDb.run("UPDATE sessions SET mode = 'async', async_state = 'closed' WHERE id = ?", [brvSealed.session_id]);
+
+  process.env.BREVO_API_KEY = 'test-brevo-key';
+  const brv1From = brevoCalls.length;
+  const brv1 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  ok('brevo: first sync succeeds', brv1.status === 200 && brv1.d.ok && !brv1.d.remaining, JSON.stringify(brv1.d));
+  ok('brevo: artists and A&Rs go to the existing lists — only the Side Bet list is created', brevoState.folders.length === 1 && brevoState.folders[0].name === 'A&R Program'
+    && brevoState.lists.map(l => l.name).join('|') === 'Side Bet #1' && brevoState.lists[0].folderId === brevoState.folders[0].id, JSON.stringify(brevoState));
+  ok('brevo: the API key rides the api-key header', brevoCalls.slice(brv1From).every(c => c.key === 'test-brevo-key'));
+  ok('brevo: the A&R profile attributes are created', ['ANR_NAME', 'ANR_CITY', 'ANR_POINTS', 'ANR_JOINED'].every(a => brevoState.attrs.includes(a)), brevoState.attrs.join(','));
+  const brvArtistsId = 119;
+  const brvArsId = 11;
+  const brvSb1Id = brevoState.lists[0].id;
+  const brvImp = imports(brv1From);
+  const brvArt = brvImp.filter(c => c.data.listIds[0] === brvArtistsId).flatMap(c => c.data.jsonBody);
+  const brvArs = brvImp.filter(c => c.data.listIds[0] === brvArsId).flatMap(c => c.data.jsonBody);
+  const brvSb1 = brvImp.filter(c => c.data.listIds[0] === brvSb1Id).flatMap(c => c.data.jsonBody);
+  const brvSb1Want = (await anDb.all("SELECT DISTINCT LOWER(u.email) AS e FROM sidebet_entries e JOIN users u ON u.uid = e.user_id JOIN packs p ON p.id = e.pack_id WHERE p.id = (SELECT pack_id FROM sidebet_entries GROUP BY pack_id ORDER BY MIN((SELECT created_at FROM packs WHERE id = pack_id)) LIMIT 1)")).map(r => r.e).sort();
+  ok('brevo: every Side Bet entrant goes on that Side Bet list, email only', brvSb1.length > 0 && brvSb1.map(c => c.email).sort().join(',') === brvSb1Want.join(',')
+    && brvSb1.every(c => Object.keys(c).join() === 'email'), JSON.stringify({ got: brvSb1, want: brvSb1Want }));
+  ok('brevo: imports never blank existing fields and update existing contacts', brvImp.length >= 2 && brvImp.every(c => c.data.emptyContactsAttributes === false && c.data.updateExistingContacts === true), JSON.stringify(brvImp.map(c => c.data.listIds)));
+  ok('brevo: artists carry email, phone and their score — never a name', brvArt.length > 0 && brvArt.every(c => Object.keys(c.attributes).every(k => k === 'SMS' || /^ARTIST_/.test(k)) && Object.keys(c).every(k => k === 'email' || k === 'attributes')), JSON.stringify(brvArt.slice(0, 3)));
+  const brvScored = brvArt.find(c => c.email === 'scored.artist@x.com');
+  ok('brevo: an artist carries ONE number — the best score among records over the ratings floor', brvScored && brvScored.attributes.ARTIST_TOP_SCORE === 6.4
+    && Object.keys(brvScored.attributes).filter(k => /^ARTIST_/.test(k)).length === 1, JSON.stringify({ c: brvScored, many: brvMany, few: brvFew }));
+  const brvUnproven = brvArt.find(c => c.email === 'unproven.artist@x.com');
+  ok('brevo: an artist with no record over the floor gets no score at all', brvUnproven && brvUnproven.attributes.ARTIST_TOP_SCORE == null, JSON.stringify(brvUnproven));
+  const brvSeal = brvArt.find(c => c.email === 'sealed.artist@x.com');
+  ok('brevo: a daily drop that has not published leaks no score', brvSeal && brvSeal.attributes.ARTIST_TOP_SCORE == null, JSON.stringify(brvSeal));
+  ok('brevo: the artist score attribute is created', brevoState.attrs.includes('ARTIST_TOP_SCORE'));
+  ok('brevo: A&R contacts never carry an artist score', brvArs.every(c => !Object.keys(c.attributes).some(k => /^ARTIST_/.test(k))));
+  ok('brevo: a reference track is not an artist contact', !brvArt.some(c => c.email === 'reference@x.com'));
+  ok('brevo: an artist with only a phone goes as an SMS contact in E.164', brvArt.some(c => !c.email && c.attributes.SMS === '+13055550177'), JSON.stringify(brvArt.filter(c => !c.email)));
+  const brvDana = brvArs.find(c => c.email === 'bv.ar@example.com');
+  ok('brevo: every A&R goes — blocked and opted-out included, flagged as data', brvDana && brvDana.attributes.ANR_BLOCKED === true && brvDana.attributes.ANR_EMAIL_OPT_OUT === true, JSON.stringify(brvDana));
+  ok('brevo: the A&R carries their profile', brvDana && brvDana.attributes.FIRSTNAME === 'Dana' && brvDana.attributes.LASTNAME === 'Q Public' && brvDana.attributes.ANR_NAME === 'Dana Q Public'
+    && brvDana.attributes.ANR_CITY === 'Miami, FL' && brvDana.attributes.ANR_INSTAGRAM === '@danaq' && brvDana.attributes.ANR_CATEGORIES === 'Producer, DJ'
+    && /\/u\/bvuser1$/.test(brvDana.attributes.ANR_PROFILE_URL) && /^\d{4}-\d\d-\d\d$/.test(brvDana.attributes.ANR_JOINED), JSON.stringify(brvDana));
+  ok('brevo: the A&R phone is E.164', brvDana && brvDana.attributes.SMS === '+13055550199');
+  const brvShared = brvArt.find(c => c.email === 'shared.artist@x.com');
+  ok('brevo: a phone already on an A&R is not put on a second contact', brvShared && !brvShared.attributes.SMS, JSON.stringify(brvShared));
+  ok('brevo: no contact ever carries a phone another contact has', (() => { const seen = new Set(); return [...brvArt, ...brvArs].every(c => { const s = c.attributes.SMS; if (!s) return true; if (seen.has(s)) return false; seen.add(s); return true; }); })());
+
+  const brv2From = brevoCalls.length;
+  const brv2 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  ok('brevo: a second sync sends nothing', brv2.status === 200 && imports(brv2From).length === 0 && brv2.d.sent.artists === 0 && brv2.d.sent.ars === 0, JSON.stringify(brv2.d));
+  ok('brevo: a second sync does not recreate lists', brevoState.lists.length === 1 && brevoState.folders.length === 1);
+  // The next iteration gets its first entrant: "Side Bet #2", in the same folder, just that entrant.
+  const brvPack2 = await anDb.get("SELECT id FROM packs p WHERE NOT EXISTS (SELECT 1 FROM sidebet_entries e WHERE e.pack_id = p.id) ORDER BY created_at DESC LIMIT 1");
+  await anDb.run('INSERT INTO sidebet_entries (id, pack_id, user_id, entry_no, first_submitted_at, updated_at, created_at) VALUES (?,?,?,?,?,?,?)',
+    ['brvent2', brvPack2.id, 'bvuser1', 1, Date.now(), Date.now(), Date.now()]);
+  const brvSb2From = brevoCalls.length;
+  const brvSb2 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brvSb2Imp = imports(brvSb2From);
+  ok('brevo: the next Side Bet gets its own list, "Side Bet #2"', brevoState.lists.length === 2 && brevoState.lists[1].name === 'Side Bet #2' && brevoState.folders.length === 1, JSON.stringify(brevoState.lists));
+  ok('brevo: ...holding just its entrant', brvSb2Imp.length === 1 && brvSb2Imp[0].data.listIds[0] === brevoState.lists[1].id
+    && brvSb2Imp[0].data.jsonBody.length === 1 && brvSb2Imp[0].data.jsonBody[0].email === 'bv.ar@example.com', JSON.stringify(brvSb2Imp.map(c => c.data)));
+  await anDb.run("DELETE FROM sidebet_entries WHERE id = 'brvent2'");
+  await anDb.run("UPDATE users SET location = 'Atlanta, GA' WHERE uid = 'bvuser1'");
+  const brv3From = brevoCalls.length;
+  const brv3 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brv3Imp = imports(brv3From);
+  ok('brevo: an edited profile resends just that contact', brv3.d.sent.ars === 1 && brv3.d.sent.artists === 0 && brv3Imp.length === 1 && brv3Imp[0].data.jsonBody[0].attributes.ANR_CITY === 'Atlanta, GA', JSON.stringify(brv3.d));
+
+  // The day publishes: the sealed artist's score goes on the next sync, and only that contact.
+  await anDb.run("UPDATE sessions SET async_state = 'published' WHERE id = ?", [brvSealed.session_id]);
+  const brvPubFrom = brevoCalls.length;
+  const brvPub = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brvPubBody = imports(brvPubFrom).flatMap(c => c.data.jsonBody);
+  ok('brevo: once the day publishes, its artist gets their score', brvPub.d.sent.artists === 1 && brvPubBody.length === 1 && brvPubBody[0].email === 'sealed.artist@x.com' && brvPubBody[0].attributes.ARTIST_TOP_SCORE === 9.9, JSON.stringify(brvPubBody));
+  // Lowering the floor re-sends just the artist whose score it changes.
+  await call('/api/admin/settings', { brevoScoreMinRatings: 1 }, 'POST', ADMINH);
+  const brvFlFrom = brevoCalls.length;
+  const brvFl = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brvFlBody = imports(brvFlFrom).flatMap(c => c.data.jsonBody);
+  ok('brevo: a lower floor re-sends only the artists whose score moved', brvFlBody.some(c => c.email === 'scored.artist@x.com' && c.attributes.ARTIST_TOP_SCORE === 9.1)
+    && brvFlBody.some(c => c.email === 'unproven.artist@x.com' && c.attributes.ARTIST_TOP_SCORE === 8.8) && !brvFlBody.some(c => c.email === 'sealed.artist@x.com'), JSON.stringify(brvFlBody.map(c => c.email)));
+  await call('/api/admin/settings', { brevoScoreMinRatings: '' }, 'POST', ADMINH);
+  await anDb.run('UPDATE sessions SET mode = ?, async_state = ? WHERE id = ?', [brvSealWas.mode, brvSealWas.async_state, brvSealed.session_id]);
+  const brvBack = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: putting the floor back marks the moved artists to send again', brvBack.d.scoreMinRatings === 5 && brvBack.d.lists.artists.pending > 0 && brvBack.d.lists.ars.pending === 0, JSON.stringify(brvBack.d.lists));
+  await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brvRead = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: the readout shows both lists, nothing pending, and the import state', brvRead.status === 200 && brvRead.d.configured && brvRead.d.lists.artists.id == brvArtistsId
+    && brvRead.d.lists.ars.pending === 0 && brvRead.d.lists.artists.pending === 0 && brvRead.d.imports.length > 0 && brvRead.d.imports[0].status === 'completed', JSON.stringify(brvRead.d));
+  const brvPlat = await call('/api/admin/platform', null, 'GET', ADMINH);
+  ok('brevo: the platform panel says the key is set, never what it is', brvPlat.d.brevoKey === true && !JSON.stringify(brvPlat.d).includes('test-brevo-key'));
+
+  await anDb.run("UPDATE settings SET v = ? WHERE k = 'brevo_sync_lock'", [String(Date.now() + 60000)]);
+  const brvLocked = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  ok('brevo: a second sync while one runs gets 409', brvLocked.status === 409, 'got ' + brvLocked.status);
+  await anDb.run("UPDATE settings SET v = '0' WHERE k = 'brevo_sync_lock'");
+
+  // The daily cron pass: nothing within 23 hours of the last sync; due a day later (after 4AM ET).
+  ok('brevo daily: not due right after a sync', (await srv._brevoDailySync({ ts: Date.now() })) === null);
+  let brvTs = Date.now() + 24 * 3600000;
+  while (srv._etHour(brvTs) < 4) brvTs += 3600000;
+  const brvDay = await srv._brevoDailySync({ ts: brvTs });
+  ok('brevo daily: runs once the day has turned', brvDay && brvDay.sent && brvDay.sent.ars === 0, JSON.stringify(brvDay));
+  ok('brevo daily: ...and only once', (await srv._brevoDailySync({ ts: brvTs })) === null);
+
+  // A different list id is a fresh start for that list only.
+  await call('/api/admin/settings', { brevoListArtists: '999' }, 'POST', ADMINH);
+  const brvAfterSwap = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: a changed list id re-sends that whole list, not the other', brvAfterSwap.d.lists.artists.id === '999' && brvAfterSwap.d.lists.artists.pending === brvAfterSwap.d.lists.artists.total && brvAfterSwap.d.lists.ars.pending === 0, JSON.stringify(brvAfterSwap.d.lists));
+
+  await call('/api/admin/settings', { brevoListArtists: '' }, 'POST', ADMINH);
+  const brvBackTo = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: clearing the artists list id goes back to list 119', brvBackTo.d.lists.artists.id === '119', JSON.stringify(brvBackTo.d.lists.artists));
+
+  delete process.env.BREVO_API_KEY;
+  await anDb.run('UPDATE rounds SET is_reference = ?, artist_email = ? WHERE id = ?', [brvRefWas.is_reference, brvRefWas.artist_email, brvRounds[2]]);
+  brevoMock.close();
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();

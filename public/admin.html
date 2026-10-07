@@ -1096,6 +1096,23 @@
       <div id="leadsStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       <div id="leadsList" style="margin-top:10px;max-height:420px;overflow:auto"><div class="empty">Loading…</div></div>
     </div>
+    <div class="card" id="brevoCard">
+      <h2>Brevo contacts</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">Brevo lists, kept up to date once a day: <b>Artists</b> (everyone whose record was played — email, phone, and the score of their best record once it has enough ratings: <b>ARTIST_TOP_SCORE</b>) and <b>A&amp;Rs</b> (every registered account, with their profile), plus everyone who entered each Side Bet. Only new or changed contacts are sent. Nobody is ever removed from a list. Artists go to list <b>119</b> and A&amp;Rs to list <b>11</b>. Each Side Bet gets its own list (“Side Bet #1”, “Side Bet #2”…), created in a Brevo folder called “A&amp;R Program” when its first entrant is synced.</p>
+      <div class="row">
+        <div><label>Artists list ID <span class="muted">(blank = 119)</span></label><input id="brevoListArtists" placeholder="119"></div>
+        <div><label>A&amp;Rs list ID <span class="muted">(blank = 11)</span></label><input id="brevoListArs" placeholder="11"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn sm" id="brevoSync">Sync now</button>
+        <label style="margin:0;display:flex;align-items:center;gap:6px">Score needs <input id="brevoMinRatings" type="number" min="1" max="100000" value="5" style="width:64px;display:inline-block"> ratings</label>
+        <button class="btn ghost sm" id="brevoSaveIds">Save</button>
+        <button class="btn ghost sm" id="brevoRefresh">Refresh</button>
+      </div>
+      <div id="brevoStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
+      <div id="brevoInfo" style="margin-top:10px"></div>
+      <p class="muted" style="font-size:11px;margin:8px 0 0">The API key is an environment variable (<b>BREVO_API_KEY</b>) — it never lives in the database.</p>
+    </div>
     <div class="card" id="cbCard">
       <h2>Backfill artist contacts</h2>
       <p class="muted" style="font-size:12px;margin:0 0 10px">Records from before the contact fields existed have no email, phone or Instagram. Every record that has contact details is a source; a CSV export with columns <b>artist, title, email, phone, instagram</b> adds more. Each record missing a field is matched by its email or Instagram handle first (unique identifiers), then title and artist, then artist name alone, and <b>only blank fields are filled</b> — nothing already on a record changes. Preview first. With no file chosen it works from the site's own records.</p>
@@ -3150,7 +3167,7 @@ async function openPlatform(){
     $('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';
     $('#dsStreamUrl').value=d.settings.dailyStreamUrl||'';
     dsFill(d.dailySchedule);
-    leadsLoad();
+    leadsLoad();brevoLoad();
     plAsanaStatus(d);
     $('#plSmsProvider').textContent=d.smsProvider||'none';
     api('/api/admin/notify/audience',null,'GET').then(a=>{
@@ -3349,7 +3366,7 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
       dailySchedule:dsRead()});
     plReviveStatus({reviveDeliveryUrl:$('#plReviveUrl').value.trim(),reviveZoneLobby:$('#plReviveLobby').value.trim(),reviveZoneGame:$('#plReviveGame').value.trim()});
     // Re-read: the server normalizes the project id, and only it knows if the token is set.
-    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';$('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';plAsanaStatus(d);dsFill(d.dailySchedule);leadsLoad();}catch(e){}
+    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';$('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';plAsanaStatus(d);dsFill(d.dailySchedule);leadsLoad();brevoLoad();}catch(e){}
     $('#plStatus').textContent='Saved ✓';setTimeout(()=>$('#plStatus').textContent='',2000);
   }catch(e){$('#plStatus').textContent=e.message;}
   $('#plSaveSettings').disabled=false;
@@ -3406,6 +3423,45 @@ $('#cbPreview')&&($('#cbPreview').onclick=()=>cbRun(false));
 $('#cbApply')&&($('#cbApply').onclick=()=>{ if(confirm('Fill the blank contact fields on the matched records? Nothing already filled in will change.')) cbRun(true); });
 $('#cbFile')&&($('#cbFile').onchange=()=>{$('#cbApply').disabled=true;$('#cbStatus').textContent='';$('#cbList').innerHTML='';});
 
+// ===== Brevo contacts (044) =====
+async function brevoLoad(){
+  const box=$('#brevoInfo'),st=$('#brevoStatus'); if(!box)return;
+  box.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const d=await api('/api/admin/brevo',null,'GET');
+    $('#brevoListArtists').value=d.lists.artists.id||'';$('#brevoListArs').value=d.lists.ars.id||'';$('#brevoMinRatings').value=d.scoreMinRatings;
+    $('#brevoSync').disabled=!d.configured;
+    const L=d.last;
+    st.innerHTML=(d.configured?'':'BREVO_API_KEY is not set — the sync is off. ')
+      +(L&&L.at?'Last sync '+new Date(L.at).toLocaleString()+(L.remaining?' · '+L.remaining+' still to send':''):'Never synced.')
+      +(L&&L.error?' · <span style="color:var(--accent)">last error: '+esc(L.error)+'</span>':'');
+    const row=l=>'<tr><td><b>'+esc(l.name)+'</b></td><td class="num">'+(l.id||'<span class="muted">new</span>')+'</td><td class="num">'+l.total+'</td><td class="num">'+(l.pending?'<span style="color:var(--accent)">'+l.pending+'</span>':'0')+'</td></tr>';
+    let h='<table class="dltable"><tr><th>List</th><th class="num">ID</th><th class="num">Contacts</th><th class="num">To send</th></tr>'+Object.values(d.lists).map(row).join('')+'</table>';
+    if(d.imports&&d.imports.length) h+='<div class="muted" style="font-size:11px;margin-top:8px">Last imports: '+d.imports.map(i=>esc(i.name||i.list)+' #'+i.processId+' ('+i.count+') '+esc(i.status||'')+(i.report?' — <a href="'+esc(i.report)+'" target="_blank" rel="noopener" style="color:var(--signal)">report</a>':'')).join(' · ')+'</div>';
+    box.innerHTML=h;
+  }catch(e){box.innerHTML='';st.textContent=e.message;}
+}
+$('#brevoRefresh')&&($('#brevoRefresh').onclick=brevoLoad);
+$('#brevoSaveIds')&&($('#brevoSaveIds').onclick=async()=>{
+  try{await api('/api/admin/settings',{brevoListArtists:$('#brevoListArtists').value.trim(),brevoListArs:$('#brevoListArs').value.trim(),brevoScoreMinRatings:$('#brevoMinRatings').value});$('#brevoStatus').textContent='Saved. A changed list is sent in full on the next sync; a changed score floor re-sends the artists whose score moved.';brevoLoad();}
+  catch(e){$('#brevoStatus').textContent=e.message;}
+});
+$('#brevoSync')&&($('#brevoSync').onclick=async()=>{
+  const btn=$('#brevoSync'),st=$('#brevoStatus'),old=btn.textContent;btn.disabled=true;
+  const tot={};
+  try{
+    for(let i=0;i<30;i++){
+      btn.textContent='Sending… ('+Object.values(tot).reduce((x,n)=>x+n,0)+')';
+      const d=await api('/api/admin/brevo/sync',{});
+      for(const k in d.sent)tot[k]=(tot[k]||0)+d.sent[k];
+      if(!d.remaining)break;
+    }
+    await brevoLoad();
+    const a=tot.artists||0,r=tot.ars||0,sb=Object.keys(tot).filter(k=>k.startsWith('sidebet:')).reduce((x,k)=>x+tot[k],0);
+    st.innerHTML='✅ Sent '+a+' artist'+(a===1?'':'s')+', '+r+' A&amp;R'+(r===1?'':'s')+(sb?' and '+sb+' Side Bet entr'+(sb===1?'y':'ies'):'')+' to Brevo. Brevo imports them in the background — the counts there update in a minute or two.';
+  }catch(e){st.textContent=e.message;}
+  btn.textContent=old;btn.disabled=false;
+});
 // ===== Sales leads → Asana (040) =====
 const LEADS_UI_BUILD='2026-09-19g';   // printed by Check Asana so a cached console is visible
 const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));
