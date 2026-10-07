@@ -46,6 +46,36 @@ const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
 const PROFILE_CATEGORIES = ['DJ', 'Producer', 'Engineer', 'Manager', 'Event Promoter', 'Booking', 'Artist', 'Creative Director', 'Videographer', 'Photographer', 'Content Creator', 'Marketing', 'Executive', 'Media', 'Listener / Fan'];
 // A profile qualifies (leaderboard/prizes/Wars + payout KYC) when it has: display name
 // + at least one category + a primary + location. Socials and photo are optional.
+// Validate + write the editable profile fields for one user. Shared by the self-serve
+// save (/api/me/profile) and the admin edit (/api/admin/users/profile) so both apply
+// exactly the same rules. Returns the recomputed completeness flag.
+// Display-name edit is optional and applied only when non-empty. The durable name lives
+// on users; the player's per-room participant rows sync too so boards, cards, and the
+// overlay all agree. A handful of rows, user/admin-triggered.
+// NOTE: the phone number is NOT writable here. It lives on /api/me/notify-prefs
+// (header auth only) so exactly one code path owns the number and its TCPA consent
+// side-effects — two endpoints with subtly different consent rules is a bug waiting.
+async function applyProfileUpdate(userId, body) {
+  let cats = Array.isArray(body.categories) ? body.categories.filter(c => PROFILE_CATEGORIES.includes(c)) : [];
+  cats = [...new Set(cats)].slice(0, PROFILE_CATEGORIES.length);
+  let primary = PROFILE_CATEGORIES.includes(body.primaryCategory) ? body.primaryCategory : null;
+  if (primary && !cats.includes(primary)) cats.push(primary); // primary implies selected
+  if (!primary && cats.length) primary = cats[0];             // default primary to first picked
+  const location = (body.location || '').toString().trim().slice(0, 120) || null;
+  const instagram = (body.instagram || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
+  const tiktok = (body.tiktok || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
+  const newName = ('name' in body) ? (body.name || '').toString().trim().slice(0, MAX_NAME) : '';
+  if (newName) {
+    await db.run('UPDATE users SET name = ? WHERE uid = ?', [newName, userId]);
+    await db.run('UPDATE participants SET name = ? WHERE user_id = ?', [newName, userId]);
+  }
+  const u = await db.get('SELECT name FROM users WHERE uid = ?', [userId]);
+  const complete = isProfileComplete({ name: u && u.name, categories: JSON.stringify(cats), primary_category: primary, location }) ? 1 : 0;
+  await db.run('UPDATE users SET categories = ?, primary_category = ?, location = ?, instagram = ?, tiktok = ?, profile_complete = ? WHERE uid = ?',
+    [JSON.stringify(cats), primary, location, instagram, tiktok, complete, userId]);
+  return !!complete;
+}
+
 function isProfileComplete(u) {
   if (!u) return false;
   let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
@@ -6653,30 +6683,45 @@ async function handleApi(req, res, url) {
     const userId = await resolveUserId(req);
     if (!userId) return bad(res, 'Not authenticated', 401);
     const body = await readBody(req);
-    let cats = Array.isArray(body.categories) ? body.categories.filter(c => PROFILE_CATEGORIES.includes(c)) : [];
-    cats = [...new Set(cats)].slice(0, PROFILE_CATEGORIES.length);
-    let primary = PROFILE_CATEGORIES.includes(body.primaryCategory) ? body.primaryCategory : null;
-    if (primary && !cats.includes(primary)) cats.push(primary); // primary implies selected
-    if (!primary && cats.length) primary = cats[0];             // default primary to first picked
-    const location = (body.location || '').toString().trim().slice(0, 120) || null;
-    const instagram = (body.instagram || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
-    const tiktok = (body.tiktok || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
-    // Display-name edit (optional; applied only when non-empty). The durable name
-    // lives on users; the player's per-room participant rows sync too so boards,
-    // cards, and the overlay all agree. A handful of rows, user-triggered.
-    const newName = ('name' in body) ? (body.name || '').toString().trim().slice(0, MAX_NAME) : '';
-    if (newName) {
-      await db.run('UPDATE users SET name = ? WHERE uid = ?', [newName, userId]);
-      await db.run('UPDATE participants SET name = ? WHERE user_id = ?', [newName, userId]);
-    }
-    // NOTE: the phone number is NOT writable here. It lives on /api/me/notify-prefs
-    // (header auth only) so exactly one code path owns the number and its TCPA consent
-    // side-effects — two endpoints with subtly different consent rules is a bug waiting.
-    const u = await db.get('SELECT name FROM users WHERE uid = ?', [userId]);
-    const complete = isProfileComplete({ name: u && u.name, categories: JSON.stringify(cats), primary_category: primary, location }) ? 1 : 0;
-    await db.run('UPDATE users SET categories = ?, primary_category = ?, location = ?, instagram = ?, tiktok = ?, profile_complete = ? WHERE uid = ?',
-      [JSON.stringify(cats), primary, location, instagram, tiktok, complete, userId]);
-    return send(res, 200, { ok: true, complete: !!complete });
+    const complete = await applyProfileUpdate(userId, body);
+    return send(res, 200, { ok: true, complete });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ADMIN: read + edit any A&R's profile (2026-10-07). The Users screen could search
+  // for a person but offered no way to open or fix their profile — the operator had to
+  // ask the A&R to do it. Same fields and the same validation as the self-serve save
+  // (applyProfileUpdate), so an admin edit can never produce a profile the A&R could not
+  // have saved themselves. Email and phone are READ here (the admin list already shows
+  // the email) but never written: email is the identity key and the phone number's
+  // TCPA consent side-effects live on /api/me/notify-prefs only.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (p === '/api/admin/users/profile' && method === 'GET') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const uid = url.searchParams.get('uid') || '';
+    const u = await db.get('SELECT * FROM users WHERE uid = ?', [uid]);
+    if (!u) return bad(res, 'User not found', 404);
+    let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
+    res.setHeader('Cache-Control', 'private, no-store');
+    return send(res, 200, {
+      profile: {
+        id: u.uid, name: u.name || '', email: u.email || '', phone: u.phone || '',
+        categories: cats, primaryCategory: u.primary_category || '',
+        location: u.location || '', instagram: u.instagram || '', tiktok: u.tiktok || '',
+        photoUrl: u.photo_url || null, complete: !!u.profile_complete, role: u.role, blocked: !!u.blocked,
+      },
+      categoriesAvailable: PROFILE_CATEGORIES,
+    });
+  }
+  if (p === '/api/admin/users/profile' && method === 'POST') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const u = await db.get('SELECT uid FROM users WHERE uid = ?', [body.uid || '']);
+    if (!u) return bad(res, 'User not found', 404);
+    const complete = await applyProfileUpdate(u.uid, body);
+    return send(res, 200, { ok: true, complete });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
