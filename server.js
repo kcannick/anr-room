@@ -577,10 +577,10 @@ async function verifyNotifyLink(req, url) {
 // discipline: prefs-scope was "read masked contact, never change the phone"; refer-scope is
 // "read your own links, totals and graphics" and nothing else. Never wired into
 // resolveUserId; the two endpoints that accept it check it explicitly.
-function mintReferLink(uid, expSec = null) {
+function mintReferLink(uid) {
   const secret = notifyLinkSecret();
   if (!secret || !uid) return null;
-  const exp = expSec || Math.floor(now() / 1000) + NOTIFY_LINK_TTL;
+  const exp = Math.floor(now() / 1000) + NOTIFY_LINK_TTL;
   const msg = `rf1.${uid}.${exp}`;
   return `${msg}.${crypto.createHmac('sha256', secret).update(msg).digest('base64url')}`;
 }
@@ -2539,6 +2539,15 @@ function referGraphicVersion(u) {
   return crypto.createHash('sha256')
     .update([u.uid, u.name || '', u.primary_category || '', u.location || '', u.photo_url || ''].join('\u0000'))
     .digest('hex').slice(0, 12);
+}
+// The Official A&R Card as a PUBLIC image URL — for email blasts (Brevo's ANR_CARD_IMAGE).
+// Public by design: everything it prints (name, role, city, photo, the two referral QRs) is
+// already on the public /u/<uid> profile, and an <img> in an email cannot carry a login.
+// `v` is referGraphicVersion: a new name/photo/city/role makes a new URL (the sync re-sends
+// it), and a matching URL is cached at the CDN for good, so a blast renders each card once.
+const ANR_CARD_EMAIL_WIDTH = 800;
+function anrCardImageUrl(base, u) {
+  return `${base}/api/card/anr/${encodeURIComponent(u.uid)}.png?v=${referGraphicVersion(u)}`;
 }
 function referralLinks(uid) {
   const u = encodeURIComponent(uid);
@@ -5516,11 +5525,12 @@ const BREVO_LISTS = {
 };
 // The A&R profile as Brevo attributes. FIRSTNAME / LASTNAME / SMS are Brevo's built-ins;
 // the rest are created on the first sync if missing.
-// On A&R contacts (operator, 2026-10-09: the full profile was too much): their three links —
-// the promo card page (the signed /refer link, so it opens without a login), their A&R
-// referral link (join) and their artist referral link (submit) — beside name, email, phone.
+// On A&R contacts (operator, 2026-10-09: the full profile was too much): their promo card as
+// an IMAGE URL (so an email blast can show each A&R their own card: <img src="{{ contact.
+// ANR_CARD_IMAGE }}">), their A&R referral link (join) and their artist referral link
+// (submit) — beside name, email, phone.
 const BREVO_ATTRS = {
-  ANR_CARD_LINK: 'text', ANR_REFERRAL_LINK: 'text', ARTIST_REFERRAL_LINK: 'text',
+  ANR_CARD_IMAGE: 'text', ANR_REFERRAL_LINK: 'text', ARTIST_REFERRAL_LINK: 'text',
   // On ARTIST contacts: ONE number, their best record's score, to segment good artists for
   // select opportunities (operator, 2026-10-05: a single value, nothing else).
   ARTIST_TOP_SCORE: 'float',
@@ -5628,7 +5638,7 @@ async function ensureBrevoAttributes() {
 // Full scan of users + played rounds — admin- or cron-triggered only (rule #1).
 async function brevoContacts() {
   const users = await db.all(
-    `SELECT uid, email, name, phone
+    `SELECT uid, email, name, phone, primary_category, location, photo_url
        FROM users WHERE email IS NOT NULL AND email <> '' ORDER BY first_seen, uid`);
   // The score is read only where it is public: a ratified rating round, and for a daily drop
   // only once the day has PUBLISHED — a tallied-but-sealed day must not leak through Brevo.
@@ -5652,14 +5662,6 @@ async function brevoContacts() {
     return phoneOwner.get(phone) === owner ? phone : null;
   };
   const base = publicBase();
-  // The card link is signed and expires (NOTIFY_LINK_TTL, 30 days), and a copy sitting in Brevo
-  // must never be a dead link. So its expiry is pinned to the WEEK: every link minted in a week
-  // shares one expiry, 30–37 days out — the payload (and its hash) changes once a week, the
-  // daily sync re-sends every A&R once a week with a fresh link, and the copy in Brevo always
-  // has at least 30 days left. (Minting off now() would change it every run and re-send
-  // everyone daily.)
-  const WEEK = 7 * 86400;
-  const cardExp = (Math.floor(Math.floor(now() / 1000) / WEEK) + 1) * WEEK + NOTIFY_LINK_TTL;
   const ars = [];
   for (const u of users) {
     const email = brevoEmail(u.email);
@@ -5667,10 +5669,9 @@ async function brevoContacts() {
     const name = (u.name || '').trim();
     const sp = name.indexOf(' ');
     const links = referralLinks(u.uid);
-    const card = mintReferLink(u.uid, cardExp);
     const attrs = {
       FIRSTNAME: sp > 0 ? name.slice(0, sp) : name, LASTNAME: sp > 0 ? name.slice(sp + 1) : '',
-      ANR_CARD_LINK: card ? `${base}/refer#rt=${card}` : `${base}/refer`,
+      ANR_CARD_IMAGE: anrCardImageUrl(base, u),
       ANR_REFERRAL_LINK: links.join, ARTIST_REFERRAL_LINK: links.submit,
     };
     // Blank text is dropped rather than sent: with emptyContactsAttributes off it would be a
@@ -9538,6 +9539,38 @@ async function handleApi(req, res, url) {
       return res.end(png);
     } catch (e) {
       console.error('[refer] card render failed:', e.message);
+      return bad(res, 'Card render failed', 500);
+    }
+  }
+
+  // The public card image (see anrCardImageUrl). No login: it prints only public profile data.
+  // A blocked or unknown A&R is a 404 — an old email then shows a broken image, never a card.
+  if (p.startsWith('/api/card/anr/') && p.endsWith('.png') && method === 'GET') {
+    const uid = decodeURIComponent(p.slice('/api/card/anr/'.length, -'.png'.length));
+    if (!/^[A-Za-z0-9_-]{6,32}$/.test(uid)) return bad(res, 'Not found', 404);
+    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, blocked FROM users WHERE uid = ?', [uid]);
+    if (!u || u.blocked) return bad(res, 'Not found', 404);
+    try {
+      const links = referralLinks(u.uid);
+      const data = {
+        name: u.name || 'A&R', category: u.primary_category || null, location: u.location || null,
+        photo: await photoDataUri(u.photo_url),
+        qrJoin: await qrPngDataUri(links.join), qrSubmit: await qrPngDataUri(links.submit),
+      };
+      let png;
+      try { png = await shareCards.renderPng('referCard', data, ANR_CARD_EMAIL_WIDTH); }
+      catch (e) {
+        if (!data.photo) throw e;
+        png = await shareCards.renderPng('referCard', { ...data, photo: null }, ANR_CARD_EMAIL_WIDTH);
+      }
+      // A current URL caches at the CDN for a year (its content cannot change without the URL
+      // changing); an old one (an email sent before a profile edit) renders today's card, briefly.
+      const current = url.searchParams.get('v') === referGraphicVersion(u);
+      res.writeHead(200, { 'Content-Type': 'image/png',
+        'Cache-Control': current ? 'public, max-age=86400, s-maxage=31536000, immutable' : 'public, max-age=3600, s-maxage=3600' });
+      return res.end(png);
+    } catch (e) {
+      console.error('[card/anr] render failed:', e.message);
       return bad(res, 'Card render failed', 500);
     }
   }

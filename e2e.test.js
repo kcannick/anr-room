@@ -5327,7 +5327,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('brevo: artists and A&Rs go to the existing lists — only the Side Bet list is created', brevoState.folders.length === 1 && brevoState.folders[0].name === 'A&R Program'
     && brevoState.lists.map(l => l.name).join('|') === 'Side Bet #1' && brevoState.lists[0].folderId === brevoState.folders[0].id, JSON.stringify(brevoState));
   ok('brevo: the API key rides the api-key header', brevoCalls.slice(brv1From).every(c => c.key === 'test-brevo-key'));
-  ok('brevo: the A&R link attributes are created', ['ANR_CARD_LINK', 'ANR_REFERRAL_LINK', 'ARTIST_REFERRAL_LINK'].every(a => brevoState.attrs.includes(a)), brevoState.attrs.join(','));
+  ok('brevo: the A&R link attributes are created', ['ANR_CARD_IMAGE', 'ANR_REFERRAL_LINK', 'ARTIST_REFERRAL_LINK'].every(a => brevoState.attrs.includes(a)), brevoState.attrs.join(','));
   const brvArtistsId = 119;
   const brvArsId = 111;
   const brvSb1Id = brevoState.lists[0].id;
@@ -5354,16 +5354,24 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const brvDana = brvArs.find(c => c.email === 'bv.ar@example.com');
   ok('brevo: every A&R goes — blocked and opted-out included', !!brvDana, JSON.stringify(brvArs.map(c => c.email)));
   ok('brevo: an A&R carries name, phone and their three links — nothing else', brvDana
-    && Object.keys(brvDana.attributes).sort().join(',') === 'ANR_CARD_LINK,ANR_REFERRAL_LINK,ARTIST_REFERRAL_LINK,FIRSTNAME,LASTNAME,SMS'
+    && Object.keys(brvDana.attributes).sort().join(',') === 'ANR_CARD_IMAGE,ANR_REFERRAL_LINK,ARTIST_REFERRAL_LINK,FIRSTNAME,LASTNAME,SMS'
     && brvDana.attributes.FIRSTNAME === 'Dana' && brvDana.attributes.LASTNAME === 'Q Public', JSON.stringify(brvDana));
   ok('brevo: the referral links carry the A&R\'s uid', brvDana && /\/\?ref=bvuser1$/.test(brvDana.attributes.ANR_REFERRAL_LINK) && /review\?ref=bvuser1$/.test(brvDana.attributes.ARTIST_REFERRAL_LINK), JSON.stringify(brvDana && brvDana.attributes));
-  const brvCardTok = brvDana && (/\/refer#rt=(rf1\.[^.]+\.\d+\.[\w-]+)$/.exec(brvDana.attributes.ANR_CARD_LINK) || [])[1];
-  const brvCardExp = brvCardTok ? Number(brvCardTok.split('.')[2]) * 1000 : 0;
-  ok('brevo: the card link is a signed /refer link good for at least 30 days', !!brvCardTok && brvCardExp - Date.now() >= 30 * 86400000 - 60000 && brvCardExp - Date.now() <= 37 * 86400000 + 60000, String(brvDana && brvDana.attributes.ANR_CARD_LINK));
+  // The card is a public image URL an email can show: no login, cached by version.
+  const brvImgPath = brvDana && (/^https?:\/\/[^/]+(\/api\/card\/anr\/bvuser1\.png\?v=[0-9a-f]{12})$/.exec(brvDana.attributes.ANR_CARD_IMAGE) || [])[1];
+  ok('brevo: the card is an image URL for that A&R, versioned', !!brvImgPath, String(brvDana && brvDana.attributes.ANR_CARD_IMAGE));
+  const brvImgBlocked = await fetch(base + brvImgPath);
+  ok('brevo: a blocked A&R\'s card image is a 404', brvImgBlocked.status === 404, 'got ' + brvImgBlocked.status);
   await anDb.run('UPDATE users SET blocked = 0 WHERE uid = ?', ['bvuser1']);
-  const brvCardOpen = await call('/api/me/referrals?rt=' + encodeURIComponent(brvCardTok || ''), null, 'GET');
+  const brvImg = await fetch(base + brvImgPath);
+  const brvImgBuf = Buffer.from(await brvImg.arrayBuffer());
+  ok('brevo: the card image renders with no login, as a PNG', brvImg.status === 200 && /image\/png/.test(brvImg.headers.get('content-type')) && brvImgBuf.slice(1, 4).toString() === 'PNG', 'got ' + brvImg.status);
+  ok('brevo: ...and a current URL caches at the CDN for good', /s-maxage=31536000/.test(brvImg.headers.get('cache-control') || ''), brvImg.headers.get('cache-control'));
+  const brvImgOld = await fetch(base + brvImgPath.replace(/v=[0-9a-f]+/, 'v=000000000000'));
+  ok('brevo: an outdated URL still shows the card, cached briefly', brvImgOld.status === 200 && /s-maxage=3600\b/.test(brvImgOld.headers.get('cache-control') || ''), brvImgOld.headers.get('cache-control'));
+  const brvImgBad = await fetch(base + '/api/card/anr/nobody123.png');
+  ok('brevo: an unknown A&R\'s card image is a 404', brvImgBad.status === 404, 'got ' + brvImgBad.status);
   await anDb.run('UPDATE users SET blocked = 1 WHERE uid = ?', ['bvuser1']);
-  ok('brevo: the card link opens that A&R\'s own page', brvCardOpen.status === 200, 'got ' + brvCardOpen.status + ' ' + JSON.stringify(brvCardOpen.d).slice(0, 120));
   ok('brevo: the A&R phone is E.164', brvDana && brvDana.attributes.SMS === '+13055550199');
   const brvShared = brvArt.find(c => c.email === 'shared.artist@x.com');
   ok('brevo: a phone already on an A&R is not put on a second contact', brvShared && !brvShared.attributes.SMS, JSON.stringify(brvShared));
