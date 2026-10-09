@@ -78,7 +78,7 @@ module.exports = function installTournaments(ctx) {
       : [];
     let graphics = {};
     try { graphics = t.graphics ? JSON.parse(t.graphics) : {}; } catch { graphics = {}; }
-    return { ...t, competitors, matches, polls, graphicsMap: graphics };
+    return { ...t, competitors, matches, polls, graphicsMap: graphics, photoCache: new Map() };
   }
   const pollsOf = (T, m) => T.polls.filter(p => p.tournament_match_id === m.id);
   const compById = (T, cid) => T.competitors.find(c => c.id === cid) || null;
@@ -214,6 +214,13 @@ module.exports = function installTournaments(ctx) {
 
   // ── Satori data ─────────────────────────────────────────────────────────────────────
   const SIL = null; // photo null → the element draws the silhouette
+  // One fetch per competitor per hydrated tournament — the zip renders ~30 graphics off one T.
+  async function photoOf(T, c) {
+    if (!c.photo_url) return SIL;
+    if (!T.photoCache) T.photoCache = new Map();
+    if (!T.photoCache.has(c.id)) T.photoCache.set(c.id, await photoDataUri(c.photo_url));
+    return T.photoCache.get(c.id);
+  }
   async function flyerData(T, { stage, filled } = {}) {
     const K = kindOf(T);
     const seats = [...T.competitors].sort((a, b) => (a.seat || a.seed) - (b.seat || b.seed));
@@ -223,7 +230,7 @@ module.exports = function installTournaments(ctx) {
     const qualifier = st === 'seat' ? seats[n - 1] || null : null;
     const bigC = st === 'champion' ? champ : qualifier;
     const photos = new Map();
-    for (const c of seats.slice(0, st === 'seat' ? n : B.FIELD)) if (c.photo_url) photos.set(c.id, await photoDataUri(c.photo_url));
+    for (const c of seats.slice(0, st === 'seat' ? n : B.FIELD)) photos.set(c.id, await photoOf(T, c));
     const eyebrow = `${K.name === KINDS.ar.name ? 'A&R Wars' : "$1,000 Music Review Tournament"} #${T.number || 1}`;
     let headline, big, cta;
     if (st === 'champion') {
@@ -251,7 +258,7 @@ module.exports = function installTournaments(ctx) {
   async function bracketData(T) {
     const K = kindOf(T);
     const photos = new Map();
-    for (const c of T.competitors) if (c.photo_url) photos.set(c.id, await photoDataUri(c.photo_url));
+    for (const c of T.competitors) photos.set(c.id, await photoOf(T, c));
     const side = cid => { const c = cid ? compById(T, cid) : null; return c ? { name: c.name, seed: c.seed, sub: c.handle ? '@' + c.handle : (c.city || ''), photo: photos.get(c.id) || null } : null; };
     const mm = m => ({ a: side(m.a_id), b: side(m.b_id), winner: m.winner_id ? (m.winner_id === m.a_id ? 'a' : 'b') : null });
     const r1 = T.matches.filter(m => m.round_no === 1).map(mm);
@@ -742,6 +749,39 @@ module.exports = function installTournaments(ctx) {
       const map = { ...T.graphicsMap, [key]: { urls: hosted ? urls : null, publishedAt: now(), asanaTaskId: asana ? asana.taskId : (T.graphicsMap[key] || {}).asanaTaskId || null, asanaUrl: asana ? asana.url : (T.graphicsMap[key] || {}).asanaUrl || null } };
       await db.run('UPDATE tournaments SET graphics = ?, caption = ? WHERE id = ?', [JSON.stringify(map), cap.caption, T.id]);
       return send(res, 200, { ok: true, urls: hosted ? urls : null, hosted, asana, asanaError, caption: cap.caption, comments: cap.comments });
+    }
+
+    // Every available graphic in one download: each ready row × its kinds, a hosted copy when
+    // one was published (a fetch, not a render), plus captions.txt. Up to 31 PNGs; photos are
+    // fetched once per competitor for the whole set.
+    if (p === '/api/admin/tournament/graphics.zip' && method === 'GET') {
+      const T = await needT(); if (!T) return true;
+      const { zipStore } = require('./zip');
+      const files = [];
+      const notes = [];
+      for (const row of graphicRows(T).filter(r => r.ready)) {
+        for (const kind of row.kinds) {
+          const name = `${T.slug}-${row.key}-${kind}.png`;
+          let buf = null;
+          const hosted = row.urls && row.urls[kind];
+          if (hosted) {
+            try {
+              const r = await fetch(hosted, { signal: AbortSignal.timeout(5000) });
+              if (r.ok) buf = Buffer.from(await r.arrayBuffer());
+            } catch (e) { /* render instead */ }
+          }
+          if (!buf) buf = await renderKey(T, row.key, kind);
+          files.push({ name, data: buf });
+        }
+        const cap = await caption(T, row.key);
+        notes.push(`== ${row.label} ==\n\n${cap.caption}\n` + (cap.comments.length ? `\nComments, four a comment:\n${cap.comments.map(c => '- ' + c).join('\n')}\n` : '') + `\nTag on the graphic: ${cap.tagOnGraphic.join(', ') || '(nobody)'}\n`);
+      }
+      if (!files.length) return bad(res, 'No graphics are ready yet — seat a competitor first', 409);
+      files.push({ name: `${T.slug}-captions.txt`, data: Buffer.from(notes.join('\n'), 'utf8') });
+      const zip = zipStore(files);
+      res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': zip.length, 'Cache-Control': 'private, no-store',
+        'Content-Disposition': `attachment; filename="${T.slug}-graphics.zip"` });
+      return res.end(zip);
     }
 
     if (p === '/api/admin/tournament/subscribers' && method === 'GET') {
