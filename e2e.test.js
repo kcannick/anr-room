@@ -5327,7 +5327,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('brevo: artists and A&Rs go to the existing lists — only the Side Bet list is created', brevoState.folders.length === 1 && brevoState.folders[0].name === 'A&R Program'
     && brevoState.lists.map(l => l.name).join('|') === 'Side Bet #1' && brevoState.lists[0].folderId === brevoState.folders[0].id, JSON.stringify(brevoState));
   ok('brevo: the API key rides the api-key header', brevoCalls.slice(brv1From).every(c => c.key === 'test-brevo-key'));
-  ok('brevo: the A&R profile attributes are created', ['ANR_NAME', 'ANR_CITY', 'ANR_POINTS', 'ANR_JOINED'].every(a => brevoState.attrs.includes(a)), brevoState.attrs.join(','));
+  ok('brevo: the A&R link attributes are created', ['ANR_CARD_LINK', 'ANR_REFERRAL_LINK', 'ARTIST_REFERRAL_LINK'].every(a => brevoState.attrs.includes(a)), brevoState.attrs.join(','));
   const brvArtistsId = 119;
   const brvArsId = 111;
   const brvSb1Id = brevoState.lists[0].id;
@@ -5348,14 +5348,22 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const brvSeal = brvArt.find(c => c.email === 'sealed.artist@x.com');
   ok('brevo: a daily drop that has not published leaks no score', brvSeal && brvSeal.attributes.ARTIST_TOP_SCORE == null, JSON.stringify(brvSeal));
   ok('brevo: the artist score attribute is created', brevoState.attrs.includes('ARTIST_TOP_SCORE'));
-  ok('brevo: A&R contacts never carry an artist score', brvArs.every(c => !Object.keys(c.attributes).some(k => /^ARTIST_/.test(k))));
+  ok('brevo: A&R contacts never carry an artist score', brvArs.every(c => !('ARTIST_TOP_SCORE' in c.attributes)));
   ok('brevo: a reference track is not an artist contact', !brvArt.some(c => c.email === 'reference@x.com'));
   ok('brevo: an artist with only a phone goes as an SMS contact in E.164', brvArt.some(c => !c.email && c.attributes.SMS === '+13055550177'), JSON.stringify(brvArt.filter(c => !c.email)));
   const brvDana = brvArs.find(c => c.email === 'bv.ar@example.com');
-  ok('brevo: every A&R goes — blocked and opted-out included, flagged as data', brvDana && brvDana.attributes.ANR_BLOCKED === true && brvDana.attributes.ANR_EMAIL_OPT_OUT === true, JSON.stringify(brvDana));
-  ok('brevo: the A&R carries their profile', brvDana && brvDana.attributes.FIRSTNAME === 'Dana' && brvDana.attributes.LASTNAME === 'Q Public' && brvDana.attributes.ANR_NAME === 'Dana Q Public'
-    && brvDana.attributes.ANR_CITY === 'Miami, FL' && brvDana.attributes.ANR_INSTAGRAM === '@danaq' && brvDana.attributes.ANR_CATEGORIES === 'Producer, DJ'
-    && /\/u\/bvuser1$/.test(brvDana.attributes.ANR_PROFILE_URL) && /^\d{4}-\d\d-\d\d$/.test(brvDana.attributes.ANR_JOINED), JSON.stringify(brvDana));
+  ok('brevo: every A&R goes — blocked and opted-out included', !!brvDana, JSON.stringify(brvArs.map(c => c.email)));
+  ok('brevo: an A&R carries name, phone and their three links — nothing else', brvDana
+    && Object.keys(brvDana.attributes).sort().join(',') === 'ANR_CARD_LINK,ANR_REFERRAL_LINK,ARTIST_REFERRAL_LINK,FIRSTNAME,LASTNAME,SMS'
+    && brvDana.attributes.FIRSTNAME === 'Dana' && brvDana.attributes.LASTNAME === 'Q Public', JSON.stringify(brvDana));
+  ok('brevo: the referral links carry the A&R\'s uid', brvDana && /\/\?ref=bvuser1$/.test(brvDana.attributes.ANR_REFERRAL_LINK) && /review\?ref=bvuser1$/.test(brvDana.attributes.ARTIST_REFERRAL_LINK), JSON.stringify(brvDana && brvDana.attributes));
+  const brvCardTok = brvDana && (/\/refer#rt=(rf1\.[^.]+\.\d+\.[\w-]+)$/.exec(brvDana.attributes.ANR_CARD_LINK) || [])[1];
+  const brvCardExp = brvCardTok ? Number(brvCardTok.split('.')[2]) * 1000 : 0;
+  ok('brevo: the card link is a signed /refer link good for at least 30 days', !!brvCardTok && brvCardExp - Date.now() >= 30 * 86400000 - 60000 && brvCardExp - Date.now() <= 37 * 86400000 + 60000, String(brvDana && brvDana.attributes.ANR_CARD_LINK));
+  await anDb.run('UPDATE users SET blocked = 0 WHERE uid = ?', ['bvuser1']);
+  const brvCardOpen = await call('/api/me/referrals?rt=' + encodeURIComponent(brvCardTok || ''), null, 'GET');
+  await anDb.run('UPDATE users SET blocked = 1 WHERE uid = ?', ['bvuser1']);
+  ok('brevo: the card link opens that A&R\'s own page', brvCardOpen.status === 200, 'got ' + brvCardOpen.status + ' ' + JSON.stringify(brvCardOpen.d).slice(0, 120));
   ok('brevo: the A&R phone is E.164', brvDana && brvDana.attributes.SMS === '+13055550199');
   const brvShared = brvArt.find(c => c.email === 'shared.artist@x.com');
   ok('brevo: a phone already on an A&R is not put on a second contact', brvShared && !brvShared.attributes.SMS, JSON.stringify(brvShared));
@@ -5376,11 +5384,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('brevo: ...holding just its entrant', brvSb2Imp.length === 1 && brvSb2Imp[0].data.listIds[0] === brevoState.lists[1].id
     && brvSb2Imp[0].data.jsonBody.length === 1 && brvSb2Imp[0].data.jsonBody[0].email === 'bv.ar@example.com', JSON.stringify(brvSb2Imp.map(c => c.data)));
   await anDb.run("DELETE FROM sidebet_entries WHERE id = 'brvent2'");
-  await anDb.run("UPDATE users SET location = 'Atlanta, GA' WHERE uid = 'bvuser1'");
+  await anDb.run("UPDATE users SET name = 'Dana Rivers' WHERE uid = 'bvuser1'");
   const brv3From = brevoCalls.length;
   const brv3 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
   const brv3Imp = imports(brv3From);
-  ok('brevo: an edited profile resends just that contact', brv3.d.sent.ars === 1 && brv3.d.sent.artists === 0 && brv3Imp.length === 1 && brv3Imp[0].data.jsonBody[0].attributes.ANR_CITY === 'Atlanta, GA', JSON.stringify(brv3.d));
+  ok('brevo: an edited profile resends just that contact', brv3.d.sent.ars === 1 && brv3.d.sent.artists === 0 && brv3Imp.length === 1 && brv3Imp[0].data.jsonBody[0].attributes.LASTNAME === 'Rivers', JSON.stringify(brv3.d));
 
   // The day publishes: the sealed artist's score goes on the next sync, and only that contact.
   await anDb.run("UPDATE sessions SET async_state = 'published' WHERE id = ?", [brvSealed.session_id]);

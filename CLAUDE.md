@@ -907,8 +907,10 @@ live on anr.makinitmag.com.
   good artists: the best room average among records with ≥ `brevo_score_min_ratings`
   ratings, default **5**, NO fallback below the floor (blank = unproven); daily scores only once
   the day is PUBLISHED (the seal)) and **A&Rs** (existing list **111**; every `users` row with an email, **opt-outs
-  and blocked NOT filtered** — operator's call, Brevo's unsubscribe governs; those states ride
-  as `ANR_*` boolean attributes along with the full profile). `brevo_sync` ledger holds a payload
+  and blocked NOT filtered** — operator's call, Brevo's unsubscribe governs. Sends name, phone and
+  THREE LINKS only (operator 2026-10-09: the full profile was too much): `ANR_CARD_LINK` (signed
+  `rf1` /refer link, expiry pinned to the week + 30d so the copy in Brevo is never dead and every
+  A&R re-sends once a week), `ANR_REFERRAL_LINK` (join), `ARTIST_REFERRAL_LINK` (submit)). `brevo_sync` ledger holds a payload
   hash per (list, contact) so only new/changed contacts go; `POST /contacts/import` with
   `emptyContactsAttributes:false`; never removes anyone. Plus a **"Side Bet #N"** list per sidebet iteration
   (email only; N = creation order among packs with entries; created in folder "A&R Program" when
