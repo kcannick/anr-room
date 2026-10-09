@@ -726,6 +726,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
           <h3 class="sec" style="margin:0">Graphics · weekly qualifier series</h3>
           <div class="row" style="gap:8px;flex:0 0 auto">
+            <button class="btn ghost sm" id="btnTnZip" title="Every ready graphic, plus the captions, in one zip">Download all graphics (zip)</button>
             <button class="btn ghost sm" id="btnTnCaption">Copy caption</button>
             <button class="btn sm" id="btnTnPublish">Publish + make Asana task</button>
           </div>
@@ -3625,6 +3626,22 @@ $('#btnTnRemind').onclick = async (e) => {
     await tnLoad(true);
   }catch(err){ out.textContent = `Stopped after ${sent}: ${err.message}`; }
   finally{ b.disabled = false; }
+};
+// Every available graphic in one zip: all the ready seat sets, the final promo, the champion
+// set and the bracket, plus captions.txt. Up to 31 renders — the button says so while it waits.
+$('#btnTnZip').onclick = async (e) => {
+  if(!TN) return;
+  const b = e.target, was = b.textContent; b.disabled = true; b.textContent = 'Building the zip…'; tnErr('');
+  try{
+    const r = await fetch('/api/admin/tournament/graphics.zip?id=' + encodeURIComponent(TN.id), { headers: chAuthHeaders() });
+    if(!r.ok){ let m = 'Could not build the zip (' + r.status + ')'; try{ m = (await r.json()).error || m; }catch{} throw new Error(m); }
+    const bl = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(bl); a.download = (TN.slug || 'tournament') + '-graphics.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }catch(err){ tnErr(err.message); }
+  finally{ b.disabled = false; b.textContent = was; }
 };
 $('#btnTnCsv').onclick = async (e) => {
   if(!TN) return;

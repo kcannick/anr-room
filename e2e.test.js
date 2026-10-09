@@ -5751,6 +5751,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tnPubl = await call('/api/admin/tournament/publish', { tournamentId: TN, key: 'seat2' }, 'POST', BOOTH);
   ok('tournament: publish without Blob keeps the caption and records the row', tnPubl.status === 200 && tnPubl.d.hosted === false && /Theo qualified/.test(tnPubl.d.caption)
     && (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d.graphics.find(g => g.key === 'seat2').publishedAt != null, JSON.stringify(tnPubl.d).slice(0, 200));
+  const tnZipRes = await fetch(base + `/api/admin/tournament/graphics.zip?id=${TN}`, { headers: BOOTH });
+  const tnZip = Buffer.from(await tnZipRes.arrayBuffer());
+  const { zipEntryCount } = require('./zip');
+  ok('tournament: one zip with every available graphic (8 seats × 3 + final 3 + champion 3 + bracket + captions)', tnZipRes.status === 200
+    && tnZipRes.headers.get('content-type') === 'application/zip' && /wars-1-graphics\.zip/.test(tnZipRes.headers.get('content-disposition') || '')
+    && tnZip.slice(0, 2).toString() === 'PK' && zipEntryCount(tnZip) === 32, `status ${tnZipRes.status} entries ${zipEntryCount(tnZip)}`);
+  ok('tournament: the zip names the files by slug/row/kind', tnZip.includes(Buffer.from('wars-1-seat1-feed.png')) && tnZip.includes(Buffer.from('wars-1-bracket-bracket.png')) && tnZip.includes(Buffer.from('wars-1-captions.txt')));
+  ok('tournament: the zip is admin only', (await fetch(base + `/api/admin/tournament/graphics.zip?id=${TN}`)).status === 403);
   ok('tournament: the list is in the admin index', (await call('/api/admin/tournaments', null, 'GET', BOOTH)).d.tournaments.some(t => t.id === TN && t.champion && t.filled === 8));
   // the artist kind reuses everything with its own words
   const tnArt = await call('/api/admin/tournament', { kind: 'artist', number: 1, eventLocal: '2030-11-22T19:00' }, 'POST', BOOTH);

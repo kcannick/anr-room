@@ -210,6 +210,7 @@ rate-limited; 404 for draft; 409 once the event has started).
 - `POST /api/admin/tournament/decide { tournamentId, matchId, winnerId|null }` (null clears the match and everything downstream)
 - `POST /api/admin/tournament/publish { tournamentId, key }` → `{ ok, urls, asana: { taskId, url }|null, caption }` (renders, hosts to Blob, makes the Asana task; without Blob the urls are null and the caption still comes back)
 - `GET /api/admin/tournament/caption?id=&key=` → `{ caption, comments: [string] }`
+- `GET /api/admin/tournament/graphics.zip?id=` → a zip of every READY graphic (each row × its kinds, hosted copies fetched when published, else rendered) plus `<slug>-captions.txt`; 409 when nothing is ready (2026-10-09, operator's ask)
 - `GET /api/admin/tournament/subscribers?id=&format=csv` → CSV (email, name, joined, reminded)
 - `POST /api/admin/tournament/remind-now { tournamentId }` → `{ sent, remaining }` (chunked; press again while `remaining`)
 - `GET /api/card/tournament?t=<id>&kind=feed|story|thumb|bracket&filled=N&stage=seat|final|champion`
