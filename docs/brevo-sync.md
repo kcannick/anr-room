@@ -5,12 +5,10 @@ The platform keeps these Brevo lists up to date:
 | List | Who | What is sent |
 |---|---|---|
 | **Artists** (your existing list **119**) | Every artist whose record was played (live shows and the daily drop; reference tracks left out) | Email, phone and their best score (below) — never a name: the name on a submission is whatever was typed |
-| **A&Rs** (your existing list **111**) | Every registered account with an email — blocked and opted-out accounts included | Email, phone, first/last name, and the profile (see below) |
+| **A&Rs** (your existing list **111**) | Every registered account with an email | Email, phone, first/last name, and their three links (see below) |
 | **Side Bet #1, #2, …** (one per sidebet iteration, created automatically) | Everyone who entered that Side Bet | Email only — they are A&Rs, so their profile is already on the contact |
 
-Opt-outs are **not** a filter. Brevo's own unsubscribe governs Brevo's sends. Whether an A&R
-has turned off our emails, is blocked, or has SMS consent is sent as data
-(`ANR_EMAIL_OPT_OUT`, `ANR_BLOCKED`, `ANR_SMS_CONSENT`), so you can build segments on it in Brevo.
+Opt-outs are **not** a filter: Brevo's own unsubscribe governs Brevo's sends.
 
 ## Setup (once)
 
@@ -38,12 +36,17 @@ artist with no record over the floor gets **no score** (blank = unproven, not lo
 the Brevo card; the next sync re-sends just the artists whose score moved. Daily-drop scores
 appear only once that day's results have published.
 
-## A&R attributes
+## A&R links
 
-`FIRSTNAME`, `LASTNAME`, `SMS`, and: `ANR_NAME`, `ANR_UID`, `ANR_PROFILE_URL`, `ANR_ROLE`,
-`ANR_CITY`, `ANR_INSTAGRAM`, `ANR_TIKTOK`, `ANR_CATEGORIES`, `ANR_PRIMARY_CATEGORY`,
-`ANR_PROFILE_COMPLETE`, `ANR_POINTS`, `ANR_SESSIONS_PLAYED`, `ANR_ROUNDS_VOTED`, `ANR_JOINED`,
-`ANR_LAST_SEEN`, `ANR_SMS_CONSENT`, `ANR_EMAIL_OPT_OUT`, `ANR_BLOCKED`.
+| Attribute | What it is |
+|---|---|
+| `ANR_CARD_LINK` | Their promo card page (`/refer`), signed so it opens without a login |
+| `ANR_REFERRAL_LINK` | Their A&R referral link — someone who joins through it is credited to them |
+| `ARTIST_REFERRAL_LINK` | Their artist referral link — the review-site submit page, credited to them |
+
+The card link carries a signed token that lasts 30 days. The sync re-issues it every week (so
+every A&R is re-sent once a week), which keeps the copy in Brevo at least 30 days from expiry.
+The two referral links never expire.
 
 ## Things to know
 

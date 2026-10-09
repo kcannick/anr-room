@@ -577,10 +577,10 @@ async function verifyNotifyLink(req, url) {
 // discipline: prefs-scope was "read masked contact, never change the phone"; refer-scope is
 // "read your own links, totals and graphics" and nothing else. Never wired into
 // resolveUserId; the two endpoints that accept it check it explicitly.
-function mintReferLink(uid) {
+function mintReferLink(uid, expSec = null) {
   const secret = notifyLinkSecret();
   if (!secret || !uid) return null;
-  const exp = Math.floor(now() / 1000) + NOTIFY_LINK_TTL;
+  const exp = expSec || Math.floor(now() / 1000) + NOTIFY_LINK_TTL;
   const msg = `rf1.${uid}.${exp}`;
   return `${msg}.${crypto.createHmac('sha256', secret).update(msg).digest('base64url')}`;
 }
@@ -5516,12 +5516,11 @@ const BREVO_LISTS = {
 };
 // The A&R profile as Brevo attributes. FIRSTNAME / LASTNAME / SMS are Brevo's built-ins;
 // the rest are created on the first sync if missing.
+// On A&R contacts (operator, 2026-10-09: the full profile was too much): their three links —
+// the promo card page (the signed /refer link, so it opens without a login), their A&R
+// referral link (join) and their artist referral link (submit) — beside name, email, phone.
 const BREVO_ATTRS = {
-  ANR_NAME: 'text', ANR_UID: 'text', ANR_PROFILE_URL: 'text', ANR_ROLE: 'text', ANR_CITY: 'text',
-  ANR_INSTAGRAM: 'text', ANR_TIKTOK: 'text', ANR_CATEGORIES: 'text', ANR_PRIMARY_CATEGORY: 'text',
-  ANR_PROFILE_COMPLETE: 'boolean', ANR_POINTS: 'float', ANR_SESSIONS_PLAYED: 'float',
-  ANR_ROUNDS_VOTED: 'float', ANR_JOINED: 'date', ANR_LAST_SEEN: 'date',
-  ANR_SMS_CONSENT: 'boolean', ANR_EMAIL_OPT_OUT: 'boolean', ANR_BLOCKED: 'boolean',
+  ANR_CARD_LINK: 'text', ANR_REFERRAL_LINK: 'text', ARTIST_REFERRAL_LINK: 'text',
   // On ARTIST contacts: ONE number, their best record's score, to segment good artists for
   // select opportunities (operator, 2026-10-05: a single value, nothing else).
   ARTIST_TOP_SCORE: 'float',
@@ -5629,9 +5628,7 @@ async function ensureBrevoAttributes() {
 // Full scan of users + played rounds — admin- or cron-triggered only (rule #1).
 async function brevoContacts() {
   const users = await db.all(
-    `SELECT uid, email, name, role, phone, location, instagram, tiktok, categories, primary_category,
-            profile_complete, lifetime_points, sessions_played, rounds_voted, first_seen, last_seen,
-            sms_marketing_consent, sms_optout_at, email_opt_out, blocked
+    `SELECT uid, email, name, phone
        FROM users WHERE email IS NOT NULL AND email <> '' ORDER BY first_seen, uid`);
   // The score is read only where it is public: a ratified rating round, and for a daily drop
   // only once the day has PUBLISHED — a tallied-but-sealed day must not leak through Brevo.
@@ -5655,27 +5652,27 @@ async function brevoContacts() {
     return phoneOwner.get(phone) === owner ? phone : null;
   };
   const base = publicBase();
+  // The card link is signed and expires (NOTIFY_LINK_TTL, 30 days), and a copy sitting in Brevo
+  // must never be a dead link. So its expiry is pinned to the WEEK: every link minted in a week
+  // shares one expiry, 30–37 days out — the payload (and its hash) changes once a week, the
+  // daily sync re-sends every A&R once a week with a fresh link, and the copy in Brevo always
+  // has at least 30 days left. (Minting off now() would change it every run and re-send
+  // everyone daily.)
+  const WEEK = 7 * 86400;
+  const cardExp = (Math.floor(Math.floor(now() / 1000) / WEEK) + 1) * WEEK + NOTIFY_LINK_TTL;
   const ars = [];
   for (const u of users) {
     const email = brevoEmail(u.email);
     if (!email) continue;
     const name = (u.name || '').trim();
     const sp = name.indexOf(' ');
-    let cats = [];
-    try { cats = JSON.parse(u.categories || '[]'); } catch (e) {}
+    const links = referralLinks(u.uid);
+    const card = mintReferLink(u.uid, cardExp);
     const attrs = {
       FIRSTNAME: sp > 0 ? name.slice(0, sp) : name, LASTNAME: sp > 0 ? name.slice(sp + 1) : '',
-      ANR_NAME: name, ANR_UID: u.uid, ANR_PROFILE_URL: `${base}/u/${u.uid}`, ANR_ROLE: u.role || 'player',
-      ANR_CITY: u.location || '', ANR_INSTAGRAM: u.instagram ? '@' + u.instagram.replace(/^@+/, '') : '',
-      ANR_TIKTOK: u.tiktok ? '@' + u.tiktok.replace(/^@+/, '') : '',
-      ANR_CATEGORIES: Array.isArray(cats) ? cats.join(', ') : '', ANR_PRIMARY_CATEGORY: u.primary_category || '',
-      ANR_PROFILE_COMPLETE: !!Number(u.profile_complete), ANR_POINTS: Number(u.lifetime_points) || 0,
-      ANR_SESSIONS_PLAYED: Number(u.sessions_played) || 0, ANR_ROUNDS_VOTED: Number(u.rounds_voted) || 0,
-      ANR_SMS_CONSENT: !!Number(u.sms_marketing_consent) && !u.sms_optout_at,
-      ANR_EMAIL_OPT_OUT: !!Number(u.email_opt_out), ANR_BLOCKED: !!Number(u.blocked),
+      ANR_CARD_LINK: card ? `${base}/refer#rt=${card}` : `${base}/refer`,
+      ANR_REFERRAL_LINK: links.join, ARTIST_REFERRAL_LINK: links.submit,
     };
-    if (u.first_seen) attrs.ANR_JOINED = etDay(Number(u.first_seen));
-    if (u.last_seen) attrs.ANR_LAST_SEEN = etDay(Number(u.last_seen));
     // Blank text is dropped rather than sent: with emptyContactsAttributes off it would be a
     // no-op anyway, and it keeps the hash stable.
     for (const k of Object.keys(attrs)) if (attrs[k] === '') delete attrs[k];
