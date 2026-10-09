@@ -40,13 +40,13 @@ appear only once that day's results have published.
 
 | Attribute | What it is |
 |---|---|
-| `ANR_CARD_LINK` | Their promo card page (`/refer`), signed so it opens without a login |
+| `ANR_CARD_IMAGE` | Their Official A&R Card as an image URL (PNG, 800 px wide) — put it in an email with an image block or `<img src="{{ contact.ANR_CARD_IMAGE }}">` |
 | `ANR_REFERRAL_LINK` | Their A&R referral link — someone who joins through it is credited to them |
 | `ARTIST_REFERRAL_LINK` | Their artist referral link — the review-site submit page, credited to them |
 
-The card link carries a signed token that lasts 30 days. The sync re-issues it every week (so
-every A&R is re-sent once a week), which keeps the copy in Brevo at least 30 days from expiry.
-The two referral links never expire.
+None of the three expire. The card image is public (it shows only what the A&R's public
+profile already shows) and always draws the A&R's current card; when they change their name,
+photo, city or role, the next sync sends a new URL. A blocked account's card shows as a broken image.
 
 ## Things to know
 
