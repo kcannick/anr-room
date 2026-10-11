@@ -4363,6 +4363,7 @@ function topSupportCents(rows) {
 // and scales with the week's rounds — it must never become reachable from a boot or poll
 // path (CLAUDE.md #1 rule).
 const WEEK_START_DOW = 1;               // 1 = Monday, in JS getDay() terms
+const WEEKLY_PICKER_WEEKS = 16;          // complete weeks the weekly report's picker offers
 const ET_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 // The weekday of an ET calendar day, read off the ET-noon instant so a DST day can never
 // answer with the day either side of itself.
@@ -4572,16 +4573,33 @@ async function weeklyReportData(day, opts = {}) {
   const limit = Math.max(1, Math.min(50, opts.limit || 8));
   const minVotes = Math.max(0, opts.minVotes || 0);
 
-  const sessions = await db.all(
-    `SELECT id, drop_day, series_id, async_state, window_opens_at, results_at, published_at
-       FROM sessions
-      WHERE mode = 'async' AND deleted_at IS NULL AND drop_day BETWEEN ? AND ?
-      ORDER BY drop_day ASC`, [win.start, win.end]);
+  // The week's sessions: every daily drop that opened in it, plus the completed LIVE rating
+  // shows that ran in it — before A&R Daily (2026-09-02) the Daily Review was a live session,
+  // and without them every week before September reads as empty. A live session is dated the
+  // way My results dates it (ET day of scheduled_at, else created_at), so the two screens put
+  // a show in the same week. Live sessions with no rating round (Verzuz, tournament nights)
+  // stay out: a week's #1 A&R takes a seat, and that seat is won on rating records.
+  const fromTs = etEpoch(win.start, 0), toTs = etEpoch(etNextDay(win.end), 0);
+  const sessions = (await db.all(
+    `SELECT id, name, mode, status, drop_day, series_id, async_state, scheduled_at, created_at
+       FROM sessions s
+      WHERE deleted_at IS NULL AND (
+            (mode = 'async' AND drop_day BETWEEN ? AND ?)
+         OR ((mode IS NULL OR mode <> 'async') AND status = 'completed'
+             AND COALESCE(scheduled_at, created_at) >= ? AND COALESCE(scheduled_at, created_at) < ?
+             AND EXISTS (SELECT 1 FROM rounds r WHERE r.session_id = s.id
+                          AND r.status = 'ratified' AND r.poll_type <> 'binary')))`,
+    [win.start, win.end, fromTs, toTs]))
+    .map(s => Object.assign(s, s.mode === 'async' ? { live: false }
+      : { live: true, drop_day: etDay(Number(s.scheduled_at || s.created_at)) }))
+    .sort((a, b) => (a.drop_day < b.drop_day ? -1 : a.drop_day > b.drop_day ? 1 : 0));
   const ids = sessions.map(s => s.id);
   const drops = sessions.map(s => ({
     id: s.id, day: s.drop_day, dayLabel: etDayLabel(s.drop_day),
     weekday: ET_DOW[etWeekday(s.drop_day)] || null,
-    state: s.async_state || 'scheduled', series_id: s.series_id || null,
+    // A completed live session revealed at ratify, so it is as final as a published drop.
+    state: s.live ? 'published' : (s.async_state || 'scheduled'), series_id: s.series_id || null,
+    live: s.live, name: s.live ? (s.name || 'Live show') : null,
   }));
   const base = {
     week: { start: win.start, end: win.end, label: win.label,
@@ -10458,22 +10476,15 @@ async function handleApi(req, res, url) {
     });
     if (!data) return bad(res, 'That is not a day I can resolve to a week', 400);
 
-    // The picker is built from the weeks that actually have drops, newest first — a week
-    // with nothing in it is not a week the operator can read on air. The week in progress
-    // is offered too (marked), because they preview it before the show.
-    const recent = await db.all(
-      `SELECT DISTINCT drop_day FROM sessions
-        WHERE mode = 'async' AND deleted_at IS NULL
-        ORDER BY drop_day DESC LIMIT 120`, []);
+    // The picker is every week, newest first: the week in progress (marked — they preview
+    // it before the show) and the WEEKLY_PICKER_WEEKS complete weeks before it, with no gaps.
+    // An empty week stays in the list and says so on the screen, rather than vanishing and
+    // making the weeks either side of it look adjacent.
     const seen = new Set(), weeks = [];
     const liveStart = weekStartFor(etDay());
-    for (const r of recent) {
-      const st = weekStartFor(r.drop_day);
-      if (!st || seen.has(st)) continue;
+    for (let i = 0, st = liveStart; i <= WEEKLY_PICKER_WEEKS && st; i++, st = etNextDay(st, -7)) {
       seen.add(st);
-      const w = weekWindow(st);
-      weeks.push({ start: st, label: w.label, current: st === liveStart });
-      if (weeks.length >= 12) break;
+      weeks.push({ start: st, label: weekWindow(st).label, current: st === liveStart });
     }
     if (!seen.has(data.week.start)) {
       weeks.unshift({ start: data.week.start, label: data.week.label, current: data.week.start === liveStart });

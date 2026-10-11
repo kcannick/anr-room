@@ -2795,8 +2795,8 @@ function renderWeekly(){
     ratified: 'Closed', published: 'Published' };
   $('#wkDrops').innerHTML = drops.length
     ? `<table class="dltable"><tr><th>Day</th><th>State</th><th class="num">Records scored</th></tr>`
-      + drops.map(d => `<tr><td>${esc(d.dayLabel || d.day)}</td>`
-          + `<td>${esc(STATE[d.state] || d.state)}</td><td class="num">${d.records || 0}</td></tr>`).join('')
+      + drops.map(d => `<tr><td>${esc(d.dayLabel || d.day)}${d.live ? ` <span class="muted">· ${esc(d.name)}</span>` : ''}</td>`
+          + `<td>${esc(d.live ? 'Live show' : (STATE[d.state] || d.state))}</td><td class="num">${d.records || 0}</td></tr>`).join('')
       + '</table>'
     : '<div class="empty">No drops landed in this week.</div>';
 }
