@@ -2226,7 +2226,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const wrep = await srv._weeklyReportData(pubbed.drop_day, { limit: 1 });
   const wwTrack = await srv._winnerWeekData(pubbed.drop_day, 'track');
   ok('Top Track of the Week is about the ARTIST placing: the artist is the name, no song title on the card, the selection in the operator\'s words',
-    wwTrack && wrep.songs[0] && wwTrack.title === wrep.songs[0].artist && wwTrack.by === '' && wwTrack.record === '“' + wrep.songs[0].title + '”'
+    wwTrack && wrep.songs[0] && wwTrack.title === (wrep.songs[0].artist || wrep.songs[0].title) && wwTrack.by === '' && wwTrack.record === '“' + wrep.songs[0].title + '”'
       && wwTrack.selected.join(' ') === 'Selected for the next $1,000 Music Tournament'
       && wwTrack.date.includes(' – ') && wwTrack.week.start === wkStart, JSON.stringify(wwTrack));
   ok('a handle prints as @name, no parentheses (the card draws the Instagram glyph beside it)', /^(@[A-Za-z0-9_.]+)?$/.test(wwTrack.handle), wwTrack.handle);
@@ -3903,6 +3903,38 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify(WKR3.songsAll.filter(r => r.title === 'Neon Skyline')));
   for (const sid of [wkThu, wkSun, wkBefore, wkAfter]) {
     await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), sid]);
+  }
+  // Before A&R Daily the Daily Review was a LIVE session; a week from then must not read empty.
+  // A completed live rating show lands in the week of its scheduled ET day; a Verzuz-only live
+  // session stays out (the week's #1 A&R takes a seat, won on rating records).
+  const wkLive = async (id, sched, poll) => {
+    await dDb.run(`INSERT INTO sessions (id, name, admin_token, status, scheduled_at, series_id, created_at)
+                   VALUES (?,?,?,?,?,?,?)`, [id, 'Daily Review - ' + id, 'tok_' + id, 'completed', sched, serId, wkNow]);
+    const rid = await wkRound(id, { title: 'Live ' + id, artist: 'On Air', avg: 9.1, poll_type: poll });
+    await wkVote(rid, await wkPart(id, wkVoters[1]), 300, 'bullseye');
+  };
+  await wkLive('wklive1', server._etEpoch('2026-04-01', 20), 'rating');
+  await wkLive('wklive2', server._etEpoch('2026-04-02', 20), 'binary');
+  await wkLive('wklive3', server._etEpoch('2026-04-06', 20), 'rating');   // next week
+  const WKL = (await call('/api/admin/weekly/status?week=2026-03-30', null, 'GET', BOOTH)).d;
+  ok('a completed live rating show counts in the week it ran',
+    WKL.drops.some(d => d.id === 'wklive1' && d.live && d.day === '2026-04-01' && d.name)
+    && WKL.songsAll.some(r => r.title === 'Live wklive1')
+    && WKL.arsAll.some(a => a.id === wkVoters[1] && a.points >= 300) && WKL.settled === true,
+    JSON.stringify(WKL.drops));
+  ok('a Verzuz-only live session and the next week\'s show stay out',
+    !WKL.drops.some(d => ['wklive2', 'wklive3'].includes(d.id)), JSON.stringify(WKL.drops.map(d => d.id)));
+  // The picker is every week back 16 complete weeks, no gaps — empty weeks included.
+  const wkPick = WKL.weeks.filter(w => w.start !== '2026-03-30' || w.current);
+  const wkCur = server._weekStartFor(server._etDay());
+  ok('the week picker offers the week in progress and the 16 complete weeks before it, no gaps',
+    wkPick.length === 17 && wkPick[0].start === wkCur && wkPick[0].current
+    && wkPick.every((w, i) => i === 0 || server._etNextDay(w.start, 7) === wkPick[i - 1].start),
+    JSON.stringify(WKL.weeks.map(w => w.start)));
+  ok('a week asked for outside the list is still offered, at the top',
+    WKL.weeks[0].start === '2026-03-30', JSON.stringify(WKL.weeks[0]));
+  for (const id of ['wklive1', 'wklive2', 'wklive3']) {
+    await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), id]);
   }
 
   console.log('\n— artist email: the decision first, the report pages, the replay link, and NO pricing —');
