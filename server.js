@@ -2806,6 +2806,20 @@ async function chartScope(q) {
     return { kind: 'range', label: `${chartDate(q.from)} – ${chartDate(q.to)}`, from: q.from, to: q.to,
       sessions: await pick('AND COALESCE(scheduled_at, created_at) BETWEEN ? AND ?', [q.from, q.to]) };
   }
+  if (q.scope === 'month') {
+    // A calendar month in ET, by when each room TALLIED: a daily drop tallies at its window
+    // close (a drop opened Sep 30 and closed Oct 1 is October's), a live show the night it ran.
+    const m = /^(\d{4})-(\d{2})$/.exec(q.month || '');
+    if (!m) return null;
+    const y = +m[1], mo = +m[2];
+    if (mo < 1 || mo > 12) return null;
+    const pad = n => String(n).padStart(2, '0');
+    const from = etEpoch(`${y}-${pad(mo)}-01`, 0);
+    const to = etEpoch(mo === 12 ? `${y + 1}-01-01` : `${y}-${pad(mo + 1)}-01`, 0) - 1;
+    const label = new Date(Date.UTC(y, mo - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    return { kind: 'month', label, month: q.month, from, to,
+      sessions: await pick("AND status <> 'upcoming' AND COALESCE(window_closes_at, scheduled_at, created_at) BETWEEN ? AND ?", [from, to]) };
+  }
   if (q.scope === 'last') {
     // "Last N rooms" means N rooms that actually RAN — an empty upcoming room isn't a show.
     const ran = await pick("AND status <> 'upcoming'", []);
@@ -2920,13 +2934,14 @@ function chartQuery(url) {
   // falsy, and `|| d` would silently restore the default floor the operator just cleared.
   const int = (k, d, lo, hi) => { const n = parseInt(g(k), 10); return Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : d)); };
   const mode = ['records', 'ars', 'weekly1s'].includes(g('mode')) ? g('mode') : 'records';
-  const scope = ['series', 'range', 'last', 'all'].includes(g('scope')) ? g('scope') : 'all';
+  const scope = ['series', 'range', 'month', 'last', 'all'].includes(g('scope')) ? g('scope') : 'all';
   return {
     mode, scope,
     seriesId: g('seriesId') || null,
     from: parseInt(g('from'), 10) || 0,
     to: parseInt(g('to'), 10) || 0,
     lastN: int('lastN', 4, 1, 52),
+    month: g('month') || null,          // YYYY-MM, scope=month
     minVotes: int('minVotes', CHART_DEFAULT_MIN_VOTES, 0, 100000),
     // A&R chart only: rank on points (default) or accuracy. minRounds is the accuracy
     // chart's floor — one lucky round is 100% and must not outrank a month of listening.

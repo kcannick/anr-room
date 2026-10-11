@@ -4833,6 +4833,12 @@ function chScopeOptions(){
   const sel=$('#chScope'),prev=sel.value;
   let html='';
   (SERIES||[]).forEach(s=>{html+=`<option value="series:${s.id}">Series — ${esc(s.title)}</option>`;});
+  // Calendar months by ET date: last month (the usual monthly chart) and this month so far.
+  const etNow=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+  const mon=k=>{const d=new Date(etNow.getFullYear(),etNow.getMonth()-k,1);
+    return {v:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),l:d.toLocaleDateString('en-US',{month:'long',year:'numeric'})};};
+  const lm=mon(1),tm=mon(0);
+  html+=`<option value="month:${lm.v}">Last month — ${lm.l}</option><option value="month:${tm.v}">This month — ${tm.l}</option>`;
   html+='<option value="last:4">Last 4 rooms</option><option value="last:8">Last 8 rooms</option>'
       +'<option value="last:12">Last 12 rooms</option><option value="range">Date range…</option>'
       +'<option value="all">All time</option>';
@@ -4852,6 +4858,7 @@ function chParams(extra){
   const sc=$('#chScope').value||'all';
   if(sc.startsWith('series:')){p.set('scope','series');p.set('seriesId',sc.slice(7));}
   else if(sc.startsWith('last:')){p.set('scope','last');p.set('lastN',sc.slice(5));}
+  else if(sc.startsWith('month:')){p.set('scope','month');p.set('month',sc.slice(6));}
   else if(sc==='range'){
     p.set('scope','range');
     p.set('from',String(chDayMs($('#chFrom').value,false)||0));

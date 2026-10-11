@@ -4557,6 +4557,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const cDup = await chGet(chBase + '&dedupe=0');
   ok('charts: dedupe=0 charts both plays', cDup.d.rows.filter(r => /broad/i.test(r.title)).length === 2, JSON.stringify(cDup.d.rows.map(r => r.title)));
 
+  console.log('\n— charts: a calendar month, by when the room tallied —');
+  const chYm = (k) => { const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })); d.setDate(1); d.setMonth(d.getMonth() - k); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+  const cMon = await chGet(`scope=month&month=${chYm(0)}&minVotes=3`);
+  ok('charts: this month charts the rooms that ran this month', cMon.status === 200 && cMon.d.rows.some(r => /broad/i.test(r.title)), JSON.stringify(cMon.d).slice(0, 200));
+  ok('charts: the month label is the month name', /^[A-Z][a-z]+ \d{4}$/.test(cMon.d.scope.label) && cMon.d.scope.kind === 'month', JSON.stringify(cMon.d.scope));
+  const cPrev = await chGet(`scope=month&month=${chYm(1)}&minVotes=3`);
+  ok('charts: last month does not include rooms that ran this month', cPrev.status === 200 && !cPrev.d.rows.some(r => /broad/i.test(r.title)), JSON.stringify(cPrev.d.rows.map(r => r.title)));
+  const cBadMon = await chGet('scope=month&month=2026-13');
+  ok('charts: a malformed month is refused', cBadMon.status >= 400, 'status ' + cBadMon.status);
+
   console.log('\n— charts: the floor is a knob, and order/limit are presentation only —');
   const cLow = await chGet(`scope=series&seriesId=${CHSER}&minVotes=0`);
   ok('charts: dropping the floor lets the small sample top the chart', cLow.d.rows[0].title === 'Tiny Sample', JSON.stringify(cLow.d.rows.map(r => r.title)));
