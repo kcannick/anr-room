@@ -4995,7 +4995,7 @@ async function chBuildCarousel(){
   if(!chData||!chData.rows.length)return;
   const per=parseInt($('#chPer').value,10)||10;
   const box=$('#chSlides'),btn=$('#chBuild');
-  const total=1+Math.ceil(chData.rows.length/per);
+  const pages=Math.ceil(chData.rows.length/per),total=pages+2; // cover · pages · closing
   box.innerHTML='<div class="muted" style="font-size:12px;margin-top:12px">Rendering 1 of '+total+'…</div>';
   btn.disabled=true;
   const figs=[];
@@ -5004,7 +5004,8 @@ async function chBuildCarousel(){
       const r=await fetch('/api/card/chart?'+chParams({slide:String(i)}).toString(),{headers:chAuthHeaders()});
       if(!r.ok)break;
       const url=URL.createObjectURL(await r.blob());
-      figs.push({url,name:(i===0?'cover':'slide-'+i)+'.png',label:i===0?'Cover':'Slide '+i});
+      const end=i===pages+1;
+      figs.push({url,name:(i===0?'cover':end?'closing':'slide-'+i)+'.png',label:i===0?'Cover':end?'Closing':'Slide '+i});
       box.innerHTML='<div class="muted" style="font-size:12px;margin-top:12px">Rendering '+Math.min(i+2,total)+' of '+total+'…</div>';
     }
     box.innerHTML='<div class="row" style="margin-top:14px;align-items:center"><b style="font-size:13px">'+figs.length+' slides</b>'

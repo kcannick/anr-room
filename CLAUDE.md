@@ -224,10 +224,17 @@ live on anr.makinitmag.com.
   never disagree with the public $500 board. **Platform-admin only** — it spans every room
   regardless of owner; a per-host flavour would need the scope query filtered by `owner_uid`.
   Endpoints: `/api/admin/charts` (`?format=csv|caption`) + `/api/card/chart?slide=N`.
-  Band key printed on the graphics: `0–2.9 Keep it in the studio` / `3–5.9 Release Ready` /
-  `6+ Potential Single` — the operator's original "0-3 / 3-6 / 6+" double-counted both edges,
-  so the shipped bands are half-open. `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling
-  and the band cuts move with the 0–10 switch.
+  **Rebuilt to the brand 2026-10-10** (operator-approved mockup `public/brand/hot100/`): one
+  `chartSlide` element, 1080×1350, a sibling of the Daily Countdown — cover (HOT + the count in
+  green) · list pages (13° rank blocks, gold at #1 only) · a closing "Ranked by the Makin' It A&R
+  Team / Join the A&R Team" slide (`slide = pages + 1`). **Records are RANK ONLY** on the slides
+  and in the caption, like the Countdown (scores are private to the Track Report); the A&R chart
+  keeps points/accuracy. No $500 pill, no "The A&R Room" eyebrow, no red. The caption follows the
+  global caption rules: keyword first line, `Comment #REVIEW` / `Comment #ANR` instead of links,
+  no emoji or topic hashtags, @handles on the first 10 rows only (Instagram's mention limit).
+  The band key (`0–2.9 Keep it in the studio` / `3–5.9 Release Ready` / `6+ Potential Single`,
+  half-open) is no longer printed; `CHART_BANDS` stays for the console and the API.
+  `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling and moves with the 0–10 switch.
 
 - **Staged rounds + one-button show control + host buzzer** (030): a round now opens into a
   new **`listening`** status — the record is on the overlay and in everyone's hands while it

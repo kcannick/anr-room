@@ -4630,7 +4630,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     cAccFloor.d.rows.length === 0 && cAccFloor.d.summary.excluded === cAccFloor.d.summary.pool && cAccFloor.d.summary.pool > 0,
     JSON.stringify(cAccFloor.d.summary));
   const cAccCap = await (await fetch(`${base}/api/admin/charts?scope=series&seriesId=${CHSER}&mode=ars&sort=accuracy&minRounds=1&format=caption`, { headers: ADMINH })).text();
-  ok('charts: the accuracy caption prints accuracy, not points', /% accuracy\)/.test(cAccCap) && !/ pts\)/.test(cAccCap), cAccCap.slice(0, 300));
+  ok('charts: the accuracy caption prints accuracy, not points', /% accuracy$/m.test(cAccCap) && !/ pts$/m.test(cAccCap), cAccCap.slice(0, 300));
 
   console.log('\n— charts: CSV and caption carry the same rows as the screen —');
   const chCsvRes = await fetch(`${base}/api/admin/charts?${chBase}&format=csv`, { headers: ADMINH });
@@ -4644,9 +4644,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const capRes = await fetch(`${base}/api/admin/charts?${chBase}&format=caption`, { headers: ADMINH });
   const capTxt = await capRes.text();
   ok('charts: caption returns text', capRes.status === 200 && capTxt.length > 40);
-  ok('charts: caption carries the score key', /Keep it in the studio/.test(capTxt) && /Potential Single/.test(capTxt), capTxt.slice(0, 200));
-  ok('charts: caption sends artists to /review and viewers to /ANR',
-    /makinitmag\.com\/review/.test(capTxt) && /makinitmag\.com\/ANR/.test(capTxt), capTxt.slice(-200));
+  // Rank only, like the slides: scores are private to the Track Report (brand redesign, 2026-10-10).
+  ok('charts: the records caption prints no score or score key',
+    !/Keep it in the studio/.test(capTxt) && !/\(\d+\.\d\)/.test(capTxt) && !/\b\d\.\d\b/.test(capTxt.split('\n').filter(l => /^\d+\. /.test(l)).join('\n')), capTxt.slice(0, 400));
+  ok('charts: the caption leads with what the post is', /^Makin’ It HOT \d+, .+: the highest-rated new music from independent artists/.test(capTxt), capTxt.split('\n')[0]);
+  ok('charts: caption asks by comment keyword, not link (no emoji, no topic hashtags)',
+    /Comment #REVIEW to Submit Music/.test(capTxt) && /Comment #ANR to join the A&R Team/.test(capTxt)
+    && !/makinitmag\.com/.test(capTxt) && !/#TheARoom/.test(capTxt) && !/\u{1F525}/u.test(capTxt), capTxt.slice(-200));
   ok('charts: caption lists the #1 record', capTxt.includes('1. Broad Appeal'), capTxt.slice(0, 300));
 
   console.log('\n— charts: the contact export is a separate, deliberate file —');
@@ -4694,6 +4698,15 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('charts: cover slide renders a PNG', slide0.status === 200 && slide0.headers.get('content-type') === 'image/png', slide0.status);
   const slide1 = await fetch(`${base}/api/card/chart?${chBase}&slide=1`, { headers: ADMINH });
   ok('charts: first list slide renders a PNG', slide1.status === 200 && (await slide1.arrayBuffer()).byteLength > 5000);
+  const chPages = Math.ceil(chTop.d.rows.length / 10);
+  const slideEnd = await fetch(`${base}/api/card/chart?${chBase}&slide=${chPages + 1}`, { headers: ADMINH });
+  ok('charts: the closing slide follows the last page', slideEnd.status === 200 && slideEnd.headers.get('content-type') === 'image/png', slideEnd.status);
+  const slideAfter = await fetch(`${base}/api/card/chart?${chBase}&slide=${chPages + 2}`, { headers: ADMINH });
+  ok('charts: nothing after the closing slide', slideAfter.status === 404, 'status ' + slideAfter.status);
+  const slideArs = await fetch(`${base}/api/card/chart?scope=series&seriesId=${CHSER}&mode=ars&slide=1`, { headers: ADMINH });
+  ok('charts: an A&R chart page renders', slideArs.status === 200, slideArs.status);
+  const png = require('./share-cards.js');
+  ok('charts: the carousel is 1080×1350, like the Countdown', JSON.stringify(png.sizeOf('chartSlide')) === '[1080,1350]');
   const slideN = await fetch(`${base}/api/card/chart?${chBase}&slide=99`, { headers: ADMINH });
   ok('charts: a slide past the end 404s (the client stops there)', slideN.status === 404, 'status ' + slideN.status);
   const bands = require('./share-cards.js').CHART_BANDS;

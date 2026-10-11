@@ -2,7 +2,7 @@
 // to PNG, using Satori (HTML/flex -> SVG) + resvg (SVG -> PNG). No headless browser, so it
 // stays serverless-friendly (the whole point — see docs/multi-tenant-roadmap + the outage rule).
 //
-// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo';
+// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo', 'chartSlide' (the HOT 100);
 // the artist's Track Report is 'trackPage' (see below), the daily graphics 'resultsSlide' / 'countdownSlide' /
 // 'winnerPost' (the Top Track / Top A&R of the Day and of the Week collab posts), and the A&R Wars
 // set 'tournamentFeed' / 'tournamentStory' / 'tournamentThumb' / 'tournamentBracket'.
@@ -215,80 +215,6 @@ function bodyPromo() {
     row({ marginTop: 44, gap: 14, width: '100%' }, [step('1', 'Evaluate'), step('2', 'Predict'), step('3', 'Rank')]),
     text({ fontFamily: SANS, fontWeight: 800, fontSize: 30, color: '#08240a', background: C.signal, padding: '22px 44px', borderRadius: 16, marginTop: 46 }, 'Claim your profile at makinitmag.com/ANR'),
   ]);
-}
-
-// ---- Chart carousel: cover slide + list slides ("Makin' It HOT 100") ----
-// The cover carries the oversized title itself (frame's header title is suppressed), the
-// period, what the room is, the score key, and the join CTA. List slides repeat the key in
-// one line so someone who swipes past the cover can still decode an 8.6.
-const BAND_COLOR = [C.inkFaint, C.gold, C.signal];
-
-function bandKeyRow(b, i) {
-  return row({
-    background: C.panel, border: `1px solid ${i === 2 ? 'rgba(75,183,73,0.45)' : C.line}`,
-    borderRadius: 14, padding: '14px 22px', width: '100%',
-  }, [
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: BAND_COLOR[i], width: 110, flexShrink: 0 }, b.range),
-    text({ fontFamily: SANS, fontWeight: 700, fontSize: 26, color: C.ink, ...NOWRAP }, b.label),
-  ]);
-}
-
-function bodyChartCover(d) {
-  const words = esc(d.title).trim().split(/\s+/);
-  const hot = words.length > 2 ? words.slice(-2).join(' ') : words.slice(-1).join(' ');
-  const top = words.length > 2 ? words.slice(0, -2).join(' ') : words.slice(0, -1).join(' ');
-  const bands = d.bands || CHART_BANDS;
-  return col({ alignItems: 'center', width: '100%' }, [
-    top ? text({ fontFamily: SANS, fontWeight: 900, fontSize: 96, color: C.ink, lineHeight: 1.02, ...NOWRAP }, top.toUpperCase()) : text({}, ''),
-    text({ fontFamily: SANS, fontWeight: 900, fontSize: 96, color: C.hot, lineHeight: 1.02, ...NOWRAP }, hot.toUpperCase()),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, letterSpacing: 8, textTransform: 'uppercase', color: C.gold, marginTop: 18, ...NOWRAP }, clip(d.sub, 30)),
-    h({ width: 150, height: 4, background: C.signal, marginTop: 30, marginBottom: 30 }, ''),
-    text({ fontFamily: SANS, fontWeight: 400, fontSize: 27, color: C.inkDim }, 'Tracks submitted to the A&R Room'),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 29, color: C.ink, marginTop: 8 }, SUBMIT_URL),
-    col({ gap: 12, width: '100%', marginTop: 38 }, bands.map(bandKeyRow)),
-    text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink, marginTop: 40 }, 'Join the A&R Team'),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: C.signal, marginTop: 8 }, JOIN_URL),
-  ]);
-}
-
-// Rows arrive pre-normalized ({rank, line1, line2, value}) so this stays dumb about
-// whether it's ranking records or A&Rs. Density flips to one line past 12 per slide —
-// 20 two-line rows don't fit 1440px, and a clipped chart is worse than a terse one.
-function bodyChartList(d) {
-  const rows = d.rows || [], per = rows.length;
-  const tight = per > 12;
-  // Row heights are budgeted against the ~1045px the frame leaves below the header and
-  // key line. 20 two-line rows can't fit 1440px, and 20 loose one-line rows overflow the
-  // footer — hence the explicit lineHeight, which Satori otherwise pads unpredictably.
-  const s = tight
-    ? { pad: '5px 18px', gap: 5, rank: 22, title: 22, sub: 18, val: 24, rankW: 56, rad: 12, clipT: 28, clipS: 22 }
-    : { pad: '11px 24px', gap: 10, rank: 36, title: 33, sub: 22, val: 40, rankW: 74, rad: 16, clipT: 25, clipS: 32 };
-  const key = row({ justifyContent: 'center', gap: 26, marginBottom: 18 },
-    (d.bands || CHART_BANDS).map((b, i) => row({ gap: 8 }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: 19, color: BAND_COLOR[i] }, b.range),
-      text({ fontFamily: SANS, fontWeight: 400, fontSize: 19, color: C.inkFaint, ...NOWRAP }, b.short),
-    ])));
-  const list = col({ gap: s.gap, width: '100%' }, rows.map(r => {
-    // `top` is explicit, not `rank === 1` — a Room #1s slide is ten different #1s and
-    // must not gold-plate all ten (or, worse, only the first).
-    const first = !!r.top;
-    const line = col({ flexGrow: 1, flexShrink: 1, marginLeft: 8, overflow: 'hidden' }, tight
-      ? [text({ fontFamily: SANS, fontWeight: 700, fontSize: s.title, lineHeight: 1.15, color: C.ink, ...NOWRAP },
-          clip(r.line1, s.clipT) + (r.line2 ? '  ·  ' + clip(r.line2, s.clipS) : ''))]
-      : [
-          text({ fontFamily: SANS, fontWeight: 800, fontSize: s.title, lineHeight: 1.2, color: C.ink, ...NOWRAP }, clip(r.line1, s.clipT)),
-          text({ fontFamily: SANS, fontWeight: 400, fontSize: s.sub, lineHeight: 1.2, color: C.inkDim, ...NOWRAP }, clip(r.line2 || '', s.clipS)),
-        ]);
-    return row({
-      background: C.panel, border: `1px solid ${first ? 'rgba(245,197,24,0.45)' : C.line}`,
-      borderRadius: s.rad, padding: s.pad, width: '100%', flexShrink: 0,
-    }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: s.rank, color: first ? C.gold : C.inkFaint, width: s.rankW, flexShrink: 0 }, r.rank),
-      line,
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: s.val, color: C.signal, flexShrink: 0 }, r.value),
-    ]);
-  }));
-  return col({ width: '100%' }, [key, list]);
 }
 
 // ---- element builders per type ----
@@ -752,6 +678,152 @@ function elementCountdownSlide(d) {
     ]));
   }
   return h({ position: 'relative', display: 'flex', width: COUNTDOWN_SIZE[0], height: COUNTDOWN_SIZE[1], background: RECAP.bg, overflow: 'hidden' }, kids);
+}
+
+// ============ The Makin' It HOT 100 — one 'chartSlide' element, 1080×1350 ============
+// The monthly chart carousel, rebuilt to the brand (operator approved, 2026-10-10) from the
+// mockup public/brand/hot100/hot100.html, a sibling of the Daily Countdown: same masthead,
+// same 80px safe area, the same 13° cut on the bookends. Replaces the 2026-08-05 DM Sans
+// cards (1080×1440, "The A&R Room" eyebrow, $500 pill — the A&R prize has no place on an
+// artist chart — red HOT 100, gold band key).
+//   cover  HOT 100 · the period · Ranked by the Makin' It A&R Team · Submit free (the cut)
+//   list   a page of rows: a 13° rank block (gold at #1 only), title, artist, @handle
+//   team   Ranked by the Makin' It A&R Team · Join the A&R Team (closing)
+// RANK ONLY for records — scores are private to the Track Report, as on the Countdown. The A&R
+// chart prints points (or accuracy): that board is public. Satori cannot measure a wrap, so
+// lines are clipped off character-width estimates.
+//
+// Data shape (server.js /api/card/chart):
+//   { kind: 'cover'|'list'|'team', mode: 'records'|'ars'|'weekly1s', title, period,
+//     count, sort, span, rows: [{ rank, top, line1, sub, handle, value, unit }] }
+const CHART_SIZE = [1080, 1350];
+const CHART_COPY = {
+  credit: 'Ranked by the Makin’ It A&R Team',
+  lead: { records: 'The highest-rated records submitted to The A&R Meeting.', weekly1s: 'The top record from each session.',
+    points: 'Points come from predicting the average on every record.', accuracy: 'How close each A&R came to the average.' },
+  by: { points: 'The A&Rs with the most points', accuracy: 'The A&Rs closest to the average' },
+  question: 'Think you should be here?',
+  submit: 'Submit free', joinBtn: 'Join the team', join: 'Join the A&R Team',
+  closing: ['Ranked by', 'the Makin’ It', 'A&R Team'],
+  closingLead: ['A&Rs rate every record submitted to The A&R Meeting.', 'Join the team and rate new records every day.'],
+};
+// "Makin’ It HOT 100" → { pre: 'HOT', num: '100' }; anything else keeps its own words.
+function chartTitleParts(title) {
+  const t = String(title || '').replace(/^Makin[’']\s*It\s+/i, '').trim();
+  const m = /^(HOT)\s+(\d+)$/i.exec(t);
+  return m ? { short: t.toUpperCase(), pre: 'HOT', num: m[2] } : { short: t, pre: t, num: '' };
+}
+function chartMast(d, { period = true, series = true, span = '' } = {}) {
+  const kids = [h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 34 } } }])];
+  if (period) kids.push(text({ position: 'absolute', right: 80, top: 78, fontFamily: MONO, fontWeight: 700, fontSize: 30, lineHeight: 1.25,
+    color: RECAP.dim, textTransform: 'uppercase', ...NOWRAP }, clip(d.period, 30)));
+  if (series) kids.push(row({ position: 'absolute', left: 80, top: 142, alignItems: 'flex-end' }, [
+    text(RES_DISPLAY(58, RECAP.fg, { textTransform: 'uppercase' }), clip(chartTitleParts(d.title).short, 22)),
+    ...(span ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, marginLeft: 22, marginBottom: 4, ...NOWRAP }, span)] : []),
+  ]));
+  return kids;
+}
+function chartCutCta(head, url) {
+  return col({ position: 'absolute', left: 80, bottom: 80 }, [
+    text(RES_DISPLAY(58, RECAP.bg, { textTransform: 'uppercase' }), head),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 36, color: RECAP.bg, marginTop: 12, ...NOWRAP }, url),
+  ]);
+}
+function chartRow(r, s, last) {
+  const first = !!r.top;
+  const block = h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: s.bw, height: s.bh, marginLeft: 6,
+    border: '2px solid ' + (first ? RESULTS_GOLD : RECAP.line), background: first ? RESULTS_GOLD : 'transparent', borderRadius: 6,
+    transform: `skewX(${SKEW}deg)` }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: s.bf, lineHeight: 1, color: first ? RECAP.bg : RECAP.fg, transform: `skewX(${-SKEW}deg)`, ...NOWRAP }, r.rank),
+  ]);
+  // Width left for the words: 920 less the block, its gaps, and the value when there is one.
+  const valW = r.value ? Math.round((String(r.value).length * 0.6 + (r.unit ? 0.5 * r.unit.length * 0.6 + 0.3 : 0)) * s.vf) + 26 : 0;
+  const room = 920 - 6 - s.bw - 26 - valW;
+  const handle = r.handle ? '@' + r.handle : '';
+  let words;
+  if (s.compact) {
+    const t1 = clip(r.line1, Math.floor(room / (s.t1 * 0.56)));
+    const left = room - t1.length * s.t1 * 0.56 - 18;
+    const x = handle || r.sub || '';
+    words = row({ alignItems: 'baseline' }, [
+      text(RES_DISPLAY(s.t1, RECAP.fg, { letterSpacing: -1 }), t1),
+      ...(x && left > 60 ? [text({ fontFamily: handle ? MONO : DISPLAY, fontWeight: 700, fontSize: 18, color: RECAP.dim, marginLeft: 18, ...NOWRAP },
+        clip(x, Math.floor(left / (18 * 0.6))))] : []),
+    ]);
+  } else {
+    const sub = String(r.sub || '');
+    const hW = handle ? Math.min(handle.length * s.t3 * 0.6, room * 0.55) : 0;
+    const subMax = Math.floor((room - (handle ? Math.min(hW, room * 0.55) + 16 : 0)) / (s.t2 * 0.55));
+    const subTxt = clip(sub, Math.max(8, subMax));
+    const hMax = Math.floor((room - (sub ? subTxt.length * s.t2 * 0.55 + 16 : 0)) / (s.t3 * 0.62));
+    words = col({ justifyContent: 'center' }, [
+      text(RES_DISPLAY(s.t1, RECAP.fg, { lineHeight: 1.02, letterSpacing: -Math.round(s.t1 * 0.035) }), clip(r.line1, Math.floor(room / (s.t1 * 0.56)))),
+      row({ alignItems: 'baseline', marginTop: 6 }, [
+        ...(sub ? [text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: s.t2, color: RECAP.fg, opacity: 0.82, letterSpacing: -0.4, ...NOWRAP }, subTxt)] : []),
+        ...(handle && hMax > 4 ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: s.t3, color: RECAP.dim, marginLeft: sub ? 16 : 0, ...NOWRAP }, clip(handle, hMax))] : []),
+      ]),
+    ]);
+  }
+  // Satori ignores baseline alignment, so the unit sits on the number's foot by hand.
+  const value = r.value ? [row({ flexShrink: 0, alignItems: 'flex-end', marginLeft: 26 }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: s.vf, lineHeight: 1, color: RECAP.green, letterSpacing: -1, ...NOWRAP }, r.value),
+    ...(r.unit ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: Math.round(s.vf * 0.5), lineHeight: 1, color: RECAP.dim, marginLeft: 6, marginBottom: Math.round(s.vf * 0.1), ...NOWRAP }, r.unit)] : []),
+  ])] : [];
+  return row({ width: 920, height: s.rh, flexShrink: 0, borderTop: `2px solid ${RECAP.line}`, ...(last ? { borderBottom: `2px solid ${RECAP.line}` } : {}) }, [
+    block, col({ flexGrow: 1, flexShrink: 1, marginLeft: 26, overflow: 'hidden' }, [words]), ...value,
+  ]);
+}
+function elementChartSlide(d) {
+  const kind = d.kind || 'list';
+  const ars = d.mode === 'ars';
+  const kids = [];
+  const field = (height) => resultsField(height, 249);
+  if (kind === 'cover') {
+    kids.push(...chartMast(d, { period: false, series: false }));
+    const t = chartTitleParts(d.title);
+    // Sized to the width: Archivo 900 caps ~0.74em, Space Mono digits 0.6em less tracking.
+    const est = t.pre.length * 0.74 + (t.num ? t.num.length * 0.52 + 0.1 : 0);
+    const fs = Math.max(110, Math.min(250, Math.floor(920 / est)));
+    kids.push(row({ position: 'absolute', left: 72, top: 210, alignItems: 'flex-end' }, [
+      text(RES_DISPLAY(fs, RECAP.fg, { lineHeight: 0.8, letterSpacing: -Math.round(fs * 0.06), textTransform: 'uppercase' }), t.pre),
+      ...(t.num ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: fs, lineHeight: 0.8, letterSpacing: -Math.round(fs * 0.08), color: RECAP.green, marginLeft: 26, ...NOWRAP }, t.num)] : []),
+    ]));
+    const top = 210 + Math.round(fs * 0.8);
+    const per = String(d.period || '');
+    const perFs = Math.min(52, Math.floor(920 / Math.max(1, per.length * 0.6)));
+    const key = ars ? (d.sort === 'accuracy' ? 'accuracy' : 'points') : (d.mode === 'weekly1s' ? 'weekly1s' : 'records');
+    kids.push(col({ position: 'absolute', left: 80, top: top + 52, width: 920 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: perFs, lineHeight: 1, color: RECAP.fg, textTransform: 'uppercase', ...NOWRAP }, per),
+      text(RES_DISPLAY(44, RECAP.fg, { marginTop: 44, letterSpacing: -2 }), ars ? CHART_COPY.by[key] : CHART_COPY.credit),
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 32, lineHeight: 1.3, color: RECAP.dim, marginTop: 14, width: 920 }, CHART_COPY.lead[key]),
+    ]));
+    kids.push(field(470));
+    kids.push(ars ? chartCutCta(CHART_COPY.join, JOIN_URL) : chartCutCta(CHART_COPY.submit, SUBMIT_URL));
+  } else if (kind === 'team') {
+    kids.push(...chartMast(d));
+    kids.push(col({ position: 'absolute', left: 76, top: 250 }, CHART_COPY.closing.map(w =>
+      text(RES_DISPLAY(132, RECAP.fg, { lineHeight: 0.88, letterSpacing: -7, textTransform: 'uppercase' }), w))));
+    kids.push(col({ position: 'absolute', left: 80, top: 640 }, CHART_COPY.closingLead.map(l =>
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 32, lineHeight: 1.3, color: RECAP.dim, ...NOWRAP }, l))));
+    kids.push(field(440));
+    kids.push(chartCutCta(CHART_COPY.join, JOIN_URL));
+  } else {
+    const rows = d.rows || [], n = Math.max(1, rows.length);
+    kids.push(...chartMast(d, { span: d.span || '' }));
+    // Rows run from under the masthead to above the submit strip (1350 − 80 − 110, less a gap).
+    const top = 236, rh = Math.floor((1130 - top) / Math.max(n, 5));
+    const s = n > 12 ? { compact: true, rh, bw: 66, bh: Math.min(34, rh - 8), bf: 19, t1: 25, t2: 20, t3: 18, vf: 26 }
+      : n > 10 ? { rh, bw: 92, bh: Math.min(50, rh - 14), bf: 28, t1: 32, t2: 22, t3: 20, vf: 38 }
+      : { rh, bw: 92, bh: 56, bf: 28, t1: 38, t2: 25, t3: 22, vf: 44 };
+    kids.push(col({ position: 'absolute', left: 80, top, width: 920 }, rows.map((r, i) => chartRow(r, s, i === rows.length - 1))));
+    kids.push(text(RES_DISPLAY(34, RECAP.fg, { position: 'absolute', left: 80, top: 1184, textTransform: 'uppercase', letterSpacing: -1 }), CHART_COPY.question));
+    kids.push(text({ position: 'absolute', left: 80, top: 1232, fontFamily: MONO, fontWeight: 700, fontSize: 28, color: RECAP.dim, ...NOWRAP }, ars ? JOIN_URL : SUBMIT_URL));
+    kids.push(h({ position: 'absolute', right: 90, bottom: 80, height: 72, display: 'flex', alignItems: 'center', background: RECAP.green,
+      borderRadius: 6, paddingLeft: 32, paddingRight: 32, transform: `skewX(${SKEW}deg)` }, [
+      text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), ars ? CHART_COPY.joinBtn : CHART_COPY.submit),
+    ]));
+  }
+  return h({ position: 'relative', display: 'flex', width: CHART_SIZE[0], height: CHART_SIZE[1], background: RECAP.bg, overflow: 'hidden' }, kids);
 }
 
 // ============ The winner posts — one 'winnerPost' element, 1080×1350 ============
@@ -1517,8 +1589,7 @@ function element(type, data = {}) {
   if (type === 'songs') return frame({ title: 'Top 8 Records', sub: data.session || null, body: bodySongs(data.list || [], showNumbers) });
   if (type === 'promo') return frame({ title: 'Join the A&R Team', sub: 'Free to join', body: bodyPromo() });
   if (type === 'trackPage') return elementTrackPage(data);
-  if (type === 'chartCover') return frame({ title: null, sub: null, body: bodyChartCover(data) });
-  if (type === 'chartList') return frame({ titleSize: 66, title: clip(data.title, 18), sub: data.sub, body: bodyChartList(data) });
+  if (type === 'chartSlide') return elementChartSlide(data);
   if (type === 'referCard') return elementReferPerson(data, false);
   if (type === 'referStory') return elementReferPerson(data, true);
   if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
@@ -1541,6 +1612,7 @@ let _satori = null, _Resvg = null;
 function sizeOf(type) {
   if (type === 'resultsSlide') return RESULTS_SIZE;
   if (type === 'countdownSlide') return COUNTDOWN_SIZE;
+  if (type === 'chartSlide') return CHART_SIZE;
   if (type === 'winnerPost') return WINNER_SIZE;
   if (type === 'trackPage') return TRACK_SIZE;
   if (TOURNAMENT_SIZES[type]) return TOURNAMENT_SIZES[type];
@@ -1558,4 +1630,4 @@ async function renderPng(type, data, outWidth) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
+module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
