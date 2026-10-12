@@ -1614,7 +1614,8 @@ async function buildDayResults(session) {
     // be BOTH rated and reported (the link died partway through the day) — rated wins, and
     // the report count rides along because it is worth showing.
     const status = rated ? 'rated' : (reports > 0 ? 'not_playable' : 'unrated');
-    const out = { ref: r.ingest_ref, status, ratings, reports };
+    const out = { ref: r.ingest_ref, status, ratings, reports,
+      resultsUrl: recordResultsUrl(session.drop_day, r.ingest_ref) };
     if (rated) out.average = Math.round(Number(r.room_average) * 10) / 10;
     return out;
   });
@@ -4243,7 +4244,8 @@ async function stageDailyDrop(res, body) {
     // Echo titles only — never the emails or phones back out (they came in over this wire,
     // that doesn't make them safe to reflect).
     return send(res, 200, { ok: true, replaced: true, sessionId: existing.id, day,
-      rounds: recs.length, seriesId: seriesId || existing.series_id || null, warnings });
+      rounds: recs.length, seriesId: seriesId || existing.series_id || null, warnings,
+      records: dropRecordLinks(day, recs) });
   }
 
   let out;
@@ -4258,7 +4260,13 @@ async function stageDailyDrop(res, body) {
     }
     throw e;
   }
-  return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings });
+  return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings,
+    records: dropRecordLinks(day, recs) });
+}
+
+// One { ref, resultsUrl } per pushed record that carries a ref, in batch order.
+function dropRecordLinks(day, recs) {
+  return recs.filter(r => r.ref).map(r => ({ ref: r.ref, resultsUrl: recordResultsUrl(day, r.ref) }));
 }
 
 // Build one day of A&R Daily from the approved batch Drupal pushes.
@@ -5997,6 +6005,13 @@ function publicBaseFromReq(req) {
 // is worth setting on any deployment that is not the production host.
 function publicBase() {
   return (process.env.PUBLIC_BASE_URL || 'https://anr.makinitmag.com').replace(/\/+$/, '');
+}
+// The console link to ONE pushed record's results, handed back to makinitmag so the webform
+// submission can keep it. Built from the day and the ref, never the round id: a cold re-push
+// deletes and re-inserts every round, so a round id in a saved link would go dead.
+// Admin-only page; the link itself carries no PII.
+function recordResultsUrl(day, ref) {
+  return publicBase() + '/admin?day=' + encodeURIComponent(day) + '&ref=' + encodeURIComponent(ref);
 }
 
 async function alreadyNotified(sessionId, participantId, channel) {
@@ -10493,6 +10508,58 @@ async function handleApi(req, res, url) {
   }
 
   // A results-carousel caption as text — the same builder the publish stores. ?set=song|ar.
+  // ONE record's results: the Daily console's Results view, and where a makinitmag
+  // submission's saved resultsUrl lands. Platform admin only. Counts are always shown; each
+  // A&R's rating and comment only once the record is ratified, because vote direction is
+  // sealed until the tally and a comment leaks it just as surely. Display names only, the
+  // same PII surface as the comment queue.
+  if (p === '/api/admin/daily/record' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const roundId = url.searchParams.get('roundId');
+    if (!roundId) return bad(res, 'roundId required');
+    const r = await db.get(
+      `SELECT r.*, s.drop_day, s.mode,
+              (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS ratings,
+              (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id) AS reports,
+              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared
+         FROM rounds r JOIN sessions s ON s.id = r.session_id
+        WHERE r.id = ? AND s.deleted_at IS NULL`, [roundId]);
+    if (!r || r.mode !== 'async') return bad(res, 'Record not found', 404);
+    const sealed = r.status !== 'ratified';
+    let rows = [];
+    if (!sealed) {
+      const nameOf = (x) => (x.uname || x.pname || 'A&R').toString().trim().slice(0, 40);
+      const votes = await db.all(
+        `SELECT v.participant_id, v.taste, p.name AS pname, u.name AS uname
+           FROM votes v JOIN participants p ON p.id = v.participant_id LEFT JOIN users u ON u.uid = p.user_id
+          WHERE v.round_id = ? AND v.taste IS NOT NULL`, [r.id]);
+      const comments = await db.all(
+        `SELECT c.participant_id, c.body, c.status, p.name AS pname, u.name AS uname
+           FROM round_comments c JOIN participants p ON p.id = c.participant_id LEFT JOIN users u ON u.uid = p.user_id
+          WHERE c.round_id = ?`, [r.id]);
+      const by = new Map();
+      for (const v of votes) by.set(v.participant_id, { name: nameOf(v), rating: Number(v.taste), comment: null, hidden: false });
+      for (const c of comments) {
+        const row = by.get(c.participant_id) || { name: nameOf(c), rating: null, comment: null, hidden: false };
+        row.comment = c.body; row.hidden = c.status === 'hidden';
+        by.set(c.participant_id, row);
+      }
+      rows = [...by.values()].sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1) || a.name.localeCompare(b.name));
+    }
+    return send(res, 200, {
+      record: {
+        id: r.id, idx: r.idx, status: r.status, day: r.drop_day, dayLabel: etDayLabel(r.drop_day),
+        song_title: r.song_title, song_artist: r.song_artist,
+        support_cents: supportCentsOf(r),
+        room_average: r.room_average != null ? Number(r.room_average) : null,
+        ratings: Number(r.ratings) || 0, reports: Number(r.reports) || 0,
+        comments_shared: Number(r.comments_shared) || 0,
+        ingest_ref: r.ingest_ref || null, ingest_url: r.ingest_url || null,
+      },
+      sealed, rows,
+    });
+  }
+
   if (p === '/api/admin/daily/results-caption' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const sid = url.searchParams.get('s');

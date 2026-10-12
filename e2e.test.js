@@ -1672,6 +1672,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
     (dOk.d.warnings || []).some(w => w.index === 4 && w.field === 'amount'), JSON.stringify(dOk.d.warnings));
   ok('and is reported as a warning so Drupal can flag it', (dOk.d.warnings || []).some(w => w.index === 2 && w.field === 'email'), JSON.stringify(dOk.d.warnings));
   ok('the response reflects NO artist contact back out', !/@/.test(JSON.stringify(dOk.d)), JSON.stringify(dOk.d));
+  // RESULTS LINKS: one per pushed record, built from day + ref (never the round id, which a
+  // cold re-push replaces), so makinitmag can save it with the submission.
+  ok('the push reply hands back one results link per record, keyed by ref, in batch order',
+    Array.isArray(dOk.d.records) && dOk.d.records.length === 5 && dOk.d.records[0].ref === 'node/1'
+      && dOk.d.records[0].resultsUrl.endsWith('/admin?day=' + today + '&ref=node%2F1'), JSON.stringify(dOk.d.records));
 
   // SUPPORT BACKFILL: amounts for records already pushed, keyed by ref. Per-row reporting.
   const supBf = await call('/api/ingest/daily/support',
@@ -3458,6 +3463,34 @@ async function startVoting(sessionId, headers, minutes = 5) {
     byRef['entry/3'].status === 'unrated' && byRef['entry/3'].reports === 0, JSON.stringify(byRef['entry/3']));
   ok('an average is sent ONLY on a rated record',
     !('average' in byRef['entry/2']) && !('average' in byRef['entry/3']), JSON.stringify(cbRecs));
+  ok('every record carries its results link (day + ref), rated or not',
+    cbRecs.every(r => r.resultsUrl && r.resultsUrl.endsWith('/admin?day=2026-09-05&ref=' + encodeURIComponent(r.ref))), JSON.stringify(cbRecs));
+
+  // ONE record's results — the console's Results view and where that saved link lands.
+  await cbDb.run(`INSERT INTO round_comments (id,round_id,session_id,participant_id,body,status,created_at,updated_at)
+                  VALUES ('cbc1','cbr1',?,?, 'Hook lands first listen.', 'shared', ?, ?)`, [cbSid, cbPar.id, Date.now(), Date.now()]);
+  const recAnon = await call('/api/admin/daily/record?roundId=cbr1', null, 'GET', {});
+  ok('a record\'s results are platform-admin only', recAnon.status === 403 || recAnon.status === 401, String(recAnon.status));
+  const rec1 = await call('/api/admin/daily/record?roundId=cbr1', null, 'GET', BOOTH);
+  ok('a ratified record shows each A&R\'s rating and comment together',
+    rec1.status === 200 && rec1.d.sealed === false && rec1.d.rows.length === 1
+      && rec1.d.rows[0].rating === 6 && rec1.d.rows[0].comment === 'Hook lands first listen.', JSON.stringify(rec1.d));
+  ok('with the counts, the day and the ref the console needs',
+    rec1.d.record.ratings === 1 && rec1.d.record.comments_shared === 1 && rec1.d.record.room_average === 6.4
+      && rec1.d.record.day === '2026-09-05' && rec1.d.record.ingest_ref === 'entry/1', JSON.stringify(rec1.d.record));
+  ok('and no artist or A&R contact details', !/@|\+1\d{9}/.test(JSON.stringify(rec1.d)), JSON.stringify(rec1.d));
+  // Still in its window: vote direction is sealed, so counts only.
+  await cbDb.run(`INSERT INTO rounds (id,session_id,idx,queue_pos,poll_type,song_title,status,created_at)
+                  VALUES ('cbr5',?,5,5,'rating','T5','voting',?)`, [cbSid, Date.now()]);
+  await cbDb.run('INSERT INTO votes (id,round_id,participant_id,taste,predict,locked_at) VALUES (?,?,?,?,?,?)',
+    ['cbv5', 'cbr5', cbPar.id, 9, 7, Date.now()]);
+  const rec5 = await call('/api/admin/daily/record?roundId=cbr5', null, 'GET', BOOTH);
+  ok('a record still in its window is SEALED: counts, but no ratings or comments',
+    rec5.status === 200 && rec5.d.sealed === true && rec5.d.rows.length === 0 && rec5.d.record.ratings === 1
+      && !/"rating":9/.test(JSON.stringify(rec5.d)), JSON.stringify(rec5.d));
+  await cbDb.run("DELETE FROM votes WHERE id = 'cbv5'"); await cbDb.run("DELETE FROM rounds WHERE id = 'cbr5'");
+  await cbDb.run("DELETE FROM round_comments WHERE id = 'cbc1'");
+  ok('an unknown record is 404', (await call('/api/admin/daily/record?roundId=nope', null, 'GET', BOOTH)).status === 404);
 
   // Now with a live endpoint. A one-shot server stands in for makinitmag.
   const http = require('http');
