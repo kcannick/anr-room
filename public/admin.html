@@ -1599,6 +1599,10 @@
           <select id="chPer" style="width:auto"><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option></select></div>
         <div id="chSortWrap" style="flex:0 0 auto;display:none"><label style="margin:0 0 4px">Rank A&amp;Rs by</label>
           <select id="chSort" style="width:auto"><option value="points" selected>Points</option><option value="accuracy">Accuracy</option></select></div>
+        <label class="pref-row" id="chScoresRow" style="flex:1;min-width:220px">
+          <input type="checkbox" id="chScores">
+          <span><b>Show scores</b><small>Print each record's average and the score key on the carousel and in the caption. Off: rank only, like the Daily Countdown.</small></span>
+        </label>
         <label class="pref-row" id="chDedupeRow" style="flex:1;min-width:220px">
           <input type="checkbox" id="chDedupe" checked>
           <span><b>Merge repeat plays</b><small>A record played in more than one room charts once, at its best showing. The CSV keeps a <code>plays</code> count.</small></span>
@@ -4947,6 +4951,7 @@ function chParams(extra){
   // One input, two floors: votes per record, or rounds per A&R on the accuracy chart.
   p.set(chMode==='ars'?'minRounds':'minVotes',String(Math.max(0,parseInt($('#chMinVotes').value,10)||0)));
   if(chMode==='ars')p.set('sort',$('#chSort').value);
+  else if($('#chScores').checked)p.set('scores','1');
   p.set('order',$('#chOrder').value);
   p.set('per',$('#chPer').value);
   p.set('dedupe',$('#chDedupe').checked?'1':'0');
@@ -4980,8 +4985,8 @@ function renderCharts(d){
   let sum=`scope · <b>${esc(sc.label)}</b> — ${sc.rooms} room${sc.rooms===1?'':'s'}, ${esc(when)}<br>`;
   if(d.mode==='ars'){
     sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`
-      +(d.sort==='accuracy'?` · ranked on <b>accuracy</b>`
-        +(s.excluded?` · <span class="warn">${s.excluded} excluded</span> (under ${d.minRounds} round${d.minRounds===1?'':'s'})`:''):'');
+      +(d.sort==='accuracy'?` · ranked on <b>accuracy</b>`:'')
+      +(s.excluded?` · <span class="warn">${s.excluded} excluded</span> (under ${d.minRounds} round${d.minRounds===1?'':'s'})`:'');
   }else if(d.mode==='weekly1s'){
     sum+=`rooms · <b>${s.charting}</b> with a #1`+(s.excluded?` · <span class="warn">${s.excluded} had nothing clear the floor</span>`:' · every room cleared the floor');
   }else{
@@ -5102,20 +5107,24 @@ document.querySelectorAll('.chart-mode').forEach(b=>b.onclick=()=>{
   chMode=b.dataset.mode;
   document.querySelectorAll('.chart-mode').forEach(x=>{x.classList.toggle('ghost',x!==b);x.classList.toggle('on',x===b);});
   $('#chDedupeRow').style.display=chMode==='records'?'':'none';
+  $('#chScoresRow').style.display=chMode==='ars'?'none':'';
   $('#chContacts').style.display=chMode==='ars'?'':'none';
   $('#chSortWrap').style.display=chMode==='ars'?'':'none';
   chFloorUi();
   $('#chLimitLabel').textContent=chMode==='weekly1s'?'Rooms':'Chart size';
   loadCharts();
 });
-// The floor input means votes per record, or rounds per A&R — and on the points board it
-// does nothing, so it is switched off there rather than left looking live.
+// The floor input means votes per record, or rounds per A&R on either ranking. Each keeps
+// its own value: points starts at 0 so a series chart matches the public $500 board until a
+// floor is asked for; accuracy starts at 10 (one lucky round is 100%).
+const chFloor={votes:10,points:0,accuracy:10};
+const chFloorKey=()=>chMode==='ars'?$('#chSort').value:'votes';
 function chFloorUi(){
-  const ars=chMode==='ars';
-  $('#chMinLabel').textContent=ars?'Min rounds':'Min votes';
-  $('#chMinVotes').disabled=ars&&$('#chSort').value!=='accuracy';
+  $('#chMinLabel').textContent=chMode==='ars'?'Min rounds':'Min votes';
+  $('#chMinVotes').value=chFloor[chFloorKey()];
 }
-['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo','#chSort'].forEach(sel=>{
+$('#chMinVotes').addEventListener('input',()=>{chFloor[chFloorKey()]=Math.max(0,parseInt($('#chMinVotes').value,10)||0);});
+['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo','#chSort','#chScores'].forEach(sel=>{
   const el=$(sel);if(!el)return;
   el.addEventListener('change',()=>{
     if(sel==='#chScope')$('#chRangeRow').style.display=$('#chScope').value==='range'?'':'none';
