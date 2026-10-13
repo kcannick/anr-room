@@ -190,6 +190,93 @@ function readBody(req, maxBytes = 1.5 * 1024 * 1024) {
 }
 function bad(res, msg, status = 400) { send(res, status, { error: msg }); }
 
+// ---------- account status (013 blocked, 046 deactivated/deleted) ----------
+// ONE predicate for "this user may appear / earn / be messaged". Every public surface, board,
+// payout and audience filters through it — hand-writing `blocked = 0` at a new site is how a
+// deactivated or deleted A&R would leak back onto a board (a test greps for that). `a` is the
+// users alias ('' for an unaliased users-only query). Safe on a LEFT JOIN miss: NULLs pass.
+function activeUserSql(a = 'u') {
+  const c = a ? `${a}.` : '';
+  return `(COALESCE(${c}blocked, 0) = 0 AND ${c}deactivated_at IS NULL AND ${c}deleted_at IS NULL)`;
+}
+// The same rule for participant-only queries (per-session boards read participants, not users).
+function activeParticipantSql(p = 'p') {
+  return `NOT EXISTS (SELECT 1 FROM users ux WHERE ux.uid = ${p}.user_id AND NOT ${activeUserSql('ux')})`;
+}
+// The JS twin, for a users row already in hand. Blocked is the admin's suspension; closed is
+// the A&R's own choice (046). Routes that say "suspended" check blocked; everything that
+// decides whether someone may earn, appear or be contacted checks userInactive.
+const userClosed = u => !!(u && (u.deactivated_at != null || u.deleted_at != null));
+const userInactive = u => !u || !!Number(u.blocked) || userClosed(u);
+
+// Sign a user out EVERYWHERE: account tokens, and every per-session player token (which never
+// expire and have no table of their own — rotating the column is the only way to kill them).
+async function revokeUserAccess(uid, q = db) {
+  await q.run('DELETE FROM auth_tokens WHERE uid = ?', [uid]);
+  const parts = await q.all('SELECT id FROM participants WHERE user_id = ?', [uid]);
+  for (const pt of parts) await q.run('UPDATE participants SET token = ? WHERE id = ?', [id(24), pt.id]);
+}
+// Deactivate (046, reversible): nothing is deleted. activeUserSql() takes them off every
+// board, page and audience; logging back in with the email code (reactivateUser) undoes it.
+async function deactivateUser(uid) {
+  await db.tx(async (tx) => {
+    await tx.run('UPDATE users SET deactivated_at = ? WHERE uid = ? AND deactivated_at IS NULL', [now(), uid]);
+    await tx.run("DELETE FROM notify_recipients WHERE uid = ? AND status = 'pending'", [uid]);
+    await revokeUserAccess(uid, tx);
+  });
+}
+async function reactivateUser(user) {
+  if (!user || user.deactivated_at == null || user.deleted_at != null) return false;
+  await db.run('UPDATE users SET deactivated_at = NULL WHERE uid = ?', [user.uid]);
+  user.deactivated_at = null;
+  return true;
+}
+// Delete (046, permanent) = ANONYMIZE. "We delete the person, not the history" (operator,
+// 2026-10-06): the row,
+// votes, point_events, round_reports and comments all stay, because they are inside room
+// averages artists were already sent, other A&Rs' accuracy points, and the Track Report.
+// What identifies the PERSON goes (name, email, phone, photo, handles, links); the generic
+// demographics that feed reports STAY (role, categories, city) — the report's "Who it's for"
+// segments group raters by them, and nulling them would quietly reshape published reports.
+// The email becomes a tombstone so the address can sign up fresh (starting from zero).
+async function anonymizeUser(uid) {
+  const u = await db.get('SELECT uid, email, photo_url FROM users WHERE uid = ?', [uid]);
+  if (!u) return false;
+  const tomb = `deleted+${uid}@deleted.invalid`;
+  await db.tx(async (tx) => {
+    await tx.run(
+      `UPDATE users SET email = ?, name = NULL, phone = NULL, instagram = NULL,
+              tiktok = NULL, photo_url = NULL,
+              drupal_uid = NULL, control_key = NULL, referrer_uid = NULL, host_defaults = NULL,
+              profile_complete = 0, sms_marketing_consent = 0, email_opt_out = 1,
+              deactivated_at = NULL, deleted_at = ?
+        WHERE uid = ?`, [tomb, now(), uid]);
+    await tx.run('UPDATE participants SET email = ?, name = NULL, phone = NULL WHERE user_id = ?', [tomb, uid]);
+    const pids = 'SELECT id FROM participants WHERE user_id = ?';
+    // round_comments are KEPT: a comment is part of the artist's Track Report, and reports are
+    // moving onto the site as live pages — deleting it would rewrite a report after the fact.
+    // With the name scrubbed above, the report credits it "A&R" (trackReportData).
+    await tx.run(`DELETE FROM recap_emails WHERE participant_id IN (${pids})`, [uid]);
+    await tx.run(`UPDATE feedback SET contact_email = NULL WHERE participant_id IN (${pids})`, [uid]);
+    await tx.run('UPDATE notification_log SET destination = NULL WHERE user_id = ?', [uid]);
+    await tx.run('DELETE FROM notify_prefs WHERE uid = ?', [uid]);
+    await tx.run('DELETE FROM notify_recipients WHERE uid = ?', [uid]);
+    await tx.run('DELETE FROM otps WHERE email = ?', [u.email]);
+    // A Sidebet entry still in play is withdrawn; a settled pack's result is history.
+    const unsettled = `SELECT e.id FROM sidebet_entries e JOIN packs k ON k.id = e.pack_id
+                        WHERE e.user_id = ? AND k.status <> 'settled'`;
+    await tx.run(`DELETE FROM sidebet_picks WHERE entry_id IN (${unsettled})`, [uid]);
+    await tx.run(`DELETE FROM sidebet_entries WHERE id IN (${unsettled})`, [uid]);
+    await revokeUserAccess(uid, tx);
+  });
+  // Best-effort, after commit: a Blob hiccup must not leave the PII half-scrubbed.
+  if (u.photo_url && /\.blob\.vercel-storage\.com\//.test(u.photo_url) && process.env.BLOB_READ_WRITE_TOKEN) {
+    try { await require('@vercel/blob').del(u.photo_url); }
+    catch (e) { console.warn('[ACCOUNT] photo delete failed:', e.message); }
+  }
+  return true;
+}
+
 // ---------- auth resolution ----------
 async function participantFromReq(req) {
   const tok = req.headers['x-player-token'];
@@ -237,7 +324,9 @@ async function userFromAuth(req) {
   }
   await db.run('UPDATE auth_tokens SET last_used = ?, expires_at = ? WHERE token = ?',
     [now(), now() + AUTH_TTL, tok]);
-  return db.get('SELECT * FROM users WHERE uid = ?', [t.uid]);
+  const u = await db.get('SELECT * FROM users WHERE uid = ?', [t.uid]);
+  // Closing an account revokes its tokens; this is the backstop if one were ever missed.
+  return userClosed(u) ? null : u;
 }
 
 // Per-host feature permissions. A host gets NONE by default; an admin grants them. Admins
@@ -323,7 +412,7 @@ function notifyAudience(topic, channel) {
   if (channel === 'email') {
     return {
       sql: `${join}
-     WHERE COALESCE(u.blocked, 0) = 0
+     WHERE ${activeUserSql('u')}
        AND COALESCE(u.email_opt_out, 0) = 0
        AND u.email IS NOT NULL AND u.email != ''
        AND COALESCE(p.enabled, ${def}) = 1`,
@@ -333,7 +422,7 @@ function notifyAudience(topic, channel) {
   if (channel === 'sms') {
     return {
       sql: `${join}
-     WHERE COALESCE(u.blocked, 0) = 0
+     WHERE ${activeUserSql('u')}
        AND u.sms_marketing_consent = 1
        AND u.phone IS NOT NULL AND LENGTH(u.phone) >= 7
        AND COALESCE(p.enabled, ${def}) = 1`,
@@ -465,6 +554,7 @@ async function verifyNotifyLink(req, url) {
   const u = await db.get('SELECT * FROM users WHERE uid = ?', [uid]);
   if (!u) return { error: 'bad_link', status: 401 };
   if (u.blocked === 1 || u.blocked === true) return { error: 'account_suspended', status: 403 };
+  if (userClosed(u)) return { error: 'account_closed', status: 403 };
   return { uid: u.uid, user: u };
 }
 
@@ -499,6 +589,7 @@ async function verifyReferLink(req, url) {
   const u = await db.get('SELECT * FROM users WHERE uid = ?', [uid]);
   if (!u) return { error: 'bad_link', status: 401 };
   if (u.blocked === 1 || u.blocked === true) return { error: 'account_suspended', status: 403 };
+  if (userClosed(u)) return { error: 'account_closed', status: 403 };
   return { uid: u.uid, user: u };
 }
 // Either token, or a refer link. Used ONLY by /api/me/referrals, /api/card/refer and
@@ -1145,9 +1236,9 @@ async function creditScoutPoints(round, session) {
   // The submit link carries OUR uid (makinitmag.com/review?ref=<users.uid>) and Drupal hands it
   // back verbatim as scout.uid, so the A&R resolves directly — no Makin' It account needed.
   // Older links carried a Drupal uid; the lazy email link still resolves those.
-  const u = (await db.get('SELECT uid, blocked, email FROM users WHERE uid = ?', [round.scout_drupal_uid]))
-    || (await db.get('SELECT uid, blocked, email FROM users WHERE drupal_uid = ?', [round.scout_drupal_uid]));
-  if (!u || u.blocked) return null;      // an unresolvable scout earns nothing
+  const u = (await db.get('SELECT uid, blocked, deactivated_at, deleted_at, email FROM users WHERE uid = ?', [round.scout_drupal_uid]))
+    || (await db.get('SELECT uid, blocked, deactivated_at, deleted_at, email FROM users WHERE drupal_uid = ?', [round.scout_drupal_uid]));
+  if (userInactive(u)) return null;      // an unresolvable (or closed) scout earns nothing
   if (isSelfScout(round, u)) return null;
   const ins = await db.run(
     `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
@@ -1605,7 +1696,7 @@ async function resultsCarouselData(session, set, { photo = true } = {}) {
   const rows = await db.all(
     `SELECT p.name AS pname, u.name AS uname, u.instagram, u.location, u.photo_url, p.total_points AS pts
        FROM participants p LEFT JOIN users u ON p.user_id = u.uid
-      WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+      WHERE p.session_id = ? AND p.verified = 1 AND ${activeUserSql('u')}
       ORDER BY pts DESC, p.created_at ASC LIMIT ?`, [session.id, RESULTS_MAX_ARS]);
   if (!rows.length) return null;
   const top = rows[0];
@@ -2265,7 +2356,7 @@ async function playerState(participant) {
   const joinRows = await db.all(
     `SELECT p.created_at, u.uid, u.name AS uname, u.profile_complete
      FROM participants p LEFT JOIN users u ON p.user_id = u.uid
-     WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+     WHERE p.session_id = ? AND p.verified = 1 AND ${activeUserSql('u')}
      ORDER BY p.created_at DESC LIMIT 6`, [sessionId]);
   // Named (complete-profile) joiners carry their PUBLIC profile id so the feed can link
   // to /u/<id> — display name + public profile only, same PII surface as the boards.
@@ -2363,8 +2454,8 @@ async function creditReferralRounds(round, session) {
   for (const r of rows) {
     if (Math.abs(Number(r.err)) > REFERRAL.errMax) continue;
     if (Number(r.locked_at) > Number(r.first_seen) + REFERRAL.windowDays * 86400000) continue;
-    const ref = await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [r.referrer_uid]);
-    if (!ref || ref.blocked || ref.uid === r.uid) continue;
+    const ref = await db.get('SELECT uid, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [r.referrer_uid]);
+    if (userInactive(ref) || ref.uid === r.uid) continue;
     // substr, not LIKE: a uid is base64url and may contain '_', which LIKE reads as a wildcard.
     const c = Number((await db.get(
       "SELECT COUNT(*) AS c FROM point_events WHERE reason = 'referral_round' AND substr(source_uid, 1, CAST(? AS INTEGER)) = ?",
@@ -2436,8 +2527,8 @@ async function attributeReferral(newUid, ref, sessionId) {
   const raw = (ref == null ? '' : String(ref)).trim().slice(0, 40);
   if (!raw || !newUid) return null;
   let inviterUid = null;
-  const byUid = await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [raw]);
-  if (byUid && !byUid.blocked) inviterUid = byUid.uid;
+  const byUid = await db.get('SELECT uid, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [raw]);
+  if (byUid && !userInactive(byUid)) inviterUid = byUid.uid;
   else if (sessionId) {
     const inviter = await db.get('SELECT user_id FROM participants WHERE session_id = ? AND ref_code = ? AND verified = 1', [sessionId, raw.toUpperCase().slice(0, 12)]);
     if (inviter && inviter.user_id) inviterUid = inviter.user_id;
@@ -2465,7 +2556,7 @@ async function overlayState(session, lbScope) {
     // drop's own participant totals read 0 until the noon tally.
     const leaderboard = session.series_id
       ? (await homeSeriesBoard(session.series_id, 10)).map(r => ({ rank: r.rank, name: r.name, points: r.points }))
-      : (await db.all('SELECT name, total_points FROM participants WHERE session_id = ? AND verified = 1 ORDER BY total_points DESC, created_at ASC LIMIT 10', [sessionId]))
+      : (await db.all(`SELECT p.name, p.total_points FROM participants p WHERE p.session_id = ? AND p.verified = 1 AND ${activeParticipantSql('p')} ORDER BY p.total_points DESC, p.created_at ASC LIMIT 10`, [sessionId]))
           .map((p, i) => ({ rank: i + 1, name: dispName(p.name), points: p.total_points }));
     return { session: { id: sessionId, name: session.name, status: session.status, mode: 'async', poll_type: 'rating' },
       participants: count, current: null, result: null, leaderboard,
@@ -2522,12 +2613,12 @@ async function overlayState(session, lbScope) {
     const lastRat = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status = 'ratified' ORDER BY idx DESC LIMIT 1", [sessionId]);
     const rows = lastRat ? await db.all(
       `SELECT p.name, v.points FROM votes v JOIN participants p ON p.id = v.participant_id
-        WHERE v.round_id = ? AND v.points IS NOT NULL ORDER BY v.points DESC, v.rank ASC LIMIT 10`, [lastRat.id]) : [];
+        WHERE v.round_id = ? AND v.points IS NOT NULL AND ${activeParticipantSql('p')} ORDER BY v.points DESC, v.rank ASC LIMIT 10`, [lastRat.id]) : [];
     leaderboard = rows.map((r, i) => ({ rank: i + 1, name: onlyFirst(r.name), points: r.points }));
   } else if (scope === 'series') {
     leaderboard = (await homeSeriesBoard(session.series_id, 10)).map(r => ({ rank: r.rank, name: r.name, points: r.points }));
   } else {
-    const board = await db.all('SELECT name, total_points FROM participants WHERE session_id = ? AND verified = 1 ORDER BY total_points DESC, created_at ASC LIMIT 10', [sessionId]);
+    const board = await db.all(`SELECT p.name, p.total_points FROM participants p WHERE p.session_id = ? AND p.verified = 1 AND ${activeParticipantSql('p')} ORDER BY p.total_points DESC, p.created_at ASC LIMIT 10`, [sessionId]);
     leaderboard = board.map((p, i) => ({ rank: i + 1, name: onlyFirst(p.name), points: p.total_points }));
   }
   return {
@@ -2563,7 +2654,7 @@ async function homeSeriesBoard(seriesId, limit = 5) {
     `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(t.pts) AS pts
        FROM (${SERIES_POINTS_SRC}) t
        JOIN users u ON t.puid = u.uid
-      WHERE u.profile_complete = 1 AND u.blocked = 0
+      WHERE u.profile_complete = 1 AND ${activeUserSql('u')}
       GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
       ORDER BY pts DESC, u.name ASC LIMIT ?`,
     [seriesId, seriesId, limit]);
@@ -2583,7 +2674,7 @@ async function cardArsData({ sessionId, seriesId }, limit = 8) {
     const rows = await db.all(
       `SELECT p.name AS pname, u.name AS uname, u.instagram, p.total_points AS pts
          FROM participants p LEFT JOIN users u ON p.user_id = u.uid
-        WHERE p.session_id = ? AND p.verified = 1 AND COALESCE(u.blocked, 0) = 0
+        WHERE p.session_id = ? AND p.verified = 1 AND ${activeUserSql('u')}
         ORDER BY pts DESC, p.created_at ASC LIMIT ?`, [sessionId, limit]);
     return rows.map(r => ({ name: r.uname || r.pname || 'A&R', ig: igClean(r.instagram), points: Number(r.pts) || 0 }));
   }
@@ -2591,7 +2682,7 @@ async function cardArsData({ sessionId, seriesId }, limit = 8) {
     `SELECT u.name, u.instagram, SUM(t.pts) AS pts
        FROM (${SERIES_POINTS_SRC}) t
        JOIN users u ON t.puid = u.uid
-      WHERE u.profile_complete = 1 AND u.blocked = 0
+      WHERE u.profile_complete = 1 AND ${activeUserSql('u')}
       GROUP BY u.uid, u.name, u.instagram
       ORDER BY pts DESC, u.name ASC LIMIT ?`, [seriesId, seriesId, limit]);
   return rows.map(r => ({ name: r.name || 'A&R', ig: igClean(r.instagram), points: Number(r.pts) || 0 }));
@@ -2729,7 +2820,7 @@ async function chartArs(scope, sessions) {
     const rows = await db.all(
       `SELECT u.uid, u.name, u.instagram, u.primary_category, u.location, SUM(t.pts) AS pts
          FROM (${SERIES_POINTS_SRC}) t JOIN users u ON t.puid = u.uid
-        WHERE u.profile_complete = 1 AND u.blocked = 0
+        WHERE u.profile_complete = 1 AND ${activeUserSql('u')}
         GROUP BY u.uid, u.name, u.instagram, u.primary_category, u.location
         ORDER BY pts DESC, u.name ASC`, [scope.seriesId, scope.seriesId]);
     // Rounds-scored isn't derivable from the points union (it carries bonus events too),
@@ -2753,7 +2844,7 @@ async function chartArs(scope, sessions) {
        JOIN rounds r ON r.id = v.round_id
        JOIN users u ON p.user_id = u.uid
       WHERE r.session_id IN (${ph}) AND v.points IS NOT NULL
-        AND u.profile_complete = 1 AND u.blocked = 0
+        AND u.profile_complete = 1 AND ${activeUserSql('u')}
       GROUP BY u.uid, u.name, u.instagram, u.primary_category, u.location
       ORDER BY pts DESC, u.name ASC`, ids);
   return rows.map(shape);
@@ -3009,19 +3100,25 @@ async function songReportData(round, session) {
   const steps = trackReport.nextActions({ band, who, setup });
   // Shared comments only, attributed (name · role · city); a blocked account's comment is
   // dropped for the same reason its votes are excluded from every board.
+  // A CLOSED account's comment (deactivated or anonymized, 046) STAYS, credited "A&R" · role ·
+  // city with no name: the report is the artist's page, and it must not change because
+  // someone left. That is why this one site filters on blocked alone (closed-ok).
   const commentRows = await db.all(
-    `SELECT c.body, p.name AS pname, u.name AS uname, u.primary_category, u.location
+    `SELECT c.body, p.name AS pname, u.name AS uname, u.primary_category, u.location,
+            CASE WHEN u.deactivated_at IS NOT NULL OR u.deleted_at IS NOT NULL THEN 1 ELSE 0 END AS closed
        FROM round_comments c
        JOIN participants p ON p.id = c.participant_id
        LEFT JOIN users u ON u.uid = p.user_id
-      WHERE c.round_id = ? AND c.status = 'shared' AND COALESCE(u.blocked, 0) = 0
+      WHERE c.round_id = ? AND c.status = 'shared' AND COALESCE(u.blocked, 0) = 0 /* closed-ok */
       ORDER BY c.created_at ASC`, [round.id]);
-  const comments = commentRows.map(r => ({
-    body: r.body,
-    name: (r.uname || r.pname || 'A&R').toString().trim().slice(0, 40),
-    role: r.primary_category || null,
-    location: r.location || null,
-  }));
+  const comments = commentRows.map(r => Number(r.closed)
+    ? { body: r.body, name: 'A&R', role: r.primary_category || null, location: r.location || null }
+    : {
+      body: r.body,
+      name: (r.uname || r.pname || 'A&R').toString().trim().slice(0, 40),
+      role: r.primary_category || null,
+      location: r.location || null,
+    });
   const ig = igClean(round.artist_instagram) || (m => m ? igClean(m[1]) : null)(/(?:IG|instagram)[:\s]+@?([A-Za-z0-9_.]+)/i.exec(round.song_note || ''));
   // The Meeting's date is the day the record was rated (drop_day, ET); a live show's is
   // the night it aired.
@@ -4355,7 +4452,7 @@ async function weeklyReportData(day, opts = {}) {
        JOIN rounds r ON r.id = v.round_id
        JOIN users u ON p.user_id = u.uid
       WHERE r.session_id IN (${ph}) AND v.points IS NOT NULL
-        AND u.profile_complete = 1 AND u.blocked = 0
+        AND u.profile_complete = 1 AND ${activeUserSql('u')}
       GROUP BY u.uid, u.name, u.instagram, u.primary_category, u.location`, ids);
   // The completion bonus lives in point_events keyed '<sessionId>:<uid>' — the only bonus
   // that belongs to a specific drop, so it is the only one a week can honestly claim.
@@ -5401,7 +5498,7 @@ async function dispatchGoLiveNotifications(session, base, channels) {
   const parts = await db.all(
     `SELECT pt.id, pt.user_id, pt.email, COALESCE(u.phone, pt.phone) AS phone,
             COALESCE(u.sms_marketing_consent, pt.sms_marketing_consent) AS sms_marketing_consent,
-            COALESCE(u.blocked, 0) AS blocked, COALESCE(u.email_opt_out, 0) AS email_opt_out,
+            CASE WHEN ${activeUserSql('u')} THEN 0 ELSE 1 END AS blocked, COALESCE(u.email_opt_out, 0) AS email_opt_out,
             pe.enabled AS pref_email, ps.enabled AS pref_sms
        FROM participants pt
        LEFT JOIN users u ON u.uid = pt.user_id
@@ -5618,6 +5715,8 @@ async function handleApi(req, res, url) {
     }
     // Blocked accounts can't log in (admins are never blocked).
     if (user.blocked) return bad(res, 'This account has been suspended.', 403);
+    // Logging in with the email code IS how a deactivated A&R comes back (046).
+    await reactivateUser(user);
     // "Join the A&R Team" signup carries a display name + optional phone — set them on
     // the account (phone present => SMS opt-in, same model as a session join).
     const sName = (name || '').toString().trim().slice(0, MAX_NAME);
@@ -5760,6 +5859,7 @@ async function handleApi(req, res, url) {
     // Recognize a returning player by email; create a permanent uid the first time.
     let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
     if (user && user.blocked) return bad(res, 'This account has been suspended.', 403);
+    if (user) await reactivateUser(user);   // a verified code brings a deactivated A&R back (046)
     const storedDigits = user ? (user.phone || '').replace(/\D/g, '') : '';
     // Providing a phone number IS the SMS opt-in (disclosure sits under the field). The
     // effective phone is: a newly typed number, OR the stored number kept by a returning
@@ -6205,7 +6305,8 @@ async function handleApi(req, res, url) {
     const where = [], params = [];
     if (q) { where.push('(LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ?)'); params.push('%' + q + '%', '%' + q + '%'); }
     if (status === 'blocked') where.push('u.blocked = 1');
-    else if (status === 'active') where.push('u.blocked = 0');
+    else if (status === 'active') where.push(activeUserSql('u'));
+    else if (status === 'closed') where.push('(u.deactivated_at IS NOT NULL OR u.deleted_at IS NOT NULL)');
     if (skill && PROFILE_CATEGORIES.includes(skill)) {
       // 'primary' matches the headline role; 'any' matches anyone with that role at all
       // (categories is a JSON array, so a quoted-token LIKE is a safe contains check).
@@ -6221,12 +6322,13 @@ async function handleApi(req, res, url) {
       : sort === 'sessions' ? `${sessSub} DESC` : sort === 'series' ? `${seriesSub} DESC` : 'u.last_seen DESC';
     const total = (await db.get(`SELECT COUNT(*) AS c FROM users u ${whereSql}`, params)).c;
     const rows = await db.all(
-      `SELECT u.uid, u.name, u.email, u.role, u.blocked, u.host_perms, u.giveaway_eligible, u.profile_complete, u.primary_category, u.location, u.photo_url, u.lifetime_points, u.last_seen,
+      `SELECT u.uid, u.name, u.email, u.role, u.blocked, u.deactivated_at, u.deleted_at, u.host_perms, u.giveaway_eligible, u.profile_complete, u.primary_category, u.location, u.photo_url, u.lifetime_points, u.last_seen,
          ${sessSub} AS sessions, ${seriesSub} AS series_participated
        FROM users u ${whereSql} ORDER BY ${orderSql} LIMIT 100`, params);
     return send(res, 200, {
       total: Number(total) || 0,
       users: rows.map(r => ({ id: r.uid, name: r.name || null, email: r.email, role: r.role, blocked: !!r.blocked,
+        account: r.deleted_at != null ? 'deleted' : r.deactivated_at != null ? 'deactivated' : 'active',
         perms: r.role === 'host' ? effectivePerms(r) : null,
         giveaway: r.role === 'host' ? hostGiveawayEligible(r) : null,
         profileComplete: !!r.profile_complete, primaryCategory: r.primary_category || null, location: r.location || null,
@@ -6242,17 +6344,16 @@ async function handleApi(req, res, url) {
     const admin = await userFromAuth(req);
     if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
     const { uid, blocked } = await readBody(req);
-    const u = await db.get('SELECT uid, role FROM users WHERE uid = ?', [uid]);
+    const u = await db.get('SELECT uid, role, deleted_at FROM users WHERE uid = ?', [uid]);
     if (!u) return bad(res, 'User not found', 404);
     if (u.role === 'admin') return bad(res, "Admins can't be blocked");
+    if (u.deleted_at != null) return bad(res, 'This account was deleted by its owner');
     const b = blocked ? 1 : 0;
     await db.run('UPDATE users SET blocked = ? WHERE uid = ?', [b, uid]);
     if (b) await db.run('DELETE FROM auth_tokens WHERE uid = ?', [uid]); // force-logout
     return send(res, 200, { ok: true, blocked: !!b });
   }
 
-  // Hard-delete a user (admin). PERMANENT — removes the account, its participations, and
-  // its votes in one transaction (changes any leaderboard that counted them). Name-confirmed.
   // Grant/revoke the host role (platform-admin only) — the invite-only upgrade. Only toggles
   // between 'host' and 'player'; never touches admins.
   if (p === '/api/admin/users/role' && method === 'POST') {
@@ -6297,23 +6398,72 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, uid, giveaway: !!on });
   }
 
+  // Delete = ANONYMIZE (operator, 2026-10-06): "we delete the person, not the history." Same
+  // anonymizeUser() as an A&R's own delete — votes, points and comments stay inside the
+  // averages and reports they were already part of; everything that identifies them goes.
+  // (This route used to hard-delete votes, which rewrote published room averages.)
   if (p === '/api/admin/users/delete' && method === 'POST') {
     const admin = await userFromAuth(req);
     if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
     const { uid, confirmName } = await readBody(req);
-    const u = await db.get('SELECT uid, name, email, role FROM users WHERE uid = ?', [uid]);
+    const u = await db.get('SELECT uid, name, email, role, deleted_at FROM users WHERE uid = ?', [uid]);
     if (!u) return bad(res, 'User not found', 404);
     if (u.role === 'admin') return bad(res, "Admins can't be deleted here");
+    if (u.deleted_at != null) return bad(res, 'Already deleted');
     const expected = (u.name && u.name.trim()) ? u.name : u.email;
     if ((confirmName || '') !== expected) return bad(res, 'Does not match — type it exactly to confirm');
-    await db.tx(async (tx) => {
-      await tx.run('DELETE FROM votes WHERE participant_id IN (SELECT id FROM participants WHERE user_id = ?)', [uid]);
-      await tx.run('DELETE FROM participants WHERE user_id = ?', [uid]);
-      await tx.run('DELETE FROM auth_tokens WHERE uid = ?', [uid]);
-      await tx.run('DELETE FROM otps WHERE email = ?', [u.email]);
-      await tx.run('DELETE FROM notify_prefs WHERE uid = ?', [uid]);
-      await tx.run('DELETE FROM users WHERE uid = ?', [uid]);
-    });
+    await anonymizeUser(uid);
+    return send(res, 200, { ok: true, deleted: true });
+  }
+
+  // ----- an A&R closes their OWN account (046) -----
+  // Account token ONLY (X-Auth-Token): never a player token, never a signed rf1/np1 link —
+  // a link forwarded out of someone's inbox must not be able to close their account.
+  // Hosts and admins are refused: they own rooms, banners and the show itself.
+  const closeGate = async () => {
+    const user = await userFromAuth(req);
+    if (!user) return { err: ['Log in to manage your account', 401] };
+    if (user.role !== 'player') return { err: ["Host accounts can't be closed here. Contact Makin' It to close this account.", 403] };
+    return { user };
+  };
+  if (p === '/api/me/account/deactivate' && method === 'POST') {
+    const g = await closeGate(); if (g.err) return bad(res, ...g.err);
+    const { confirm } = await readBody(req);
+    if (confirm !== true) return bad(res, 'Confirm to deactivate');
+    await deactivateUser(g.user.uid);
+    return send(res, 200, { ok: true, deactivated: true });
+  }
+  // Delete is permanent, so it asks for a FRESH code sent to the address on file — a 30-day
+  // token left signed in on a shared device is not enough. Own otp scope ('__close__') so a
+  // login code can't be replayed here, or this code used to log in.
+  if (p === '/api/me/account/delete-code' && method === 'POST') {
+    const g = await closeGate(); if (g.err) return bad(res, ...g.err);
+    const em = g.user.email.toLowerCase();
+    const code = code6();
+    await db.run("DELETE FROM otps WHERE email = ? AND session_id = '__close__'", [em]);
+    await db.run("INSERT INTO otps (email, session_id, code, expires_at, attempts) VALUES (?, '__close__', ?, ?, 0)",
+      [em, code, now() + 10 * 60 * 1000]);
+    const r = await sendOtp(g.user.email, code, 'deleting your account');
+    // sendOtp hands the code back on a FAILED send so a login can still go through; here that
+    // would put the delete code on the screen of whoever holds the device — the one thing the
+    // code exists to rule out. Only the console provider (local dev) shows it.
+    if (r.fallback) return bad(res, "We couldn't send the code. Try again in a minute.", 502);
+    return send(res, 200, { sent: true, to: maskEmail(g.user.email), devCode: r.devCode || null });
+  }
+  if (p === '/api/me/account/delete' && method === 'POST') {
+    const g = await closeGate(); if (g.err) return bad(res, ...g.err);
+    const { code, confirmText } = await readBody(req);
+    if (String(confirmText || '').trim() !== 'DELETE') return bad(res, 'Type DELETE to confirm');
+    const em = g.user.email.toLowerCase();
+    const otp = await db.get("SELECT * FROM otps WHERE email = ? AND session_id = '__close__'", [em]);
+    if (!otp) return bad(res, 'Request a code first');
+    if (now() > Number(otp.expires_at)) return bad(res, 'Code expired. Request a new one.');
+    if (Number(otp.attempts) >= 5) return bad(res, 'Too many tries. Request a new code.');
+    if (String(otp.code) !== String(code || '').trim()) {
+      await db.run("UPDATE otps SET attempts = attempts + 1 WHERE email = ? AND session_id = '__close__'", [em]);
+      return bad(res, 'Incorrect code');
+    }
+    await anonymizeUser(g.user.uid);
     return send(res, 200, { ok: true, deleted: true });
   }
 
@@ -6322,8 +6472,8 @@ async function handleApi(req, res, url) {
   if (p === '/api/profile' && method === 'GET') {
     const uid = url.searchParams.get('u') || url.searchParams.get('id');
     if (!uid) return bad(res, 'Profile id required');
-    const u = await db.get('SELECT uid, name, categories, primary_category, location, instagram, tiktok, photo_url, blocked, lifetime_points FROM users WHERE uid = ?', [uid]);
-    if (!u || u.blocked) return bad(res, 'Profile not found', 404);
+    const u = await db.get('SELECT uid, name, categories, primary_category, location, instagram, tiktok, photo_url, blocked, deactivated_at, deleted_at, lifetime_points FROM users WHERE uid = ?', [uid]);
+    if (userInactive(u)) return bad(res, 'Profile not found', 404);
     let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
     const sessions = (await db.get('SELECT COUNT(DISTINCT session_id) AS c FROM participants WHERE user_id = ? AND verified = 1', [uid])).c;
     // Current series rank: rank among qualified (complete, non-blocked) A&Rs in the active
@@ -6338,7 +6488,7 @@ async function handleApi(req, res, url) {
          JOIN users u2       ON p.user_id = u2.uid
          JOIN rounds r       ON v.round_id = r.id
          JOIN sessions s     ON r.session_id = s.id
-         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u2.profile_complete = 1 AND u2.blocked = 0
+         WHERE s.series_id = ? AND s.deleted_at IS NULL AND v.points IS NOT NULL AND u2.profile_complete = 1 AND ${activeUserSql('u2')}
          GROUP BY u2.uid ORDER BY pts DESC`, [ser.id]);
       const idx = ranked.findIndex(r => r.uid === uid);
       if (idx >= 0) { seriesRank = idx + 1; seriesTitle = ser.title; }
@@ -7309,8 +7459,8 @@ async function handleApi(req, res, url) {
     if (!given || given.length < 12) return send(res, 401, { error: 'Bad key' });
     // Compare in the DB by exact match (the column is uniquely indexed). A timing-safe
     // compare against every row would mean scanning the table on each press.
-    const host = await db.get('SELECT uid, blocked FROM users WHERE control_key = ?', [given]);
-    if (!host || host.blocked) return send(res, 401, { error: 'Bad key' });
+    const host = await db.get('SELECT uid, blocked, deactivated_at, deleted_at FROM users WHERE control_key = ?', [given]);
+    if (userInactive(host)) return send(res, 401, { error: 'Bad key' });
     // Explicit room wins; otherwise the host's live room, then their soonest upcoming one.
     const wanted = url.searchParams.get('s') || url.searchParams.get('sessionId');
     const session = wanted
@@ -7491,8 +7641,8 @@ async function handleApi(req, res, url) {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     // email_opt_out (028) is the global kill switch every unsubscribe link sets. Without
     // it here, an A&R who unsubscribed would still be counted — and still be mailed.
-    const em = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND COALESCE(email_opt_out,0) = 0 AND email IS NOT NULL AND email != ''")).c;
-    const sm = (await db.get("SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0 AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7")).c;
+    const em = (await db.get(`SELECT COUNT(*) AS c FROM users WHERE ${activeUserSql('')} AND COALESCE(email_opt_out,0) = 0 AND email IS NOT NULL AND email != ''`)).c;
+    const sm = (await db.get(`SELECT COUNT(*) AS c FROM users WHERE ${activeUserSql('')} AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7`)).c;
     return send(res, 200, { email: Number(em) || 0, sms: Number(sm) || 0 });
   }
 
@@ -7532,12 +7682,12 @@ async function handleApi(req, res, url) {
     if (wantEmail) await db.run(
       `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
          SELECT ?, uid, 'email', email FROM users
-          WHERE COALESCE(blocked,0) = 0 AND COALESCE(email_opt_out,0) = 0
+          WHERE ${activeUserSql('')} AND COALESCE(email_opt_out,0) = 0
             AND email IS NOT NULL AND email != ''`, [bcId]);
     if (wantSms) await db.run(
       `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
          SELECT ?, uid, 'sms', phone FROM users
-          WHERE COALESCE(blocked,0) = 0 AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7`, [bcId]);
+          WHERE ${activeUserSql('')} AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7`, [bcId]);
     const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
     return send(res, 200, { broadcastId: bcId, queued: Number(q) || 0 });
   }
@@ -8493,7 +8643,7 @@ async function handleApi(req, res, url) {
       `SELECT u.uid AS user_id, u.name, u.email, u.profile_complete, u.primary_category, u.location, SUM(t.pts) AS series_points
        FROM (${SERIES_POINTS_SRC}) t
        JOIN users u ON t.puid = u.uid
-       WHERE u.blocked = 0
+       WHERE ${activeUserSql('u')}
        GROUP BY u.uid, u.name, u.email, u.profile_complete, u.primary_category, u.location
        ORDER BY series_points DESC, u.name ASC
        LIMIT ?`, [seriesId, seriesId, limit]);
@@ -8524,7 +8674,7 @@ async function handleApi(req, res, url) {
       `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url, SUM(t.pts) AS series_points
        FROM (${SERIES_POINTS_SRC}) t
        JOIN users u ON t.puid = u.uid
-       WHERE u.profile_complete = 1 AND u.blocked = 0
+       WHERE u.profile_complete = 1 AND ${activeUserSql('u')}
        GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
        ORDER BY series_points DESC, u.name ASC
        LIMIT ?`, [seriesId, seriesId, limit]);
@@ -8585,7 +8735,7 @@ async function handleApi(req, res, url) {
     // location the ticker shows, and it doubles as a "complete to appear" pull). Public-
     // safe: display name + city + role + photo; never email/phone.
     const arRows = await db.all(
-      'SELECT uid, name, primary_category, location, photo_url FROM users WHERE profile_complete = 1 AND blocked = 0 ORDER BY first_seen DESC LIMIT 12', []);
+      `SELECT uid, name, primary_category, location, photo_url FROM users WHERE profile_complete = 1 AND ${activeUserSql('')} ORDER BY first_seen DESC LIMIT 12`, []);
     const recentARs = arRows.map(u => ({ id: u.uid, name: u.name, category: u.primary_category || null, location: u.location || null, photoUrl: u.photo_url || null }));
     // Top talent scouts (operator, 2026-10-02): scouting is the secondary game and the
     // homepage makes a big deal of who is best at it — the top 3 by lifetime scouting points
@@ -8596,7 +8746,7 @@ async function handleApi(req, res, url) {
       `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url,
               SUM(pe.points) AS pts, COUNT(*) AS records
          FROM point_events pe JOIN users u ON u.uid = pe.user_id
-        WHERE pe.reason = 'scout' AND u.profile_complete = 1 AND COALESCE(u.blocked, 0) = 0
+        WHERE pe.reason = 'scout' AND u.profile_complete = 1 AND ${activeUserSql('u')}
         GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
        HAVING SUM(pe.points) > 0
         ORDER BY pts DESC, records DESC, u.name ASC LIMIT 3`, []);
@@ -8628,7 +8778,7 @@ async function handleApi(req, res, url) {
       const rows = await db.all(
         `SELECT p.name AS pname, p.total_points, u.name AS uname, u.primary_category, u.location, u.photo_url
            FROM participants p LEFT JOIN users u ON u.uid = p.user_id
-          WHERE p.session_id = ? AND p.verified = 1 AND p.total_points > 0
+          WHERE p.session_id = ? AND p.verified = 1 AND p.total_points > 0 AND ${activeUserSql('u')}
           ORDER BY p.total_points DESC, p.created_at ASC LIMIT 8`, [lastPub.id]);
       yesterday = {
         day: lastPub.drop_day, dayLabel: etDayLabel(lastPub.drop_day),
@@ -8642,7 +8792,7 @@ async function handleApi(req, res, url) {
 
     // "On the team." One bounded COUNT, and it is the membership rather than the qualified
     // subset — someone who just joined is on the team before their profile is complete.
-    const teamCount = Number((await db.get('SELECT COUNT(*) AS c FROM users WHERE COALESCE(blocked,0) = 0', [])).c) || 0;
+    const teamCount = Number((await db.get(`SELECT COUNT(*) AS c FROM users WHERE ${activeUserSql('')}`, [])).c) || 0;
 
     // ---- Try one right now ----
     // Records that ALREADY RAN, so the average is a settled fact rather than a claim, and a
@@ -8851,8 +9001,8 @@ async function handleApi(req, res, url) {
     const kinds = { card: 'referCard', story: 'referStory', join: 'referJoin', submit: 'referSubmit' };
     const type = kinds[url.searchParams.get('kind') || 'card'];
     if (!type) return bad(res, 'Unknown graphic', 404);
-    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, blocked FROM users WHERE uid = ?', [uid]);
-    if (!u || u.blocked) return bad(res, 'Not logged in', 401);
+    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [uid]);
+    if (userInactive(u)) return bad(res, 'Not logged in', 401);
     try {
       const links = referralLinks(u.uid);
       const data = {
@@ -9022,8 +9172,8 @@ async function handleApi(req, res, url) {
     if (!uid) return bad(res, 'Not logged in', 401);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, drupal_uid, blocked FROM users WHERE uid = ?', [uid]);
-    if (!u || u.blocked) return bad(res, 'Not logged in', 401);
+    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, drupal_uid, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [uid]);
+    if (userInactive(u)) return bad(res, 'Not logged in', 401);
     const dayMs = 86400000, nowTs = now();
     // ---- A&R lane: everyone whose account this A&R brought in, plus what each has paid.
     const invitees = await db.all(
@@ -9111,8 +9261,8 @@ async function handleApi(req, res, url) {
     if (!uid) return bad(res, 'Not logged in', 401);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    const u = await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [uid]);
-    if (!u || u.blocked) return bad(res, 'Not logged in', 401);
+    const u = await db.get('SELECT uid, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [uid]);
+    if (userInactive(u)) return bad(res, 'Not logged in', 401);
     return send(res, 200, await arResultsData(uid, url.searchParams.get('week')));
   }
   // QR code as SVG (self-hosted; used by the vertical overlay's "Scan to Win $500" join code).
@@ -9134,7 +9284,7 @@ async function handleApi(req, res, url) {
     const sessionId = url.searchParams.get('sessionId');
     if (!(await canAdminSession(req, sessionId))) return bad(res, 'Not authorized', 403);
     const one = async (sql, args) => (await db.get(sql, args)).c;
-    const eligibleSql = `SELECT COUNT(*) AS c FROM participants p WHERE p.session_id = ? AND p.verified = 1 AND p.email IS NOT NULL AND p.email <> '' AND EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = p.id)`;
+    const eligibleSql = `SELECT COUNT(*) AS c FROM participants p WHERE p.session_id = ? AND p.verified = 1 AND p.email IS NOT NULL AND p.email <> '' AND ${activeParticipantSql('p')} AND EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = p.id)`;
     const eligible = await one(eligibleSql, [sessionId]);
     const total = await one('SELECT COUNT(*) AS c FROM recap_emails WHERE session_id = ?', [sessionId]);
     const sent = await one("SELECT COUNT(*) AS c FROM recap_emails WHERE session_id = ? AND status = 'sent'", [sessionId]);
@@ -9159,7 +9309,7 @@ async function handleApi(req, res, url) {
       const promoUrl = await uploadPng(`recap/${sessionId}/promo.png`, await shareCards.renderPng('promo', {}));
       await db.run('INSERT INTO recap_jobs (session_id, ars_url, songs_url, promo_url, created_at) VALUES (?,?,?,?,?) ON CONFLICT (session_id) DO UPDATE SET ars_url = excluded.ars_url, songs_url = excluded.songs_url, promo_url = excluded.promo_url',
         [sessionId, arsUrl, songsUrl, promoUrl, now()]);
-      const voters = await db.all(`SELECT p.id, p.email FROM participants p WHERE p.session_id = ? AND p.verified = 1 AND p.email IS NOT NULL AND p.email <> '' AND EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = p.id)`, [sessionId]);
+      const voters = await db.all(`SELECT p.id, p.email FROM participants p WHERE p.session_id = ? AND p.verified = 1 AND p.email IS NOT NULL AND p.email <> '' AND ${activeParticipantSql('p')} AND EXISTS (SELECT 1 FROM votes v WHERE v.participant_id = p.id)`, [sessionId]);
       for (const v of voters) {
         await db.run("INSERT INTO recap_emails (id, session_id, participant_id, email, status, created_at) VALUES (?,?,?,?, 'pending', ?) ON CONFLICT (session_id, participant_id) DO NOTHING", [id(12), sessionId, v.id, v.email, now()]);
       }
@@ -10624,3 +10774,4 @@ module.exports._weekStartOf = weekStartOf;
 module.exports._resultsPages = resultsPages;
 module.exports._arResultsData = arResultsData;
 module.exports._accountResultsUrl = accountResultsUrl;
+module.exports._songReportData = songReportData;

@@ -901,6 +901,33 @@ live on anr.makinitmag.com.
   - The daily page's done, sealed and recap screens link **My past results**; the edit form's
     copy of the tab strip (join.html) carries the tab too.
 
+- **Close your own account — Deactivate / Delete** (046, 2026-10-05/06, operator's call).
+  **Backend BUILT + green, NOT committed; the UI waits on mockup approval**
+  (`public/_mock-account-close.html`, a panel at the bottom of `/profile` edit mode).
+  **"Delete" = ANONYMIZE — "we delete the person, not the history"** (operator, 2026-10-06):
+  a true delete would reshape published reports. The A&R's own Delete AND the console's admin
+  Delete both run `anonymizeUser` (the admin route used to hard-delete votes).
+  Two timestamps on `users`, separate from the admin's `blocked`:
+  - **Deactivate** (`deactivated_at`, reversible): nothing removed; off every board, page and
+    audience; all tokens revoked. **Logging in with the email code brings it back**, same points.
+  - **Delete** (`deleted_at`, permanent, `anonymizeUser`): name, email, phone,
+    photo, handles, links, prefs and an unsettled Sidebet entry go; the email becomes
+    `deleted+<uid>@deleted.invalid` so the address can sign up fresh from zero. **KEPT:** the
+    row, votes, point_events, round_reports, round_comments AND the generic demographics
+    (role, categories, city) — they feed the Track Report's averages and "Who it's for"
+    segments, and the report is moving onto the site as a live page, so it must not change
+    because someone left. A closed account's comment is credited "A&R" · role · city, no name;
+    the report's comment query is the one site filtering on `blocked` alone (`closed-ok`).
+  - **Both leave the boards** — a closed account can't win the $500 or a Wars seat.
+  - **One predicate:** `activeUserSql(alias)` / `activeParticipantSql(p)` / `userInactive(u)` in
+    server.js. Every board, payout (scout, referral), audience, profile and signed link goes
+    through it; an e2e guard fails on a hand-written `blocked = 0`. The per-session participant
+    boards (live leaderboard, daily "yesterday" board) had NO blocked filter before — they do now.
+  - Endpoints: `POST /api/me/account/deactivate {confirm:true}`; `/delete-code` then
+    `/delete {code, confirmText:'DELETE'}`. **Account token only** (never a player token or an
+    rf1/np1 link); hosts/admins refused. The code is its own otp scope (`__close__`) and is
+    NEVER shown on screen on a failed send (sendOtp's login fallback would defeat it).
+
 ## What's next (roadmap order)
 1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
    (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count
