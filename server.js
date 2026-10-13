@@ -22,8 +22,8 @@ const path = require('path');
 })();
 
 const db = require('./db');
-const { sendOtp, sendFeedback, sendEmail, escapeHtml } = require('./email');
-const { sendSms, PROVIDER: SMS_PROVIDER, smsSegments, isGsm7, SMS_SINGLE_SEGMENT } = require('./sms');
+const { sendOtp, sendFeedback, sendEmail, isDeadAddress, escapeHtml } = require('./email');
+const { sendSms, PROVIDER: SMS_PROVIDER, smsSegments, isGsm7, SMS_SINGLE_SEGMENT, normalize: smsNormalize } = require('./sms');
 const realtime = require('./realtime');
 const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy } = require('./scoring');
 const shareCards = require('./share-cards');
@@ -46,6 +46,36 @@ const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
 const PROFILE_CATEGORIES = ['DJ', 'Producer', 'Engineer', 'Manager', 'Event Promoter', 'Booking', 'Artist', 'Creative Director', 'Videographer', 'Photographer', 'Content Creator', 'Marketing', 'Executive', 'Media', 'Listener / Fan'];
 // A profile qualifies (leaderboard/prizes/Wars + payout KYC) when it has: display name
 // + at least one category + a primary + location. Socials and photo are optional.
+// Validate + write the editable profile fields for one user. Shared by the self-serve
+// save (/api/me/profile) and the admin edit (/api/admin/users/profile) so both apply
+// exactly the same rules. Returns the recomputed completeness flag.
+// Display-name edit is optional and applied only when non-empty. The durable name lives
+// on users; the player's per-room participant rows sync too so boards, cards, and the
+// overlay all agree. A handful of rows, user/admin-triggered.
+// NOTE: the phone number is NOT writable here. It lives on /api/me/notify-prefs
+// (header auth only) so exactly one code path owns the number and its TCPA consent
+// side-effects — two endpoints with subtly different consent rules is a bug waiting.
+async function applyProfileUpdate(userId, body) {
+  let cats = Array.isArray(body.categories) ? body.categories.filter(c => PROFILE_CATEGORIES.includes(c)) : [];
+  cats = [...new Set(cats)].slice(0, PROFILE_CATEGORIES.length);
+  let primary = PROFILE_CATEGORIES.includes(body.primaryCategory) ? body.primaryCategory : null;
+  if (primary && !cats.includes(primary)) cats.push(primary); // primary implies selected
+  if (!primary && cats.length) primary = cats[0];             // default primary to first picked
+  const location = (body.location || '').toString().trim().slice(0, 120) || null;
+  const instagram = (body.instagram || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
+  const tiktok = (body.tiktok || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
+  const newName = ('name' in body) ? (body.name || '').toString().trim().slice(0, MAX_NAME) : '';
+  if (newName) {
+    await db.run('UPDATE users SET name = ? WHERE uid = ?', [newName, userId]);
+    await db.run('UPDATE participants SET name = ? WHERE user_id = ?', [newName, userId]);
+  }
+  const u = await db.get('SELECT name FROM users WHERE uid = ?', [userId]);
+  const complete = isProfileComplete({ name: u && u.name, categories: JSON.stringify(cats), primary_category: primary, location }) ? 1 : 0;
+  await db.run('UPDATE users SET categories = ?, primary_category = ?, location = ?, instagram = ?, tiktok = ?, profile_complete = ? WHERE uid = ?',
+    [JSON.stringify(cats), primary, location, instagram, tiktok, complete, userId]);
+  return !!complete;
+}
+
 function isProfileComplete(u) {
   if (!u) return false;
   let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
@@ -218,12 +248,26 @@ async function revokeUserAccess(uid, q = db) {
 }
 // Deactivate (046, reversible): nothing is deleted. activeUserSql() takes them off every
 // board, page and audience; logging back in with the email code (reactivateUser) undoes it.
+// A closed account leaves Brevo too (the sync only ever ADDS, and filters closed accounts out
+// of what it adds): the contact is deleted there and its ledger rows cleared, so a deactivated
+// A&R who logs back in is simply synced again on the next run. Best-effort — Brevo being down
+// must not undo or block the close itself. Silent without BREVO_API_KEY.
+async function brevoForget(email) {
+  const e = brevoEmail(email);
+  if (!e) return;
+  await db.run('DELETE FROM brevo_sync WHERE contact_key = ?', ['e:' + e]).catch(() => {});
+  if (!process.env.BREVO_API_KEY) return;
+  try { await brevoFetch(`/contacts/${encodeURIComponent(e)}?identifierType=email_id`, { method: 'DELETE' }); }
+  catch (err) { if (!/Brevo 404/.test(err.message)) console.warn('[ACCOUNT] Brevo contact delete failed:', err.message); }
+}
 async function deactivateUser(uid) {
+  const u = await db.get('SELECT email FROM users WHERE uid = ?', [uid]);
   await db.tx(async (tx) => {
     await tx.run('UPDATE users SET deactivated_at = ? WHERE uid = ? AND deactivated_at IS NULL', [now(), uid]);
     await tx.run("DELETE FROM notify_recipients WHERE uid = ? AND status = 'pending'", [uid]);
     await revokeUserAccess(uid, tx);
   });
+  if (u) await brevoForget(u.email);
 }
 async function reactivateUser(user) {
   if (!user || user.deactivated_at == null || user.deleted_at != null) return false;
@@ -269,6 +313,7 @@ async function anonymizeUser(uid) {
     await tx.run(`DELETE FROM sidebet_entries WHERE id IN (${unsettled})`, [uid]);
     await revokeUserAccess(uid, tx);
   });
+  await brevoForget(u.email);
   // Best-effort, after commit: a Blob hiccup must not leave the PII half-scrubbed.
   if (u.photo_url && /\.blob\.vercel-storage\.com\//.test(u.photo_url) && process.env.BLOB_READ_WRITE_TOKEN) {
     try { await require('@vercel/blob').del(u.photo_url); }
@@ -365,10 +410,30 @@ const NOTIFY_TOPICS = {
   room_live:     { label: 'A room goes live', channels: { email: 1, sms: 1 } },
   // The A&R Daily open notice (2026-09-27, operator's call: ON by default). Email only — a
   // daily text to the whole list is a cost and an opt-out generator the operator declined.
-  daily_open:    { label: 'Daily records open', channels: { email: 1 } },
+  // `engaged` (2026-10-06): the DEFAULT reaches only active accounts (see engagedSql); an
+  // explicit ON keeps a daily mail regardless. The October audit: 766 sends a day, 4% clicked,
+  // 607 of 776 recipients had neither clicked nor rated in 30 days.
+  daily_open:    { label: 'Daily records open', channels: { email: 1 }, engaged: true },
   digest_daily:  { label: 'Daily update',     channels: { email: 0 } },
-  digest_weekly: { label: 'Weekly update',    channels: { email: 0 } },
+  // The weekly update (2026-10-06) is the cadence for everyone the daily notice no longer
+  // reaches: ON by default, `nudge` = the default goes to the NON-engaged only (the engaged
+  // already hear from us daily) and stops after WEEKLY_SUNSET_SENDS unanswered sends. An
+  // explicit ON gets it every week regardless. Sender: enqueueWeeklyUpdate / drainWeeklyUpdate.
+  digest_weekly: { label: 'Weekly update',    channels: { email: 1 }, nudge: true },
 };
+// "Engaged" = signed in or rated within ENGAGED_DAYS (users.last_seen is stamped at both), or
+// an account younger than NEW_ACCOUNT_DAYS (a new A&R gets the daily mail for two weeks to
+// form the habit). WEEKLY_SUNSET_SENDS weekly mails with no activity since = stop sending;
+// the preference stays for them to turn back on.
+const ENGAGED_DAYS = 30;
+const NEW_ACCOUNT_DAYS = 14;
+const WEEKLY_SUNSET_SENDS = 4;
+// A FRAGMENT with its params, over users aliased `u`. Composes into audience queries by string
+// append, so its '?'s bind by position in the final string (the toPg() rule).
+function engagedSql(at = now()) {
+  return { sql: '(u.last_seen >= ? OR u.first_seen >= ?)',
+    params: [at - ENGAGED_DAYS * 86400000, at - NEW_ACCOUNT_DAYS * 86400000] };
+}
 const NOTIFY_CHANNELS = ['email', 'sms'];
 
 // Is (topic, channel) a real, offered pair? Everything that writes prefs goes through this
@@ -410,14 +475,32 @@ function notifyAudience(topic, channel) {
       LEFT JOIN notify_prefs p
              ON p.uid = u.uid AND p.topic = ? AND p.channel = '${channel}'`;
   if (channel === 'email') {
-    return {
-      sql: `${join}
+    const t = NOTIFY_TOPICS[topic];
+    const eng = engagedSql();
+    // email_bounced_at (043): the provider refused this address for good; no topic mails it.
+    let sql = `${join}
      WHERE ${activeUserSql('u')}
        AND COALESCE(u.email_opt_out, 0) = 0
+       AND u.email_bounced_at IS NULL
        AND u.email IS NOT NULL AND u.email != ''
-       AND COALESCE(p.enabled, ${def}) = 1`,
-      params: [topic],
-    };
+       AND COALESCE(p.enabled, ${def}) = 1`;
+    const params = [topic];
+    // `(p.enabled = 1 OR x)`: NULL OR false is NULL, which WHERE treats as false — so a
+    // default-on row is gated by x and an explicit ON row passes. Exactly the intent.
+    if (t.engaged) { sql += `
+       AND (p.enabled = 1 OR ${eng.sql})`; params.push(...eng.params); }
+    if (t.nudge) {
+      sql += `
+       AND (p.enabled = 1 OR NOT ${eng.sql})`; params.push(...eng.params);
+      // Sunset: sent weekly rows since the person was last seen. A row that went out BEFORE
+      // their last activity does not count — they came back, the count starts over.
+      sql += `
+       AND (p.enabled = 1 OR (SELECT COUNT(*) FROM notify_recipients r JOIN notify_broadcasts b ON b.id = r.broadcast_id
+                WHERE r.uid = u.uid AND r.channel = 'email' AND r.status = 'sent' AND b.kind = ?
+                  AND COALESCE(r.sent_at, 0) > COALESCE(u.last_seen, 0)) < ${WEEKLY_SUNSET_SENDS})`;
+      params.push(topic);
+    }
+    return { sql, params };
   }
   if (channel === 'sms') {
     return {
@@ -433,6 +516,19 @@ function notifyAudience(topic, channel) {
 }
 // How many A&Rs would receive (topic, channel) right now. Bounded aggregate, admin-only
 // callers — never on the boot or poll path.
+// The mass announcement's audience, per channel, as {sql, params} fragments over `u`. The
+// channel gates are the ones notifyAudience() uses (kept byte-equivalent on purpose); the
+// 'engaged' flavour adds the activity gate. Bounced addresses are out of both.
+function announcementAudience(which = 'engaged') {
+  const eng = engagedSql();
+  const gate = which === 'all' ? { sql: '', params: [] } : { sql: ` AND ${eng.sql}`, params: eng.params };
+  return {
+    email: { sql: `FROM users u WHERE ${activeUserSql('u')} AND COALESCE(u.email_opt_out,0) = 0 AND u.email_bounced_at IS NULL
+            AND u.email IS NOT NULL AND u.email != ''${gate.sql}`, params: gate.params },
+    sms: { sql: `FROM users u WHERE ${activeUserSql('u')} AND u.sms_marketing_consent = 1 AND u.phone IS NOT NULL AND LENGTH(u.phone) >= 7${gate.sql}`, params: gate.params },
+  };
+}
+
 async function notifyAudienceCount(topic, channel) {
   const a = notifyAudience(topic, channel);
   if (!a) return null;
@@ -527,6 +623,29 @@ function mintNotifyLink(uid) {
 function notifyManageUrl(base, uid) {
   const tok = mintNotifyLink(uid);
   return tok ? `${base}/profile#nt=${tok}` : `${base}/profile`;
+}
+// One-click unsubscribe target for the List-Unsubscribe header (2026-10-06): the inbox POSTs
+// here with no page in between, so it must work with the token alone. Null when links are
+// unconfigured — then the header is simply omitted and the footer link does the job.
+function notifyUnsubscribeUrl(base, uid) {
+  const tok = mintNotifyLink(uid);
+  return tok ? `${base}/api/notify/unsubscribe?nt=${tok}` : null;
+}
+// Per-stream send options for a registered A&R's mail. `tag` names the stream to the provider.
+function notifySendOpts(base, uid, tag) {
+  return { tag, unsubscribe: notifyUnsubscribeUrl(base, uid) };
+}
+// The provider refused the ADDRESS (hard bounce, invalid, spam report, provider-side unsub):
+// stamp users.email_bounced_at so every audience query skips it from now on. Best-effort and
+// case-blind. Nothing clears it automatically (the email is the account's identity key and is
+// not editable on the profile); the operator clears it by hand when an address is fixed.
+async function noteEmailOutcome(dest, out) {
+  if (!out || out.ok || !isDeadAddress(out.reject) || !dest) return false;
+  try {
+    const r = await db.run('UPDATE users SET email_bounced_at = ? WHERE LOWER(email) = LOWER(?) AND email_bounced_at IS NULL', [now(), String(dest)]);
+    if (r.changes) console.warn(`[EMAIL] ${out.reject}: ${maskEmail(dest)} marked bounced`);
+    return !!r.changes;
+  } catch (e) { console.error('[EMAIL] bounce note failed:', e.message); return false; }
 }
 
 // Verify, cheapest-and-most-decisive first. Returns { uid } or { error, status }.
@@ -927,6 +1046,11 @@ async function ratifyAndPublish(round, session) {
   // Needs room_average, so it can only fire here — after the tally.
   try { await creditScoutPoints(await db.get('SELECT * FROM rounds WHERE id = ?', [round.id]), session); }
   catch (e) { console.error('[scout] credit failed:', e.message); }
+  // A tournament poll: the side with more votes advances in the bracket (045).
+  if (round.tournament_match_id) {
+    try { await tournaments.onRoundRatified(round); }
+    catch (e) { console.error('[tournament] advance failed:', e.message); }
+  }
   // Compute the public series board ONCE here and push it as payload, so every connected
   // homepage applies it directly instead of each re-fetching + recomputing (O(1) at scale).
   let lbData = null;
@@ -1462,6 +1586,18 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
         out.openSent = (out.openSent || 0) + d.sent;
       } catch (e) { console.error('[daily] open notice drain failed:', e.message); }
     }
+    // The weekly update: queued once on Wednesday afternoon, then drained like the others.
+    // Only broadcasts still 'sending' are looked at, so a finished week costs one indexed read.
+    try {
+      const dueWeek = left() > 4000 ? await weeklyUpdateDue(at) : null;
+      if (dueWeek) { const q = await enqueueWeeklyUpdate(dueWeek); out.weeklyQueued = q.queued; }
+      const weeklies = await db.all("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND status <> 'done' ORDER BY created_at DESC LIMIT 2");
+      for (const b of weeklies) {
+        if (left() < 4000) { out.budgetHit = true; break; }
+        const d = await drainWeeklyUpdate({ broadcastId: b.id, limit: 60, deadline: t0 + budgetMs });
+        out.weeklySent = (out.weeklySent || 0) + d.sent;
+      }
+    } catch (e) { console.error('[daily] weekly update failed:', e.message); }
     // The artist heads-up ("rated, on tomorrow's Livestream Countdown"), for tallied days.
     // Enqueue is idempotent (uniq_artist_headsup), so calling it every tick is how a failed
     // enqueue retries. SMS obeys the ET window like every other artist text.
@@ -1535,6 +1671,22 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       if (a.attached) out.asanaAttached = a.attached;
     } catch (e) { console.error('[daily] asana pass failed:', e.message); }
   }
+
+  // ---- Tournament reminders (045): the list's one email, remind_min before the event ----
+  if (left() > 3000) {
+    try {
+      const r = await tournaments.drainReminders({ deadline: Date.now() + Math.min(6000, left() - 1000), ts: at });
+      if (r.sent) out.tournamentReminders = r.sent;
+    } catch (e) { console.error('[daily] tournament reminders failed:', e.message); }
+  }
+
+  // ---- Brevo: artists + A&Rs onto their lists, once a day (044) ----
+  if (left() > 9000) {
+    try {
+      const b = await brevoDailySync({ budgetMs: Math.min(8000, left() - 1000), ts: at });
+      if (b) out.brevoSent = Object.values(b.sent).reduce((x, n) => x + n, 0);
+    } catch (e) { console.error('[daily] brevo sync failed:', e.message); }
+  }
   return out;
 }
 
@@ -1568,7 +1720,8 @@ async function buildDayResults(session) {
     // be BOTH rated and reported (the link died partway through the day) — rated wins, and
     // the report count rides along because it is worth showing.
     const status = rated ? 'rated' : (reports > 0 ? 'not_playable' : 'unrated');
-    const out = { ref: r.ingest_ref, status, ratings, reports };
+    const out = { ref: r.ingest_ref, status, ratings, reports,
+      resultsUrl: recordResultsUrl(session.drop_day, r.ingest_ref) };
     if (rated) out.average = Math.round(Number(r.room_average) * 10) / 10;
     return out;
   });
@@ -1643,6 +1796,13 @@ function recapDateLabel(ts) {
   const g = (t) => (p.find(x => x.type === t) || {}).value || '';
   return `${g('month')}.${g('day')}.${g('year')}`;
 }
+// A daily set is NAMED FOR THE DAY IT CLOSES (operator, 2026-10-03): it opens the day before,
+// closes on the named date and is posted the day after, like a sports result. Never results_at —
+// under the 69-hour clock that is two days after the close, and the posts for the Oct 2 and Oct 3
+// closes went out dated 10.04 and 10.05.
+async function dailySetDate(session) {
+  return recapDateLabel(Number(session.window_closes_at) || dropWindowFor(session.drop_day, await dailySchedule()).closesAt || now());
+}
 // "Daily at 3PM" off the stream's own epoch, so the graphic and the caption follow the setting.
 function recapTimeLabel(ts) {
   const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })
@@ -1692,7 +1852,7 @@ async function resultsCarouselData(session, set, { photo = true } = {}) {
   if (set === 'song') return countdownCarouselData(session);
   const copy = RESULTS_COPY[set];
   if (!copy) return null;
-  const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  const date = await dailySetDate(session);
   const rows = await db.all(
     `SELECT p.name AS pname, u.name AS uname, u.instagram, u.location, u.photo_url, p.total_points AS pts
        FROM participants p LEFT JOIN users u ON p.user_id = u.uid
@@ -1742,7 +1902,7 @@ async function countdownCarouselData(session) {
     const ig = igClean(r.artist_instagram) || (m ? igClean(m[1]) : null);
     return { rank: i + 1, title: (r.song_title || '—').trim(), artist: (r.song_artist || '').trim(), handle: ig ? '@' + ig : '' };
   });
-  const date = recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  const date = await dailySetDate(session);
   const n = recs.length, total = n + 3;
   const slides = [{ slide: 1, total, date, kind: 'cover', count: n }];
   recs.slice().reverse().forEach((r, i) => slides.push({ slide: i + 2, total, date, kind: 'rank', ...r }));
@@ -2487,6 +2647,15 @@ function referGraphicVersion(u) {
     .update([u.uid, u.name || '', u.primary_category || '', u.location || '', u.photo_url || ''].join('\u0000'))
     .digest('hex').slice(0, 12);
 }
+// The Official A&R Card as a PUBLIC image URL — for email blasts (Brevo's ANR_CARD_IMAGE).
+// Public by design: everything it prints (name, role, city, photo, the two referral QRs) is
+// already on the public /u/<uid> profile, and an <img> in an email cannot carry a login.
+// `v` is referGraphicVersion: a new name/photo/city/role makes a new URL (the sync re-sends
+// it), and a matching URL is cached at the CDN for good, so a blast renders each card once.
+const ANR_CARD_EMAIL_WIDTH = 800;
+function anrCardImageUrl(base, u) {
+  return `${base}/api/card/anr/${encodeURIComponent(u.uid)}.png?v=${referGraphicVersion(u)}`;
+}
 function referralLinks(uid) {
   const u = encodeURIComponent(uid);
   return { join: `${publicBase()}/?ref=${u}`, submit: `${SUBMIT_REVIEW_URL}?ref=${u}` };
@@ -2744,6 +2913,20 @@ async function chartScope(q) {
     return { kind: 'range', label: `${chartDate(q.from)} – ${chartDate(q.to)}`, from: q.from, to: q.to,
       sessions: await pick('AND COALESCE(scheduled_at, created_at) BETWEEN ? AND ?', [q.from, q.to]) };
   }
+  if (q.scope === 'month') {
+    // A calendar month in ET, by when each room TALLIED: a daily drop tallies at its window
+    // close (a drop opened Sep 30 and closed Oct 1 is October's), a live show the night it ran.
+    const m = /^(\d{4})-(\d{2})$/.exec(q.month || '');
+    if (!m) return null;
+    const y = +m[1], mo = +m[2];
+    if (mo < 1 || mo > 12) return null;
+    const pad = n => String(n).padStart(2, '0');
+    const from = etEpoch(`${y}-${pad(mo)}-01`, 0);
+    const to = etEpoch(mo === 12 ? `${y + 1}-01-01` : `${y}-${pad(mo + 1)}-01`, 0) - 1;
+    const label = new Date(Date.UTC(y, mo - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    return { kind: 'month', label, month: q.month, from, to,
+      sessions: await pick("AND status <> 'upcoming' AND COALESCE(window_closes_at, scheduled_at, created_at) BETWEEN ? AND ?", [from, to]) };
+  }
   if (q.scope === 'last') {
     // "Last N rooms" means N rooms that actually RAN — an empty upcoming room isn't a show.
     const ran = await pick("AND status <> 'upcoming'", []);
@@ -2858,13 +3041,14 @@ function chartQuery(url) {
   // falsy, and `|| d` would silently restore the default floor the operator just cleared.
   const int = (k, d, lo, hi) => { const n = parseInt(g(k), 10); return Math.max(lo, Math.min(hi, Number.isFinite(n) ? n : d)); };
   const mode = ['records', 'ars', 'weekly1s'].includes(g('mode')) ? g('mode') : 'records';
-  const scope = ['series', 'range', 'last', 'all'].includes(g('scope')) ? g('scope') : 'all';
+  const scope = ['series', 'range', 'month', 'last', 'all'].includes(g('scope')) ? g('scope') : 'all';
   return {
     mode, scope,
     seriesId: g('seriesId') || null,
     from: parseInt(g('from'), 10) || 0,
     to: parseInt(g('to'), 10) || 0,
     lastN: int('lastN', 4, 1, 52),
+    month: g('month') || null,          // YYYY-MM, scope=month
     minVotes: int('minVotes', CHART_DEFAULT_MIN_VOTES, 0, 100000),
     // A&R chart only: rank on points (default) or accuracy. minRounds is the accuracy
     // chart's floor — one lucky round is 100% and must not outrank a month of listening.
@@ -3003,22 +3187,37 @@ function chartsCsv(d) {
   return [head.join(',')].concat(body.map(row => row.map(esc).join(','))).join('\n');
 }
 
-// The Instagram caption: the chart as pasteable text, with the band key and both CTAs.
+// The Instagram caption (rewritten with the brand redesign, 2026-10-10, to the caption rules in
+// ~/.claude/CLAUDE.md): the first line says what the post is in the words people search;
+// records are RANK ONLY, like the slides (scores are private to the Track Report); comment
+// keywords instead of links (a caption link is not clickable on Instagram); no emoji and no topic
+// hashtags. @handles only on the first CHART_CAPTION_MENTIONS rows — Instagram stops notifying
+// once a caption mentions more than 10 accounts — and plain names after that.
+const CHART_CAPTION_MENTIONS = 10;
 function chartsCaption(d) {
   const L = [];
-  L.push(`${d.title.toUpperCase()} — ${d.scope.label.toUpperCase()} 🔥`, '');
-  L.push(`Tracks submitted to the A&R Room at ${shareCards.SUBMIT_URL} — rated live, 0–${d.scaleMax}, by the room.`, '');
-  if (d.mode !== 'ars') { d.bands.forEach(b => L.push(`${b.range} | ${b.label}`)); L.push(''); }
-  d.rows.forEach(r => {
-    if (d.mode === 'ars') return L.push(`${r.rank}. ${r.name}${r.ig ? ' — @' + r.ig : ''} (${d.sort === 'accuracy'
-      ? chartAcc(r.accuracy) + '% accuracy' : r.points.toLocaleString() + ' pts'})`);
-    if (d.mode === 'weekly1s') return L.push(r.record
-      ? `${r.room} — ${r.record.title}${r.record.ig ? ' — @' + r.record.ig : ' — ' + r.record.artist} (${r.record.score.toFixed(1)})`
-      : `${r.room} — no record cleared the floor`);
-    L.push(`${r.rank}. ${r.title}${r.ig ? ' — @' + r.ig : (r.artist ? ' — ' + r.artist : '')} (${r.score.toFixed(1)})`);
-  });
-  L.push('', `Join the A&R Team → ${shareCards.JOIN_URL}`, `Submit your record → ${shareCards.SUBMIT_URL}`, '',
-    '@Makinit4indies #TheARoom');
+  const who = (i, ig, name) => (ig && i < CHART_CAPTION_MENTIONS ? '@' + ig : name || (ig ? ig : ''));
+  if (d.mode === 'ars') {
+    const acc = d.sort === 'accuracy';
+    L.push(`${d.title}, ${d.scope.label}: the members of the Makin’ It A&R Team ${acc ? 'closest to the average' : 'with the most points'}.`, '');
+    L.push('A&Rs rate new music from independent artists every day and score points for predicting the average rating.', '');
+    d.rows.forEach((r, i) => L.push(`${r.rank}. ${who(i, r.ig, r.name)}${who(i, r.ig, r.name) !== r.name && r.name ? ' (' + r.name + ')' : ''} — ${acc
+      ? chartAcc(r.accuracy) + '% accuracy' : r.points.toLocaleString() + ' pts'}`));
+    L.push('', 'Comment #ANR to join the A&R Team');
+    return L.join('\n');
+  }
+  if (d.mode === 'weekly1s') {
+    L.push(`${d.title}, ${d.scope.label}: the top-rated record from each session of the Makin’ It A&R Meeting.`, '');
+    d.rows.forEach((r, i) => L.push(r.record
+      ? `${r.room}: ${r.record.title} — ${who(i, r.record.ig, r.record.artist)}`
+      : `${r.room}: no record cleared the floor`));
+  } else {
+    L.push(`${d.title}, ${d.scope.label}: the highest-rated new music from independent artists, ranked by the Makin’ It A&R Team.`, '');
+    L.push('Every record was submitted for review to The A&R Meeting and rated by our A&Rs. Swipe to see where each one placed.', '');
+    d.rows.forEach((r, i) => L.push(`${r.rank}. ${r.title} — ${who(i, r.ig, r.artist)}`));
+  }
+  L.push('', 'Think you should be here? Submit your music free for a review by the A&R Team.', '',
+    'Comment #REVIEW to Submit Music', 'Comment #ANR to join the A&R Team');
   return L.join('\n');
 }
 
@@ -3465,7 +3664,8 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
         // Per recipient: it is signed for THIS A&R and lands on their own results.
         resultsUrl: accountResultsUrl(base || publicBase(), r.uid) };
       const out = await sendEmail(r.dest, bc.subject || 'A&R Daily',
-        dailyDigestEmailHtml(arg), dailyDigestEmailText(arg));
+        dailyDigestEmailHtml(arg), dailyDigestEmailText(arg), notifySendOpts(base || publicBase(), r.uid, 'digest_daily'));
+      await noteEmailOutcome(r.dest, out);
       if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); sent++; }
       else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); failed++; }
     } catch (e) {
@@ -3514,6 +3714,131 @@ function dailyOpenEmailText(arg, manage) {
   return lines.join('\n');
 }
 
+// ===== THE WEEKLY UPDATE (2026-10-06) =====
+// The cadence for everyone the daily notice no longer reaches (digest_weekly, default ON,
+// non-engaged by default, sunset after WEEKLY_SUNSET_SENDS unanswered — see NOTIFY_TOPICS).
+// ONE broadcast per week: kind 'digest_weekly', ref_id = the Monday of the week it reports,
+// guarded by uniq_broadcast_kind_ref. Queued by the lifecycle on WEEKLY_SEND_DOW at or after
+// WEEKLY_SEND_HOUR ET (Wednesday 1PM: the Sunday drop publishes at noon Wednesday, so the
+// week is complete), drained by the same tick. Content is names and ranks only — never a
+// score (scores are the Track Report's) — plus today's records, which is the point of the mail.
+const WEEKLY_SEND_DOW = 3;    // Wednesday, JS getDay() terms
+const WEEKLY_SEND_HOUR = 13;  // 1:00 PM ET
+async function weeklyUpdateDue(at = now()) {
+  const day = etDay(at);
+  if (etWeekday(day) !== WEEKLY_SEND_DOW || etHour(at) < WEEKLY_SEND_HOUR) return null;
+  const week = lastCompleteWeekStart(day);
+  if (!week) return null;
+  const existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
+  return existing ? null : week;
+}
+async function enqueueWeeklyUpdate(week) {
+  const a = notifyAudience('digest_weekly', 'email');
+  if (!a || !week) return { broadcastId: null, queued: 0 };
+  const win = weekWindow(week);
+  const subject = `A&R Daily — the week of ${win ? win.startLabel : week}`;
+  let existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
+  let bcId = existing ? existing.id : id(9);
+  if (!existing) {
+    try {
+      await db.run(
+        `INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [bcId, subject, `Weekly update for the week of ${week}`, 'email', null, 'sending', now(), 'digest_weekly', week]);
+    } catch (e) { /* the unique index won — adopt the row */ }
+    existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
+    if (!existing) return { broadcastId: null, queued: 0 };
+    bcId = existing.id;
+  }
+  await db.run(
+    `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
+       SELECT ?, u.uid, 'email', u.email
+       ${a.sql}
+     ON CONFLICT (broadcast_id, uid, channel) DO NOTHING`,
+    [bcId, ...a.params]);
+  const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
+  return { broadcastId: bcId, queued: Number(q) || 0 };
+}
+// Shared per-broadcast content: last week's top records and A&Rs (names and ranks, no
+// scores), the open day's count and close, and where to rate.
+async function weeklyUpdateContent(week, base) {
+  const rep = await weeklyReportData(week, { limit: 3 }).catch(() => null);
+  const win = weekWindow(week);
+  const open = await db.get(
+    "SELECT id, window_closes_at, drop_day FROM sessions WHERE mode = 'async' AND status = 'live' AND async_state = 'open' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
+  const openCount = open ? Number((await db.get(
+    "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [open.id])).c) || 0 : 0;
+  return {
+    weekLabel: win ? win.label : week,
+    records: ((rep && rep.songs) || []).map(r => ({ title: r.title, artist: r.artist || null })),
+    ars: ((rep && rep.ars) || []).map(a => ({ name: a.name, location: a.location || null })),
+    totals: rep && rep.totals ? { records: rep.totals.records, ars: rep.totals.ars, ratings: rep.totals.ratings } : null,
+    openCount,
+    closesLabel: open && Number(open.window_closes_at) > now() ? etWhenLabel(Number(open.window_closes_at), open.drop_day) : null,
+    playUrl: await openDropUrl(base),
+  };
+}
+function weeklyUpdateEmailHtml(c, manage) {
+  const li = (rows, f) => rows.map((r, i) => `<li style="margin:0 0 6px">${i + 1}. ${f(r)}</li>`).join('');
+  const sec = (title, inner) => inner ? `<p style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;margin:22px 0 8px">${title}</p>${inner}` : '';
+  const recs = c.records.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.records, r => `<b>${escapeHtml(r.title)}</b>${r.artist ? ' — ' + escapeHtml(r.artist) : ''}`)}</ol>` : '';
+  const ars = c.ars.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.ars, a => `<b>${escapeHtml(dispName(a.name) || 'A&R')}</b>${a.location ? ' · ' + escapeHtml(a.location) : ''}`)}</ol>` : '';
+  const totals = c.totals && c.totals.records ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0">${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.</p>` : '';
+  const today = c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + escapeHtml(c.closesLabel) + '.' : ''}` : 'New records open for rating every day at 3:00 PM ET.';
+  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
+    <div style="max-width:420px;margin:0 auto">
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily · Weekly update</div>
+      <h1 style="font-size:22px;margin:8px 0 10px">The week of ${escapeHtml(c.weekLabel)}</h1>
+      ${totals}
+      ${sec('Top records', recs)}
+      ${sec('Top A&amp;Rs', ars)}
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:22px 0 0">${today}</p>
+      <a href="${c.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:14px;text-align:center">Rate today's records</a>
+      <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
+      ${manage ? notifyFooterHtml(manage) : ''}
+    </div>
+  </div>`;
+}
+function weeklyUpdateEmailText(c, manage) {
+  const lines = [`A&R Daily — weekly update`, `The week of ${c.weekLabel}`, ''];
+  if (c.totals && c.totals.records) lines.push(`${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.`, '');
+  if (c.records.length) { lines.push('Top records:'); c.records.forEach((r, i) => lines.push(`${i + 1}. ${r.title}${r.artist ? ' — ' + r.artist : ''}`)); lines.push(''); }
+  if (c.ars.length) { lines.push('Top A&Rs:'); c.ars.forEach((a, i) => lines.push(`${i + 1}. ${dispName(a.name) || 'A&R'}${a.location ? ' · ' + a.location : ''}`)); lines.push(''); }
+  lines.push(c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + c.closesLabel + '.' : ''}` : 'New records open for rating every day at 3:00 PM ET.');
+  lines.push(`Rate today's records: ${c.playUrl}`);
+  if (manage) lines.push('', notifyFooterText(manage));
+  return lines.join('\n');
+}
+async function drainWeeklyUpdate({ broadcastId, limit = 40, deadline = null, base = null } = {}) {
+  const bc = await db.get("SELECT * FROM notify_broadcasts WHERE id = ? AND kind = 'digest_weekly'", [broadcastId]);
+  if (!bc) return { sent: 0, failed: 0, remaining: 0 };
+  const root = base || publicBase();
+  const content = await weeklyUpdateContent(bc.ref_id, root);
+  const rows = await db.all(
+    "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [bc.id, limit]);
+  let sent = 0, failed = 0;
+  for (const r of rows) {
+    if (deadline && Date.now() > deadline) break;
+    const claim = await db.run(
+      "UPDATE notify_recipients SET status = 'sending' WHERE broadcast_id = ? AND uid = ? AND channel = ? AND status = 'pending'",
+      [bc.id, r.uid, r.channel]);
+    if (!claim.changes) continue;
+    try {
+      const manage = notifyManageUrl(root, r.uid);
+      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily — weekly update', weeklyUpdateEmailHtml(content, manage), weeklyUpdateEmailText(content, manage),
+        notifySendOpts(root, r.uid, 'digest_weekly'));
+      await noteEmailOutcome(r.dest, out);
+      if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), bc.id, r.uid, r.channel]); sent++; }
+      else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), bc.id, r.uid, r.channel]); failed++; }
+    } catch (e) {
+      await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(e.message || 'error').slice(0, 200), bc.id, r.uid, r.channel]); failed++;
+    }
+  }
+  const remaining = Number((await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bc.id])).c) || 0;
+  if (!remaining) await db.run("UPDATE notify_broadcasts SET status = 'done' WHERE id = ?", [bc.id]);
+  return { sent, failed, remaining };
+}
+
 async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = null } = {}) {
   const bc = await db.get("SELECT * FROM notify_broadcasts WHERE kind = 'daily_open' AND ref_id = ?", [sessionId]);
   if (!bc) return { sent: 0, failed: 0, remaining: 0 };
@@ -3541,7 +3866,9 @@ async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = n
       const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
       const manage = notifyManageUrl(root, r.uid);
       const arg = { ...shared, name: u && u.name };
-      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily', dailyOpenEmailHtml(arg, manage), dailyOpenEmailText(arg, manage));
+      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily', dailyOpenEmailHtml(arg, manage), dailyOpenEmailText(arg, manage),
+        notifySendOpts(root, r.uid, 'daily_open'));
+      await noteEmailOutcome(r.dest, out);
       if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), bc.id, r.uid, r.channel]); sent++; }
       else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), bc.id, r.uid, r.channel]); failed++; }
     } catch (e) {
@@ -4029,7 +4356,8 @@ async function stageDailyDrop(res, body) {
     // Echo titles only — never the emails or phones back out (they came in over this wire,
     // that doesn't make them safe to reflect).
     return send(res, 200, { ok: true, replaced: true, sessionId: existing.id, day,
-      rounds: recs.length, seriesId: seriesId || existing.series_id || null, warnings });
+      rounds: recs.length, seriesId: seriesId || existing.series_id || null, warnings,
+      records: dropRecordLinks(day, recs) });
   }
 
   let out;
@@ -4044,7 +4372,13 @@ async function stageDailyDrop(res, body) {
     }
     throw e;
   }
-  return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings });
+  return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings,
+    records: dropRecordLinks(day, recs) });
+}
+
+// One { ref, resultsUrl } per pushed record that carries a ref, in batch order.
+function dropRecordLinks(day, recs) {
+  return recs.filter(r => r.ref).map(r => ({ ref: r.ref, resultsUrl: recordResultsUrl(day, r.ref) }));
 }
 
 // Build one day of A&R Daily from the approved batch Drupal pushes.
@@ -4149,6 +4483,7 @@ function topSupportCents(rows) {
 // and scales with the week's rounds — it must never become reachable from a boot or poll
 // path (CLAUDE.md #1 rule).
 const WEEK_START_DOW = 1;               // 1 = Monday, in JS getDay() terms
+const WEEKLY_PICKER_WEEKS = 16;          // complete weeks the weekly report's picker offers
 const ET_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 // The weekday of an ET calendar day, read off the ET-noon instant so a DST day can never
 // answer with the day either side of itself.
@@ -4358,16 +4693,33 @@ async function weeklyReportData(day, opts = {}) {
   const limit = Math.max(1, Math.min(50, opts.limit || 8));
   const minVotes = Math.max(0, opts.minVotes || 0);
 
-  const sessions = await db.all(
-    `SELECT id, drop_day, series_id, async_state, window_opens_at, results_at, published_at
-       FROM sessions
-      WHERE mode = 'async' AND deleted_at IS NULL AND drop_day BETWEEN ? AND ?
-      ORDER BY drop_day ASC`, [win.start, win.end]);
+  // The week's sessions: every daily drop that opened in it, plus the completed LIVE rating
+  // shows that ran in it — before A&R Daily (2026-09-02) the Daily Review was a live session,
+  // and without them every week before September reads as empty. A live session is dated the
+  // way My results dates it (ET day of scheduled_at, else created_at), so the two screens put
+  // a show in the same week. Live sessions with no rating round (Verzuz, tournament nights)
+  // stay out: a week's #1 A&R takes a seat, and that seat is won on rating records.
+  const fromTs = etEpoch(win.start, 0), toTs = etEpoch(etNextDay(win.end), 0);
+  const sessions = (await db.all(
+    `SELECT id, name, mode, status, drop_day, series_id, async_state, scheduled_at, created_at
+       FROM sessions s
+      WHERE deleted_at IS NULL AND (
+            (mode = 'async' AND drop_day BETWEEN ? AND ?)
+         OR ((mode IS NULL OR mode <> 'async') AND status = 'completed'
+             AND COALESCE(scheduled_at, created_at) >= ? AND COALESCE(scheduled_at, created_at) < ?
+             AND EXISTS (SELECT 1 FROM rounds r WHERE r.session_id = s.id
+                          AND r.status = 'ratified' AND r.poll_type <> 'binary')))`,
+    [win.start, win.end, fromTs, toTs]))
+    .map(s => Object.assign(s, s.mode === 'async' ? { live: false }
+      : { live: true, drop_day: etDay(Number(s.scheduled_at || s.created_at)) }))
+    .sort((a, b) => (a.drop_day < b.drop_day ? -1 : a.drop_day > b.drop_day ? 1 : 0));
   const ids = sessions.map(s => s.id);
   const drops = sessions.map(s => ({
     id: s.id, day: s.drop_day, dayLabel: etDayLabel(s.drop_day),
     weekday: ET_DOW[etWeekday(s.drop_day)] || null,
-    state: s.async_state || 'scheduled', series_id: s.series_id || null,
+    // A completed live session revealed at ratify, so it is as final as a published drop.
+    state: s.live ? 'published' : (s.async_state || 'scheduled'), series_id: s.series_id || null,
+    live: s.live, name: s.live ? (s.name || 'Live show') : null,
   }));
   const base = {
     week: { start: win.start, end: win.end, label: win.label,
@@ -4642,7 +4994,7 @@ async function sendArtistReportEmail(round, session, dest) {
   };
   const html = artistEmailHtml(common);
   const text = artistEmailText(common);
-  const r = await sendEmail(dest, `Track Report: “${d.title}” — ${decision}`, html, text);
+  const r = await sendEmail(dest, `Track Report: “${d.title}” — ${decision}`, html, text, { tag: 'artist_report' });
   return r.ok ? { ok: true, pages } : { ok: false, error: r.error };
 }
 
@@ -4818,7 +5170,7 @@ async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = 
         : await (async () => {
             const c = artistHeadsupContent({ title, artist: row.song_artist, streamAt,
               reportAt: Number(session.results_at) || null, streamUrl });
-            return sendEmail(row.dest, c.subject, artistHeadsupHtml(c), artistHeadsupText(c));
+            return sendEmail(row.dest, c.subject, artistHeadsupHtml(c), artistHeadsupText(c), { tag: 'artist_headsup' });
           })();
       if (r.ok) { await db.run("UPDATE artist_headsups SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
       else { await db.run("UPDATE artist_headsups SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
@@ -5316,6 +5668,311 @@ async function syncLeadsToAsana({ pct, minVotes, limit = LEADS_BATCH, budgetMs =
   return out;
 }
 
+// ===== BREVO CONTACT SYNC (044) =====
+// Two Brevo lists fed from the platform: every ARTIST whose record has been played (email +
+// phone + their best score — never a name: the name on a round is whatever the submitter
+// typed, so it is not sent), and
+// every registered A&R with as much of their profile as we hold. Opt-outs here are NOT a
+// filter (operator, 2026-10-05): Brevo's own unsubscribe governs its sends; the A&R's
+// opt-out state rides along as an attribute so it can be segmented on.
+//
+// Key in BREVO_API_KEY (env, never the settings table — the platform GET echoes settings).
+// The list ids are settings: created on the first sync, pasteable on the Platform panel.
+// The ledger (brevo_sync) holds a hash per contact, so a run sends only what changed and the
+// daily cron is cheap. Nothing is ever removed from a list.
+const BREVO_API = process.env.BREVO_API_BASE || 'https://api.brevo.com/v3';
+const BREVO_CALL_TIMEOUT_MS = Number(process.env.BREVO_CALL_TIMEOUT_MS) || 8000;
+const BREVO_CHUNK = 2000;               // contacts per import call (~1MB, far under the 8MB limit)
+const BREVO_BUDGET_MS = 16000;           // per press / per cron tick, like the leads sync
+const BREVO_DAILY_GAP_MS = 23 * 3600000; // the cron's once-a-day spacing
+const BREVO_FOLDER = 'A&R Program';
+const BREVO_LISTS = {
+  // The operator's existing artists list (2026-10-06). A setting overrides it; blank returns here.
+  artists: { setting: 'brevo_list_artists', name: 'A&R Program — Artists', defaultId: '119' },
+  ars: { setting: 'brevo_list_ars', name: 'A&R Program — A&Rs', defaultId: '111' },
+};
+// The A&R profile as Brevo attributes. FIRSTNAME / LASTNAME / SMS are Brevo's built-ins;
+// the rest are created on the first sync if missing.
+// On A&R contacts (operator, 2026-10-09: the full profile was too much): their promo card as
+// an IMAGE URL (so an email blast can show each A&R their own card: <img src="{{ contact.
+// ANR_CARD_IMAGE }}">), their A&R referral link (join) and their artist referral link
+// (submit) — beside name, email, phone.
+const BREVO_ATTRS = {
+  ANR_CARD_IMAGE: 'text', ANR_REFERRAL_LINK: 'text', ARTIST_REFERRAL_LINK: 'text',
+  // On ARTIST contacts: ONE number, their best record's score, to segment good artists for
+  // select opportunities (operator, 2026-10-05: a single value, nothing else).
+  ARTIST_TOP_SCORE: 'float',
+};
+// A record's score counts only with at least this many ratings (operator, 2026-10-05: default
+// 5) — a 9.0 from one A&R is not "good music". An artist with no record over the floor gets NO
+// score, not a weaker one: the field is for filtering offers, so blank must mean "unproven".
+// Setting `brevo_score_min_ratings` (the Brevo card); changing it changes the payloads, so the
+// next sync re-sends exactly the contacts whose score moved.
+const BREVO_SCORE_MIN_RATINGS = 5;
+async function brevoScoreFloor() {
+  const v = parseInt(await settingGet('brevo_score_min_ratings'), 10);
+  return Number.isFinite(v) && v >= 1 ? v : BREVO_SCORE_MIN_RATINGS;
+}
+
+async function brevoFetch(path, opts = {}) {
+  const key = process.env.BREVO_API_KEY;
+  if (!key) throw new Error('Brevo not configured (set BREVO_API_KEY)');
+  let r;
+  try {
+    r = await fetch(BREVO_API + path, {
+      ...opts,
+      headers: { 'api-key': key, accept: 'application/json', ...(opts.body ? { 'content-type': 'application/json' } : {}), ...(opts.headers || {}) },
+      signal: AbortSignal.timeout(BREVO_CALL_TIMEOUT_MS),
+    });
+  } catch (e) {
+    const where = `${opts.method || 'GET'} ${path.split('?')[0]}`;
+    if (e.name === 'TimeoutError') throw new Error(`Brevo did not answer ${where} within ${BREVO_CALL_TIMEOUT_MS / 1000}s`);
+    throw new Error(`Could not reach Brevo for ${where} (${(e.cause && e.cause.code) || e.message})`);
+  }
+  const body = await r.text();
+  if (!r.ok) {
+    let msg = `Brevo ${r.status}`;
+    try { const j = JSON.parse(body); if (j.message) msg += ': ' + j.message; } catch (e) {}
+    throw new Error(msg);
+  }
+  try { return JSON.parse(body); } catch (e) { return {}; }
+}
+const brevoJson = (path, method, data) => brevoFetch(path, { method, body: JSON.stringify(data) });
+const settingGet = async (k) => (await db.get('SELECT v FROM settings WHERE k = ?', [k]))?.v || null;
+const brevoListId = async (list) => (await settingGet(BREVO_LISTS[list].setting)) || BREVO_LISTS[list].defaultId || null;
+const settingSet = (k, v) => db.run('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v', [k, v]);
+
+// E.164 or nothing. Stored phones come in three shapes (raw form input, backfilled bare
+// digits, +E.164); Brevo rejects anything that is not a full international number.
+function brevoPhone(raw) {
+  if (!raw) return null;
+  const n = smsNormalize(raw);
+  return n && /^\+\d{8,15}$/.test(n) ? n : null;
+}
+function brevoEmail(raw) {
+  const e = (raw || '').toString().trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null;
+}
+
+// Every list the sync writes to: the two fixed lists, plus one per sidebet iteration
+// ("Side Bet #1", "Side Bet #2", … — operator, 2026-10-06), numbered by the order the packs were
+// created among those that have entries. A sidebet list's id is remembered per pack
+// (`brevo_list_sidebet_<packId>`), so its name and number are fixed once it exists.
+async function brevoTargets(sets) {
+  const targets = [];
+  for (const [k, l] of Object.entries(BREVO_LISTS)) {
+    targets.push({ list: k, name: l.name, setting: l.setting, id: await brevoListId(k), items: sets[k] });
+  }
+  const packs = await db.all(
+    `SELECT p.id FROM packs p WHERE EXISTS (SELECT 1 FROM sidebet_entries e WHERE e.pack_id = p.id)
+      ORDER BY p.created_at, p.id`);
+  for (const [i, pk] of packs.entries()) {
+    const setting = 'brevo_list_sidebet_' + pk.id;
+    targets.push({ list: 'sidebet:' + pk.id, name: `Side Bet #${i + 1}`, setting, packId: pk.id,
+      id: await settingGet(setting), items: sets.sidebets.get(pk.id) || [] });
+  }
+  return targets;
+}
+
+// Create any list that has no id yet (in the "A&R Program" folder); ids remembered in settings.
+async function ensureBrevoLists(targets) {
+  let folderId = null;
+  for (const t of targets) {
+    if (t.id) continue;
+    if (!folderId) {
+      const folders = (await brevoFetch('/contacts/folders?limit=50&offset=0')).folders || [];
+      folderId = (folders.find(f => f.name === BREVO_FOLDER) || {}).id;
+      if (!folderId) folderId = (await brevoJson('/contacts/folders', 'POST', { name: BREVO_FOLDER })).id;
+    }
+    const made = await brevoJson('/contacts/lists', 'POST', { name: t.name, folderId });
+    t.id = String(made.id);
+    await settingSet(t.setting, t.id);
+  }
+}
+
+async function ensureBrevoAttributes() {
+  // The flag is the attribute set itself, so adding an attribute re-runs this once.
+  const want = Object.keys(BREVO_ATTRS).join(',');
+  if ((await settingGet('brevo_attrs_ok')) === want) return;
+  const have = new Set(((await brevoFetch('/contacts/attributes')).attributes || []).map(a => a.name));
+  for (const [name, type] of Object.entries(BREVO_ATTRS)) {
+    if (have.has(name)) continue;
+    await brevoJson(`/contacts/attributes/normal/${name}`, 'POST', { type });
+  }
+  await settingSet('brevo_attrs_ok', want);
+}
+
+// Both contact sets, deduped, phone collisions resolved. Each item: { key, list, contact }.
+// Full scan of users + played rounds — admin- or cron-triggered only (rule #1).
+// Closed accounts (046) are out — a deleted one's email is a tombstone and a deactivated one asked
+// for no email. BLOCKED stays in, deliberately (operator: Brevo's own unsubscribe governs), so
+// this is NOT activeUserSql().
+async function brevoContacts() {
+  const users = await db.all(
+    `SELECT uid, email, name, phone, primary_category, location, photo_url
+       FROM users WHERE email IS NOT NULL AND email <> ''
+        AND deactivated_at IS NULL AND deleted_at IS NULL ORDER BY first_seen, uid`);
+  // The score is read only where it is public: a ratified rating round, and for a daily drop
+  // only once the day has PUBLISHED — a tallied-but-sealed day must not leak through Brevo.
+  const rounds = await db.all(
+    `SELECT r.artist_email, r.artist_phone,
+            CASE WHEN r.status = 'ratified' AND r.room_average IS NOT NULL AND COALESCE(r.poll_type,'rating') <> 'binary'
+                  AND (COALESCE(s.mode,'') <> 'async' OR s.async_state = 'published')
+                 THEN r.room_average END AS score,
+            (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS ratings
+       FROM rounds r JOIN sessions s ON s.id = r.session_id
+      WHERE s.deleted_at IS NULL AND COALESCE(r.is_reference, 0) = 0
+        AND ((r.artist_email IS NOT NULL AND r.artist_email <> '') OR (r.artist_phone IS NOT NULL AND r.artist_phone <> ''))
+      ORDER BY r.created_at, r.id`);
+  // Brevo holds ONE contact per SMS number. A number claimed by two emails stays on the first
+  // claimant (A&Rs first, then artists in submission order) and is left off the others, so
+  // the whole row is not rejected over it.
+  const phoneOwner = new Map();
+  const claim = (phone, owner) => {
+    if (!phone) return null;
+    if (!phoneOwner.has(phone)) phoneOwner.set(phone, owner);
+    return phoneOwner.get(phone) === owner ? phone : null;
+  };
+  const base = publicBase();
+  const ars = [];
+  for (const u of users) {
+    const email = brevoEmail(u.email);
+    if (!email) continue;
+    const name = (u.name || '').trim();
+    const sp = name.indexOf(' ');
+    const links = referralLinks(u.uid);
+    const attrs = {
+      FIRSTNAME: sp > 0 ? name.slice(0, sp) : name, LASTNAME: sp > 0 ? name.slice(sp + 1) : '',
+      ANR_CARD_IMAGE: anrCardImageUrl(base, u),
+      ANR_REFERRAL_LINK: links.join, ARTIST_REFERRAL_LINK: links.submit,
+    };
+    // Blank text is dropped rather than sent: with emptyContactsAttributes off it would be a
+    // no-op anyway, and it keeps the hash stable.
+    for (const k of Object.keys(attrs)) if (attrs[k] === '') delete attrs[k];
+    const phone = claim(brevoPhone(u.phone), 'e:' + email);
+    if (phone) attrs.SMS = phone;
+    ars.push({ key: 'e:' + email, list: 'ars', contact: { email, attributes: attrs } });
+  }
+  // Artists: one contact per email; the latest non-blank phone on any of their records wins,
+  // and the best score over the ratings floor rides along as ARTIST_TOP_SCORE.
+  const byEmail = new Map(), phoneOnly = new Map();
+  const floor = await brevoScoreFloor();
+  const note = (c, r) => {
+    if (r.score == null || (Number(r.ratings) || 0) < floor) return;
+    if (c.best == null || Number(r.score) > c.best) c.best = Number(r.score);
+  };
+  for (const r of rounds) {
+    const email = brevoEmail(r.artist_email), phone = brevoPhone(r.artist_phone);
+    if (email) { const c = byEmail.get(email) || { phone: null }; if (phone) c.phone = phone; note(c, r); byEmail.set(email, c); }
+    else if (phone) { const c = phoneOnly.get(phone) || {}; note(c, r); phoneOnly.set(phone, c); }
+  }
+  const scoreAttrs = (c) => c.best != null ? { ARTIST_TOP_SCORE: Math.round(c.best * 10) / 10 } : {};
+  const artists = [];
+  for (const [email, c] of byEmail) {
+    const phone = claim(c.phone, 'e:' + email);
+    artists.push({ key: 'e:' + email, list: 'artists', contact: { email, attributes: { ...(phone ? { SMS: phone } : {}), ...scoreAttrs(c) } } });
+  }
+  for (const [phone, c] of phoneOnly) {
+    if (phoneOwner.has(phone)) continue;   // already on someone's email contact
+    phoneOwner.set(phone, 's:' + phone);
+    artists.push({ key: 's:' + phone, list: 'artists', contact: { attributes: { SMS: phone, ...scoreAttrs(c) } } });
+  }
+  // Sidebet entrants, per iteration. Email only: every entrant is a users row, so their profile
+  // already rides the A&Rs list — this just puts the same contact on that Side Bet's list.
+  const entries = await db.all(
+    `SELECT e.pack_id, u.email FROM sidebet_entries e JOIN users u ON u.uid = e.user_id
+      WHERE u.email IS NOT NULL AND u.email <> '' AND u.deactivated_at IS NULL AND u.deleted_at IS NULL
+      ORDER BY e.pack_id, e.created_at`);
+  const sidebets = new Map();
+  for (const e of entries) {
+    const email = brevoEmail(e.email);
+    if (!email) continue;
+    if (!sidebets.has(e.pack_id)) sidebets.set(e.pack_id, []);
+    sidebets.get(e.pack_id).push({ key: 'e:' + email, list: 'sidebet:' + e.pack_id, contact: { email } });
+  }
+  return { ars, artists, sidebets };
+}
+const brevoHash = (c) => crypto.createHash('sha256').update(JSON.stringify(c)).digest('hex').slice(0, 32);
+
+// What would go on the next sync, per list — the console's readout and the sync's plan.
+async function brevoPending() {
+  const targets = await brevoTargets(await brevoContacts());
+  const ledger = new Map((await db.all('SELECT list, contact_key, hash FROM brevo_sync')).map(r => [r.list + '|' + r.contact_key, r.hash]));
+  for (const t of targets) {
+    const items = t.items.map(it => ({ ...it, hash: brevoHash(it.contact) }));
+    t.total = items.length;
+    // The ledger is keyed by list AND id: pointing a list somewhere else (a setting, or a new
+    // default in code) means nothing has been sent THERE yet, so everyone goes again.
+    t.ledgerKey = t.list + '@' + t.id;
+    t.pending = items.filter(it => ledger.get(t.ledgerKey + '|' + it.key) !== it.hash);
+    delete t.items;
+  }
+  return targets;
+}
+
+// One budgeted pass. Re-runnable: whatever Brevo accepted is in the ledger, the rest goes next time.
+async function syncContactsToBrevo({ budgetMs = BREVO_BUDGET_MS, ts = Date.now() } = {}) {
+  const t0 = Date.now();
+  await ensureBrevoAttributes();
+  const targets = await brevoPending();
+  await ensureBrevoLists(targets);
+  for (const t of targets) t.ledgerKey = t.list + '@' + t.id;   // a list made just now has its id only now
+  const out = { sent: {}, total: {}, remaining: 0, processIds: [] };
+  for (const t of targets) {
+    out.sent[t.list] = 0;
+    out.total[t.list] = t.total;
+    for (let i = 0; i < t.pending.length; i += BREVO_CHUNK) {
+      if (Date.now() - t0 > budgetMs) { out.remaining += t.pending.length - i; break; }
+      const chunk = t.pending.slice(i, i + BREVO_CHUNK);
+      const r = await brevoJson('/contacts/import', 'POST', {
+        jsonBody: chunk.map(it => it.contact), listIds: [Number(t.id)],
+        updateExistingContacts: true, emptyContactsAttributes: false,
+      });
+      if (r.processId) out.processIds.push({ list: t.list, name: t.name, processId: r.processId, count: chunk.length });
+      const at = now();
+      for (const it of chunk) {
+        await db.run(`INSERT INTO brevo_sync (list, contact_key, hash, synced_at) VALUES (?, ?, ?, ?)
+          ON CONFLICT (list, contact_key) DO UPDATE SET hash = excluded.hash, synced_at = excluded.synced_at`,
+          [t.ledgerKey, it.key, it.hash, at]);
+      }
+      out.sent[t.list] += chunk.length;
+    }
+  }
+  const last = { at: ts, sent: out.sent, total: out.total, remaining: out.remaining,
+    processIds: out.processIds.length ? out.processIds : (JSON.parse((await settingGet('brevo_last_sync')) || '{}').processIds || []), error: null };
+  await settingSet('brevo_last_sync', JSON.stringify(last));
+  return out;
+}
+
+// The settings-row lock (the asana_leads_lock pattern): one sync at a time, platform-wide.
+async function withBrevoLock(fn) {
+  const lockUntil = String(Date.now() + 26000);
+  await db.run("INSERT INTO settings (k, v) VALUES ('brevo_sync_lock', '0') ON CONFLICT (k) DO NOTHING");
+  const claim = await db.run("UPDATE settings SET v = ? WHERE k = 'brevo_sync_lock' AND v < ?", [lockUntil, String(Date.now())]);
+  if (!claim.changes) return { locked: true };
+  try { return await fn(); }
+  finally { await db.run("UPDATE settings SET v = '0' WHERE k = 'brevo_sync_lock' AND v = ?", [lockUntil]); }
+}
+
+// Cron: once a day (and onward on later ticks while a big first load still has `remaining`).
+// Silent until BREVO_API_KEY is set. Creates a new Side Bet list itself when an iteration
+// gets its first entrant.
+async function brevoDailySync({ budgetMs = 8000, ts = Date.now() } = {}) {
+  if (!process.env.BREVO_API_KEY) return null;
+  const last = JSON.parse((await settingGet('brevo_last_sync')) || '{}');
+  const due = !last.at || last.remaining > 0 || last.error || (ts - last.at >= BREVO_DAILY_GAP_MS && etHour(ts) >= 4);
+  if (!due) return null;
+  // A failing Brevo retries once an hour, not on every 5-minute tick.
+  if (last.error && last.errorAt && ts - last.errorAt < 3600000) return null;
+  try {
+    const r = await withBrevoLock(() => syncContactsToBrevo({ budgetMs, ts }));
+    return r.locked ? null : r;
+  } catch (e) {
+    await settingSet('brevo_last_sync', JSON.stringify({ ...last, error: e.message, errorAt: ts }));
+    throw e;
+  }
+}
+
 async function adminState(session, opts = {}) {
   // Hosts (non-admin owners) see engagement — names, points, counts, socials — but NEVER
   // contact PII (email/phone). Only the platform admin (Makin' It) sees emails.
@@ -5466,6 +6123,13 @@ function publicBaseFromReq(req) {
 function publicBase() {
   return (process.env.PUBLIC_BASE_URL || 'https://anr.makinitmag.com').replace(/\/+$/, '');
 }
+// The console link to ONE pushed record's results, handed back to makinitmag so the webform
+// submission can keep it. Built from the day and the ref, never the round id: a cold re-push
+// deletes and re-inserts every round, so a round id in a saved link would go dead.
+// Admin-only page; the link itself carries no PII.
+function recordResultsUrl(day, ref) {
+  return publicBase() + '/admin?day=' + encodeURIComponent(day) + '&ref=' + encodeURIComponent(ref);
+}
 
 async function alreadyNotified(sessionId, participantId, channel) {
   return !!(await db.get('SELECT 1 FROM notification_log WHERE session_id = ? AND participant_id = ? AND channel = ?', [sessionId, participantId, channel]));
@@ -5529,7 +6193,8 @@ async function dispatchGoLiveNotifications(session, base, channels) {
     <p><a href="${url}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none">Enter the evaluation →</a></p>
     <p style="color:#666;font-size:13px">${url}</p>
     ${notifyFooterHtml(manage)}</div>`;
-      const r = await sendEmail(p.email, subject, html, `${text}\n\n${notifyFooterText(manage)}`);
+      const r = await sendEmail(p.email, subject, html, `${text}\n\n${notifyFooterText(manage)}`, notifySendOpts(base, p.user_id, 'room_live'));
+      await noteEmailOutcome(p.email, r);
       await logNotify(sessionId, p, 'email', p.email, r.ok ? 'sent' : 'failed', r.error);
       r.ok ? sent++ : failed++;
     }
@@ -5609,9 +6274,109 @@ async function sidebetResults(pack, limit = SIDEBET_RESULT_LIMIT) {
 }
 
 // ---------- routes ----------
+// Queue (or open) a round in a live session. Shared by the console's queue form and the
+// tournament's "Queue matchup" (045), so a tournament poll is an ordinary binary round that
+// also remembers which match it belongs to (tournament_match_id).
+// Returns { ok, payload } or { ok:false, error, status }.
+async function queueRound(session, body) {
+  const { song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type,
+    artist_email, artist_phone, roundId, pack_song_a, pack_song_b, tournamentMatchId } = body;
+  const sessionId = session.id;
+  const fail = (error, status = 400) => ({ ok: false, error, status });
+  {
+    // A drop's records arrive as one approved batch from Drupal and are numbered at insert.
+    // Hand-adding here would either auto-open into a running window or land a pending round
+    // the lifecycle never picks up — and either way it breaks the day's idx sequence.
+    if (isAsync(session)) return fail('A&R Daily records come from the approved daily push, not the queue form', 409);
+    // `roundId` = "this form is already a queued round" — the console sends it when the form
+    // was auto-filled from a review-site push, which stages the record server-side. Without
+    // it, pressing Add would queue a SECOND copy of the song already sitting on deck. Scoped
+    // to PENDING rounds in this room, so it can never rewrite one that's playing or ratified;
+    // an unknown/stale id falls through to a normal insert rather than erroring at the host
+    // mid-show. Everything below (open-if-idle, poll-type resolution) is shared.
+    let bound = null;
+    if (roundId) bound = await db.get("SELECT * FROM rounds WHERE id = ? AND session_id = ? AND status = 'pending'", [roundId, sessionId]);
+    // Poll type is PER-ROUND now. Resolve it: explicit body value → the session's most
+    // recent round's type (so it persists round-to-round) → the session default → rating.
+    let pt = poll_type === 'binary' ? 'binary' : (poll_type === 'rating' ? 'rating' : null);
+    if (!pt) {
+      const last = await db.get('SELECT poll_type FROM rounds WHERE session_id = ? ORDER BY created_at DESC LIMIT 1', [sessionId]);
+      pt = (last && last.poll_type) || (session.poll_type === 'binary' ? 'binary' : 'rating');
+    }
+    const isBinary = pt === 'binary';
+    // Sidebet (033): a binary matchup queued FROM the service pack carries the two
+    // pack_song ids, which is what lets the played set derive at settle instead of the
+    // host re-ticking 18 boxes. Validated against the pack actually linked to THIS room
+    // — an id from another pack would silently mark the wrong song as played, and that
+    // decides a cash prize. A round is never rejected over this: an unrecognised id is
+    // dropped and the host confirms by hand, which the settle checklist already expects.
+    let packA = null, packB = null;
+    if (isBinary && (pack_song_a || pack_song_b)) {
+      const linked = await db.get("SELECT id FROM packs WHERE session_id = ? AND status <> 'settled' ORDER BY created_at DESC LIMIT 1", [sessionId]);
+      if (linked) {
+        const okSong = async (sid) => {
+          if (!sid) return null;
+          const r = await db.get('SELECT id FROM pack_songs WHERE id = ? AND pack_id = ?', [sid, linked.id]);
+          return r ? r.id : null;
+        };
+        packA = await okSong(pack_song_a);
+        packB = await okSong(pack_song_b);
+      }
+    }
+    if (!song_title || !song_title.trim()) return fail(isBinary ? 'Song A title required' : 'Song title required');
+    // Binary rounds need both sides; Song A reuses song_title/song_artist.
+    if (isBinary && (!option_b_title || !option_b_title.trim())) return fail('Song B title required');
+    // Queued songs don't get a round number (idx) until they're actually opened —
+    // they're played in queue order, which may differ from the order added.
+    const rid = bound ? bound.id : id(9);
+    if (bound) {
+      // Same fields, written over the record already on deck — the host's edits win over what
+      // the review site pushed. queue_pos is left alone so a reordered queue stays reordered.
+      await db.run(
+        `UPDATE rounds SET poll_type = ?, song_title = ?, song_artist = ?, song_note = ?, giveaway = ?,
+           option_b_title = ?, option_b_artist = ?, artist_email = ?, artist_phone = ?,
+           pack_song_a = ?, pack_song_b = ?, tournament_match_id = COALESCE(?, tournament_match_id) WHERE id = ?`,
+        [pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
+         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, tournamentMatchId || null, rid]
+      );
+    } else {
+      const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
+      await db.run(
+        `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, pack_song_a, pack_song_b, tournament_match_id, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
+        [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
+         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
+         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, tournamentMatchId || null, now()]
+      );
+    }
+    // Straight to open unless a round is already in play — then it waits in the queue.
+    // Removes the mandatory add-then-open two-step for the common case. As of 030 "open"
+    // means LISTENING: the record goes up and the room hears it, and the host presses
+    // Advance to start the clock. Opening straight into voting would start a countdown
+    // before anyone had heard the song, which is the thing staging exists to prevent.
+    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed')", [sessionId]);
+    if (!inPlay) {
+      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed','ratified')", [sessionId])).c;
+      await db.run("UPDATE rounds SET status = 'listening', idx = ?, opens_at = ?, closes_at = NULL WHERE id = ?",
+        [Number(started) + 1, now(), rid]);
+      if (session.status === 'upcoming') await db.run("UPDATE sessions SET status = 'live', scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?", [now(), sessionId]);
+      await realtime.publish(sessionId, 'round');
+      return { ok: true, payload: { roundId: rid, opened: true, status: 'listening' } };
+    }
+    return { ok: true, payload: { roundId: rid, opened: false } };
+  }
+}
+
 async function handleApi(req, res, url) {
   const p = url.pathname;
   const method = req.method;
+
+  // Tournaments (045): public page data + the reminder list, and the admin dashboard.
+  if (p === '/api/tournament' || p.startsWith('/api/tournament/') || p.startsWith('/api/admin/tournament')) {
+    const handled = await tournaments.handle(req, res, url);
+    if (handled !== false) return;
+  }
 
   // ----- create session (admin bootstrap) -----
   if (p === '/api/session' && method === 'POST') {
@@ -6099,30 +6864,45 @@ async function handleApi(req, res, url) {
     const userId = await resolveUserId(req);
     if (!userId) return bad(res, 'Not authenticated', 401);
     const body = await readBody(req);
-    let cats = Array.isArray(body.categories) ? body.categories.filter(c => PROFILE_CATEGORIES.includes(c)) : [];
-    cats = [...new Set(cats)].slice(0, PROFILE_CATEGORIES.length);
-    let primary = PROFILE_CATEGORIES.includes(body.primaryCategory) ? body.primaryCategory : null;
-    if (primary && !cats.includes(primary)) cats.push(primary); // primary implies selected
-    if (!primary && cats.length) primary = cats[0];             // default primary to first picked
-    const location = (body.location || '').toString().trim().slice(0, 120) || null;
-    const instagram = (body.instagram || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
-    const tiktok = (body.tiktok || '').toString().trim().replace(/^@+/, '').slice(0, 60) || null;
-    // Display-name edit (optional; applied only when non-empty). The durable name
-    // lives on users; the player's per-room participant rows sync too so boards,
-    // cards, and the overlay all agree. A handful of rows, user-triggered.
-    const newName = ('name' in body) ? (body.name || '').toString().trim().slice(0, MAX_NAME) : '';
-    if (newName) {
-      await db.run('UPDATE users SET name = ? WHERE uid = ?', [newName, userId]);
-      await db.run('UPDATE participants SET name = ? WHERE user_id = ?', [newName, userId]);
-    }
-    // NOTE: the phone number is NOT writable here. It lives on /api/me/notify-prefs
-    // (header auth only) so exactly one code path owns the number and its TCPA consent
-    // side-effects — two endpoints with subtly different consent rules is a bug waiting.
-    const u = await db.get('SELECT name FROM users WHERE uid = ?', [userId]);
-    const complete = isProfileComplete({ name: u && u.name, categories: JSON.stringify(cats), primary_category: primary, location }) ? 1 : 0;
-    await db.run('UPDATE users SET categories = ?, primary_category = ?, location = ?, instagram = ?, tiktok = ?, profile_complete = ? WHERE uid = ?',
-      [JSON.stringify(cats), primary, location, instagram, tiktok, complete, userId]);
-    return send(res, 200, { ok: true, complete: !!complete });
+    const complete = await applyProfileUpdate(userId, body);
+    return send(res, 200, { ok: true, complete });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ADMIN: read + edit any A&R's profile (2026-10-07). The Users screen could search
+  // for a person but offered no way to open or fix their profile — the operator had to
+  // ask the A&R to do it. Same fields and the same validation as the self-serve save
+  // (applyProfileUpdate), so an admin edit can never produce a profile the A&R could not
+  // have saved themselves. Email and phone are READ here (the admin list already shows
+  // the email) but never written: email is the identity key and the phone number's
+  // TCPA consent side-effects live on /api/me/notify-prefs only.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (p === '/api/admin/users/profile' && method === 'GET') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const uid = url.searchParams.get('uid') || '';
+    const u = await db.get('SELECT * FROM users WHERE uid = ?', [uid]);
+    if (!u) return bad(res, 'User not found', 404);
+    let cats = []; try { cats = JSON.parse(u.categories || '[]'); } catch {}
+    res.setHeader('Cache-Control', 'private, no-store');
+    return send(res, 200, {
+      profile: {
+        id: u.uid, name: u.name || '', email: u.email || '', phone: u.phone || '',
+        categories: cats, primaryCategory: u.primary_category || '',
+        location: u.location || '', instagram: u.instagram || '', tiktok: u.tiktok || '',
+        photoUrl: u.photo_url || null, complete: !!u.profile_complete, role: u.role, blocked: !!u.blocked,
+      },
+      categoriesAvailable: PROFILE_CATEGORIES,
+    });
+  }
+  if (p === '/api/admin/users/profile' && method === 'POST') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const u = await db.get('SELECT uid FROM users WHERE uid = ?', [body.uid || '']);
+    if (!u) return bad(res, 'User not found', 404);
+    const complete = await applyProfileUpdate(u.uid, body);
+    return send(res, 200, { ok: true, complete });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -6145,6 +6925,27 @@ async function handleApi(req, res, url) {
     return { user: v.user, viaLink: true };
   }
 
+  // One-click unsubscribe (2026-10-06): the target of the List-Unsubscribe header on every
+  // mail to a registered A&R. Gmail/Yahoo POST `List-Unsubscribe=One-Click` here with no
+  // page in between, so the signed `nt` token is the whole identity. It sets the GLOBAL
+  // kill switch (email_opt_out) — the person pressed Unsubscribe on a mail from us, and
+  // turning off one topic while the others keep coming is not what that button means.
+  // A browser GET lands on the contact center with the same token, where the choice is finer.
+  // Same scope rule as the manage link: never resolveUserId, never a session.
+  if (p === '/api/notify/unsubscribe' && (method === 'POST' || method === 'GET')) {
+    const v = await verifyNotifyLink(req, url);
+    res.setHeader('Cache-Control', 'no-store');
+    if (v.error) {
+      if (method === 'GET') { res.writeHead(302, { Location: '/profile' }); return res.end(); }
+      return bad(res, v.error, v.status);
+    }
+    if (method === 'GET') {
+      res.writeHead(302, { Location: '/profile#nt=' + encodeURIComponent(url.searchParams.get('nt') || '') });
+      return res.end();
+    }
+    await db.run('UPDATE users SET email_opt_out = 1 WHERE uid = ?', [v.uid]);
+    return send(res, 200, { ok: true, unsubscribed: true });
+  }
   if (p === '/api/me/notify-prefs' && (method === 'GET' || method === 'POST')) {
     const actor = await resolveNotifyActor(req, url);
     if (actor.error) return bad(res, actor.error, actor.status);
@@ -7641,9 +8442,12 @@ async function handleApi(req, res, url) {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     // email_opt_out (028) is the global kill switch every unsubscribe link sets. Without
     // it here, an A&R who unsubscribed would still be counted — and still be mailed.
-    const em = (await db.get(`SELECT COUNT(*) AS c FROM users WHERE ${activeUserSql('')} AND COALESCE(email_opt_out,0) = 0 AND email IS NOT NULL AND email != ''`)).c;
-    const sm = (await db.get(`SELECT COUNT(*) AS c FROM users WHERE ${activeUserSql('')} AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7`)).c;
-    return send(res, 200, { email: Number(em) || 0, sms: Number(sm) || 0 });
+    // Both audiences are reported so the composer can show what each choice reaches.
+    const count = async (frag) => Number((await db.get(`SELECT COUNT(*) AS c ${frag.sql}`, frag.params)).c) || 0;
+    const all = announcementAudience('all'), eng = announcementAudience('engaged');
+    return send(res, 200, { email: await count(all.email), sms: await count(all.sms),
+      engaged: { email: await count(eng.email), sms: await count(eng.sms) },
+      engagedDays: ENGAGED_DAYS, newAccountDays: NEW_ACCOUNT_DAYS });
   }
 
   // Subscription readout for the Platform panel (028): who would actually receive each
@@ -7673,21 +8477,22 @@ async function handleApi(req, res, url) {
     const message = (body.message || '').toString().trim().slice(0, NOTIFY_MESSAGE_MAX);
     const subject = (body.subject || '').toString().trim().slice(0, 150);
     const wantEmail = !!body.email, wantSms = !!body.sms;
+    // Audience (2026-10-06): 'engaged' (the default — active within ENGAGED_DAYS or new) or
+    // 'all'. Everyone is a deliberate choice on the composer, not what a blast does by itself.
+    const audience = body.audience === 'all' ? 'all' : 'engaged';
     if (!message) return bad(res, 'Write the message first');
     if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
     if (wantEmail && !subject) return bad(res, 'Email needs a subject');
     const bcId = id(9);
     await db.run('INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at) VALUES (?,?,?,?,?,?,?)',
       [bcId, subject || null, message, [wantEmail && 'email', wantSms && 'sms'].filter(Boolean).join('+'), admin.uid, 'sending', now()]);
+    const aud = announcementAudience(audience);
     if (wantEmail) await db.run(
       `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
-         SELECT ?, uid, 'email', email FROM users
-          WHERE ${activeUserSql('')} AND COALESCE(email_opt_out,0) = 0
-            AND email IS NOT NULL AND email != ''`, [bcId]);
+         SELECT ?, u.uid, 'email', u.email ${aud.email.sql}`, [bcId, ...aud.email.params]);
     if (wantSms) await db.run(
       `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
-         SELECT ?, uid, 'sms', phone FROM users
-          WHERE ${activeUserSql('')} AND sms_marketing_consent = 1 AND phone IS NOT NULL AND LENGTH(phone) >= 7`, [bcId]);
+         SELECT ?, u.uid, 'sms', u.phone ${aud.sms.sql}`, [bcId, ...aud.sms.params]);
     const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
     return send(res, 200, { broadcastId: bcId, queued: Number(q) || 0 });
   }
@@ -7738,8 +8543,9 @@ async function handleApi(req, res, url) {
     for (const r of batch) {
       const m = await renderAnnouncement(bc, r.uid, base);
       const out = r.channel === 'email'
-        ? await sendEmail(r.dest, m.subject, m.html, m.text)
+        ? await sendEmail(r.dest, m.subject, m.html, m.text, notifySendOpts(base, r.uid, 'announcement'))
         : await sendSms(r.dest, m.sms);
+      if (r.channel === 'email') await noteEmailOutcome(r.dest, out);
       if (out.ok) { sentN++; await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); }
       else { failedN++; await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); }
     }
@@ -7916,6 +8722,7 @@ async function handleApi(req, res, url) {
       smsProvider: (process.env.SMS_PROVIDER || 'none'),
       // The PAT itself is an env var and never leaves the server — only whether it's set.
       asanaToken: !!process.env.ASANA_TOKEN,
+      brevoKey: !!process.env.BREVO_API_KEY,
       cronConfigured: !!process.env.CRON_SECRET,
     });
   }
@@ -7950,6 +8757,19 @@ async function handleApi(req, res, url) {
       await db.run("DELETE FROM settings WHERE k = 'asana_leads_fields'");
       // A different project is a fresh start: the ledger describes tasks in the old one.
       if (next !== prev) await db.run('DELETE FROM asana_leads');
+    }
+    // Brevo list ids (044). Blank = back to the default list. A different list is a fresh start
+    // with no clearing needed: the ledger is keyed by list id, so nothing reads as sent there.
+    for (const [field, list] of [['brevoListArtists', 'artists'], ['brevoListArs', 'ars']]) {
+      if (!(field in body)) continue;
+      const k = BREVO_LISTS[list].setting;
+      const next = (body[field] || '').toString().trim().replace(/\D/g, '').slice(0, 20) || null;
+      await setOrClear(k, next);
+    }
+    // The ratings a record needs before its score goes on the artist's Brevo contact.
+    if ('brevoScoreMinRatings' in body) {
+      const n = parseInt(body.brevoScoreMinRatings, 10);
+      await setOrClear('brevo_score_min_ratings', Number.isFinite(n) && n >= 1 ? String(Math.min(n, 100000)) : null);
     }
     // A&R Daily schedule. Saved values are validated as a whole; null puts the defaults back.
     // Every drop that has NOT opened is re-stamped to the new window here, because a cold day
@@ -8070,91 +8890,12 @@ async function handleApi(req, res, url) {
   }
 
   if (p === '/api/admin/round' && method === 'POST') {
-    const { sessionId, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, poll_type,
-      artist_email, artist_phone, roundId, pack_song_a, pack_song_b } = await readBody(req);
-    const session = await canAdminSession(req, sessionId);
+    const body = await readBody(req);
+    const session = await canAdminSession(req, body.sessionId);
     if (!session) return bad(res, 'Admin auth failed', 401);
-    // A drop's records arrive as one approved batch from Drupal and are numbered at insert.
-    // Hand-adding here would either auto-open into a running window or land a pending round
-    // the lifecycle never picks up — and either way it breaks the day's idx sequence.
-    if (isAsync(session)) return bad(res, 'A&R Daily records come from the approved daily push, not the queue form', 409);
-    // `roundId` = "this form is already a queued round" — the console sends it when the form
-    // was auto-filled from a review-site push, which stages the record server-side. Without
-    // it, pressing Add would queue a SECOND copy of the song already sitting on deck. Scoped
-    // to PENDING rounds in this room, so it can never rewrite one that's playing or ratified;
-    // an unknown/stale id falls through to a normal insert rather than erroring at the host
-    // mid-show. Everything below (open-if-idle, poll-type resolution) is shared.
-    let bound = null;
-    if (roundId) bound = await db.get("SELECT * FROM rounds WHERE id = ? AND session_id = ? AND status = 'pending'", [roundId, sessionId]);
-    // Poll type is PER-ROUND now. Resolve it: explicit body value → the session's most
-    // recent round's type (so it persists round-to-round) → the session default → rating.
-    let pt = poll_type === 'binary' ? 'binary' : (poll_type === 'rating' ? 'rating' : null);
-    if (!pt) {
-      const last = await db.get('SELECT poll_type FROM rounds WHERE session_id = ? ORDER BY created_at DESC LIMIT 1', [sessionId]);
-      pt = (last && last.poll_type) || (session.poll_type === 'binary' ? 'binary' : 'rating');
-    }
-    const isBinary = pt === 'binary';
-    // Sidebet (033): a binary matchup queued FROM the service pack carries the two
-    // pack_song ids, which is what lets the played set derive at settle instead of the
-    // host re-ticking 18 boxes. Validated against the pack actually linked to THIS room
-    // — an id from another pack would silently mark the wrong song as played, and that
-    // decides a cash prize. A round is never rejected over this: an unrecognised id is
-    // dropped and the host confirms by hand, which the settle checklist already expects.
-    let packA = null, packB = null;
-    if (isBinary && (pack_song_a || pack_song_b)) {
-      const linked = await db.get("SELECT id FROM packs WHERE session_id = ? AND status <> 'settled' ORDER BY created_at DESC LIMIT 1", [sessionId]);
-      if (linked) {
-        const okSong = async (sid) => {
-          if (!sid) return null;
-          const r = await db.get('SELECT id FROM pack_songs WHERE id = ? AND pack_id = ?', [sid, linked.id]);
-          return r ? r.id : null;
-        };
-        packA = await okSong(pack_song_a);
-        packB = await okSong(pack_song_b);
-      }
-    }
-    if (!song_title || !song_title.trim()) return bad(res, (isBinary ? 'Song A title required' : 'Song title required'));
-    // Binary rounds need both sides; Song A reuses song_title/song_artist.
-    if (isBinary && (!option_b_title || !option_b_title.trim())) return bad(res, 'Song B title required');
-    // Queued songs don't get a round number (idx) until they're actually opened —
-    // they're played in queue order, which may differ from the order added.
-    const rid = bound ? bound.id : id(9);
-    if (bound) {
-      // Same fields, written over the record already on deck — the host's edits win over what
-      // the review site pushed. queue_pos is left alone so a reordered queue stays reordered.
-      await db.run(
-        `UPDATE rounds SET poll_type = ?, song_title = ?, song_artist = ?, song_note = ?, giveaway = ?,
-           option_b_title = ?, option_b_artist = ?, artist_email = ?, artist_phone = ?,
-           pack_song_a = ?, pack_song_b = ? WHERE id = ?`,
-        [pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
-         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
-         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, rid]
-      );
-    } else {
-      const maxPos = (await db.get("SELECT COALESCE(MAX(queue_pos),0) AS m FROM rounds WHERE session_id = ? AND status = 'pending'", [sessionId])).m;
-      await db.run(
-        `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway, option_b_title, option_b_artist, artist_email, artist_phone, pack_song_a, pack_song_b, status, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)`,
-        [rid, sessionId, 0, Number(maxPos) + 1, pt, song_title.trim(), (song_artist || '').trim(), (song_note || '').trim(), (giveaway || '').trim(),
-         isBinary ? (option_b_title || '').trim() : null, isBinary ? (option_b_artist || '').trim() : null,
-         cleanArtistEmail(artist_email), cleanArtistPhone(artist_phone), packA, packB, now()]
-      );
-    }
-    // Straight to open unless a round is already in play — then it waits in the queue.
-    // Removes the mandatory add-then-open two-step for the common case. As of 030 "open"
-    // means LISTENING: the record goes up and the room hears it, and the host presses
-    // Advance to start the clock. Opening straight into voting would start a countdown
-    // before anyone had heard the song, which is the thing staging exists to prevent.
-    const inPlay = await db.get("SELECT id FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed')", [sessionId]);
-    if (!inPlay) {
-      const started = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('listening','voting','closed','ratified')", [sessionId])).c;
-      await db.run("UPDATE rounds SET status = 'listening', idx = ?, opens_at = ?, closes_at = NULL WHERE id = ?",
-        [Number(started) + 1, now(), rid]);
-      if (session.status === 'upcoming') await db.run("UPDATE sessions SET status = 'live', scheduled_at = COALESCE(scheduled_at, ?) WHERE id = ?", [now(), sessionId]);
-      await realtime.publish(sessionId, 'round');
-      return send(res, 200, { roundId: rid, opened: true, status: 'listening' });
-    }
-    return send(res, 200, { roundId: rid, opened: false });
+    const r = await queueRound(session, body);
+    if (!r.ok) return bad(res, r.error, r.status || 400);
+    return send(res, 200, r.payload);
   }
 
   // ---- the staged advance: one action drives the whole show ----
@@ -8827,7 +9568,9 @@ async function handleApi(req, res, url) {
     const schedW = dropWindowFor(etDay(), await dailySchedule());
     const schedule = { opensLabel: etClockLabel(schedW.opensAt), closesLabel: etClockLabel(schedW.closesAt),
       streamLabel: etClockLabel(schedW.streamAt), resultsLabel: etClockLabel(schedW.resultsAt) };
-    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners: [], recentARs, topScouts, houseSubmitUrl, schedule });
+    let winners = [];
+    try { winners = await tournaments.homeWinners(); } catch (e) { console.error('[home] winners failed:', e.message); }
+    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners, recentARs, topScouts, houseSubmitUrl, schedule });
   }
 
 
@@ -9033,6 +9776,38 @@ async function handleApi(req, res, url) {
     }
   }
 
+  // The public card image (see anrCardImageUrl). No login: it prints only public profile data.
+  // A blocked or unknown A&R is a 404 — an old email then shows a broken image, never a card.
+  if (p.startsWith('/api/card/anr/') && p.endsWith('.png') && method === 'GET') {
+    const uid = decodeURIComponent(p.slice('/api/card/anr/'.length, -'.png'.length));
+    if (!/^[A-Za-z0-9_-]{6,32}$/.test(uid)) return bad(res, 'Not found', 404);
+    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [uid]);
+    if (userInactive(u)) return bad(res, 'Not found', 404);
+    try {
+      const links = referralLinks(u.uid);
+      const data = {
+        name: u.name || 'A&R', category: u.primary_category || null, location: u.location || null,
+        photo: await photoDataUri(u.photo_url),
+        qrJoin: await qrPngDataUri(links.join), qrSubmit: await qrPngDataUri(links.submit),
+      };
+      let png;
+      try { png = await shareCards.renderPng('referCard', data, ANR_CARD_EMAIL_WIDTH); }
+      catch (e) {
+        if (!data.photo) throw e;
+        png = await shareCards.renderPng('referCard', { ...data, photo: null }, ANR_CARD_EMAIL_WIDTH);
+      }
+      // A current URL caches at the CDN for a year (its content cannot change without the URL
+      // changing); an old one (an email sent before a profile edit) renders today's card, briefly.
+      const current = url.searchParams.get('v') === referGraphicVersion(u);
+      res.writeHead(200, { 'Content-Type': 'image/png',
+        'Cache-Control': current ? 'public, max-age=86400, s-maxage=31536000, immutable' : 'public, max-age=3600, s-maxage=3600' });
+      return res.end(png);
+    } catch (e) {
+      console.error('[card/anr] render failed:', e.message);
+      return bad(res, 'Card render failed', 500);
+    }
+  }
+
   if (p.startsWith('/api/card/') && method === 'GET') {
     const kind = p.slice('/api/card/'.length);
     const numbers = url.searchParams.get('numbers') === '1';
@@ -9040,6 +9815,7 @@ async function handleApi(req, res, url) {
     const seriesId = url.searchParams.get('series');
     const sendPng = (buf, cache) => { res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': cache }); return res.end(buf); };
     try {
+      if (kind === 'tournament') return await tournaments.card(req, res, url);
       if (kind === 'promo') {
         return sendPng(await shareCards.renderPng('promo', {}), 'public, max-age=86400');
       }
@@ -9124,37 +9900,36 @@ async function handleApi(req, res, url) {
         if (!wd) return bad(res, 'No published drops in that week', 404);
         return sendPng(await shareCards.renderPng('winnerPost', wd), 'private, no-store');
       }
-      // Chart carousel (admin): slide 0 is the cover, 1..N are the list slides. Same query
-      // params as /api/admin/charts, plus &per= (rows per slide) and &slide=.
+      // Chart carousel (admin): slide 0 is the cover, 1..N the list pages, N+1 the closing
+      // slide. Same query params as /api/admin/charts, plus &per= (rows per page) and &slide=.
+      // Rank only for records (scores are private to the Track Report); the A&R chart keeps
+      // its points or accuracy — that board is public.
       if (kind === 'chart') {
         if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
         const q = chartQuery(url);
         const data = await chartsData(q);
         if (!data) return bad(res, 'Scope not found', 404);
         const slide = Math.max(0, parseInt(url.searchParams.get('slide') || '0', 10) || 0);
-        if (slide === 0) {
-          return sendPng(await shareCards.renderPng('chartCover',
-            { title: data.title, sub: data.scope.label, bands: data.bands }), 'private, no-store');
-        }
+        const base = { mode: data.mode, title: data.title, period: data.scope.label, sort: data.sort };
+        const pages = Math.ceil(data.rows.length / q.per);
+        if (slide === 0) return sendPng(await shareCards.renderPng('chartSlide', { ...base, kind: 'cover', count: data.rows.length }), 'private, no-store');
+        if (slide === pages + 1 && pages > 0) return sendPng(await shareCards.renderPng('chartSlide', { ...base, kind: 'team' }), 'private, no-store');
         const chunk = data.rows.slice((slide - 1) * q.per, slide * q.per);
         if (!chunk.length) return bad(res, 'No such slide', 404);
+        const p2 = n => String(n).padStart(2, '0');
         const shaped = chunk.map(r => {
-          if (data.mode === 'ars') return { rank: r.rank, top: r.rank === 1, line1: r.name,
-            line2: r.ig ? '@' + r.ig : [r.category, r.location].filter(Boolean).join(' · '),
-            value: data.sort === 'accuracy' ? chartAcc(r.accuracy) + '%' : (r.points || 0).toLocaleString() };
+          if (data.mode === 'ars') return { rank: p2(r.rank), top: r.rank === 1, line1: r.name, sub: r.location || r.category || '', handle: r.ig || '',
+            value: data.sort === 'accuracy' ? chartAcc(r.accuracy) : (r.points || 0).toLocaleString(), unit: data.sort === 'accuracy' ? '%' : 'pts' };
           if (data.mode === 'weekly1s') return { rank: '#1', top: false,
             line1: r.record ? r.record.title : '—',
-            line2: r.record ? [r.room, chartDate(r.showAt)].filter(Boolean).join(' · ') : r.room + ' · no record cleared the floor',
-            value: r.record ? r.record.score.toFixed(1) : '—' };
-          return { rank: r.rank, top: r.rank === 1, line1: r.title,
-            line2: [r.artist, r.ig ? '@' + r.ig : ''].filter(Boolean).join(' · '),
-            value: r.score.toFixed(1) };
+            sub: r.record ? [r.record.artist, chartDate(r.showAt)].filter(Boolean).join(' · ') : r.room + ' · no record cleared the floor',
+            handle: r.record ? r.record.ig || '' : '' };
+          return { rank: p2(r.rank), top: r.rank === 1, line1: r.title, sub: r.artist || '', handle: r.ig || '' };
         });
         const first = chunk[0], last = chunk[chunk.length - 1];
-        const span = data.mode === 'weekly1s' ? `${chunk.length} rooms`
-          : (first.rank === last.rank ? `#${first.rank}` : `#${first.rank}–${last.rank}`);
-        return sendPng(await shareCards.renderPng('chartList',
-          { title: data.title, sub: `${data.scope.label} · ${span}`, rows: shaped, bands: data.bands }), 'private, no-store');
+        const span = data.mode === 'weekly1s' ? `${chunk.length} sessions`
+          : (first.rank === last.rank ? `#${first.rank}` : `#${Math.min(first.rank, last.rank)}–${Math.max(first.rank, last.rank)}`);
+        return sendPng(await shareCards.renderPng('chartSlide', { ...base, kind: 'list', span, rows: shaped }), 'private, no-store');
       }
       return bad(res, 'Unknown card', 404);
     } catch (e) {
@@ -9339,7 +10114,9 @@ async function handleApi(req, res, url) {
         const scoreUrl = await uploadPng(`recap/${sessionId}/score-${row.participant_id}.png`, await shareCards.renderPng('score', d));
         const manage = notifyManageUrl(publicBaseFromReq(req), participant && participant.user_id);
         const html = recapEmailHtml({ name: d.name, sessionName: session.name, rank: d.rank, total: d.total, cards: { score: scoreUrl, songs: job.songs_url, ars: job.ars_url, promo: job.promo_url }, manage });
-        const r = await sendEmail(row.email, `Your A&R Room session record — ${session.name}`, html, recapEmailText(d, session.name, manage));
+        const r = await sendEmail(row.email, `Your A&R Room session record — ${session.name}`, html, recapEmailText(d, session.name, manage),
+          notifySendOpts(base, row.user_id, 'recap'));
+        await noteEmailOutcome(row.email, r);
         if (r.ok) { await db.run("UPDATE recap_emails SET status = 'sent', score_url = ?, sent_at = ?, error = NULL WHERE id = ?", [scoreUrl, now(), row.id]); sent++; }
         else { await db.run("UPDATE recap_emails SET status = 'failed', error = ? WHERE id = ?", [(r.error || 'send failed').slice(0, 300), row.id]); failed++; }
       } catch (e) {
@@ -9884,22 +10661,15 @@ async function handleApi(req, res, url) {
     });
     if (!data) return bad(res, 'That is not a day I can resolve to a week', 400);
 
-    // The picker is built from the weeks that actually have drops, newest first — a week
-    // with nothing in it is not a week the operator can read on air. The week in progress
-    // is offered too (marked), because they preview it before the show.
-    const recent = await db.all(
-      `SELECT DISTINCT drop_day FROM sessions
-        WHERE mode = 'async' AND deleted_at IS NULL
-        ORDER BY drop_day DESC LIMIT 120`, []);
+    // The picker is every week, newest first: the week in progress (marked — they preview
+    // it before the show) and the WEEKLY_PICKER_WEEKS complete weeks before it, with no gaps.
+    // An empty week stays in the list and says so on the screen, rather than vanishing and
+    // making the weeks either side of it look adjacent.
     const seen = new Set(), weeks = [];
     const liveStart = weekStartFor(etDay());
-    for (const r of recent) {
-      const st = weekStartFor(r.drop_day);
-      if (!st || seen.has(st)) continue;
+    for (let i = 0, st = liveStart; i <= WEEKLY_PICKER_WEEKS && st; i++, st = etNextDay(st, -7)) {
       seen.add(st);
-      const w = weekWindow(st);
-      weeks.push({ start: st, label: w.label, current: st === liveStart });
-      if (weeks.length >= 12) break;
+      weeks.push({ start: st, label: weekWindow(st).label, current: st === liveStart });
     }
     if (!seen.has(data.week.start)) {
       weeks.unshift({ start: data.week.start, label: data.week.label, current: data.week.start === liveStart });
@@ -9908,6 +10678,58 @@ async function handleApi(req, res, url) {
   }
 
   // A results-carousel caption as text — the same builder the publish stores. ?set=song|ar.
+  // ONE record's results: the Daily console's Results view, and where a makinitmag
+  // submission's saved resultsUrl lands. Platform admin only. Counts are always shown; each
+  // A&R's rating and comment only once the record is ratified, because vote direction is
+  // sealed until the tally and a comment leaks it just as surely. Display names only, the
+  // same PII surface as the comment queue.
+  if (p === '/api/admin/daily/record' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const roundId = url.searchParams.get('roundId');
+    if (!roundId) return bad(res, 'roundId required');
+    const r = await db.get(
+      `SELECT r.*, s.drop_day, s.mode,
+              (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS ratings,
+              (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id) AS reports,
+              (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared
+         FROM rounds r JOIN sessions s ON s.id = r.session_id
+        WHERE r.id = ? AND s.deleted_at IS NULL`, [roundId]);
+    if (!r || r.mode !== 'async') return bad(res, 'Record not found', 404);
+    const sealed = r.status !== 'ratified';
+    let rows = [];
+    if (!sealed) {
+      const nameOf = (x) => (x.uname || x.pname || 'A&R').toString().trim().slice(0, 40);
+      const votes = await db.all(
+        `SELECT v.participant_id, v.taste, p.name AS pname, u.name AS uname
+           FROM votes v JOIN participants p ON p.id = v.participant_id LEFT JOIN users u ON u.uid = p.user_id
+          WHERE v.round_id = ? AND v.taste IS NOT NULL`, [r.id]);
+      const comments = await db.all(
+        `SELECT c.participant_id, c.body, c.status, p.name AS pname, u.name AS uname
+           FROM round_comments c JOIN participants p ON p.id = c.participant_id LEFT JOIN users u ON u.uid = p.user_id
+          WHERE c.round_id = ?`, [r.id]);
+      const by = new Map();
+      for (const v of votes) by.set(v.participant_id, { name: nameOf(v), rating: Number(v.taste), comment: null, hidden: false });
+      for (const c of comments) {
+        const row = by.get(c.participant_id) || { name: nameOf(c), rating: null, comment: null, hidden: false };
+        row.comment = c.body; row.hidden = c.status === 'hidden';
+        by.set(c.participant_id, row);
+      }
+      rows = [...by.values()].sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1) || a.name.localeCompare(b.name));
+    }
+    return send(res, 200, {
+      record: {
+        id: r.id, idx: r.idx, status: r.status, day: r.drop_day, dayLabel: etDayLabel(r.drop_day),
+        song_title: r.song_title, song_artist: r.song_artist,
+        support_cents: supportCentsOf(r),
+        room_average: r.room_average != null ? Number(r.room_average) : null,
+        ratings: Number(r.ratings) || 0, reports: Number(r.reports) || 0,
+        comments_shared: Number(r.comments_shared) || 0,
+        ingest_ref: r.ingest_ref || null, ingest_url: r.ingest_url || null,
+      },
+      sealed, rows,
+    });
+  }
+
   if (p === '/api/admin/daily/results-caption' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const sid = url.searchParams.get('s');
@@ -10230,6 +11052,42 @@ async function handleApi(req, res, url) {
       await db.run("UPDATE settings SET v = '0' WHERE k = 'asana_leads_lock' AND v = ?", [lockUntil]);
     }
   }
+  // ---- Brevo contacts (044) ----
+  // Readout: key set, list ids, contacts per list, how many the next sync would send, the last
+  // run and the state of its import jobs (Brevo imports asynchronously — a rejected batch only
+  // shows up there).
+  if (p === '/api/admin/brevo' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const plan = await brevoPending();
+    const last = JSON.parse((await settingGet('brevo_last_sync')) || 'null');
+    const lists = {};
+    for (const t of plan) lists[t.list] = { id: t.id || null, name: t.name, total: t.total, pending: t.pending.length, sidebet: !!t.packId };
+    let imports = [];
+    if (process.env.BREVO_API_KEY && last && last.processIds) {
+      for (const pr of last.processIds.slice(-4)) {
+        try { const d = await brevoFetch(`/processes/${pr.processId}`); imports.push({ ...pr, status: d.status || null, report: d.export_url || null }); }
+        catch (e) { imports.push({ ...pr, status: 'unknown', error: e.message }); }
+      }
+    }
+    return send(res, 200, { configured: !!process.env.BREVO_API_KEY, lists, last, imports, scoreMinRatings: await brevoScoreFloor() });
+  }
+  // One budgeted pass; the console loops while `remaining` > 0. The first press creates the
+  // folder, both lists and the A&R attributes.
+  if (p === '/api/admin/brevo/sync' && method === 'POST') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    if (!process.env.BREVO_API_KEY) return bad(res, 'Brevo not configured (set BREVO_API_KEY)', 409);
+    try {
+      const r = await withBrevoLock(() => syncContactsToBrevo());
+      if (r.locked) return bad(res, 'A Brevo sync is already running. Wait for it to finish, then press again.', 409);
+      return send(res, 200, { ok: true, ...r });
+    } catch (e) {
+      console.error('[brevo] sync failed:', e.message);
+      const last = JSON.parse((await settingGet('brevo_last_sync')) || '{}');
+      await settingSet('brevo_last_sync', JSON.stringify({ ...last, error: e.message, errorAt: Date.now() }));
+      return bad(res, 'Brevo sync failed: ' + e.message, 502);
+    }
+  }
+
   // Create the project (once) and write the tasks. Bounded per press; the console loops
   // while `remaining` > 0.
   if (p === '/api/admin/leads/asana' && method === 'POST') {
@@ -10586,6 +11444,15 @@ function serveStatic(res, file) {
   fs.createReadStream(full).pipe(res);
 }
 
+// ═══ TOURNAMENTS — A&R Wars + the $1,000 Music Review Tournament (045) ══════════════════
+// Routes, data and graphics live in tournament.js; it is handed the helpers it needs here so
+// the module stays testable and this file grows by a handful of lines.
+const tournaments = require('./tournament')({
+  db, id, now, send, bad, readBody, platformAdmin, realtime, shareCards, photoDataUri, uploadPng,
+  sendEmail, escapeHtml, asanaFetch, asanaProject: dailyAsanaProject, weeklyReportData,
+  lastCompleteWeekStart, etNextDay, etClockLabel, etEpoch, igClean, publicBase, queueRound, canAdminSession,
+});
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -10606,6 +11473,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
     if (url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html'); // A&R Wars prediction contest
+    // Tournament landing pages (045): /wars = the latest A&R Wars, /tournament/<slug> = any.
+    if (url.pathname === '/wars' || url.pathname === '/tournament' || url.pathname.startsWith('/tournament/')) return serveStatic(res, 'tournament.html');
     // The A&R's account (2026-10-01): ONE page with sections — Earn points (the default;
     // what /refer was), My profile, and a tab to the edit form. /refer serves the same file
     // so every link already out there (email footers, the signed [card link], QR'd flyers'
@@ -10708,6 +11577,7 @@ module.exports._artistNoticeSmsBody = artistNoticeSmsBody;
 module.exports._goLiveSmsBody = goLiveSmsBody;
 module.exports._fitSmsTitle = fitSmsTitle;
 module.exports._syncLeadsToAsana = syncLeadsToAsana;
+module.exports._brevoDailySync = brevoDailySync;
 module.exports._leadGroups = leadGroups;
 module.exports._parseLeadRef = parseLeadRef;
 module.exports._etHour = etHour;
@@ -10736,6 +11606,16 @@ module.exports._artistHeadsupContent = artistHeadsupContent;
 module.exports._dailyOpenEmailText = dailyOpenEmailText;
 module.exports._enqueueDailyOpen = enqueueDailyOpen;
 module.exports._NOTIFY_TOPICS = NOTIFY_TOPICS;
+module.exports._notifyAudience = notifyAudience;
+module.exports._announcementAudience = announcementAudience;
+module.exports._enqueueWeeklyUpdate = enqueueWeeklyUpdate;
+module.exports._drainWeeklyUpdate = drainWeeklyUpdate;
+module.exports._weeklyUpdateDue = weeklyUpdateDue;
+module.exports._weeklyUpdateEmailHtml = weeklyUpdateEmailHtml;
+module.exports._weeklyUpdateEmailText = weeklyUpdateEmailText;
+module.exports._noteEmailOutcome = noteEmailOutcome;
+module.exports._notifyUnsubscribeUrl = notifyUnsubscribeUrl;
+module.exports._ENGAGED = { ENGAGED_DAYS, NEW_ACCOUNT_DAYS, WEEKLY_SUNSET_SENDS };
 module.exports._lastCompleteWeekStart = lastCompleteWeekStart;
 module.exports._weeklyReportData = weeklyReportData;
 module.exports._etDay = etDay;
@@ -10775,3 +11655,4 @@ module.exports._resultsPages = resultsPages;
 module.exports._arResultsData = arResultsData;
 module.exports._accountResultsUrl = accountResultsUrl;
 module.exports._songReportData = songReportData;
+module.exports._tournaments = tournaments;

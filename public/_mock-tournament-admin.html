@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — Tournament dashboard (console)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<link rel="stylesheet" href="/ui.css?v=1">
+<style>
+  /* Chrome mirrored from public/admin.html so this reads as the real console. */
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh;overflow-x:clip}
+  .mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+  .bar{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(13,11,22,.95);backdrop-filter:blur(8px);z-index:5}
+  .bar .dot{width:10px;height:10px;border-radius:50%;background:var(--signal)}
+  .bar h1{font-size:16px;margin:0;font-weight:600}
+  .bar .who{margin-left:auto;font-size:13px;color:var(--ink-dim)}
+  .wrap{max-width:980px;margin:0 auto;padding:20px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px;min-width:0;margin-bottom:14px}
+  h3.sec{margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:"Space Mono",monospace;font-weight:700}
+  label{display:block;font-size:12px;color:var(--ink-dim);margin:0 0 6px 2px}
+  input,textarea,select{width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;border-radius:10px;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--signal)}
+  .stack{display:flex;flex-direction:column;gap:11px}
+  .row{display:flex;gap:10px}.row>*{flex:1}
+  @media(max-width:700px){.row{flex-direction:column}}
+  .muted{color:var(--ink-faint)} .hint{font-size:12px;color:var(--ink-faint);margin:5px 0 0 2px;line-height:1.45}
+  .modeswitch{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .modeswitch button{background:transparent;border:0;color:var(--ink-dim);font:inherit;font-size:12.5px;font-weight:600;padding:8px 12px;cursor:pointer}
+  .modeswitch button.on{background:var(--panel-2);color:var(--ink)}
+  .mocklabel{font-family:"Space Mono",monospace;font-size:11.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);margin:34px 0 6px}
+  .mocknote{font-size:13.5px;line-height:1.55;color:var(--ink-dim);margin:0 0 16px;max-width:760px}
+  .mocknote b{color:var(--ink)} .mocknote .flag{color:var(--gold)}
+
+  /* steps strip: where the tournament is in its life */
+  .steps{display:flex;gap:6px;flex-wrap:wrap}
+  .step{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px;color:var(--ink-faint);background:var(--inset)}
+  .step b{display:block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:3px}
+  .step.done{border-color:var(--signal);color:var(--ink)} .step.done b{color:var(--signal)}
+  .step.now{border-color:var(--accent);color:var(--ink);background:rgba(109,95,224,.10)} .step.now b{color:var(--accent)}
+
+  /* competitors */
+  .seats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  @media(max-width:700px){.seats{grid-template-columns:1fr}}
+  .seat{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:var(--inset)}
+  .seat .n{font-family:"Space Mono",monospace;font-weight:700;color:var(--accent);width:22px;text-align:center;font-size:14px}
+  .seat img{width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;background:#222}
+  .seat .ph{width:40px;height:40px;border-radius:50%;flex:none;border:1.5px dashed var(--gold);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--gold);font-family:"Space Mono",monospace}
+  .seat .who{flex:1;min-width:0} .seat .nm{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seat .sub{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seat .src{font-size:10.5px;color:var(--ink-faint);font-family:"Space Mono",monospace;letter-spacing:.08em;text-transform:uppercase;flex:none}
+  .seat .ed{background:none;border:0;color:var(--ink-faint);cursor:pointer;font-size:12px;padding:4px}
+  .seat.empty{border-style:dashed;justify-content:center;color:var(--ink-faint);font-size:13px;min-height:60px}
+  .picks{border:1px solid var(--line);border-radius:12px;background:var(--inset);max-height:260px;overflow-y:auto}
+  .pk{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #1a1530;font-size:13.5px;cursor:pointer}
+  .pk:last-child{border-bottom:0}
+  .pk .box{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line);flex:none}
+  .pk.on .box{background:var(--signal);border-color:var(--signal)}
+  .pk img{width:28px;height:28px;border-radius:50%;object-fit:cover}
+  .pk .wk{margin-left:auto;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-faint);flex:none}
+  .pk .rep{color:var(--gold);font-size:11px;flex:none}
+
+  /* bracket */
+  .bracket{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  @media(max-width:700px){.bracket{grid-template-columns:1fr}}
+  .rnd h4{margin:0 0 8px;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  .m{border:1px solid var(--line);border-radius:12px;background:var(--inset);padding:10px;margin-bottom:10px}
+  .m .side{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13.5px}
+  .m .side img{width:26px;height:26px;border-radius:50%;object-fit:cover}
+  .m .side .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m .side .pct{font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-faint)}
+  .m .side.w .nm{color:var(--signal);font-weight:700} .m .side.w .pct{color:var(--signal)}
+  .m .side.l{opacity:.45}
+  .m .side.tbd .nm{color:var(--ink-faint);font-style:italic}
+  .m .vs{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--accent);text-align:center;padding:1px 0}
+  .m .song{font-size:11.5px;color:var(--ink-faint);padding-left:34px;margin-top:-4px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m .foot{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #1a1530;font-size:12px;color:var(--ink-faint);flex-wrap:wrap}
+  .m .foot .pill{font-size:11px;padding:3px 9px}
+  .m.live{border-color:var(--signal);box-shadow:0 0 0 2px rgba(75,183,73,.15)}
+  .m.next{border-color:var(--accent)}
+  .m.final .side.w .nm{color:var(--gold)} .m.final .side.w .pct{color:var(--gold)}
+  .polls{display:flex;gap:5px;margin:6px 0 0 34px}
+  .polls span{font-family:"Space Mono",monospace;font-size:10.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;color:var(--ink-faint)}
+  .polls span.a{border-color:var(--signal);color:var(--signal)} .polls span.b{border-color:var(--accent);color:var(--accent)}
+  .polls span.open{border-color:var(--gold);color:var(--gold)}
+
+  /* graphics */
+  .gfx{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  @media(max-width:700px){.gfx{grid-template-columns:repeat(2,1fr)}}
+  .g{border:1px solid var(--line);border-radius:12px;background:var(--inset);padding:8px;text-align:center}
+  .g img{width:100%;border-radius:8px;display:block;background:#222}
+  .g .t{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin:7px 0 2px}
+  .g .s{font-size:11.5px;color:var(--ink-dim)}
+  .stat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-width:0}
+  .stat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-faint)}
+  .stat .v{font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:3px}
+  .stat .v.ok{color:var(--signal)} .stat .v.gold{color:var(--gold)}
+  .list tr td{padding:8px 10px;border-bottom:1px solid #1a1530;font-size:13.5px}
+  .list tr:last-child td{border-bottom:0}
+  table.list{width:100%;border-collapse:collapse}
+  .warnbox{background:rgba(245,197,24,.06);border:1px solid var(--gold);border-radius:10px;padding:11px 13px;font-size:13px;line-height:1.5}
+  .warnbox b{color:var(--gold)}
+</style>
+</head>
+<body>
+
+<div class="bar"><span class="dot"></span><h1>The A&amp;R Room · Host</h1><span class="who">Platform admin</span></div>
+
+<div class="wrap">
+
+<div class="mocklabel">Tournaments · console</div>
+<div class="mocknote">A new mode on the console's mode switch. One screen runs the whole thing for <b>both</b> tournaments (A&amp;R Wars and the $1,000 Music Review Tournament): pick the field, generate the bracket, run the night, publish the graphics, send the reminder. The bracket below is shown <b>mid-event</b> (round 1 done, one semi ratified, the other voting) so every state is visible at once. <span class="flag">Gold notes</span> mark decisions worth a look. Spec: <span class="mono">docs/specs/tournament-spec.md</span>.</div>
+
+<!-- ===== header: mode switch + which tournament ===== -->
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+  <div class="modeswitch">
+    <button>A&amp;R Daily</button><button>Weekly</button><button>Live show</button><button class="on">Tournaments</button><button>Platform</button>
+  </div>
+  <div class="row" style="gap:8px;flex:0 0 auto">
+    <select style="font-size:12.5px;padding:8px 9px;border-radius:9px;max-width:300px">
+      <option>A&amp;R Wars #1 · Sun Oct 25 · live</option>
+      <option>$1,000 Music Review Tournament #1 · Sun Nov 22 · promo</option>
+      <option>A&amp;R Wars #2 · Sun Dec 20 · draft</option>
+    </select>
+    <button class="btn ghost sm">+ New tournament</button>
+  </div>
+</div>
+
+<!-- ===== 1. where it is ===== -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+    <div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.02em">A&amp;R Wars #1 <span class="pill live" style="vertical-align:middle;margin-left:6px">live</span></div>
+      <div class="mono" style="font-size:12px;color:var(--ink-dim);margin-top:4px">Sunday, October 25 · 7:00 PM ET · $500 Cash Prize · <a href="#" style="color:var(--signal)">anr.makinitmag.com/wars</a></div>
+    </div>
+    <div class="row" style="gap:8px;flex:0 0 auto">
+      <button class="btn ghost sm">Open the live console</button>
+      <button class="btn ghost sm">Edit setup</button>
+    </div>
+  </div>
+  <div class="steps">
+    <div class="step done"><b>1 · Setup</b>Date, prize, pack, session</div>
+    <div class="step done"><b>2 · Field</b>8 of 8 seats filled</div>
+    <div class="step done"><b>3 · Promo</b>8 weekly flyers out · 214 on the list</div>
+    <div class="step now"><b>4 · Event</b>Round 2 of 3 in play</div>
+    <div class="step"><b>5 · Wrap</b>Champion · winner graphics · archive</div>
+  </div>
+</div>
+
+<!-- ===== 2. setup (collapsed by default once past draft; shown open here) ===== -->
+<div class="card">
+  <h3 class="sec">Setup</h3>
+  <div class="stack">
+    <div class="row">
+      <div><label>Tournament</label><select><option>A&amp;R Wars (A&amp;Rs · $500 Cash Prize · plays the Service Pack)</option><option>$1,000 Music Review Tournament (artists · $1,000 Promo Budget · plays own catalog)</option></select></div>
+      <div><label>Number</label><input value="1"></div>
+      <div><label>Prize line <span class="muted">(printed on the graphics)</span></label><input value="$500 Cash Prize"></div>
+    </div>
+    <div class="row">
+      <div><label>Event date &amp; time (ET)</label><input value="2026-10-25 19:00"></div>
+      <div><label>Live session <span class="muted">(the Versus room the polls run in)</span></label><select><option>A&amp;R Wars #1 · Oct 25 · upcoming · Series 4</option><option>— create one —</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>Service Pack <span class="muted">(A&amp;R Wars only — the songs competitors pick from)</span></label><select><option>A&amp;R Service Pack 12 · 60 songs · Pick the Hits open</option></select></div>
+      <div><label>Watch link <span class="muted">(shown on the landing page when live)</span></label><input value="https://www.youtube.com/@makinitmag/live"></div>
+    </div>
+    <div class="row">
+      <div><label>Polls in the final</label><input value="3"><div class="hint">4 + 2 + 3 = 9 polls = 18 songs, the number Pick the Hits counts on.</div></div>
+      <div><label>Reminder email goes out</label><select><option>2 hours before</option><option>1 hour before</option><option>24 hours before</option><option>Off — send by hand</option></select></div>
+      <div><label>Landing page</label><input value="/wars" disabled><div class="hint">/wars always shows the latest A&amp;R Wars; /tournament/wars-1 is this one.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 3. the field ===== -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <h3 class="sec" style="margin:0">The field · 8 of 8</h3>
+    <div class="row" style="gap:8px;flex:0 0 auto">
+      <button class="btn ghost sm">Seed by Series points</button>
+      <button class="btn ghost sm" disabled title="Locked once a match is decided">Rebuild bracket</button>
+    </div>
+  </div>
+  <div class="seats">
+    <div class="seat"><span class="n">1</span><img src="https://i.pravatar.cc/80?img=12"><div class="who"><div class="nm">Marcus Hale</div><div class="sub">@marcushale · Atlanta, GA</div></div><span class="src">Wk Sep 28</span><button class="ed">✎</button></div>
+    <div class="seat"><span class="n">2</span><img src="https://i.pravatar.cc/80?img=32"><div class="who"><div class="nm">Dana Okafor</div><div class="sub">@dana.okafor · Houston, TX</div></div><span class="src">picked</span><button class="ed">✎</button></div>
+    <div class="seat"><span class="n">3</span><img src="https://i.pravatar.cc/80?img=5"><div class="who"><div class="nm">Jalen Brooks</div><div class="sub">@jalenbrooks · Chicago, IL</div></div><span class="src">picked</span><button class="ed">✎</button></div>
+    <div class="seat"><span class="n">4</span><img src="https://i.pravatar.cc/80?img=47"><div class="who"><div class="nm">Priya Natarajan</div><div class="sub">@priya.n · Newark, NJ</div></div><span class="src">picked</span><button class="ed">✎</button></div>
+    <div class="seat"><span class="n">5</span><img src="https://i.pravatar.cc/80?img=15"><div class="who"><div class="nm">Terrence Mills</div><div class="sub">@tmills · Memphis, TN</div></div><span class="src">picked</span><button class="ed">✎</button></div>
+    <div class="seat"><span class="n">6</span><div class="ph">no photo</div><div class="who"><div class="nm">Keisha Lang</div><div class="sub">@keishalang · Charlotte, NC</div></div><span class="src">picked</span><button class="ed">✎</button></div>
+    <div class="seat"><span class="n">7</span><img src="https://i.pravatar.cc/80?img=56"><div class="who"><div class="nm">Andre Villanueva</div><div class="sub">— no Instagram · Miami, FL</div></div><span class="src">picked</span><button class="ed">✎</button></div>
+    <div class="seat"><span class="n">8</span><img src="https://i.pravatar.cc/80?img=20"><div class="who"><div class="nm">Simone Reyes</div><div class="sub">@simone.reyes · Brooklyn, NY</div></div><span class="src">picked</span><button class="ed">✎</button></div>
+  </div>
+  <p class="hint" style="margin-top:8px">Seed numbers are editable on each row (✎ also edits name, handle, city, photo — a competitor row is a copy of the profile, so a fix here never touches the A&amp;R's account). A dashed <span style="color:var(--gold)">no photo</span> ring means the graphic will print a placeholder until one is added.</p>
+
+  <div style="margin-top:14px">
+    <h3 class="sec">Add competitors</h3>
+    <div class="row" style="margin-bottom:8px">
+      <input placeholder="Search A&amp;Rs by name (complete profiles only)">
+      <button class="btn ghost sm" style="flex:0 0 auto">Add</button>
+    </div>
+    <label>From the weekly winners <span class="muted">(last 8 complete weeks · tick to seat)</span></label>
+    <div class="picks">
+      <div class="pk on"><span class="box"></span><img src="https://i.pravatar.cc/80?img=12"><span>Marcus Hale · 1,840 pts</span><span class="wk">Wk of Sep 28</span></div>
+      <div class="pk"><span class="box"></span><img src="https://i.pravatar.cc/80?img=12"><span>Marcus Hale · 1,210 pts</span><span class="rep">repeat — seat passes to #2: Lena Cho</span><span class="wk">Wk of Sep 21</span></div>
+      <div class="pk"><span class="box"></span><img src="https://i.pravatar.cc/80?img=9"><span>Omar Siddiqui · 1,190 pts</span><span class="wk">Wk of Sep 14</span></div>
+      <div class="pk"><span class="box"></span><img src="https://i.pravatar.cc/80?img=28"><span>Lena Cho · 1,105 pts</span><span class="wk">Wk of Sep 7</span></div>
+      <div class="pk"><span class="box"></span><img src="https://i.pravatar.cc/80?img=3"><span>Rob Castellano · 980 pts</span><span class="wk">Wk of Aug 31</span></div>
+    </div>
+    <p class="hint">For the $1,000 Music Review Tournament this list is the weekly <b>Top Tracks</b> instead (artist, Instagram, the record), and the search box becomes "Add an artist" (name, Instagram, photo upload). Same seats, same bracket.</p>
+  </div>
+</div>
+
+<!-- ===== 4. the bracket — the live control ===== -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+    <h3 class="sec" style="margin:0">Bracket · round 2 of 3</h3>
+    <span class="pill live">session live · 212 A&amp;Rs in</span>
+  </div>
+  <p class="hint" style="margin:0 0 12px">Each matchup is one binary poll in the live session. <b>Queue matchup</b> fills the room's queue; the night then runs on the normal Advance button (listening → voting → ratify). When a poll ratifies, the winner moves into the next slot on its own. The split stays sealed until ratify, same as every poll — only the vote count shows while it is open.</p>
+
+  <div class="bracket">
+    <div class="rnd"><h4>Round 1 · quarterfinals</h4>
+      <div class="m">
+        <div class="side w"><img src="https://i.pravatar.cc/80?img=12"><span class="nm">1 · Marcus Hale</span><span class="pct">58%</span></div>
+        <div class="song">"Late Nights" — Ty Rivers</div>
+        <div class="vs">VS</div>
+        <div class="side l"><img src="https://i.pravatar.cc/80?img=20"><span class="nm">8 · Simone Reyes</span><span class="pct">42%</span></div>
+        <div class="song">"Paper Planes" — Ivy Mae</div>
+        <div class="foot"><span class="pill done">decided · 184 votes</span><button class="btn ghost sm" style="margin-left:auto">Override</button></div>
+      </div>
+      <div class="m">
+        <div class="side l"><img src="https://i.pravatar.cc/80?img=47"><span class="nm">4 · Priya Natarajan</span><span class="pct">47%</span></div>
+        <div class="vs">VS</div>
+        <div class="side w"><img src="https://i.pravatar.cc/80?img=15"><span class="nm">5 · Terrence Mills</span><span class="pct">53%</span></div>
+        <div class="foot"><span class="pill done">decided · 190 votes</span><button class="btn ghost sm" style="margin-left:auto">Override</button></div>
+      </div>
+      <div class="m">
+        <div class="side w"><img src="https://i.pravatar.cc/80?img=5"><span class="nm">3 · Jalen Brooks</span><span class="pct">50%</span></div>
+        <div class="vs">VS</div>
+        <div class="side l"><span class="nm" style="padding-left:34px">6 · Keisha Lang</span><span class="pct">50%</span></div>
+        <div class="foot"><span class="pill" style="border-color:var(--gold);color:var(--gold)">tie · host decided</span><span>Jalen Brooks</span><button class="btn ghost sm" style="margin-left:auto">Override</button></div>
+      </div>
+      <div class="m">
+        <div class="side w"><img src="https://i.pravatar.cc/80?img=32"><span class="nm">2 · Dana Okafor</span><span class="pct">64%</span></div>
+        <div class="vs">VS</div>
+        <div class="side l"><img src="https://i.pravatar.cc/80?img=56"><span class="nm">7 · Andre Villanueva</span><span class="pct">36%</span></div>
+        <div class="foot"><span class="pill done">decided · 201 votes</span><button class="btn ghost sm" style="margin-left:auto">Override</button></div>
+      </div>
+    </div>
+
+    <div class="rnd"><h4>Round 2 · semifinals</h4>
+      <div class="m">
+        <div class="side w"><img src="https://i.pravatar.cc/80?img=12"><span class="nm">Marcus Hale</span><span class="pct">55%</span></div>
+        <div class="vs">VS</div>
+        <div class="side l"><img src="https://i.pravatar.cc/80?img=15"><span class="nm">Terrence Mills</span><span class="pct">45%</span></div>
+        <div class="foot"><span class="pill done">decided · 207 votes</span><button class="btn ghost sm" style="margin-left:auto">Override</button></div>
+      </div>
+      <div class="m live">
+        <div class="side"><img src="https://i.pravatar.cc/80?img=5"><span class="nm">Jalen Brooks</span><span class="pct">—</span></div>
+        <div class="song">"Glass House" — Noor Adeyemi</div>
+        <div class="vs">VS</div>
+        <div class="side"><img src="https://i.pravatar.cc/80?img=32"><span class="nm">Dana Okafor</span><span class="pct">—</span></div>
+        <div class="song">"Two Doors" — Kenji Park</div>
+        <div class="foot"><span class="pill live">voting · 0:48 · 163 votes</span><span class="muted">split sealed until ratify</span></div>
+      </div>
+    </div>
+
+    <div class="rnd"><h4>Final · best of 3 polls</h4>
+      <div class="m next final">
+        <div class="side"><img src="https://i.pravatar.cc/80?img=12"><span class="nm">Marcus Hale</span></div>
+        <div class="vs">VS</div>
+        <div class="side tbd"><span class="nm" style="padding-left:34px">winner of semifinal 2</span></div>
+        <div class="polls"><span>poll 1</span><span>poll 2</span><span>poll 3</span></div>
+        <div class="foot"><span class="muted">Queue opens when both sides are in</span></div>
+      </div>
+      <!-- what the queue form looks like on a ready match -->
+      <div class="m next">
+        <div class="mono" style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:8px">Queue matchup · example, semifinal 2</div>
+        <div class="stack" style="gap:7px">
+          <div><label style="margin-bottom:3px">Jalen Brooks plays</label><select><option>"Glass House" — Noor Adeyemi (pack #14)</option><option>…58 more pack songs, played ones greyed…</option></select></div>
+          <div><label style="margin-bottom:3px">Dana Okafor plays</label><select><option>"Two Doors" — Kenji Park (pack #31)</option></select></div>
+          <button class="btn sm">Queue matchup</button>
+        </div>
+        <p class="hint">A&amp;R Wars: picks come from the linked pack and stamp <span class="mono">pack_song_a/b</span>, so Pick the Hits settles off the same rows. Artist tournament: two text fields, the artist's own song titles.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 5. graphics — one row per qualifier week ===== -->
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+    <h3 class="sec" style="margin:0">Graphics · weekly qualifier series</h3>
+    <div class="row" style="gap:8px;flex:0 0 auto">
+      <button class="btn ghost sm">Copy caption</button>
+      <button class="btn sm">Publish Week 8 + make Asana task</button>
+    </div>
+  </div>
+  <p class="hint" style="margin:0 0 12px">One set per week as a seat fills: the week's qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?"). After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
+  <div class="gfx" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+    <div class="g"><img src="/brand/wars/preview/flyer-feed-filled8.png" alt=""><div class="t">Feed · 1080×1350</div><div class="s">Week 8 · Simone Reyes qualified</div></div>
+    <div class="g"><img src="/brand/wars/preview/flyer-story-filled8.png" alt=""><div class="t">Story · 1080×1920</div><div class="s">Week 8</div></div>
+    <div class="g"><img src="/brand/wars/preview/thumb-filled8.png" alt=""><div class="t">Thumbnail · 1920×1080</div><div class="s">Week 8</div></div>
+  </div>
+  <table class="list" style="margin-top:12px">
+    <tr><td class="mono" style="color:var(--ink-faint);width:120px">Week 1</td><td>Marcus Hale qualified · published Aug 12 · <a href="#" style="color:var(--signal)">Asana task</a></td><td class="mono" style="text-align:right;color:var(--ink-faint)">3 files</td></tr>
+    <tr><td class="mono" style="color:var(--ink-faint)">Week 2 – 7</td><td>Published · one row each</td><td class="mono" style="text-align:right;color:var(--ink-faint)">3 files each</td></tr>
+    <tr><td class="mono" style="color:var(--accent)">Week 8</td><td>Simone Reyes qualified · ready, not published</td><td class="mono" style="text-align:right;color:var(--ink-faint)">renders live</td></tr>
+    <tr><td class="mono" style="color:var(--ink-faint)">Final promo</td><td class="muted">All 8 seats filled · "Who has the Best Ear?" · unlocks with Week 8</td><td></td></tr>
+    <tr><td class="mono" style="color:var(--ink-faint)">Champion</td><td class="muted">After the final</td><td></td></tr>
+  </table>
+  <p class="hint">A seat added by hand (not a weekly winner) still gets a row: the series is "one flyer per seat", whatever week it was filled.</p>
+</div>
+
+<!-- ===== 6. landing page + reminder list ===== -->
+<div class="card">
+  <h3 class="sec">Landing page &amp; reminder list</h3>
+  <div class="row" style="gap:8px;margin-bottom:12px">
+    <div class="stat"><div class="k">On the list</div><div class="v">214</div></div>
+    <div class="stat"><div class="k">Of them A&amp;Rs</div><div class="v ok">131</div></div>
+    <div class="stat"><div class="k">Reminder</div><div class="v">5:00 PM</div><div class="hint" style="margin:0">today, automatic</div></div>
+    <div class="stat"><div class="k">Pick the Hits</div><div class="v gold">388</div><div class="hint" style="margin:0">entries</div></div>
+  </div>
+  <div class="row" style="gap:8px;flex-wrap:wrap">
+    <a class="btn ghost sm" href="/_mock-tournament.html" style="flex:0 0 auto">Open the landing page</a>
+    <button class="btn ghost sm" style="flex:0 0 auto">Copy link</button>
+    <button class="btn ghost sm" style="flex:0 0 auto">Send the reminder now</button>
+    <button class="btn ghost sm" style="flex:0 0 auto">Download the list (CSV)</button>
+  </div>
+  <p class="hint">The list is email + name, no account — anyone can join it from the landing page. The reminder is one email with the watch link and a one-click unsubscribe. A&amp;Rs with "when a session goes live" on get the normal go-live text and email as well; nobody gets both twice (the list skips an address that is already an A&amp;R with that notice on). <span style="color:var(--gold)">Open question:</span> also sync the list to Brevo as "A&amp;R Wars #1"? One line to add if yes.</p>
+</div>
+
+<!-- ===== 7. wrap (shown as it will look after the final) ===== -->
+<div class="card" style="border-color:var(--gold);background:rgba(245,197,24,.04)">
+  <h3 class="sec" style="color:var(--gold)">Wrap · after the final</h3>
+  <div class="warnbox" style="margin-bottom:10px"><b>Champion: Marcus Hale.</b> Decided 2–1 in the final at 9:42 PM. The Champion set and the bracket graphic render on their own; publish them from here. The homepage winners strip and the landing page show the champion as soon as the final is decided.</div>
+  <div class="row" style="gap:8px;flex-wrap:wrap">
+    <button class="btn sm" style="flex:0 0 auto">Publish champion set + bracket</button>
+    <button class="btn ghost sm" style="flex:0 0 auto">Open Pick the Hits settle checklist</button>
+    <button class="btn ghost sm" style="flex:0 0 auto">End the session</button>
+  </div>
+  <p class="hint">Settling Pick the Hits stays on the Sidebet screen (it reads the played songs off the same polls). The $500 payout is outside the app.</p>
+</div>
+
+</div>
+</body>
+</html>

@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 042; suite green)
+## Current state (migrations through 046; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -224,10 +224,17 @@ live on anr.makinitmag.com.
   never disagree with the public $500 board. **Platform-admin only** — it spans every room
   regardless of owner; a per-host flavour would need the scope query filtered by `owner_uid`.
   Endpoints: `/api/admin/charts` (`?format=csv|caption`) + `/api/card/chart?slide=N`.
-  Band key printed on the graphics: `0–2.9 Keep it in the studio` / `3–5.9 Release Ready` /
-  `6+ Potential Single` — the operator's original "0-3 / 3-6 / 6+" double-counted both edges,
-  so the shipped bands are half-open. `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling
-  and the band cuts move with the 0–10 switch.
+  **Rebuilt to the brand 2026-10-10** (operator-approved mockup `public/brand/hot100/`): one
+  `chartSlide` element, 1080×1350, a sibling of the Daily Countdown — cover (HOT + the count in
+  green) · list pages (13° rank blocks, gold at #1 only) · a closing "Ranked by the Makin' It A&R
+  Team / Join the A&R Team" slide (`slide = pages + 1`). **Records are RANK ONLY** on the slides
+  and in the caption, like the Countdown (scores are private to the Track Report); the A&R chart
+  keeps points/accuracy. No $500 pill, no "The A&R Room" eyebrow, no red. The caption follows the
+  global caption rules: keyword first line, `Comment #REVIEW` / `Comment #ANR` instead of links,
+  no emoji or topic hashtags, @handles on the first 10 rows only (Instagram's mention limit).
+  The band key (`0–2.9 Keep it in the studio` / `3–5.9 Release Ready` / `6+ Potential Single`,
+  half-open) is no longer printed; `CHART_BANDS` stays for the console and the API.
+  `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling and moves with the 0–10 switch.
 
 - **Staged rounds + one-button show control + host buzzer** (030): a round now opens into a
   new **`listening`** status — the record is on the overlay and in everyone's hands while it
@@ -901,9 +908,88 @@ live on anr.makinitmag.com.
   - The daily page's done, sealed and recap screens link **My past results**; the edit form's
     copy of the tab strip (join.html) carries the tab too.
 
+- **Brevo contact sync** (044, 2026-10-06): two Brevo lists — **Artists** (the operator's
+  existing list **119**, `BREVO_LISTS.artists.defaultId`; a setting overrides it) — every played artist, reference tracks out; **email + phone ONLY**,
+  operator: round names are unreliable — plus ONE number, `ARTIST_TOP_SCORE`, for segmenting
+  good artists: the best room average among records with ≥ `brevo_score_min_ratings`
+  ratings, default **5**, NO fallback below the floor (blank = unproven); daily scores only once
+  the day is PUBLISHED (the seal)) and **A&Rs** (existing list **111**; every `users` row with an email, **opt-outs
+  and blocked NOT filtered** — operator's call, Brevo's unsubscribe governs. Sends name, phone and
+  THREE LINKS only (operator 2026-10-09: the full profile was too much): `ANR_CARD_IMAGE` — a
+  PUBLIC, non-expiring PNG URL of the Official A&R Card for email blasts,
+  `/api/card/anr/<uid>.png?v=<referGraphicVersion>` (800px; prints only public-profile data;
+  current `v` = CDN-cached a year, stale `v` = today's card for 1h; blocked/unknown = 404) —
+  `ANR_REFERRAL_LINK` (join), `ARTIST_REFERRAL_LINK` (submit)). `brevo_sync` ledger holds a payload
+  hash per (list, contact) so only new/changed contacts go; `POST /contacts/import` with
+  `emptyContactsAttributes:false`; never removes anyone. Plus a **"Side Bet #N"** list per sidebet iteration
+  (email only; N = creation order among packs with entries; created in folder "A&R Program" when
+  its first entrant syncs; id in `brevo_list_sidebet_<packId>`). First **Sync now** (Platform
+  panel card) creates the attributes; then `runAsyncDropLifecycle` runs it once a day
+  (≥23h apart, after 4AM ET; continues on later ticks while `remaining`; failures retry hourly).
+  Brevo allows one SMS number per contact, so a phone already claimed (A&Rs first) is left off
+  the next contact. `BREVO_API_KEY` env; `BREVO_API_BASE` is the test mock. Doc: docs/brevo-sync.md.
+- **Email engagement gate** (043, 2026-10-06). The audit (Mandrill activity export joined to
+  users/prefs/votes, per-address table kept local in `docs/reports/`, gitignored): the daily
+  "records are open" notice went to every address (~766/day), 4% clicked, 607 of 776 recipients
+  had neither clicked nor rated in 30 days. Now: **`daily_open` is default-ON for ENGAGED
+  accounts only** — `users.last_seen` within `ENGAGED_DAYS` (30; stamped at login AND at vote)
+  or `first_seen` within `NEW_ACCOUNT_DAYS` (14) — an explicit ON keeps it regardless
+  (`engagedSql()` composed into `notifyAudience`; `(p.enabled = 1 OR gate)`). **`digest_weekly`
+  flipped to default ON with a real sender** (`enqueueWeeklyUpdate`/`drainWeeklyUpdate`, kind
+  `digest_weekly`, ref_id = the Monday; queued by the daily cron on Wednesday ≥1PM ET for the
+  last complete week; names/ranks only, no scores): by default it goes to the NON-engaged only
+  and **sunsets after `WEEKLY_SUNSET_SENDS` (4) sent weeklies with no activity since**
+  (counted via `notify_recipients.sent_at > users.last_seen`, index `idx_notify_rcpt_uid`); an
+  explicit ON is never sunset. **`users.email_bounced_at`** is set by `noteEmailOutcome` when
+  the provider rejects an ADDRESS (hard-bounce/invalid/spam/unsub — `isDeadAddress` in
+  email.js; soft bounces never) and every email audience skips it; nothing clears it (email
+  is the identity key) — the operator clears by hand. **Every A&R mail carries
+  `List-Unsubscribe` + `List-Unsubscribe-Post: One-Click`** → `POST /api/notify/unsubscribe?nt=
+  <np1>` sets `email_opt_out` (the global switch — that is what the inbox button means); GET
+  redirects into `/profile#nt=`. **Sends are tagged** per stream in Mandrill/Resend
+  (`sendEmail(..., { tag, unsubscribe })`: daily_open, digest_daily, digest_weekly,
+  announcement, room_live, recap, otp, artist_report, artist_headsup) so provider reporting can
+  split by stream. **Mass announcements default to the engaged audience** (`audience:
+  'engaged'|'all'` on `notify/start`; the composer's "Send to" select; `notify/audience` reports
+  both counts). One-off data pass run against prod the same day: stale pending rows from the
+  Aug/Sep broadcasts cancelled, the 7 bouncing addresses stamped, explicit OFF prefs written
+  for the 132 accounts with zero opens and no play.
+
+- **Tournament tooling — A&R Wars + the $1,000 Music Review Tournament** (045, 2026-10-07;
+  REVERSES the 2026-07-01 "no bracket layer" decision — the operator asked for the layer).
+  ONE model keyed on `tournaments.kind` (`ar` | `artist`): `tournament_competitors` (a ROW copied
+  from the profile, editable, never written back; `seat` = order filled, drives the weekly
+  flyers; `seed` = the bracket), `tournament_matches` (7 rows, 1v8 4v5 3v6 2v7),
+  `tournament_subscribers` (the landing page's reminder list — email only, no account, one-click
+  unsubscribe), `rounds.tournament_match_id`. Pure bracket rules in `bracket.js` (tested); data +
+  routes in `tournament.js`, installed by server.js with the helpers it needs. **A matchup is an
+  ordinary binary round** queued by `queueRound()` (the queue-form route refactored into it) with
+  `pack_song_a/b` stamped for a pack pick, so Pick the Hits settles off the same rows; **ratify
+  decides the match** (`split_a > 50` = A; a 50 or a zero-vote poll leaves it to the host's
+  Decide button; a host decision is sticky; override clears everything downstream); the final is
+  `final_polls` (3) decided at a majority but the console still asks for poll 3 (the side bet
+  needs 18 songs); the final's winner sets `status='complete'` + `winner_competitor_id`, and
+  `/api/home.winners` (hardcoded `[]` until now) lists complete tournaments. **The seal holds
+  on the public page**: a poll's `split_a` is null until ratified, only the count ships.
+  **Graphics are a WEEKLY qualifier series** (operator): one big slot (that week's qualifier) +
+  8 small seats (everyone picked so far, silhouettes for the rest); final promo = all 8 filled,
+  big slot a question mark + "Who has the Best Ear?" (operator's wording); champion set after;
+  $500 printed ONCE per graphic; a one-line premise on every state. Satori elements
+  `tournamentFeed/Story/Thumb/Bracket` (purple lockup block — head-to-head), rendered live and
+  admin-only at `/api/card/tournament?t=&kind=&filled=&stage=`; Publish hosts to Blob at
+  `tournaments/<slug>/<key>-<kind>.png` and makes one Asana task per row (caption per the SEO
+  rule, no topic hashtags, ≤4 mentions a comment). Public page `/wars` (latest Wars) and
+  `/tournament/<slug>` (`public/tournament.html`, 15s refetch while live, no Ably); reminder
+  sent by the daily cron `remind_min` before `event_at` (claimed rows, tagged
+  `tournament_reminder`) or by hand. Console: the Tournaments mode (setup · field with
+  weekly-winner candidates + search · live bracket with Queue matchup / Decide / Override ·
+  graphics rows · reminder list + CSV · wrap). Platform-admin only. Spec + API contract:
+  **docs/specs/tournament-spec.md**; mockups `public/_mock-tournament*.html`,
+  `public/brand/wars/`. Dev seed: `scripts/dev-seed-tournament.js`.
+
 - **Close your own account — Deactivate / Delete** (046, 2026-10-05/06, operator's call).
-  **Backend BUILT + green, NOT committed; the UI waits on mockup approval**
-  (`public/_mock-account-close.html`, a panel at the bottom of `/profile` edit mode).
+  Panel at the bottom of `/profile` edit mode (join.html), built to the approved mockup
+  `public/_mock-account-close.html` (approved 2026-10-11).
   **"Delete" = ANONYMIZE — "we delete the person, not the history"** (operator, 2026-10-06):
   a true delete would reshape published reports. The A&R's own Delete AND the console's admin
   Delete both run `anonymizeUser` (the admin route used to hard-delete votes).
@@ -927,21 +1013,19 @@ live on anr.makinitmag.com.
     `/delete {code, confirmText:'DELETE'}`. **Account token only** (never a player token or an
     rf1/np1 link); hosts/admins refused. The code is its own otp scope (`__close__`) and is
     NEVER shown on screen on a failed send (sendOtp's login fallback would defeat it).
+  - **Brevo:** closing an account deletes the Brevo contact (`brevoForget`, best-effort) and
+    clears its `brevo_sync` ledger rows; the sync skips deactivated/deleted accounts (but still
+    NOT blocked ones — the operator's Brevo rule). A reactivated A&R re-syncs on the next run.
 
 ## What's next (roadmap order)
-1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
-   (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count
-   for the cut), but NONE of the tournament machinery is built: the 8-competitor bracket +
-   seeding (top-N from the series board + invited Tastemakers), the matchup→advancement flow
-   wiring binary-poll outcomes to the bracket, the service-pack / scouting workflow, and a
-   **winners model** (the homepage `winners[]` is still an empty array — nothing writes it).
-   This is the largest remaining build; not started.
+1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
+   bracket for the stream; the Promo Budget crediting for the artist tournament; the Series
+   `qualify_count` cut is superseded by weekly seats and left as is; Brevo list for the
+   reminder subscribers (operator undecided).
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
-3. **Digest senders** — the DAILY one shipped with A&R Daily (033): `digest_daily` now has a
-   real sender, a chunked drain and a `*/5` cron, and is `notifyAudience()`'s first production
-   caller. **`digest_weekly` still has nothing behind it** — same shape, no sender. Its default
-   is OFF and should stay off until there is one. Web push is a third channel on the same
+3. **Digest senders** — both shipped: `digest_daily` (033, opt-in) and `digest_weekly` (043,
+   default ON for the non-engaged, sunsets after 4). Web push is a third channel on the same
    table, still gated behind the PWA shell.
 4. **PWA install + iOS web push** — DEFERRED behind a branding / site facelift pass (which
    gates the install prompt work).

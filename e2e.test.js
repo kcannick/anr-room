@@ -12,7 +12,8 @@ process.env.INGEST_TOKEN = 'test-ingest-secret';
 process.env.DAILY_INGEST_TOKEN = 'test-daily-secret';
 process.env.ANALYTICS_TOKEN = 'test-analytics-secret';
 process.env.ASANA_API_BASE = 'http://localhost:3997';   // a mock Asana, started by the leads tests
-process.env.ASANA_CALL_TIMEOUT_MS = '500';               // so a deliberately stalled call fails fast
+process.env.ASANA_CALL_TIMEOUT_MS = '500';
+process.env.BREVO_API_BASE = 'http://localhost:3995';   // a mock Brevo, started by the Brevo tests               // so a deliberately stalled call fails fast
 const fs = require('fs');
 try { fs.unlinkSync('./test.db'); } catch {}
 try { fs.unlinkSync('./test.db-wal'); } catch {}
@@ -1474,6 +1475,25 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('re-login reflects role=host', hVer.d.role === 'host', JSON.stringify(hVer.d));
   const roleForbidden = await call('/api/admin/users/role', { uid: hostUser.id, role: 'player' }, 'POST', HOSTH);
   ok('a host cannot assign roles', roleForbidden.status === 403, 'got ' + roleForbidden.status);
+
+  console.log('\n— admin edits an A&R profile (same rules as the self-serve save) —');
+  const apGet = await call('/api/admin/users/profile?uid=' + encodeURIComponent(hostUser.id), null, 'GET', ADMINH);
+  ok('admin reads a user profile with email + categories catalog', apGet.status === 200 && apGet.d.profile.email === 'host@test.com' && Array.isArray(apGet.d.categoriesAvailable), JSON.stringify(apGet.d));
+  const apGetForbidden = await call('/api/admin/users/profile?uid=' + encodeURIComponent(hostUser.id), null, 'GET', HOSTH);
+  ok('a host cannot read another user profile via the admin route', apGetForbidden.status === 403, 'got ' + apGetForbidden.status);
+  const apMissing = await call('/api/admin/users/profile?uid=nope', null, 'GET', ADMINH);
+  ok('unknown uid is a 404', apMissing.status === 404, 'got ' + apMissing.status);
+  const apSave = await call('/api/admin/users/profile', { uid: hostUser.id, name: 'Host Edited', categories: ['DJ', 'Bogus', 'Producer'], primaryCategory: 'Producer', location: 'Atlanta, GA', instagram: '@hostig', tiktok: '' }, 'POST', ADMINH);
+  ok('admin saves a profile and it becomes complete', apSave.status === 200 && apSave.d.complete === true, JSON.stringify(apSave.d));
+  const apAfter = (await call('/api/admin/users/profile?uid=' + encodeURIComponent(hostUser.id), null, 'GET', ADMINH)).d.profile;
+  ok('saved fields round-trip; unknown category dropped; @ stripped', apAfter.name === 'Host Edited' && apAfter.categories.join(',') === 'DJ,Producer' && apAfter.primaryCategory === 'Producer' && apAfter.location === 'Atlanta, GA' && apAfter.instagram === 'hostig' && apAfter.complete === true, JSON.stringify(apAfter));
+  const pubAfter = (await call('/api/profile?u=' + encodeURIComponent(hostUser.id), null, 'GET')).d;
+  ok('public profile reflects the admin edit', pubAfter.profile && pubAfter.profile.name === 'Host Edited' && pubAfter.profile.location === 'Atlanta, GA', JSON.stringify(pubAfter));
+  const apSaveForbidden = await call('/api/admin/users/profile', { uid: hostUser.id, name: 'Nope' }, 'POST', HOSTH);
+  ok('a host cannot write a profile via the admin route', apSaveForbidden.status === 403, 'got ' + apSaveForbidden.status);
+  const apIncomplete = await call('/api/admin/users/profile', { uid: hostUser.id, categories: [], location: '' }, 'POST', ADMINH);
+  ok('clearing roles/location makes the profile incomplete again', apIncomplete.status === 200 && apIncomplete.d.complete === false, JSON.stringify(apIncomplete.d));
+  await call('/api/admin/users/profile', { uid: hostUser.id, categories: ['DJ'], primaryCategory: 'DJ', location: 'Atlanta, GA' }, 'POST', ADMINH);
   // A host viewing their OWN session sees engagement but no contact PII; admin sees email.
   const hs = await call('/api/session', { name: 'Host Redact' }, 'POST', HOSTH);
   const HS = hs.d.sessionId;
@@ -1652,6 +1672,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
     (dOk.d.warnings || []).some(w => w.index === 4 && w.field === 'amount'), JSON.stringify(dOk.d.warnings));
   ok('and is reported as a warning so Drupal can flag it', (dOk.d.warnings || []).some(w => w.index === 2 && w.field === 'email'), JSON.stringify(dOk.d.warnings));
   ok('the response reflects NO artist contact back out', !/@/.test(JSON.stringify(dOk.d)), JSON.stringify(dOk.d));
+  // RESULTS LINKS: one per pushed record, built from day + ref (never the round id, which a
+  // cold re-push replaces), so makinitmag can save it with the submission.
+  ok('the push reply hands back one results link per record, keyed by ref, in batch order',
+    Array.isArray(dOk.d.records) && dOk.d.records.length === 5 && dOk.d.records[0].ref === 'node/1'
+      && dOk.d.records[0].resultsUrl.endsWith('/admin?day=' + today + '&ref=node%2F1'), JSON.stringify(dOk.d.records));
 
   // SUPPORT BACKFILL: amounts for records already pushed, keyed by ref. Per-row reporting.
   const supBf = await call('/api/ingest/daily/support',
@@ -2206,7 +2231,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const wrep = await srv._weeklyReportData(pubbed.drop_day, { limit: 1 });
   const wwTrack = await srv._winnerWeekData(pubbed.drop_day, 'track');
   ok('Top Track of the Week is about the ARTIST placing: the artist is the name, no song title on the card, the selection in the operator\'s words',
-    wwTrack && wrep.songs[0] && wwTrack.title === wrep.songs[0].artist && wwTrack.by === '' && wwTrack.record === '“' + wrep.songs[0].title + '”'
+    wwTrack && wrep.songs[0] && wwTrack.title === (wrep.songs[0].artist || wrep.songs[0].title) && wwTrack.by === '' && wwTrack.record === '“' + wrep.songs[0].title + '”'
       && wwTrack.selected.join(' ') === 'Selected for the next $1,000 Music Tournament'
       && wwTrack.date.includes(' – ') && wwTrack.week.start === wkStart, JSON.stringify(wwTrack));
   ok('a handle prints as @name, no parentheses (the card draws the Instagram glyph beside it)', /^(@[A-Za-z0-9_.]+)?$/.test(wwTrack.handle), wwTrack.handle);
@@ -3438,6 +3463,34 @@ async function startVoting(sessionId, headers, minutes = 5) {
     byRef['entry/3'].status === 'unrated' && byRef['entry/3'].reports === 0, JSON.stringify(byRef['entry/3']));
   ok('an average is sent ONLY on a rated record',
     !('average' in byRef['entry/2']) && !('average' in byRef['entry/3']), JSON.stringify(cbRecs));
+  ok('every record carries its results link (day + ref), rated or not',
+    cbRecs.every(r => r.resultsUrl && r.resultsUrl.endsWith('/admin?day=2026-09-05&ref=' + encodeURIComponent(r.ref))), JSON.stringify(cbRecs));
+
+  // ONE record's results — the console's Results view and where that saved link lands.
+  await cbDb.run(`INSERT INTO round_comments (id,round_id,session_id,participant_id,body,status,created_at,updated_at)
+                  VALUES ('cbc1','cbr1',?,?, 'Hook lands first listen.', 'shared', ?, ?)`, [cbSid, cbPar.id, Date.now(), Date.now()]);
+  const recAnon = await call('/api/admin/daily/record?roundId=cbr1', null, 'GET', {});
+  ok('a record\'s results are platform-admin only', recAnon.status === 403 || recAnon.status === 401, String(recAnon.status));
+  const rec1 = await call('/api/admin/daily/record?roundId=cbr1', null, 'GET', BOOTH);
+  ok('a ratified record shows each A&R\'s rating and comment together',
+    rec1.status === 200 && rec1.d.sealed === false && rec1.d.rows.length === 1
+      && rec1.d.rows[0].rating === 6 && rec1.d.rows[0].comment === 'Hook lands first listen.', JSON.stringify(rec1.d));
+  ok('with the counts, the day and the ref the console needs',
+    rec1.d.record.ratings === 1 && rec1.d.record.comments_shared === 1 && rec1.d.record.room_average === 6.4
+      && rec1.d.record.day === '2026-09-05' && rec1.d.record.ingest_ref === 'entry/1', JSON.stringify(rec1.d.record));
+  ok('and no artist or A&R contact details', !/@|\+1\d{9}/.test(JSON.stringify(rec1.d)), JSON.stringify(rec1.d));
+  // Still in its window: vote direction is sealed, so counts only.
+  await cbDb.run(`INSERT INTO rounds (id,session_id,idx,queue_pos,poll_type,song_title,status,created_at)
+                  VALUES ('cbr5',?,5,5,'rating','T5','voting',?)`, [cbSid, Date.now()]);
+  await cbDb.run('INSERT INTO votes (id,round_id,participant_id,taste,predict,locked_at) VALUES (?,?,?,?,?,?)',
+    ['cbv5', 'cbr5', cbPar.id, 9, 7, Date.now()]);
+  const rec5 = await call('/api/admin/daily/record?roundId=cbr5', null, 'GET', BOOTH);
+  ok('a record still in its window is SEALED: counts, but no ratings or comments',
+    rec5.status === 200 && rec5.d.sealed === true && rec5.d.rows.length === 0 && rec5.d.record.ratings === 1
+      && !/"rating":9/.test(JSON.stringify(rec5.d)), JSON.stringify(rec5.d));
+  await cbDb.run("DELETE FROM votes WHERE id = 'cbv5'"); await cbDb.run("DELETE FROM rounds WHERE id = 'cbr5'");
+  await cbDb.run("DELETE FROM round_comments WHERE id = 'cbc1'");
+  ok('an unknown record is 404', (await call('/api/admin/daily/record?roundId=nope', null, 'GET', BOOTH)).status === 404);
 
   // Now with a live endpoint. A one-shot server stands in for makinitmag.
   const http = require('http');
@@ -3884,6 +3937,38 @@ async function startVoting(sessionId, headers, minutes = 5) {
   for (const sid of [wkThu, wkSun, wkBefore, wkAfter]) {
     await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), sid]);
   }
+  // Before A&R Daily the Daily Review was a LIVE session; a week from then must not read empty.
+  // A completed live rating show lands in the week of its scheduled ET day; a Verzuz-only live
+  // session stays out (the week's #1 A&R takes a seat, won on rating records).
+  const wkLive = async (id, sched, poll) => {
+    await dDb.run(`INSERT INTO sessions (id, name, admin_token, status, scheduled_at, series_id, created_at)
+                   VALUES (?,?,?,?,?,?,?)`, [id, 'Daily Review - ' + id, 'tok_' + id, 'completed', sched, serId, wkNow]);
+    const rid = await wkRound(id, { title: 'Live ' + id, artist: 'On Air', avg: 9.1, poll_type: poll });
+    await wkVote(rid, await wkPart(id, wkVoters[1]), 300, 'bullseye');
+  };
+  await wkLive('wklive1', server._etEpoch('2026-04-01', 20), 'rating');
+  await wkLive('wklive2', server._etEpoch('2026-04-02', 20), 'binary');
+  await wkLive('wklive3', server._etEpoch('2026-04-06', 20), 'rating');   // next week
+  const WKL = (await call('/api/admin/weekly/status?week=2026-03-30', null, 'GET', BOOTH)).d;
+  ok('a completed live rating show counts in the week it ran',
+    WKL.drops.some(d => d.id === 'wklive1' && d.live && d.day === '2026-04-01' && d.name)
+    && WKL.songsAll.some(r => r.title === 'Live wklive1')
+    && WKL.arsAll.some(a => a.id === wkVoters[1] && a.points >= 300) && WKL.settled === true,
+    JSON.stringify(WKL.drops));
+  ok('a Verzuz-only live session and the next week\'s show stay out',
+    !WKL.drops.some(d => ['wklive2', 'wklive3'].includes(d.id)), JSON.stringify(WKL.drops.map(d => d.id)));
+  // The picker is every week back 16 complete weeks, no gaps — empty weeks included.
+  const wkPick = WKL.weeks.filter(w => w.start !== '2026-03-30' || w.current);
+  const wkCur = server._weekStartFor(server._etDay());
+  ok('the week picker offers the week in progress and the 16 complete weeks before it, no gaps',
+    wkPick.length === 17 && wkPick[0].start === wkCur && wkPick[0].current
+    && wkPick.every((w, i) => i === 0 || server._etNextDay(w.start, 7) === wkPick[i - 1].start),
+    JSON.stringify(WKL.weeks.map(w => w.start)));
+  ok('a week asked for outside the list is still offered, at the top',
+    WKL.weeks[0].start === '2026-03-30', JSON.stringify(WKL.weeks[0]));
+  for (const id of ['wklive1', 'wklive2', 'wklive3']) {
+    await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), id]);
+  }
 
   console.log('\n— artist email: the decision first, the report pages, the replay link, and NO pricing —');
   // The operator's explicit call: the report goes out free to drive visibility, and the
@@ -4293,7 +4378,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('room_live email defaults ON', fp.status === 200 && fp.d.topics.room_live.channels.email === true, JSON.stringify(fp.d.topics));
   ok('room_live sms defaults ON', fp.d.topics.room_live.channels.sms === true, JSON.stringify(fp.d.topics.room_live));
   ok('daily digest defaults OFF', fp.d.topics.digest_daily.channels.email === false, JSON.stringify(fp.d.topics.digest_daily));
-  ok('weekly digest defaults OFF', fp.d.topics.digest_weekly.channels.email === false, JSON.stringify(fp.d.topics.digest_weekly));
+  // Flipped 2026-10-06: the weekly update is the cadence for everyone the daily notice no
+  // longer reaches, so it is ON by default (non-engaged by default; see the gate tests).
+  ok('weekly update defaults ON', fp.d.topics.digest_weekly.channels.email === true, JSON.stringify(fp.d.topics.digest_weekly));
   ok('SMS not offered for a digest', fp.d.topics.digest_daily.channels.sms === undefined, JSON.stringify(fp.d.topics.digest_daily.channels));
   // THE no-backfill assertion: those defaults came from the catalog, not from rows.
   const freshRows = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [freshUid])).c);
@@ -4539,6 +4626,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const cDup = await chGet(chBase + '&dedupe=0');
   ok('charts: dedupe=0 charts both plays', cDup.d.rows.filter(r => /broad/i.test(r.title)).length === 2, JSON.stringify(cDup.d.rows.map(r => r.title)));
 
+  console.log('\n— charts: a calendar month, by when the room tallied —');
+  const chYm = (k) => { const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })); d.setDate(1); d.setMonth(d.getMonth() - k); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+  const cMon = await chGet(`scope=month&month=${chYm(0)}&minVotes=3`);
+  ok('charts: this month charts the rooms that ran this month', cMon.status === 200 && cMon.d.rows.some(r => /broad/i.test(r.title)), JSON.stringify(cMon.d).slice(0, 200));
+  ok('charts: the month label is the month name', /^[A-Z][a-z]+ \d{4}$/.test(cMon.d.scope.label) && cMon.d.scope.kind === 'month', JSON.stringify(cMon.d.scope));
+  const cPrev = await chGet(`scope=month&month=${chYm(1)}&minVotes=3`);
+  ok('charts: last month does not include rooms that ran this month', cPrev.status === 200 && !cPrev.d.rows.some(r => /broad/i.test(r.title)), JSON.stringify(cPrev.d.rows.map(r => r.title)));
+  const cBadMon = await chGet('scope=month&month=2026-13');
+  ok('charts: a malformed month is refused', cBadMon.status >= 400, 'status ' + cBadMon.status);
+
   console.log('\n— charts: the floor is a knob, and order/limit are presentation only —');
   const cLow = await chGet(`scope=series&seriesId=${CHSER}&minVotes=0`);
   ok('charts: dropping the floor lets the small sample top the chart', cLow.d.rows[0].title === 'Tiny Sample', JSON.stringify(cLow.d.rows.map(r => r.title)));
@@ -4602,7 +4699,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     cAccFloor.d.rows.length === 0 && cAccFloor.d.summary.excluded === cAccFloor.d.summary.pool && cAccFloor.d.summary.pool > 0,
     JSON.stringify(cAccFloor.d.summary));
   const cAccCap = await (await fetch(`${base}/api/admin/charts?scope=series&seriesId=${CHSER}&mode=ars&sort=accuracy&minRounds=1&format=caption`, { headers: ADMINH })).text();
-  ok('charts: the accuracy caption prints accuracy, not points', /% accuracy\)/.test(cAccCap) && !/ pts\)/.test(cAccCap), cAccCap.slice(0, 300));
+  ok('charts: the accuracy caption prints accuracy, not points', /% accuracy$/m.test(cAccCap) && !/ pts$/m.test(cAccCap), cAccCap.slice(0, 300));
 
   console.log('\n— charts: CSV and caption carry the same rows as the screen —');
   const chCsvRes = await fetch(`${base}/api/admin/charts?${chBase}&format=csv`, { headers: ADMINH });
@@ -4616,9 +4713,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const capRes = await fetch(`${base}/api/admin/charts?${chBase}&format=caption`, { headers: ADMINH });
   const capTxt = await capRes.text();
   ok('charts: caption returns text', capRes.status === 200 && capTxt.length > 40);
-  ok('charts: caption carries the score key', /Keep it in the studio/.test(capTxt) && /Potential Single/.test(capTxt), capTxt.slice(0, 200));
-  ok('charts: caption sends artists to /review and viewers to /ANR',
-    /makinitmag\.com\/review/.test(capTxt) && /makinitmag\.com\/ANR/.test(capTxt), capTxt.slice(-200));
+  // Rank only, like the slides: scores are private to the Track Report (brand redesign, 2026-10-10).
+  ok('charts: the records caption prints no score or score key',
+    !/Keep it in the studio/.test(capTxt) && !/\(\d+\.\d\)/.test(capTxt) && !/\b\d\.\d\b/.test(capTxt.split('\n').filter(l => /^\d+\. /.test(l)).join('\n')), capTxt.slice(0, 400));
+  ok('charts: the caption leads with what the post is', /^Makin’ It HOT \d+, .+: the highest-rated new music from independent artists/.test(capTxt), capTxt.split('\n')[0]);
+  ok('charts: caption asks by comment keyword, not link (no emoji, no topic hashtags)',
+    /Comment #REVIEW to Submit Music/.test(capTxt) && /Comment #ANR to join the A&R Team/.test(capTxt)
+    && !/makinitmag\.com/.test(capTxt) && !/#TheARoom/.test(capTxt) && !/\u{1F525}/u.test(capTxt), capTxt.slice(-200));
   ok('charts: caption lists the #1 record', capTxt.includes('1. Broad Appeal'), capTxt.slice(0, 300));
 
   console.log('\n— charts: the contact export is a separate, deliberate file —');
@@ -4666,6 +4767,15 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('charts: cover slide renders a PNG', slide0.status === 200 && slide0.headers.get('content-type') === 'image/png', slide0.status);
   const slide1 = await fetch(`${base}/api/card/chart?${chBase}&slide=1`, { headers: ADMINH });
   ok('charts: first list slide renders a PNG', slide1.status === 200 && (await slide1.arrayBuffer()).byteLength > 5000);
+  const chPages = Math.ceil(chTop.d.rows.length / 10);
+  const slideEnd = await fetch(`${base}/api/card/chart?${chBase}&slide=${chPages + 1}`, { headers: ADMINH });
+  ok('charts: the closing slide follows the last page', slideEnd.status === 200 && slideEnd.headers.get('content-type') === 'image/png', slideEnd.status);
+  const slideAfter = await fetch(`${base}/api/card/chart?${chBase}&slide=${chPages + 2}`, { headers: ADMINH });
+  ok('charts: nothing after the closing slide', slideAfter.status === 404, 'status ' + slideAfter.status);
+  const slideArs = await fetch(`${base}/api/card/chart?scope=series&seriesId=${CHSER}&mode=ars&slide=1`, { headers: ADMINH });
+  ok('charts: an A&R chart page renders', slideArs.status === 200, slideArs.status);
+  const png = require('./share-cards.js');
+  ok('charts: the carousel is 1080×1350, like the Countdown', JSON.stringify(png.sizeOf('chartSlide')) === '[1080,1350]');
   const slideN = await fetch(`${base}/api/card/chart?${chBase}&slide=99`, { headers: ADMINH });
   ok('charts: a slide past the end 404s (the client stops there)', slideN.status === 404, 'status ' + slideN.status);
   const bands = require('./share-cards.js').CHART_BANDS;
@@ -5157,6 +5267,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The published drop from the daily tests; later tests may have retired it, so bring it back for these.
   const atWas = await anDb.get('SELECT deleted_at, async_state FROM sessions WHERE id = ?', [LDROP]);
   await anDb.run("UPDATE sessions SET deleted_at = NULL, async_state = 'published' WHERE id = ?", [LDROP]);
+  // Results two days after the close, as under the 69-hour clock, so the two dates differ.
+  await anDb.run('UPDATE sessions SET results_at = window_closes_at + 2 * 86400000 WHERE id = ?', [LDROP]);
   const atBefore = asanaCalls.length;
   const atSong = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'song' }, 'POST', BOOTH);
   const atMade = asanaCalls.slice(atBefore);
@@ -5169,6 +5281,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
     atTask && /^Makin' It Daily Countdown — \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
       && /Caption \(paste as-is\)/.test(atTask.data.notes) && /Comment #REVIEW to Submit Music/.test(atTask.data.notes)
       && /Post the 6 attached slides in order/.test(atTask.data.notes), JSON.stringify(atTask && atTask.data));
+  // A daily set is named for the day it CLOSES, never the results day (the Oct 2 / Oct 3 posts
+  // went out dated 10.04 / 10.05 under the 69-hour clock).
+  const atWin = await anDb.get('SELECT window_closes_at, results_at FROM sessions WHERE id = ?', [LDROP]);
+  const atCloseLbl = require('./server')._recapDateLabel(Number(atWin.window_closes_at));
+  ok('daily asana: the task and the slides are dated by the close, not the results day',
+    atTask && atTask.data.name.endsWith('— ' + atCloseLbl), JSON.stringify([atTask && atTask.data.name, atCloseLbl]));
   const atAr = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'ar' }, 'POST', BOOTH);
   const atArTask = asanaCalls.filter(c => c.method === 'POST' && c.path === '/tasks').pop();
   ok('daily asana: the Top A&Rs task is its own task, placement only',
@@ -5227,6 +5345,533 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('daily asana: refuses without ASANA_TOKEN (409)', atOff.status === 409, 'got ' + atOff.status);
   await anDb.run('UPDATE sessions SET deleted_at = ?, async_state = ? WHERE id = ?', [atWas.deleted_at, atWas.async_state, LDROP]);
   asanaMock.close();
+
+  // ======================================================================
+  // Brevo contacts (044): artists (email + phone only) and every A&R (full profile) onto two
+  // lists. Brevo is a mock on BREVO_API_BASE (set at the top of this file).
+  console.log('\n— Brevo contacts —');
+  const brevoCalls = [];
+  const brevoState = { folders: [], lists: [], attrs: ['FIRSTNAME', 'LASTNAME', 'SMS'], nextId: 500 };   // clear of the real list ids (111, 119)
+  const brevoMock = require('http').createServer((req, res) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      const u = new URL(req.url, 'http://x');
+      const data = body ? JSON.parse(body) : null;
+      brevoCalls.push({ method: req.method, path: u.pathname, data, key: req.headers['api-key'] });
+      const reply = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(obj == null ? '' : JSON.stringify(obj)); };
+      let m;
+      if (req.method === 'GET' && u.pathname === '/contacts/folders') return reply(200, { folders: brevoState.folders, count: brevoState.folders.length });
+      if (req.method === 'POST' && u.pathname === '/contacts/folders') { const f = { id: brevoState.nextId++, name: data.name }; brevoState.folders.push(f); return reply(201, { id: f.id }); }
+      if (req.method === 'POST' && u.pathname === '/contacts/lists') { const l = { id: brevoState.nextId++, ...data }; brevoState.lists.push(l); return reply(201, { id: l.id }); }
+      if (req.method === 'GET' && u.pathname === '/contacts/attributes') return reply(200, { attributes: brevoState.attrs.map(name => ({ name, category: 'normal' })) });
+      if (req.method === 'POST' && (m = /^\/contacts\/attributes\/normal\/(\w+)$/.exec(u.pathname))) { brevoState.attrs.push(m[1]); return reply(201, null); }
+      if (req.method === 'POST' && u.pathname === '/contacts/import') return reply(202, { processId: brevoState.nextId++ });
+      if (req.method === 'GET' && (m = /^\/processes\/(\d+)$/.exec(u.pathname))) return reply(200, { id: Number(m[1]), status: 'completed' });
+      reply(500, { message: 'unmocked ' + req.method + ' ' + u.pathname });
+    });
+  });
+  await new Promise(r => brevoMock.listen(3995, r));
+  const imports = (from) => brevoCalls.slice(from).filter(c => c.path === '/contacts/import');
+
+  const brvHost = await call('/api/admin/brevo', null, 'GET', AH);
+  ok('brevo: platform-admin only (a host token gets 403)', brvHost.status === 403, 'got ' + brvHost.status);
+  const brvOff = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  ok('brevo: sync refuses without BREVO_API_KEY (409)', brvOff.status === 409, 'got ' + brvOff.status);
+
+  // Fixtures: an A&R who is blocked and opted out (still goes — opt-outs are not a filter here),
+  // an artist whose phone is the A&R's, an artist with only a phone, a reference track.
+  const brvNow = Date.now();
+  await anDb.run('INSERT INTO users (uid, email, name, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,0,0)',
+    ['bvuser1', 'BV.Ar@Example.com', 'Dana Q Public', brvNow, brvNow]);
+  await anDb.run("UPDATE users SET phone = '(305) 555-0199', location = 'Miami, FL', instagram = 'danaq', categories = ?, primary_category = 'Producer', blocked = 1, email_opt_out = 1 WHERE uid = 'bvuser1'", [JSON.stringify(['Producer', 'DJ'])]);
+  const brvRounds = (await anDb.all("SELECT r.id FROM rounds r JOIN sessions s ON s.id = r.session_id WHERE s.deleted_at IS NULL AND COALESCE(r.is_reference,0) = 0 ORDER BY r.created_at LIMIT 3")).map(r => r.id);
+  await anDb.run("UPDATE rounds SET artist_email = 'Shared.Artist@x.com', artist_phone = '305-555-0199' WHERE id = ?", [brvRounds[0]]);
+  await anDb.run("UPDATE rounds SET artist_email = NULL, artist_phone = '1 (305) 555-0177' WHERE id = ?", [brvRounds[1]]);
+  const brvRefWas = await anDb.get('SELECT is_reference, artist_email FROM rounds WHERE id = ?', [brvRounds[2]]);
+  await anDb.run("UPDATE rounds SET is_reference = 1, artist_email = 'reference@x.com' WHERE id = ?", [brvRounds[2]]);
+  // Scores: an artist with a 6.4 over the ratings floor and a 9.1 under it (only the 6.4 counts),
+  // an artist with only an under-floor record (no score at all), and an artist whose record sits
+  // in a daily drop that has not published (no score until it does).
+  const brvRated = await anDb.all(`SELECT r.id, r.session_id, (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS n
+      FROM rounds r JOIN sessions s ON s.id = r.session_id
+     WHERE s.deleted_at IS NULL AND COALESCE(s.mode,'') <> 'async' AND COALESCE(r.is_reference,0) = 0 AND COALESCE(r.poll_type,'rating') <> 'binary'
+     ORDER BY n DESC, r.id`);
+  const brvFree = brvRated.filter(r => !brvRounds.includes(r.id));
+  const brvMany = brvFree.find(r => r.n >= 3);
+  const brvSealed = brvFree.find(r => r.n >= 3 && r.session_id !== brvMany.session_id);
+  const brvUnder = brvFree.filter(r => r.n >= 1 && r.n < 3 && r.session_id !== brvSealed.session_id);
+  const [brvFew, brvLone] = brvUnder;
+  const brvDefault = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: the score floor defaults to 5 ratings', brvDefault.d.scoreMinRatings === 5, JSON.stringify(brvDefault.d.scoreMinRatings));
+  await call('/api/admin/settings', { brevoScoreMinRatings: 3 }, 'POST', ADMINH);
+  await anDb.run("UPDATE rounds SET artist_email = 'scored.artist@x.com', artist_phone = NULL, status = 'ratified', room_average = 6.4 WHERE id = ?", [brvMany.id]);
+  await anDb.run("UPDATE rounds SET artist_email = 'scored.artist@x.com', artist_phone = NULL, status = 'ratified', room_average = 9.1 WHERE id = ?", [brvFew.id]);
+  await anDb.run("UPDATE rounds SET artist_email = 'unproven.artist@x.com', artist_phone = NULL, status = 'ratified', room_average = 8.8 WHERE id = ?", [brvLone.id]);
+  await anDb.run("UPDATE rounds SET artist_email = 'sealed.artist@x.com', artist_phone = NULL, status = 'ratified', room_average = 9.9 WHERE id = ?", [brvSealed.id]);
+  const brvSealWas = await anDb.get('SELECT mode, async_state FROM sessions WHERE id = ?', [brvSealed.session_id]);
+  await anDb.run("UPDATE sessions SET mode = 'async', async_state = 'closed' WHERE id = ?", [brvSealed.session_id]);
+
+  process.env.BREVO_API_KEY = 'test-brevo-key';
+  const brv1From = brevoCalls.length;
+  const brv1 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  ok('brevo: first sync succeeds', brv1.status === 200 && brv1.d.ok && !brv1.d.remaining, JSON.stringify(brv1.d));
+  ok('brevo: artists and A&Rs go to the existing lists — only the Side Bet list is created', brevoState.folders.length === 1 && brevoState.folders[0].name === 'A&R Program'
+    && brevoState.lists.map(l => l.name).join('|') === 'Side Bet #1' && brevoState.lists[0].folderId === brevoState.folders[0].id, JSON.stringify(brevoState));
+  ok('brevo: the API key rides the api-key header', brevoCalls.slice(brv1From).every(c => c.key === 'test-brevo-key'));
+  ok('brevo: the A&R link attributes are created', ['ANR_CARD_IMAGE', 'ANR_REFERRAL_LINK', 'ARTIST_REFERRAL_LINK'].every(a => brevoState.attrs.includes(a)), brevoState.attrs.join(','));
+  const brvArtistsId = 119;
+  const brvArsId = 111;
+  const brvSb1Id = brevoState.lists[0].id;
+  const brvImp = imports(brv1From);
+  const brvArt = brvImp.filter(c => c.data.listIds[0] === brvArtistsId).flatMap(c => c.data.jsonBody);
+  const brvArs = brvImp.filter(c => c.data.listIds[0] === brvArsId).flatMap(c => c.data.jsonBody);
+  const brvSb1 = brvImp.filter(c => c.data.listIds[0] === brvSb1Id).flatMap(c => c.data.jsonBody);
+  const brvSb1Want = (await anDb.all("SELECT DISTINCT LOWER(u.email) AS e FROM sidebet_entries e JOIN users u ON u.uid = e.user_id JOIN packs p ON p.id = e.pack_id WHERE p.id = (SELECT pack_id FROM sidebet_entries GROUP BY pack_id ORDER BY MIN((SELECT created_at FROM packs WHERE id = pack_id)) LIMIT 1)")).map(r => r.e).sort();
+  ok('brevo: every Side Bet entrant goes on that Side Bet list, email only', brvSb1.length > 0 && brvSb1.map(c => c.email).sort().join(',') === brvSb1Want.join(',')
+    && brvSb1.every(c => Object.keys(c).join() === 'email'), JSON.stringify({ got: brvSb1, want: brvSb1Want }));
+  ok('brevo: imports never blank existing fields and update existing contacts', brvImp.length >= 2 && brvImp.every(c => c.data.emptyContactsAttributes === false && c.data.updateExistingContacts === true), JSON.stringify(brvImp.map(c => c.data.listIds)));
+  ok('brevo: artists carry email, phone and their score — never a name', brvArt.length > 0 && brvArt.every(c => Object.keys(c.attributes).every(k => k === 'SMS' || /^ARTIST_/.test(k)) && Object.keys(c).every(k => k === 'email' || k === 'attributes')), JSON.stringify(brvArt.slice(0, 3)));
+  const brvScored = brvArt.find(c => c.email === 'scored.artist@x.com');
+  ok('brevo: an artist carries ONE number — the best score among records over the ratings floor', brvScored && brvScored.attributes.ARTIST_TOP_SCORE === 6.4
+    && Object.keys(brvScored.attributes).filter(k => /^ARTIST_/.test(k)).length === 1, JSON.stringify({ c: brvScored, many: brvMany, few: brvFew }));
+  const brvUnproven = brvArt.find(c => c.email === 'unproven.artist@x.com');
+  ok('brevo: an artist with no record over the floor gets no score at all', brvUnproven && brvUnproven.attributes.ARTIST_TOP_SCORE == null, JSON.stringify(brvUnproven));
+  const brvSeal = brvArt.find(c => c.email === 'sealed.artist@x.com');
+  ok('brevo: a daily drop that has not published leaks no score', brvSeal && brvSeal.attributes.ARTIST_TOP_SCORE == null, JSON.stringify(brvSeal));
+  ok('brevo: the artist score attribute is created', brevoState.attrs.includes('ARTIST_TOP_SCORE'));
+  ok('brevo: A&R contacts never carry an artist score', brvArs.every(c => !('ARTIST_TOP_SCORE' in c.attributes)));
+  ok('brevo: a reference track is not an artist contact', !brvArt.some(c => c.email === 'reference@x.com'));
+  ok('brevo: an artist with only a phone goes as an SMS contact in E.164', brvArt.some(c => !c.email && c.attributes.SMS === '+13055550177'), JSON.stringify(brvArt.filter(c => !c.email)));
+  const brvDana = brvArs.find(c => c.email === 'bv.ar@example.com');
+  ok('brevo: every A&R goes — blocked and opted-out included', !!brvDana, JSON.stringify(brvArs.map(c => c.email)));
+  ok('brevo: an A&R carries name, phone and their three links — nothing else', brvDana
+    && Object.keys(brvDana.attributes).sort().join(',') === 'ANR_CARD_IMAGE,ANR_REFERRAL_LINK,ARTIST_REFERRAL_LINK,FIRSTNAME,LASTNAME,SMS'
+    && brvDana.attributes.FIRSTNAME === 'Dana' && brvDana.attributes.LASTNAME === 'Q Public', JSON.stringify(brvDana));
+  ok('brevo: the referral links carry the A&R\'s uid', brvDana && /\/\?ref=bvuser1$/.test(brvDana.attributes.ANR_REFERRAL_LINK) && /review\?ref=bvuser1$/.test(brvDana.attributes.ARTIST_REFERRAL_LINK), JSON.stringify(brvDana && brvDana.attributes));
+  // The card is a public image URL an email can show: no login, cached by version.
+  const brvImgPath = brvDana && (/^https?:\/\/[^/]+(\/api\/card\/anr\/bvuser1\.png\?v=[0-9a-f]{12})$/.exec(brvDana.attributes.ANR_CARD_IMAGE) || [])[1];
+  ok('brevo: the card is an image URL for that A&R, versioned', !!brvImgPath, String(brvDana && brvDana.attributes.ANR_CARD_IMAGE));
+  const brvImgBlocked = await fetch(base + brvImgPath);
+  ok('brevo: a blocked A&R\'s card image is a 404', brvImgBlocked.status === 404, 'got ' + brvImgBlocked.status);
+  await anDb.run('UPDATE users SET blocked = 0 WHERE uid = ?', ['bvuser1']);
+  const brvImg = await fetch(base + brvImgPath);
+  const brvImgBuf = Buffer.from(await brvImg.arrayBuffer());
+  ok('brevo: the card image renders with no login, as a PNG', brvImg.status === 200 && /image\/png/.test(brvImg.headers.get('content-type')) && brvImgBuf.slice(1, 4).toString() === 'PNG', 'got ' + brvImg.status);
+  ok('brevo: ...and a current URL caches at the CDN for good', /s-maxage=31536000/.test(brvImg.headers.get('cache-control') || ''), brvImg.headers.get('cache-control'));
+  const brvImgOld = await fetch(base + brvImgPath.replace(/v=[0-9a-f]+/, 'v=000000000000'));
+  ok('brevo: an outdated URL still shows the card, cached briefly', brvImgOld.status === 200 && /s-maxage=3600\b/.test(brvImgOld.headers.get('cache-control') || ''), brvImgOld.headers.get('cache-control'));
+  const brvImgBad = await fetch(base + '/api/card/anr/nobody123.png');
+  ok('brevo: an unknown A&R\'s card image is a 404', brvImgBad.status === 404, 'got ' + brvImgBad.status);
+  await anDb.run('UPDATE users SET blocked = 1 WHERE uid = ?', ['bvuser1']);
+  ok('brevo: the A&R phone is E.164', brvDana && brvDana.attributes.SMS === '+13055550199');
+  const brvShared = brvArt.find(c => c.email === 'shared.artist@x.com');
+  ok('brevo: a phone already on an A&R is not put on a second contact', brvShared && !brvShared.attributes.SMS, JSON.stringify(brvShared));
+  ok('brevo: no contact ever carries a phone another contact has', (() => { const seen = new Set(); return [...brvArt, ...brvArs].every(c => { const s = c.attributes.SMS; if (!s) return true; if (seen.has(s)) return false; seen.add(s); return true; }); })());
+
+  const brv2From = brevoCalls.length;
+  const brv2 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  ok('brevo: a second sync sends nothing', brv2.status === 200 && imports(brv2From).length === 0 && brv2.d.sent.artists === 0 && brv2.d.sent.ars === 0, JSON.stringify(brv2.d));
+  ok('brevo: a second sync does not recreate lists', brevoState.lists.length === 1 && brevoState.folders.length === 1);
+  // The next iteration gets its first entrant: "Side Bet #2", in the same folder, just that entrant.
+  const brvPack2 = await anDb.get("SELECT id FROM packs p WHERE NOT EXISTS (SELECT 1 FROM sidebet_entries e WHERE e.pack_id = p.id) ORDER BY created_at DESC LIMIT 1");
+  await anDb.run('INSERT INTO sidebet_entries (id, pack_id, user_id, entry_no, first_submitted_at, updated_at, created_at) VALUES (?,?,?,?,?,?,?)',
+    ['brvent2', brvPack2.id, 'bvuser1', 1, Date.now(), Date.now(), Date.now()]);
+  const brvSb2From = brevoCalls.length;
+  const brvSb2 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brvSb2Imp = imports(brvSb2From);
+  ok('brevo: the next Side Bet gets its own list, "Side Bet #2"', brevoState.lists.length === 2 && brevoState.lists[1].name === 'Side Bet #2' && brevoState.folders.length === 1, JSON.stringify(brevoState.lists));
+  ok('brevo: ...holding just its entrant', brvSb2Imp.length === 1 && brvSb2Imp[0].data.listIds[0] === brevoState.lists[1].id
+    && brvSb2Imp[0].data.jsonBody.length === 1 && brvSb2Imp[0].data.jsonBody[0].email === 'bv.ar@example.com', JSON.stringify(brvSb2Imp.map(c => c.data)));
+  await anDb.run("DELETE FROM sidebet_entries WHERE id = 'brvent2'");
+  await anDb.run("UPDATE users SET name = 'Dana Rivers' WHERE uid = 'bvuser1'");
+  const brv3From = brevoCalls.length;
+  const brv3 = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brv3Imp = imports(brv3From);
+  ok('brevo: an edited profile resends just that contact', brv3.d.sent.ars === 1 && brv3.d.sent.artists === 0 && brv3Imp.length === 1 && brv3Imp[0].data.jsonBody[0].attributes.LASTNAME === 'Rivers', JSON.stringify(brv3.d));
+
+  // The day publishes: the sealed artist's score goes on the next sync, and only that contact.
+  await anDb.run("UPDATE sessions SET async_state = 'published' WHERE id = ?", [brvSealed.session_id]);
+  const brvPubFrom = brevoCalls.length;
+  const brvPub = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brvPubBody = imports(brvPubFrom).flatMap(c => c.data.jsonBody);
+  ok('brevo: once the day publishes, its artist gets their score', brvPub.d.sent.artists === 1 && brvPubBody.length === 1 && brvPubBody[0].email === 'sealed.artist@x.com' && brvPubBody[0].attributes.ARTIST_TOP_SCORE === 9.9, JSON.stringify(brvPubBody));
+  // Lowering the floor re-sends just the artist whose score it changes.
+  await call('/api/admin/settings', { brevoScoreMinRatings: 1 }, 'POST', ADMINH);
+  const brvFlFrom = brevoCalls.length;
+  const brvFl = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brvFlBody = imports(brvFlFrom).flatMap(c => c.data.jsonBody);
+  ok('brevo: a lower floor re-sends only the artists whose score moved', brvFlBody.some(c => c.email === 'scored.artist@x.com' && c.attributes.ARTIST_TOP_SCORE === 9.1)
+    && brvFlBody.some(c => c.email === 'unproven.artist@x.com' && c.attributes.ARTIST_TOP_SCORE === 8.8) && !brvFlBody.some(c => c.email === 'sealed.artist@x.com'), JSON.stringify(brvFlBody.map(c => c.email)));
+  await call('/api/admin/settings', { brevoScoreMinRatings: '' }, 'POST', ADMINH);
+  await anDb.run('UPDATE sessions SET mode = ?, async_state = ? WHERE id = ?', [brvSealWas.mode, brvSealWas.async_state, brvSealed.session_id]);
+  const brvBack = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: putting the floor back marks the moved artists to send again', brvBack.d.scoreMinRatings === 5 && brvBack.d.lists.artists.pending > 0 && brvBack.d.lists.ars.pending === 0, JSON.stringify(brvBack.d.lists));
+  await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  const brvRead = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: the readout shows both lists, nothing pending, and the import state', brvRead.status === 200 && brvRead.d.configured && brvRead.d.lists.artists.id == brvArtistsId
+    && brvRead.d.lists.ars.pending === 0 && brvRead.d.lists.artists.pending === 0 && brvRead.d.imports.length > 0 && brvRead.d.imports[0].status === 'completed', JSON.stringify(brvRead.d));
+  const brvPlat = await call('/api/admin/platform', null, 'GET', ADMINH);
+  ok('brevo: the platform panel says the key is set, never what it is', brvPlat.d.brevoKey === true && !JSON.stringify(brvPlat.d).includes('test-brevo-key'));
+
+  await anDb.run("UPDATE settings SET v = ? WHERE k = 'brevo_sync_lock'", [String(Date.now() + 60000)]);
+  const brvLocked = await call('/api/admin/brevo/sync', {}, 'POST', ADMINH);
+  ok('brevo: a second sync while one runs gets 409', brvLocked.status === 409, 'got ' + brvLocked.status);
+  await anDb.run("UPDATE settings SET v = '0' WHERE k = 'brevo_sync_lock'");
+
+  // The daily cron pass: nothing within 23 hours of the last sync; due a day later (after 4AM ET).
+  ok('brevo daily: not due right after a sync', (await srv._brevoDailySync({ ts: Date.now() })) === null);
+  let brvTs = Date.now() + 24 * 3600000;
+  while (srv._etHour(brvTs) < 4) brvTs += 3600000;
+  const brvDay = await srv._brevoDailySync({ ts: brvTs });
+  ok('brevo daily: runs once the day has turned', brvDay && brvDay.sent && brvDay.sent.ars === 0, JSON.stringify(brvDay));
+  ok('brevo daily: ...and only once', (await srv._brevoDailySync({ ts: brvTs })) === null);
+
+  // A different list id is a fresh start for that list only.
+  await call('/api/admin/settings', { brevoListArtists: '999' }, 'POST', ADMINH);
+  const brvAfterSwap = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: a changed list id re-sends that whole list, not the other', brvAfterSwap.d.lists.artists.id === '999' && brvAfterSwap.d.lists.artists.pending === brvAfterSwap.d.lists.artists.total && brvAfterSwap.d.lists.ars.pending === 0, JSON.stringify(brvAfterSwap.d.lists));
+
+  await call('/api/admin/settings', { brevoListArtists: '' }, 'POST', ADMINH);
+  const brvBackTo = await call('/api/admin/brevo', null, 'GET', ADMINH);
+  ok('brevo: clearing the artists list id goes back to list 119', brvBackTo.d.lists.artists.id === '119', JSON.stringify(brvBackTo.d.lists.artists));
+
+  delete process.env.BREVO_API_KEY;
+  await anDb.run('UPDATE rounds SET is_reference = ?, artist_email = ? WHERE id = ?', [brvRefWas.is_reference, brvRefWas.artist_email, brvRounds[2]]);
+  brevoMock.close();
+
+  // ===================== EMAIL ENGAGEMENT GATE (043, 2026-10-06) =====================
+  // The audit: the daily notice went to every address (766/day), 4% clicked. The audience
+  // now gates on activity; the weekly update takes everyone else and sunsets; bounced
+  // addresses are out everywhere; every A&R mail carries a one-click unsubscribe.
+  console.log('\n— email engagement gate: daily notice reaches the active, the new, and the explicit —');
+  process.env.NOTIFY_LINK_SECRET = 'test-notify-link-secret';
+  const egDb = require('./db');
+  const egNow = Date.now(), DAY = 86400000;
+  const egUser = async (uid, email, first, last) => egDb.run(
+    'INSERT INTO users (uid, email, name, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,0,0)',
+    [uid, email, uid, egNow - first * DAY, egNow - last * DAY]);
+  await egUser('eg_stale', 'eg-stale@test.com', 90, 60);        // inactive for 60 days
+  await egUser('eg_active', 'eg-active@test.com', 90, 3);        // seen 3 days ago
+  await egUser('eg_new', 'eg-new@test.com', 2, 2);               // joined 2 days ago, never back
+  await egUser('eg_explicit', 'eg-explicit@test.com', 90, 60);   // stale, but asked for the daily
+  await egUser('eg_bounced', 'eg-bounced@test.com', 90, 1);      // active, but the address is dead
+  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_explicit','daily_open','email',1," + egNow + ")");
+  await egDb.run('UPDATE users SET email_bounced_at = ? WHERE uid = ?', [egNow, 'eg_bounced']);
+  const audOf = async (topic) => { const a = srv._notifyAudience(topic, 'email'); return new Set((await egDb.all(`SELECT u.uid ${a.sql}`, a.params)).map(r => r.uid)); };
+  const dailyAud = await audOf('daily_open');
+  ok('gate: an A&R seen within 30 days gets the daily notice', dailyAud.has('eg_active'));
+  ok('gate: an account under 14 days old gets it (habit window)', dailyAud.has('eg_new'));
+  ok('gate: an explicit ON gets it however stale', dailyAud.has('eg_explicit'));
+  ok('gate: a stale account on the default does NOT', !dailyAud.has('eg_stale'));
+  ok('gate: a bounced address is out even when active', !dailyAud.has('eg_bounced'));
+  ok('gate: the constants are the ones the copy quotes (30 / 14 / 4)',
+    srv._ENGAGED.ENGAGED_DAYS === 30 && srv._ENGAGED.NEW_ACCOUNT_DAYS === 14 && srv._ENGAGED.WEEKLY_SUNSET_SENDS === 4, JSON.stringify(srv._ENGAGED));
+
+  console.log('\n— the weekly update: the non-engaged by default, the explicit always, sunset after 4 —');
+  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_active','digest_weekly','email',1," + egNow + ")");
+  let weeklyAud = await audOf('digest_weekly');
+  ok('weekly: a stale account on the default is on it', weeklyAud.has('eg_stale'));
+  ok('weekly: a new account is NOT (it gets the daily)', !weeklyAud.has('eg_new'));
+  ok('weekly: an active account that chose Weekly is on it', weeklyAud.has('eg_active'));
+  ok('weekly: a bounced address is out', !weeklyAud.has('eg_bounced'));
+  // Sunset: four sent weeklies since they were last seen = stop. One sent BEFORE their last
+  // activity does not count against them.
+  for (let i = 0; i < 4; i++) {
+    await egDb.run("INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id) VALUES (?,?,?,?,?,?,?,?,?)",
+      ['eg_w' + i, 'w', 'w', 'email', null, 'done', egNow, 'digest_weekly', '2026-0' + (5 + i) + '-01']);
+    await egDb.run("INSERT INTO notify_recipients (broadcast_id, uid, channel, dest, status, sent_at) VALUES (?,?,?,?,?,?)",
+      ['eg_w' + i, 'eg_stale', 'email', 'eg-stale@test.com', 'sent', i === 0 ? egNow - 70 * DAY : egNow - (10 - i) * DAY]);
+  }
+  weeklyAud = await audOf('digest_weekly');
+  ok('sunset: three unanswered weeklies since last seen is not yet four — still on it', weeklyAud.has('eg_stale'));
+  await egDb.run("INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id) VALUES ('eg_w4','w','w','email',NULL,'done',?, 'digest_weekly','2026-09-01')", [egNow]);
+  await egDb.run("INSERT INTO notify_recipients (broadcast_id, uid, channel, dest, status, sent_at) VALUES ('eg_w4','eg_stale','email','eg-stale@test.com','sent',?)", [egNow - 2 * DAY]);
+  weeklyAud = await audOf('digest_weekly');
+  ok('sunset: the fourth unanswered weekly ends it', !weeklyAud.has('eg_stale'));
+  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_stale','digest_weekly','email',1," + egNow + ")");
+  ok('sunset: an explicit ON is never sunset', (await audOf('digest_weekly')).has('eg_stale'));
+  await egDb.run("DELETE FROM notify_prefs WHERE uid = 'eg_stale'");
+  await egDb.run("UPDATE users SET last_seen = ? WHERE uid = 'eg_stale'", [egNow - DAY]);
+  ok('sunset: coming back (last_seen moves past the sends) restarts the count — and the daily takes over',
+    !(await audOf('digest_weekly')).has('eg_stale') && (await audOf('daily_open')).has('eg_stale'));
+  await egDb.run("UPDATE users SET last_seen = ? WHERE uid = 'eg_stale'", [egNow - 60 * DAY]);
+
+  console.log('\n— the weekly sender: one broadcast per week, drained, names only —');
+  const wq = await srv._enqueueWeeklyUpdate('2026-09-21');
+  ok('weekly: enqueues a broadcast with recipients', wq.broadcastId && wq.queued > 0, JSON.stringify(wq));
+  const wq2 = await srv._enqueueWeeklyUpdate('2026-09-21');
+  ok('weekly: a second enqueue for the same week adopts the same broadcast', wq2.broadcastId === wq.broadcastId, JSON.stringify([wq, wq2]));
+  const wbc = await egDb.all("SELECT * FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = '2026-09-21'");
+  ok('weekly: exactly one broadcast row for the week', wbc.length === 1 && /week of Mon, Sep 21/.test(wbc[0].subject), JSON.stringify(wbc.map(b => b.subject)));
+  const wd = await srv._drainWeeklyUpdate({ broadcastId: wq.broadcastId, limit: 100, base: 'https://x' });
+  ok('weekly: the drain sends them all and marks the broadcast done', wd.remaining === 0 && wd.failed === 0 && wd.sent === wq.queued
+    && (await egDb.get("SELECT status FROM notify_broadcasts WHERE id = ?", [wq.broadcastId])).status === 'done', JSON.stringify(wd));
+  const wc = { weekLabel: 'Mon, Sep 21 – Sun, Sep 27', records: [{ title: 'Song A', artist: 'Artist A' }], ars: [{ name: 'Kelby Cannick', location: 'Atlanta, GA' }],
+    totals: { records: 40, ars: 25, ratings: 300 }, openCount: 8, closesLabel: 'at 3:00 PM ET tomorrow', playUrl: 'https://x/daily?s=abc' };
+  const wh = srv._weeklyUpdateEmailHtml(wc, 'https://x/profile#nt=t'), wt = srv._weeklyUpdateEmailText(wc, 'https://x/profile#nt=t');
+  ok('weekly mail: ranks, names, the open day and the CTA — no score anywhere',
+    /1\. <b>Song A<\/b> — Artist A/.test(wh) && /Kelby Cannick/.test(wh) && /8 records are open/.test(wh) && /Rate today's records/.test(wh)
+      && !/\d\.\d/.test(wt) && /Rating closes at 3:00 PM ET tomorrow/.test(wt) && /Top records:\n1\. Song A — Artist A/.test(wt) && /Manage your notifications/.test(wt), wt);
+  ok('weekly: not due on a non-Wednesday', (await srv._weeklyUpdateDue(Date.parse('2026-10-05T18:00:00Z'))) === null);
+  const dueW = await srv._weeklyUpdateDue(Date.parse('2026-10-07T18:00:00Z')); // Wed 2PM ET
+  ok('weekly: due on Wednesday after 1PM ET, for the last complete week', dueW === '2026-09-28', String(dueW));
+  ok('weekly: not due on Wednesday morning', (await srv._weeklyUpdateDue(Date.parse('2026-10-07T14:00:00Z'))) === null);
+
+  console.log('\n— bounces: a dead address is noted once and mailed never again —');
+  ok('bounce: a hard bounce stamps email_bounced_at', (await srv._noteEmailOutcome('EG-Active@test.com', { ok: false, error: 'x', reject: 'hard-bounce' })) === true
+    && (await egDb.get("SELECT email_bounced_at FROM users WHERE uid = 'eg_active'")).email_bounced_at != null);
+  ok('bounce: a soft bounce (full inbox) does not', (await srv._noteEmailOutcome('eg-new@test.com', { ok: false, error: 'x', reject: 'soft-bounce' })) === false
+    && (await egDb.get("SELECT email_bounced_at FROM users WHERE uid = 'eg_new'")).email_bounced_at == null);
+  ok('bounce: a successful send never does', (await srv._noteEmailOutcome('eg-new@test.com', { ok: true })) === false);
+  ok('bounce: the bounced active A&R is out of the daily audience now', !(await audOf('daily_open')).has('eg_active'));
+  await egDb.run("UPDATE users SET email_bounced_at = NULL WHERE uid = 'eg_active'");
+
+  console.log('\n— announcements default to the active list; everyone is a choice —');
+  const egAud = (await call('/api/admin/notify/audience', null, 'GET', BOOTH)).d;
+  ok('audience readout carries both counts', egAud.engaged && egAud.engaged.email < egAud.email && egAud.engagedDays === 30, JSON.stringify(egAud));
+  const egBc = await call('/api/admin/notify/start', { subject: 'Hi', message: 'Hello', email: true }, 'POST', BOOTH);
+  const egRows = new Set((await egDb.all('SELECT uid FROM notify_recipients WHERE broadcast_id = ?', [egBc.d.broadcastId])).map(r => r.uid));
+  ok('announcement: the default audience is the active list', egRows.has('eg_active') && egRows.has('eg_new') && !egRows.has('eg_stale') && !egRows.has('eg_bounced'), JSON.stringify([...egRows].filter(u => u.startsWith('eg_'))));
+  const egBcAll = await call('/api/admin/notify/start', { subject: 'Hi', message: 'Hello', email: true, audience: 'all' }, 'POST', BOOTH);
+  const egRowsAll = new Set((await egDb.all('SELECT uid FROM notify_recipients WHERE broadcast_id = ?', [egBcAll.d.broadcastId])).map(r => r.uid));
+  ok('announcement: "all" reaches the stale account too, but still not a bounced one', egRowsAll.has('eg_stale') && !egRowsAll.has('eg_bounced'));
+
+  console.log('\n— one-click unsubscribe (List-Unsubscribe-Post) —');
+  const egTok = srv._mintNotifyLink('eg_new');
+  const unsubBad = await fetch(base + '/api/notify/unsubscribe?nt=np1.eg_new.9999999999.nope', { method: 'POST' });
+  ok('unsubscribe: a bad token is refused', unsubBad.status === 401, 'got ' + unsubBad.status);
+  const unsubGet = await fetch(base + '/api/notify/unsubscribe?nt=' + encodeURIComponent(egTok), { redirect: 'manual' });
+  ok('unsubscribe: a browser GET lands on the contact center with the token', unsubGet.status === 302 && /\/profile#nt=/.test(unsubGet.headers.get('location') || ''), unsubGet.status + ' ' + unsubGet.headers.get('location'));
+  ok('unsubscribe: still subscribed after the GET', Number((await egDb.get("SELECT COALESCE(email_opt_out,0) AS o FROM users WHERE uid = 'eg_new'")).o) === 0);
+  const unsubPost = await fetch(base + '/api/notify/unsubscribe?nt=' + encodeURIComponent(egTok), { method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' });
+  ok('unsubscribe: the POST sets the global kill switch', unsubPost.status === 200 && Number((await egDb.get("SELECT COALESCE(email_opt_out,0) AS o FROM users WHERE uid = 'eg_new'")).o) === 1, 'got ' + unsubPost.status);
+  ok('unsubscribe: and the daily audience drops them', !(await audOf('daily_open')).has('eg_new'));
+  ok('send options: the unsubscribe URL rides the header for a registered A&R', /\/api\/notify\/unsubscribe\?nt=np1\./.test(srv._notifyUnsubscribeUrl('https://x', 'eg_new')));
+  delete process.env.NOTIFY_LINK_SECRET;
+  ok('send options: no secret, no header (null URL)', srv._notifyUnsubscribeUrl('https://x', 'eg_new') === null);
+  await egDb.run("DELETE FROM notify_recipients WHERE uid LIKE 'eg_%'");
+  await egDb.run("DELETE FROM notify_broadcasts WHERE id LIKE 'eg_w%'");
+  await egDb.run("DELETE FROM users WHERE uid LIKE 'eg_%'");
+  await egDb.run("DELETE FROM notify_prefs WHERE uid LIKE 'eg_%'");
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.log('\n— tournaments: A&R Wars dashboard, bracket, polls, landing page (045) —');
+  // ═══════════════════════════════════════════════════════════════════════════
+  const tnDb = require('./db');
+  ok('tournament: nothing scheduled is a 404', (await call('/api/tournament?kind=ar', null, 'GET')).status === 404);
+  ok('tournament: /wars serves the landing page', /tournament/i.test(await (await fetch(base + '/wars')).text()));
+  ok('tournament: a non-admin cannot create one', (await call('/api/admin/tournament', { kind: 'ar', number: 1 }, 'POST', CHHOST)).status === 403);
+  const tnBadKind = await call('/api/admin/tournament', { number: 1 }, 'POST', BOOTH);
+  ok('tournament: kind is required', tnBadKind.status === 400, JSON.stringify(tnBadKind.d));
+  const tnMake = await call('/api/admin/tournament', { kind: 'ar', number: 1, eventLocal: '2030-10-25T19:00', remindMin: 120 }, 'POST', BOOTH);
+  ok('tournament: created as a draft with a derived slug', tnMake.status === 200 && tnMake.d.id && tnMake.d.slug === 'wars-1', JSON.stringify(tnMake.d));
+  const TN = tnMake.d.id;
+  let tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: detail reads back the setup', tnd.tournament.status === 'draft' && tnd.tournament.kind === 'ar' && tnd.tournament.filled === 0
+    && tnd.tournament.dateLabel === 'Friday, October 25' && tnd.tournament.timeLabel === '7:00 PM ET' && tnd.tournament.eventLocal === '2030-10-25T19:00'
+    && tnd.tournament.prizeText === '$500 Cash Prize' && tnd.tournament.lockupWord === 'WARS', JSON.stringify(tnd.tournament));
+  ok('tournament: 11 graphic rows, none ready yet', tnd.graphics.length === 11 && tnd.graphics.every(g => !g.ready), JSON.stringify(tnd.graphics.map(g => g.key)));
+  ok('tournament: a draft is not public', (await call('/api/tournament?slug=wars-1', null, 'GET')).status === 404);
+  ok('tournament: cannot open promo with an empty field', (await call('/api/admin/tournament/status', { tournamentId: TN, status: 'promo' }, 'POST', BOOTH)).status === 409);
+
+  // the field: two A&Rs from the user table, six typed in
+  await tnDb.run("UPDATE users SET profile_complete = 1, instagram = '@maya.ig', location = 'Atlanta, GA' WHERE email = 'a@test.com'");
+  const tnSearch = (await call(`/api/admin/tournament/search?id=${TN}&q=maya`, null, 'GET', BOOTH)).d;
+  ok('tournament: search finds a complete profile with the handle cleaned', tnSearch.results.length >= 1 && tnSearch.results[0].handle === 'maya.ig', JSON.stringify(tnSearch));
+  const mayaUid = tnSearch.results[0].userId;
+  const tnAdd1 = await call('/api/admin/tournament/competitor', { tournamentId: TN, userId: mayaUid, name: 'Maya', qualifiedLabel: 'Week 1' }, 'POST', BOOTH);
+  ok('tournament: seat 1 filled from the profile (handle + city copied)', tnAdd1.status === 200 && tnAdd1.d.seat === 1 && tnAdd1.d.seed === 1, JSON.stringify(tnAdd1.d));
+  ok('tournament: the same A&R cannot be seated twice', (await call('/api/admin/tournament/competitor', { tournamentId: TN, userId: mayaUid, name: 'Maya' }, 'POST', BOOTH)).status === 409);
+  const TNC = [tnAdd1.d.competitorId];
+  for (const [i, nm] of ['Theo', 'Iris', 'Dana', 'Jalen', 'Priya', 'Terrence'].entries()) {
+    const r = await call('/api/admin/tournament/competitor', { tournamentId: TN, name: nm, handle: i % 2 ? '' : '@' + nm.toLowerCase(), city: 'Houston, TX', qualifiedLabel: `Week ${i + 2}` }, 'POST', BOOTH);
+    TNC.push(r.d.competitorId);
+  }
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: 7 seats, no bracket yet', tnd.tournament.filled === 7 && tnd.tournament.matches.length === 0);
+  ok('tournament: name is required on a seat', (await call('/api/admin/tournament/competitor', { tournamentId: TN, name: '' }, 'POST', BOOTH)).status === 400);
+  const tnAdd8 = await call('/api/admin/tournament/competitor', { tournamentId: TN, name: 'Simone', handle: 'simone', qualifiedLabel: 'Week 8' }, 'POST', BOOTH);
+  TNC.push(tnAdd8.d.competitorId);
+  ok('tournament: a ninth seat is refused', (await call('/api/admin/tournament/competitor', { tournamentId: TN, name: 'Nine' }, 'POST', BOOTH)).status === 409);
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  const tnSeat1 = tnd.tournament.competitors.find(c => c.id === TNC[0]);
+  ok('tournament: a profile seat carries the profile photo/handle/city', tnSeat1 && tnSeat1.handle === 'maya.ig' && tnSeat1.city === 'Atlanta, GA' && tnSeat1.qualifiedLabel === 'Week 1', JSON.stringify(tnSeat1));
+  const tn_r1 = tnd.tournament.matches.filter(m => m.round_no === 1);
+  ok('tournament: the 8th seat builds the bracket (7 matches)', tnd.tournament.matches.length === 7, 'got ' + tnd.tournament.matches.length);
+  ok('tournament: round 1 is 1v8 4v5 3v6 2v7 by seed', tn_r1.map(m => [m.a_id, m.b_id]).join('|') === [[TNC[0], TNC[7]], [TNC[3], TNC[4]], [TNC[2], TNC[5]], [TNC[1], TNC[6]]].join('|'));
+  ok('tournament: graphic rows seat1..8 + final are ready, champion/bracket not', tnd.graphics.filter(g => g.ready).map(g => g.key).join(',') === 'seat1,seat2,seat3,seat4,seat5,seat6,seat7,seat8,final,bracket', tnd.graphics.filter(g => g.ready).map(g => g.key).join(','));
+
+  // reseed: the order given becomes the seeding, the bracket is rebuilt
+  const tnOrder = [...TNC].reverse();
+  const tnSeed = await call('/api/admin/tournament/seed', { tournamentId: TN, order: tnOrder }, 'POST', BOOTH);
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: reseeding rebuilds round 1', tnSeed.status === 200 && tnd.tournament.matches.find(m => m.round_no === 1 && m.slot === 1).a_id === tnOrder[0], JSON.stringify(tnSeed.d));
+  ok('tournament: a seed order missing someone is refused', (await call('/api/admin/tournament/seed', { tournamentId: TN, order: tnOrder.slice(1) }, 'POST', BOOTH)).status === 400);
+  await call('/api/admin/tournament/seed', { tournamentId: TN, order: TNC }, 'POST', BOOTH);
+  const tnCap = (await call(`/api/admin/tournament/caption?id=${TN}&key=seat3`, null, 'GET', BOOTH)).d;
+  ok('tournament: the seat-3 caption names the qualifier, no hashtags, comments carry the earlier seats', /^Iris qualified for A&R Wars #1 \(Week 3\)\./.test(tnCap.caption) && !/#\w/.test(tnCap.caption.replace('#1', '').replace('#ANR', ''))
+    && tnCap.comments.length === 1 && /@maya\.ig/.test(tnCap.comments[0]) && /@theo/.test(tnCap.comments[0]), JSON.stringify(tnCap));
+  ok('tournament: the final caption asks the question', /Who has the Best Ear\?/.test((await call(`/api/admin/tournament/caption?id=${TN}&key=final`, null, 'GET', BOOTH)).d.caption));
+
+  // promo: the page goes public, the reminder list opens
+  const tnPromo = await call('/api/admin/tournament/status', { tournamentId: TN, status: 'promo' }, 'POST', BOOTH);
+  ok('tournament: promo opens with 8 seats and a date', tnPromo.status === 200, JSON.stringify(tnPromo.d));
+  const tnPub = (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament;
+  ok('tournament: public shape (promo) — 8 competitors, no matches, no champion, premise + question', tnPub && tnPub.competitors.length === 8 && tnPub.matches.length === 0 && tnPub.champion === null
+    && /Best Ear/.test(tnPub.question) && /8 A&Rs play/.test(tnPub.premise) && tnPub.subscribers === 0, JSON.stringify(tnPub && { c: tnPub.competitors.length, m: tnPub.matches.length }));
+  ok('tournament: public competitors carry no private fields', tnPub.competitors.every(c => !('email' in c) && !('user_id' in c) && !('userId' in c)));
+  ok('tournament: ?kind=ar resolves the latest', (await call('/api/tournament?kind=ar', null, 'GET')).d.tournament.id === TN);
+  ok('tournament: remind rejects a bad address', (await call('/api/tournament/remind', { slug: 'wars-1', email: 'nope' })).status === 400);
+  const tnRem = await call('/api/tournament/remind', { slug: 'wars-1', email: 'TnFan@Test.com', name: 'Fan' });
+  ok('tournament: remind adds the email', tnRem.status === 200 && tnRem.d.ok, JSON.stringify(tnRem.d));
+  await call('/api/tournament/remind', { slug: 'wars-1', email: 'tnfan@test.com' });
+  await call('/api/tournament/remind', { slug: 'wars-1', email: 'a@test.com' });
+  ok('tournament: one row per email, case-blind', Number((await tnDb.get('SELECT COUNT(*) AS c FROM tournament_subscribers WHERE tournament_id = ?', [TN])).c) === 2);
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: the console counts the list and how many are A&Rs', tnd.subscribers.count === 2 && tnd.subscribers.ars === 1 && tnd.subscribers.reminded === 0, JSON.stringify(tnd.subscribers));
+  ok('tournament: reminder time = event − remind_min', tnd.tournament.remindAt === tnd.tournament.eventAt - 120 * 60000);
+  const tnCsv = await (await fetch(base + `/api/admin/tournament/subscribers?id=${TN}&format=csv`, { headers: BOOTH })).text();
+  ok('tournament: CSV export has the rows', /^email,name,joined/.test(tnCsv) && /tnfan@test\.com/.test(tnCsv) && /a@test\.com/.test(tnCsv), tnCsv.slice(0, 80));
+  ok('tournament: not due yet, the cron sends nothing', (await srv._tournaments.drainReminders({ ts: Date.now() })).sent === 0);
+  const tnEvent = tnd.tournament.eventAt;
+  ok('tournament: due inside the window, the cron sends to the list once', (await srv._tournaments.drainReminders({ ts: tnEvent - 60 * 60000 })).sent === 2
+    && (await srv._tournaments.drainReminders({ ts: tnEvent - 30 * 60000 })).sent === 0);
+  const tnTok = (await tnDb.get("SELECT unsub_token FROM tournament_subscribers WHERE email = 'tnfan@test.com'")).unsub_token;
+  const tnUnsub = await fetch(base + '/api/tournament/unsubscribe?u=' + encodeURIComponent(tnTok));
+  ok('tournament: one-click unsubscribe', tnUnsub.status === 200 && (await tnDb.get("SELECT unsubscribed_at FROM tournament_subscribers WHERE email = 'tnfan@test.com'")).unsubscribed_at != null);
+  ok('tournament: the public count drops the unsubscribed', (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament.subscribers === 1);
+  ok('tournament: remind-now has nobody left', (await call('/api/admin/tournament/remind-now', { tournamentId: TN }, 'POST', BOOTH)).d.remaining === 0);
+
+  // event night: a Versus session + a pack to pick from
+  const tnSess = await call('/api/session', { name: 'Wars Night', pollType: 'binary' }, 'POST', BOOTH);
+  const TSID = tnSess.d.sessionId, TAH = { 'X-Admin-Token': tnSess.d.adminToken };
+  ok('tournament: cannot go live without a session', (await call('/api/admin/tournament/status', { tournamentId: TN, status: 'live' }, 'POST', BOOTH)).status === 409);
+  const tnPack = await call('/api/admin/sidebet', { name: 'Wars Pack', picksRequired: 6, warsAt: Date.now() + 7 * 86400000, closesAt: Date.now() + 6 * 86400000, status: 'draft', sessionId: TSID }, 'POST', ADMINH);
+  const TPACK = tnPack.d.id;
+  await call('/api/admin/sidebet/songs', { packId: TPACK, songs: [1, 2, 3, 4, 5, 6].map(n => ({ title: 'Pack Song ' + n, artist: 'Artist ' + n })) }, 'POST', ADMINH);
+  const tnLink = await call('/api/admin/tournament', { id: TN, sessionId: TSID, packId: TPACK, watchUrl: 'https://youtube.com/live/x' }, 'POST', BOOTH);
+  ok('tournament: linked to the session and the pack', tnLink.status === 200, JSON.stringify(tnLink.d));
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  ok('tournament: the pack songs are offered for the matchup pickers', tnd.packSongs.length === 6 && tnd.packSongs.every(s => !s.played), JSON.stringify(tnd.packSongs.length));
+  const tnLive = await call('/api/admin/tournament/status', { tournamentId: TN, status: 'live' }, 'POST', BOOTH);
+  ok('tournament: live', tnLive.status === 200 && (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament.liveSession.id === TSID, JSON.stringify(tnLive.d));
+  ok('tournament: the reminder form closes once live-ish (event in the future still accepts)', (await call('/api/tournament/remind', { slug: 'wars-1', email: 'late@test.com' })).status === 200);
+
+  // three voters in the Wars session
+  async function tnJoin(email, name) {
+    const rq = await call('/api/join/request', { sessionId: TSID, email });
+    return (await call('/api/join/verify', { sessionId: TSID, email, code: rq.d.devCode, name })).d.token;
+  }
+  const tn_w1 = await tnJoin('tn_w1@test.com', 'W One'), tn_w2 = await tnJoin('tn_w2@test.com', 'W Two'), tn_w3 = await tnJoin('tn_w3@test.com', 'W Three');
+  const tnMatches = () => tnd.tournament.matches;
+  const mAt = (rn, sl) => tnMatches().find(m => m.round_no === rn && m.slot === sl);
+  async function tnRefresh() { tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d; }
+  async function tnPlay(rn, sl, picks, songs) {
+    await tnRefresh();
+    const m = mAt(rn, sl);
+    const q = await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: m.id, a: songs ? songs[0] : { title: `R${rn}S${sl} A`, artist: 'x' }, b: songs ? songs[1] : { title: `R${rn}S${sl} B`, artist: 'y' } }, 'POST', BOOTH);
+    if (q.status !== 200) return q;
+    await startVoting(TSID, TAH);
+    for (const [tok, pick] of picks) await call('/api/vote', { pick, predict_split: 50 }, 'POST', { 'X-Player-Token': tok });
+    const rat = await call('/api/admin/round/ratify', { sessionId: TSID, roundId: q.d.roundId }, 'POST', TAH);
+    await tnRefresh();
+    return { q, rat, roundId: q.d.roundId };
+  }
+  ok('tournament: the final cannot be queued before both sides are in', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: mAt(3, 1).id, a: { title: 'x' }, b: { title: 'y' } }, 'POST', BOOTH)).status === 409);
+  ok('tournament: a matchup needs a song on each side', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: mAt(1, 1).id, a: { title: 'x' }, b: {} }, 'POST', BOOTH)).status === 400);
+  // tn_r1 slot 1 from the pack — A takes it 2–1
+  const tn_p11 = await tnPlay(1, 1, [[tn_w1, 'A'], [tn_w2, 'A'], [tn_w3, 'B']], [{ packSongId: tnd.packSongs[0].id }, { packSongId: tnd.packSongs[1].id }]);
+  ok('tournament: the matchup opened as a binary round in the session', tn_p11.q.d.opened === true && tn_p11.rat.status === 200, JSON.stringify(tn_p11.q.d) + JSON.stringify(tn_p11.rat.d));
+  const tnRound = await tnDb.get('SELECT tournament_match_id, pack_song_a, pack_song_b, poll_type FROM rounds WHERE id = ?', [tn_p11.roundId]);
+  ok('tournament: the round remembers its match and stamps the pack songs', tnRound.tournament_match_id === mAt(1, 1).id && tnRound.pack_song_a === tnd.packSongs[0].id && tnRound.poll_type === 'binary', JSON.stringify(tnRound));
+  ok('tournament: ratify decides the match for side A and seats them in the semifinal', mAt(1, 1).winner_id === mAt(1, 1).a_id && mAt(1, 1).decided_by === 'polls' && mAt(2, 1).a_id === mAt(1, 1).a_id, JSON.stringify(mAt(2, 1)));
+  ok('tournament: the played pack songs are marked', tnd.packSongs.filter(s => s.played).length === 2);
+  ok('tournament: a decided match cannot be queued again', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: mAt(1, 1).id, a: { title: 'x' }, b: { title: 'y' } }, 'POST', BOOTH)).status === 409);
+  // the seal: while slot 2 is voting the public page shows the count, never the split
+  const tn_m12 = mAt(1, 2);
+  const tn_q12 = await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: tn_m12.id, a: { title: 'Open A', artist: '' }, b: { title: 'Open B', artist: '' } }, 'POST', BOOTH);
+  await startVoting(TSID, TAH);
+  await call('/api/vote', { pick: 'B', predict_split: 50 }, 'POST', { 'X-Player-Token': tn_w1 });
+  await call('/api/vote', { pick: 'B', predict_split: 50 }, 'POST', { 'X-Player-Token': tn_w2 });
+  let tnPubLive = (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament;
+  let pm12 = tnPubLive.matches.find(m => m.id === tn_m12.id);
+  ok('tournament: SEALED — an open poll shows votes but split_a is null', pm12.live === true && pm12.polls.length === 1 && pm12.polls[0].votes === 2 && pm12.polls[0].split_a === null && pm12.winner_id === null, JSON.stringify(pm12));
+  ok('tournament: a second poll cannot be queued while one is open', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: tn_m12.id, a: { title: 'x' }, b: { title: 'y' } }, 'POST', BOOTH)).status === 409);
+  await call('/api/admin/round/ratify', { sessionId: TSID, roundId: tn_q12.d.roundId }, 'POST', TAH);
+  tnPubLive = (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament;
+  pm12 = tnPubLive.matches.find(m => m.id === tn_m12.id);
+  ok('tournament: after ratify the split is public and B advances', pm12.polls[0].split_a === 0 && pm12.winner_id === tn_m12.b_id && tnPubLive.matches.find(m => m.round_no === 2 && m.slot === 1).b_id === tn_m12.b_id, JSON.stringify(pm12));
+  ok('tournament: the loser is marked out on the public field', tnPubLive.competitors.find(c => c.id === tn_m12.a_id).out === true && tnPubLive.competitors.find(c => c.id === tn_m12.b_id).out === false);
+  // a tie goes to the host
+  const tn_p13 = await tnPlay(1, 3, [[tn_w1, 'A'], [tn_w2, 'B']]);
+  ok('tournament: a 50/50 poll leaves the match undecided', tn_p13.rat.status === 200 && mAt(1, 3).winner_id === null, JSON.stringify(mAt(1, 3)));
+  ok('tournament: the host cannot pick someone outside the match', (await call('/api/admin/tournament/decide', { tournamentId: TN, matchId: mAt(1, 3).id, winnerId: TNC[0] }, 'POST', BOOTH)).status === 400);
+  await call('/api/admin/tournament/decide', { tournamentId: TN, matchId: mAt(1, 3).id, winnerId: mAt(1, 3).b_id }, 'POST', BOOTH);
+  await tnRefresh();
+  ok('tournament: host decides the tie, recorded as such, seated in semi 2', mAt(1, 3).winner_id === mAt(1, 3).b_id && mAt(1, 3).decided_by === 'host' && mAt(2, 2).a_id === mAt(1, 3).b_id);
+  ok('tournament: seats and seeding lock once a match is decided', (await call('/api/admin/tournament/seed', { tournamentId: TN, byPoints: true }, 'POST', BOOTH)).status === 409
+    && (await call('/api/admin/tournament/competitor/remove', { tournamentId: TN, competitorId: TNC[7] }, 'POST', BOOTH)).status === 409);
+  // override: clearing a decided match empties everything downstream
+  await call('/api/admin/tournament/decide', { tournamentId: TN, matchId: mAt(1, 1).id, winnerId: null }, 'POST', BOOTH);
+  await tnRefresh();
+  ok('tournament: clearing a match empties its semifinal seat', mAt(1, 1).winner_id === null && mAt(2, 1).a_id === null && mAt(2, 1).b_id === tn_m12.b_id);
+  await call('/api/admin/tournament/decide', { tournamentId: TN, matchId: mAt(1, 1).id, winnerId: mAt(1, 1).b_id }, 'POST', BOOTH);
+  await tnRefresh();
+  ok('tournament: the host can hand it to the other side', mAt(1, 1).winner_id === mAt(1, 1).b_id && mAt(1, 1).decided_by === 'host' && mAt(2, 1).a_id === mAt(1, 1).b_id);
+  // the rest of the night
+  const tn_p14 = await tnPlay(1, 4, [[tn_w1, 'A'], [tn_w2, 'A']]);
+  ok('tournament: round 1 complete', tn_p14.rat.status === 200 && tnMatches().filter(m => m.round_no === 1).every(m => m.winner_id));
+  ok('tournament: the bracket graphic row is ready', tnd.graphics.find(g => g.key === 'bracket').ready === true);
+  const tn_p21 = await tnPlay(2, 1, [[tn_w1, 'A'], [tn_w2, 'A'], [tn_w3, 'B']]);
+  const tn_p22 = await tnPlay(2, 2, [[tn_w1, 'B'], [tn_w2, 'B']]);
+  await tnRefresh();
+  ok('tournament: the final is set', tn_p21.rat.status === 200 && tn_p22.rat.status === 200 && mAt(3, 1).a_id === mAt(2, 1).winner_id && mAt(3, 1).b_id === mAt(2, 2).winner_id, JSON.stringify(mAt(3, 1)));
+  ok('tournament: still live, no champion', tnd.tournament.status === 'live' && tnd.tournament.champion === null);
+  const tn_f1 = await tnPlay(3, 1, [[tn_w1, 'A'], [tn_w2, 'B'], [tn_w3, 'A']]);
+  await tnRefresh();
+  ok('tournament: final poll 1 alone decides nothing (best of 3)', tn_f1.rat.status === 200 && mAt(3, 1).winner_id === null && mAt(3, 1).polls.length === 1);
+  const tn_f2 = await tnPlay(3, 1, [[tn_w1, 'A'], [tn_w2, 'A']]);
+  await tnRefresh();
+  ok('tournament: 2 of 3 decides the final → champion, status complete', tn_f2.rat.status === 200 && mAt(3, 1).winner_id === mAt(3, 1).a_id && tnd.tournament.status === 'complete'
+    && tnd.tournament.champion && tnd.tournament.champion.id === mAt(3, 1).a_id, JSON.stringify(tnd.tournament.champion));
+  ok('tournament: the third poll can still be played (Pick the Hits needs all 18)', (await tnPlay(3, 1, [[tn_w1, 'B']])).q.status === 200);
+  await tnRefresh();
+  ok('tournament: a 4th final poll is refused', (await call('/api/admin/tournament/queue', { tournamentId: TN, matchId: mAt(3, 1).id, a: { title: 'x' }, b: { title: 'y' } }, 'POST', BOOTH)).status === 409);
+  ok('tournament: champion + bracket graphics ready', tnd.graphics.find(g => g.key === 'champion').ready && tnd.graphics.find(g => g.key === 'bracket').ready);
+  const tnHome = (await call('/api/home', null, 'GET')).d;
+  ok('tournament: the homepage winners strip carries the champion (name/handle/photo only)', tnHome.winners.length === 1 && tnHome.winners[0].champion.name === tnd.tournament.champion.name
+    && tnHome.winners[0].slug === 'wars-1' && !('email' in tnHome.winners[0].champion), JSON.stringify(tnHome.winners));
+  ok('tournament: the finished page says so', (await call('/api/tournament?slug=wars-1', null, 'GET')).d.tournament.status === 'complete');
+  ok('tournament: the reminder form is closed once finished', (await call('/api/tournament/remind', { slug: 'wars-1', email: 'late2@test.com' })).status === 409);
+  ok('tournament: ?kind=ar falls back to the latest complete one', (await call('/api/tournament?kind=ar', null, 'GET')).d.tournament.id === TN);
+  const tnChampCap = (await call(`/api/admin/tournament/caption?id=${TN}&key=champion`, null, 'GET', BOOTH)).d;
+  ok('tournament: the champion caption', new RegExp('^' + tnd.tournament.champion.name + ' wins A&R Wars #1 and the \\$500 Cash Prize\\.').test(tnChampCap.caption), tnChampCap.caption);
+  // graphics render live (admin only) and publish without Blob still returns the caption
+  const tnCard = await fetch(base + `/api/card/tournament?t=${TN}&kind=feed&filled=4`, { headers: BOOTH });
+  ok('tournament: the feed flyer renders', tnCard.status === 200 && tnCard.headers.get('content-type') === 'image/png', 'got ' + tnCard.status);
+  ok('tournament: the bracket renders', (await fetch(base + `/api/card/tournament?t=${TN}&kind=bracket`, { headers: BOOTH })).status === 200);
+  ok('tournament: the story + thumb render', (await fetch(base + `/api/card/tournament?t=${TN}&kind=story&stage=final`, { headers: BOOTH })).status === 200
+    && (await fetch(base + `/api/card/tournament?t=${TN}&kind=thumb&stage=champion`, { headers: BOOTH })).status === 200);
+  ok('tournament: graphics are admin only', (await fetch(base + `/api/card/tournament?t=${TN}&kind=feed`)).status === 403);
+  const tnPubl = await call('/api/admin/tournament/publish', { tournamentId: TN, key: 'seat2' }, 'POST', BOOTH);
+  ok('tournament: publish without Blob keeps the caption and records the row', tnPubl.status === 200 && tnPubl.d.hosted === false && /Theo qualified/.test(tnPubl.d.caption)
+    && (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d.graphics.find(g => g.key === 'seat2').publishedAt != null, JSON.stringify(tnPubl.d).slice(0, 200));
+  const tnZipRes = await fetch(base + `/api/admin/tournament/graphics.zip?id=${TN}`, { headers: BOOTH });
+  const tnZip = Buffer.from(await tnZipRes.arrayBuffer());
+  const { zipEntryCount } = require('./zip');
+  ok('tournament: one zip with every available graphic (8 seats × 3 + final 3 + champion 3 + bracket + captions)', tnZipRes.status === 200
+    && tnZipRes.headers.get('content-type') === 'application/zip' && /wars-1-graphics\.zip/.test(tnZipRes.headers.get('content-disposition') || '')
+    && tnZip.slice(0, 2).toString() === 'PK' && zipEntryCount(tnZip) === 32, `status ${tnZipRes.status} entries ${zipEntryCount(tnZip)}`);
+  ok('tournament: the zip names the files by slug/row/kind', tnZip.includes(Buffer.from('wars-1-seat1-feed.png')) && tnZip.includes(Buffer.from('wars-1-bracket-bracket.png')) && tnZip.includes(Buffer.from('wars-1-captions.txt')));
+  ok('tournament: the zip is admin only', (await fetch(base + `/api/admin/tournament/graphics.zip?id=${TN}`)).status === 403);
+  ok('tournament: the list is in the admin index', (await call('/api/admin/tournaments', null, 'GET', BOOTH)).d.tournaments.some(t => t.id === TN && t.champion && t.filled === 8));
+  // the artist kind reuses everything with its own words
+  const tnArt = await call('/api/admin/tournament', { kind: 'artist', number: 1, eventLocal: '2030-11-22T19:00' }, 'POST', BOOTH);
+  ok('tournament: the artist tournament gets its own name, slug, prize and premise', tnArt.d.slug === 'artist-1' && (await call(`/api/admin/tournament?id=${tnArt.d.id}`, null, 'GET', BOOTH)).d.tournament.prizeText === '$1,000 Promo Budget'
+    && /Music Review Tournament/.test((await call(`/api/admin/tournament?id=${tnArt.d.id}`, null, 'GET', BOOTH)).d.tournament.name));
 
   // ======================================================================
   // ACCOUNT CLOSE (046) — an A&R deactivates (reversible) or deletes (anonymize) their own
