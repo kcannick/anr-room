@@ -689,13 +689,14 @@ function elementCountdownSlide(d) {
 //   cover  HOT 100 · the period · Ranked by the Makin' It A&R Team · Submit free (the cut)
 //   list   a page of rows: a 13° rank block (gold at #1 only), title, artist, @handle
 //   team   Ranked by the Makin' It A&R Team · Join the A&R Team (closing)
-// RANK ONLY for records — scores are private to the Track Report, as on the Countdown. The A&R
-// chart prints points (or accuracy): that board is public. Satori cannot measure a wrap, so
+// RANK ONLY for records by default — scores are private to the Track Report, as on the Countdown;
+// `scores: true` (the console's "Show scores") prints each average plus the band key, built to the
+// mockup's &scores=1 variant. The A&R chart always prints points (or accuracy): that board is public. Satori cannot measure a wrap, so
 // lines are clipped off character-width estimates.
 //
 // Data shape (server.js /api/card/chart):
 //   { kind: 'cover'|'list'|'team', mode: 'records'|'ars'|'weekly1s', title, period,
-//     count, sort, span, rows: [{ rank, top, line1, sub, handle, value, unit }] }
+//     count, sort, span, scores, bands, rows: [{ rank, top, line1, sub, handle, value, unit }] }
 const CHART_SIZE = [1080, 1350];
 const CHART_COPY = {
   credit: 'Ranked by the Makin’ It A&R Team',
@@ -722,6 +723,18 @@ function chartMast(d, { period = true, series = true, span = '' } = {}) {
     ...(span ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, marginLeft: 22, marginBottom: 4, ...NOWRAP }, span)] : []),
   ]));
   return kids;
+}
+// The score key, only on a scored chart (&scores=1): skewed outline chips, the range in green
+// (scoring) Space Mono. Big on the cover (range over label, three across), one line on a page.
+function chartKey(bands, big) {
+  const skew = { transform: `skewX(${SKEW}deg)` }, unskew = { transform: `skewX(${-SKEW}deg)` };
+  return row({ gap: big ? 14 : 10 }, (bands || CHART_BANDS).map(b => h({ display: 'flex', flexDirection: big ? 'column' : 'row',
+    alignItems: big ? 'flex-start' : 'center', border: `2px solid ${RECAP.line}`, borderRadius: 6, ...skew,
+    ...(big ? { width: 297 } : {}), paddingLeft: big ? 24 : 14, paddingRight: big ? 18 : 14, paddingTop: big ? 12 : 7, paddingBottom: big ? 12 : 7 }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: big ? 24 : 18, lineHeight: 1.1, color: RECAP.green, ...unskew, ...NOWRAP }, b.range),
+    text({ fontFamily: DISPLAY, fontWeight: big ? 800 : 700, fontSize: big ? 24 : 18, lineHeight: 1.15, letterSpacing: big ? -0.5 : 0,
+      color: big ? RECAP.fg : RECAP.dim, marginTop: big ? 6 : 0, marginLeft: big ? 0 : 10, ...unskew, ...NOWRAP }, b.label),
+  ])));
 }
 function chartCutCta(head, url) {
   return col({ position: 'absolute', left: 80, bottom: 80 }, [
@@ -796,6 +809,7 @@ function elementChartSlide(d) {
       text({ fontFamily: MONO, fontWeight: 700, fontSize: perFs, lineHeight: 1, color: RECAP.fg, textTransform: 'uppercase', ...NOWRAP }, per),
       text(RES_DISPLAY(44, RECAP.fg, { marginTop: 44, letterSpacing: -2 }), ars ? CHART_COPY.by[key] : CHART_COPY.credit),
       text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 32, lineHeight: 1.3, color: RECAP.dim, marginTop: 14, width: 920 }, CHART_COPY.lead[key]),
+      ...(d.scores && !ars ? [row({ marginTop: 40, marginLeft: 4 }, [chartKey(d.bands, true)])] : []),
     ]));
     kids.push(field(470));
     kids.push(ars ? chartCutCta(CHART_COPY.join, JOIN_URL) : chartCutCta(CHART_COPY.submit, SUBMIT_URL));
@@ -810,8 +824,11 @@ function elementChartSlide(d) {
   } else {
     const rows = d.rows || [], n = Math.max(1, rows.length);
     kids.push(...chartMast(d, { span: d.span || '' }));
-    // Rows run from under the masthead to above the submit strip (1350 − 80 − 110, less a gap).
-    const top = 236, rh = Math.floor((1130 - top) / Math.max(n, 5));
+    // Rows run from under the masthead (and the key line, on a scored chart) to above the
+    // submit strip (1350 − 80 − 110, less a gap).
+    const scored = d.scores && !ars;
+    if (scored) kids.push(row({ position: 'absolute', left: 86, top: 226 }, [chartKey(d.bands, false)]));
+    const top = scored ? 290 : 236, rh = Math.floor((1130 - top) / Math.max(n, 5));
     const s = n > 12 ? { compact: true, rh, bw: 66, bh: Math.min(34, rh - 8), bf: 19, t1: 25, t2: 20, t3: 18, vf: 26 }
       : n > 10 ? { rh, bw: 92, bh: Math.min(50, rh - 14), bf: 28, t1: 32, t2: 22, t3: 20, vf: 38 }
       : { rh, bw: 92, bh: 56, bf: 28, t1: 38, t2: 25, t3: 22, vf: 44 };

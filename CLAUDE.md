@@ -232,8 +232,12 @@ live on anr.makinitmag.com.
   keeps points/accuracy. No $500 pill, no "The A&R Room" eyebrow, no red. The caption follows the
   global caption rules: keyword first line, `Comment #REVIEW` / `Comment #ANR` instead of links,
   no emoji or topic hashtags, @handles on the first 10 rows only (Instagram's mention limit).
-  The band key (`0–2.9 Keep it in the studio` / `3–5.9 Release Ready` / `6+ Potential Single`,
-  half-open) is no longer printed; `CHART_BANDS` stays for the console and the API.
+  **"Show scores"** (console checkbox → `&scores=1`, 2026-10-12, operator's ask) prints each
+  record's average and the band key (`0–2.9 Keep it in the studio` / `3–5.9 Release Ready` /
+  `6+ Potential Single`, half-open) on the cover, every page and in the caption; off by default.
+  Never applies to the A&R chart. **Min rounds works on both A&R rankings** (2026-10-12): points
+  defaults to 0 so a series chart still matches the public $500 board until a floor is set,
+  accuracy to 10; the console remembers each separately.
   `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling and moves with the 0–10 switch.
 
 - **Staged rounds + one-button show control + host buzzer** (030): a round now opens into a

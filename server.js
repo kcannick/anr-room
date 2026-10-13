@@ -2947,7 +2947,13 @@ function chartQuery(url) {
     // A&R chart only: rank on points (default) or accuracy. minRounds is the accuracy
     // chart's floor — one lucky round is 100% and must not outrank a month of listening.
     sort: g('sort') === 'accuracy' ? 'accuracy' : 'points',
-    minRounds: int('minRounds', CHART_DEFAULT_MIN_ROUNDS, 0, 100000),
+    // The A&R chart's floor, on either ranking (operator, 2026-10-12). Points defaults to 0 so
+    // a series points chart still matches the public $500 board unless a floor is asked for;
+    // accuracy defaults to 10 — one lucky round is 100% and must not outrank a month of listening.
+    minRounds: int('minRounds', g('sort') === 'accuracy' ? CHART_DEFAULT_MIN_ROUNDS : 0, 0, 100000),
+    // Print the room average (and the band key) on the records carousel and in its caption.
+    // OFF by default: scores are private to the Track Report, like the Daily Countdown.
+    scores: g('scores') === '1',
     limit: int('limit', 100, 1, 1000),
     per: int('per', 10, 5, 20),          // rows per carousel slide (IG caps a carousel at 20)
     order: g('order') === 'countdown' ? 'countdown' : 'top',
@@ -2962,7 +2968,7 @@ async function chartsData(q) {
   const sessions = scope.sessions;
   const out = {
     mode: q.mode, order: q.order, minVotes: q.minVotes, limit: q.limit, per: q.per,
-    dedupe: q.dedupe, scaleMax: shareCards.CHART_SCALE_MAX, bands: shareCards.CHART_BANDS,
+    dedupe: q.dedupe, scores: q.scores && q.mode !== 'ars', scaleMax: shareCards.CHART_SCALE_MAX, bands: shareCards.CHART_BANDS,
     scope: { kind: scope.kind, label: scope.label, rooms: sessions.length,
       from: sessions.length ? Math.min(...sessions.map(s => Number(s.show_at))) : null,
       to: sessions.length ? Math.max(...sessions.map(s => Number(s.show_at))) : null },
@@ -2972,11 +2978,11 @@ async function chartsData(q) {
   if (q.mode === 'ars') {
     const pool = await chartArs(scope, sessions);
     out.sort = q.sort;
-    let all = pool;
+    out.minRounds = q.minRounds;
+    // Same rule as the record floor: under it you are EXCLUDED, not reweighted.
+    let all = pool.filter(r => (r.rounds || 0) >= q.minRounds);
     if (q.sort === 'accuracy') {
-      // Same rule as the record floor: under it you are EXCLUDED, not reweighted.
-      out.minRounds = q.minRounds;
-      all = pool.filter(r => r.accuracy != null && (r.rounds || 0) >= q.minRounds)
+      all = all.filter(r => r.accuracy != null)
         .sort((a, b) => b.accuracy - a.accuracy || b.points - a.points || a.name.localeCompare(b.name));
     }
     const rows = all.slice(0, q.limit).map((r, i) => ({ rank: i + 1, ...r }));
@@ -3083,10 +3089,11 @@ function chartsCsv(d) {
 
 // The Instagram caption (rewritten with the brand redesign, 2026-10-10, to the caption rules in
 // ~/.claude/CLAUDE.md): the first line says what the post is in the words people search;
-// records are RANK ONLY, like the slides (scores are private to the Track Report); comment
+// records are RANK ONLY by default, like the slides (scores are private to the Track Report); comment
 // keywords instead of links (a caption link is not clickable on Instagram); no emoji and no topic
 // hashtags. @handles only on the first CHART_CAPTION_MENTIONS rows — Instagram stops notifying
-// once a caption mentions more than 10 accounts — and plain names after that.
+// once a caption mentions more than 10 accounts — and plain names after that. Scores ride
+// along only when the chart asks for them (&scores=1), the same switch as the slides.
 const CHART_CAPTION_MENTIONS = 10;
 function chartsCaption(d) {
   const L = [];
@@ -3100,15 +3107,20 @@ function chartsCaption(d) {
     L.push('', 'Comment #ANR to join the A&R Team');
     return L.join('\n');
   }
+  // With &scores=1 the caption carries the averages and the band key, matching the slides.
+  const sc = v => (d.scores ? ` (${v.toFixed(1)})` : '');
+  const key = () => { if (d.scores) { d.bands.forEach(b => L.push(`${b.range}: ${b.label}`)); L.push(''); } };
   if (d.mode === 'weekly1s') {
     L.push(`${d.title}, ${d.scope.label}: the top-rated record from each session of the Makin’ It A&R Meeting.`, '');
+    key();
     d.rows.forEach((r, i) => L.push(r.record
-      ? `${r.room}: ${r.record.title} — ${who(i, r.record.ig, r.record.artist)}`
+      ? `${r.room}: ${r.record.title} — ${who(i, r.record.ig, r.record.artist)}${sc(r.record.score)}`
       : `${r.room}: no record cleared the floor`));
   } else {
     L.push(`${d.title}, ${d.scope.label}: the highest-rated new music from independent artists, ranked by the Makin’ It A&R Team.`, '');
-    L.push('Every record was submitted for review to The A&R Meeting and rated by our A&Rs. Swipe to see where each one placed.', '');
-    d.rows.forEach((r, i) => L.push(`${r.rank}. ${r.title} — ${who(i, r.ig, r.artist)}`));
+    L.push(`Every record was submitted for review to The A&R Meeting and rated by our A&Rs${d.scores ? ` from 0 to ${d.scaleMax}` : ''}. Swipe to see where each one placed.`, '');
+    key();
+    d.rows.forEach((r, i) => L.push(`${r.rank}. ${r.title} — ${who(i, r.ig, r.artist)}${sc(r.score)}`));
   }
   L.push('', 'Think you should be here? Submit your music free for a review by the A&R Team.', '',
     'Comment #REVIEW to Submit Music', 'Comment #ANR to join the A&R Team');
@@ -9732,7 +9744,7 @@ async function handleApi(req, res, url) {
       }
       // Chart carousel (admin): slide 0 is the cover, 1..N the list pages, N+1 the closing
       // slide. Same query params as /api/admin/charts, plus &per= (rows per page) and &slide=.
-      // Rank only for records (scores are private to the Track Report); the A&R chart keeps
+      // Rank only for records unless &scores=1 (scores are private to the Track Report); the A&R chart keeps
       // its points or accuracy — that board is public.
       if (kind === 'chart') {
         if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
@@ -9740,7 +9752,8 @@ async function handleApi(req, res, url) {
         const data = await chartsData(q);
         if (!data) return bad(res, 'Scope not found', 404);
         const slide = Math.max(0, parseInt(url.searchParams.get('slide') || '0', 10) || 0);
-        const base = { mode: data.mode, title: data.title, period: data.scope.label, sort: data.sort };
+        const base = { mode: data.mode, title: data.title, period: data.scope.label, sort: data.sort,
+          scores: data.scores, bands: data.bands };
         const pages = Math.ceil(data.rows.length / q.per);
         if (slide === 0) return sendPng(await shareCards.renderPng('chartSlide', { ...base, kind: 'cover', count: data.rows.length }), 'private, no-store');
         if (slide === pages + 1 && pages > 0) return sendPng(await shareCards.renderPng('chartSlide', { ...base, kind: 'team' }), 'private, no-store');
@@ -9753,8 +9766,9 @@ async function handleApi(req, res, url) {
           if (data.mode === 'weekly1s') return { rank: '#1', top: false,
             line1: r.record ? r.record.title : '—',
             sub: r.record ? [r.record.artist, chartDate(r.showAt)].filter(Boolean).join(' · ') : r.room + ' · no record cleared the floor',
-            handle: r.record ? r.record.ig || '' : '' };
-          return { rank: p2(r.rank), top: r.rank === 1, line1: r.title, sub: r.artist || '', handle: r.ig || '' };
+            handle: r.record ? r.record.ig || '' : '', value: data.scores && r.record ? r.record.score.toFixed(1) : '' };
+          return { rank: p2(r.rank), top: r.rank === 1, line1: r.title, sub: r.artist || '', handle: r.ig || '',
+            value: data.scores ? r.score.toFixed(1) : '' };
         });
         const first = chunk[0], last = chunk[chunk.length - 1];
         const span = data.mode === 'weekly1s' ? `${chunk.length} sessions`

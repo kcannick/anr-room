@@ -4694,6 +4694,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('charts: the round floor excludes, and says how many',
     cAccFloor.d.rows.length === 0 && cAccFloor.d.summary.excluded === cAccFloor.d.summary.pool && cAccFloor.d.summary.pool > 0,
     JSON.stringify(cAccFloor.d.summary));
+  // The round floor works on the points ranking too (operator, 2026-10-12), off by default there.
+  ok('charts: the points chart has no round floor unless asked', cA.d.minRounds === 0 && cA.d.summary.excluded === 0, JSON.stringify(cA.d.summary));
+  const cPtsFloor = await chGet(`scope=series&seriesId=${CHSER}&mode=ars&minRounds=9999`);
+  ok('charts: a round floor on the points chart excludes, and says how many',
+    cPtsFloor.d.sort === 'points' && cPtsFloor.d.rows.length === 0 && cPtsFloor.d.summary.excluded === cPtsFloor.d.summary.pool && cPtsFloor.d.summary.pool > 0,
+    JSON.stringify(cPtsFloor.d.summary));
+  const minR = Math.max(...cA.d.rows.map(r => r.rounds));
+  const cPtsSome = await chGet(`scope=series&seriesId=${CHSER}&mode=ars&minRounds=${minR}`);
+  ok('charts: ...keeping everyone at or over it, ranked 1..n',
+    cPtsSome.d.rows.length > 0 && cPtsSome.d.rows.every((r, i) => r.rounds >= minR && r.rank === i + 1)
+    && cPtsSome.d.rows.length === cA.d.rows.filter(r => r.rounds >= minR).length, JSON.stringify(cPtsSome.d.rows.map(r => r.rounds)));
   const cAccCap = await (await fetch(`${base}/api/admin/charts?scope=series&seriesId=${CHSER}&mode=ars&sort=accuracy&minRounds=1&format=caption`, { headers: ADMINH })).text();
   ok('charts: the accuracy caption prints accuracy, not points', /% accuracy$/m.test(cAccCap) && !/ pts$/m.test(cAccCap), cAccCap.slice(0, 300));
 
@@ -4717,6 +4728,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
     /Comment #REVIEW to Submit Music/.test(capTxt) && /Comment #ANR to join the A&R Team/.test(capTxt)
     && !/makinitmag\.com/.test(capTxt) && !/#TheARoom/.test(capTxt) && !/\u{1F525}/u.test(capTxt), capTxt.slice(-200));
   ok('charts: caption lists the #1 record', capTxt.includes('1. Broad Appeal'), capTxt.slice(0, 300));
+  // "Show scores" (operator, 2026-10-12): the averages and the key, on request only.
+  const capSc = await (await fetch(`${base}/api/admin/charts?${chBase}&scores=1&format=caption`, { headers: ADMINH })).text();
+  ok('charts: scores=1 puts each average and the score key in the caption',
+    /^1\. Broad Appeal — .*\(\d\.\d\)$/m.test(capSc) && /Keep it in the studio/.test(capSc) && /Potential Single/.test(capSc), capSc.slice(0, 500));
+  const scData = await chGet(`${chBase}&scores=1`);
+  ok('charts: the chart data says it is scored', scData.d.scores === true && chTop.d.scores === false);
+  const arsSc = await chGet(`scope=series&seriesId=${CHSER}&mode=ars&scores=1`);
+  ok('charts: scores never applies to the A&R chart (it always prints points)', arsSc.d.scores === false);
 
   console.log('\n— charts: the contact export is a separate, deliberate file —');
   const arsQ = `scope=series&seriesId=${CHSER}&mode=ars`;
@@ -4768,6 +4787,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('charts: the closing slide follows the last page', slideEnd.status === 200 && slideEnd.headers.get('content-type') === 'image/png', slideEnd.status);
   const slideAfter = await fetch(`${base}/api/card/chart?${chBase}&slide=${chPages + 2}`, { headers: ADMINH });
   ok('charts: nothing after the closing slide', slideAfter.status === 404, 'status ' + slideAfter.status);
+  const slideSc = await fetch(`${base}/api/card/chart?${chBase}&scores=1&slide=1`, { headers: ADMINH });
+  ok('charts: a scored page renders', slideSc.status === 200 && slideSc.headers.get('content-type') === 'image/png', slideSc.status);
+  const coverSc = await fetch(`${base}/api/card/chart?${chBase}&scores=1&slide=0`, { headers: ADMINH });
+  ok('charts: a scored cover renders', coverSc.status === 200, coverSc.status);
   const slideArs = await fetch(`${base}/api/card/chart?scope=series&seriesId=${CHSER}&mode=ars&slide=1`, { headers: ADMINH });
   ok('charts: an A&R chart page renders', slideArs.status === 200, slideArs.status);
   const png = require('./share-cards.js');
