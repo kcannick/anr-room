@@ -1290,7 +1290,7 @@
       </div>
       <input id="uSearch" placeholder="Search by name or email…" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;border-radius:10px">
       <div class="ufilters" style="margin-top:9px">
-        <select id="uStatus"><option value="">All statuses</option><option value="active">Active</option><option value="blocked">Blocked</option></select>
+        <select id="uStatus"><option value="">All statuses</option><option value="active">Active</option><option value="blocked">Blocked</option><option value="closed">Closed by the A&amp;R</option></select>
         <select id="uSkill"><option value="">All skills</option></select>
         <select id="uSkillMode" style="flex:0 0 auto;min-width:0;max-width:118px"><option value="primary">Primary</option><option value="any">Any role</option></select>
       </div>
@@ -4759,10 +4759,11 @@ async function loadUsers(){
     if(!d.users.length){box.innerHTML='<div class="empty">No users match.</div>';return;}
     box.innerHTML=d.users.map(u=>{
       const av=u.photoUrl?`<img class="uav" src="${esc(u.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(u.name||u.email))}</div>`;
-      const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.role==='host'?'<span class="badge host">Host</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', (!u.blocked&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
+      const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.role==='host'?'<span class="badge host">Host</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', u.account==='deactivated'?'<span class="badge incomplete">Deactivated</span>':'', u.account==='deleted'?'<span class="badge blocked">Deleted</span>':'', (!u.blocked&&u.account==='active'&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
       const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', u.seriesParticipated?(u.seriesParticipated+' series'):'', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
       const editBtn=`<button class="btn ghost sm" onclick="openUserEdit('${u.id}')">Edit profile</button>`;
-      const actions=editBtn+(u.role==='admin'?'<span class="muted" style="font-size:12px">protected</span>':
+      const actions=u.account==='deleted'?'<span class="muted" style="font-size:12px">deleted by the A&amp;R</span>':
+        editBtn+(u.role==='admin'?'<span class="muted" style="font-size:12px">protected</span>':
         `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
         `<button class="btn ${u.blocked?'ghost':'warn'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
         `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`);
@@ -4788,7 +4789,7 @@ window.toggleGiveaway=async(uid,on)=>{try{await api('/api/admin/users/giveaway',
 ['uStatus','uSkill','uSkillMode','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
 // delete-user modal (type-name confirm)
 let udState={id:null,name:''};
-window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='Permanently delete <b style="color:var(--ink)">'+esc(name)+'</b>, including their account, participation history, and evaluations. This changes any rankings that included them and cannot be undone.';$('#udName').textContent=name;$('#udConfirm').value='';$('#udDelete').disabled=true;$('#udErr').textContent='';$('#userDelModal').style.display='flex';};
+window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='Permanently delete <b style="color:var(--ink)">'+esc(name)+'</b>: their name, email, phone, photo and handles are removed and they come off every board. Their ratings and comments stay, with no name, so past room averages and artist reports do not change. This cannot be undone.';$('#udName').textContent=name;$('#udConfirm').value='';$('#udDelete').disabled=true;$('#udErr').textContent='';$('#userDelModal').style.display='flex';};
 $('#udConfirm').oninput=function(){$('#udDelete').disabled=this.value!==udState.name;};
 $('#udCancel').onclick=()=>{$('#userDelModal').style.display='none';};
 $('#udDelete').onclick=async()=>{$('#udErr').textContent='';try{await api('/api/admin/users/delete',{uid:udState.id,confirmName:$('#udConfirm').value});$('#userDelModal').style.display='none';await loadUsers();}catch(e){$('#udErr').textContent=e.message;}};
