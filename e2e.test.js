@@ -4553,7 +4553,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const delRows = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [cbAUid])).c);
   ok('the doomed account has prefs to delete', delRows > 0, 'rows ' + delRows);
   const delRes = await call('/api/admin/users/delete', { uid: cbAUid, confirmName: 'CB Auth' }, 'POST', BOOTH);
-  ok('account hard-deleted', delRes.status === 200, JSON.stringify(delRes.d));
+  ok('admin delete: ok', delRes.status === 200, JSON.stringify(delRes.d));
+  const delUser = await npDb.get('SELECT name, email, deleted_at FROM users WHERE uid = ?', [cbAUid]);
+  ok('admin delete anonymizes (the person goes, the row and history stay)',
+    delUser && delUser.deleted_at != null && delUser.name == null && /^deleted\+/.test(delUser.email), JSON.stringify(delUser));
+  ok('admin delete: a second press is refused', (await call('/api/admin/users/delete', { uid: cbAUid, confirmName: 'CB Auth' }, 'POST', BOOTH)).status === 400);
   const delAfter = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [cbAUid])).c);
   ok('prefs die with the account', delAfter === 0, 'rows ' + delAfter);
 
@@ -5868,6 +5872,109 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tnArt = await call('/api/admin/tournament', { kind: 'artist', number: 1, eventLocal: '2030-11-22T19:00' }, 'POST', BOOTH);
   ok('tournament: the artist tournament gets its own name, slug, prize and premise', tnArt.d.slug === 'artist-1' && (await call(`/api/admin/tournament?id=${tnArt.d.id}`, null, 'GET', BOOTH)).d.tournament.prizeText === '$1,000 Promo Budget'
     && /Music Review Tournament/.test((await call(`/api/admin/tournament?id=${tnArt.d.id}`, null, 'GET', BOOTH)).d.tournament.name));
+
+  // ======================================================================
+  // ACCOUNT CLOSE (046) — an A&R deactivates (reversible) or deletes (anonymize) their own
+  // account. Delete keeps the votes inside the averages; both take them off every board.
+  // ======================================================================
+  console.log('\n— account close: deactivate hides + restores on login; delete anonymizes —');
+  {
+  const acDb = require('./db');
+  const acSer = await call('/api/admin/series/create', { title: 'Close Series', status: 'active' }, 'POST', BOOTH);
+  const AC_SER = acSer.d.seriesId;
+  const acS = await call('/api/session', { name: 'Close Room' }, 'POST', BOOTH);
+  const ACSID = acS.d.sessionId, ACAH = { 'X-Admin-Token': acS.d.adminToken };
+  await call('/api/admin/series/tag', { sessionId: ACSID, seriesId: AC_SER }, 'POST', BOOTH);
+  async function acJoin(email, name) {
+    const jr = await call('/api/join/request', { sessionId: ACSID, email });
+    const pTok = (await call('/api/join/verify', { sessionId: ACSID, email, code: jr.d.devCode, name })).d.token;
+    const ar = await call('/api/auth/request', { email });
+    const av = (await call('/api/auth/verify', { email, code: ar.d.devCode })).d;
+    const AUTH = { 'X-Auth-Token': av.token };
+    await call('/api/me/profile', { name, categories: ['Producer'], primaryCategory: 'Producer', location: 'Atlanta, GA' }, 'POST', AUTH);
+    return { P: { 'X-Player-Token': pTok }, AUTH, uid: av.uid };
+  }
+  const cara = await acJoin('cara.close@test.com', 'Cara Closer');
+  const kip = await acJoin('kip.keep@test.com', 'Kip Keeper');
+  const acR = await call('/api/admin/round', { sessionId: ACSID, song_title: 'Close Song' }, 'POST', ACAH);
+  await startVoting(ACSID, ACAH);
+  await call('/api/vote', { taste: 8, predict: 6 }, 'POST', cara.P);
+  await call('/api/vote', { taste: 4, predict: 6 }, 'POST', kip.P);
+  await call('/api/comment', { roundId: acR.d.roundId, body: 'The hook lands on the second pass.' }, 'POST', cara.P);
+  await call('/api/admin/round/ratify', { sessionId: ACSID, roundId: acR.d.roundId }, 'POST', ACAH);
+  const acRound = async () => acDb.get('SELECT room_average FROM rounds WHERE id = ?', [acR.d.roundId]);
+  const avgBefore = (await acRound()).room_average;
+  const kipPts = async () => (await acDb.get('SELECT v.points FROM votes v JOIN participants p ON p.id = v.participant_id WHERE p.user_id = ? AND v.round_id = ?', [kip.uid, acR.d.roundId])).points;
+  const kipBefore = await kipPts();
+  const board = async () => ((await call(`/api/series/leaderboard?seriesId=${AC_SER}`, null, 'GET')).d.leaderboard || []);
+  const onBoard = async (name) => (await board()).find(r => r.name === name);
+  const caraPts = (await onBoard('Cara Closer') || {}).points;
+  ok('account close: both A&Rs start on the series board', caraPts != null && !!(await onBoard('Kip Keeper')), JSON.stringify(await board()));
+  const acAudBefore = (await call('/api/admin/notify/audience', null, 'GET', BOOTH)).d.email;
+
+  // Gates
+  ok('account close: a player token cannot close an account', (await call('/api/me/account/deactivate', { confirm: true }, 'POST', cara.P)).status === 401);
+  ok('account close: an admin is refused', (await call('/api/me/account/deactivate', { confirm: true }, 'POST', BOOTH)).status === 403);
+  ok('account close: deactivate needs an explicit confirm', (await call('/api/me/account/deactivate', {}, 'POST', cara.AUTH)).status === 400);
+
+  // Deactivate
+  const deact = await call('/api/me/account/deactivate', { confirm: true }, 'POST', cara.AUTH);
+  ok('deactivate: ok', deact.status === 200 && deact.d.deactivated === true, JSON.stringify(deact));
+  ok('deactivate: off the series board', !(await onBoard('Cara Closer')) && !!(await onBoard('Kip Keeper')));
+  ok('deactivate: public profile is gone', (await call('/api/profile?u=' + cara.uid, null, 'GET')).status === 404);
+  ok('deactivate: the account token is dead', (await call('/api/auth/me', null, 'GET', cara.AUTH)).status === 401);
+  ok('deactivate: the per-session player token is dead', (await call('/api/me/state', null, 'GET', cara.P)).status !== 200);
+  ok('deactivate: out of the email audience', (await call('/api/admin/notify/audience', null, 'GET', BOOTH)).d.email === acAudBefore - 1);
+  ok('deactivate: nothing was deleted (the vote is still there)',
+    !!(await acDb.get('SELECT 1 AS x FROM votes v JOIN participants p ON p.id = v.participant_id WHERE p.user_id = ?', [cara.uid])));
+  // Logging back in with the email code brings everything back.
+  const back = await call('/api/auth/request', { email: 'cara.close@test.com' });
+  const backV = (await call('/api/auth/verify', { email: 'cara.close@test.com', code: back.d.devCode })).d;
+  cara.AUTH = { 'X-Auth-Token': backV.token };
+  ok('reactivate: same account on login', backV.uid === cara.uid);
+  ok('reactivate: back on the board with the same points', ((await onBoard('Cara Closer')) || {}).points === caraPts, JSON.stringify(await board()));
+  ok('reactivate: profile is public again', (await call('/api/profile?u=' + cara.uid, null, 'GET')).status === 200);
+
+  // Delete
+  ok('delete: refuses without typing DELETE', (await call('/api/me/account/delete', { code: '000000' }, 'POST', cara.AUTH)).status === 400);
+  ok('delete: refuses before a code is requested', (await call('/api/me/account/delete', { code: '000000', confirmText: 'DELETE' }, 'POST', cara.AUTH)).status === 400);
+  const dc = await call('/api/me/account/delete-code', {}, 'POST', cara.AUTH);
+  ok('delete: code sent to the address on file (masked)', dc.status === 200 && dc.d.to === 'c•••@test.com' && !!dc.d.devCode, JSON.stringify(dc));
+  ok('delete: a login code does not work here', (await call('/api/auth/verify', { email: 'cara.close@test.com', code: dc.d.devCode })).status === 400);
+  const wrong = String((Number(dc.d.devCode) + 1) % 1000000).padStart(6, '0');
+  ok('delete: wrong code refused', (await call('/api/me/account/delete', { code: wrong, confirmText: 'DELETE' }, 'POST', cara.AUTH)).status === 400);
+  const del = await call('/api/me/account/delete', { code: dc.d.devCode, confirmText: 'DELETE' }, 'POST', cara.AUTH);
+  ok('delete: ok', del.status === 200 && del.d.deleted === true, JSON.stringify(del));
+  const gone = await acDb.get('SELECT * FROM users WHERE uid = ?', [cara.uid]);
+  ok('delete: the row is scrubbed and tombstoned',
+    gone && gone.deleted_at != null && gone.name == null && gone.photo_url == null
+      && gone.email === `deleted+${cara.uid}@deleted.invalid` && !gone.profile_complete && gone.phone == null, JSON.stringify(gone));
+  ok('delete: the demographics that feed reports are kept (role, city)', gone.primary_category === 'Producer' && gone.location === 'Atlanta, GA', JSON.stringify(gone));
+  ok('delete: participant rows carry no name or email',
+    !(await acDb.get("SELECT 1 AS x FROM participants WHERE user_id = ? AND (name IS NOT NULL OR email NOT LIKE 'deleted+%')", [cara.uid])));
+  ok('delete: the comment is kept (it is part of the artist\'s report)', !!(await acDb.get('SELECT 1 AS x FROM round_comments WHERE round_id = ?', [acR.d.roundId])));
+  const acRepData = await require('./server')._songReportData(await acDb.get('SELECT * FROM rounds WHERE id = ?', [acR.d.roundId]), await acDb.get('SELECT * FROM sessions WHERE id = ?', [ACSID]));
+  const acCmt = (acRepData.comments || []).find(c => /second pass/.test(c.body));
+  ok('delete: the report still carries the comment, credited "A&R" · role · city, no name', !!acCmt && acCmt.name === 'A&R' && acCmt.role === 'Producer' && acCmt.location === 'Atlanta, GA', JSON.stringify(acRepData.comments));
+  ok('delete: the room average is unchanged', (await acRound()).room_average === avgBefore, `${avgBefore} -> ${(await acRound()).room_average}`);
+  ok('delete: the other A&R\'s points are unchanged', (await kipPts()) === kipBefore);
+  ok('delete: off the board, the other A&R stays', !(await onBoard('Cara Closer')) && !!(await onBoard('Kip Keeper')));
+  ok('delete: signed out', (await call('/api/auth/me', null, 'GET', cara.AUTH)).status === 401);
+  const fresh = await call('/api/auth/request', { email: 'cara.close@test.com' });
+  ok('delete: the email is not "known" any more', fresh.d.known && fresh.d.known.exists === false);
+  const freshV = (await call('/api/auth/verify', { email: 'cara.close@test.com', code: fresh.d.devCode })).d;
+  ok('delete: the same email signs up fresh as a new account', !!freshV.uid && freshV.uid !== cara.uid);
+  const adminList = (await call('/api/admin/users?status=closed', null, 'GET', BOOTH)).d;
+  ok('delete: the console lists it as deleted', (adminList.users || []).some(u => u.id === cara.uid && u.account === 'deleted'), JSON.stringify(adminList.users));
+  ok('delete: the admin cannot unblock a deleted account', (await call('/api/admin/users/block', { uid: cara.uid, blocked: false }, 'POST', BOOTH)).status === 400);
+
+  // Guard: every "may this user appear/earn/be messaged" check goes through activeUserSql().
+  // A hand-written `blocked = 0` would silently let deactivated and deleted A&Rs back in.
+  const srcLines = fs.readFileSync('./server.js', 'utf8').split('\n');
+  const raw = srcLines.map((l, i) => [i + 1, l]).filter(([, l]) =>
+    /(\b\w+\.)?blocked\s*=\s*0|COALESCE\(\s*(\w+\.)?blocked\s*,\s*0\s*\)\s*=\s*0/.test(l) && !/\$\{c\}blocked/.test(l) && !/closed-ok/.test(l) && !/^\s*\/\//.test(l));
+  ok('guard: no hand-written blocked predicate outside activeUserSql()', raw.length === 0, JSON.stringify(raw));
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   server.close();

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account Close Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<link rel="stylesheet" href="/ui.css?v=1">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:24px 16px 60px;background:radial-gradient(130% 70% at 50% -6%, #241a4d 0%, var(--bg) 54%);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;min-height:100vh}
+  .grid{display:flex;flex-wrap:wrap;gap:28px;justify-content:center;align-items:flex-start}
+  .col{width:100%;max-width:400px}
+  .cap{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 10px 2px}
+  .eyebrow{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;margin:0 0 9px}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px}
+  h2{font-size:18px;font-weight:800;margin:2px 0 6px;letter-spacing:-.01em}
+  .dim{color:var(--ink-dim);font-size:13px;line-height:1.5;margin:0}
+  label{display:block;font-size:12px;color:var(--ink-dim);margin:14px 0 6px 2px}
+  input{width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:16px;padding:13px 14px;border-radius:12px;outline:none}
+  input.code{text-align:center;letter-spacing:.45em;font-size:24px;font-family:"Space Mono",monospace}
+  .btn{display:flex;width:100%;font-size:15px;padding:14px 16px;margin-top:14px}
+  .btn.ghost{margin-top:9px}
+  .row{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+  .row b{font-size:14.5px}
+  .hint{font-size:11.5px;color:var(--ink-faint);line-height:1.5;margin:7px 2px 0}
+  .err{color:var(--hot);font-size:13px;margin-top:8px}
+  ul{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.55;color:var(--ink-dim)}
+  ul li{margin:3px 0}
+  .lh{font-size:12px;font-weight:700;margin:14px 0 0;letter-spacing:.04em}
+  .lh.gone{color:var(--hot)} .lh.stay{color:var(--ink)}
+  .sheet{border-color:var(--hot)}
+  .done{text-align:center}
+</style>
+</head>
+<body>
+<div class="grid">
+
+  <!-- 1. The panel, bottom of /profile edit mode (after Notifications) -->
+  <div class="col">
+    <p class="cap">1 · /profile, below Notifications</p>
+    <div class="panel">
+      <p class="eyebrow" style="margin-bottom:4px">Account</p>
+      <h2>Leave the A&amp;R Team</h2>
+      <div class="row" style="border-top:0;margin-top:6px;padding-top:0">
+        <b>Deactivate</b>
+        <p class="dim" style="margin-top:4px">Hide your profile, stop all emails and texts, and take your points off the boards. Log back in with your email any time and everything comes back.</p>
+        <button class="btn ghost">Deactivate my account</button>
+      </div>
+      <div class="row">
+        <b style="color:var(--hot)">Delete</b>
+        <p class="dim" style="margin-top:4px">Permanently remove your name, contact details and photo. This can't be undone.</p>
+        <button class="btn danger">Delete my account</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Deactivate confirm -->
+  <div class="col">
+    <p class="cap">2 · Deactivate — confirm</p>
+    <div class="panel">
+      <h2>Deactivate your account?</h2>
+      <ul>
+        <li>Your profile and name come off every board and page.</li>
+        <li>Your points stop counting toward this month's prize while you're away.</li>
+        <li>No emails or texts from us.</li>
+      </ul>
+      <p class="dim" style="margin-top:12px">To come back, log in with your email. Your points, results and profile will all be where you left them.</p>
+      <button class="btn">Deactivate</button>
+      <button class="btn ghost">Cancel</button>
+    </div>
+  </div>
+
+  <!-- 3. Delete confirm -->
+  <div class="col">
+    <p class="cap">3 · Delete — confirm with email code</p>
+    <div class="panel sheet">
+      <h2 style="color:var(--hot)">Delete your account</h2>
+      <p class="dim">This is permanent. You'll be signed out and won't be able to log back in to this account.</p>
+      <p class="lh gone">What we delete</p>
+      <ul>
+        <li>Your name, email, phone, photo and social handles</li>
+        <li>Your points, results and place on every board</li>
+        <li>Your Sidebet entry, if the contest is still open</li>
+      </ul>
+      <p class="lh stay">What stays, with no name attached</p>
+      <ul>
+        <li>Your ratings, inside past room averages, so the results artists and other A&amp;Rs already received don't change.</li>
+        <li>Your notes to artists, on their reports, signed &ldquo;A&amp;R&rdquo;.</li>
+        <li>Your role and city, which are counted in artists' reports.</li>
+      </ul>
+      <p class="dim" style="margin-top:12px">We sent a code to <b style="color:var(--ink)">k•••@gmail.com</b>.</p>
+      <label>Code</label>
+      <input class="code" value="482913" maxlength="6">
+      <label>Type DELETE to confirm</label>
+      <input value="DELETE">
+      <p class="err">&nbsp;</p>
+      <button class="btn hot" style="margin-top:6px">Delete my account permanently</button>
+      <button class="btn ghost">Cancel</button>
+      <p class="hint">You can sign up again later with the same email, but you'll start from zero.</p>
+    </div>
+  </div>
+
+  <!-- 4. Done -->
+  <div class="col">
+    <p class="cap">4 · After — signed out, on the homepage</p>
+    <div class="panel done">
+      <h2>Your account has been deleted.</h2>
+      <p class="dim">You've been signed out on this device.</p>
+      <a class="btn ghost" href="#">Back to the homepage</a>
+    </div>
+    <div class="panel done" style="margin-top:16px">
+      <h2>Your account is deactivated.</h2>
+      <p class="dim">Log in with your email any time to come back.</p>
+      <a class="btn ghost" href="#">Back to the homepage</a>
+    </div>
+    <p class="hint" style="margin-top:12px">Hosts and admins see a note instead of the buttons: "Host accounts can't be closed here. Contact Makin' It to close this account."</p>
+  </div>
+
+</div>
+</body>
+</html>

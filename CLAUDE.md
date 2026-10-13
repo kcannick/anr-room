@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 045; suite green)
+## Current state (migrations through 046; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -986,6 +986,36 @@ live on anr.makinitmag.com.
   graphics rows · reminder list + CSV · wrap). Platform-admin only. Spec + API contract:
   **docs/specs/tournament-spec.md**; mockups `public/_mock-tournament*.html`,
   `public/brand/wars/`. Dev seed: `scripts/dev-seed-tournament.js`.
+
+- **Close your own account — Deactivate / Delete** (046, 2026-10-05/06, operator's call).
+  Panel at the bottom of `/profile` edit mode (join.html), built to the approved mockup
+  `public/_mock-account-close.html` (approved 2026-10-11).
+  **"Delete" = ANONYMIZE — "we delete the person, not the history"** (operator, 2026-10-06):
+  a true delete would reshape published reports. The A&R's own Delete AND the console's admin
+  Delete both run `anonymizeUser` (the admin route used to hard-delete votes).
+  Two timestamps on `users`, separate from the admin's `blocked`:
+  - **Deactivate** (`deactivated_at`, reversible): nothing removed; off every board, page and
+    audience; all tokens revoked. **Logging in with the email code brings it back**, same points.
+  - **Delete** (`deleted_at`, permanent, `anonymizeUser`): name, email, phone,
+    photo, handles, links, prefs and an unsettled Sidebet entry go; the email becomes
+    `deleted+<uid>@deleted.invalid` so the address can sign up fresh from zero. **KEPT:** the
+    row, votes, point_events, round_reports, round_comments AND the generic demographics
+    (role, categories, city) — they feed the Track Report's averages and "Who it's for"
+    segments, and the report is moving onto the site as a live page, so it must not change
+    because someone left. A closed account's comment is credited "A&R" · role · city, no name;
+    the report's comment query is the one site filtering on `blocked` alone (`closed-ok`).
+  - **Both leave the boards** — a closed account can't win the $500 or a Wars seat.
+  - **One predicate:** `activeUserSql(alias)` / `activeParticipantSql(p)` / `userInactive(u)` in
+    server.js. Every board, payout (scout, referral), audience, profile and signed link goes
+    through it; an e2e guard fails on a hand-written `blocked = 0`. The per-session participant
+    boards (live leaderboard, daily "yesterday" board) had NO blocked filter before — they do now.
+  - Endpoints: `POST /api/me/account/deactivate {confirm:true}`; `/delete-code` then
+    `/delete {code, confirmText:'DELETE'}`. **Account token only** (never a player token or an
+    rf1/np1 link); hosts/admins refused. The code is its own otp scope (`__close__`) and is
+    NEVER shown on screen on a failed send (sendOtp's login fallback would defeat it).
+  - **Brevo:** closing an account deletes the Brevo contact (`brevoForget`, best-effort) and
+    clears its `brevo_sync` ledger rows; the sync skips deactivated/deleted accounts (but still
+    NOT blocked ones — the operator's Brevo rule). A reactivated A&R re-syncs on the next run.
 
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
