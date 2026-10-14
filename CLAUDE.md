@@ -1062,23 +1062,24 @@ wording, use it **verbatim** rather than improving it. Prefer the literal noun (
 "picks", "entry") over an invented one. Rejected examples, for calibration: "Got a good ear for
 music?", "Call all 18 and the money's yours", "surest bet", "dark horses", "your card".
 
-## Canonical naming + prize rules (operator, 2026-10-03 — do not drift from these)
-- **A daily set is named for the day it CLOSES.** It opens the day before, closes on the named
-  date, and is posted the day after: opens Sat Oct 3, closes Sun Oct 4, posted Mon Oct 5 →
-  **"October 4th"**. Public title, verbatim: **"Makin' It Daily Countdown"** /
-  **"October 4th Results"**. Ordinal day ("4th"). Every surface — console, player, emails,
-  Track Report, captions, carousels, winner posts, Asana — prints that ONE date; compute it
-  from `etDay(window_closes_at)`, never `drop_day` (the OPEN day). Open/close/air times appear
-  only as labelled times ("closes tomorrow at 3:00 PM"), never as a second date.
-- **Internal session names = TYPE + date**, verbatim format **"Daily Drop - Oct 4, 2026"**
-  (close date for a drop). The type is in the name because drops share the console with Live
-  Reviews, Takeovers, Tournaments and Versus competitions ("Live Review - Jul 3, 2026"); a
-  one-off event's own title stands in as the type. The public title stays "Makin' It Daily
-  Countdown / October 4th Results".
-- **BETA.** Everything that closed before Mon 2026-09-28 is one series named **BETA**, and
-  its sessions are numbered **"Show N — <internal name>"** (Show 1 – Show 75, date order; a
-  daily set's date is its close day, a live session's the day it ran). From Series 1 on, no
-  number. Renames are retroactive. Rename table: docs/specs/show-naming-rename-table.md.
+## Canonical naming + prize rules (operator, 2026-10-03, naming revised 2026-10-14 — do not drift)
+- **A daily set is named for its RELEASE date** (2026-10-14; replaces the 10-03 close-date
+  rule). It opens two days before release: a full day for A&Rs to review, then a full day to
+  prepare the announcement. Opens Wed Oct 14 3PM, closes Thu Oct 15 3PM, released (countdown
+  posted) Fri Oct 16 3PM → **"October 16th"**. Public title, verbatim: **"Makin' It Daily
+  Countdown"** / **"October 16th Results"**. Ordinal day ("16th"). Every surface — console,
+  player, emails, Track Report, captions, carousels, Asana — prints that ONE date; compute it
+  from `etDay(stream_at)` (the release step), never `drop_day` (the OPEN day) or the close.
+  Open/close times appear only as labelled times ("closes tomorrow at 3:00 PM"), never as a
+  second date. Sets from before the 2026-10-01 clock released on their close day.
+- **Internal session names = TYPE + date**, verbatim format **"Daily Drop - Oct 16, 2026"**
+  (release date for a drop). The type is in the name because drops share the console with
+  Live Reviews, Takeovers, Tournaments and Versus competitions ("Live Review - Jul 3, 2026");
+  a one-off event's own title stands in as the type.
+- **BETA.** Everything that closed before Mon 2026-09-28 is the closed series **BETA** (done
+  in prod 2026-10-10; the active series is Series 2), and its sessions are numbered
+  **"Show N — <internal name>"** (Show 1 – Show 75, date order). After BETA, no number.
+  Renames are retroactive. Rename table: docs/specs/show-naming-rename-table.md.
 - **The $500 prize is never described as monthly, and no date or timing is ever attached to
   it** — not "monthly", "the month's top A&R", "this month's rankings", "Monthly A&R Award",
   nor a week, a date or a deadline. Say "$500 to the top A&R", "the $500 A&R Award", "Top A&Rs
