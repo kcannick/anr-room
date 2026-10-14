@@ -163,7 +163,7 @@ function frame(t) {
     const L = 5, LINES = [
       'Live music review',
       'Rate the records · Predict the average',
-      '<span class="gold">$500</span> to the month’s Top A&R',
+      '<span class="gold">$500</span> to the Top A&R',
       'Submit your music · <span class="mono">makinitmag.com/review</span>',
       '<span class="gold">$1,000</span> Giveaway for participating artists',   // operator, 2026-09-15
     ];
@@ -201,7 +201,7 @@ function frame(t) {
     { at: 1.4,  end: 4.2,  lines: ['Wednesday', '7PM ET'] },
     { at: 4.2,  end: 7.0,  lines: ['Live music', 'review'] },
     { at: 7.0,  end: 9.9,  lines: ['Rate the records', 'Predict the average'], small: true },
-    { at: 9.9,  end: 12.6, lines: ['<span class="gold">$500</span> to the', 'month’s Top A&R'], small: true },
+    { at: 9.9,  end: 12.6, lines: ['<span class="gold">$500</span> to the', 'Top A&R'], small: true },
     { at: 12.6, end: 15,   lines: ['Watch live'], last: true },
   ];
   const sc = SCENES.find(s => t >= s.at && t < s.end) || (t >= 15 ? SCENES[4] : null);

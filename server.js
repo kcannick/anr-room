@@ -3414,7 +3414,7 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
     ['Your A&R Record', cards.score],
     ['Top 8 Songs', cards.songs],
     ['Top 8 A&Rs', cards.ars],
-    [`${GIVEAWAY_PRIZE_LABEL} Monthly A&R Award`, cards.promo],
+    [`${GIVEAWAY_PRIZE_LABEL} A&R Award`, cards.promo],
   ].filter(([, u]) => !!u);
   const block = imgs.map(([alt, u]) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="${escapeHtml(alt)}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
@@ -6201,7 +6201,7 @@ async function dispatchGoLiveNotifications(session, base, channels) {
       const manage = notifyManageUrl(base, p.user_id);
       const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.5">
     <p><strong>${escapeHtml(name)}</strong> is now live in The A&amp;R Room.</p>
-    <p>Evaluate records, predict the room's consensus, and build your monthly ranking.</p>
+    <p>Evaluate records, predict the room's consensus, and build your ranking.</p>
     <p><a href="${url}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none">Enter the evaluation →</a></p>
     <p style="color:#666;font-size:13px">${url}</p>
     ${notifyFooterHtml(manage)}</div>`;
@@ -7198,7 +7198,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, uid, perms: clean });
   }
 
-  // Include / exclude a host from the monthly $500 giveaway (platform-admin only): { uid, on }.
+  // Include / exclude a host from the $500 giveaway (platform-admin only): { uid, on }.
   // Only meaningful for hosts (admins are always in); the session must still be series-tagged.
   if (p === '/api/admin/users/giveaway' && method === 'POST') {
     const admin = await userFromAuth(req);

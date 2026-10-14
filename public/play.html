@@ -11,7 +11,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://anr.makinitmag.com/play">
 <meta property="og:title" content="The A&R Team">
-<meta property="og:description" content="Rate the day’s records and predict the average. $500 to the month’s top A&R.">
+<meta property="og:description" content="Rate the day’s records and predict the average. $500 to the top A&R.">
 <meta property="og:image" content="https://anr.makinitmag.com/brand/og/og-team.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -385,10 +385,10 @@
     </div>
     <!-- $500 GIVEAWAY HOOK — shown only when this session competes for the monthly series. -->
     <div class="panel give-hook hide" id="giveHook" style="margin-top:14px;text-align:center">
-      <div class="gh-prize">🏆 Monthly A&amp;R Award · <b id="ghPrize">$500</b></div>
+      <div class="gh-prize">🏆 A&amp;R Award · <b id="ghPrize">$500</b></div>
       <div class="gh-series" id="ghSeries"></div>
       <div class="gh-board" id="ghBoard"></div>
-      <div class="gh-foot">Top A&amp;Rs in the monthly rankings qualify for A&amp;R Wars, where the champion earns the award. Evaluate records. Predict the consensus. Build your ranking.</div>
+      <div class="gh-foot">Top A&amp;Rs in the rankings qualify for A&amp;R Wars, where the champion earns the award. Evaluate records. Predict the consensus. Build your ranking.</div>
     </div>
     <!-- LIVENESS FEED (3.5d) — recent joins, count-only -->
     <div class="panel" id="livenessPanel" style="margin-top:14px;display:none">
@@ -638,7 +638,7 @@
     <div class="ht-steps">
       <div class="ht-step"><span class="ht-n">①</span><div><b id="htS1t">Evaluate the record 0–9</b><div class="ht-d" id="htS1d"></div></div></div>
       <div class="ht-step"><span class="ht-n">②</span><div><b id="htS2t">Predict the consensus</b><div class="ht-d" id="htS2d"></div></div></div>
-      <div class="ht-step"><span class="ht-n">③</span><div><b id="htS3t">Build your monthly ranking</b><div class="ht-d" id="htS3d"></div></div></div>
+      <div class="ht-step"><span class="ht-n">③</span><div><b id="htS3t">Build your ranking</b><div class="ht-d" id="htS3d"></div></div></div>
     </div>
     <button class="btn" id="htGo" style="width:100%;margin-top:18px">I'm ready to evaluate</button>
   </div>
@@ -1318,7 +1318,7 @@ function renderGiveHook(st){
   const top=(g.board||[]).slice(0,3);
   $('#ghBoard').innerHTML = top.length
     ? top.map(p=>`<div class="gh-row"><span class="gh-rank">${p.rank}</span><span class="gh-name">${esc(p.name)}</span><span class="gh-pts">${Number(p.points)||0} pts</span></div>`).join('')
-    : '<div class="gh-foot" style="margin:0">Set the first mark in the monthly rankings.</div>';
+    : '<div class="gh-foot" style="margin:0">Set the first mark in the rankings.</div>';
   el.classList.remove('hide');
 }
 
@@ -1343,10 +1343,10 @@ function maybeShowHowTo(st){
   }
   if(g){
     $('#htS3t').textContent='Compete for the '+(g.prize||'$500')+' A&R Award';
-    $('#htS3d').textContent='Top A&Rs in this month’s rankings qualify for A&R Wars — the champion earns the '+(g.prize||'$500')+' award. Every completed round contributes to your record.';
+    $('#htS3d').textContent='Top A&Rs in the rankings qualify for A&R Wars — the champion earns the '+(g.prize||'$500')+' award. Every completed round contributes to your record.';
   }else{
-    $('#htS3t').textContent='Build your monthly ranking';
-    $('#htS3d').textContent='Accurate predictions and completed sessions move you up the monthly rankings.';
+    $('#htS3t').textContent='Build your ranking';
+    $('#htS3d').textContent='Accurate predictions and completed sessions move you up the rankings.';
   }
   $('#howToModal').style.display='flex';
 }
