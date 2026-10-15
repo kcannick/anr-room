@@ -5803,7 +5803,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const has = (t, re) => re.test(t);
     const want = [/90 seconds of 1 song/, /play a full song/, /3 full songs/, /No song may be repeated/, /top 18 songs/, /This is WAR/, /\$500 Cash Prize and a feature in the next issue of Makin' It Magazine/,
       /points accumulated for the current series/, /live on camera/, /RSVP to watch live:\s*\S+\/wars/, /Comment #ANR/, /makinitmag\.com\/push/, /\/daily/, /Bonus Points/, /Review daily drops early/,
-      new RegExp('\\?ref=' + mu.uid + '(\\s|$)'), new RegExp('makinitmag\\.com/review\\?ref=' + mu.uid), /A&R review referral link/, /personal join link/, /^Hi Maya,/, /Reply with your makinitmag\.com username so we can add a Win to your account: Top A&R and Chosen to compete in the A&R Wars Tournament\./];
+      new RegExp('\\?ref=' + mu.uid + '(\\s|$)'), new RegExp('makinitmag\\.com/review\\?ref=' + mu.uid), /Here's your personal link to refer new artists: https:\/\/www\.makinitmag\.com\/review\?ref=/, /Here's your personal link to refer new A&Rs: /, /^Hi Maya,/, /Reply with your makinitmag\.com username so we can add a Win to your account: Top A&R and Chosen to compete in the A&R Wars Tournament\./];
     const missing = want.filter(re => !has(m.text, re));
     ok('package: the briefing email carries the operator\'s copy, the personal links and the caption', missing.length === 0 && m.subject === "You're in A&R Wars #1: tournament details and your promo graphics"
       && m.text.includes(tnPkgCap.caption) && /<pre/.test(m.html) && m.html.includes('/wars') && m.html.includes('makinitmag.com/push'), 'missing: ' + missing.map(String).join(' | '));

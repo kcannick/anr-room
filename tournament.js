@@ -37,7 +37,7 @@ const PACKAGE_COPY = {
   prize: "Winner receives $500 Cash Prize and a feature in the next issue of Makin' It Magazine.",
   ties: 'In the event of any ties, the winner will be selected based on points accumulated for the current series.',
   rsvp: 'Have your people RSVP to watch live:',
-  join: 'If you know anyone with a good ear for music, have them join the A&R Team to help determine the winner. Your personal join link:',
+  join: "If you know anyone with a good ear for music, have them join the A&R Team to help determine the winner. Here's your personal link to refer new A&Rs:",
   joinPlain: 'If you know anyone with a good ear for music, have them join the A&R Team to help determine the winner:',
   artists: 'If you know any artists that should be included in our A&R Service Pack, have them submit their record at',
   qualifying: "We're already qualifying A&Rs for our next tournament. Make sure you're rating songs from the daily drop:",
@@ -489,8 +489,8 @@ module.exports = function installTournaments(ctx) {
     const cap = await caption(T, `pkg${seatN}`);
     const subject = `You're in ${K.name} #${num}: tournament details and your promo graphics`;
     const P = PACKAGE_COPY;
-    const bonus2 = reviewUrl ? `${P.bonus[1]} Their personal A&R review referral link: ${reviewUrl}` : P.bonus[1];
-    const bonus3 = `${P.bonus[2]} Your personal join link: ${joinUrl}`;
+    const bonus2 = reviewUrl ? `${P.bonus[1]} Here's your personal link to refer new artists: ${reviewUrl}` : P.bonus[1];
+    const bonus3 = `${P.bonus[2]} Here's your personal link to refer new A&Rs: ${joinUrl}`;
     const text = [
       `Hi ${first},`, '',
       `You're in ${K.name} #${num}, ${when}. ${P.camera}`, '',
@@ -528,8 +528,8 @@ ${para(`${e(P.qualifying)}<br>${a(daily)}`)}
 <h2 style="font-size:20px;line-height:1.2;letter-spacing:-.02em;margin:22px 0 10px">${e(P.bonusTitle)}</h2>
 <ul style="font-size:16px;line-height:1.5;margin:0 0 14px;padding-left:22px">
 <li>${e(P.bonus[0])}</li>
-<li>${e(P.bonus[1])}${reviewUrl ? ` Their personal A&amp;R review referral link:<br>${a(reviewUrl)}` : ''}</li>
-<li>${e(P.bonus[2])} Your personal join link:<br>${a(joinUrl)}</li>
+<li>${e(P.bonus[1])}${reviewUrl ? ` Here's your personal link to refer new artists:<br>${a(reviewUrl)}` : ''}</li>
+<li>${e(P.bonus[2])} Here's your personal link to refer new A&amp;Rs:<br>${a(joinUrl)}</li>
 </ul>
 ${para(e(P.graphics))}
 <pre style="white-space:pre-wrap;font-family:Archivo,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;background:#171328;border:1px solid #2e2750;border-radius:12px;padding:16px;margin:0 0 22px">${e(cap.caption)}</pre>
