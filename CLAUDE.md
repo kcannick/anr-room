@@ -610,8 +610,8 @@ live on anr.makinitmag.com.
   Don't put money behind it yet." — and the score sits under it as evidence. **What to spend
   (operator, 2026-10-15) replaced that line:** every report gives an amount off the room
   average (`SPEND` in track-report.js, fixed edges, independent of the band edges): under 3
-  don't invest · 3–4 up to $300 over the first 3 months · 4–5 at least $300 · 5–6 at least
-  $800 · 6–7 at least $1,500 · 7+ work out what you can afford and how long to push it as a
+  don't invest · 3–4 up to $300 over the first 3 months · 4–5 at least $300 · 5–6 $800, no more than
+  $1,000 until a response justifies more · 6–7 invest at least $1,500 and see where it goes · 7+ work out what you can afford and how long to push it as a
   single. It is the decision headline and always step 02 on the What now page. A dollar
   amount in the email is advice about the artist's own release; the no-upsell test still
   bans anything that sells ours. **Every headline

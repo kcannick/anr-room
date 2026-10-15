@@ -3217,7 +3217,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the share page is last', rpKinds[rpKinds.length - 1] === 'share');
   ok('a prediction gives a setup page; three actions always', rpKinds.includes('setup') && rpKinds.includes('next') && (rpMeta.d.steps || []).length === 3);
   ok('no role segments -> no "who it is for" page', !rpKinds.includes('whofor'));
-  ok('a 6.6 is the invest band, and the decision is a sentence', rpMeta.d.mean === '6.6' && rpMeta.d.band === 'invest' && rpMeta.d.decision === 'Release it. Spend at least $1,500 on it.', rpMeta.d.decision);
+  ok('a 6.6 is the invest band, and the decision is a sentence', rpMeta.d.mean === '6.6' && rpMeta.d.band === 'invest' && rpMeta.d.decision === 'Release it. Invest at least $1,500 in it.', rpMeta.d.decision);
   ok('the report never says how the machine works', !/pool|lottery|queue|submission|ratif/i.test(JSON.stringify(rpMeta.d.steps) + rpMeta.d.decision));
   for (const page of [1, 2, rpKinds.length]) {
     const r = await fetch(base + `/api/card/song-report?r=${RPRID}&page=${page}`, { headers: RPAH });
