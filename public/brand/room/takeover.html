@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A&amp;R Room Takeover</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   A&R Room TAKEOVER — a guest takes the show (promo list 2.8: photo slot +
+   name + handle + date). A sibling of room.html: same lockup, same copy
+   lines, same green CTA; the photo takes the place of the green field and
+   sits behind the 13° cut. No type touches the cut.
+
+     ?f=wide|yt|story|feed|header   1920x1080 · 1280x720 · 1080x1920 · 1080x1350 · 1080x405
+     ?name=Huncho%20Miles       the guest
+     ?handle=huncho._miles999   Instagram handle, printed with the @
+     ?date=2026-10-21           the show (MM.DD.YY in Space Mono)
+     ?time=7PM%20ET
+     ?photo=takeover/x.jpg      relative to room/; ?pos=50%25%2015%25 = object-position
+   ============================================================ */
+:root{ --ground:#0E0C1A; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+#c.wide,#c.yt{width:1920px;height:1080px}
+#c.yt{zoom:.6666667}
+#c.story{width:1080px;height:1920px}
+#c.feed{width:1080px;height:1350px}
+#c.header{width:1080px;height:405px}
+
+.photo{position:absolute;overflow:hidden}
+.photo img{width:100%;height:100%;object-fit:cover;object-position:var(--pos,50% 20%)}
+.scrim{position:absolute;left:0;top:0;right:0;height:52%;background:linear-gradient(180deg,rgba(14,12,26,.9) 0%,rgba(14,12,26,.55) 55%,rgba(14,12,26,0) 100%)}
+.logo{position:absolute;height:40px;width:auto;left:var(--pad)}
+.lock{position:absolute;width:auto}
+.guest{position:absolute;left:var(--pad)}
+.guest small{display:block;font-family:'Space Mono',monospace;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--green);margin-bottom:.35em}
+.guest b{display:block;font-weight:900;line-height:.95;letter-spacing:-.04em;color:var(--ink);white-space:nowrap}
+.guest b::before{content:'';display:inline-block;width:.09em;height:.78em;background:var(--green);transform:skewX(-13deg);margin-right:.22em;vertical-align:-.04em}
+.guest .handle{display:block;font-family:'Space Mono',monospace;font-weight:700;color:var(--dim);margin-top:.5em;letter-spacing:-.01em}
+.date{position:absolute;left:var(--pad);font-family:'Space Mono',monospace;font-weight:700;letter-spacing:-.02em;line-height:1}
+.sub{position:absolute;left:var(--pad);font-weight:500;color:var(--ink);line-height:1.25}
+.sub .mono{font-family:'Space Mono',monospace;font-weight:700}
+.cta{position:absolute;left:var(--pad);font-weight:900;line-height:1;letter-spacing:-.03em;color:var(--green)}
+.cta .url{display:block;font-family:'Space Mono',monospace;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+
+/* ---- feed 1080x1350: photo on top, the cut, the card below ---- */
+.feed{--pad:72px}
+.feed .photo{left:0;top:0;right:0;height:840px;clip-path:polygon(0 0,100% 0,100% 591px,0 840px)}  /* 1080*tan13 = 249 */
+.feed .logo{top:72px}
+.feed .lock{left:0;top:130px;height:200px}
+.feed .guest{top:872px}
+.feed .guest small{font-size:26px}
+.feed .guest b{font-size:96px}
+.feed .guest .handle{font-size:34px}
+.feed .date{top:1092px;font-size:64px}
+.feed .sub{top:1178px;font-size:34px}
+.feed .cta{display:none}
+.feed .url2{position:absolute;left:var(--pad);top:1246px;font-family:'Space Mono',monospace;font-weight:700;font-size:34px;color:var(--green)}
+
+/* ---- story 1080x1920 ---- */
+.story{--pad:72px}
+.story .photo{left:0;top:0;right:0;height:1240px;clip-path:polygon(0 0,100% 0,100% 991px,0 1240px)}
+.story .logo{top:250px}
+.story .lock{left:0;top:320px;height:220px}
+.story .guest{top:1280px}
+.story .guest small{font-size:28px}
+.story .guest b{font-size:108px}
+.story .guest .handle{font-size:38px}
+.story .date{top:1510px;font-size:72px}
+.story .sub{top:1600px;font-size:38px}
+.story .cta{bottom:100px;font-size:52px}
+.story .cta .url{font-size:42px;margin-top:12px}
+.story .url2{display:none}
+
+/* ---- header 1080x405: the stream header; text left, photo right behind a vertical cut ---- */
+.header{--pad:48px}
+.header .photo{top:0;right:0;bottom:0;width:470px;clip-path:polygon(94px 0,100% 0,100% 100%,0 100%)}  /* 405*tan13 = 93.5 */
+.header .scrim{display:none}
+.header .logo{top:40px;height:26px}
+.header .lock{left:8px;top:84px;height:120px}
+.header .guest{top:212px}
+.header .guest small{font-size:16px;margin-bottom:.2em}
+.header .guest b{font-size:60px}
+.header .guest .handle{display:none}
+.header .date{display:none}
+.header .sub{top:318px;font-size:22px}
+.header .sub .mono{color:var(--green)}
+.header .cta{display:none}
+.header .url2{position:absolute;left:var(--pad);top:352px;font-family:'Space Mono',monospace;font-weight:700;font-size:20px;color:var(--green)}
+
+/* ---- wide 1920x1080: text left, photo right behind a vertical cut ---- */
+.wide{--pad:112px}
+.wide .photo{top:0;right:0;bottom:0;width:860px;clip-path:polygon(249px 0,100% 0,100% 100%,0 100%)}
+.wide .scrim{display:none}
+.wide .logo{top:96px}
+.wide .lock{left:16px;top:150px;height:300px}
+.wide .guest{top:480px}
+.wide .guest small{font-size:28px}
+.wide .guest b{font-size:112px}
+.wide .guest .handle{font-size:38px}
+.wide .date{top:740px;font-size:84px}
+.wide .sub{top:848px;font-size:40px}
+.wide .cta{display:none}
+.wide .url2{position:absolute;left:var(--pad);top:966px;font-family:'Space Mono',monospace;font-weight:700;font-size:36px;color:var(--green)}
+</style>
+</head>
+<body>
+<div id="c">
+  <div class="photo"><img id="photo" alt=""></div>
+  <div class="scrim"></div>
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <img class="lock" src="../lockups/anr-room-h.svg" alt="">
+  <div class="guest" id="guest"><small>Takeover:</small><b id="name"></b><span class="handle" id="handle"></span></div>
+  <div class="date" id="date"></div>
+  <div class="sub" id="sub"></div>
+  <div class="cta">Watch live<span class="url">makinitmag.com/live</span></div>
+  <div class="url2">makinitmag.com/live</div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const F = ['wide','yt','story','feed','header'].includes(q.get('f')) ? q.get('f') : 'feed';
+const TIME = q.get('time') || '7PM ET';
+const c = document.getElementById('c');
+c.className = F === 'yt' ? 'wide yt' : F;
+document.getElementById('name').textContent = q.get('name') || 'Guest Name';
+const h = (q.get('handle') || '').replace(/^@/, '');
+document.getElementById('handle').textContent = h ? '@' + h : '';
+const ph = document.getElementById('photo');
+ph.src = q.get('photo') || 'takeover/huncho-miles.jpg';
+if (q.get('pos')) ph.style.objectPosition = q.get('pos');
+const DATE = q.get('date') || '';
+let wd = 'Wednesday';
+if (DATE) {
+  const d = new Date(DATE + 'T12:00:00');
+  wd = d.toLocaleDateString('en-US', { weekday: 'long' });
+  const p2 = n => String(n).padStart(2, '0');
+  document.getElementById('date').textContent = p2(d.getMonth() + 1) + '.' + p2(d.getDate()) + '.' + String(d.getFullYear()).slice(-2);
+}
+let dateTxt = '';
+if (DATE) dateTxt = document.getElementById('date').textContent;
+document.getElementById('sub').innerHTML = (F === 'header' && dateTxt ? '<span class="mono">' + dateTxt + '</span> · ' : '') + wd + ' · <span class="mono">' + TIME + '</span> · Live music review';
+document.title = 'A&R Room Takeover — ' + (q.get('name') || '') + ' — ' + F;
+</script>
+</body>
+</html>
