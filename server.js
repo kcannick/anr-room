@@ -11470,6 +11470,7 @@ const tournaments = require('./tournament')({
   db, id, now, send, bad, readBody, platformAdmin, realtime, shareCards, photoDataUri, uploadPng,
   sendEmail, escapeHtml, asanaFetch, asanaProject: dailyAsanaProject, weeklyReportData,
   lastCompleteWeekStart, etNextDay, etClockLabel, etEpoch, igClean, publicBase, queueRound, canAdminSession,
+  userInactive, maskEmail, noteEmailOutcome, referralLinks, sendSms, maskPhone,
 });
 
 const server = http.createServer(async (req, res) => {

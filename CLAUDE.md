@@ -982,7 +982,33 @@ live on anr.makinitmag.com.
   `tournamentFeed/Story/Thumb/Bracket` (purple lockup block — head-to-head), rendered live and
   admin-only at `/api/card/tournament?t=&kind=&filled=&stage=`; Publish hosts to Blob at
   `tournaments/<slug>/<key>-<kind>.png` and makes one Asana task per row (caption per the SEO
-  rule, no topic hashtags, ≤4 mentions a comment). Public page `/wars` (latest Wars) and
+  rule, no topic hashtags, ≤4 mentions a comment).
+  **The final package** (no migration, 2026-10-14, operator's ask): once all 8 seats are filled,
+  each competitor gets their OWN feed + story to post — stage `package` + `featured=N` on the same
+  flyer element (them big, all 8 seats, purple ring on theirs, headline "<Name> plays for $500."
+  so the amount still prints once, and TWO asks on the field: "RSVP to watch live ·
+  <host>/wars" left, "Join the A&R Team · makinitmag.com/ANR" right, where the prize block sits on
+  the other states — `d.cta2` in `warsFoot`). Rows `pkg1..8` (`asana:false` — NO Asana task, the
+  competitor's post is not the operator's queue; publish hosts the files only). Delivery is
+  **`POST /api/admin/tournament/package-send {tournamentId, key, force?}`**: the competitor
+  briefing in the operator's words verbatim (`PACKAGE_COPY` — on camera, download the Service
+  Pack + pick 18, 3 rounds = 90s / a full song / 3 full songs, 5 songs no repeats, $500 + a
+  magazine feature, ties by current-series points, RSVP link, the competitor's PERSONAL join link
+  `?ref=<uid>` and review referral link, makinitmag.com/push for Service Pack artists, the daily
+  drop, a Bonus Points block, "Reply with your makinitmag.com username so we can add a Win to
+  your account", the caption) with **both PNGs ATTACHED** (`sendEmail` now takes
+  `opts.attachments`, mapped for Resend and Mandrill; renders on the fly when unpublished, so
+  Blob is not a gate). One row per request (the console's "Publish all 8" / "Email every
+  competitor" loop); idempotent on `graphics[key].sentAt` unless `force`; `sentTo` is the MASKED
+  address. **A heads-up TEXT follows the email** (2026-10-15: "<Wars> #N: we just sent an email
+  to <address> with all the details for the tournament. Check Spam and the Promotions tab if you
+  don't see it. Good luck!", GSM-7, one segment for a short address else MMS by sms.js, to `users.phone`
+  with no marketing-consent gate — their own seat; no phone = no text, state `sms` on the row).
+  A competitor with no account (`contact: none`), closed, or bounced is refused with a
+  reason — the per-competitor zip (`graphics.zip?key=pkgN`: feed, story, caption) is the hand-DM
+  path; the bare zip leaves the package rows out. The round format lives ONLY in the email copy.
+  `email_opt_out` is not honoured here (their own participation). Mockup `?stage=package&me=N`
+  in `public/brand/wars/flyer-{feed,story}.html`. Public page `/wars` (latest Wars) and
   `/tournament/<slug>` (`public/tournament.html`, 15s refetch while live, no Ably); reminder
   sent by the daily cron `remind_min` before `event_at` (claimed rows, tagged
   `tournament_reminder`) or by hand. Console: the Tournaments mode (setup · field with

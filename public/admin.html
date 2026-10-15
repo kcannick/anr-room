@@ -754,9 +754,17 @@
             <button class="btn sm" id="btnTnPublish">Publish + make Asana task</button>
           </div>
         </div>
-        <p class="hint" style="margin:0 0 12px">One set per seat as it fills: the qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?"). After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
+        <p class="hint" style="margin:0 0 12px">One set per seat as it fills: the qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?") and each competitor gets a <b>package</b> — their own feed + story to post (them big, all 8 seats, RSVP + Join the A&amp;R Team) that you email them with the tournament briefing and the graphics attached. After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
         <div class="gfx" id="tnGfx"></div>
         <table class="list" id="tnGfxList" style="margin-top:12px"></table>
+        <div class="row hide" id="tnPkgBar" style="gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+          <span class="mono" style="color:var(--ink-faint);font-size:12px">Package:</span>
+          <button class="btn sm" id="btnTnSend" title="Email this competitor the briefing with both graphics attached, then text them a heads-up">Email competitor</button>
+          <button class="btn ghost sm" id="btnTnPkgZip" title="This competitor's feed, story and caption — for a hand DM">Download this package (zip)</button>
+          <span style="flex:1 1 auto"></span>
+          <button class="btn ghost sm" id="btnTnPkgAll" title="Render and host all 8 packages, one at a time">Publish all 8 packages</button>
+          <button class="btn ghost sm" id="btnTnSendAll" title="Email every competitor with an account, one at a time; skips anyone already sent">Email every competitor</button>
+        </div>
         <div id="tnPubOut" class="out hide"></div>
         <p class="hint">A seat added by hand (not a weekly winner) still gets a row: the series is "one flyer per seat", whatever week it was filled.</p>
       </div>
@@ -3536,9 +3544,10 @@ $('#tnBracket').addEventListener('click', async (e) => {
 function tnCardUrl(key, kind){
   const t = TN; if(!t) return '';
   let q = '/api/card/tournament?t=' + encodeURIComponent(t.id) + '&kind=' + kind;
-  const seat = /^seat(\d+)$/.exec(key);
+  const seat = /^seat(\d+)$/.exec(key), pkg = /^pkg(\d)$/.exec(key);
   if(kind === 'bracket') return q;
   if(seat) q += '&filled=' + seat[1] + '&stage=seat';
+  else if(pkg) q += '&filled=8&stage=package&featured=' + pkg[1];
   else if(key === 'final') q += '&filled=8&stage=final';
   else if(key === 'champion') q += '&stage=champion';
   return q;
@@ -3564,11 +3573,23 @@ function renderTnGfx(){
     tnGfxKey = pick ? pick.key : '';
   }
   const g = rows.find(x => x.key === tnGfxKey) || null;
-  $('#btnTnPublish').textContent = g ? `Publish ${g.label} + make Asana task` : 'Publish + make Asana task';
+  const isPkg = x => !!x && x.asana === false;
+  $('#btnTnPublish').textContent = g ? (isPkg(g) ? `Publish ${g.label} (host the files)` : `Publish ${g.label} + make Asana task`) : 'Publish + make Asana task';
   $('#btnTnPublish').disabled = !g || !g.ready;
   $('#btnTnCaption').disabled = !g;
+  // The package bar: email / zip for the selected competitor, publish-all / email-all for the set.
+  const pkgRows = rows.filter(isPkg), pkgReady = pkgRows.some(x => x.ready);
+  $('#tnPkgBar').classList.toggle('hide', !pkgRows.length);
+  const contactNote = x => x.contact === 'email' ? '' : x.contact === 'none' ? 'no account — download and DM' : x.contact === 'inactive' ? 'account closed' : x.contact === 'bounced' ? 'email bounced' : '';
+  $('#btnTnSend').disabled = !(g && isPkg(g) && g.ready && g.contact === 'email');
+  $('#btnTnSend').textContent = g && isPkg(g) ? (g.sentAt ? `Sent ${tnWhen(g.sentAt)} · send again` : `Email ${g.label.replace(/^Package · /, '')}`) : 'Email competitor';
+  $('#btnTnSend').title = g && isPkg(g) && contactNote(g) ? contactNote(g) : 'Email this competitor the briefing with both graphics attached';
+  $('#btnTnPkgZip').disabled = !(g && isPkg(g) && g.ready);
+  $('#btnTnPkgAll').disabled = !pkgReady;
+  $('#btnTnSendAll').disabled = !pkgRows.some(x => x.ready && x.contact === 'email' && !x.sentAt);
   $('#tnGfxList').innerHTML = rows.length ? rows.map(x => {
-    const state = x.publishedAt ? `published ${esc(x.publishedLabel || tnWhen(x.publishedAt))}` : x.ready ? 'ready, not published' : (x.note || x.hint || (x.key === 'final' ? 'unlocks with seat 8' : x.key === 'champion' ? 'after the final' : x.key === 'bracket' ? 'event night' : 'seat not filled'));
+    let state = x.publishedAt ? `published ${esc(x.publishedLabel || tnWhen(x.publishedAt))}` : x.ready ? 'ready, not published' : (x.note || x.hint || (x.key === 'final' ? 'unlocks with seat 8' : x.key === 'champion' ? 'after the final' : x.key === 'bracket' ? 'event night' : isPkg(x) ? 'unlocks with seat 8' : 'seat not filled'));
+    if(isPkg(x) && x.ready) state += x.sentAt ? ` · <b>sent ${esc(tnWhen(x.sentAt))}</b>${x.sentTo ? ' to ' + esc(x.sentTo) : ''}${x.sms === 'sent' ? ' · text sent' + (x.smsTo ? ' to ' + esc(x.smsTo) : '') : x.sms === 'no phone' ? ' · no phone on file' : x.sms === 'failed' ? ' · text failed' : ''}` : contactNote(x) ? ` · ${esc(contactNote(x))}` : ' · not sent';
     const files = x.urls ? Object.keys(x.urls).length + ' file' + (Object.keys(x.urls).length === 1 ? '' : 's') : (x.ready ? 'renders live' : '');
     return `<tr class="pick${x.key === tnGfxKey ? ' sel' : ''}" data-key="${esc(x.key)}">
       <td class="mono" style="color:${x.key === tnGfxKey ? 'var(--accent)' : 'var(--ink-faint)'};width:120px">${esc(x.label)}</td>
@@ -3590,9 +3611,76 @@ function renderTnGfx(){
   const sub = g.label + (g.who ? ' · ' + g.who : '');
   box.innerHTML = g.key === 'bracket'
     ? tile('bracket', 'Bracket · 1080×1350', sub)
-    : tile('feed', 'Feed · 1080×1350', sub) + tile('story', 'Story · 1080×1920', g.label) + tile('thumb', 'Thumbnail · 1920×1080', g.label);
+    : tile('feed', 'Feed · 1080×1350', sub) + tile('story', 'Story · 1080×1920', g.label) + (isPkg(g) ? '' : tile('thumb', 'Thumbnail · 1920×1080', g.label));
   tnLoadImgs(box);
 }
+// One competitor's package by email. `force` re-sends one already sent (the button says so).
+async function tnSendPackage(key, out, { force = false } = {}){
+  const d = await api('/api/admin/tournament/package-send', { tournamentId: TN.id, key, force });
+  return d;
+}
+$('#btnTnSend').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const g = (TN.graphics || []).find(x => x.key === tnGfxKey); if(!g) return;
+  const who = g.label.replace(/^Package · /, '');
+  if(g.sentAt && !confirm(`${who} was already sent this package on ${tnWhen(g.sentAt)}. Send it again?`)) return;
+  const b = e.target, out = $('#tnPubOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = `Rendering and emailing ${who}…`;
+  const k = tnGfxKey;
+  try{
+    const d = await tnSendPackage(k, out, { force: !!g.sentAt });
+    out.textContent = `Sent to ${d.to || who} with ${d.attachments || 0} graphics attached.` + (d.sms === 'sent' ? ` Heads-up text sent to ${d.smsTo || 'their number'}.` : d.sms === 'no phone' ? ' No phone on file, so no text.' : d.sms === 'failed' ? ' The heads-up text failed (see the server log).' : '');
+    await tnLoad(true); tnGfxKey = k; renderTnGfx();
+  }catch(err){ out.textContent = 'Send failed: ' + err.message; b.disabled = false; }
+};
+$('#btnTnPkgZip').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const b = e.target, was = b.textContent; b.disabled = true; b.textContent = 'Building the zip…'; tnErr('');
+  try{
+    const r = await fetch('/api/admin/tournament/graphics.zip?id=' + encodeURIComponent(TN.id) + '&key=' + encodeURIComponent(tnGfxKey), { headers: chAuthHeaders() });
+    if(!r.ok){ let m = 'Could not build the zip (' + r.status + ')'; try{ m = (await r.json()).error || m; }catch{} throw new Error(m); }
+    const bl = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(bl); a.download = (TN.slug || 'tournament') + '-' + tnGfxKey + '.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }catch(err){ tnErr(err.message); }
+  finally{ b.disabled = false; b.textContent = was; }
+};
+// The two set-wide loops: one request per competitor (eight renders in one request would
+// overrun the function cap), and never both at once — each publish and send rewrites the
+// tournament's graphics map, so a race could drop a sentAt.
+let tnPkgBusy = false;
+async function tnPkgLoop(btn, out, label, step){
+  if(!TN || tnPkgBusy) return; tnPkgBusy = true;
+  const all = [$('#btnTnPkgAll'), $('#btnTnSendAll'), $('#btnTnSend'), $('#btnTnPublish')]; all.forEach(b => b.disabled = true); tnErr('');
+  out.classList.remove('hide');
+  const rows = (TN.graphics || []).filter(x => x.asana === false && x.ready);
+  const done = [], skipped = [];
+  try{
+    for(const g of rows){
+      out.textContent = `${label} ${g.label.replace(/^Package · /, '')}… (${done.length + skipped.length + 1} of ${rows.length})`;
+      const r = await step(g);
+      (r.skip ? skipped : done).push(`${g.label.replace(/^Package · /, '')}${r.note ? ' — ' + r.note : ''}`);
+    }
+    out.innerHTML = `${esc(label)} done: ${done.length}.` + (done.length ? '\n' + done.map(esc).join('\n') : '') + (skipped.length ? `\n\nSkipped ${skipped.length}:\n${skipped.map(esc).join('\n')}` : '');
+  }catch(err){ out.textContent = `Stopped after ${done.length}: ${err.message}`; }
+  finally{ tnPkgBusy = false; const k = tnGfxKey; await tnLoad(true); tnGfxKey = k; renderTnGfx(); }
+}
+$('#btnTnPkgAll').onclick = (e) => tnPkgLoop(e.target, $('#tnPubOut'), 'Publishing', async g => {
+  const d = await api('/api/admin/tournament/publish', { tournamentId: TN.id, key: g.key });
+  return { note: d.hosted ? 'hosted' : 'rendered, not hosted (BLOB_READ_WRITE_TOKEN unset?)' };
+});
+$('#btnTnSendAll').onclick = (e) => {
+  const n = (TN.graphics || []).filter(x => x.asana === false && x.ready && x.contact === 'email' && !x.sentAt).length;
+  if(!confirm(`Email the package to ${n} competitor${n === 1 ? '' : 's'} with an account? Anyone already sent is skipped.`)) return;
+  tnPkgLoop(e.target, $('#tnPubOut'), 'Emailing', async g => {
+    if(g.sentAt) return { skip: true, note: 'already sent ' + tnWhen(g.sentAt) };
+    if(g.contact !== 'email') return { skip: true, note: g.contact === 'none' ? 'no account — download and DM' : g.contact === 'inactive' ? 'account closed' : 'email bounced' };
+    const d = await tnSendPackage(g.key, $('#tnPubOut'));
+    return { note: 'sent to ' + (d.to || '') + (d.sms === 'sent' ? ', text sent' : d.sms === 'no phone' ? ', no phone' : d.sms === 'failed' ? ', text FAILED' : '') };
+  });
+};
 function tnWhen(ms){ try{ return fmtET(ms, { month: 'short', day: 'numeric' }); }catch(e){ return ''; } }
 $('#tnGfxList').addEventListener('click', (e) => {
   const tr = e.target.closest('tr.pick'); if(!tr || e.target.closest('a')) return;
@@ -3616,7 +3704,8 @@ async function tnPublish(key, out, btn){
     const lines = [];
     Object.keys(urls).forEach(k => lines.push(k + ': ' + (urls[k] ? `<a href="${esc(urls[k])}" target="_blank" rel="noopener">${esc(urls[k])}</a>` : 'not hosted (BLOB_READ_WRITE_TOKEN unset?)')));
     if(!Object.keys(urls).length) lines.push('urls: none hosted (BLOB_READ_WRITE_TOKEN unset?)');
-    lines.push(d.asana && d.asana.url ? `Asana: <a href="${esc(d.asana.url)}" target="_blank" rel="noopener">${esc(d.asana.url)}</a>` : 'Asana: no task made' + (d.asanaError ? ' — ' + esc(d.asanaError) : ''));
+    if(/^pkg\d$/.test(key)) lines.push('Asana: not for a package — email the competitor or download the zip');
+    else lines.push(d.asana && d.asana.url ? `Asana: <a href="${esc(d.asana.url)}" target="_blank" rel="noopener">${esc(d.asana.url)}</a>` : 'Asana: no task made' + (d.asanaError ? ' — ' + esc(d.asanaError) : ''));
     if(d.error || d.errors) lines.push('errors: ' + esc(JSON.stringify(d.error || d.errors)));
     if(d.caption) lines.push('\n' + esc(d.caption));
     out.innerHTML = lines.join('\n');

@@ -23,14 +23,44 @@ const KINDS = {
 const STATUSES = ['draft', 'promo', 'live', 'complete'];
 const REMIND_BATCH = 40;
 const CTA_URL = 'makinitmag.com/ANR';
+const HOUSE_HANDLE = '@makinitmusicreview';
+const SUBMIT_PACK_URL = 'https://www.makinitmag.com/push';   // where an artist submits for the Service Pack (operator, 2026-10-14)
 const CANDIDATE_WEEKS = 8;
+// The competitor briefing that rides the package email — the operator's wording, verbatim
+// (2026-10-14). The round format lives ONLY here; the graphics and the public page do not
+// carry it.
+const PACKAGE_COPY = {
+  camera: 'All participants will be joining live on camera for the tournament.',
+  pack: 'Download the A&R Service Pack, listen to all the records and pick your top 18 tracks. The competition is 3 rounds.',
+  rounds: ['First round you get to play the first 90 seconds of 1 song.', 'Second round you will play a full song.', 'Final round you get to play 3 full songs.'],
+  strategy: 'No song may be repeated. You have a total of 5 songs that you can play but you should have a list of your top 18 songs. Be strategic with what you play. This is WAR.',
+  prize: "Winner receives $500 Cash Prize and a feature in the next issue of Makin' It Magazine.",
+  ties: 'In the event of any ties, the winner will be selected based on points accumulated for the current series.',
+  rsvp: 'Have your people RSVP to watch live:',
+  join: 'If you know anyone with a good ear for music, have them join the A&R Team to help determine the winner. Your personal join link:',
+  joinPlain: 'If you know anyone with a good ear for music, have them join the A&R Team to help determine the winner:',
+  artists: 'If you know any artists that should be included in our A&R Service Pack, have them submit their record at',
+  qualifying: "We're already qualifying A&Rs for our next tournament. Make sure you're rating songs from the daily drop:",
+  bonusTitle: 'Bonus Points',
+  bonus: [
+    'Review daily drops early for bonus points.',
+    'Earn bonus points from any artist you referred who gets reviewed. The better their song averages, the more points you earn.',
+    'You also earn bonus points based on A&Rs you refer. The better they do, the more bonus points you earn.',
+  ],
+  graphics: 'Download the attached promotional graphics and start promoting. Here is a caption you can post as-is:',
+  username: 'Reply with your makinitmag.com username so we can add a Win to your account: Top A&R and Chosen to compete in the A&R Wars Tournament.',
+};
+// The heads-up text that follows the email. Operator's wording, 2026-10-15: names the address it
+// went to and where to look. GSM-7; a long address can push it past one segment, and sms.js then
+// sends it as MMS on its own.
+const packageSmsBody = (name, num, email) => `${name} #${num}: we just sent an email to ${email} with all the details for the tournament. Check Spam and the Promotions tab if you don't see it. Good luck!`;
 const CANDIDATE_TTL_MS = 60000;
 
 module.exports = function installTournaments(ctx) {
   const { db, id, now, send, bad, readBody, platformAdmin, realtime, shareCards, photoDataUri,
     uploadPng, sendEmail, escapeHtml, asanaFetch, asanaProject, weeklyReportData,
     lastCompleteWeekStart, etNextDay, etClockLabel, etEpoch, igClean, publicBase, queueRound,
-    canAdminSession } = ctx;
+    canAdminSession, userInactive, maskEmail, noteEmailOutcome, referralLinks, sendSms, maskPhone } = ctx;
 
   // ── labels ──────────────────────────────────────────────────────────────────────────
   const dateLabel = ts => ts ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(Number(ts))) : null;
@@ -194,23 +224,62 @@ module.exports = function installTournaments(ctx) {
       rows.push({ key: `seat${i}`, label: c ? `Seat ${i} · ${c.name}` : `Seat ${i}`, ready: !!c, kinds: ['feed', 'story', 'thumb'] });
     }
     rows.push({ key: 'final', label: 'Final promo · all 8 seats', ready: n >= B.FIELD, kinds: ['feed', 'story', 'thumb'] });
+    // The final package: once the field is set, each competitor gets their own feed + story
+    // to post (them big, all 8 seats, RSVP + Join asks). No Asana task — the email to the
+    // competitor (package-send) and the per-competitor zip are the delivery.
+    for (let i = 1; i <= B.FIELD; i++) {
+      const c = seats[i - 1];
+      rows.push({ key: `pkg${i}`, label: c ? `Package · ${c.name}` : `Package · Seat ${i}`, ready: n >= B.FIELD, kinds: ['feed', 'story'],
+        asana: false, competitorId: c ? c.id : null, contact: c && c.user_id ? 'account' : 'none' });
+    }
     rows.push({ key: 'champion', label: 'Champion', ready: !!T.winner_competitor_id, kinds: ['feed', 'story', 'thumb'] });
     rows.push({ key: 'bracket', label: 'Bracket (event night)', ready: T.matches.length > 0, kinds: ['bracket'] });
     return rows.map(r => {
       const g = T.graphicsMap[r.key] || null;
       return { ...r, urls: g && g.urls ? g.urls : null, publishedAt: g ? g.publishedAt || null : null,
-        asanaTaskId: g ? g.asanaTaskId || null : null, asanaUrl: g ? g.asanaUrl || null : null };
+        asanaTaskId: g ? g.asanaTaskId || null : null, asanaUrl: g ? g.asanaUrl || null : null,
+        ...(r.asana === false ? { sentAt: g ? g.sentAt || null : null, sentTo: g ? g.sentTo || null : null, sms: g ? g.sms || null : null, smsTo: g ? g.smsTo || null : null } : {}) };
     });
   }
+  // The console's rows plus, for the package rows, whether the competitor can be emailed:
+  // 'email' (an active account with a live address) · 'none' (no account — download the zip
+  // and DM it) · 'inactive' (blocked or closed) · 'bounced'. One users query for the eight.
+  async function graphicRowsWithContact(T) {
+    const rows = graphicRows(T);
+    const uids = [...new Set(T.competitors.map(c => c.user_id).filter(Boolean))];
+    const by = new Map();
+    if (uids.length) {
+      const us = await db.all(`SELECT uid, email, blocked, deactivated_at, deleted_at, email_bounced_at FROM users WHERE uid IN (${uids.map(() => '?').join(',')})`, uids);
+      for (const u of us) by.set(u.uid, u);
+    }
+    for (const r of rows) {
+      if (r.asana !== false) continue;
+      const c = r.competitorId ? compById(T, r.competitorId) : null;
+      r.contact = contactState(c && c.user_id ? by.get(c.user_id) : null);
+    }
+    return rows;
+  }
+  function contactState(u) {
+    if (!u || !u.email) return 'none';
+    if (userInactive(u)) return 'inactive';
+    if (u.email_bounced_at) return 'bounced';
+    return 'email';
+  }
   function keyToRender(T, key) {
-    // → { stage, filled } for the flyers, or { bracket: true }
+    // → { stage, filled } for the flyers, { stage:'package', featured } for a competitor's own
+    // flyer, or { bracket: true }
     if (key === 'bracket') return { bracket: true };
     if (key === 'champion') return { stage: 'champion', filled: filledCount(T) };
     if (key === 'final') return { stage: 'final', filled: B.FIELD };
     const m = /^seat(\d)$/.exec(key || '');
     if (m) return { stage: 'seat', filled: Number(m[1]) };
+    const pm = /^pkg([1-8])$/.exec(key || '');
+    if (pm) return { stage: 'package', filled: B.FIELD, featured: Number(pm[1]) };
     return null;
   }
+  const isPackageKey = key => /^pkg[1-8]$/.test(key || '');
+  // The RSVP URL as printed on a graphic: the public host without the scheme, plus /wars.
+  const rsvpUrl = () => publicBase().replace(/^https?:\/\//, '') + '/wars';
 
   // ── Satori data ─────────────────────────────────────────────────────────────────────
   const SIL = null; // photo null → the element draws the silhouette
@@ -221,19 +290,29 @@ module.exports = function installTournaments(ctx) {
     if (!T.photoCache.has(c.id)) T.photoCache.set(c.id, await photoDataUri(c.photo_url));
     return T.photoCache.get(c.id);
   }
-  async function flyerData(T, { stage, filled } = {}) {
+  async function flyerData(T, { stage, filled, featured } = {}) {
     const K = kindOf(T);
     const seats = [...T.competitors].sort((a, b) => (a.seat || a.seed) - (b.seat || b.seed));
     const n = Math.max(0, Math.min(B.FIELD, filled != null ? Number(filled) : seats.length));
     const st = stage || stageOf(T);
     const champ = T.winner_competitor_id ? compById(T, T.winner_competitor_id) : null;
-    const qualifier = st === 'seat' ? seats[n - 1] || null : null;
+    // `featured` is a seat number: the competitor whose own package this is. All 8 seats show.
+    const fIdx = st === 'package' ? Math.max(1, Math.min(B.FIELD, Number(featured) || 1)) : null;
+    const qualifier = st === 'seat' ? seats[n - 1] || null : st === 'package' ? seats[fIdx - 1] || null : null;
     const bigC = st === 'champion' ? champ : qualifier;
     const photos = new Map();
     for (const c of seats.slice(0, st === 'seat' ? n : B.FIELD)) photos.set(c.id, await photoOf(T, c));
     const eyebrow = `${K.name === KINDS.ar.name ? 'A&R Wars' : "$1,000 Music Review Tournament"} #${T.number || 1}`;
-    let headline, big, cta;
-    if (st === 'champion') {
+    let headline, big, cta, cta2 = null;
+    if (st === 'package') {
+      // "<Name> plays for $500." — the one prize mention on this flyer; the field carries two
+      // asks (RSVP + Join) where the prize block sits on the other states.
+      headline = qualifier ? `${qualifier.name} plays for ${K.prizeAmount}.` : `${K.name} #${T.number || 1}`;
+      big = qualifier ? { name: qualifier.name, handle: qualifier.handle || null, photo: photos.get(qualifier.id) || SIL,
+        tag: qualifier.qualified_label ? `Qualified · ${qualifier.qualified_label}` : `Qualified · Seat ${fIdx}` } : null;
+      cta = { label: 'RSVP to watch live', url: rsvpUrl() };
+      cta2 = { label: T.kind === 'ar' ? 'Join the A&R Team' : 'Vote live at', url: CTA_URL };
+    } else if (st === 'champion') {
       headline = champ ? `${champ.name} wins ${K.prizeAmount}.` : `${K.name} champion`;
       big = champ ? { name: champ.name, handle: champ.handle || null, photo: photos.get(champ.id) || SIL, tag: 'Champion' } : null;
       cta = { label: 'Watch the replay', url: CTA_URL };
@@ -253,7 +332,7 @@ module.exports = function installTournaments(ctx) {
         ring: c && champ && st === 'champion' && c.id === champ.id ? 'champion' : (c && qualifier && c.id === qualifier.id ? 'qualifier' : null) });
     }
     return { lockupWord: K.lockupWord, eyebrow, dateLabel: dateLabel(T.event_at) || 'Date to be announced', timeLabel: timeLabel(T.event_at) || '',
-      stage: st, headline, premise: K.premise, prizeAmount: K.prizeAmount, prizeLabel: K.prizeLabel, big, seats: seatRows, cta, bigC };
+      stage: st, headline, premise: K.premise, prizeAmount: K.prizeAmount, prizeLabel: K.prizeLabel, big, seats: seatRows, cta, cta2, bigC };
   }
   async function bracketData(T) {
     const K = kindOf(T);
@@ -299,6 +378,19 @@ module.exports = function installTournaments(ctx) {
     } else if (r.stage === 'final') {
       lines = [`${K.name} #${T.number || 1} is ${when}. ${K.question}`, K.premise, `Vote live at ${CTA_URL}.`, join];
       comments = chunk(seats.map(tag), 4).map(g => `The ${who} in the tournament: ${g.join(', ')}`);
+    } else if (r.stage === 'package') {
+      // The competitor's own caption, first person: the keyword line, the premise and the
+      // prize, when to watch with the RSVP link, the join ask by comment keyword, the house
+      // account, then the other seven (eight mentions in all, under Instagram's ten).
+      const me = seats[r.featured - 1] || null;
+      const others = seats.filter(c => !me || c.id !== me.id);
+      const joinLine = T.kind === 'ar' ? 'Join the A&R Team and vote: Comment #ANR' : 'Vote on every matchup: Comment #ANR to join the A&R Team';
+      // The premise with the amount folded in ("takes the $500 Cash Prize"), so the prize is named once.
+      const premise = K.premise.replace(/the cash prize\.$/, `the ${K.prizeText}.`).replace(/the Promo Budget\.$/, `the ${K.prizeText}.`);
+      lines = [`I'm in ${K.name} #${T.number || 1}, the ${who === 'A&Rs' ? 'A&R' : 'artist'} tournament from Makin' It Magazine. ${premise}`,
+        `Watch live ${when}. RSVP: ${rsvpUrl()}`, joinLine, HOUSE_HANDLE,
+        ...(others.length ? [`Also in the tournament: ${others.map(tag).join(', ')}`] : [])];
+      return { caption: lines.join('\n\n'), comments: [], tagOnGraphic: seats.map(tag) };
     } else {
       const q = seats[r.filled - 1];
       lines = [`${q ? q.name : 'A new competitor'} qualified for ${K.name} #${T.number || 1}${q && q.qualified_label ? ' (' + q.qualified_label + ')' : ''}.`,
@@ -375,6 +467,74 @@ module.exports = function installTournaments(ctx) {
 <p style="margin:0 0 26px"><a href="${escapeHtml(watch)}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:800;font-size:16px;padding:14px 22px;border-radius:12px;text-decoration:none">Watch and vote</a></p>
 <p style="font-size:12px;line-height:1.5;color:#8c84ad;margin:0">You asked for this one reminder on the tournament page. <a href="${escapeHtml(unsub)}" style="color:#8c84ad">Unsubscribe</a></p></div>`;
     return { subject, html, text, unsub };
+  }
+  const slugName = s => String(s || 'competitor').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'competitor';
+  // The package email: the competitor briefing (PACKAGE_COPY, the operator's words) plus the
+  // caption to post. `u` is the competitor's users row (for the personal referral links — a
+  // competitor with no account gets the plain URLs). The graphics ride as attachments.
+  async function packageEmail(T, c, u) {
+    const K = kindOf(T);
+    const base = publicBase();
+    const num = T.number || 1;
+    const when = T.event_at ? `${dateLabel(T.event_at)} at ${timeLabel(T.event_at)}` : 'date to be announced';
+    const pack = T.pack_id ? await db.get('SELECT name, download_url FROM packs WHERE id = ?', [T.pack_id]) : null;
+    const packUrl = pack && pack.download_url ? pack.download_url : null;
+    const links = u && u.uid && referralLinks ? referralLinks(u.uid) : null;
+    const joinUrl = links ? links.join : `https://${CTA_URL}`;
+    const reviewUrl = links ? links.submit : null;
+    const rsvp = `${base}/wars`;
+    const daily = `${base}/daily`;
+    const first = String(c.name || '').trim().split(/\s+/)[0] || 'there';
+    const seatN = c.seat || c.seed;
+    const cap = await caption(T, `pkg${seatN}`);
+    const subject = `You're in ${K.name} #${num}: tournament details and your promo graphics`;
+    const P = PACKAGE_COPY;
+    const bonus2 = reviewUrl ? `${P.bonus[1]} Their personal A&R review referral link: ${reviewUrl}` : P.bonus[1];
+    const bonus3 = `${P.bonus[2]} Your personal join link: ${joinUrl}`;
+    const text = [
+      `Hi ${first},`, '',
+      `You're in ${K.name} #${num}, ${when}. ${P.camera}`, '',
+      P.username, '',
+      packUrl ? `${P.pack}\nDownload: ${packUrl}` : P.pack, '',
+      ...P.rounds, '',
+      P.strategy, '',
+      `${P.prize} ${P.ties}`, '',
+      `${P.rsvp} ${rsvp}`, '',
+      links ? `${P.join} ${joinUrl}` : `${P.joinPlain} ${joinUrl}`, '',
+      `${P.artists} ${SUBMIT_PACK_URL}`, '',
+      `${P.qualifying} ${daily}`, '',
+      P.bonusTitle, `- ${P.bonus[0]}`, `- ${bonus2}`, `- ${bonus3}`, '',
+      P.graphics, '', cap.caption, '',
+      `You're getting this because you have a seat in ${K.name} #${num}. Questions? Reply to this email.`,
+    ].join('\n');
+    const e = escapeHtml;
+    const a = (href, label) => `<a href="${e(href)}" style="color:#4bb749;word-break:break-all">${e(label || href)}</a>`;
+    const para = (s, extra = '') => `<p style="font-size:16px;line-height:1.5;margin:0 0 14px;${extra}">${s}</p>`;
+    const html = `<div style="font-family:Archivo,Helvetica,Arial,sans-serif;background:#0e0c1a;color:#eae9f2;padding:28px;max-width:600px;margin:0 auto">
+<p style="font-family:'Space Mono',Menlo,monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#9793b4;margin:0 0 14px">Makin' It Magazine presents</p>
+<h1 style="font-size:30px;line-height:1.05;letter-spacing:-.03em;margin:0 0 16px">${e(K.name)} #${num}</h1>
+${para(`Hi ${e(first)},`)}
+${para(`You're in <b>${e(K.name)} #${num}</b>, <b>${e(when)}</b>. ${e(P.camera)}`)}
+${para(`<b>${e(P.username)}</b>`)}
+${para(e(P.pack) + (packUrl ? `<br>${a(packUrl, 'Download the A&R Service Pack')}` : ''))}
+<ol style="font-size:16px;line-height:1.5;margin:0 0 14px;padding-left:22px">${P.rounds.map(r => `<li>${e(r)}</li>`).join('')}</ol>
+${para(e(P.strategy))}
+${para(`<b>${e(P.prize)}</b> ${e(P.ties)}`)}
+${para(`${e(P.rsvp)}<br>${a(rsvp)}`)}
+<p style="margin:0 0 22px"><a href="${e(rsvp)}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:800;font-size:16px;padding:14px 22px;border-radius:12px;text-decoration:none">RSVP page</a></p>
+${para(`${e(links ? P.join : P.joinPlain)}<br>${a(joinUrl)}`)}
+${para(`${e(P.artists)}<br>${a(SUBMIT_PACK_URL)}`)}
+${para(`${e(P.qualifying)}<br>${a(daily)}`)}
+<h2 style="font-size:20px;line-height:1.2;letter-spacing:-.02em;margin:22px 0 10px">${e(P.bonusTitle)}</h2>
+<ul style="font-size:16px;line-height:1.5;margin:0 0 14px;padding-left:22px">
+<li>${e(P.bonus[0])}</li>
+<li>${e(P.bonus[1])}${reviewUrl ? ` Their personal A&amp;R review referral link:<br>${a(reviewUrl)}` : ''}</li>
+<li>${e(P.bonus[2])} Your personal join link:<br>${a(joinUrl)}</li>
+</ul>
+${para(e(P.graphics))}
+<pre style="white-space:pre-wrap;font-family:Archivo,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;background:#171328;border:1px solid #2e2750;border-radius:12px;padding:16px;margin:0 0 22px">${e(cap.caption)}</pre>
+<p style="font-size:12px;line-height:1.5;color:#8c84ad;margin:0">You're getting this because you have a seat in ${e(K.name)} #${num}. Questions? Reply to this email.</p></div>`;
+    return { subject, html, text, caption: cap.caption, packUrl, joinUrl, reviewUrl };
   }
   // Send up to `limit` reminders for one tournament. Rows are CLAIMED (reminded_at stamped)
   // before the send so a double-invoked cron can never send twice; a failed send is logged.
@@ -537,7 +697,8 @@ module.exports = function installTournaments(ctx) {
         sessions, packs, packSongs,
         candidates: T.status === 'draft' || T.status === 'promo' ? await candidates(T) : [],
         subscribers: { count: Number(subs.c) || 0, ars: Number(ars) || 0, reminded: Number(subs.r) || 0 },
-        graphics: graphicRows(T),
+        graphics: await graphicRowsWithContact(T),
+        packageInfo: { pack: T.pack_id ? !!(await db.get('SELECT 1 AS x FROM packs WHERE id = ? AND download_url IS NOT NULL', [T.pack_id])) : false },
         asana: { configured: !!(process.env.ASANA_TOKEN && (await asanaProject())), blob: !!process.env.BLOB_READ_WRITE_TOKEN },
       });
     }
@@ -727,6 +888,14 @@ module.exports = function installTournaments(ctx) {
       }
       let asana = null, asanaError = null;
       const project = await asanaProject();
+      if (row.asana === false) {
+        // A package row: the competitor's own post, not the operator's queue — no Asana task,
+        // and the tournament's caption column keeps the operator's last caption.
+        const prev = T.graphicsMap[key] || {};
+        const map = { ...T.graphicsMap, [key]: { ...prev, urls: hosted ? urls : null, publishedAt: now() } };
+        await db.run('UPDATE tournaments SET graphics = ? WHERE id = ?', [JSON.stringify(map), T.id]);
+        return send(res, 200, { ok: true, urls: hosted ? urls : null, hosted, asana: null, asanaError: null, caption: cap.caption, comments: cap.comments });
+      }
       if (process.env.ASANA_TOKEN && project) {
         try {
           const task = await asanaFetch('/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -754,12 +923,18 @@ module.exports = function installTournaments(ctx) {
     // Every available graphic in one download: each ready row × its kinds, a hosted copy when
     // one was published (a fetch, not a render), plus captions.txt. Up to 31 PNGs; photos are
     // fetched once per competitor for the whole set.
+    // `?key=pkgN` narrows it to ONE competitor's package (feed, story, caption) — the hand-DM
+    // path for a competitor with no account. The bare zip leaves the package rows out so it
+    // stays inside one request's render budget.
     if (p === '/api/admin/tournament/graphics.zip' && method === 'GET') {
       const T = await needT(); if (!T) return true;
       const { zipStore } = require('./zip');
       const files = [];
       const notes = [];
-      for (const row of graphicRows(T).filter(r => r.ready)) {
+      const onlyKey = str(url.searchParams.get('key'), 12) || null;
+      if (onlyKey && !isPackageKey(onlyKey)) return bad(res, 'Unknown graphic');
+      const rows = graphicRows(T).filter(r => r.ready && (onlyKey ? r.key === onlyKey : r.asana !== false));
+      for (const row of rows) {
         for (const kind of row.kinds) {
           const name = `${T.slug}-${row.key}-${kind}.png`;
           let buf = null;
@@ -776,12 +951,64 @@ module.exports = function installTournaments(ctx) {
         const cap = await caption(T, row.key);
         notes.push(`== ${row.label} ==\n\n${cap.caption}\n` + (cap.comments.length ? `\nComments, four a comment:\n${cap.comments.map(c => '- ' + c).join('\n')}\n` : '') + `\nTag on the graphic: ${cap.tagOnGraphic.join(', ') || '(nobody)'}\n`);
       }
-      if (!files.length) return bad(res, 'No graphics are ready yet — seat a competitor first', 409);
-      files.push({ name: `${T.slug}-captions.txt`, data: Buffer.from(notes.join('\n'), 'utf8') });
+      if (!files.length) return bad(res, onlyKey ? 'That package is not ready yet — fill all 8 seats first' : 'No graphics are ready yet — seat a competitor first', 409);
+      files.push({ name: onlyKey ? `${T.slug}-${onlyKey}-caption.txt` : `${T.slug}-captions.txt`, data: Buffer.from(notes.join('\n'), 'utf8') });
       const zip = zipStore(files);
       res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': zip.length, 'Cache-Control': 'private, no-store',
-        'Content-Disposition': `attachment; filename="${T.slug}-graphics.zip"` });
+        'Content-Disposition': `attachment; filename="${T.slug}-${onlyKey ? onlyKey : 'graphics'}.zip"` });
       return res.end(zip);
+    }
+
+    // Email one competitor their package: the briefing (PACKAGE_COPY) with both graphics
+    // attached and a caption to post. Renders on the fly when the row was never published, so
+    // Blob is not a gate. One row per request (two renders + a send fits the request cap;
+    // eight do not — the console loops). Idempotent on graphics[key].sentAt unless `force`.
+    if (p === '/api/admin/tournament/package-send' && method === 'POST') {
+      const T = await needT(); if (!T) return true;
+      const key = str(body.key, 12);
+      const r = keyToRender(T, key);
+      if (!r || r.stage !== 'package') return bad(res, 'Not a package graphic');
+      const row = graphicRows(T).find(x => x.key === key);
+      if (!row || !row.ready) return bad(res, 'That package is not ready yet — fill all 8 seats first', 409);
+      const c = row.competitorId ? compById(T, row.competitorId) : null;
+      if (!c) return bad(res, 'No competitor in that seat', 409);
+      const u = c.user_id ? await db.get('SELECT uid, name, email, phone, blocked, deactivated_at, deleted_at, email_bounced_at FROM users WHERE uid = ?', [c.user_id]) : null;
+      const contact = contactState(u);
+      if (contact === 'none') return bad(res, `${c.name} has no account on file — download the zip and send it by hand`, 409);
+      if (contact === 'inactive') return bad(res, `${c.name}'s account is closed or suspended`, 409);
+      if (contact === 'bounced') return bad(res, `${c.name}'s email address has bounced — fix it on their profile first`, 409);
+      const prev = T.graphicsMap[key] || {};
+      if (prev.sentAt && !body.force) return bad(res, `Already sent ${shortDate(prev.sentAt)} — send again?`, 409);
+      const files = [];
+      for (const kind of row.kinds) {
+        let buf = null;
+        const hosted = row.urls && row.urls[kind];
+        if (hosted) {
+          try { const rr = await fetch(hosted, { signal: AbortSignal.timeout(5000) }); if (rr.ok) buf = Buffer.from(await rr.arrayBuffer()); } catch (e) { /* render instead */ }
+        }
+        if (!buf) buf = await renderKey(T, key, kind);
+        files.push({ filename: `${T.slug}-${slugName(c.name)}-${kind}.png`, mime: 'image/png', dataBase64: buf.toString('base64') });
+      }
+      const m = await packageEmail(T, c, u);
+      const out = await sendEmail(u.email, m.subject, m.html, m.text, { tag: 'tournament_package', attachments: files });
+      if (!out.ok) {
+        await noteEmailOutcome(u.email, out);
+        console.error('[tournament] package send failed:', maskEmail(u.email), out.error);
+        return bad(res, `Send failed: ${out.error || 'unknown error'}`, 502);
+      }
+      const sentAt = now();
+      // The heads-up text follows the email: their own seat, so it goes to the number on file
+      // (no marketing-consent gate); nothing on file = no text, reported as such.
+      let sms = 'no phone', smsTo = null;
+      if (u.phone) {
+        const sr = await sendSms(u.phone, packageSmsBody(kindOf(T).name, T.number || 1, u.email));
+        sms = sr.ok ? 'sent' : 'failed';
+        smsTo = sr.ok ? maskPhone(u.phone) : null;
+        if (!sr.ok) console.error('[tournament] package sms failed:', maskPhone(u.phone), sr.error);
+      }
+      const map = { ...T.graphicsMap, [key]: { ...prev, sentAt, sentTo: maskEmail(u.email), sms, smsTo } };
+      await db.run('UPDATE tournaments SET graphics = ? WHERE id = ?', [JSON.stringify(map), T.id]);
+      return send(res, 200, { ok: true, sent: true, to: maskEmail(u.email), sentAt, attachments: files.length, sms, smsTo });
     }
 
     if (p === '/api/admin/tournament/subscribers' && method === 'GET') {
@@ -818,12 +1045,14 @@ module.exports = function installTournaments(ctx) {
     else {
       const stage = url.searchParams.get('stage') || null;
       const filled = url.searchParams.get('filled');
-      const d = await flyerData(T, { stage: ['seat', 'final', 'champion'].includes(stage) ? stage : undefined, filled: filled != null ? Number(filled) : undefined });
+      const featured = url.searchParams.get('featured');
+      const d = await flyerData(T, { stage: ['seat', 'final', 'champion', 'package'].includes(stage) ? stage : undefined,
+        filled: filled != null ? Number(filled) : undefined, featured: featured != null ? Number(featured) : undefined });
       buf = await shareCards.renderPng(kind === 'story' ? 'tournamentStory' : kind === 'thumb' ? 'tournamentThumb' : 'tournamentFeed', d);
     }
     res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store' });
     return res.end(buf);
   }
 
-  return { handle, card, onRoundRatified, drainReminders, homeWinners, KINDS, _flyerData: flyerData, _bracketData: bracketData, _caption: caption };
+  return { handle, card, onRoundRatified, drainReminders, homeWinners, KINDS, _flyerData: flyerData, _bracketData: bracketData, _caption: caption, _packageEmail: packageEmail, _loadById: loadById, _packageSmsBody: packageSmsBody };
 };

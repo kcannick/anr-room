@@ -5703,7 +5703,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('tournament: detail reads back the setup', tnd.tournament.status === 'draft' && tnd.tournament.kind === 'ar' && tnd.tournament.filled === 0
     && tnd.tournament.dateLabel === 'Friday, October 25' && tnd.tournament.timeLabel === '7:00 PM ET' && tnd.tournament.eventLocal === '2030-10-25T19:00'
     && tnd.tournament.prizeText === '$500 Cash Prize' && tnd.tournament.lockupWord === 'WARS', JSON.stringify(tnd.tournament));
-  ok('tournament: 11 graphic rows, none ready yet', tnd.graphics.length === 11 && tnd.graphics.every(g => !g.ready), JSON.stringify(tnd.graphics.map(g => g.key)));
+  ok('tournament: 19 graphic rows (8 seats, final, 8 packages, champion, bracket), none ready yet', tnd.graphics.length === 19 && tnd.graphics.every(g => !g.ready), JSON.stringify(tnd.graphics.map(g => g.key)));
   ok('tournament: a draft is not public', (await call('/api/tournament?slug=wars-1', null, 'GET')).status === 404);
   ok('tournament: cannot open promo with an empty field', (await call('/api/admin/tournament/status', { tournamentId: TN, status: 'promo' }, 'POST', BOOTH)).status === 409);
 
@@ -5732,7 +5732,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tn_r1 = tnd.tournament.matches.filter(m => m.round_no === 1);
   ok('tournament: the 8th seat builds the bracket (7 matches)', tnd.tournament.matches.length === 7, 'got ' + tnd.tournament.matches.length);
   ok('tournament: round 1 is 1v8 4v5 3v6 2v7 by seed', tn_r1.map(m => [m.a_id, m.b_id]).join('|') === [[TNC[0], TNC[7]], [TNC[3], TNC[4]], [TNC[2], TNC[5]], [TNC[1], TNC[6]]].join('|'));
-  ok('tournament: graphic rows seat1..8 + final are ready, champion/bracket not', tnd.graphics.filter(g => g.ready).map(g => g.key).join(',') === 'seat1,seat2,seat3,seat4,seat5,seat6,seat7,seat8,final,bracket', tnd.graphics.filter(g => g.ready).map(g => g.key).join(','));
+  ok('tournament: graphic rows seat1..8 + final are ready, champion/bracket not', tnd.graphics.filter(g => g.ready).map(g => g.key).join(',') === 'seat1,seat2,seat3,seat4,seat5,seat6,seat7,seat8,final,pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7,pkg8,bracket', tnd.graphics.filter(g => g.ready).map(g => g.key).join(','));
 
   // reseed: the order given becomes the seeding, the bracket is rebuilt
   const tnOrder = [...TNC].reverse();
@@ -5745,6 +5745,85 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('tournament: the seat-3 caption names the qualifier, no hashtags, comments carry the earlier seats', /^Iris qualified for A&R Wars #1 \(Week 3\)\./.test(tnCap.caption) && !/#\w/.test(tnCap.caption.replace('#1', '').replace('#ANR', ''))
     && tnCap.comments.length === 1 && /@maya\.ig/.test(tnCap.comments[0]) && /@theo/.test(tnCap.comments[0]), JSON.stringify(tnCap));
   ok('tournament: the final caption asks the question', /Who has the Best Ear\?/.test((await call(`/api/admin/tournament/caption?id=${TN}&key=final`, null, 'GET', BOOTH)).d.caption));
+
+  // ── the final package: one feed + story per competitor, emailed with the briefing attached ──
+  const tnPkgRows = tnd.graphics.filter(g => /^pkg\d$/.test(g.key));
+  ok('package: 8 rows, feed + story only, no Asana, ready once the field is set', tnPkgRows.length === 8 && tnPkgRows.every(g => g.ready && g.asana === false && g.kinds.join() === 'feed,story'),
+    JSON.stringify(tnPkgRows.map(g => [g.key, g.ready, g.kinds])));
+  ok('package: rows know whether the competitor can be emailed (account vs none)', tnPkgRows[0].contact === 'email' && tnPkgRows[1].contact === 'none' && tnPkgRows[0].label === 'Package · Maya',
+    JSON.stringify(tnPkgRows.map(g => [g.label, g.contact])));
+  ok('package: the feed + story render for a featured seat', (await fetch(base + `/api/card/tournament?t=${TN}&kind=feed&stage=package&featured=3`, { headers: BOOTH })).status === 200
+    && (await fetch(base + `/api/card/tournament?t=${TN}&kind=story&stage=package&featured=3`, { headers: BOOTH })).headers.get('content-type') === 'image/png');
+  {
+    const T3 = await srv._tournaments._loadById(TN);
+    const d3 = await srv._tournaments._flyerData(T3, { stage: 'package', featured: 3 });
+    ok('package: the flyer data puts seat 3 big, all 8 seats filled, the ring on seat 3, both asks on the field',
+      d3.stage === 'package' && d3.big && d3.big.name === 'Iris' && d3.headline === 'Iris plays for $500.' && d3.seats.length === 8 && d3.seats.every(x => x.filled)
+        && d3.seats.filter(x => x.ring === 'qualifier').map(x => x.n).join() === '3' && d3.cta.label === 'RSVP to watch live' && /\/wars$/.test(d3.cta.url)
+        && d3.cta2 && d3.cta2.label === 'Join the A&R Team' && d3.cta2.url === 'makinitmag.com/ANR', JSON.stringify({ h: d3.headline, cta: d3.cta, cta2: d3.cta2, rings: d3.seats.map(x => x.ring) }));
+    const dSeat = await srv._tournaments._flyerData(T3, { stage: 'seat', filled: 3 });
+    ok('package: the other stages carry no second ask (their foot is unchanged)', dSeat.cta2 === null && dSeat.seats.filter(x => x.filled).length === 3);
+  }
+  const tnPkgCap = (await call(`/api/admin/tournament/caption?id=${TN}&key=pkg1`, null, 'GET', BOOTH)).d;
+  ok('package: the competitor\'s caption — keyword line, RSVP link, comment keyword, the house account, the other seven, never self, no topic hashtags',
+    /^I'm in A&R Wars #1, the A&R tournament from Makin' It Magazine\. 8 A&Rs play/.test(tnPkgCap.caption) && /\$500 Cash Prize\./.test(tnPkgCap.caption)
+      && /RSVP: \S+\/wars/.test(tnPkgCap.caption) && /Join the A&R Team and vote: Comment #ANR/.test(tnPkgCap.caption) && /@makinitmusicreview/.test(tnPkgCap.caption)
+      && /Also in the tournament: @theo, Iris, @dana, Jalen, @priya, Terrence, @simone$/.test(tnPkgCap.caption) && !/maya/i.test(tnPkgCap.caption)
+      && (tnPkgCap.caption.match(/#/g) || []).length === 2 && tnPkgCap.comments.length === 0 && tnPkgCap.tagOnGraphic.length === 8, JSON.stringify(tnPkgCap));
+  const tnCapBefore = (await tnDb.get('SELECT caption FROM tournaments WHERE id = ?', [TN])).caption;
+  const tnPkgPub = await call('/api/admin/tournament/publish', { tournamentId: TN, key: 'pkg1' }, 'POST', BOOTH);
+  ok('package: publish renders without Blob, makes no Asana task and leaves the tournament caption alone', tnPkgPub.status === 200 && tnPkgPub.d.hosted === false && tnPkgPub.d.asana === null
+    && /^I'm in A&R Wars #1/.test(tnPkgPub.d.caption) && (await tnDb.get('SELECT caption FROM tournaments WHERE id = ?', [TN])).caption === tnCapBefore
+    && (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d.graphics.find(g => g.key === 'pkg1').publishedAt != null, JSON.stringify(tnPkgPub.d).slice(0, 200));
+  ok('package: send refuses a non-package key', (await call('/api/admin/tournament/package-send', { tournamentId: TN, key: 'seat1' }, 'POST', BOOTH)).status === 400);
+  const tnNoAcct = await call('/api/admin/tournament/package-send', { tournamentId: TN, key: 'pkg2' }, 'POST', BOOTH);
+  ok('package: a competitor with no account cannot be emailed (download and DM)', tnNoAcct.status === 409 && /no account/.test(tnNoAcct.d.error), JSON.stringify(tnNoAcct.d));
+  await tnDb.run("UPDATE users SET email_bounced_at = 1 WHERE email = 'a@test.com'");
+  ok('package: a bounced address is refused', (await call('/api/admin/tournament/package-send', { tournamentId: TN, key: 'pkg1' }, 'POST', BOOTH)).status === 409);
+  await tnDb.run("UPDATE users SET email_bounced_at = NULL WHERE email = 'a@test.com'");
+  const tnSend = await call('/api/admin/tournament/package-send', { tournamentId: TN, key: 'pkg1' }, 'POST', BOOTH);
+  tnd = (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d;
+  const tnPkg1 = tnd.graphics.find(g => g.key === 'pkg1');
+  ok('package: the email goes with both graphics attached and the row records it (masked address, never the raw one)',
+    tnSend.status === 200 && tnSend.d.sent === true && tnSend.d.attachments === 2 && tnSend.d.to === 'a•••@test.com' && tnSend.d.sms === 'no phone'
+      && tnPkg1.sentAt != null && tnPkg1.sentTo === 'a•••@test.com' && !/a@test\.com/.test(JSON.stringify(tnd.graphics)), JSON.stringify([tnSend.d, tnPkg1]));
+  await tnDb.run("UPDATE users SET phone = '+14045550123' WHERE email = 'a@test.com'");
+  const tnForce = await call('/api/admin/tournament/package-send', { tournamentId: TN, key: 'pkg1', force: true }, 'POST', BOOTH);
+  ok('package: a second send is refused until forced', (await call('/api/admin/tournament/package-send', { tournamentId: TN, key: 'pkg1' }, 'POST', BOOTH)).status === 409 && tnForce.status === 200);
+  ok('package: with a phone on file the heads-up text follows the email, naming the address (masked number, GSM-7, one segment for a short address)', tnForce.d.sms === 'sent' && /^\+1•+0123$|•/.test(tnForce.d.smsTo || '') && !/4045550123/.test(JSON.stringify(tnForce.d))
+      && (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d.graphics.find(g => g.key === 'pkg1').sms === 'sent'
+      && srv._tournaments._packageSmsBody('A&R Wars', 1, 'a@test.com') === "A&R Wars #1: we just sent an email to a@test.com with all the details for the tournament. Check Spam and the Promotions tab if you don't see it. Good luck!"
+      && require('./sms').isGsm7(srv._tournaments._packageSmsBody('A&R Wars', 1, 'a@test.com')) && srv._tournaments._packageSmsBody('A&R Wars', 1, 'a@test.com').length <= 160, JSON.stringify(tnForce.d));
+  await tnDb.run("UPDATE users SET phone = NULL WHERE email = 'a@test.com'");
+  {
+    const T3 = await srv._tournaments._loadById(TN);
+    const maya = T3.competitors.find(c => c.id === TNC[0]), theo = T3.competitors.find(c => c.id === TNC[1]);
+    const mu = await tnDb.get("SELECT uid, name, email FROM users WHERE email = 'a@test.com'");
+    const m = await srv._tournaments._packageEmail(T3, maya, mu);
+    const has = (t, re) => re.test(t);
+    const want = [/90 seconds of 1 song/, /play a full song/, /3 full songs/, /No song may be repeated/, /top 18 songs/, /This is WAR/, /\$500 Cash Prize and a feature in the next issue of Makin' It Magazine/,
+      /points accumulated for the current series/, /live on camera/, /RSVP to watch live:\s*\S+\/wars/, /Comment #ANR/, /makinitmag\.com\/push/, /\/daily/, /Bonus Points/, /Review daily drops early/,
+      new RegExp('\\?ref=' + mu.uid + '(\\s|$)'), new RegExp('makinitmag\\.com/review\\?ref=' + mu.uid), /A&R review referral link/, /personal join link/, /^Hi Maya,/, /Reply with your makinitmag\.com username so we can add a Win to your account: Top A&R and Chosen to compete in the A&R Wars Tournament\./];
+    const missing = want.filter(re => !has(m.text, re));
+    ok('package: the briefing email carries the operator\'s copy, the personal links and the caption', missing.length === 0 && m.subject === "You're in A&R Wars #1: tournament details and your promo graphics"
+      && m.text.includes(tnPkgCap.caption) && /<pre/.test(m.html) && m.html.includes('/wars') && m.html.includes('makinitmag.com/push'), 'missing: ' + missing.map(String).join(' | '));
+    ok('package: no pack linked → the Service Pack line has no download link', m.packUrl === null && !/Download: /.test(m.text));
+    const m2 = await srv._tournaments._packageEmail(T3, theo, null);
+    ok('package: a competitor with no account gets the plain join URL and no referral links', m2.joinUrl === 'https://makinitmag.com/ANR' && m2.reviewUrl === null && !/\?ref=/.test(m2.text) && /^Hi Theo,/.test(m2.text));
+    // a pack with a download link rides along
+    const tnPackMk = await call('/api/admin/sidebet', { name: 'Wars Pack', picksRequired: 6, prizeText: '$150', warsAt: Date.now() + 86400000 * 20, closesAt: Date.now() + 86400000 * 19, status: 'draft', downloadUrl: 'https://example.com/pack.zip' }, 'POST', BOOTH);
+    await call('/api/admin/tournament', { id: TN, packId: tnPackMk.d.id }, 'POST', BOOTH);
+    const T4 = await srv._tournaments._loadById(TN);
+    const m3 = await srv._tournaments._packageEmail(T4, maya, mu);
+    ok('package: a linked pack puts its download link in the briefing', T4.pack_id === tnPackMk.d.id && m3.packUrl === 'https://example.com/pack.zip' && /Download: https:\/\/example\.com\/pack\.zip/.test(m3.text), JSON.stringify([T4.pack_id, m3.packUrl]));
+    await call('/api/admin/tournament', { id: TN, packId: null }, 'POST', BOOTH);
+  }
+  const tnPkgZipRes = await fetch(base + `/api/admin/tournament/graphics.zip?id=${TN}&key=pkg1`, { headers: BOOTH });
+  const tnPkgZip = Buffer.from(await tnPkgZipRes.arrayBuffer());
+  ok('package: one competitor\'s zip = feed, story, caption', tnPkgZipRes.status === 200 && /wars-1-pkg1\.zip/.test(tnPkgZipRes.headers.get('content-disposition') || '')
+    && require('./zip').zipEntryCount(tnPkgZip) === 3 && tnPkgZip.includes(Buffer.from('wars-1-pkg1-feed.png')) && tnPkgZip.includes(Buffer.from('wars-1-pkg1-story.png')) && tnPkgZip.includes(Buffer.from('wars-1-pkg1-caption.txt')),
+    `status ${tnPkgZipRes.status}`);
+  ok('package: the zip filter takes package keys only', (await fetch(base + `/api/admin/tournament/graphics.zip?id=${TN}&key=seat1`, { headers: BOOTH })).status === 400);
 
   // promo: the page goes public, the reminder list opens
   const tnPromo = await call('/api/admin/tournament/status', { tournamentId: TN, status: 'promo' }, 'POST', BOOTH);

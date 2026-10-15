@@ -43,11 +43,17 @@ function sendHeaders(opts) {
 }
 const TAG_RE = /^[a-z0-9_-]{1,50}$/;
 
+// opts.attachments: [{ filename, mime, dataBase64 }] — the same shape sendFeedback's screenshot
+// uses, mapped to each provider's own field names. Keep it to a few files of a few MB.
+const attachmentsOf = opts => Array.isArray(opts && opts.attachments) ? opts.attachments.filter(a => a && a.dataBase64 && a.filename) : [];
+
 async function sendViaResend(to, subject, html, text, opts = {}) {
   const body = { from: FROM, to: [to], subject, html, text };
   const headers = sendHeaders(opts);
   if (Object.keys(headers).length) body.headers = headers;
   if (opts.tag && TAG_RE.test(opts.tag)) body.tags = [{ name: 'stream', value: opts.tag }];
+  const att = attachmentsOf(opts);
+  if (att.length) body.attachments = att.map(a => ({ filename: a.filename, content: a.dataBase64 }));
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -74,6 +80,8 @@ async function sendViaMandrill(to, subject, html, text, opts = {}) {
   const headers = sendHeaders(opts);
   if (Object.keys(headers).length) message.headers = headers;
   if (opts.tag && TAG_RE.test(opts.tag)) message.tags = [opts.tag];
+  const att = attachmentsOf(opts);
+  if (att.length) message.attachments = att.map(a => ({ type: a.mime || 'image/png', name: a.filename, content: a.dataBase64 }));
   const res = await fetch((process.env.MANDRILL_API_BASE || 'https://mandrillapp.com/api/1.0/') + 'messages/send.json', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -120,8 +128,9 @@ async function sendOtp(to, code, sessionName) {
 // opts: { tag, unsubscribe } — see sendHeaders().
 async function sendEmail(to, subject, html, text, opts = {}) {
   if (PROVIDER === 'console') {
-    console.log(`\n[EMAIL] ${to} :: ${subject}${opts.tag ? ` [${opts.tag}]` : ''}\n`);
-    return { ok: true };
+    const att = attachmentsOf(opts);
+    console.log(`\n[EMAIL] ${to} :: ${subject}${opts.tag ? ` [${opts.tag}]` : ''}${att.length ? ` (${att.length} attachments)` : ''}\n`);
+    return { ok: true, attachments: att.length };
   }
   try {
     if (PROVIDER === 'resend') await sendViaResend(to, subject, html, text, opts);

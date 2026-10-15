@@ -120,6 +120,43 @@ rule: plain words, "A&R Wars", "qualified", "vote live", "A&R Team" in the first
 hashtags; the qualifier tagged on the graphic and the post is a collab with them; "Comment #ANR
 to join the A&R Team" rather than a link.
 
+### 5.1 The final package — one set per competitor (2026-10-14)
+
+Once all 8 seats are filled, every competitor gets their **own** feed + story to post: them in
+the big slot, all 8 seats filled with the purple ring on theirs, headline **"<Name> plays for
+$500."** (the one prize mention), and **two asks on the green field** — "RSVP to watch live ·
+anr.makinitmag.com/wars" bottom-left and "Join the A&R Team · makinitmag.com/ANR" bottom-right,
+where the prize block sits on the other states. No thumbnail (the competitor posts to Instagram).
+Render: `/api/card/tournament?t=&kind=feed|story&stage=package&featured=N`. Mockup:
+`flyer-{feed,story}.html?stage=package&me=N`.
+
+Console rows `pkg1..pkg8` (between Final promo and Champion), ready together with the final
+promo. **Publish hosts the two files and makes no Asana task** — the post is the competitor's,
+not the operator's queue. Delivery is the **package email** (`POST
+/api/admin/tournament/package-send {tournamentId, key, force?}`): the briefing in the operator's
+words (`PACKAGE_COPY` in tournament.js — on camera; download the Service Pack and pick your top
+18; three rounds: the first 90 seconds of one song, a full song, three full songs; five songs, no
+repeats; $500 Cash Prize and a feature in the next issue; ties decided on current-series points;
+RSVP link; the competitor's personal join link `?ref=<uid>` and personal review referral link;
+makinitmag.com/push for Service Pack artists; rate the daily drop; a Bonus Points block; "Reply
+with your makinitmag.com username so we can add a Win to your account: Top A&R and Chosen to
+compete in the A&R Wars Tournament"), the caption to post as-is, and **both PNGs attached** (`sendEmail(..., { attachments })`, rendered on
+the fly when the row was never published — Blob is not a gate). One competitor per request; the
+console's "Publish all 8" and "Email every competitor" loop one row at a time and never run
+together. Idempotent on `graphics[key].sentAt` (the row shows "sent <date> to <masked>"), `force`
+re-sends. **A heads-up text follows the email** ("A&R Wars #1: we just sent an email to <address> with
+all the details for the tournament. Check Spam and the Promotions tab if you don't see it. Good
+luck!", GSM-7; a long address tips it to MMS) to the phone on file — their own
+seat, so no marketing-consent gate; no phone means no text and the row says so (`sms`).
+Refused with a reason when the competitor has no account (`contact: none` — download
+the per-competitor zip, `graphics.zip?id=&key=pkgN`, and DM it), a closed account, or a bounced
+address. `email_opt_out` is not consulted: this is their own participation.
+
+Caption (`caption(T,'pkgN')`), first person: "I'm in A&R Wars #1, the A&R tournament from Makin'
+It Magazine. <premise with the $500 Cash Prize>" · "Watch live <date>. RSVP: <host>/wars" ·
+"Join the A&R Team and vote: Comment #ANR" · `@makinitmusicreview` · "Also in the tournament:
+<the other seven>" — eight mentions, under Instagram's ten; no comments list.
+
 ## 6. Landing page + reminder list
 
 `/wars` → the latest A&R Wars; `/tournament/<slug>` → any tournament (`public/tournament.html`,
