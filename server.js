@@ -1787,6 +1787,13 @@ async function pushDayResults(session) {
 // Makin' It Daily Countdown — the carousel (countdownCarouselData) and, while it still runs, the stream.
 const DAILY_STREAM_NAME = "Makin' It Daily Countdown";
 const WEEKLY_SHOW_NAME = 'The A&R Room - Weekly Live Music Review'; // Wednesday 7PM ET
+// The daily live stream is RETIRED (operator, 2026-10-15): the only live stream is The A&R
+// Room on Wednesday, where the week's Top 8 are announced and the week's finalist for the
+// $1,000 Music Tournament is picked. Every communication that pointed at a daily stream now
+// says this instead. ONE definition so no mail can drift. The `daily_stream_url` setting
+// now holds this show's link.
+const WEEKLY_SHOW_LINE = "The A&R Room live stream is Wednesday at 7:00 PM ET. The week's Top 8 are announced there and the week's finalist for the $1,000 Music Tournament is picked.";
+const WEEKLY_SHOW_CTA = 'Watch The A&R Room live, Wednesday 7:00 PM ET';
 
 // The date on a daily graphic: MM.DD.YY in ET. Graphics are dated the day they POST
 // (results_at), never drop_day (operator, 2026-09-27).
@@ -2379,14 +2386,13 @@ async function asyncPlayerState(participant, session, count) {
       dayLabel: etDayLabel(day), opensLabel: etClockLabel(opens),
       closesLabel: etClockLabel(closes), resultsLabel: etClockLabel(results),
       closesWhen: etWhenLabel(closes, day), resultsWhen: etWhenLabel(results, day),
-      // The Livestream Countdown between the close and the results, and when the next set of
-      // records opens — no longer the same moment as the results, so the page says both.
-      // Relative to TODAY, not the drop day ("tomorrow" must mean tomorrow for the reader), and
-      // absent once it has passed — a sealed page is read the day after the drop opened.
+      // When the next set of records opens, relative to TODAY ("tomorrow" must mean tomorrow
+      // for the reader), absent once it has passed. The daily stream is retired (2026-10-15);
+      // the page points at the Wednesday show instead.
       ...(await (async () => {
         const sc = await dailySchedule();
         const fut = (t) => (t && t > ts ? etWhenLabel(t, etDay(ts)) : null);
-        return { streamWhen: fut(dropStreamAt(session, sc)), streamName: DAILY_STREAM_NAME,
+        return { weeklyShow: WEEKLY_SHOW_LINE,
           nextOpensWhen: day ? fut(dropWindowFor(etNextDay(day), sc).opensAt) : null };
       })()) },
     phase,
@@ -3453,7 +3459,7 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
 // hours before today's records close, so "rate today's records" is true at send time and the
 // reminder has real urgency. The recap email IS the acquisition email.
 
-// The day's own results link, the Livestream Countdown replay, and the reminder that TODAY's
+// The day's own results link, the Wednesday show link, and the reminder that TODAY's
 // records close soon (the results mail lands 3 hours before the next close by construction).
 function digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours }) {
   const remind = closesLabel
@@ -3524,7 +3530,8 @@ function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, s
         ? `Here is how you did on the ${escapeHtml(dayLabel || '')} records.`
         : `You didn't rate the ${escapeHtml(dayLabel || '')} records, so there are no results of your own this time.`}</p>
       ${common}
-      ${ex.streamUrl ? `<a href="${ex.streamUrl}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:4px 0 0">Watch the ${escapeHtml(DAILY_STREAM_NAME)}</a>` : ''}
+      <p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:12px 0 0">${escapeHtml(WEEKLY_SHOW_LINE)}</p>
+      ${ex.streamUrl ? `<a href="${ex.streamUrl}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:8px 0 0">${escapeHtml(WEEKLY_SHOW_CTA)}</a>` : ''}
       ${arBlock}
       <div style="height:1px;background:#2e2750;margin:26px 0 18px"></div>
       ${ex.remind ? `<p style="font-size:14.5px;font-weight:700;color:#f3f0fb;margin:0 0 12px">${escapeHtml(ex.remind)}</p>` : ''}
@@ -3544,7 +3551,8 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
     : `The results.`);
   if (!played) lines.push('', `You didn't rate the ${dayLabel || ''} records, so there are no results of your own this time.`.replace('the  records', 'these records'));
   lines.push('', `${DIGEST_IG_LABEL}: ${DIGEST_IG_URL}`);
-  if (ex.streamUrl) lines.push('', `Watch the ${DAILY_STREAM_NAME}: ${ex.streamUrl}`);
+  lines.push('', WEEKLY_SHOW_LINE);
+  if (ex.streamUrl) lines.push(`${WEEKLY_SHOW_CTA}: ${ex.streamUrl}`);
   if (played) {
     const n = recap.rounds.length;
     lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Bullseyes ${recap.bullseyes || 0}`);
@@ -5004,9 +5012,9 @@ async function sendArtistReportEmail(round, session, dest) {
   const common = {
     title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, decision, votes: d.votes,
     what: d.what, dateLabel: d.dateLabel,
-    // A daily record was heard on the Livestream Countdown, so that is the replay to send.
+    // A daily record's week is announced on The A&R Room (Wednesday), so that is the link.
     watchUrl: isAsync(session) ? await dailyStreamUrl() : (session.watch_url || null),
-    watchLabel: isAsync(session) ? `Watch the ${DAILY_STREAM_NAME}` : null,
+    watchLabel: isAsync(session) ? WEEKLY_SHOW_CTA : null,
     pages, comments: d.comments, hashtag: d.what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting',
   };
   const html = artistEmailHtml(common);
@@ -5106,29 +5114,21 @@ async function enqueueArtistHeadsups(sessionId) {
   return { queued };
 }
 
-// "tomorrow's Livestream Countdown" when it is tomorrow as the message SENDS (an SMS held
-// overnight by the window can go the morning of the stream), else "today's", else the date.
-function headsupWhen(streamAt, ts = now()) {
-  const d = etDay(Number(streamAt)), today = etDay(ts);
-  if (d === today) return { word: "today's", day: null };
-  if (d === etNextDay(today)) return { word: "tomorrow's", day: null };
-  return { word: 'the', day: etDayLabel(d) };
-}
-function artistHeadsupSmsBody(title, streamAt, ts = now()) {
-  const w = headsupWhen(streamAt, ts);
-  const clock = recapTimeLabel(streamAt).replace(/^Daily at /, '');
-  const frame = (t) => `"${t}" was rated by the A&R Team. It's on ${w.word} ${DAILY_STREAM_NAME}${w.day ? ' on ' + w.day : ''}, ${clock} ET. Tune in for results. Reply STOP to opt out.`;
+// The heads-up (2026-10-15): the record was rated, the results come by email on the report
+// day, and the week's Top 8 are announced on the Wednesday show. No daily stream to tune into.
+// GSM-7, one segment: the report day is the only variable text besides the title.
+function artistHeadsupSmsBody(title, reportAt) {
+  const day = reportAt ? etDayLabel(etDay(Number(reportAt))) : null;
+  const frame = (t) => `"${t}" was rated by the A&R Team. Results by email${day ? ' ' + day : ''}. Top 8 of the week: The A&R Room live, Wed 7PM ET. Reply STOP to opt out.`;
   return frame(fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame('').length));
 }
-function artistHeadsupContent({ title, artist, streamAt, reportAt, streamUrl }, ts = now()) {
-  const w = headsupWhen(streamAt, ts);
-  const when = `${etDayLabel(etDay(Number(streamAt)))} at ${etClockLabel(streamAt)}`;
+function artistHeadsupContent({ title, artist, reportAt, streamUrl }) {
   return {
-    subject: `“${title}” was rated — it will appear on ${w.word} ${DAILY_STREAM_NAME}`,
+    subject: `“${title}” was rated by the A&R Team`,
     lead: 'Your song was rated.',
-    body: `“${title}”${artist ? ' by ' + artist : ''} was rated by the A&R Team and will appear on ${w.word} ${DAILY_STREAM_NAME}, ${when}.`,
-    tune: 'Tune in for results. Have your fans tune in to participate in the comments.',
-    report: reportAt ? `Your full Track Report arrives by email on ${etDayLabel(etDay(Number(reportAt)))}.` : '',
+    body: `“${title}”${artist ? ' by ' + artist : ''} was rated by the A&R Team.${reportAt ? ` Your full Track Report arrives by email on ${etDayLabel(etDay(Number(reportAt)))}.` : ''}`,
+    tune: WEEKLY_SHOW_LINE,
+    report: '',
     streamUrl,
   };
 }
@@ -5146,7 +5146,7 @@ function artistHeadsupHtml(c) {
           <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F6F7FB;">${escapeHtml(c.lead)}</h1>
           <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0 0 12px;">${escapeHtml(c.body)}</p>
           <p style="font-size:14px;line-height:1.6;color:#F6F7FB;font-weight:bold;margin:0 0 16px;">${escapeHtml(c.tune)}</p>
-          ${c.streamUrl ? `<p style="margin:6px 0 14px;"><a href="${c.streamUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">Watch the ${escapeHtml(DAILY_STREAM_NAME)}</a></p>` : ''}
+          ${c.streamUrl ? `<p style="margin:6px 0 14px;"><a href="${c.streamUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">${escapeHtml(WEEKLY_SHOW_CTA)}</a></p>` : ''}
           ${c.report ? `<p style="font-size:12.5px;line-height:1.55;color:#8A94A6;margin:0;">${escapeHtml(c.report)}</p>` : ''}
           <p style="font-size:12.5px;color:#8A94A6;margin:20px 0 0;">Submit another record → <a href="https://${shareCards.SUBMIT_URL}" style="color:#4BB749;text-decoration:none;">${shareCards.SUBMIT_URL}</a></p>
         </td></tr>
@@ -5155,7 +5155,7 @@ function artistHeadsupHtml(c) {
   </div>`;
 }
 const artistHeadsupText = (c) => [c.lead, '', c.body, '', c.tune,
-  ...(c.streamUrl ? ['', `Watch the ${DAILY_STREAM_NAME}: ${c.streamUrl}`] : []),
+  ...(c.streamUrl ? ['', `${WEEKLY_SHOW_CTA}: ${c.streamUrl}`] : []),
   ...(c.report ? ['', c.report] : []), '', `Submit another record: https://${shareCards.SUBMIT_URL}`].join('\n');
 
 // Same claim discipline as drainArtistEmail / drainArtistSms: pending -> sending before the
@@ -5164,11 +5164,11 @@ const artistHeadsupText = (c) => [c.lead, '', c.body, '', c.tune,
 async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = {}) {
   const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   if (!session) return { sent: 0, failed: 0 };
-  const sched = await dailySchedule();
-  const streamAt = dropStreamAt(session, sched);
-  // The stream has happened: "will appear on tomorrow's Livestream Countdown" is no longer
-  // true, and the report is on its way. Anything still pending is left, not sent late.
-  if (!streamAt || now() >= streamAt) return { sent: 0, failed: 0, stale: true };
+  // The report has gone out (results_at): "your Track Report arrives on <day>" is no longer
+  // true. Anything still pending is left, not sent late. (Was the stream time until the daily
+  // stream was retired, 2026-10-15.)
+  const reportAt = Number(session.results_at) || null;
+  if (!reportAt || now() >= reportAt) return { sent: 0, failed: 0, stale: true };
   const smsOk = withinSmsWindow();
   const rows = await db.all(
     `SELECT h.*, r.song_title, r.song_artist FROM artist_headsups h JOIN rounds r ON r.id = h.round_id
@@ -5183,9 +5183,9 @@ async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = 
     try {
       const title = row.song_title || 'your record';
       const r = row.channel === 'sms'
-        ? await sendSms(row.dest, artistHeadsupSmsBody(title, streamAt))
+        ? await sendSms(row.dest, artistHeadsupSmsBody(title, Number(session.results_at) || null))
         : await (async () => {
-            const c = artistHeadsupContent({ title, artist: row.song_artist, streamAt,
+            const c = artistHeadsupContent({ title, artist: row.song_artist,
               reportAt: Number(session.results_at) || null, streamUrl });
             return sendEmail(row.dest, c.subject, artistHeadsupHtml(c), artistHeadsupText(c), { tag: 'artist_headsup' });
           })();
@@ -11623,6 +11623,7 @@ module.exports._dropAfterClose = dropAfterClose;
 module.exports._dropStreamAt = dropStreamAt;
 module.exports._artistHeadsupSmsBody = artistHeadsupSmsBody;
 module.exports._artistHeadsupContent = artistHeadsupContent;
+module.exports._WEEKLY_SHOW_LINE = WEEKLY_SHOW_LINE;
 module.exports._dailyOpenEmailText = dailyOpenEmailText;
 module.exports._enqueueDailyOpen = enqueueDailyOpen;
 module.exports._NOTIFY_TOPICS = NOTIFY_TOPICS;

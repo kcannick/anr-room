@@ -932,6 +932,19 @@ live on anr.makinitmag.com.
   (≥23h apart, after 4AM ET; continues on later ticks while `remaining`; failures retry hourly).
   Brevo allows one SMS number per contact, so a phone already claimed (A&Rs first) is left off
   the next contact. `BREVO_API_KEY` env; `BREVO_API_BASE` is the test mock. Doc: docs/brevo-sync.md.
+- **Daily live stream RETIRED from every communication** (no migration, 2026-10-15, operator's
+  call): the only live stream is **The A&R Room on Wednesday at 7:00 PM ET**, where the week's
+  Top 8 are announced and the week's finalist for the $1,000 Music Tournament is picked.
+  `WEEKLY_SHOW_LINE` / `WEEKLY_SHOW_CTA` are the ONE definition; the artist heads-up (email +
+  SMS) now says "rated · Track Report by email on <day> · Top 8 of the week on The A&R Room
+  live, Wed 7PM ET" and stops sending at `results_at` (was `stream_at`); the daily digest and
+  the Track Report email carry the Wednesday show line and link; `/api/home` async carries
+  `weeklyShow` instead of `streamWhen/streamName`; the `daily_stream_url` setting is now the
+  Wednesday show's link (panel label changed). **Kept:** `stream_at` as the time the Daily
+  Countdown graphics render (console label "Daily Countdown graphics render at"), the Instagram
+  countdown carousel and its Asana task, `DAILY_STREAM_NAME` as that carousel's name. The 041
+  bullet below describes the hours as built; its "Livestream Countdown" wording is history.
+
 - **Email engagement gate** (043, 2026-10-06). The audit (Mandrill activity export joined to
   users/prefs/votes, per-address table kept local in `docs/reports/`, gitignored): the daily
   "records are open" notice went to every address (~766/day), 4% clicked, 607 of 776 recipients

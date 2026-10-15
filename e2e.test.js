@@ -2065,16 +2065,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a repeat tick never queues a second heads-up',
     (await dDb.all('SELECT id FROM artist_headsups WHERE session_id = ?', [LDROP])).length === 2);
   const streamAtL = Number((await lSess()).stream_at);
-  const huc = srv._artistHeadsupContent({ title: 'My Song', artist: 'Me', streamAt: streamAtL,
-    reportAt: Number((await lSess()).results_at), streamUrl: 'https://yt.example/live' }, streamAtL - 86400000);
-  ok('the heads-up says the record was rated and is on tomorrow\'s Livestream Countdown',
-    /was rated/.test(huc.body) && /tomorrow's Makin' It Daily Countdown/.test(huc.subject), JSON.stringify(huc));
-  ok('in the operator\'s words', huc.tune === 'Tune in for results. Have your fans tune in to participate in the comments.');
-  ok('and it carries no score, rank or count — the livestream is the reveal',
+  const huc = srv._artistHeadsupContent({ title: 'My Song', artist: 'Me',
+    reportAt: Number((await lSess()).results_at), streamUrl: 'https://yt.example/live' });
+  ok('the heads-up says the record was rated and when the report comes — no daily stream (2026-10-15)',
+    /was rated by the A&R Team/.test(huc.subject) && /Track Report arrives by email on/.test(huc.body)
+      && !/Countdown|Livestream|livestream|Tune in/.test(huc.subject + huc.body + huc.tune), JSON.stringify(huc));
+  ok('and points at the Wednesday show', huc.tune === srv._WEEKLY_SHOW_LINE && /Wednesday at 7:00 PM ET/.test(huc.tune) && /\$1,000 Music Tournament/.test(huc.tune));
+  ok('and it carries no score, rank or count — the results are the reveal',
     !/\d\.\d|out of 9|#\d|A&Rs heard/.test(huc.body + huc.subject + huc.tune), huc.body);
-  const huSms = srv._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', streamAtL, streamAtL - 86400000);
+  const huSms = srv._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', streamAtL);
   ok('the heads-up text is plain GSM-7 inside one segment', huSms.length <= 160 && /^[\x20-\x7e]*$/.test(huSms)
-    && /tomorrow's Makin' It Daily Countdown/.test(huSms) && /Reply STOP/.test(huSms), huSms.length + ' ' + huSms);
+    && /Results by email/.test(huSms) && /The A&R Room live, Wed 7PM ET/.test(huSms) && /Reply STOP/.test(huSms) && !/Countdown/.test(huSms), huSms.length + ' ' + huSms);
 
   // The Livestream Countdown: the ranked graphics render, and NOTHING is revealed yet.
   ok('before the stream the graphics have not rendered',
@@ -3394,8 +3395,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const dgFull = { ...dgArg, name: 'Kelby Cannick', recap: dgRecap, streamUrl: 'https://yt.example/live',
     resultsUrl: 'https://x/account#results', closesLabel: '3:00 PM ET', closesInHours: 3 };
   const dgFullHtml = srv._dailyDigestEmailHtml(dgFull), dgFullText = srv._dailyDigestEmailText(dgFull);
-  ok('the results mail links the Livestream Countdown',
-    /yt\.example\/live/.test(dgFullHtml) && /Watch the Makin' It Daily Countdown/.test(dgFullText));
+  ok('the results mail links The A&R Room show, not a daily stream (2026-10-15)',
+    /yt\.example\/live/.test(dgFullHtml) && /Watch The A&R Room live, Wednesday 7:00 PM ET/.test(dgFullText)
+      && /\$1,000 Music Tournament/.test(dgFullText) && !/Watch the Makin' It Daily Countdown/.test(dgFullHtml + dgFullText));
   ok('and to the A&R\'s own results on the site', /See your results/.test(dgFullHtml) && /account#results/.test(dgFullHtml) && /account#results/.test(dgFullText));
   ok('the text version is a headline too', /Points 543/.test(dgFullText) && !/A Record/.test(dgFullText) && !/Rank/.test(dgFullText), dgFullText);
   ok('and says today\'s records close in 3 hours',
