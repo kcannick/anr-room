@@ -21,3 +21,6 @@ __pycache__/
 
 # Per-address engagement exports (PII) — local only
 docs/reports/
+
+# per-guest takeover photos and renders (guest photos stay out of the repo; PNGs live in the Drive folder)
+public/brand/room/takeover/
