@@ -6566,7 +6566,11 @@ async function handleApi(req, res, url) {
     // participants — labelled "A&Rs" in the UI), and round_count (ratified, i.e.
     // scored, rounds). All cheap at this scale. Newest first: the room you just
     // ended should be at the top of its group, not the bottom.
+    // mode / async_state / results_at let the console tell a daily drop that is OPEN from one
+    // that has closed and is waiting on its results: both are status='live' (flipping a drop to
+    // 'completed' at the close would reveal the averages on /daily before results go out).
     const cols = `id, name, status, scheduled_at, owner_uid, created_at, series_id, poll_type, geo_mode,
+      mode, async_state, results_at,
       (SELECT COUNT(*) FROM participants pp WHERE pp.session_id = sessions.id AND pp.verified = 1) AS ar_count,
       (SELECT COUNT(*) FROM rounds rr WHERE rr.session_id = sessions.id AND rr.status = 'ratified') AS round_count`;
     const rows = user.role === 'admin'

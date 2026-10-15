@@ -2016,6 +2016,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the close tick closes and tallies the whole day', tClose.d.closed === 1 && tClose.d.ratified === 3, JSON.stringify(tClose.d));
   ok('every record is ratified', (await lRounds()).every(r => r.status === 'ratified'));
   ok('the day reaches async_state=ratified', (await lSess()).async_state === 'ratified');
+  // The console's session list groups by status, and a drop stays status='live' until its
+  // results publish — so the list must carry what tells a closed drop from the open one.
+  const closedListRow = ((await call('/api/auth/sessions', null, 'GET', ADMINH)).d.sessions || []).find(x => x.id === LDROP);
+  ok('the session list tells a closed drop from an open one (mode, async_state, results_at)',
+    closedListRow && closedListRow.status === 'live' && closedListRow.mode === 'async'
+      && closedListRow.async_state === 'ratified' && Number(closedListRow.results_at) > 0, JSON.stringify(closedListRow));
   const scored = await dDb.all('SELECT points, room_average FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [LDROP]);
   ok('the tally scored every vote', scored.length === 5 && scored.every(v => v.points != null), JSON.stringify(scored));
 

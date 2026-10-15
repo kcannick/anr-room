@@ -4006,8 +4006,14 @@ $('#btnLogout').onclick=async()=>{
 };
 
 // Session picker
-const STATUS_LABEL={upcoming:'Upcoming',live:'Live',completed:'Completed',archived:'Archived'};
-const STATUS_ORDER=['live','upcoming','completed','archived'];
+const STATUS_LABEL={upcoming:'Upcoming',live:'Live',closed:'Voting closed',completed:'Completed',archived:'Archived'};
+const STATUS_ORDER=['live','closed','upcoming','completed','archived'];
+// A daily drop stays status='live' from its open until its results publish (~45 hours), so
+// without this every drop in flight lists as Live. Only the OPEN one is; the rest have closed
+// and are waiting on results.
+function listStatus(s){
+  return s.mode==='async' && s.status==='live' && s.async_state && s.async_state!=='open' ? 'closed' : s.status;
+}
 let SERIES=[]; // admin-only cache of series for the inline tag dropdowns
 const isAdmin=()=>ME&&ME.role==='admin';
 // Feature permission: admin = always; host = per-grant. Drives host-facing tool visibility.
@@ -4066,10 +4072,14 @@ function sessionCardHtml(s){
     s.round_count?attr(s.round_count+' round'+(s.round_count==1?'':'s')):'',
     st?attr('◆ '+esc(st),'series'):attr('◇ Unassigned','series none')
   ].filter(Boolean).join('');
-  return `<div class="sc${s.status==='live'?' live':''}">
+  const ls=listStatus(s);
+  const pillTxt=ls==='closed'
+    ? 'Voting closed'+(s.results_at?' · results '+fmtET(Number(s.results_at),{weekday:'short',hour:'numeric',minute:'2-digit'}):'')
+    : (STATUS_LABEL[ls]||ls);
+  return `<div class="sc${ls==='live'?' live':''}">
     <div class="sc-top">
       <div class="sc-name">${esc(s.name)}</div>
-      <span class="pill ${s.status}">${STATUS_LABEL[s.status]||s.status}</span>
+      <span class="pill ${ls==='closed'?'completed':ls}">${esc(pillTxt)}</span>
     </div>
     <div class="sc-attrs">${attrs}</div>
     <div class="sc-actions">
@@ -4123,7 +4133,7 @@ function renderPickerList(){
   if(!pickerSessions.length){box.innerHTML='<div class="empty">No sessions yet. Create your first one.</div>';return;}
   const sort=SESS_SORTS[$('#sessSort').value]||SESS_SORTS.recent;
   const groups={};STATUS_ORDER.forEach(s=>groups[s]=[]);
-  pickerSessions.forEach(s=>{(groups[s.status]||(groups[s.status]=[])).push(s);});
+  pickerSessions.forEach(s=>{const g=listStatus(s);(groups[g]||(groups[g]=[])).push(s);});
   let html='';
   for(const st of STATUS_ORDER){
     if(!groups[st]||!groups[st].length)continue;
