@@ -1140,15 +1140,20 @@ function warsEye(d, g) {
 }
 // The foot of the portrait pieces: the call to action bottom-left on the green field, the
 // prize bottom-right (hidden on the champion graphic, whose headline carries the amount).
+// A second ask (`d.cta2`, the final package) takes the prize's spot, right-aligned — that
+// graphic's headline carries the amount instead, so the prize still prints exactly once.
 function warsFoot(d, g) {
   const cta = d.cta || {};
-  const kids = [
-    col({ position: 'absolute', left: g.pad, bottom: g.ctaBottom }, [
-      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: g.ctaFs, lineHeight: 1, letterSpacing: -Math.round(g.ctaFs * 0.03), color: WARS.bg, ...NOWRAP }, clip(cta.label || '', 24)),
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.urlFs, lineHeight: 1, letterSpacing: -0.3, color: WARS.bg, marginTop: g.urlMt, ...NOWRAP }, clip(cta.url || '', 28)),
-    ]),
-  ];
-  if (d.stage !== 'champion' && d.prizeAmount) {
+  const two = !!(d.cta2 && d.cta2.label);
+  const ctaFs = two && g.pkgCtaFs ? g.pkgCtaFs : g.ctaFs;
+  const urlFs = two && g.pkgUrlFs ? g.pkgUrlFs : g.urlFs;
+  const stack = (c, right) => col({ position: 'absolute', [right ? 'right' : 'left']: g.pad, bottom: g.ctaBottom, alignItems: right ? 'flex-end' : 'flex-start' }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: ctaFs, lineHeight: 1, letterSpacing: -Math.round(ctaFs * 0.03), color: WARS.bg, ...NOWRAP }, clip(c.label || '', 24)),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: urlFs, lineHeight: 1, letterSpacing: -0.3, color: WARS.bg, marginTop: g.urlMt, ...NOWRAP }, clip(c.url || '', 28)),
+  ]);
+  const kids = [stack(cta, false)];
+  if (two) kids.push(stack(d.cta2, true));
+  else if (d.stage !== 'champion' && d.prizeAmount) {
     kids.push(col({ position: 'absolute', right: g.pad, bottom: g.prizeBottom, alignItems: 'flex-end' }, [
       text({ fontFamily: MONO, fontWeight: 700, fontSize: g.prizeFs, lineHeight: 1, letterSpacing: -Math.round(g.prizeFs * 0.04), color: WARS.bg, ...NOWRAP }, d.prizeAmount),
       text({ fontFamily: MONO, fontWeight: 700, fontSize: g.prizeLabelFs, lineHeight: 1.2, letterSpacing: -0.3, color: WARS.bg, marginTop: 4, ...NOWRAP }, d.prizeLabel || WARS_PRIZE_LABEL),
@@ -1164,7 +1169,7 @@ function elementTournamentPortrait(d, story) {
     ? { W: Wd, pad: 72, logoTop: 262, logoH: 34, numTop: 258, numFs: 32, lockTop: 330, S: 140, eyeTop: 520, headTop: 572, headFs: 66,
         top: 700, ph: 380, nm: 58, ig: 28, igi: 32, tagH: 44, tagFs: 23, when: 46, premiseW: 512, txW: 936 - 380 - 44,
         seatsTop: 1136, seat: { w: 112, ph: 104, nameFs: 19, nameMt: 10, seatFs: 16, ring: 4, dash: 2 },
-        field: [620, 249], ctaBottom: 262, ctaFs: 52, urlFs: 40, urlMt: 14, prizeBottom: 268, prizeFs: 72, prizeLabelFs: 30 }
+        field: [620, 249], ctaBottom: 262, ctaFs: 52, urlFs: 40, urlMt: 14, prizeBottom: 268, prizeFs: 72, prizeLabelFs: 30, pkgCtaFs: 44, pkgUrlFs: 34 }
     : { W: Wd, pad: 72, logoTop: 64, logoH: 32, numTop: 60, numFs: 32, lockTop: 128, S: 120, eyeTop: 288, headTop: 338, headFs: 64,
         top: 440, ph: 340, nm: 60, ig: 30, igi: 34, tagH: 44, tagFs: 24, when: 44, premiseW: 552, txW: 936 - 340 - 44,
         seatsTop: 820, seat: { w: 112, ph: 100, nameFs: 19, nameMt: 10, seatFs: 16, ring: 4, dash: 2 },

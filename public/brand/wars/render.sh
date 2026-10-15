@@ -3,7 +3,7 @@
 #   ./render.sh                              -> every piece at every state into preview/, plus the 180px thumbnail check
 #   ./render.sh <piece> <query> <suffix>     -> one PNG, e.g. ./render.sh thumb "filled=3" filled3
 # Pieces: flyer-feed (1080x1350) · flyer-story (1080x1920) · thumb (1920x1080) — weekly seat flyers,
-#         states filled=1..8 · stage=final · stage=champion
+#         states filled=1..8 · stage=final · stage=champion · stage=package&me=N (flyers only)
 #         bracket (1080x1350) — event night, states stage=field|final4|final2|champion
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,6 +29,8 @@ for piece in flyer-feed flyer-story thumb; do
   render "$piece" "stage=final" final
   render "$piece" "stage=champion" champion
 done
+# The final package: one flyer per competitor (feed + story only), e.g. competitor 3's
+for piece in flyer-feed flyer-story; do render "$piece" "stage=package&me=3" package3; done
 for stage in field final4 final2 champion; do render bracket "stage=$stage" "$stage"; done
 # The thumbnail at 180px wide (what a sidebar shows), blown back up nearest-neighbour so the loss is honest.
 for s in filled4 final champion; do
