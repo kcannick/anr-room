@@ -3760,6 +3760,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // Monday: the week's #1 (8.8), a record that ties it on score but with fewer ratings,
   // and the week's top supporter sitting mid-table — money is not a placing.
   const wkR1 = await wkRound(wkMon, { title: 'Neon Skyline', artist: 'The Verge', ig: 'thevergemusic', avg: 8.8, support: 5000 });
+  await dDb.run('UPDATE rounds SET ingest_url = ?, artist_profile_url = ? WHERE id = ?',
+    ['https://www.makinitmag.com/node/9001', 'https://www.makinitmag.com/artist/the-verge', wkR1]);
   const wkR2 = await wkRound(wkMon, { title: 'Tie On Score', artist: 'Fewer Voters', avg: 8.8, support: 0 });
   const wkR3 = await wkRound(wkMon, { title: 'Paid The Most', artist: 'Big Spender', avg: 6.1, support: 25000 });
   // Thursday: a reference track and a Verzuz round, neither of which may ever chart, plus a
@@ -3831,6 +3833,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify(WKR.songsAll.map(r => r.title)));
   ok('#1 is the week\'s highest room average', WKR.songs[0].title === 'Neon Skyline',
     JSON.stringify(WKR.songs.map(r => [r.rank, r.title, r.score])));
+  ok('each record carries its makinitmag.com submission and artist profile links for the console',
+    WKR.songs[0].ingest_url === 'https://www.makinitmag.com/node/9001'
+      && WKR.songs[0].artist_profile_url === 'https://www.makinitmag.com/artist/the-verge'
+      && WKR.songs[1].ingest_url === null,
+    JSON.stringify(WKR.songs.map(r => [r.title, r.ingest_url, r.artist_profile_url])));
   ok('a tie on score breaks on the number of ratings behind it, not the day',
     WKR.songs[1].title === 'Tie On Score', JSON.stringify(WKR.songs.map(r => r.title)));
   ok('a reference track never charts — it is not a submission and #1 buys a tournament seat',

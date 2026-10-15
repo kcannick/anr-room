@@ -4752,6 +4752,7 @@ async function weeklyReportData(day, opts = {}) {
   const rows = await db.all(
     `SELECT r.id, r.idx, r.session_id, r.song_title, r.song_artist, r.artist_instagram,
             r.song_note, r.play_url, r.room_average, r.support_cents,
+            r.ingest_url, r.artist_profile_url,
             (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL) AS votes
        FROM rounds r
       WHERE r.session_id IN (${ph}) AND r.status = 'ratified'
@@ -4773,6 +4774,10 @@ async function weeklyReportData(day, opts = {}) {
       title: r.song_title || '—', artist: r.song_artist || '',
       ig: igClean(r.artist_instagram) || (m ? igClean(m[1]) : null),
       play_url: r.play_url || '',
+      // The submission on makinitmag.com (the admin deep link — this screen is platform-admin
+      // only, the same surface the daily console shows it on) and the artist's public profile.
+      ingest_url: r.ingest_url || null,
+      artist_profile_url: r.artist_profile_url || null,
       score: Number(r.room_average), votes: Number(r.votes) || 0,
       support_cents: supportCentsOf(r),
       top_supporter: topCents != null && supportCentsOf(r) === topCents,
