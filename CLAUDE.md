@@ -607,7 +607,14 @@ live on anr.makinitmag.com.
   decision. Spec: **docs/specs/track-report-spec.md** (built from the Room Report Redesign
   mockup). The old three pages opened with a big green number and buried the instruction on
   the last card; the report now opens with a sentence the artist can act on — "Release it.
-  Don't put money behind it yet." — and the score sits under it as evidence. **Every headline
+  Don't put money behind it yet." — and the score sits under it as evidence. **What to spend
+  (operator, 2026-10-15) replaced that line:** every report gives an amount off the room
+  average (`SPEND` in track-report.js, fixed edges, independent of the band edges): under 3
+  don't invest · 3–4 up to $300 over the first 3 months · 4–5 at least $300 · 5–6 at least
+  $800 · 6–7 at least $1,500 · 7+ work out what you can afford and how long to push it as a
+  single. It is the decision headline and always step 02 on the What now page. A dollar
+  amount in the email is advice about the artist's own release; the no-upsell test still
+  bans anything that sells ours. **Every headline
   is derived** in `track-report.js` (pure, `track-report.test.js`) from numbers `songReportData`
   already had: the BAND (edges 3 / 6, the chart key's cuts; `TRACK_BAND_EDGES=a,b` overrides),
   the histogram's SHAPE (consensus / divided / spread / thin — "Agreement, with three

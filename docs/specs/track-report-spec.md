@@ -51,7 +51,7 @@ record:**
 
 | # | Card | Headline example | Derived from |
 |---|---|---|---|
-| 1 | **The decision** | "Release it. Don't put money behind it yet." Score underneath as evidence. | the score band |
+| 1 | **The decision** | "Release it. Spend at least $300 on it." Score underneath as evidence. (Spend tiers added 2026-10-15 — see track-report.js `SPEND`.) | the score band + spend tier |
 | 2 | **How it split** | "Agreement, with three believers." Histogram, average, middle score, count of 7+. | histogram shape: consensus / divided / thin |
 | 3 | **Against the room** | A marker on the series' real score curve. Replaces "Top 61%". | series distribution |
 | 4 | **Who it's for** | "Artists and DJs. Not managers." Segments reframed as targeting. | role/city segments (≥3 voters) |

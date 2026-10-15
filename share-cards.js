@@ -1532,7 +1532,7 @@ function trackContent(d) {
     return [
       trackHeadline(['Three things', 'to do next.'], 80),
       col({ marginTop: 40 }, steps),
-      trackPull('Every line on this page comes from the numbers on the other pages — the decision, the biggest gap between groups of A&Rs, and the setup. Nothing is written by hand.', 'plain'),
+      trackPull('Every line on this page comes from the numbers on the other pages — the score, the biggest gap between groups of A&Rs, and the setup. The amount is what to spend letting people know the record is out.', 'plain'),
     ];
   }
   if (k === 'comments') {

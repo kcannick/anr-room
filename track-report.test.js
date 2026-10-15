@@ -14,7 +14,16 @@ ok('2.9 keeps it in the studio', tr.bandFor(2.9).key === 'studio');
 ok('3.0 is release-ready (lower-inclusive edge)', tr.bandFor(3.0).key === 'release');
 ok('5.9 is still release', tr.bandFor(5.9).key === 'release');
 ok('6.0 is invest (lower-inclusive edge)', tr.bandFor(6.0).key === 'invest');
-ok('the release headline is the instruction', tr.bandFor(4.3).headline.join(' ') === 'Release it. Don’t put money behind it yet.');
+ok('the release headline is the instruction', tr.bandFor(4.3).headline.join(' ') === 'Release it. Spend at least $300 on it.');
+console.log('— what to spend (operator, 2026-10-15) —');
+const sp = (m) => tr.bandFor(m).spend;
+ok('under 3: do not invest', sp(2.9) === 'none' && /Don’t invest/.test(tr.bandFor(2.9).money));
+ok('3–4: up to $300', sp(3) === 'up300' && sp(3.9) === 'up300' && /up to \$300 over the first 3 months/.test(tr.bandFor(3.5).money));
+ok('4–5: at least $300', sp(4) === 'min300' && sp(4.9) === 'min300');
+ok('5–6: at least $800', sp(5) === 'min800' && /at least \$800/.test(tr.bandFor(5.5).money));
+ok('6–7: at least $1,500', sp(6) === 'min1500' && sp(6.9) === 'min1500' && /\$1,500/.test(tr.bandFor(6.2).headline.join(' ')));
+ok('7+: work out what you can afford', sp(7) === 'single' && /how long you’re willing to push this as a single/.test(tr.bandFor(8.4).moneyRest));
+ok('spend tiers ignore calibrated band edges', tr.bandFor(3.2, [3.5, 6]).spend === 'up300' && tr.bandFor(3.2, [3.5, 6]).key === 'studio');
 ok('edges are a parameter (calibration is a two-number change)', tr.bandFor(4.3, [4.5, 7]).key === 'studio' && tr.bandFor(7.2, [4.5, 7]).key === 'invest');
 ok('band labels match the chart key', tr.BANDS.map(b => b.label).join('|') === 'Keep it in the studio|Release Ready|Potential Single');
 
@@ -90,17 +99,19 @@ const band = tr.bandFor(4.3);
 const n1 = tr.nextActions({ band, who: w1, setup: g1 });
 ok('exactly three', n1.length === 3);
 ok('01 is the band', n1[0].lead === 'Release it.');
-ok('02 is the segment gap', n1[1].lead === 'Send it to artists, not managers.', n1[1].lead);
-ok('03 is the prediction direction', /Another pass at the song/.test(n1[2].lead));
+ok('02 is what to spend', n1[1].lead === 'Spend at least $300 over the first 3 months.', n1[1].lead);
+ok('03 is the segment gap', n1[2].lead === 'Send it to artists, not managers.', n1[2].lead);
 const n2 = tr.nextActions({ band, who: w2, setup: null });
-ok('no gap -> the band’s money line', n2[1].lead === 'Hold the ad budget.');
+ok('no gap -> still the money line', n2[1].lead === 'Spend at least $300 over the first 3 months.');
 ok('no prediction and no gap -> bring the next one', n2[2].lead === 'Bring the next one.');
 const n3 = tr.nextActions({ band: tr.bandFor(7.1), who: null, setup: tr.setupVsRecord(7.0, 7.1) });
 ok('invest band opens with the push', n3[0].lead === 'Release it and plan a push.');
 ok('even setup -> keep the packaging', n3[2].lead === 'Keep the packaging.');
 const n4 = tr.nextActions({ band: tr.bandFor(2.1), who: w3, setup: null });
 ok('studio band: do not release this version', n4[0].lead === 'Don’t release this version.');
-ok('city gap + no prediction -> money line fills slot 3', n4[1].lead === 'Start in Atlanta.' && n4[2].lead === 'Keep the money.');
+ok('studio: do not invest, then the city gap', n4[1].lead === 'Don’t invest in this version.' && n4[2].lead === 'Start in Atlanta.');
+const n5 = tr.nextActions({ band, who: null, setup: g1 });
+ok('no gap -> the prediction direction fills slot 3', /Another pass at the song/.test(n5[2].lead));
 
 console.log('— the decision card’s sub-line —');
 const d1 = tr.decisionSub(30, s1, band);
@@ -110,7 +121,7 @@ ok('divided copy', /did not agree/.test(tr.decisionSub(15, s2, band)));
 
 console.log('— copy rules: nothing about the machine —');
 const allCopy = [s1, s2, s3, s4, ar1, w1, w2, w3, g1, g2].filter(Boolean).map(o => o.pull + ' ' + (o.headline || []).join(' ')).join(' ')
-  + n1.concat(n2, n3, n4).map(s => s.lead + ' ' + s.rest).join(' ') + d1 + tr.BANDS.map(b => b.headline.join(' ') + b.action + b.actionRest + b.money + b.moneyRest).join(' ');
+  + n1.concat(n2, n3, n4).map(s => s.lead + ' ' + s.rest).join(' ') + d1 + tr.BANDS.map(b => b.action + b.actionRest).join(' ') + tr.SPEND.map(t => t.headline.join(' ') + t.money + t.moneyRest).join(' ');
 ok('no pool / lottery / queue / submission / ratified anywhere', !noSell.test(allCopy), (allCopy.match(noSell) || [''])[0]);
 ok('no emoji, no exclamation marks', !/[!\u{1F300}-\u{1FAFF}]/u.test(allCopy));
 

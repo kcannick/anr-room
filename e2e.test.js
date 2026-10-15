@@ -3217,7 +3217,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the share page is last', rpKinds[rpKinds.length - 1] === 'share');
   ok('a prediction gives a setup page; three actions always', rpKinds.includes('setup') && rpKinds.includes('next') && (rpMeta.d.steps || []).length === 3);
   ok('no role segments -> no "who it is for" page', !rpKinds.includes('whofor'));
-  ok('a 6.6 is the invest band, and the decision is a sentence', rpMeta.d.mean === '6.6' && rpMeta.d.band === 'invest' && rpMeta.d.decision === 'Release it. This one is worth investing in.', rpMeta.d.decision);
+  ok('a 6.6 is the invest band, and the decision is a sentence', rpMeta.d.mean === '6.6' && rpMeta.d.band === 'invest' && rpMeta.d.decision === 'Release it. Spend at least $1,500 on it.', rpMeta.d.decision);
   ok('the report never says how the machine works', !/pool|lottery|queue|submission|ratif/i.test(JSON.stringify(rpMeta.d.steps) + rpMeta.d.decision));
   for (const page of [1, 2, rpKinds.length]) {
     const r = await fetch(base + `/api/card/song-report?r=${RPRID}&page=${page}`, { headers: RPAH });
@@ -3984,17 +3984,20 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // email must never mention price or an upsell. That's a product decision a future copy
   // edit could quietly undo, so it's asserted here rather than left to review.
   const aeBase = { title: 'Midnight Run', artist: 'Jaylen Cole', mean: '7.4', bandLabel: 'Potential Single',
-    decision: 'Release it. This one is worth investing in.', votes: 11, what: 'A&R Room', dateLabel: 'Jul 8, 2026',
+    decision: 'Release it. Push it as a single.', votes: 11, what: 'A&R Room', dateLabel: 'Jul 8, 2026',
     watchUrl: 'https://youtube.com/watch?v=abc123', pages: ['https://blob/p1.png', 'https://blob/p2.png', 'https://blob/p3.png'] };
   const aeHtml = server._artistEmailHtml(aeBase);
   ok('artist email embeds every report page', ['p1', 'p2', 'p3'].every(p => aeHtml.includes(p + '.png')));
-  ok('artist email leads with the decision as the headline', /<h1[^>]*>Release it\. This one is worth investing in\.<\/h1>/.test(aeHtml));
+  ok('artist email leads with the decision as the headline', /<h1[^>]*>Release it\. Push it as a single\.<\/h1>/.test(aeHtml));
   ok('artist email carries the replay link', aeHtml.includes('youtube.com/watch?v=abc123'));
   ok('artist email points the artist at the replay for clips', /short clips/i.test(aeHtml));
   ok('a live-show email asks for the collab post with the Room tag', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARRoom'));
   ok('artist email shows the rating, the band and the A&R count', aeHtml.includes('7.4') && aeHtml.includes('Potential Single') && /11 A&amp;Rs/.test(aeHtml));
   ok('artist email says nothing about the machine', !/pool|lottery|queue|submission|ratif/i.test(aeHtml));
-  const sellWords = /\$\d|\bprice\b|\bpricing\b|\bpurchase\b|\bpaid\b|\bupgrade\b|\bcheckout\b|\bbuy\b|\bupsell\b/i;
+  // A dollar amount IS allowed: the Track Report tells the artist what to spend on their own
+  // release (operator, 2026-10-15). What stays banned is anything that sells OUR product.
+  const sellWords = /\bprice\b|\bpricing\b|\bpurchase\b|\bpaid\b|\bupgrade\b|\bcheckout\b|\bbuy\b|\bupsell\b/i;
+  ok('a spend amount in the decision is advice, not a sale', !sellWords.test(server._artistEmailHtml({ ...aeBase, decision: 'Release it. Spend at least $800 on it.' })));
   ok('artist email mentions NO price or upsell (operator decision)', !sellWords.test(aeHtml),
     (aeHtml.match(sellWords) || [''])[0]);
   // A Meeting record: no replay (every vote is async), the Meeting's own tag.
