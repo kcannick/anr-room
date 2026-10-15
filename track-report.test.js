@@ -85,11 +85,12 @@ ok('roles pluralise', tr.plural('DJ') === 'DJs' && tr.plural('Listener / Fan') =
 
 console.log('— setup vs record: the prediction gap has a meaning —');
 const g1 = tr.setupVsRecord(4.6, 4.3);
-ok('predicted above delivered = it promised more', g1.key === 'over' && g1.headline.join(' ') === 'It promised a little more than it gave.', flat(g1.headline));
-ok('a big miss drops the "little"', tr.setupVsRecord(5.5, 4.3).headline.join(' ') === 'It promised more than it gave.');
+ok('predicted above delivered = the A&Rs expected more', g1.key === 'over' && g1.headline.join(' ') === 'The A&Rs expected a little more.', flat(g1.headline));
+ok('a big miss: saw more in it than it delivered', tr.setupVsRecord(5.5, 4.3).headline.join(' ') === 'The A&Rs saw more in it than it delivered.');
 ok('the label is signed', g1.label === '-0.3');
 const g2 = tr.setupVsRecord(4.0, 4.4);
-ok('delivered above predicted = better than its packaging', g2.key === 'under' && /costing you plays/.test(g2.pull));
+ok('delivered above predicted = it outperformed', g2.key === 'under' && /outperformed what the A&Rs expected/.test(g2.pull));
+ok('a big beat says outperformed', tr.setupVsRecord(3.0, 4.5).headline.join(' ') === 'It outperformed expectations.');
 ok('+ sign on the label', g2.label === '+0.4');
 ok('within 0.15 is even', tr.setupVsRecord(4.4, 4.5).key === 'even');
 ok('no prediction -> null', tr.setupVsRecord(null, 4.5) === null);
@@ -106,7 +107,7 @@ ok('no gap -> still the money line', n2[1].lead === 'Spend at least $300 over th
 ok('no prediction and no gap -> bring the next one', n2[2].lead === 'Bring the next one.');
 const n3 = tr.nextActions({ band: tr.bandFor(7.1), who: null, setup: tr.setupVsRecord(7.0, 7.1) });
 ok('invest band opens with the push', n3[0].lead === 'Release it and plan a push.');
-ok('even setup -> keep the packaging', n3[2].lead === 'Keep the packaging.');
+ok('even -> trust the score', n3[2].lead === 'Trust the score.');
 const n4 = tr.nextActions({ band: tr.bandFor(2.1), who: w3, setup: null });
 ok('studio band: do not release this version', n4[0].lead === 'Don’t release this version.');
 ok('studio: do not invest, then the city gap', n4[1].lead === 'Don’t invest in this version.' && n4[2].lead === 'Start in Atlanta.');

@@ -217,18 +217,20 @@ function setupVsRecord(predictMean, mean) {
   if (predictMean == null || !Number.isFinite(Number(predictMean))) return null;
   const d = Number(mean) - Number(predictMean);
   let key, headline, pull;
+  // Framed as what the A&Rs EXPECTED vs what the record DELIVERED (operator, 2026-10-15) —
+  // the prediction is each A&R's read of where the room would land, made after hearing it.
   if (Math.abs(d) < GAP_EVEN) {
     key = 'even';
-    headline = ['It gave what', 'it promised.'];
-    pull = 'The setup and the record match. Whatever the score is, the title, the artwork and the intro are telling the truth about it.';
+    headline = ['It delivered what', 'the A&Rs expected.'];
+    pull = 'The A&Rs called it. What they expected from this record is what it delivered.';
   } else if (d < 0) {
     key = 'over';
-    headline = d <= -GAP_BIG ? ['It promised more', 'than it gave.'] : ['It promised a little', 'more than it gave.'];
-    pull = `A ${d <= -GAP_BIG ? 'gap' : 'small gap'} the wrong way. The title, the artwork and the intro are doing more work than the record is — worth another pass at the song before another pass at the marketing.`;
+    headline = d <= -GAP_BIG ? ['The A&Rs saw more', 'in it than it delivered.'] : ['The A&Rs expected', 'a little more.'];
+    pull = 'The A&Rs saw more in it than it delivered. They expected it to score higher than it did — worth another pass at the song before you spend on the marketing.';
   } else {
     key = 'under';
-    headline = d >= GAP_BIG ? ['It gave more', 'than it promised.'] : ['It gave a little', 'more than it promised.'];
-    pull = 'The record is better than its setup. The title, the artwork and the intro are costing you plays — fix the packaging before you spend on the song.';
+    headline = d >= GAP_BIG ? ['It outperformed', 'expectations.'] : ['It beat', 'expectations.'];
+    pull = 'It outperformed what the A&Rs expected. People like it more once they hear it, so the job is getting it heard.';
   }
   return { key, headline, pull, diff: d, label: (d >= 0 ? '+' : '') + fmt1(d) };
 }
@@ -246,9 +248,9 @@ function nextActions({ band, who, setup }) {
       rest: `They scored it ${fmt1(g.diff)} higher. That’s your first push.` });
   } else if (g && g.kind === 'city') {
     steps.push({ lead: `Start in ${g.top}.`, rest: `A&Rs there scored it ${fmt1(g.diff)} higher than in ${g.bottom}. Push it there first.` });
-  } else if (setup && setup.key === 'over') steps.push({ lead: 'Another pass at the song before another pass at the marketing.', rest: 'The setup promised more than the record gave.' });
-  else if (setup && setup.key === 'under') steps.push({ lead: 'Fix the packaging.', rest: 'The record is better than its setup. The title, artwork and intro are costing plays.' });
-  else if (setup) steps.push({ lead: 'Keep the packaging.', rest: 'The setup told the truth about the record. Change the song before you change the presentation.' });
+  } else if (setup && setup.key === 'over') steps.push({ lead: 'Another pass at the song before another pass at the marketing.', rest: 'The A&Rs saw more in it than it delivered.' });
+  else if (setup && setup.key === 'under') steps.push({ lead: 'Get it heard.', rest: 'It outperformed what the A&Rs expected. The more people hear it, the better it does.' });
+  else if (setup) steps.push({ lead: 'Trust the score.', rest: 'It delivered what the A&Rs expected. No surprises either way.' });
   else steps.push({ lead: 'Bring the next one.', rest: 'The room scores what it hears. The fastest way to a better report is a better record.' });
   return steps.slice(0, 3);
 }

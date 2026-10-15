@@ -1517,7 +1517,7 @@ function trackContent(d) {
         big(d.mean, 'Delivered', false),
         text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: TRACK.purple, marginBottom: 74, marginLeft: 'auto', ...NOWRAP }, su.label || ''),
       ]),
-      trackBody(`The A&Rs guessed ${d.predictMean} from the setup, then heard it and landed on ${d.mean}.`, { mt: 40 }),
+      trackBody(`The A&Rs expected it to score ${d.predictMean}. It scored ${d.mean}.`, { mt: 40 }),
       trackPull(su.pull || '', 'purple'),
     ];
   }
@@ -1532,7 +1532,7 @@ function trackContent(d) {
     return [
       trackHeadline(['Three things', 'to do next.'], 80),
       col({ marginTop: 40 }, steps),
-      trackPull('Every line on this page comes from the numbers on the other pages — the score, the biggest gap between groups of A&Rs, and the setup. The amount is what to spend letting people know the record is out.', 'plain'),
+      trackPull('Every line on this page comes from the numbers on the other pages — the score, the biggest gap between groups of A&Rs, and what the A&Rs expected. The amount is what to spend letting people know the record is out.', 'plain'),
     ];
   }
   if (k === 'comments') {
