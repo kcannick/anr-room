@@ -761,6 +761,7 @@
           <span class="mono" style="color:var(--ink-faint);font-size:12px">Package:</span>
           <button class="btn sm" id="btnTnSend" title="Email this competitor the briefing with both graphics attached, then text them a heads-up">Email competitor</button>
           <button class="btn ghost sm" id="btnTnPkgZip" title="This competitor's feed, story and caption — for a hand DM">Download this package (zip)</button>
+          <button class="btn ghost sm" id="btnTnPkgTest" title="Send this competitor's package to YOUR OWN email and phone, exactly as they would get it; nothing is sent to them or recorded">Send test to me</button>
           <span style="flex:1 1 auto"></span>
           <button class="btn ghost sm" id="btnTnPkgAll" title="Render and host all 8 packages, one at a time">Publish all 8 packages</button>
           <button class="btn ghost sm" id="btnTnSendAll" title="Email every competitor with an account, one at a time; skips anyone already sent">Email every competitor</button>
@@ -3585,6 +3586,7 @@ function renderTnGfx(){
   $('#btnTnSend').textContent = g && isPkg(g) ? (g.sentAt ? `Sent ${tnWhen(g.sentAt)} · send again` : `Email ${g.label.replace(/^Package · /, '')}`) : 'Email competitor';
   $('#btnTnSend').title = g && isPkg(g) && contactNote(g) ? contactNote(g) : 'Email this competitor the briefing with both graphics attached';
   $('#btnTnPkgZip').disabled = !(g && isPkg(g) && g.ready);
+  $('#btnTnPkgTest').disabled = !(g && isPkg(g) && g.ready);
   $('#btnTnPkgAll').disabled = !pkgReady;
   $('#btnTnSendAll').disabled = !pkgRows.some(x => x.ready && x.contact === 'email' && !x.sentAt);
   $('#tnGfxList').innerHTML = rows.length ? rows.map(x => {
@@ -3632,6 +3634,18 @@ $('#btnTnSend').onclick = async (e) => {
     out.textContent = `Sent to ${d.to || who} with ${d.attachments || 0} graphics attached.` + (d.sms === 'sent' ? ` Heads-up text sent to ${d.smsTo || 'their number'}.` : d.sms === 'no phone' ? ' No phone on file, so no text.' : d.sms === 'failed' ? ' The heads-up text failed (see the server log).' : '');
     await tnLoad(true); tnGfxKey = k; renderTnGfx();
   }catch(err){ out.textContent = 'Send failed: ' + err.message; b.disabled = false; }
+};
+$('#btnTnPkgTest').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const g = (TN.graphics || []).find(x => x.key === tnGfxKey); if(!g) return;
+  const who = g.label.replace(/^Package · /, '');
+  const b = e.target, out = $('#tnPubOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = `Rendering ${who}'s package and sending it to you…`;
+  try{
+    const d = await api('/api/admin/tournament/package-test', { tournamentId: TN.id, key: tnGfxKey });
+    out.textContent = `Test sent to ${d.to} with ${d.attachments || 0} graphics attached (${who}'s package, [TEST] in the subject).` + (d.sms === 'sent' ? ` Heads-up text sent to ${d.smsTo}.` : d.sms === 'no phone' ? ' No phone on your account, so no text.' : ' The text failed (see the server log).') + ' Nothing was sent to the competitor.';
+  }catch(err){ out.textContent = 'Test failed: ' + err.message; }
+  finally{ b.disabled = false; }
 };
 $('#btnTnPkgZip').onclick = async (e) => {
   if(!TN || !tnGfxKey) return;

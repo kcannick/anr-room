@@ -148,7 +148,9 @@ re-sends. **A heads-up text follows the email** ("A&R Wars #1: we just sent an e
 all the details for the tournament. Check Spam and the Promotions tab if you don't see it. Good
 luck!", GSM-7; a long address tips it to MMS) to the phone on file — their own
 seat, so no marketing-consent gate; no phone means no text and the row says so (`sms`).
-Refused with a reason when the competitor has no account (`contact: none` — download
+**Send test to me** (`POST /api/admin/tournament/package-test {tournamentId, key}`) sends that
+competitor's package to the logged-in admin's own email and phone with `[TEST]` in the subject,
+recording nothing. Refused with a reason when the competitor has no account (`contact: none` — download
 the per-competitor zip, `graphics.zip?id=&key=pkgN`, and DM it), a closed account, or a bounced
 address. `email_opt_out` is not consulted: this is their own participation.
 

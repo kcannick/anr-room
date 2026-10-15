@@ -5818,6 +5818,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok('package: a linked pack puts its download link in the briefing', T4.pack_id === tnPackMk.d.id && m3.packUrl === 'https://example.com/pack.zip' && /Download: https:\/\/example\.com\/pack\.zip/.test(m3.text), JSON.stringify([T4.pack_id, m3.packUrl]));
     await call('/api/admin/tournament', { id: TN, packId: null }, 'POST', BOOTH);
   }
+  const tnTest = await call('/api/admin/tournament/package-test', { tournamentId: TN, key: 'pkg2' }, 'POST', BOOTH);
+  ok('package: "send test to me" mails the admin their own copy of a competitor\'s package and records nothing', tnTest.status === 200 && tnTest.d.test === true && tnTest.d.attachments === 2
+    && tnTest.d.competitor === 'Theo' && /•••@/.test(tnTest.d.to) && (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d.graphics.find(g => g.key === 'pkg2').sentAt == null, JSON.stringify(tnTest.d));
+  ok('package: the test send takes package keys only', (await call('/api/admin/tournament/package-test', { tournamentId: TN, key: 'final' }, 'POST', BOOTH)).status === 400);
   const tnPkgZipRes = await fetch(base + `/api/admin/tournament/graphics.zip?id=${TN}&key=pkg1`, { headers: BOOTH });
   const tnPkgZip = Buffer.from(await tnPkgZipRes.arrayBuffer());
   ok('package: one competitor\'s zip = feed, story, caption', tnPkgZipRes.status === 200 && /wars-1-pkg1\.zip/.test(tnPkgZipRes.headers.get('content-disposition') || '')
