@@ -2429,7 +2429,9 @@ function renderDaily(){
   // being scored) → Closed (scored, not yet announced) → Published (terminal, results are
   // out). The DB values behind them are untouched — async_state is a claim token the cron
   // and the tests key off, and renaming it would be a migration, not a label change.
-  const STATE_LABEL = { scheduled: 'Scheduled', open: 'Open', closing: 'Processing',
+  // Same four words as the session list (operator, 2026-10-15): Upcoming → Live → Closed →
+  // Published. "Processing" (the seconds while a tally runs) reads as Closed: voting is over.
+  const STATE_LABEL = { scheduled: 'Upcoming', open: 'Live', closing: 'Closed',
     ratified: 'Closed', published: 'Published' };
   $('#dlState').textContent = STATE_LABEL[dr.async_state] || dr.async_state;
   $('#dlState').className = 'pill ' + (dr.async_state === 'open' ? 'live'
@@ -4006,14 +4008,11 @@ $('#btnLogout').onclick=async()=>{
 };
 
 // Session picker
-const STATUS_LABEL={upcoming:'Upcoming',live:'Live',closed:'Voting closed',completed:'Completed',archived:'Archived'};
-const STATUS_ORDER=['live','closed','upcoming','completed','archived'];
-// A daily drop stays status='live' from its open until its results publish (~45 hours), so
-// without this every drop in flight lists as Live. Only the OPEN one is; the rest have closed
-// and are waiting on results.
-function listStatus(s){
-  return s.mode==='async' && s.status==='live' && s.async_state && s.async_state!=='open' ? 'closed' : s.status;
-}
+// The four session states (operator, 2026-10-15) + Archived. The server derives `phase` from
+// status + async_state (sessionPhase in server.js) so every screen reads the same answer.
+const STATUS_LABEL={upcoming:'Upcoming',live:'Live',closed:'Closed',published:'Published',archived:'Archived'};
+const STATUS_ORDER=['live','closed','upcoming','published','archived'];
+function listStatus(s){ return s.phase || s.status; }
 let SERIES=[]; // admin-only cache of series for the inline tag dropdowns
 const isAdmin=()=>ME&&ME.role==='admin';
 // Feature permission: admin = always; host = per-grant. Drives host-facing tool visibility.
@@ -4074,12 +4073,12 @@ function sessionCardHtml(s){
   ].filter(Boolean).join('');
   const ls=listStatus(s);
   const pillTxt=ls==='closed'
-    ? 'Voting closed'+(s.results_at?' · results '+fmtET(Number(s.results_at),{weekday:'short',hour:'numeric',minute:'2-digit'}):'')
+    ? 'Closed'+(s.results_at?' · results '+fmtET(Number(s.results_at),{weekday:'short',hour:'numeric',minute:'2-digit'}):'')
     : (STATUS_LABEL[ls]||ls);
   return `<div class="sc${ls==='live'?' live':''}">
     <div class="sc-top">
       <div class="sc-name">${esc(s.name)}</div>
-      <span class="pill ${ls==='closed'?'completed':ls}">${esc(pillTxt)}</span>
+      <span class="pill ${ls==='closed'||ls==='published'?'completed':ls}">${esc(pillTxt)}</span>
     </div>
     <div class="sc-attrs">${attrs}</div>
     <div class="sc-actions">
@@ -6449,12 +6448,12 @@ function render(st){
   // for anything staged before this console was opened.
   syncIngestBinding(st);
   maybeAutoIngest(st).catch(()=>{});
-  $('#who').textContent=st.session.name+' · '+st.session.status+sessionTypeSuffix(st);
+  $('#who').textContent=st.session.name+' · '+({upcoming:'Upcoming',live:'Live',completed:'Published',archived:'Archived'}[st.session.status]||st.session.status)+sessionTypeSuffix(st);
   // lifecycle controls reflect current status
   const stx=st.session.status;
   const pillCls={upcoming:'upcoming',live:'live',completed:'completed',archived:'archived'}[stx]||'';
   const pill=$('#sessStatusPill');
-  pill.textContent={upcoming:'Upcoming',live:'● Live',completed:'Completed',archived:'Archived'}[stx]||stx;
+  pill.textContent={upcoming:'Upcoming',live:'● Live',completed:'Published',archived:'Archived'}[stx]||stx;
   pill.className='pill '+pillCls;
   $('#btnGoLive').classList.toggle('hide',stx!=='upcoming');
   $('#btnUnlive').classList.toggle('hide',stx!=='live');   // undo an accidental go-live

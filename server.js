@@ -4179,6 +4179,24 @@ const ASYNC_MIN_FOR_BONUS = 3;
 
 const isAsync = (s) => !!s && s.mode === 'async';
 
+// THE session state model (operator, 2026-10-15): Upcoming → Live (voting) → Closed (no more
+// voting, results sealed) → Published (results public), plus Archived. DERIVED, never stored:
+// `status` and `async_state` each carry half of it and both stay as they are — `status =
+// 'completed'` is what lets /daily reveal averages, and `async_state` is the cron's claim
+// token — so a third stored field could only drift from them. A live show has no Closed step
+// in practice (each round reveals at its own ratify), so it goes Live → Published.
+function sessionPhase(s) {
+  if (!s) return null;
+  if (s.status === 'archived') return 'archived';
+  if (s.status === 'completed' || s.async_state === 'published') return 'published';
+  if (isAsync(s)) {
+    if (s.async_state === 'closing' || s.async_state === 'ratified') return 'closed';
+    if (s.async_state === 'open') return 'live';
+    return 'upcoming';
+  }
+  return s.status === 'live' ? 'live' : 'upcoming';
+}
+
 // A&R Daily has no per-round host controls. The day's records open together, close together
 // and ratify together, on the clock — so every one of open / reopen / start-voting / unopen /
 // close / extend / ratify would act on ONE arbitrary record of a day that has many open at
@@ -6576,7 +6594,7 @@ async function handleApi(req, res, url) {
     const rows = user.role === 'admin'
       ? await db.all(`SELECT ${cols} FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC`, [])
       : await db.all(`SELECT ${cols} FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [user.uid]);
-    return send(res, 200, { role: user.role, sessions: rows });
+    return send(res, 200, { role: user.role, sessions: rows.map(r => ({ ...r, phase: sessionPhase(r) })) });
   }
 
   // ----- request OTP -----
@@ -11620,6 +11638,7 @@ module.exports._weekWindow = weekWindow;
 module.exports._weekStartFor = weekStartFor;
 module.exports._dailyDigestEmailText = dailyDigestEmailText;
 module.exports._DAILY_STREAM_NAME = DAILY_STREAM_NAME;
+module.exports._sessionPhase = sessionPhase;
 module.exports._WEEKLY_SHOW_NAME = WEEKLY_SHOW_NAME;
 module.exports._bustDailySchedule = () => { _dailySched.at = 0; };
 module.exports._dropAfterClose = dropAfterClose;

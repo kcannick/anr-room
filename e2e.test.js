@@ -2022,6 +2022,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the session list tells a closed drop from an open one (mode, async_state, results_at)',
     closedListRow && closedListRow.status === 'live' && closedListRow.mode === 'async'
       && closedListRow.async_state === 'ratified' && Number(closedListRow.results_at) > 0, JSON.stringify(closedListRow));
+  ok('a closed drop is phase=closed (Upcoming → Live → Closed → Published)', closedListRow && closedListRow.phase === 'closed', closedListRow && closedListRow.phase);
+  const ph = srv._sessionPhase;
+  ok('sessionPhase maps every state to the four (plus archived)',
+    ph({ mode: 'async', status: 'upcoming', async_state: 'scheduled' }) === 'upcoming'
+      && ph({ mode: 'async', status: 'live', async_state: 'open' }) === 'live'
+      && ph({ mode: 'async', status: 'live', async_state: 'closing' }) === 'closed'
+      && ph({ mode: 'async', status: 'live', async_state: 'ratified' }) === 'closed'
+      && ph({ mode: 'async', status: 'completed', async_state: 'published' }) === 'published'
+      && ph({ mode: null, status: 'upcoming' }) === 'upcoming'
+      && ph({ mode: null, status: 'live' }) === 'live'
+      && ph({ mode: null, status: 'completed' }) === 'published'
+      && ph({ mode: null, status: 'archived' }) === 'archived');
   const scored = await dDb.all('SELECT points, room_average FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [LDROP]);
   ok('the tally scored every vote', scored.length === 5 && scored.every(v => v.points != null), JSON.stringify(scored));
 
