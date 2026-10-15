@@ -959,6 +959,37 @@ ${para(e(P.graphics))}
       return res.end(zip);
     }
 
+    // Send ONE competitor's package to the logged-in admin's own email and phone — the dress
+    // rehearsal before the real send. Same render, same email, same text, `[TEST]` in the
+    // subject; nothing is recorded on the row and the competitor is not contacted.
+    if (p === '/api/admin/tournament/package-test' && method === 'POST') {
+      const T = await needT(); if (!T) return true;
+      const key = str(body.key, 12);
+      const r = keyToRender(T, key);
+      if (!r || r.stage !== 'package') return bad(res, 'Not a package graphic');
+      const row = graphicRows(T).find(x => x.key === key);
+      if (!row || !row.ready) return bad(res, 'That package is not ready yet — fill all 8 seats first', 409);
+      const c = row.competitorId ? compById(T, row.competitorId) : null;
+      if (!c) return bad(res, 'No competitor in that seat', 409);
+      const me = await db.get('SELECT uid, name, email, phone FROM users WHERE uid = ?', [admin.uid]);
+      if (!me || !me.email) return bad(res, 'Your account has no email address', 409);
+      const cu = c.user_id ? await db.get('SELECT uid, name, email FROM users WHERE uid = ?', [c.user_id]) : null;
+      const files = [];
+      for (const kind of row.kinds) {
+        const buf = await renderKey(T, key, kind);
+        files.push({ filename: `${T.slug}-${slugName(c.name)}-${kind}.png`, mime: 'image/png', dataBase64: buf.toString('base64') });
+      }
+      const m = await packageEmail(T, c, cu);
+      const out = await sendEmail(me.email, `[TEST] ${m.subject}`, m.html, m.text, { tag: 'tournament_package', attachments: files });
+      if (!out.ok) return bad(res, `Send failed: ${out.error || 'unknown error'}`, 502);
+      let sms = 'no phone', smsTo = null;
+      if (me.phone) {
+        const sr = await sendSms(me.phone, packageSmsBody(kindOf(T).name, T.number || 1, cu && cu.email ? cu.email : me.email));
+        sms = sr.ok ? 'sent' : 'failed'; smsTo = sr.ok ? maskPhone(me.phone) : null;
+      }
+      return send(res, 200, { ok: true, test: true, to: maskEmail(me.email), attachments: files.length, sms, smsTo, competitor: c.name });
+    }
+
     // Email one competitor their package: the briefing (PACKAGE_COPY) with both graphics
     // attached and a caption to post. Renders on the fly when the row was never published, so
     // Blob is not a gate. One row per request (two renders + a send fits the request cap;

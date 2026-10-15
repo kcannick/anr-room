@@ -1004,6 +1004,9 @@ live on anr.makinitmag.com.
   to <address> with all the details for the tournament. Check Spam and the Promotions tab if you
   don't see it. Good luck!", GSM-7, one segment for a short address else MMS by sms.js, to `users.phone`
   with no marketing-consent gate — their own seat; no phone = no text, state `sms` on the row).
+  **"Send test to me"** (`package-test`, 2026-10-15) mails the ADMIN their own copy of one
+  competitor's package (`[TEST]` subject, same text) and records nothing — the dress rehearsal the
+  operator asked for.
   A competitor with no account (`contact: none`), closed, or bounced is refused with a
   reason — the per-competitor zip (`graphics.zip?key=pkgN`: feed, story, caption) is the hand-DM
   path; the bare zip leaves the package rows out. The round format lives ONLY in the email copy.
