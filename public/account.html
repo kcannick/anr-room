@@ -95,6 +95,23 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 .gcard .gt b{display:block;font-size:13.5px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
 .gcard .gt small{display:block;font-family:"Space Mono",monospace;font-size:10px;color:var(--ink-dim);margin-top:4px}
 .gdl{display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 11px 11px;height:40px;border-radius:10px;background:var(--signal);color:var(--bg);font-weight:800;font-size:13px}
+/* ---- the grade card (2026-10-15): the A&R's card for their latest published day ---- */
+.gc{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;display:flex;flex-direction:column;gap:12px}
+.gc .gchead{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.gc .gchead b{font-size:17px;font-weight:900;letter-spacing:-.02em}
+.gc .gchead small{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);white-space:nowrap}
+.gc .seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:4px}
+.gc .seg button{height:36px;border:0;border-radius:9px;background:transparent;color:var(--ink-dim);font-weight:800;font-size:13px;cursor:pointer}
+.gc .seg button.on{background:var(--signal);color:var(--bg)}
+.gc .seg button[disabled]{opacity:.35;cursor:default}
+.gc .pic{aspect-ratio:4/5;background:#07060d;border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.gc .pic img{width:100%;height:100%;object-fit:contain;display:block}
+.gc .pic span{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
+.gc .dls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.gc .dls button{height:42px;border-radius:10px;border:0;background:var(--signal);color:var(--bg);font-weight:800;font-size:13px;cursor:pointer}
+.gc .dls button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.gc p{margin:0;font-size:13px;line-height:1.5;color:var(--ink-dim)}
+.gc p a{color:var(--signal)}
 /* ---- my results (built to public/_mock-account-results.html) ---- */
 .stats.four{gap:8px}
 .stats.four .stat{min-width:0;padding:12px 4px}
@@ -261,6 +278,25 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
          then one week at a time, each day opening into its records. Points only, no rank. -->
     <div class="sec" id="sec-results">
       <div id="rsOpen"></div>
+      <!-- The grade card for the newest published day they played. Hidden until there is one. -->
+      <div class="gc hide" id="gcPanel">
+        <div class="gchead"><b>Your grade card</b><small id="gcDay"></small></div>
+        <div class="seg" role="radiogroup" aria-label="Which card">
+          <button type="button" data-gcscope="day" role="radio">Latest day</button>
+          <button type="button" data-gcscope="standing" role="radio">Standing</button>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Card style">
+          <button type="button" data-gcstyle="photo" role="radio">Big photo</button>
+          <button type="button" data-gcstyle="stats" role="radio">Stats</button>
+        </div>
+        <div class="pic" id="gcPic"><span>Loading</span></div>
+        <p class="hide" id="gcNoPhoto">The big-photo card needs a bigger photo. <a href="/profile">Upload a new photo</a> and it will be ready on your next card.</p>
+        <div class="dls">
+          <button type="button" data-gcdl="feed">Download for feed</button>
+          <button type="button" class="ghost" data-gcdl="story">Download for story</button>
+        </div>
+        <p>Posting it is up to you. If you do, we'll collab with you on Instagram.</p>
+      </div>
       <div class="err hide" id="rsErr"></div>
       <div class="panel">
         <div class="pager">
@@ -575,6 +611,77 @@ async function loadResults(week){
   }
   RS_BUSY = false;
 }
+// ---- The grade card. The picture needs the token in a header, so it is fetched and shown as
+// a blob URL, like the referral graphics. The pick is saved when the device is signed in; on a
+// refer link (read-only) it still switches the preview and the download.
+// Two cards: the latest day, and Standing (all time, no date, no rank).
+let GC = null, GC_URL = null, GC_SCOPE = 'day';
+function gcHead(){
+  const s = GC_SCOPE === 'standing' ? GC.standing : GC.card;
+  $('#gcDay').textContent = !s ? '' : GC_SCOPE === 'standing'
+    ? 'Grade ' + s.grade + ' · ' + s.drops + (s.drops === 1 ? ' drop' : ' drops')
+    : 'Grade ' + s.grade + (s.dayLabel ? ' · ' + s.dayLabel : '');
+  document.querySelectorAll('[data-gcscope]').forEach(b => {
+    const on = b.dataset.gcscope === GC_SCOPE;
+    b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+    b.disabled = b.dataset.gcscope === 'standing' ? !GC.standing : !GC.card;
+  });
+}
+async function gcLoad(){
+  try{ GC = await api('/api/me/grade-card/latest', null, authHeaders() || {}); }catch(e){ return; }
+  if(!GC || (!GC.card && !GC.standing)) return;
+  GC_SCOPE = GC.card ? 'day' : 'standing';
+  gcHead();
+  $('#gcPanel').classList.remove('hide');
+  $('#gcNoPhoto').classList.toggle('hide', !!GC.hasBigPhoto);
+  gcSeg(); gcPic();
+}
+function gcSeg(){
+  document.querySelectorAll('[data-gcstyle]').forEach(b => {
+    const on = b.dataset.gcstyle === GC.style;
+    b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+    if(b.dataset.gcstyle === 'photo') b.disabled = !GC.hasBigPhoto;
+  });
+}
+function gcSrc(fmt, extra){
+  const which = GC_SCOPE === 'standing' ? 'scope=standing' : 's=' + encodeURIComponent(GC.card.sessionId);
+  return '/api/me/grade-card?' + which + '&style=' + GC.style + (fmt === 'story' ? '&fmt=story' : '') + (extra || '');
+}
+document.querySelectorAll('[data-gcscope]').forEach(b => b.onclick = () => {
+  if(!GC || b.disabled || b.dataset.gcscope === GC_SCOPE) return;
+  GC_SCOPE = b.dataset.gcscope; gcHead(); gcPic();
+  track('grade_card_scope', { scope: GC_SCOPE });
+});
+async function gcPic(){
+  const box = $('#gcPic'); box.textContent = ''; box.appendChild(mk('span', null, 'Loading'));
+  try{
+    const r = await fetch(gcSrc('feed', '&w=432'), { headers: authHeaders() || {} });
+    if(!r.ok) throw 0;
+    if(GC_URL) URL.revokeObjectURL(GC_URL);
+    GC_URL = URL.createObjectURL(await r.blob());
+    const img = new Image(); img.alt = 'Your grade card'; img.src = GC_URL;
+    box.textContent = ''; box.appendChild(img);
+  }catch(e){ box.textContent = ''; box.appendChild(mk('span', null, 'Preview unavailable')); }
+}
+document.querySelectorAll('[data-gcstyle]').forEach(b => b.onclick = async () => {
+  if(!GC || b.disabled || b.dataset.gcstyle === GC.style) return;
+  GC.style = b.dataset.gcstyle; gcSeg(); gcPic();
+  track('grade_card_style', { style: GC.style });
+  try{ await api('/api/me/grade-card-style', { style: GC.style }, authHeaders() || {}); }catch(e){ /* refer link: preview only */ }
+});
+document.querySelectorAll('[data-gcdl]').forEach(b => b.onclick = async () => {
+  if(!GC || b.dataset.busy) return;
+  b.dataset.busy = '1'; b.style.opacity = '.5';
+  try{
+    const r = await fetch(gcSrc(b.dataset.gcdl), { headers: authHeaders() || {} });
+    if(!r.ok) throw new Error('Could not build your card');
+    const u = URL.createObjectURL(await r.blob());
+    const l = document.createElement('a'); l.href = u; l.download = 'anr-' + (GC_SCOPE === 'standing' ? 'standing' : 'grade-card') + (b.dataset.gcdl === 'story' ? '-story' : '') + '.png';
+    document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 10000);
+    track('grade_card_download', { fmt: b.dataset.gcdl, style: GC.style, scope: GC_SCOPE });
+  }catch(e){ alert(e.message); }
+  delete b.dataset.busy; b.style.opacity = '';
+});
 $('#rsPrev').onclick = () => { const w = $('#rsPrev').dataset.week; if(w){ loadResults(w); track('results_week', { dir: 'prev' }); } };
 $('#rsNext').onclick = () => { const w = $('#rsNext').dataset.week; if(w){ loadResults(w); track('results_week', { dir: 'next' }); } };
 // ---- sections. The hash names the section so /account#profile is linkable; "edit" is the
@@ -582,7 +689,7 @@ $('#rsNext').onclick = () => { const w = $('#rsNext').dataset.week; if(w){ loadR
 function showSec(k){
   if(k === 'edit'){ location.href = '/profile'; return; }
   if(k !== 'profile' && k !== 'results') k = 'earn';
-  if(k === 'results' && !RS_LOADED) loadResults();
+  if(k === 'results' && !RS_LOADED){ loadResults(); gcLoad(); }
   document.querySelectorAll('.tab[data-sec]').forEach(t => t.classList.toggle('on', t.dataset.sec === k));
   document.querySelectorAll('.sec').forEach(x => x.classList.toggle('on', x.id === 'sec-' + k));
   try{ history.replaceState(null, '', location.pathname + location.search + (k === 'earn' ? '' : '#' + k)); }catch(e){}
