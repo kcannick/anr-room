@@ -1452,8 +1452,8 @@ async function sweepCompletionBonuses(session) {
 //   scheduled -> open        at window_opens_at; the "voting is open" email is queued
 //   open -> closing          at window_closes_at; then tallies over as many ticks as it needs
 //   closing -> ratified      when every record has tallied; the artist heads-up is queued
-//   (ratified, graphics)     at stream_at — the ranked graphics render for the Livestream
-//                            Countdown's posts; the state does not change and nothing is revealed
+//   (ratified, graphics)     at stream_at — the ranked graphics render for the Daily Countdown
+//                            carousel; the state does not change and nothing is revealed
 //   ratified -> published    at results_at — the seal lifts, the emails and the callback go
 // Driven by /api/cron/daily (and by an admin route, so the operator can run it by hand and so
 // the suite can drive it without CRON_SECRET set).
@@ -4039,6 +4039,8 @@ async function weeklyUpdateContent(week, base) {
     totals: rep && rep.totals ? { records: rep.totals.records, ars: rep.totals.ars, ratings: rep.totals.ratings } : null,
     openCount,
     closesLabel: open && Number(open.window_closes_at) > now() ? etWhenLabel(Number(open.window_closes_at), open.drop_day) : null,
+    // The daily open, as a label off the schedule setting — never a hardcoded hour.
+    opensLabel: etClockLabel(dropWindowFor(etDay(), await dailySchedule()).opensAt),
     playUrl: await openDropUrl(base),
   };
 }
@@ -4048,7 +4050,7 @@ function weeklyUpdateEmailHtml(c, manage) {
   const recs = c.records.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.records, r => `<b>${escapeHtml(r.title)}</b>${r.artist ? ' — ' + escapeHtml(r.artist) : ''}`)}</ol>` : '';
   const ars = c.ars.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.ars, a => `<b>${escapeHtml(dispName(a.name) || 'A&R')}</b>${a.location ? ' · ' + escapeHtml(a.location) : ''}`)}</ol>` : '';
   const totals = c.totals && c.totals.records ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0">${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.</p>` : '';
-  const today = c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + escapeHtml(c.closesLabel) + '.' : ''}` : 'New records open for rating every day at 3:00 PM ET.';
+  const today = c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + escapeHtml(c.closesLabel) + '.' : ''}` : `New records open for rating every day at ${escapeHtml(c.opensLabel || '6:00 PM ET')}.`;
   return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
     <div style="max-width:420px;margin:0 auto">
       <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily · Weekly update</div>
@@ -4069,7 +4071,7 @@ function weeklyUpdateEmailText(c, manage) {
   if (c.totals && c.totals.records) lines.push(`${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.`, '');
   if (c.records.length) { lines.push('Top records:'); c.records.forEach((r, i) => lines.push(`${i + 1}. ${r.title}${r.artist ? ' — ' + r.artist : ''}`)); lines.push(''); }
   if (c.ars.length) { lines.push('Top A&Rs:'); c.ars.forEach((a, i) => lines.push(`${i + 1}. ${dispName(a.name) || 'A&R'}${a.location ? ' · ' + a.location : ''}`)); lines.push(''); }
-  lines.push(c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + c.closesLabel + '.' : ''}` : 'New records open for rating every day at 3:00 PM ET.');
+  lines.push(c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + c.closesLabel + '.' : ''}` : `New records open for rating every day at ${c.opensLabel || '6:00 PM ET'}.`);
   lines.push(`Rate today's records: ${c.playUrl}`, '', subscribeBlockText());
   if (manage) lines.push('', notifyFooterText(manage));
   return lines.join('\n');
@@ -4250,24 +4252,32 @@ function etWhenLabel(ts, fromDay) {
 // The daily schedule, as ET minutes-of-day. Defaults, not hardcodes: the drop builder takes
 // explicit overrides so a test can run a 60-second window instead of waiting for noon.
 // ===== A&R DAILY — the schedule, TUNABLE from the platform panel =====
-// Defaults (operator, 2026-09-27 — "more production time and notification between events"),
-// as hours after the open:
+// Defaults (the evening clock, 2026-10-16), as hours after the open:
 //   -1  the review site locks the day's track list (Drupal's side; nothing here enforces it)
-//    0  3:00 PM ET — records open, and A&Rs are emailed that voting is open (daily_open)
-//   24  3:00 PM ET next day — rating closes and tallies; each rated artist is told the record
-//       appears on TOMORROW's Livestream Countdown (email + SMS, artist_headsups)
-//   48  3:00 PM ET the day after — the Livestream Countdown (stream_at). The ranked graphics
-//       render here so clips and carousels can be posted after the stream.
-//   69  12:00 PM ET the day after that — RESULTS: the seal lifts on /daily, the A&R results
+//    0  6:00 PM ET — records open, and A&Rs are emailed that voting is open (daily_open)
+//   24  6:00 PM ET next day — rating closes and tallies; each rated artist is told the record
+//       was rated and when the report comes (email + SMS, artist_headsups)
+//   40  10:00 AM ET the day after — the Daily Countdown graphics render (stream_at) and the
+//       Asana post task is made, so the operator has the whole day to post the carousel.
+//   66  12:00 PM ET the day after that — RESULTS: the seal lifts on /daily, the A&R results
 //       email and the artists' Track Reports go out, makinitmag gets the results callback.
-//       "Today's ratings close in 3 hours" in that email is true by construction.
-// So at 3 PM every day one drop opens, one closes and one streams, and three are in flight.
-// The seal holds through the stream on purpose: the page must not spoil the countdown.
+//       "Today's records close at 6:00 PM ET — in 6 hours" in that email is true by construction.
+// So at 6 PM every day one drop opens and one closes, and three are in flight.
+//
+// WHY 6 PM (2026-10-16, from six weeks of production votes): A&Rs rate when the "voting is
+// open" email lands, not at a natural hour — 46% of a day's raters start within three hours
+// of the open, and the hourly peak moved with the open when it went from noon to 3 PM. The
+// only time people come on their own is 7–11 PM ET, and nothing happens 11 PM–10 AM. A 3 PM
+// open put the email burst in the middle of the workday (2 PM Central, noon Pacific — the
+// audience is ~70% Eastern, ~20% Central) and the evening wave arrived separately. A 6 PM
+// open stacks the burst on the evening window. 7 PM would collide with the Wednesday show.
 //
 // The stream and results are a DAY OFFSET after the close day plus an ET minute-of-day, never
 // "close + 24h": the window crosses DST (see etEpoch), and a duration would drift an hour.
-// Completion bonus: 100 for finishing every record within 6 hours of the open, 75 within 12,
-// 50 within 18, 25 any time before the close. The tiers are HOURS AFTER THE OPEN.
+// Completion bonus: 100 for finishing every record within 6 hours of the open (by midnight),
+// 75 within 16 (by 10 AM — the old 12-hour step fell at 6 AM, inside the dead zone, so it
+// paid nobody the 12-hour step did not), 50 within 21 (by 3 PM), 25 any time before the
+// close. The tiers are HOURS AFTER THE OPEN.
 //
 // Overrides live in `settings` (daily_open_min / daily_close_min / daily_stream_min /
 // daily_results_min as ET minutes-of-day, daily_stream_days / daily_results_days as days after
@@ -4275,10 +4285,10 @@ function etWhenLabel(ts, fromDay) {
 // instance for 30s. A closing time at or before the opening time means the NEXT day. Order is
 // clamped: close <= stream <= results.
 const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
-  openMin: 15 * 60, closeMin: 15 * 60,
-  streamMin: 15 * 60, streamDays: 1,      // the Livestream Countdown, the day after the close
-  resultsMin: 12 * 60, resultsDays: 2,    // results, two days after the close (69h)
-  tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 12, points: 75 }, { hours: 18, points: 50 }]),
+  openMin: 18 * 60, closeMin: 18 * 60,
+  streamMin: 10 * 60, streamDays: 1,      // the Daily Countdown graphics render, the morning after the close
+  resultsMin: 12 * 60, resultsDays: 2,    // results, two days after the close (66h)
+  tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 16, points: 75 }, { hours: 21, points: 50 }]),
   finalPoints: 25,
   // Minutes after publish before artist reports queue. Was 60 — the comment-rejection
   // checkpoint 029 needs — but the report now goes out 45 hours after the tally, which is

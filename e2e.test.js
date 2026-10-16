@@ -2676,9 +2676,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and so do its records', Number(handReR.opens_at) === Number(handRe.window_opens_at) && Number(handReR.closes_at) === Number(handRe.window_closes_at));
   const schedReset = await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
   const schedBack = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
-  ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 15 * 60 && schedBack.closeMin === 15 * 60
+  ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 18 * 60 && schedBack.closeMin === 18 * 60
     && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 0
-    && schedBack.streamDays === 1 && schedBack.resultsDays === 2 && schedBack.resultsHours === 69 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 15),
+    && schedBack.streamDays === 1 && schedBack.resultsDays === 2 && schedBack.resultsHours === 66 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 18),
     JSON.stringify(schedBack));
 
   // MOVING a cold day. The case: the review site's noon lock-in pressed at 12:01 pushes a
@@ -2700,9 +2700,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const mvNext = srv._etNextDay(mvTo);
   ok('the whole window moves with it — open, close, results, scheduled start and the default name',
     mvSess.drop_day === mvTo
-      && Number(mvSess.window_opens_at) === srv._etEpoch(mvTo, 15)
-      && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 15)
-      && Number(mvSess.stream_at) === srv._etEpoch(srv._etNextDay(mvNext), 15)
+      && Number(mvSess.window_opens_at) === srv._etEpoch(mvTo, 18)
+      && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 18)
+      && Number(mvSess.stream_at) === srv._etEpoch(srv._etNextDay(mvNext), 10)
       && Number(mvSess.results_at) === srv._etEpoch(srv._etNextDay(mvNext, 2), 12)
       && Number(mvSess.scheduled_at) === Number(mvSess.window_opens_at)
       && mvSess.name === 'A&R Daily — ' + mvTo,
@@ -2727,7 +2727,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // Onto a day whose noon HAS passed: it opens in the same request — "move it to today" means
   // open now, not on the next five-minute tick. Only THIS drop opens; the lifecycle is not run
   // over every other day.
-  const mvNow = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: handDay, at: srv._etEpoch(handDay, 15) + 1000 }, 'POST', BOOTH);
+  const mvNow = await call('/api/admin/daily/move', { sessionId: handSess.id, toDay: handDay, at: srv._etEpoch(handDay, 18) + 1000 }, 'POST', BOOTH);
   const mvLive = await dDb.get('SELECT * FROM sessions WHERE id = ?', [handSess.id]);
   const mvVoting = (await dDb.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'voting'", [handSess.id])).c;
   ok('a move onto a day past its open time opens the drop at once',
@@ -3752,19 +3752,28 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // HOURS AFTER THE OPEN, anchored to the day's own window_opens_at — not ET minutes-of-day.
   // The window crosses midnight, so someone finishing at 2AM is 120 minutes into the ET clock
   // and a minutes-of-day comparison would pay the top tier for the slowest finish.
-  // Defaults (2026-09-15): 100 within 6h, 75 within 12h, 50 within 18h, 25 before the close.
+  // Defaults (2026-10-16, the evening clock): 100 within 6h, 75 within 16h, 50 within 21h, 25 before the close.
+  // This session opens at NOON so the midnight crossing is exercised by the 100 -> 75 step.
   const at = (day, hh, mm = 0) => server._etEpoch(day, hh, mm);
   const bSess = { drop_day: '2026-07-04', window_opens_at: at('2026-07-04', 12), window_closes_at: at('2026-07-05', 12) };
   ok('finish at 12:01 PM -> 100', server._completionBonusPoints(bSess, at('2026-07-04', 12, 1)) === 100);
   ok('finish at 5:59 PM  -> 100', server._completionBonusPoints(bSess, at('2026-07-04', 17, 59)) === 100);
   ok('finish at 6:00 PM  -> 75',  server._completionBonusPoints(bSess, at('2026-07-04', 18)) === 75);
-  ok('finish at 11:59 PM -> 75',  server._completionBonusPoints(bSess, at('2026-07-04', 23, 59)) === 75);
-  ok('finish at 12:00 AM next day -> 50 (NOT 100 — the window crosses midnight)', server._completionBonusPoints(bSess, at('2026-07-05', 0)) === 50);
-  ok('finish at 5:59 AM next day -> 50', server._completionBonusPoints(bSess, at('2026-07-05', 5, 59)) === 50);
-  ok('finish at 6:00 AM next day -> 25', server._completionBonusPoints(bSess, at('2026-07-05', 6)) === 25);
+  ok('finish at 12:00 AM next day -> 75 (NOT 100 — the window crosses midnight)', server._completionBonusPoints(bSess, at('2026-07-05', 0)) === 75);
+  ok('finish at 3:59 AM next day -> 75', server._completionBonusPoints(bSess, at('2026-07-05', 3, 59)) === 75);
+  ok('finish at 4:00 AM next day -> 50', server._completionBonusPoints(bSess, at('2026-07-05', 4)) === 50);
+  ok('finish at 8:59 AM next day -> 50', server._completionBonusPoints(bSess, at('2026-07-05', 8, 59)) === 50);
+  ok('finish at 9:00 AM next day -> 25', server._completionBonusPoints(bSess, at('2026-07-05', 9)) === 25);
   ok('finish at 11:59 AM next day -> 25', server._completionBonusPoints(bSess, at('2026-07-05', 11, 59)) === 25);
-  ok('a day with only a drop_day still resolves its open from the schedule',
-    server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-04', 17, 59)) === 100);
+  // The default clock itself: a 6 PM open pays 100 until midnight, 75 until 10 AM, 50 until 3 PM, 25 until the 6 PM close.
+  ok('a day with only a drop_day still resolves its open from the schedule (6 PM open -> 100 at 11:59 PM)',
+    server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-04', 23, 59)) === 100);
+  ok('default clock: 12:00 AM -> 75, 9:59 AM -> 75, 10:00 AM -> 50, 2:59 PM -> 50, 3:00 PM -> 25',
+    server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-05', 0)) === 75
+    && server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-05', 9, 59)) === 75
+    && server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-05', 10)) === 50
+    && server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-05', 14, 59)) === 50
+    && server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-05', 15)) === 25);
   // The steps follow a custom schedule: a 3-hour step at 90, then 10 before the close.
   const cSched = server._parseDailySchedule({ openMin: 13 * 60, closeMin: 10 * 60, resultsMin: 11 * 60, tiers: [{ hours: 3, points: 90 }], finalPoints: 10 }).cfg;
   const cSess = { drop_day: '2026-07-04', window_opens_at: at('2026-07-04', 13), window_closes_at: at('2026-07-05', 10) };
@@ -3774,18 +3783,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   console.log('\n— A&R Daily: the schedule —');
   const D = server._DAILY_SCHEDULE_DEFAULTS;
   const dw = server._dropWindowFor('2026-07-04', D);
-  ok('default window: opens 3 PM, closes 3 PM next day, livestream 3 PM the day after, results noon the day after that (the 2026-09-27 clock)',
-    dw.opensAt === at('2026-07-04', 15) && dw.closesAt === at('2026-07-05', 15)
-      && dw.streamAt === at('2026-07-06', 15) && dw.resultsAt === at('2026-07-07', 12), JSON.stringify(dw));
-  ok('which is 24 / 48 / 69 hours after the open',
-    (dw.closesAt - dw.opensAt) / 3600000 === 24 && (dw.streamAt - dw.opensAt) / 3600000 === 48
-      && (dw.resultsAt - dw.opensAt) / 3600000 === 69, JSON.stringify(dw));
+  ok('default window: opens 6 PM, closes 6 PM next day, graphics render 10 AM the day after, results noon the day after that (the 2026-10-16 clock)',
+    dw.opensAt === at('2026-07-04', 18) && dw.closesAt === at('2026-07-05', 18)
+      && dw.streamAt === at('2026-07-06', 10) && dw.resultsAt === at('2026-07-07', 12), JSON.stringify(dw));
+  ok('which is 24 / 40 / 66 hours after the open',
+    (dw.closesAt - dw.opensAt) / 3600000 === 24 && (dw.streamAt - dw.opensAt) / 3600000 === 40
+      && (dw.resultsAt - dw.opensAt) / 3600000 === 66, JSON.stringify(dw));
   // The offsets are whole ET days, never durations: a window across the November switch
   // still streams and publishes on the wall clock.
   const dstW = server._dropWindowFor('2026-10-31', D);
   ok('the stream and results stay on the ET wall clock across a DST change',
-    dstW.streamAt === at('2026-11-02', 15) && dstW.resultsAt === at('2026-11-03', 12), JSON.stringify(dstW));
-  ok('artist reports go out with the results by default — the report is 45 hours after the tally', D.artistDelayMin === 0);
+    dstW.streamAt === at('2026-11-02', 10) && dstW.resultsAt === at('2026-11-03', 12), JSON.stringify(dstW));
+  ok('artist reports go out with the results by default — the report is 42 hours after the tally', D.artistDelayMin === 0);
   const sameDay = server._dropWindowFor('2026-07-04', { ...D, openMin: 9 * 60, closeMin: 21 * 60, streamMin: 20 * 60, streamDays: 0, resultsMin: 20 * 60, resultsDays: 0 });
   ok('a close later than the open is the same day, and the stream and results never land before the close',
     sameDay.closesAt === at('2026-07-04', 21) && sameDay.streamAt === at('2026-07-04', 21) && sameDay.resultsAt === at('2026-07-04', 21), JSON.stringify(sameDay));
