@@ -2343,6 +2343,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
     && /attachment; filename="anr-grade-.+-story\.png"/.test(gMine.headers.get('content-disposition') || '')
     && /no-store/.test(gMine.headers.get('cache-control') || ''), gMine.status + ' ' + gMine.headers.get('content-disposition'));
   ok('the card download needs a login', (await fetch(base + '/api/me/grade-card?s=' + LDROP)).status === 401);
+  // An admin pulls any A&R's latest card from Edit profile (operator, 2026-10-15).
+  const gAdmProf = await call('/api/admin/users/profile?uid=' + encodeURIComponent(lifeUid), null, 'GET', BOOTH);
+  ok('the admin profile view names the latest card', gAdmProf.status === 200 && gAdmProf.d.gradeCard
+    && gAdmProf.d.gradeCard.sessionId === LDROP && gAdmProf.d.gradeCard.grade === gFacts.grade, JSON.stringify(gAdmProf.d.gradeCard));
+  const gAdm = await fetch(base + '/api/admin/users/grade-card?uid=' + encodeURIComponent(lifeUid) + '&style=stats&dl=1', { headers: BOOTH });
+  ok('an admin downloads it, named for the A&R', gAdm.status === 200 && gAdm.headers.get('content-type') === 'image/png'
+    && /attachment; filename=".+-anr-grade-/.test(gAdm.headers.get('content-disposition') || ''), gAdm.status + ' ' + gAdm.headers.get('content-disposition'));
+  ok('a non-admin cannot pull someone else\'s card', (await fetch(base + '/api/admin/users/grade-card?uid=' + encodeURIComponent(lifeUid), { headers: LH })).status === 403);
+  ok('an A&R with no published day played has no card', (await call('/api/admin/users/profile?uid=' + encodeURIComponent(uidNever), null, 'GET', BOOTH)).d.gradeCard === null
+    && (await fetch(base + '/api/admin/users/grade-card?uid=' + encodeURIComponent(uidNever), { headers: BOOTH })).status === 404);
   await dDb.run('UPDATE users SET photo_large_url = NULL, grade_card_style = NULL WHERE uid = ?', [lifeUid]);
   if (gSecretWas === undefined) delete process.env.NOTIFY_LINK_SECRET; else process.env.NOTIFY_LINK_SECRET = gSecretWas;
   const rcptCount = rcpts.length;

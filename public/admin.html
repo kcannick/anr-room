@@ -1800,6 +1800,20 @@
     <label>TikTok</label>
     <input id="ueTiktok" maxlength="60" placeholder="handle, no @" autocomplete="off">
     <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:10px 0 0">Email and phone are not editable here. The photo is changed by the A&amp;R on their own profile page.</p>
+    <!-- Latest grade card (2026-10-15): the A&R's card for the newest published day they played. -->
+    <div id="ueCard" style="display:none;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <label style="margin-top:0">Latest grade card <span class="muted" style="font-weight:400" id="ueCardDay"></span></label>
+      <div class="permrow" style="margin:6px 0 8px">
+        <button type="button" class="permchip" data-uecs="photo">Big photo</button>
+        <button type="button" class="permchip" data-uecs="stats">Stats</button>
+      </div>
+      <div id="ueCardPic" style="aspect-ratio:4/5;max-width:220px;background:#07060d;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--ink-dim)">Loading…</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="button" class="btn sm" data-uecdl="feed">Download feed</button>
+        <button type="button" class="btn ghost sm" data-uecdl="story">Download story</button>
+      </div>
+      <div class="muted" id="ueCardNote" style="font-size:12px;color:var(--ink-faint);margin-top:6px"></div>
+    </div>
     <button class="btn" id="ueSave" style="width:100%;margin-top:12px">Save profile</button>
     <a class="btn ghost" id="ueOpen" target="_blank" rel="noopener" style="width:100%;margin-top:9px;display:block;text-align:center;box-sizing:border-box">Open public profile</a>
     <button class="btn ghost" id="ueCancel" style="width:100%;margin-top:9px">Cancel</button>
@@ -4930,9 +4944,39 @@ window.openUserEdit=async(uid)=>{
     $('#ueComplete').textContent=pr.complete?'Profile complete':'Profile incomplete — needs a name, at least one role with a primary, and a location';
     $('#ueComplete').style.color=pr.complete?'var(--signal)':'var(--ink-faint)';
     ueRenderCats();
+    ueCardShow(pr.id,d.gradeCard);
     $('#userEditModal').style.display='flex';$('#ueName').focus();
   }catch(e){alert(e.message);}
 };
+// Latest grade card: preview + download, fetched with the admin's token (an <img> cannot send it).
+let ueCard={uid:null,info:null,style:null,url:null};
+const ueCardSrc=(fmt,extra)=>'/api/admin/users/grade-card?uid='+encodeURIComponent(ueCard.uid)+'&style='+ueCard.style+(fmt==='story'?'&fmt=story':'')+(extra||'');
+const ueCardHdr=()=>{const h={};if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;return h;};
+function ueCardShow(uid,info){
+  ueCard={uid,info,style:info?info.style:null,url:ueCard.url};
+  $('#ueCard').style.display=info?'block':'none';
+  if(!info)return;
+  $('#ueCardDay').textContent='· Grade '+info.grade+(info.dayLabel?' · '+info.dayLabel:'');
+  $('#ueCardNote').textContent=info.hasBigPhoto?'':'No big photo on file, so only the stats card is available.';
+  ueCardChips();ueCardPic();
+}
+function ueCardChips(){document.querySelectorAll('[data-uecs]').forEach(b=>{b.classList.toggle('on',b.dataset.uecs===ueCard.style);b.disabled=b.dataset.uecs==='photo'&&!ueCard.info.hasBigPhoto;});}
+async function ueCardPic(){
+  const box=$('#ueCardPic');box.textContent='Loading…';
+  try{const r=await fetch(ueCardSrc('feed','&w=432'),{headers:ueCardHdr()});if(!r.ok)throw 0;
+    if(ueCard.url)URL.revokeObjectURL(ueCard.url);ueCard.url=URL.createObjectURL(await r.blob());
+    box.innerHTML='<img alt="" style="width:100%;height:100%;object-fit:contain;display:block" src="'+ueCard.url+'">';
+  }catch(e){box.textContent='Preview unavailable';}
+}
+document.querySelectorAll('[data-uecs]').forEach(b=>b.onclick=()=>{if(b.disabled||!ueCard.info)return;ueCard.style=b.dataset.uecs;ueCardChips();ueCardPic();});
+document.querySelectorAll('[data-uecdl]').forEach(b=>b.onclick=async()=>{
+  if(!ueCard.info||b.disabled)return;b.disabled=true;
+  try{const r=await fetch(ueCardSrc(b.dataset.uecdl,'&dl=1'),{headers:ueCardHdr()});if(!r.ok)throw new Error('Could not build the card');
+    const cd=r.headers.get('content-disposition')||'',m=cd.match(/filename="([^"]+)"/);
+    const u=URL.createObjectURL(await r.blob()),l=document.createElement('a');l.href=u;l.download=m?m[1]:'grade-card.png';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);
+  }catch(e){alert(e.message);}
+  b.disabled=false;
+});
 $('#uePrimary').onchange=function(){ueState.primary=this.value;};
 $('#ueCancel').onclick=()=>{$('#userEditModal').style.display='none';};
 $('#ueSave').onclick=async()=>{

@@ -111,6 +111,8 @@ live on anr.makinitmag.com.
     the email `<img>`), `/api/me/grade-card` (own card, download), `/api/me/grade-card/latest`,
     `POST /api/me/grade-card-style` (login only). All 404 before the day PUBLISHES (the seal).
     Account page: "Your grade card" at the top of My results (no separate mockup was made).
+    Admin: Users → Edit profile shows the A&R's latest card (preview, look, download):
+    `/api/admin/users/grade-card?uid=` (admin only; the style is per download, never saved).
   - **Daily email rules (operator):** `digest_daily` is ON by default but goes ONLY to who rated
     the published drop (results + card; subject "Your A&R grade for <day>: <grade>") or who rated
     none of it but rated the public drop before (`dailyMissedEmail*`, his line: "you missed

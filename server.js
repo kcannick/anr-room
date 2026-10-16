@@ -2763,6 +2763,14 @@ async function gradeCardFacts(sessionId, uid) {
   for (const t of tiers) if (Object.prototype.hasOwnProperty.call(counts, t.tier)) counts[t.tier] = Number(t.c) || 0;
   return { sessionId: s.id, day: s.drop_day, dayLabel: gradeDayLabel(s.drop_day), grade: recap.grade, accuracy: recap.accuracy, counts };
 }
+// What the admin's Edit profile panel shows about the card (null when there is none yet).
+async function adminGradeCardInfo(u) {
+  const full = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [u.uid]);
+  const facts = full ? await latestGradeCardFacts(full.uid) : null;
+  if (!facts) return null;
+  return { sessionId: facts.sessionId, dayLabel: facts.dayLabel, grade: facts.grade,
+    style: gradeCardStyleFor(full), hasBigPhoto: !!full.photo_large_url };
+}
 // The newest published day this A&R played, as facts, or null. Bounded: five rows at most.
 async function latestGradeCardFacts(uid) {
   const rows = await db.all(
@@ -7100,7 +7108,34 @@ async function handleApi(req, res, url) {
         photoUrl: u.photo_url || null, complete: !!u.profile_complete, role: u.role, blocked: !!u.blocked,
       },
       categoriesAvailable: PROFILE_CATEGORIES,
+      gradeCard: await adminGradeCardInfo(u),
     });
+  }
+  // The A&R's grade card, pulled by an admin (operator, 2026-10-15) — e.g. to post or collab on
+  // it. Same renderer and the same seal as the A&R's own download: only a published day they
+  // played. `style` overrides their pick for this download only; nothing is saved.
+  if (p === '/api/admin/users/grade-card' && method === 'GET') {
+    const admin = await userFromAuth(req);
+    if (!admin || admin.role !== 'admin') return bad(res, 'Admin only', 403);
+    const u = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [url.searchParams.get('uid') || '']);
+    if (!u) return bad(res, 'User not found', 404);
+    const sid = (url.searchParams.get('s') || '').toString();
+    const facts = sid ? await gradeCardFacts(sid, u.uid) : await latestGradeCardFacts(u.uid);
+    if (!facts) return bad(res, 'No grade card yet', 404);
+    const fmt = url.searchParams.get('fmt') === 'story' ? 'story' : 'feed';
+    try {
+      const png = await renderGradeCard(u, facts, { style: url.searchParams.get('style'), fmt, width: gradeCardWidth(url.searchParams.get('w')) });
+      const head = { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store' };
+      if (url.searchParams.get('dl') === '1') {
+        const who = String(u.name || u.uid).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'anr';
+        head['Content-Disposition'] = `attachment; filename="${who}-${gradeCardFilename(facts, fmt)}"`;
+      }
+      res.writeHead(200, head);
+      return res.end(png);
+    } catch (e) {
+      console.error('[admin/grade-card] render failed:', e.message);
+      return bad(res, 'Card render failed', 500);
+    }
   }
   if (p === '/api/admin/users/profile' && method === 'POST') {
     const admin = await userFromAuth(req);
