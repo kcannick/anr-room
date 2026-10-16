@@ -852,7 +852,7 @@ function render(){
 
   if(st.phase === 'sealed'){
     $('#sealedDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
-    $('#sealedSub').textContent = afterLines(as, 'Rating is closed.');
+    afterNode($('#sealedSub'), as, 'Rating is closed.');
     show('sealed'); return;
   }
 
@@ -892,7 +892,17 @@ function renderDone(st){
     row.appendChild(l); row.appendChild(v); tiers.appendChild(row);
   });
 
-  $('#doneNext').textContent = afterLines(as, '');
+  afterNode($('#doneNext'), as, '');
+}
+// afterLines as text, then the YouTube subscribe line with a real link (operator, 2026-10-15:
+// every touch point asks people to subscribe and hit the bell). Built as nodes, never HTML.
+function afterNode(el, as, lead){
+  el.textContent = afterLines(as, lead);
+  if(!as.subscribeUrl) return;
+  el.appendChild(document.createTextNode(' ' + (as.subscribeLine || '') + ' '));
+  const a = document.createElement('a'); a.href = as.subscribeUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.textContent = as.subscribeCta || 'Subscribe on YouTube'; a.style.color = 'var(--signal)'; a.style.fontWeight = '700';
+  el.appendChild(a);
 }
 
 // What happens after the close, in order: the next records, the results, the Wednesday

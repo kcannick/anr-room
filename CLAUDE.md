@@ -956,6 +956,15 @@ live on anr.makinitmag.com.
   Countdown graphics render (console label "Daily Countdown graphics render at"), the Instagram
   countdown carousel and its Asana task, `DAILY_STREAM_NAME` as that carousel's name. The 041
   bullet below describes the hours as built; its "Livestream Countdown" wording is history.
+  **YouTube subscribe touch point (same day):** every recurring mail (daily open, digest,
+  weekly update, go-live, artist heads-up email + SMS, Track Report for daily records) and the
+  /daily post-close screen carry `SUBSCRIBE_LINE` ("Subscribe to our YouTube channel and hit
+  the bell so you're notified when we go live and can see if you made it.") and a "Subscribe
+  on YouTube" link to `LIVE_SUBSCRIBE_URL` = **https://www.makinitmag.com/live**, which 301s
+  to the channel's live page with `?sub_confirmation=1` (verified; `makinitmag.com.live` is
+  NOT a domain). One block, `subscribeBlockHtml('ar'|'artist')` / `subscribeBlockText()`.
+  `dailyStreamUrl()` falls back to that URL when the panel setting is empty. The heads-up SMS
+  says "subscribe + hit the bell: makinitmag.com/live" and stays inside one GSM-7 segment.
 
 - **Email engagement gate** (043, 2026-10-06). The audit (Mandrill activity export joined to
   users/prefs/votes, per-address table kept local in `docs/reports/`, gitignored): the daily

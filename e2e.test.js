@@ -2075,7 +2075,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
     !/\d\.\d|out of 9|#\d|A&Rs heard/.test(huc.body + huc.subject + huc.tune), huc.body);
   const huSms = srv._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', streamAtL);
   ok('the heads-up text is plain GSM-7 inside one segment', huSms.length <= 160 && /^[\x20-\x7e]*$/.test(huSms)
-    && /Results by email/.test(huSms) && /The A&R Room live, Wed 7PM ET/.test(huSms) && /Reply STOP/.test(huSms) && !/Countdown/.test(huSms), huSms.length + ' ' + huSms);
+    && /Report by email/.test(huSms) && /Top 8 Wed 7PM ET/.test(huSms) && /makinitmag\.com\/live/.test(huSms) && /Reply STOP/.test(huSms) && !/Countdown/.test(huSms), huSms.length + ' ' + huSms);
+  const huTxt = srv._artistHeadsupText(huc), huHtml = srv._artistHeadsupHtml(huc);
+  ok('the heads-up asks the artist to subscribe on YouTube and hit the bell (2026-10-15)',
+    /hit the bell/.test(huTxt) && /Subscribe on YouTube: https:\/\/www\.makinitmag\.com\/live/.test(huTxt) && /href="https:\/\/www\.makinitmag\.com\/live"/.test(huHtml), huTxt);
 
   // The Livestream Countdown: the ranked graphics render, and NOTHING is revealed yet.
   ok('before the stream the graphics have not rendered',
@@ -3396,7 +3399,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     resultsUrl: 'https://x/account#results', closesLabel: '3:00 PM ET', closesInHours: 3 };
   const dgFullHtml = srv._dailyDigestEmailHtml(dgFull), dgFullText = srv._dailyDigestEmailText(dgFull);
   ok('the results mail links The A&R Room show, not a daily stream (2026-10-15)',
-    /yt\.example\/live/.test(dgFullHtml) && /Watch The A&R Room live, Wednesday 7:00 PM ET/.test(dgFullText)
+    /makinitmag\.com\/live/.test(dgFullHtml) && /hit the bell/.test(dgFullText) && /Subscribe on YouTube/.test(dgFullText)
       && /\$1,000 Music Tournament/.test(dgFullText) && !/Watch the Makin' It Daily Countdown/.test(dgFullHtml + dgFullText));
   ok('and to the A&R\'s own results on the site', /See your results/.test(dgFullHtml) && /account#results/.test(dgFullHtml) && /account#results/.test(dgFullText));
   ok('the text version is a headline too', /Points 543/.test(dgFullText) && !/A Record/.test(dgFullText) && !/Rank/.test(dgFullText), dgFullText);
