@@ -754,18 +754,19 @@
             <button class="btn sm" id="btnTnPublish">Publish + make Asana task</button>
           </div>
         </div>
-        <p class="hint" style="margin:0 0 12px">One set per seat as it fills: the qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?") and each competitor gets a <b>package</b> — their own feed + story to post (them big, all 8 seats, RSVP + Join the A&amp;R Team) that you email them with the tournament briefing and the graphics attached. After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
+        <p class="hint" style="margin:0 0 12px">One set per seat as it fills: the qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?") and each competitor gets a <b>package</b> — their own feed + story to post (them big, all 8 seats, RSVP + Join the A&amp;R Team) that you email them with the tournament briefing and the graphics attached, followed by a heads-up text. After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
         <div class="gfx" id="tnGfx"></div>
         <table class="list" id="tnGfxList" style="margin-top:12px"></table>
         <div class="row hide" id="tnPkgBar" style="gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
           <span class="mono" style="color:var(--ink-faint);font-size:12px">Package:</span>
-          <button class="btn sm" id="btnTnSend" title="Email this competitor the briefing with both graphics attached, then text them a heads-up">Email competitor</button>
+          <button class="btn sm" id="btnTnSend" title="Emails this competitor the tournament briefing with both graphics attached, then texts the phone on their account that the email went out">Email + text competitor</button>
           <button class="btn ghost sm" id="btnTnPkgZip" title="This competitor's feed, story and caption — for a hand DM">Download this package (zip)</button>
-          <button class="btn ghost sm" id="btnTnPkgTest" title="Send this competitor's package to YOUR OWN email and phone, exactly as they would get it; nothing is sent to them or recorded">Send test to me</button>
+          <button class="btn ghost sm" id="btnTnPkgTest" title="Sends this competitor's package to YOUR OWN email and phone, exactly as they would get it; nothing is sent to them or recorded">Send test to me (email + text)</button>
           <span style="flex:1 1 auto"></span>
           <button class="btn ghost sm" id="btnTnPkgAll" title="Render and host all 8 packages, one at a time">Publish all 8 packages</button>
-          <button class="btn ghost sm" id="btnTnSendAll" title="Email every competitor with an account, one at a time; skips anyone already sent">Email every competitor</button>
+          <button class="btn ghost sm" id="btnTnSendAll" title="Emails and texts every competitor with an account, one at a time; skips anyone already sent">Email + text every competitor</button>
         </div>
+        <p class="hint" id="tnPkgHint" style="margin:6px 0 0">Each send is <b>two messages</b>: the tournament briefing by email with the feed and story attached, then a text to the phone on the competitor's account saying the email went out ("check Spam and the Promotions tab"). No phone on file means email only, and the row says so. Texts go right away, so send during the day. <b>Send test to me</b> does the same to your own email and phone first.</p>
         <div id="tnPubOut" class="out hide"></div>
         <p class="hint">A seat added by hand (not a weekly winner) still gets a row: the series is "one flyer per seat", whatever week it was filled.</p>
       </div>
@@ -3583,8 +3584,8 @@ function renderTnGfx(){
   $('#tnPkgBar').classList.toggle('hide', !pkgRows.length);
   const contactNote = x => x.contact === 'email' ? '' : x.contact === 'none' ? 'no account — download and DM' : x.contact === 'inactive' ? 'account closed' : x.contact === 'bounced' ? 'email bounced' : '';
   $('#btnTnSend').disabled = !(g && isPkg(g) && g.ready && g.contact === 'email');
-  $('#btnTnSend').textContent = g && isPkg(g) ? (g.sentAt ? `Sent ${tnWhen(g.sentAt)} · send again` : `Email ${g.label.replace(/^Package · /, '')}`) : 'Email competitor';
-  $('#btnTnSend').title = g && isPkg(g) && contactNote(g) ? contactNote(g) : 'Email this competitor the briefing with both graphics attached';
+  $('#btnTnSend').textContent = g && isPkg(g) ? (g.sentAt ? `Sent ${tnWhen(g.sentAt)} · send again` : `Email + text ${g.label.replace(/^Package · /, '')}`) : 'Email + text competitor';
+  $('#btnTnSend').title = g && isPkg(g) && contactNote(g) ? contactNote(g) : 'Emails this competitor the tournament briefing with both graphics attached, then texts the phone on their account';
   $('#btnTnPkgZip').disabled = !(g && isPkg(g) && g.ready);
   $('#btnTnPkgTest').disabled = !(g && isPkg(g) && g.ready);
   $('#btnTnPkgAll').disabled = !pkgReady;
@@ -3625,9 +3626,9 @@ $('#btnTnSend').onclick = async (e) => {
   if(!TN || !tnGfxKey) return;
   const g = (TN.graphics || []).find(x => x.key === tnGfxKey); if(!g) return;
   const who = g.label.replace(/^Package · /, '');
-  if(g.sentAt && !confirm(`${who} was already sent this package on ${tnWhen(g.sentAt)}. Send it again?`)) return;
+  if(g.sentAt && !confirm(`${who} was already sent this package on ${tnWhen(g.sentAt)}. Send the email and text again?`)) return;
   const b = e.target, out = $('#tnPubOut'); b.disabled = true; tnErr('');
-  out.classList.remove('hide'); out.textContent = `Rendering and emailing ${who}…`;
+  out.classList.remove('hide'); out.textContent = `Rendering ${who}'s package, emailing it, then texting…`;
   const k = tnGfxKey;
   try{
     const d = await tnSendPackage(k, out, { force: !!g.sentAt });
@@ -3687,8 +3688,8 @@ $('#btnTnPkgAll').onclick = (e) => tnPkgLoop(e.target, $('#tnPubOut'), 'Publishi
 });
 $('#btnTnSendAll').onclick = (e) => {
   const n = (TN.graphics || []).filter(x => x.asana === false && x.ready && x.contact === 'email' && !x.sentAt).length;
-  if(!confirm(`Email the package to ${n} competitor${n === 1 ? '' : 's'} with an account? Anyone already sent is skipped.`)) return;
-  tnPkgLoop(e.target, $('#tnPubOut'), 'Emailing', async g => {
+  if(!confirm(`Email AND text the package to ${n} competitor${n === 1 ? '' : 's'} with an account? Each gets the briefing with the graphics attached, then a text if a phone is on file. Anyone already sent is skipped.`)) return;
+  tnPkgLoop(e.target, $('#tnPubOut'), 'Emailing + texting', async g => {
     if(g.sentAt) return { skip: true, note: 'already sent ' + tnWhen(g.sentAt) };
     if(g.contact !== 'email') return { skip: true, note: g.contact === 'none' ? 'no account — download and DM' : g.contact === 'inactive' ? 'account closed' : 'email bounced' };
     const d = await tnSendPackage(g.key, $('#tnPubOut'));
