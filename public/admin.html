@@ -1802,8 +1802,12 @@
     <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:10px 0 0">Email and phone are not editable here. The photo is changed by the A&amp;R on their own profile page.</p>
     <!-- Latest grade card (2026-10-15): the A&R's card for the newest published day they played. -->
     <div id="ueCard" style="display:none;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
-      <label style="margin-top:0">Latest grade card <span class="muted" style="font-weight:400" id="ueCardDay"></span></label>
-      <div class="permrow" style="margin:6px 0 8px">
+      <label style="margin-top:0">Grade card <span class="muted" style="font-weight:400" id="ueCardDay"></span></label>
+      <div class="permrow" style="margin:6px 0 4px">
+        <button type="button" class="permchip" data-uecscope="day">Latest day</button>
+        <button type="button" class="permchip" data-uecscope="standing">Standing</button>
+      </div>
+      <div class="permrow" style="margin:4px 0 8px">
         <button type="button" class="permchip" data-uecs="photo">Big photo</button>
         <button type="button" class="permchip" data-uecs="stats">Stats</button>
       </div>
@@ -4949,17 +4953,23 @@ window.openUserEdit=async(uid)=>{
   }catch(e){alert(e.message);}
 };
 // Latest grade card: preview + download, fetched with the admin's token (an <img> cannot send it).
-let ueCard={uid:null,info:null,style:null,url:null};
-const ueCardSrc=(fmt,extra)=>'/api/admin/users/grade-card?uid='+encodeURIComponent(ueCard.uid)+'&style='+ueCard.style+(fmt==='story'?'&fmt=story':'')+(extra||'');
+let ueCard={uid:null,info:null,style:null,url:null,scope:'day'};
+const ueCardSrc=(fmt,extra)=>'/api/admin/users/grade-card?uid='+encodeURIComponent(ueCard.uid)+(ueCard.scope==='standing'?'&scope=standing':'')+'&style='+ueCard.style+(fmt==='story'?'&fmt=story':'')+(extra||'');
 const ueCardHdr=()=>{const h={};if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;return h;};
 function ueCardShow(uid,info){
-  ueCard={uid,info,style:info?info.style:null,url:ueCard.url};
+  ueCard={uid,info,style:info?info.style:null,url:ueCard.url,scope:info&&info.grade?'day':'standing'};
   $('#ueCard').style.display=info?'block':'none';
   if(!info)return;
-  $('#ueCardDay').textContent='· Grade '+info.grade+(info.dayLabel?' · '+info.dayLabel:'');
+  ueCardHead();
   $('#ueCardNote').textContent=info.hasBigPhoto?'':'No big photo on file, so only the stats card is available.';
   ueCardChips();ueCardPic();
 }
+function ueCardHead(){
+  const i=ueCard.info,st=ueCard.scope==='standing';
+  $('#ueCardDay').textContent=st?(i.standing?'· Standing '+i.standing.grade+' · '+i.standing.drops+(i.standing.drops===1?' drop':' drops'):''):('· Grade '+i.grade+(i.dayLabel?' · '+i.dayLabel:''));
+  document.querySelectorAll('[data-uecscope]').forEach(b=>{b.classList.toggle('on',b.dataset.uecscope===ueCard.scope);b.disabled=b.dataset.uecscope==='standing'?!i.standing:!i.grade;});
+}
+document.querySelectorAll('[data-uecscope]').forEach(b=>b.onclick=()=>{if(b.disabled||!ueCard.info)return;ueCard.scope=b.dataset.uecscope;ueCardHead();ueCardPic();});
 function ueCardChips(){document.querySelectorAll('[data-uecs]').forEach(b=>{b.classList.toggle('on',b.dataset.uecs===ueCard.style);b.disabled=b.dataset.uecs==='photo'&&!ueCard.info.hasBigPhoto;});}
 async function ueCardPic(){
   const box=$('#ueCardPic');box.textContent='Loading…';

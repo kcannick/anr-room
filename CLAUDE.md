@@ -113,6 +113,11 @@ live on anr.makinitmag.com.
     Account page: "Your grade card" at the top of My results (no separate mockup was made).
     Admin: Users → Edit profile shows the A&R's latest card (preview, look, download):
     `/api/admin/users/grade-card?uid=` (admin only; the style is per download, never saved).
+  - **Standing card** (operator, 2026-10-15): the same card ALL-TIME (`standingFacts`: every
+    published daily drop rated; grade from the average accuracy of every rated record; the good
+    three summed; "Standing · N drops" where the date goes). NO RANK, by decision. `scope=standing`
+    on `/api/me/grade-card` and the admin door; the account page and admin panel switch
+    Latest day / Standing.
   - **Daily email rules (operator):** `digest_daily` is ON by default but goes ONLY to who rated
     the published drop (results + card; subject "Your A&R grade for <day>: <grade>") or who rated
     none of it but rated the public drop before (`dailyMissedEmail*`, his line: "you missed

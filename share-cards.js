@@ -386,9 +386,11 @@ function elementReferFlyer(d, kind) {
 //   'gradePhoto' / 'gradePhotoStory'  A — the photo fills the top and fades into the ground;
 //                                     the name sits where they meet, the grade in the A&R block
 //   'gradeStats' / 'gradeStatsStory'  C — the green cut, a small face, the grade large
-// Data shape (built by server.js gradeCardData), one per A&R per published day:
+// Data shape (built by server.js renderGradeCard), one per A&R per published day:
 //   { name, category, location, photo (data URI or null), grade, accuracy (0..100),
 //     counts: { bullseye, sharp, close }, dayLabel }
+// THE STANDING CARD (operator, 2026-10-15) is the same card, all-time: `standing: true` and
+// `drops` (how many published drops they rated) replace the date with "Standing". Never a rank.
 // Rules the operator set, all enforced here rather than by the caller:
 //   - only the good three counts print (Bullseye, Sharp, Close). Off and Way off NEVER do.
 //   - no headcount, no QR, no invite link: the one address is makinitmag.com/ANR.
@@ -463,6 +465,11 @@ function gradeFoot(z) {
   ]);
 }
 const accLabel = a => (a == null ? '—' : Math.round(Number(a)) + '%');
+// What the grade is OF: the day ("Oct 14") or, on the Standing card, all time ("Standing · 14 drops").
+function gradeWhen(d) {
+  if (d.standing) { const n = Number(d.drops) || 0; return 'Standing' + (n ? ` · ${n} ${n === 1 ? 'drop' : 'drops'}` : ''); }
+  return d.dayLabel || 'Grade';
+}
 
 // A: the photo is the ground of the top of the card.
 function elementGradePhoto(d, story) {
@@ -471,6 +478,8 @@ function elementGradePhoto(d, story) {
     ? { photoH: 1300, fadeTop: 800, lead: 58, name: 150, meta: 32, chip: 250, icon: 60, count: 66, label: 22, pitch: 40, prize: 42, url: 34, gap: 40, ngap: 20 }
     : { photoH: 900, fadeTop: 520, lead: 46, name: 112, meta: 26, chip: 190, icon: 44, count: 50, label: 18, pitch: 30, prize: 32, url: 38, gap: 22, ngap: 14 };
   const chip = col({ alignItems: 'center', gap: 16, flexShrink: 0 }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: z.label, letterSpacing: Math.round(z.label * 0.16), textTransform: 'uppercase',
+      color: REFER.green, ...NOWRAP }, gradeWhen(d)),
     h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: z.chip, height: z.chip, background: REFER.green,
         borderRadius: Math.round(z.chip * 0.06), transform: `skewX(${SKEW}deg)` },
       text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: Math.round(z.chip * 0.52),
@@ -513,7 +522,7 @@ function elementGradeStats(d, story) {
     row({ justifyContent: 'space-between', alignItems: 'flex-end' }, [
       col({ gap: 14 }, [
         text({ fontFamily: MONO, fontWeight: 400, fontSize: 24, letterSpacing: 4, textTransform: 'uppercase', color: REFER.dim, ...NOWRAP },
-          'Grade' + (d.dayLabel ? ' · ' + d.dayLabel : '')),
+          d.standing ? gradeWhen(d) : 'Grade' + (d.dayLabel ? ' · ' + d.dayLabel : '')),
         text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: z.grade, lineHeight: 0.8, letterSpacing: -Math.round(z.grade * 0.06), color: REFER.green, ...NOWRAP }, d.grade || '—'),
       ]),
       col({ alignItems: 'flex-end', gap: 6 }, [

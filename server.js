@@ -2763,12 +2763,36 @@ async function gradeCardFacts(sessionId, uid) {
   for (const t of tiers) if (Object.prototype.hasOwnProperty.call(counts, t.tier)) counts[t.tier] = Number(t.c) || 0;
   return { sessionId: s.id, day: s.drop_day, dayLabel: gradeDayLabel(s.drop_day), grade: recap.grade, accuracy: recap.accuracy, counts };
 }
+// THE STANDING CARD (operator, 2026-10-15): the same card, ALL-TIME — every published daily drop
+// the A&R rated. Grade from the average accuracy of every rated record (the same per-round
+// accuracy buildRecap uses), the good three counted across all of them, and how many drops.
+// NO RANK, by decision: rank is what the weekly announcement reveals. One bounded read per call
+// (one A&R's votes), on demand only — never on a fan-out path.
+async function standingFacts(uid) {
+  const rows = await db.all(
+    `SELECT v.err, v.tier, r.poll_type, pa.session_id
+       FROM participants pa
+       JOIN sessions s ON s.id = pa.session_id
+       JOIN votes v ON v.participant_id = pa.id
+       JOIN rounds r ON r.id = v.round_id
+      WHERE pa.user_id = ? AND pa.verified = 1 AND s.mode = 'async' AND s.async_state = 'published'
+        AND s.deleted_at IS NULL AND r.status = 'ratified'`, [uid]);
+  const accs = rows.map(m => roundAccuracy(m.err, m.poll_type === 'binary' ? 100 : 9)).filter(a => a != null);
+  if (!accs.length) return null;
+  const accuracy = Math.round((accs.reduce((a, b) => a + b, 0) / accs.length) * 100) / 100;
+  const counts = { bullseye: 0, sharp: 0, close: 0 };
+  for (const m of rows) if (Object.prototype.hasOwnProperty.call(counts, m.tier)) counts[m.tier]++;
+  return { standing: true, sessionId: null, day: 'standing', dayLabel: null,
+    drops: new Set(rows.map(m => m.session_id)).size, grade: gradeForAccuracy(accuracy), accuracy, counts };
+}
 // What the admin's Edit profile panel shows about the card (null when there is none yet).
 async function adminGradeCardInfo(u) {
   const full = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [u.uid]);
   const facts = full ? await latestGradeCardFacts(full.uid) : null;
-  if (!facts) return null;
-  return { sessionId: facts.sessionId, dayLabel: facts.dayLabel, grade: facts.grade,
+  const st = full ? await standingFacts(full.uid) : null;
+  if (!facts && !st) return null;
+  return { sessionId: facts ? facts.sessionId : null, dayLabel: facts ? facts.dayLabel : null, grade: facts ? facts.grade : null,
+    standing: st ? { grade: st.grade, drops: st.drops } : null,
     style: gradeCardStyleFor(full), hasBigPhoto: !!full.photo_large_url };
 }
 // The newest published day this A&R played, as facts, or null. Bounded: five rows at most.
@@ -2784,7 +2808,8 @@ async function renderGradeCard(u, facts, { style, fmt = 'feed', width } = {}) {
   const st = gradeCardStyleFor(u, style);
   const data = { name: u.name || 'A&R', category: u.primary_category || null, location: u.location || null,
     photo: await photoDataUri(st === 'photo' ? u.photo_large_url : u.photo_url),
-    grade: facts.grade, accuracy: facts.accuracy, counts: facts.counts, dayLabel: facts.dayLabel };
+    grade: facts.grade, accuracy: facts.accuracy, counts: facts.counts, dayLabel: facts.dayLabel,
+    standing: !!facts.standing, drops: facts.drops || 0 };
   // The big photo could not be fetched: the stats card, with the avatar, rather than a card
   // whose whole top is empty.
   let type = gradeCardType(st, fmt);
@@ -7120,7 +7145,8 @@ async function handleApi(req, res, url) {
     const u = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [url.searchParams.get('uid') || '']);
     if (!u) return bad(res, 'User not found', 404);
     const sid = (url.searchParams.get('s') || '').toString();
-    const facts = sid ? await gradeCardFacts(sid, u.uid) : await latestGradeCardFacts(u.uid);
+    const facts = url.searchParams.get('scope') === 'standing' ? await standingFacts(u.uid)
+      : sid ? await gradeCardFacts(sid, u.uid) : await latestGradeCardFacts(u.uid);
     if (!facts) return bad(res, 'No grade card yet', 404);
     const fmt = url.searchParams.get('fmt') === 'story' ? 'story' : 'feed';
     try {
@@ -10069,8 +10095,10 @@ async function handleApi(req, res, url) {
     const u = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [uid]);
     if (userInactive(u)) return bad(res, 'Not logged in', 401);
     const facts = await latestGradeCardFacts(uid);
+    const st = await standingFacts(uid);
     return send(res, 200, {
       card: facts ? { sessionId: facts.sessionId, dayLabel: facts.dayLabel, grade: facts.grade } : null,
+      standing: st ? { grade: st.grade, drops: st.drops } : null,
       style: gradeCardStyleFor(u), picked: GRADE_CARD_STYLES.includes(u.grade_card_style) ? u.grade_card_style : null,
       hasBigPhoto: !!u.photo_large_url,
     });
@@ -10081,7 +10109,8 @@ async function handleApi(req, res, url) {
     const u = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [uid]);
     if (userInactive(u)) return bad(res, 'Not logged in', 401);
     const sid = (url.searchParams.get('s') || '').toString();
-    const facts = sid ? await gradeCardFacts(sid, uid) : await latestGradeCardFacts(uid);
+    const facts = url.searchParams.get('scope') === 'standing' ? await standingFacts(uid)
+      : sid ? await gradeCardFacts(sid, uid) : await latestGradeCardFacts(uid);
     if (!facts) return bad(res, 'No grade for that day', 404);
     const fmt = url.searchParams.get('fmt') === 'story' ? 'story' : 'feed';
     try {
@@ -11976,6 +12005,7 @@ module.exports._dailyMissedEmailText = dailyMissedEmailText;
 module.exports._DAILY_MISSED_SUBJECT = DAILY_MISSED_SUBJECT;
 module.exports._previousPublicDrop = previousPublicDrop;
 module.exports._gradeCardFacts = gradeCardFacts;
+module.exports._standingFacts = standingFacts;
 module.exports._gradeCardImageUrl = gradeCardImageUrl;
 module.exports._gradeCardStyleFor = gradeCardStyleFor;
 module.exports._FIRST_WEEK_DAYS = FIRST_WEEK_DAYS;

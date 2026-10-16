@@ -281,6 +281,10 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
       <!-- The grade card for the newest published day they played. Hidden until there is one. -->
       <div class="gc hide" id="gcPanel">
         <div class="gchead"><b>Your grade card</b><small id="gcDay"></small></div>
+        <div class="seg" role="radiogroup" aria-label="Which card">
+          <button type="button" data-gcscope="day" role="radio">Latest day</button>
+          <button type="button" data-gcscope="standing" role="radio">Standing</button>
+        </div>
         <div class="seg" role="radiogroup" aria-label="Card style">
           <button type="button" data-gcstyle="photo" role="radio">Big photo</button>
           <button type="button" data-gcstyle="stats" role="radio">Stats</button>
@@ -610,11 +614,24 @@ async function loadResults(week){
 // ---- The grade card. The picture needs the token in a header, so it is fetched and shown as
 // a blob URL, like the referral graphics. The pick is saved when the device is signed in; on a
 // refer link (read-only) it still switches the preview and the download.
-let GC = null, GC_URL = null;
+// Two cards: the latest day, and Standing (all time, no date, no rank).
+let GC = null, GC_URL = null, GC_SCOPE = 'day';
+function gcHead(){
+  const s = GC_SCOPE === 'standing' ? GC.standing : GC.card;
+  $('#gcDay').textContent = !s ? '' : GC_SCOPE === 'standing'
+    ? 'Grade ' + s.grade + ' · ' + s.drops + (s.drops === 1 ? ' drop' : ' drops')
+    : 'Grade ' + s.grade + (s.dayLabel ? ' · ' + s.dayLabel : '');
+  document.querySelectorAll('[data-gcscope]').forEach(b => {
+    const on = b.dataset.gcscope === GC_SCOPE;
+    b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+    b.disabled = b.dataset.gcscope === 'standing' ? !GC.standing : !GC.card;
+  });
+}
 async function gcLoad(){
   try{ GC = await api('/api/me/grade-card/latest', null, authHeaders() || {}); }catch(e){ return; }
-  if(!GC || !GC.card) return;
-  $('#gcDay').textContent = 'Grade ' + GC.card.grade + (GC.card.dayLabel ? ' · ' + GC.card.dayLabel : '');
+  if(!GC || (!GC.card && !GC.standing)) return;
+  GC_SCOPE = GC.card ? 'day' : 'standing';
+  gcHead();
   $('#gcPanel').classList.remove('hide');
   $('#gcNoPhoto').classList.toggle('hide', !!GC.hasBigPhoto);
   gcSeg(); gcPic();
@@ -627,8 +644,14 @@ function gcSeg(){
   });
 }
 function gcSrc(fmt, extra){
-  return '/api/me/grade-card?s=' + encodeURIComponent(GC.card.sessionId) + '&style=' + GC.style + (fmt === 'story' ? '&fmt=story' : '') + (extra || '');
+  const which = GC_SCOPE === 'standing' ? 'scope=standing' : 's=' + encodeURIComponent(GC.card.sessionId);
+  return '/api/me/grade-card?' + which + '&style=' + GC.style + (fmt === 'story' ? '&fmt=story' : '') + (extra || '');
 }
+document.querySelectorAll('[data-gcscope]').forEach(b => b.onclick = () => {
+  if(!GC || b.disabled || b.dataset.gcscope === GC_SCOPE) return;
+  GC_SCOPE = b.dataset.gcscope; gcHead(); gcPic();
+  track('grade_card_scope', { scope: GC_SCOPE });
+});
 async function gcPic(){
   const box = $('#gcPic'); box.textContent = ''; box.appendChild(mk('span', null, 'Loading'));
   try{
@@ -653,9 +676,9 @@ document.querySelectorAll('[data-gcdl]').forEach(b => b.onclick = async () => {
     const r = await fetch(gcSrc(b.dataset.gcdl), { headers: authHeaders() || {} });
     if(!r.ok) throw new Error('Could not build your card');
     const u = URL.createObjectURL(await r.blob());
-    const l = document.createElement('a'); l.href = u; l.download = 'anr-grade-card' + (b.dataset.gcdl === 'story' ? '-story' : '') + '.png';
+    const l = document.createElement('a'); l.href = u; l.download = 'anr-' + (GC_SCOPE === 'standing' ? 'standing' : 'grade-card') + (b.dataset.gcdl === 'story' ? '-story' : '') + '.png';
     document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 10000);
-    track('grade_card_download', { fmt: b.dataset.gcdl, style: GC.style });
+    track('grade_card_download', { fmt: b.dataset.gcdl, style: GC.style, scope: GC_SCOPE });
   }catch(e){ alert(e.message); }
   delete b.dataset.busy; b.style.opacity = '';
 });

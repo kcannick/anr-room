@@ -2343,10 +2343,30 @@ async function startVoting(sessionId, headers, minutes = 5) {
     && /attachment; filename="anr-grade-.+-story\.png"/.test(gMine.headers.get('content-disposition') || '')
     && /no-store/.test(gMine.headers.get('cache-control') || ''), gMine.status + ' ' + gMine.headers.get('content-disposition'));
   ok('the card download needs a login', (await fetch(base + '/api/me/grade-card?s=' + LDROP)).status === 401);
+  // THE STANDING CARD: the same card, all time — every published drop rated, no date, no rank.
+  const stdOne = await srv._standingFacts(lifeUid);
+  ok('Standing on one drop matches that day', stdOne && stdOne.standing && stdOne.drops === 1 && stdOne.grade === gFacts.grade
+    && JSON.stringify(stdOne.counts) === JSON.stringify(gFacts.counts), JSON.stringify(stdOne));
+  await seatVote('prevdrop1', lifeUid, 'bullseye');
+  const stdTwo = await srv._standingFacts(lifeUid);
+  ok('Standing adds up every published drop they rated', stdTwo.drops === 2 && stdTwo.counts.bullseye === gFacts.counts.bullseye + 1, JSON.stringify(stdTwo));
+  ok('Standing carries no rank and no date', !('rank' in stdTwo) && stdTwo.dayLabel === null, JSON.stringify(stdTwo));
+  ok('no Standing for someone who never rated a published drop', (await srv._standingFacts(uidNever)) === null);
+  const stLatest = await call('/api/me/grade-card/latest', null, 'GET', LH);
+  ok('the account page gets the Standing beside the latest day', stLatest.d.standing && stLatest.d.standing.drops === 2, JSON.stringify(stLatest.d));
+  const stMine = await fetch(base + '/api/me/grade-card?scope=standing&dl=1', { headers: LH });
+  ok('the A&R downloads their Standing card', stMine.status === 200 && /anr-grade-standing\.png/.test(stMine.headers.get('content-disposition') || ''),
+    stMine.status + ' ' + stMine.headers.get('content-disposition'));
+  const stAdm = await fetch(base + '/api/admin/users/grade-card?uid=' + encodeURIComponent(lifeUid) + '&scope=standing', { headers: BOOTH });
+  ok('an admin pulls the Standing card too', stAdm.status === 200 && stAdm.headers.get('content-type') === 'image/png', 'got ' + stAdm.status);
+  const stRender = await require('./share-cards').renderPng('gradeStats', { name: 'Kelby', grade: 'B+', accuracy: 87, counts: stdTwo.counts, standing: true, drops: 2 });
+  ok('the Standing card renders', Buffer.isBuffer(stRender) && stRender.length > 10000);
+
   // An admin pulls any A&R's latest card from Edit profile (operator, 2026-10-15).
   const gAdmProf = await call('/api/admin/users/profile?uid=' + encodeURIComponent(lifeUid), null, 'GET', BOOTH);
-  ok('the admin profile view names the latest card', gAdmProf.status === 200 && gAdmProf.d.gradeCard
-    && gAdmProf.d.gradeCard.sessionId === LDROP && gAdmProf.d.gradeCard.grade === gFacts.grade, JSON.stringify(gAdmProf.d.gradeCard));
+  ok('the admin profile view names the latest card and the Standing', gAdmProf.status === 200 && gAdmProf.d.gradeCard
+    && gAdmProf.d.gradeCard.sessionId === LDROP && gAdmProf.d.gradeCard.grade === gFacts.grade
+    && gAdmProf.d.gradeCard.standing && gAdmProf.d.gradeCard.standing.drops === 2, JSON.stringify(gAdmProf.d.gradeCard));
   const gAdm = await fetch(base + '/api/admin/users/grade-card?uid=' + encodeURIComponent(lifeUid) + '&style=stats&dl=1', { headers: BOOTH });
   ok('an admin downloads it, named for the A&R', gAdm.status === 200 && gAdm.headers.get('content-type') === 'image/png'
     && /attachment; filename=".+-anr-grade-/.test(gAdm.headers.get('content-disposition') || ''), gAdm.status + ' ' + gAdm.headers.get('content-disposition'));
