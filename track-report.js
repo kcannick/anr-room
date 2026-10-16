@@ -43,25 +43,28 @@ const BANDS = [
 // are LOWER-INCLUSIVE on the room average and fixed (they do not move with
 // TRACK_BAND_EDGES — calibrating the band names must not quietly change a dollar figure).
 // The amount is advice to the artist about their own release, never a price of ours.
-const SPEND_EDGES = [3, 4, 5, 6, 7];
+const SPEND_EDGES = [3, 4, 5, 6, 7, 8];
 const SPEND = [
   { key: 'none', headline: ['Keep working', 'on it.'],
     money: 'Don’t invest in this version.', moneyRest: 'Keep the money for the next version.' },
   { key: 'up300', headline: ['Release it.', 'Spend up to', '$300 on it.'],
     money: 'Spend up to $300 over the first 3 months.',
-    moneyRest: 'It’s a solid release. Use it to let people know it’s out, then see how the response is.' },
+    moneyRest: 'It’s a potential release. Use it to let people know it’s out, then see how the response is.' },
   { key: 'min300', headline: ['Release it.', 'Spend at least', '$300 on it.'],
     money: 'Spend at least $300 over the first 3 months.',
     moneyRest: 'It’s a solid release. Use it to let people know it’s out.' },
-  { key: 'min800', headline: ['Release it.', 'Spend $800', 'to $1,000 on it.'],
-    money: 'Spend at least $800 over the first 3 months.',
-    moneyRest: 'Don’t spend more than $1,000 unless you start seeing a response that justifies investing more.' },
+  { key: 'some', headline: ['Release it.', 'Worth putting', 'money behind.'],
+    money: 'Worth putting some money behind.',
+    moneyRest: 'But don’t spend over $1,000 within the first 3 months unless you start seeing a response that justifies investing more.' },
   { key: 'min1500', headline: ['Release it.', 'Invest at least', '$1,500 in it.'],
     money: 'Invest at least $1,500 over the first 3 months.',
     moneyRest: 'It’s worth investing in. See where it goes, starting with the people who scored it highest.' },
   { key: 'single', headline: ['Release it.', 'Push it as', 'a single.'],
     money: 'Work out what you can afford to spend.',
     moneyRest: 'Sit down and figure out what you can afford to spend and how long you’re willing to push this as a single.' },
+  { key: 'backing', headline: ['Release it.', 'Don’t push it', 'on your own.'],
+    money: 'Don’t try to do this on your own.',
+    moneyRest: 'Sit down and figure out what you can afford to spend and how long you’re willing to push this as a single. You may want to bring in an investor or a consultant.' },
 ];
 
 function spendFor(mean) {
