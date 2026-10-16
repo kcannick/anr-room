@@ -1760,9 +1760,15 @@ $('#cropSave').onclick=async()=>{
   const sx=-crop.ox/crop.scale, sy=-crop.oy/crop.scale, sSize=crop.S/crop.scale;
   ctx.drawImage(crop.img, sx, sy, sSize, sSize, 0, 0, out, out);
   const dataUrl=cv.toDataURL('image/jpeg',0.85);
+  // The big copy of the SAME crop, for the big-photo grade card (up to 1200px). Skipped when the
+  // source is too small to give one; the A&R then gets the stats card.
+  const big=Math.min(1200, Math.floor(sSize));
+  let imageLarge=null;
+  if(big>=800){ const bc=document.createElement('canvas'); bc.width=big; bc.height=big;
+    bc.getContext('2d').drawImage(crop.img, sx, sy, sSize, sSize, 0, 0, big, big); imageLarge=bc.toDataURL('image/jpeg',0.85); }
   $('#cropSave').disabled=true;
   try{
-    const d=await api('/api/me/photo',{image:dataUrl});
+    const d=await api('/api/me/photo',{image:dataUrl, imageLarge});
     myProfile=myProfile||{}; myProfile.photoUrl=d.photoUrl;
     renderPfAvatar();
     $('#cropModal').style.display='none';

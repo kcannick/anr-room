@@ -2098,16 +2098,42 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const uidOut = await mkUser('digest-out@test.com', 'OptedOut');
   const uidNever = await mkUser('digest-never@test.com', 'NeverAsked');
   await dDb.run('UPDATE users SET email_opt_out = 1 WHERE uid = ?', [uidOut]);
-  // digest_daily's catalog default is OFF and STAYS off (028): flipping it turns an opt-in
-  // list into a daily send to the whole base, which is a deliverability decision and belongs
-  // in its own one-line commit after a week on a manual list. So the audience is opt-in, and
-  // uidNever — who was never asked — proves it by getting nothing.
+  // THE DAILY EMAIL RULES (2026-10-15). digest_daily is ON by default now, but its audience is
+  // only (a) who rated THIS drop — results + grade card — and (b) who rated none of it but rated
+  // the public drop before — "you missed yesterday's drop". So: uidIdle rated the drop before
+  // (missed mail), uidGone rated only one two back (nothing), uidNever never played (nothing).
   const optIn = async (uid) => dDb.run(
     "INSERT INTO notify_prefs (uid, topic, channel, enabled, source, updated_at) VALUES (?, 'digest_daily', 'email', 1, 'test', ?)"
     + ' ON CONFLICT (uid, topic, channel) DO UPDATE SET enabled = 1', [uid, Date.now()]);
-  await optIn(await uidOf('life@test.com'));
-  await optIn(uidIdle);
   await optIn(uidOut);
+  const uidGone = await mkUser('digest-gone@test.com', 'Gone');
+  const lDay = (await lSess()).drop_day;
+  const dayBefore = (d, n) => new Date(Date.parse(d + 'T12:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+  // A played drop, by SQL: a session, one ratified round, a verified participant with a vote.
+  const seatVote = async (sid, uid, tier = 'sharp') => {
+    const have = await dDb.get("SELECT id FROM rounds WHERE session_id = ? AND status = 'ratified' ORDER BY idx LIMIT 1", [sid]);
+    const rid = have ? have.id : sid + '_r1';
+    if (!have) {
+      await dDb.run("INSERT INTO rounds (id, session_id, idx, song_title, status, room_average, created_at) VALUES (?,?,1,'Earlier Song','ratified',5,?)", [rid, sid, Date.now()]);
+    }
+    const pid = 'p_' + sid + '_' + uid;
+    await dDb.run('INSERT INTO participants (id, session_id, user_id, email, name, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,1,10,?)',
+      [pid, sid, uid, uid + '@seat.test', 'Seat', 'tok_' + pid, Date.now()]);
+    await dDb.run('INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at, points, err, tier) VALUES (?,?,?,5,5.4,?,10,0.4,?)',
+      ['v_' + pid, rid, pid, Date.now(), tier]);
+  };
+  const mkDrop = async (sid, day) => dDb.run(
+    "INSERT INTO sessions (id, name, admin_token, status, mode, async_state, drop_day, published_at, created_at) VALUES (?,?,?,'completed','async','published',?,?,?)",
+    [sid, 'Drop ' + day, 'adm_' + sid, day, Date.now() - 5 * 86400000, Date.now()]);
+  await mkDrop('prevdrop1', dayBefore(lDay, 1));
+  await mkDrop('prevdrop2', dayBefore(lDay, 2));
+  await seatVote('prevdrop1', uidIdle);
+  await seatVote('prevdrop2', uidGone);
+  ok('the drop before is the public drop with the latest earlier day',
+    ((await srv._previousPublicDrop(await lSess())) || {}).id === 'prevdrop1');
+  // THE SEAL: no grade exists for a day that has not published.
+  ok('no grade card before the day publishes (the seal)',
+    (await srv._gradeCardFacts(LDROP, await uidOf('life@test.com'))) === null);
 
   const resultsAt = Number((await lSess()).results_at);
   const tPub = await tick(resultsAt + 1000);
@@ -2271,12 +2297,54 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const rcpts = await dDb.all('SELECT * FROM notify_recipients WHERE broadcast_id = ?', [bcRow.id]);
   const uidPlayed = await uidOf('life@test.com');
   ok('the A&R who played the day is on the list', rcpts.some(r => r.uid === uidPlayed), JSON.stringify(rcpts.length));
-  ok('so is an A&R who did NOT play — the audience is unconditional, only the block is not',
+  ok('so is an A&R who skipped this day but rated the drop before (the missed mail)',
     rcpts.some(r => r.uid === uidIdle), JSON.stringify(rcpts.length));
+  ok('an A&R who last rated two drops back gets no daily mail (the weekly is theirs)',
+    !rcpts.some(r => r.uid === uidGone), JSON.stringify(rcpts.length));
   ok('email_opt_out is the global kill switch and outranks a topic opt-in',
     !rcpts.some(r => r.uid === uidOut), JSON.stringify(rcpts.length));
-  ok('and digest_daily stays OPT-IN: someone who never chose gets nothing',
+  ok('someone who never played gets nothing, though the topic is ON by default',
     !rcpts.some(r => r.uid === uidNever), JSON.stringify(rcpts.length));
+  const sentRows = await dDb.all('SELECT uid, status FROM notify_recipients WHERE broadcast_id = ?', [bcRow.id]);
+  ok('the publish tick drains both mails', sentRows.length >= 2 && sentRows.every(r => r.status === 'sent'), JSON.stringify(sentRows));
+
+  // ---- The grade card, now that the day is out.
+  const lifeUid = await uidOf('life@test.com');
+  const gFacts = await srv._gradeCardFacts(LDROP, lifeUid);
+  ok('a published day gives a grade, an accuracy and ONLY the good three counts',
+    gFacts && /^[A-F][+-]?$/.test(gFacts.grade) && gFacts.accuracy != null
+      && JSON.stringify(Object.keys(gFacts.counts)) === '["bullseye","sharp","close"]', JSON.stringify(gFacts));
+  ok('no grade for a day the A&R did not play', (await srv._gradeCardFacts(LDROP, uidIdle)) === null);
+  const gSecretWas = process.env.NOTIFY_LINK_SECRET;
+  ok('no secret, no card URL (the email then has no picture)', (delete process.env.NOTIFY_LINK_SECRET, srv._gradeCardImageUrl(base, LDROP, lifeUid)) === null);
+  process.env.NOTIFY_LINK_SECRET = 'test-notify-link-secret';
+  const gUrl = srv._gradeCardImageUrl(base, LDROP, lifeUid, { width: 600 });
+  const gImg = await fetch(gUrl);
+  ok('the signed card URL serves a PNG to anyone (the email <img>)',
+    gImg.status === 200 && gImg.headers.get('content-type') === 'image/png' && /public/.test(gImg.headers.get('cache-control') || ''), 'got ' + gImg.status);
+  const gBad = await fetch(gUrl.replace(/k=[^&]+/, 'k=AAAAAAAAAAAAAAAAAAAAAA'));
+  ok('a wrong signature is a 404', gBad.status === 404, 'got ' + gBad.status);
+  const gOther = await fetch(gUrl.replace(encodeURIComponent(lifeUid), encodeURIComponent(uidIdle)));
+  ok('the signature is per A&R: swapping the uid is a 404', gOther.status === 404, 'got ' + gOther.status);
+  const gLatest = await call('/api/me/grade-card/latest', null, 'GET', LH);
+  ok('the account page finds the latest card; no big photo means the stats card',
+    gLatest.status === 200 && gLatest.d.card && gLatest.d.card.sessionId === LDROP && gLatest.d.style === 'stats' && gLatest.d.hasBigPhoto === false, JSON.stringify(gLatest.d));
+  const gPick = await call('/api/me/grade-card-style', { style: 'photo' }, 'POST', LH);
+  ok('picking the big photo with no big photo saves the pick but still draws stats',
+    gPick.status === 200 && gPick.d.picked === 'photo' && gPick.d.style === 'stats', JSON.stringify(gPick.d));
+  ok('a style that is not one of the two is refused', (await call('/api/me/grade-card-style', { style: 'gold' }, 'POST', LH)).status === 400);
+  const { Resvg: GR } = require('@resvg/resvg-js');
+  const bigPhoto = 'data:image/png;base64,' + new GR('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900"><rect width="900" height="900" fill="#5b4bb0"/></svg>').render().asPng().toString('base64');
+  await dDb.run('UPDATE users SET photo_large_url = ? WHERE uid = ?', [bigPhoto, lifeUid]);
+  const gLatest2 = await call('/api/me/grade-card/latest', null, 'GET', LH);
+  ok('with a big photo, the pick takes effect', gLatest2.d.style === 'photo' && gLatest2.d.hasBigPhoto === true, JSON.stringify(gLatest2.d));
+  const gMine = await fetch(base + '/api/me/grade-card?s=' + LDROP + '&fmt=story&dl=1', { headers: LH });
+  ok('the A&R downloads their own story card', gMine.status === 200 && gMine.headers.get('content-type') === 'image/png'
+    && /attachment; filename="anr-grade-.+-story\.png"/.test(gMine.headers.get('content-disposition') || '')
+    && /no-store/.test(gMine.headers.get('cache-control') || ''), gMine.status + ' ' + gMine.headers.get('content-disposition'));
+  ok('the card download needs a login', (await fetch(base + '/api/me/grade-card?s=' + LDROP)).status === 401);
+  await dDb.run('UPDATE users SET photo_large_url = NULL, grade_card_style = NULL WHERE uid = ?', [lifeUid]);
+  if (gSecretWas === undefined) delete process.env.NOTIFY_LINK_SECRET; else process.env.NOTIFY_LINK_SECRET = gSecretWas;
   const rcptCount = rcpts.length;
   const tPubAgain = await tick(resultsAt + 2000);
   ok('a second publish tick does not publish again (the claim is the lock)', tPubAgain.d.published === 0, JSON.stringify(tPubAgain.d));
@@ -2284,6 +2352,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('and it does not duplicate a single recipient row', rcpts2.length === rcptCount, rcptCount + ' -> ' + rcpts2.length);
   const bcCount = await dDb.get("SELECT COUNT(*) AS c FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [LDROP]);
   ok('nor a second broadcast', Number(bcCount.c) === 1, JSON.stringify(bcCount));
+  // The two earlier drops existed only to sort the digest audience; later tests own those days.
+  for (const sid of ['prevdrop1', 'prevdrop2']) {
+    await dDb.run('DELETE FROM votes WHERE participant_id IN (SELECT id FROM participants WHERE session_id = ?)', [sid]);
+    await dDb.run('DELETE FROM participants WHERE session_id = ?', [sid]);
+    await dDb.run('DELETE FROM rounds WHERE session_id = ?', [sid]);
+    await dDb.run('DELETE FROM sessions WHERE id = ?', [sid]);
+  }
 
   // ---- My results, once the day has published: record by record, points, no rank.
   const rsPub = (await call('/api/me/results', null, 'GET', LH)).d;
@@ -2367,7 +2442,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const bothEmail = (await dDb.get('SELECT artist_email FROM rounds WHERE session_id = ? AND artist_email IS NOT NULL LIMIT 1', [LDROP]) || {}).artist_email;
   if (bothEmail) {
     const bothUid = await mkUser(bothEmail, 'Both Hats');
-    await optIn(bothUid);
+    await seatVote(LDROP, bothUid);
     await srv._enqueueDailyDigest(await lSess());
     const gotBroadcast = await dDb.get('SELECT 1 AS x FROM notify_recipients WHERE broadcast_id = ? AND uid = ?', [bcRow.id, bothUid]);
     const gotNotice = await dDb.get('SELECT 1 AS x FROM artist_notices WHERE session_id = ? AND dest = ?', [LDROP, bothEmail]);
@@ -3419,6 +3494,41 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a recap with zero rounds counts as not having played',
     !/Yesterday's results, Kelby/.test(dgEmpty) && !/How you did/.test(dgEmpty));
 
+  console.log('\n— A&R Daily: the grade card in the results mail, and the missed mail (2026-10-15) —');
+  const dgCard = srv._dailyDigestEmailHtml({ ...dgFull, cardUrl: 'https://x/api/card/grade/d1/u1.png?k=abc' });
+  ok('the results mail carries the grade card picture and says how to post it',
+    /<img src="https:\/\/x\/api\/card\/grade\/d1\/u1\.png\?k=abc"/.test(dgCard) && /alt="Your grade card: A\+"/.test(dgCard)
+      && /we'll collab with you on Instagram/.test(dgCard));
+  ok('a non-player never gets a card, even if one were passed',
+    !/<img/.test(srv._dailyDigestEmailHtml({ ...dgFull, recap: null, cardUrl: 'https://x/c.png' })));
+  ok('the text version links the card', /Your grade card: https:\/\/x\/api\/card\/grade/.test(srv._dailyDigestEmailText({ ...dgFull, cardUrl: 'https://x/api/card/grade/d1/u1.png?k=abc' })));
+  const msArg = { name: 'Kelby Cannick', manage: null, playUrl: 'https://x/daily?s=abc', closesLabel: '3:00 PM ET', closesInHours: 3 };
+  const msText = srv._dailyMissedEmailText(msArg), msHtml = srv._dailyMissedEmailHtml(msArg);
+  ok("the missed mail is the operator's line, then today's records",
+    /Hey Kelby Cannick, you missed yesterday's drop, but you have time to rate the new ones now\./.test(msText)
+      && /Today's records close at 3:00 PM ET — in 3 hours\./.test(msText) && /Rate today's records: https:\/\/x\/daily\?s=abc/.test(msText), msText);
+  ok('and carries no grade, no results and no picture', !/grade|results|<img/i.test(msHtml.replace(/A&amp;R Daily/g, '')), msHtml.slice(0, 300));
+  ok('its subject says what happened', srv._DAILY_MISSED_SUBJECT === "You missed yesterday's drop");
+
+  console.log('\n— the grade card renders (share-cards grade*) —');
+  const gcCards = require('./share-cards');
+  ok('four grade card types, feed 1080x1350 and story 1080x1920',
+    JSON.stringify(gcCards.GRADE_SIZES) === JSON.stringify({ gradePhoto: [1080, 1350], gradePhotoStory: [1080, 1920], gradeStats: [1080, 1350], gradeStatsStory: [1080, 1920] }));
+  ok('only the good three counts are ever printed', JSON.stringify(gcCards.GRADE_COPY.tiers.map(x => x[1])) === '["Bullseye","Sharp","Close"]'
+    && !/off/i.test(JSON.stringify(gcCards.GRADE_COPY)));
+  ok('the card copy: the question, $500 cash, makinitmag.com/ANR, no headcount',
+    gcCards.GRADE_COPY.lead === 'Do you have a better ear than' && gcCards.GRADE_COPY.prize === '$500 cash'
+      && gcCards.GRADE_COPY.url === 'makinitmag.com/ANR' && !/\d+\+|members/i.test(JSON.stringify(gcCards.GRADE_COPY)));
+  const gcData = { name: 'Kelby Cannick', category: 'DJ', location: 'Atlanta, GA', photo: null, grade: 'A-', accuracy: 91.4,
+    counts: { bullseye: 3, sharp: 4, close: 5 }, dayLabel: 'Oct 14' };
+  for (const type of Object.keys(gcCards.GRADE_SIZES)) {
+    const png = await gcCards.renderPng(type, gcData);
+    ok('renders ' + type, Buffer.isBuffer(png) && png.length > 10000 && png.readUInt32BE(16) === 1080
+      && png.readUInt32BE(20) === gcCards.GRADE_SIZES[type][1], type + ' ' + (png && png.length));
+  }
+  const gcLong = await gcCards.renderPng('gradePhoto', { ...gcData, name: 'Bartholomew Montgomery-Featherstonehaugh' });
+  ok('a very long name still renders', Buffer.isBuffer(gcLong) && gcLong.length > 10000);
+
   console.log('\n— A&R Daily: the results callback to makinitmag —');
   // Fires at PUBLISH (noon), not at the 9AM tally: the day is scored at 9 but results do not
   // reach A&Rs until noon, and handing averages to another system in that window would put
@@ -4386,7 +4496,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const fp = await call('/api/me/notify-prefs', null, 'GET', FRESH);
   ok('room_live email defaults ON', fp.status === 200 && fp.d.topics.room_live.channels.email === true, JSON.stringify(fp.d.topics));
   ok('room_live sms defaults ON', fp.d.topics.room_live.channels.sms === true, JSON.stringify(fp.d.topics.room_live));
-  ok('daily digest defaults OFF', fp.d.topics.digest_daily.channels.email === false, JSON.stringify(fp.d.topics.digest_daily));
+  // Flipped 2026-10-15: the daily results mail now goes only to those who rated the day or the
+  // one before (enqueueDailyDigest), so it is ON by default.
+  ok('daily results defaults ON', fp.d.topics.digest_daily.channels.email === true, JSON.stringify(fp.d.topics.digest_daily));
   // Flipped 2026-10-06: the weekly update is the cadence for everyone the daily notice no
   // longer reaches, so it is ON by default (non-engaged by default; see the gate tests).
   ok('weekly update defaults ON', fp.d.topics.digest_weekly.channels.email === true, JSON.stringify(fp.d.topics.digest_weekly));
@@ -5591,10 +5703,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
   await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_explicit','daily_open','email',1," + egNow + ")");
   await egDb.run('UPDATE users SET email_bounced_at = ? WHERE uid = ?', [egNow, 'eg_bounced']);
   const audOf = async (topic) => { const a = srv._notifyAudience(topic, 'email'); return new Set((await egDb.all(`SELECT u.uid ${a.sql}`, a.params)).map(r => r.uid)); };
+  // 2026-10-15: the open notice is RETIRED except for a new A&R's first week, until they play.
+  // The active and the explicit no longer get it; their daily email is the results/missed one.
+  await egUser('eg_new_played', 'eg-new-played@test.com', 2, 1);  // joined 2 days ago, already played
+  await egDb.run("UPDATE users SET sessions_played = 1 WHERE uid = 'eg_new_played'");
+  await egUser('eg_week_old', 'eg-week-old@test.com', 8, 8);      // joined 8 days ago, never played
   const dailyAud = await audOf('daily_open');
-  ok('gate: an A&R seen within 30 days gets the daily notice', dailyAud.has('eg_active'));
-  ok('gate: an account under 14 days old gets it (habit window)', dailyAud.has('eg_new'));
-  ok('gate: an explicit ON gets it however stale', dailyAud.has('eg_explicit'));
+  ok('daily notice: a first-week account that has not played gets it', dailyAud.has('eg_new'));
+  ok('daily notice: retired for an active A&R on the default', !dailyAud.has('eg_active'));
+  ok('daily notice: an explicit ON no longer widens it', !dailyAud.has('eg_explicit'));
+  ok('daily notice: a first-week account that already played does NOT (the results mail is theirs)', !dailyAud.has('eg_new_played'));
+  ok('daily notice: the first week is seven days', !dailyAud.has('eg_week_old') && srv._FIRST_WEEK_DAYS === 7);
   ok('gate: a stale account on the default does NOT', !dailyAud.has('eg_stale'));
   ok('gate: a bounced address is out even when active', !dailyAud.has('eg_bounced'));
   ok('gate: the constants are the ones the copy quotes (30 / 14 / 4)',
@@ -5607,6 +5726,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('weekly: a new account is NOT (it gets the daily)', !weeklyAud.has('eg_new'));
   ok('weekly: an active account that chose Weekly is on it', weeklyAud.has('eg_active'));
   ok('weekly: a bounced address is out', !weeklyAud.has('eg_bounced'));
+  // The weekly's default now goes to everyone outside the DAILY reach (first week, or seen in
+  // the last 4 days), not outside 30 days: someone who stopped rating a week ago gets no daily
+  // email any more, so the weekly is theirs.
+  await egUser('eg_lapsed', 'eg-lapsed@test.com', 90, 10);
+  weeklyAud = await audOf('digest_weekly');
+  ok('weekly: an A&R seen 10 days ago (out of the daily reach) is on it', weeklyAud.has('eg_lapsed'));
   // Sunset: four sent weeklies since they were last seen = stop. One sent BEFORE their last
   // activity does not count against them.
   for (let i = 0; i < 4; i++) {
@@ -5625,8 +5750,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('sunset: an explicit ON is never sunset', (await audOf('digest_weekly')).has('eg_stale'));
   await egDb.run("DELETE FROM notify_prefs WHERE uid = 'eg_stale'");
   await egDb.run("UPDATE users SET last_seen = ? WHERE uid = 'eg_stale'", [egNow - DAY]);
-  ok('sunset: coming back (last_seen moves past the sends) restarts the count — and the daily takes over',
-    !(await audOf('digest_weekly')).has('eg_stale') && (await audOf('daily_open')).has('eg_stale'));
+  ok('sunset: coming back (last_seen moves past the sends) puts them in the daily reach, so the weekly waits',
+    !(await audOf('digest_weekly')).has('eg_stale'));
   await egDb.run("UPDATE users SET last_seen = ? WHERE uid = 'eg_stale'", [egNow - 60 * DAY]);
 
   console.log('\n— the weekly sender: one broadcast per week, drained, names only —');
@@ -5656,7 +5781,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('bounce: a soft bounce (full inbox) does not', (await srv._noteEmailOutcome('eg-new@test.com', { ok: false, error: 'x', reject: 'soft-bounce' })) === false
     && (await egDb.get("SELECT email_bounced_at FROM users WHERE uid = 'eg_new'")).email_bounced_at == null);
   ok('bounce: a successful send never does', (await srv._noteEmailOutcome('eg-new@test.com', { ok: true })) === false);
-  ok('bounce: the bounced active A&R is out of the daily audience now', !(await audOf('daily_open')).has('eg_active'));
+  ok('bounce: the bounced A&R is out even of the weekly they chose', !(await audOf('digest_weekly')).has('eg_active'));
   await egDb.run("UPDATE users SET email_bounced_at = NULL WHERE uid = 'eg_active'");
 
   console.log('\n— announcements default to the active list; everyone is a choice —');

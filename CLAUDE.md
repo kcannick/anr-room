@@ -89,13 +89,35 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 046; suite green)
+## Current state (migrations through 047; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
 > claimed 028 had shipped while the migration was still untracked locally and `main` was
 > level with `origin/main` — a whole feature, and a migration prod had never run, sitting
 > unpushed. "SHIPPED" here must mean pushed to origin, not merely built and green.
+- **The daily grade card + the daily email rules** (047, 2026-10-15; built on branch
+  `claude/grade-card`, NOT yet merged or deployed when written). Mockup: mim repo
+  `docs/mockups/anr-grade-card-round2.html`, options A and C.
+  - **Card** (`share-cards.js` `gradePhoto[Story]` / `gradeStats[Story]`): "Do you have a better
+    ear than <name>?", the grade, accuracy, and ONLY Bullseye / Sharp / Close (Off and Way off
+    are never printed — operator). "$500 cash" in gold, makinitmag.com/ANR, no QR, no invite
+    link, no headcount. A = the A&R's big photo is the top of the card; C = stats-led, small face.
+    The A&R picks (`users.grade_card_style`); A needs `users.photo_large_url`, else C.
+  - **Big photo:** both crop modals (join.html, play.html) now also send `imageLarge`, the SAME
+    crop at up to 1200px (skipped under 800px). The A&R's own crop is the focus point; nothing
+    detects faces. Stored on Blob only; every upload replaces or clears it.
+  - **Doors:** `/api/card/grade/<day>/<uid>.png?k=` (public, HMAC with NOTIFY_LINK_SECRET, for
+    the email `<img>`), `/api/me/grade-card` (own card, download), `/api/me/grade-card/latest`,
+    `POST /api/me/grade-card-style` (login only). All 404 before the day PUBLISHES (the seal).
+    Account page: "Your grade card" at the top of My results (no separate mockup was made).
+  - **Daily email rules (operator):** `digest_daily` is ON by default but goes ONLY to who rated
+    the published drop (results + card; subject "Your A&R grade for <day>: <grade>") or who rated
+    none of it but rated the public drop before (`dailyMissedEmail*`, his line: "you missed
+    yesterday's drop, but you have time to rate the new ones now"). Missed two in a row = no
+    daily mail. `daily_open` is RETIRED except a new account's first 7 days until they play
+    (`firstWeek`; an explicit ON no longer widens it). The weekly's default now goes to everyone
+    outside the daily reach (`dailyReachSql`: first week or seen in the last 4 days).
 - **Reliability spine:** outage fix + self-healing ensureInit + boot-safe deploy-step
   migrations; soft-delete clears live; unique email index. Neon TLS now fully verified
   (`rejectUnauthorized: true`; `PGSSL=no-verify` is the escape hatch). pg BIGINT/NUMERIC
@@ -1070,7 +1092,7 @@ live on anr.makinitmag.com.
    reminder subscribers (operator undecided).
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
-3. **Digest senders** — both shipped: `digest_daily` (033, opt-in) and `digest_weekly` (043,
+3. **Digest senders** — both shipped: `digest_daily` (033; default ON and narrowed to recent players 2026-10-15) and `digest_weekly` (043,
    default ON for the non-engaged, sunsets after 4). Web push is a third channel on the same
    table, still gated behind the PWA shell.
 4. **PWA install + iOS web push** — DEFERRED behind a branding / site facelift pass (which

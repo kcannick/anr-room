@@ -284,13 +284,13 @@ async function reactivateUser(user) {
 // segments group raters by them, and nulling them would quietly reshape published reports.
 // The email becomes a tombstone so the address can sign up fresh (starting from zero).
 async function anonymizeUser(uid) {
-  const u = await db.get('SELECT uid, email, photo_url FROM users WHERE uid = ?', [uid]);
+  const u = await db.get('SELECT uid, email, photo_url, photo_large_url FROM users WHERE uid = ?', [uid]);
   if (!u) return false;
   const tomb = `deleted+${uid}@deleted.invalid`;
   await db.tx(async (tx) => {
     await tx.run(
       `UPDATE users SET email = ?, name = NULL, phone = NULL, instagram = NULL,
-              tiktok = NULL, photo_url = NULL,
+              tiktok = NULL, photo_url = NULL, photo_large_url = NULL,
               drupal_uid = NULL, control_key = NULL, referrer_uid = NULL, host_defaults = NULL,
               profile_complete = 0, sms_marketing_consent = 0, email_opt_out = 1,
               deactivated_at = NULL, deleted_at = ?
@@ -315,8 +315,9 @@ async function anonymizeUser(uid) {
   });
   await brevoForget(u.email);
   // Best-effort, after commit: a Blob hiccup must not leave the PII half-scrubbed.
-  if (u.photo_url && /\.blob\.vercel-storage\.com\//.test(u.photo_url) && process.env.BLOB_READ_WRITE_TOKEN) {
-    try { await require('@vercel/blob').del(u.photo_url); }
+  for (const src of [u.photo_url, u.photo_large_url]) {
+    if (!(src && /\.blob\.vercel-storage\.com\//.test(src) && process.env.BLOB_READ_WRITE_TOKEN)) continue;
+    try { await require('@vercel/blob').del(src); }
     catch (e) { console.warn('[ACCOUNT] photo delete failed:', e.message); }
   }
   return true;
@@ -408,17 +409,26 @@ function effectivePerms(user) {
 // splitting them later is one line here plus a UI row — no migration.
 const NOTIFY_TOPICS = {
   room_live:     { label: 'A room goes live', channels: { email: 1, sms: 1 } },
-  // The A&R Daily open notice (2026-09-27, operator's call: ON by default). Email only — a
-  // daily text to the whole list is a cost and an opt-out generator the operator declined.
-  // `engaged` (2026-10-06): the DEFAULT reaches only active accounts (see engagedSql); an
-  // explicit ON keeps a daily mail regardless. The October audit: 766 sends a day, 4% clicked,
-  // 607 of 776 recipients had neither clicked nor rated in 30 days.
-  daily_open:    { label: 'Daily records open', channels: { email: 1 }, engaged: true },
-  digest_daily:  { label: 'Daily update',     channels: { email: 0 } },
-  // The weekly update (2026-10-06) is the cadence for everyone the daily notice no longer
-  // reaches: ON by default, `nudge` = the default goes to the NON-engaged only (the engaged
-  // already hear from us daily) and stops after WEEKLY_SUNSET_SENDS unanswered sends. An
-  // explicit ON gets it every week regardless. Sender: enqueueWeeklyUpdate / drainWeeklyUpdate.
+  // THE DAILY EMAIL RULES (operator, 2026-10-15). A daily email goes only to someone with a
+  // reason to get one that day:
+  //   - rated the drop whose results just came out  -> their results + grade card (digest_daily)
+  //   - skipped it, but rated the drop before        -> "you missed yesterday's drop" (digest_daily)
+  //   - a new account that has not played yet        -> "today's records are open", first week only (daily_open)
+  // Everyone else gets no daily email; the weekly update is their cadence. The October audit
+  // that started this: 766 open notices a day, 4% clicked, 607 of 776 recipients had neither
+  // clicked nor rated in 30 days.
+  //
+  // daily_open was the open notice to every active account; it is RETIRED for everyone but a
+  // new A&R's first FIRST_WEEK_DAYS (`firstWeek`), and an explicit ON no longer widens it.
+  daily_open:    { label: "Today's records are open (your first week)", channels: { email: 1 }, firstWeek: true },
+  // digest_daily was opt-in (028) because it went to the whole list. Its audience is now only
+  // the two groups above (enqueueDailyDigest narrows it), so it is ON by default; an explicit
+  // OFF still wins, as does email_opt_out.
+  digest_daily:  { label: 'Your daily results', channels: { email: 1 } },
+  // The weekly update (2026-10-06) is the cadence for everyone the daily emails do not reach:
+  // ON by default, `nudge` = the default goes only to those OUTSIDE the daily reach (see
+  // dailyReachSql) and stops after WEEKLY_SUNSET_SENDS unanswered sends. An explicit ON gets
+  // it every week regardless. Sender: enqueueWeeklyUpdate / drainWeeklyUpdate.
   digest_weekly: { label: 'Weekly update',    channels: { email: 1 }, nudge: true },
 };
 // "Engaged" = signed in or rated within ENGAGED_DAYS (users.last_seen is stamped at both), or
@@ -428,6 +438,17 @@ const NOTIFY_TOPICS = {
 const ENGAGED_DAYS = 30;
 const NEW_ACCOUNT_DAYS = 14;
 const WEEKLY_SUNSET_SENDS = 4;
+// A new A&R's first week: the only accounts the "records are open" email still reaches.
+const FIRST_WEEK_DAYS = 7;
+// Who the DAILY emails can reach on a given day: a first-week account, or someone active in the
+// last DAILY_REACH_DAYS (users.last_seen is stamped at sign-in and at every rating). A drop's
+// results come out 3 days after it opens, so 4 days covers "rated one of the last two drops".
+// The weekly update's default goes to everyone outside this.
+const DAILY_REACH_DAYS = 4;
+function dailyReachSql(at = now()) {
+  return { sql: '(u.first_seen >= ? OR u.last_seen >= ?)',
+    params: [at - FIRST_WEEK_DAYS * 86400000, at - DAILY_REACH_DAYS * 86400000] };
+}
 // A FRAGMENT with its params, over users aliased `u`. Composes into audience queries by string
 // append, so its '?'s bind by position in the final string (the toPg() rule).
 function engagedSql(at = now()) {
@@ -489,9 +510,17 @@ function notifyAudience(topic, channel) {
     // default-on row is gated by x and an explicit ON row passes. Exactly the intent.
     if (t.engaged) { sql += `
        AND (p.enabled = 1 OR ${eng.sql})`; params.push(...eng.params); }
-    if (t.nudge) {
+    // First week only, and only until they play (sessions_played counts the drops they joined).
+    // Not widened by an explicit ON: the notice is retired for everyone else (2026-10-15).
+    if (t.firstWeek) {
       sql += `
-       AND (p.enabled = 1 OR NOT ${eng.sql})`; params.push(...eng.params);
+       AND u.first_seen >= ? AND COALESCE(u.sessions_played, 0) = 0`;
+      params.push(now() - FIRST_WEEK_DAYS * 86400000);
+    }
+    if (t.nudge) {
+      const reach = dailyReachSql();
+      sql += `
+       AND (p.enabled = 1 OR NOT ${reach.sql})`; params.push(...reach.params);
       // Sunset: sent weekly rows since the person was last seen. A row that went out BEFORE
       // their last activity does not count — they came back, the count starts over.
       sql += `
@@ -2695,6 +2724,94 @@ async function photoDataUri(photoUrl) {
     return `data:${ct};base64,${buf.toString('base64')}`;
   } catch (e) { console.error('[refer] photo fetch failed:', e.message); return null; }
 }
+// ===== THE DAILY GRADE CARD (2026-10-15) =====
+// "Do you have a better ear than <name>?" — one card per A&R per published day: their grade,
+// accuracy and the good three counts (share-cards.js 'grade*'). Two looks, the A&R's pick
+// (users.grade_card_style): 'photo' (their big photo is the ground of the card) or 'stats'.
+// 'photo' needs users.photo_large_url (047); without it the card is 'stats', whatever was picked.
+// The card rides the results email and is downloadable from /account#results. Posting it is
+// the A&R's choice; the operator collabs with them on it.
+const GRADE_CARD_STYLES = ['photo', 'stats'];
+const GRADE_CARD_THUMB_WIDTH = 432;
+const GRADE_CARD_EMAIL_WIDTH = 600;
+const GRADE_CARD_USER_COLS = 'uid, name, primary_category, location, photo_url, photo_large_url, grade_card_style, blocked, deactivated_at, deleted_at';
+function gradeCardStyleFor(u, asked) {
+  const want = GRADE_CARD_STYLES.includes(asked) ? asked : (GRADE_CARD_STYLES.includes(u && u.grade_card_style) ? u.grade_card_style : null);
+  if (want === 'stats') return 'stats';
+  return u && u.photo_large_url ? 'photo' : 'stats';
+}
+function gradeCardType(style, fmt) { return (style === 'photo' ? 'gradePhoto' : 'gradeStats') + (fmt === 'story' ? 'Story' : ''); }
+function gradeDayLabel(day) {
+  const ts = etEpoch(day, 12);
+  return ts == null ? null : new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' }).format(new Date(ts));
+}
+// One A&R's grade for one day, or null. THE SEAL: only a PUBLISHED daily drop has a grade
+// anyone may see — until then the room average is exactly what the A&Rs are predicting.
+async function gradeCardFacts(sessionId, uid) {
+  const s = await db.get(
+    "SELECT id, drop_day FROM sessions WHERE id = ? AND mode = 'async' AND async_state = 'published' AND deleted_at IS NULL", [sessionId]);
+  if (!s) return null;
+  const pa = await db.get('SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [sessionId, uid]);
+  if (!pa) return null;
+  const recap = await buildRecap(pa);
+  if (!recap.roundsPlayed || !recap.grade) return null;
+  // Only the good three are ever printed (operator, 2026-10-15): Off and Way off are not counted here.
+  const counts = { bullseye: 0, sharp: 0, close: 0 };
+  const tiers = await db.all(
+    `SELECT v.tier, COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id
+      WHERE v.participant_id = ? AND r.status = 'ratified' GROUP BY v.tier`, [pa.id]);
+  for (const t of tiers) if (Object.prototype.hasOwnProperty.call(counts, t.tier)) counts[t.tier] = Number(t.c) || 0;
+  return { sessionId: s.id, day: s.drop_day, dayLabel: gradeDayLabel(s.drop_day), grade: recap.grade, accuracy: recap.accuracy, counts };
+}
+// The newest published day this A&R played, as facts, or null. Bounded: five rows at most.
+async function latestGradeCardFacts(uid) {
+  const rows = await db.all(
+    `SELECT s.id FROM participants pa JOIN sessions s ON s.id = pa.session_id
+      WHERE pa.user_id = ? AND pa.verified = 1 AND s.mode = 'async' AND s.async_state = 'published' AND s.deleted_at IS NULL
+      ORDER BY s.drop_day DESC LIMIT 5`, [uid]);
+  for (const r of rows) { const f = await gradeCardFacts(r.id, uid); if (f) return f; }
+  return null;
+}
+async function renderGradeCard(u, facts, { style, fmt = 'feed', width } = {}) {
+  const st = gradeCardStyleFor(u, style);
+  const data = { name: u.name || 'A&R', category: u.primary_category || null, location: u.location || null,
+    photo: await photoDataUri(st === 'photo' ? u.photo_large_url : u.photo_url),
+    grade: facts.grade, accuracy: facts.accuracy, counts: facts.counts, dayLabel: facts.dayLabel };
+  // The big photo could not be fetched: the stats card, with the avatar, rather than a card
+  // whose whole top is empty.
+  let type = gradeCardType(st, fmt);
+  if (st === 'photo' && !data.photo) { type = gradeCardType('stats', fmt); data.photo = await photoDataUri(u.photo_url); }
+  try { return await shareCards.renderPng(type, data, width); }
+  catch (e) {
+    if (!data.photo) throw e;
+    return shareCards.renderPng(gradeCardType('stats', fmt), { ...data, photo: null }, width);
+  }
+}
+// The card as a public image URL for the results email: an <img> cannot carry a login, so the
+// URL carries an HMAC of (day, A&R) instead. No expiry — the card is theirs to post whenever.
+// Without NOTIFY_LINK_SECRET there is no URL and the email simply has no picture.
+function gradeCardSig(sessionId, uid) {
+  const secret = notifyLinkSecret();
+  if (!secret || !sessionId || !uid) return null;
+  return crypto.createHmac('sha256', secret).update(`gc1.${sessionId}.${uid}`).digest('base64url').slice(0, 22);
+}
+function gradeCardImageUrl(base, sessionId, uid, { style, fmt = 'feed', width } = {}) {
+  const k = gradeCardSig(sessionId, uid);
+  if (!k) return null;
+  const q = new URLSearchParams({ k });
+  if (style) q.set('style', style);
+  if (fmt === 'story') q.set('fmt', 'story');
+  if (width) q.set('w', String(width));
+  return `${base}/api/card/grade/${encodeURIComponent(sessionId)}/${encodeURIComponent(uid)}.png?${q}`;
+}
+function gradeCardWidth(raw) {
+  const w = parseInt(raw, 10);
+  return Number.isFinite(w) && w >= 200 && w < 1080 ? w : undefined;
+}
+function gradeCardFilename(facts, fmt) {
+  return `anr-grade-${facts.day || 'card'}${fmt === 'story' ? '-story' : ''}.png`;
+}
+
 // Durable first-touch attribution. `ref` is the referrer's uid off the join link (or, on a
 // session link, a per-session participant code — the older form). Only a BRAND-NEW account is
 // attributed, never a self-referral, and referrer_uid is set once and never reassigned.
@@ -3473,7 +3590,7 @@ function digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours }) {
 const DIGEST_IG_URL = 'https://www.instagram.com/makinit4indies/';
 const DIGEST_IG_LABEL = 'See the Top Tracks on Instagram';
 
-function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours }) {
+function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours, cardUrl = null }) {
   const ex = digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours });
   const common = `<a href="${DIGEST_IG_URL}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:4px 0 0">${DIGEST_IG_LABEL}</a>`;
 
@@ -3529,6 +3646,8 @@ function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, s
       <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">${played
         ? `Here is how you did on the ${escapeHtml(dayLabel || '')} records.`
         : `You didn't rate the ${escapeHtml(dayLabel || '')} records, so there are no results of your own this time.`}</p>
+      ${played && cardUrl ? `<img src="${escapeHtml(cardUrl)}" width="368" alt="Your grade card: ${escapeHtml(recap.grade || '')}" style="display:block;width:100%;max-width:368px;height:auto;margin:0 auto 12px;border:1px solid #2e2750;border-radius:12px">
+      <p style="font-size:13.5px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">Your grade card. Want to post it? Download it from ${ex.resultsUrl ? `<a href="${ex.resultsUrl}" style="color:#4bb749">your results page</a>` : 'your results page'} and we'll collab with you on Instagram.</p>` : ''}
       ${common}
       <p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:12px 0 0">${escapeHtml(WEEKLY_SHOW_LINE)}</p>
       ${ex.streamUrl ? `<a href="${ex.streamUrl}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:8px 0 0">${escapeHtml(WEEKLY_SHOW_CTA)}</a>` : ''}
@@ -3542,7 +3661,7 @@ function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, s
   </div>`;
 }
 
-function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours }) {
+function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours, cardUrl = null }) {
   const ex = digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours });
   const lines = [`A&R Daily${dayLabel ? ' — ' + dayLabel : ''}`, ''];
   const played = !!(recap && recap.rounds && recap.rounds.length);
@@ -3556,6 +3675,7 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
   if (played) {
     const n = recap.rounds.length;
     lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Bullseyes ${recap.bullseyes || 0}`);
+    if (cardUrl) lines.push(`Your grade card: ${cardUrl}`, `Want to post it? Download it from your results page and we'll collab with you on Instagram.`);
     if (recap.completionBonus) lines.push(`Completion bonus: +${recap.completionBonus}`);
     lines.push('', `You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.`);
     if (ex.resultsUrl) lines.push(`See your results: ${ex.resultsUrl}`);
@@ -3566,6 +3686,39 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
   if (manage) lines.push('', notifyFooterText(manage));
   return lines.join('\n');
 }
+
+// "You missed yesterday's drop" — the digest's second group (operator, 2026-10-15, his words):
+// someone who rated the drop before but none of this one. No results block (there is nothing
+// of theirs to show) and no grade; just today's records, which are still open as this sends.
+function dailyMissedEmailContent({ name, closesLabel, closesInHours }) {
+  const ex = digestExtras({ closesLabel, closesInHours });
+  return {
+    lead: `${name ? 'Hey ' + dispName(name) + ', y' : 'Hey, y'}ou missed yesterday's drop, but you have time to rate the new ones now.`,
+    remind: ex.remind,
+  };
+}
+function dailyMissedEmailHtml(arg) {
+  const c = dailyMissedEmailContent(arg);
+  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
+    <div style="max-width:400px;margin:0 auto;text-align:center">
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily</div>
+      <h1 style="font-size:22px;line-height:1.3;margin:8px 0 12px">${escapeHtml(c.lead)}</h1>
+      ${c.remind ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.remind)}</p>` : ''}
+      <a href="${arg.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:16px">Rate today's records</a>
+      <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
+      ${arg.manage ? notifyFooterHtml(arg.manage) : ''}
+    </div>
+  </div>`;
+}
+function dailyMissedEmailText(arg) {
+  const c = dailyMissedEmailContent(arg);
+  const lines = ['A&R Daily', '', c.lead];
+  if (c.remind) lines.push('', c.remind);
+  lines.push('', `Rate today's records: ${arg.playUrl}`);
+  if (arg.manage) lines.push('', notifyFooterText(arg.manage));
+  return lines.join('\n');
+}
+const DAILY_MISSED_SUBJECT = "You missed yesterday's drop";
 
 // Queue the digest. ONE broadcast row per day, made idempotent by uniq_broadcast_kind_ref
 // (kind='digest_daily', ref_id=<session id>) — a re-run of the publisher finds the existing
@@ -3580,20 +3733,45 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
 // fragment's topic '?' in the FROM/JOIN — hence [bcId, ...a.params] and not the reverse.
 // Do not let a later edit move a '?' earlier without re-ordering this array.
 //
-// NO EXCLUSIONS. Every A&R on the list gets the mail; the personalised block simply renders
-// for those who played and is absent for those who didn't. Someone who missed a day is
-// exactly who a "today's records are open" CTA is for.
+// ONLY TWO GROUPS (operator, 2026-10-15; it used to be the whole opted-in list):
+//   played   — rated at least one record of THIS drop: their results and grade card
+//   missed   — rated none of this drop but rated the public drop before it: "you missed
+//              yesterday's drop, but you have time to rate the new ones now"
+// Someone who missed two in a row falls out of the daily mail; the weekly update reaches them.
+// Which of the two a recipient gets is decided at send time (drainDailyDigest), from the same
+// facts this audience is built from.
+//
+// The extra fragment appends after the topic audience, so its '?'s bind after a.params.
 async function enqueueDailyDigest(session) {
   const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
+  const prev = await previousPublicDrop(session);
+  // "Rated the day" = at least one vote in it, for a verified participant. One ? per use.
+  const played = `EXISTS (SELECT 1 FROM participants pa JOIN votes v ON v.participant_id = pa.id
+          JOIN rounds r ON r.id = v.round_id AND r.session_id = pa.session_id
+         WHERE pa.session_id = ? AND pa.user_id = u.uid AND pa.verified = 1)`;
+  const extra = prev
+    ? { sql: `\n       AND (${played} OR ${played})`, params: [session.id, prev.id] }
+    : { sql: `\n       AND ${played}`, params: [session.id] };
   return enqueueDayBroadcast(session, 'digest_daily',
-    `A&R Daily — ${etDayLabel(day) || 'the'} results`, `A&R Daily results for ${day}`);
+    `A&R Daily — ${etDayLabel(day) || 'the'} results`, `A&R Daily results for ${day}`, extra);
+}
+// The public daily drop before this one, or null. "Public" = what /daily lists: an unlisted
+// test drop is never someone's "yesterday".
+async function previousPublicDrop(session) {
+  if (!session || !session.drop_day) return null;
+  return db.get(
+    `SELECT id, drop_day FROM sessions WHERE mode = 'async' AND deleted_at IS NULL AND id != ?
+        AND (visibility IS NULL OR visibility != 'unlisted') AND drop_day < ?
+      ORDER BY drop_day DESC LIMIT 1`, [session.id, session.drop_day]);
 }
 
 // ONE broadcast row per (kind, day), fanned out set-based to a topic's email audience. Shared
 // by the results digest (digest_daily) and the open notice (daily_open); kind == topic.
-async function enqueueDayBroadcast(session, kind, subject, message) {
-  const a = notifyAudience(kind, 'email');
-  if (!a) return { broadcastId: null, queued: 0 };
+// `extra` narrows the audience further: a {sql, params} fragment appended after it.
+async function enqueueDayBroadcast(session, kind, subject, message, extra = null) {
+  const a0 = notifyAudience(kind, 'email');
+  if (!a0) return { broadcastId: null, queued: 0 };
+  const a = extra ? { sql: a0.sql + extra.sql, params: [...a0.params, ...extra.params] } : a0;
   // uniq_broadcast_kind_ref is a PARTIAL unique index, and a bare ON CONFLICT (kind, ref_id)
   // does not match one without repeating its predicate — a dialect detail not worth encoding
   // in the statement. Let the index throw and re-read instead: the index is the real guard,
@@ -3679,12 +3857,24 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
       }
       const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
       const manage = notifyManageUrl(base || publicBase(), r.uid);
-      const arg = { name: (participant && participant.name) || (u && u.name) || null, dayLabel,
-        recap, manage, playUrl, ...extras,
-        // Per recipient: it is signed for THIS A&R and lands on their own results.
-        resultsUrl: accountResultsUrl(base || publicBase(), r.uid) };
-      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily',
-        dailyDigestEmailHtml(arg), dailyDigestEmailText(arg), notifySendOpts(base || publicBase(), r.uid, 'digest_daily'));
+      const name = (participant && participant.name) || (u && u.name) || null;
+      // The audience is only those who played this day or the one before (enqueueDailyDigest),
+      // so "did not play this one" here means "played the one before": the missed email.
+      const played = !!(recap && recap.roundsPlayed);
+      let subject, html, textBody;
+      if (played) {
+        const arg = { name, dayLabel, recap, manage, playUrl, ...extras,
+          // Per recipient: it is signed for THIS A&R and lands on their own results.
+          resultsUrl: accountResultsUrl(base || publicBase(), r.uid),
+          cardUrl: recap.grade ? gradeCardImageUrl(base || publicBase(), sessionId, r.uid, { width: GRADE_CARD_EMAIL_WIDTH }) : null };
+        subject = recap.grade ? `Your A&R grade for ${dayLabel || 'the day'}: ${recap.grade}` : (bc.subject || 'A&R Daily');
+        html = dailyDigestEmailHtml(arg); textBody = dailyDigestEmailText(arg);
+      } else {
+        const arg = { name, manage, playUrl, ...extras };
+        subject = DAILY_MISSED_SUBJECT;
+        html = dailyMissedEmailHtml(arg); textBody = dailyMissedEmailText(arg);
+      }
+      const out = await sendEmail(r.dest, subject, html, textBody, notifySendOpts(base || publicBase(), r.uid, 'digest_daily'));
       await noteEmailOutcome(r.dest, out);
       if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), broadcastId, r.uid, r.channel]); sent++; }
       else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), broadcastId, r.uid, r.channel]); failed++; }
@@ -7080,7 +7270,8 @@ async function handleApi(req, res, url) {
   if (p === '/api/me/photo' && method === 'POST') {
     const userId = await resolveUserId(req);
     if (!userId) return bad(res, 'Not authenticated', 401);
-    const body = await readBody(req);
+    // 3MB: the 400px avatar plus the big copy of the same crop (imageLarge, up to 1200px).
+    const body = await readBody(req, 3 * 1024 * 1024);
     if (body.__tooBig) return bad(res, 'Image too large — try again (crop makes a small file)', 413);
     const dataUrl = (body.image || '').toString();
     const m = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
@@ -7099,8 +7290,25 @@ async function handleApi(req, res, url) {
         storage = 'error:' + ((e && e.message) || 'unknown').slice(0, 80);
       }
     }
-    await db.run('UPDATE users SET photo_url = ? WHERE uid = ?', [photoUrl, userId]);
-    return send(res, 200, { ok: true, photoUrl, storage }); // storage tells us which path ran
+    // The big copy of the SAME crop, for the big-photo grade card (047). Blob only: a ~1MB data
+    // URL is not something to keep inline on the users row. Every upload replaces it, and an
+    // upload without one (an old client, or a source photo too small for a big copy) clears it,
+    // so the big card never shows a different photo from the avatar.
+    let photoLargeUrl = null;
+    const big = (body.imageLarge || '').toString().match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (big && storage === 'blob') {
+      const bigBuf = Buffer.from(big[2], 'base64');
+      if (bigBuf.length <= 2 * 1024 * 1024) {
+        try {
+          const { put } = require('@vercel/blob');
+          const r = await put(`avatars/${userId}-${now()}-large.${big[1] === 'png' ? 'png' : 'jpg'}`, bigBuf,
+            { access: 'public', contentType: `image/${big[1]}`, token: process.env.BLOB_READ_WRITE_TOKEN });
+          photoLargeUrl = r.url;
+        } catch (e) { console.error('[blob] large photo upload failed:', e && e.message); }
+      }
+    }
+    await db.run('UPDATE users SET photo_url = ?, photo_large_url = ? WHERE uid = ?', [photoUrl, photoLargeUrl, userId]);
+    return send(res, 200, { ok: true, photoUrl, hasLargePhoto: !!photoLargeUrl, storage }); // storage tells us which path ran
   }
 
   // Diagnostic: is Vercel Blob configured for this runtime? Boolean only, no secret.
@@ -9793,6 +10001,77 @@ async function handleApi(req, res, url) {
     }
   }
 
+  // ---- The daily grade card (see gradeCardFacts). Three doors, one renderer:
+  //   /api/card/grade/<day>/<uid>.png?k=  public, signed — the results email's <img>
+  //   /api/me/grade-card                  the A&R's own, logged in or by refer link
+  //   /api/me/grade-card/latest           what the account page needs to show it
+  // All of them 404 for a day that has not published (the seal) or that the A&R did not play.
+  if (p.startsWith('/api/card/grade/') && p.endsWith('.png') && method === 'GET') {
+    const parts = p.slice('/api/card/grade/'.length, -'.png'.length).split('/').map(x => decodeURIComponent(x));
+    if (parts.length !== 2 || !/^[A-Za-z0-9_-]{4,40}$/.test(parts[0]) || !/^[A-Za-z0-9_-]{6,32}$/.test(parts[1])) return bad(res, 'Not found', 404);
+    const [sid, uid] = parts;
+    const want = gradeCardSig(sid, uid), k = (url.searchParams.get('k') || '').toString();
+    if (!want || k.length !== want.length || !crypto.timingSafeEqual(Buffer.from(k), Buffer.from(want))) return bad(res, 'Not found', 404);
+    const u = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [uid]);
+    if (userInactive(u)) return bad(res, 'Not found', 404);
+    const facts = await gradeCardFacts(sid, uid);
+    if (!facts) return bad(res, 'Not found', 404);
+    const fmt = url.searchParams.get('fmt') === 'story' ? 'story' : 'feed';
+    try {
+      const png = await renderGradeCard(u, facts, { style: url.searchParams.get('style'), fmt, width: gradeCardWidth(url.searchParams.get('w')) });
+      const head = { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400, s-maxage=604800' };
+      if (url.searchParams.get('dl') === '1') head['Content-Disposition'] = `attachment; filename="${gradeCardFilename(facts, fmt)}"`;
+      res.writeHead(200, head);
+      return res.end(png);
+    } catch (e) {
+      console.error('[card/grade] render failed:', e.message);
+      return bad(res, 'Card render failed', 500);
+    }
+  }
+  if (p === '/api/me/grade-card/latest' && method === 'GET') {
+    const uid = await resolveReferUid(req, url);
+    if (!uid) return bad(res, 'Not logged in', 401);
+    const u = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [uid]);
+    if (userInactive(u)) return bad(res, 'Not logged in', 401);
+    const facts = await latestGradeCardFacts(uid);
+    return send(res, 200, {
+      card: facts ? { sessionId: facts.sessionId, dayLabel: facts.dayLabel, grade: facts.grade } : null,
+      style: gradeCardStyleFor(u), picked: GRADE_CARD_STYLES.includes(u.grade_card_style) ? u.grade_card_style : null,
+      hasBigPhoto: !!u.photo_large_url,
+    });
+  }
+  if (p === '/api/me/grade-card' && method === 'GET') {
+    const uid = await resolveReferUid(req, url);
+    if (!uid) return bad(res, 'Not logged in', 401);
+    const u = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [uid]);
+    if (userInactive(u)) return bad(res, 'Not logged in', 401);
+    const sid = (url.searchParams.get('s') || '').toString();
+    const facts = sid ? await gradeCardFacts(sid, uid) : await latestGradeCardFacts(uid);
+    if (!facts) return bad(res, 'No grade for that day', 404);
+    const fmt = url.searchParams.get('fmt') === 'story' ? 'story' : 'feed';
+    try {
+      const png = await renderGradeCard(u, facts, { style: url.searchParams.get('style'), fmt, width: gradeCardWidth(url.searchParams.get('w')) });
+      const head = { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store' };
+      if (url.searchParams.get('dl') === '1') head['Content-Disposition'] = `attachment; filename="${gradeCardFilename(facts, fmt)}"`;
+      res.writeHead(200, head);
+      return res.end(png);
+    } catch (e) {
+      console.error('[me/grade-card] render failed:', e.message);
+      return bad(res, 'Card render failed', 500);
+    }
+  }
+  // The A&R's pick. A WRITE, so a real login only — the refer link is read-only by design.
+  if (p === '/api/me/grade-card-style' && method === 'POST') {
+    const uid = await resolveUserId(req);
+    if (!uid) return bad(res, 'Not logged in', 401);
+    const body = await readBody(req);
+    const style = (body.style || '').toString();
+    if (!GRADE_CARD_STYLES.includes(style)) return bad(res, 'Pick photo or stats');
+    await db.run('UPDATE users SET grade_card_style = ? WHERE uid = ?', [style, uid]);
+    const u = await db.get(`SELECT ${GRADE_CARD_USER_COLS} FROM users WHERE uid = ?`, [uid]);
+    return send(res, 200, { ok: true, picked: style, style: gradeCardStyleFor(u) });
+  }
+
   // The public card image (see anrCardImageUrl). No login: it prints only public profile data.
   // A blocked or unknown A&R is a 404 — an old email then shows a broken image, never a card.
   if (p.startsWith('/api/card/anr/') && p.endsWith('.png') && method === 'GET') {
@@ -11657,6 +11936,14 @@ module.exports._referralLinks = referralLinks;
 module.exports._buildRecap = buildRecap;
 module.exports._enqueueDailyDigest = enqueueDailyDigest;
 module.exports._dailyDigestEmailHtml = dailyDigestEmailHtml;
+module.exports._dailyMissedEmailHtml = dailyMissedEmailHtml;
+module.exports._dailyMissedEmailText = dailyMissedEmailText;
+module.exports._DAILY_MISSED_SUBJECT = DAILY_MISSED_SUBJECT;
+module.exports._previousPublicDrop = previousPublicDrop;
+module.exports._gradeCardFacts = gradeCardFacts;
+module.exports._gradeCardImageUrl = gradeCardImageUrl;
+module.exports._gradeCardStyleFor = gradeCardStyleFor;
+module.exports._FIRST_WEEK_DAYS = FIRST_WEEK_DAYS;
 // Exported for tests: the results callback is an OUTBOUND integration with retry semantics,
 // and both halves (what we send, and when we stop trying) are asserted directly.
 module.exports._buildDayResults = buildDayResults;

@@ -379,6 +379,168 @@ function elementReferFlyer(d, kind) {
     ]),
   ]);
 }
+// ============ The daily grade card — "Do you have a better ear than <name>?" ============
+// The card an A&R gets the day a drop's results come out (operator, 2026-10-15). Built to the
+// approved mockup (mim repo docs/mockups/anr-grade-card-round2.html), options A and C; the
+// A&R picks which one is theirs:
+//   'gradePhoto' / 'gradePhotoStory'  A — the photo fills the top and fades into the ground;
+//                                     the name sits where they meet, the grade in the A&R block
+//   'gradeStats' / 'gradeStatsStory'  C — the green cut, a small face, the grade large
+// Data shape (built by server.js gradeCardData), one per A&R per published day:
+//   { name, category, location, photo (data URI or null), grade, accuracy (0..100),
+//     counts: { bullseye, sharp, close }, dayLabel }
+// Rules the operator set, all enforced here rather than by the caller:
+//   - only the good three counts print (Bullseye, Sharp, Close). Off and Way off NEVER do.
+//   - no headcount, no QR, no invite link: the one address is makinitmag.com/ANR.
+//   - gold on the money only ("$500 cash"). Drawn target icons, never emoji.
+// THE SEAL: a grade exists only for a published day. The callers check that; this module
+// only draws what it is given.
+const GRADE_SIZES = { gradePhoto: [1080, 1350], gradePhotoStory: [1080, 1920], gradeStats: [1080, 1350], gradeStatsStory: [1080, 1920] };
+const GRADE_COPY = {
+  lead: 'Do you have a better ear than',
+  pitch: 'Join the A&R Team. Put your ear to the test against industry tastemakers, professionals and creatives.',
+  prizeLead: 'Qualify to win', prize: '$500 cash',
+  url: 'makinitmag.com/ANR',
+  tiers: [['bullseye', 'Bullseye'], ['sharp', 'Sharp'], ['close', 'Close']],
+};
+// One target; the dot moves out with the miss (centre = Bullseye). Same drawings as the mockup.
+const _gradeIcons = {};
+function gradeIconUri(kind, color) {
+  const key = kind + color;
+  if (!_gradeIcons[key]) {
+    const dot = { bullseye: [12, 12, 2.4], sharp: [14.4, 10.2, 2.2], close: [16.4, 8, 2.2] }[kind] || [12, 12, 2.4];
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+      + '<circle cx="12" cy="12" r="10" fill="none" stroke="' + color + '" stroke-width="1.6"/>'
+      + '<circle cx="12" cy="12" r="5.5" fill="none" stroke="' + color + '" stroke-width="1.6"/>'
+      + '<circle cx="' + dot[0] + '" cy="' + dot[1] + '" r="' + dot[2] + '" fill="' + color + '"/></svg>';
+    _gradeIcons[key] = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _gradeIcons[key];
+}
+// The name as at most two lines, the last ending in a green "?" (the name finishes the
+// question). Sized down for a long name so it never runs under the grade.
+function gradeName(name, maxSize, maxWidth) {
+  const words = esc(name).trim().split(/\s+/).filter(Boolean);
+  const lines = words.length > 1 ? [clip(words[0], 14), clip(words.slice(1).join(' '), 14)] : [clip(words[0] || 'A&R', 14)];
+  const longest = Math.max(...lines.map((l, i) => l.length + (i === lines.length - 1 ? 1 : 0)));
+  const size = Math.max(56, Math.min(maxSize, Math.floor(maxWidth / (longest * 0.6))));
+  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize: size, lineHeight: 0.9, letterSpacing: -Math.round(size * 0.045), color: REFER.fg, ...NOWRAP };
+  return col({}, lines.map((l, i) => i < lines.length - 1
+    ? text(st, l)
+    : row({ alignItems: 'flex-end' }, [text(st, l), text({ ...st, color: REFER.green }, '?')])));
+}
+function gradeMeta(d, size) {
+  return text({ fontFamily: MONO, fontWeight: 400, fontSize: size, letterSpacing: Math.round(size * 0.12), textTransform: 'uppercase', color: REFER.green, ...NOWRAP },
+    clip([d.category, d.location].filter(Boolean).join(' / '), 34));
+}
+function gradeTiers(d, z) {
+  const c = d.counts || {};
+  return row({ alignItems: 'stretch' }, GRADE_COPY.tiers.map(([k, label], i) => {
+    const hit = k === 'bullseye', color = hit ? REFER.green : REFER.dim;
+    const icon = { type: 'img', props: { src: gradeIconUri(k, color), width: z.icon, height: z.icon, style: { width: z.icon, height: z.icon } } };
+    const n = text({ fontFamily: MONO, fontWeight: 700, fontSize: z.count, lineHeight: 1, color: hit ? REFER.green : REFER.fg }, String(Number(c[k]) || 0));
+    return col({ flexGrow: 1, flexBasis: 0, alignItems: 'center', gap: 8, borderLeft: i ? `2px solid ${REFER.line}` : 'none' }, [
+      z.stacked ? col({ alignItems: 'center', gap: 8 }, [icon, n]) : row({ gap: 12 }, [icon, n]),
+      text({ fontFamily: MONO, fontWeight: 400, fontSize: z.label, letterSpacing: Math.round(z.label * 0.1), textTransform: 'uppercase', color, ...NOWRAP }, label),
+    ]);
+  }));
+}
+function gradeOffer(z) {
+  const prizeSt = { fontFamily: MONO, fontWeight: 700, fontSize: z.prize, lineHeight: 1.2, ...NOWRAP };
+  return col({ gap: Math.round(z.gap * 0.6) }, [
+    text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.pitch, lineHeight: 1.22, letterSpacing: -Math.round(z.pitch * 0.02), color: REFER.fg, maxWidth: 920 }, GRADE_COPY.pitch),
+    row({}, [
+      text({ ...prizeSt, color: REFER.fg, marginRight: Math.round(z.prize * 0.6) }, GRADE_COPY.prizeLead),
+      text({ ...prizeSt, color: REFER.gold }, GRADE_COPY.prize),
+      text({ ...prizeSt, color: REFER.fg }, '.'),
+    ]),
+  ]);
+}
+function gradeFoot(z) {
+  return row({ justifyContent: 'space-between', alignItems: 'flex-end' }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: z.url, color: REFER.green, ...NOWRAP }, GRADE_COPY.url),
+    referEndorse(20),
+  ]);
+}
+const accLabel = a => (a == null ? '—' : Math.round(Number(a)) + '%');
+
+// A: the photo is the ground of the top of the card.
+function elementGradePhoto(d, story) {
+  const W0 = 1080, H0 = story ? 1920 : 1350;
+  const z = story
+    ? { photoH: 1300, fadeTop: 800, lead: 58, name: 150, meta: 32, chip: 250, icon: 60, count: 66, label: 22, pitch: 40, prize: 42, url: 34, gap: 40, ngap: 20 }
+    : { photoH: 900, fadeTop: 520, lead: 46, name: 112, meta: 26, chip: 190, icon: 44, count: 50, label: 18, pitch: 30, prize: 32, url: 38, gap: 22, ngap: 14 };
+  const chip = col({ alignItems: 'center', gap: 16, flexShrink: 0 }, [
+    h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: z.chip, height: z.chip, background: REFER.green,
+        borderRadius: Math.round(z.chip * 0.06), transform: `skewX(${SKEW}deg)` },
+      text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: Math.round(z.chip * 0.52),
+        letterSpacing: -Math.round(z.chip * 0.03), color: REFER.bg, lineHeight: 1, ...NOWRAP }, d.grade || '—')),
+    row({ gap: 10 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: z.label, color: REFER.fg, ...NOWRAP }, accLabel(d.accuracy)),
+      text({ fontFamily: MONO, fontWeight: 400, fontSize: z.label, letterSpacing: Math.round(z.label * 0.12), textTransform: 'uppercase', color: REFER.dim, ...NOWRAP }, 'Accuracy'),
+    ]),
+  ]);
+  const layers = [];
+  if (d.photo) layers.push({ type: 'img', props: { src: d.photo, width: W0, height: z.photoH,
+    style: { position: 'absolute', left: 0, top: 0, width: W0, height: z.photoH, objectFit: 'cover' } } });
+  layers.push(h({ position: 'absolute', left: 0, top: 0, width: W0, height: 260,
+    background: 'linear-gradient(180deg, rgba(14,12,26,1) 0%, rgba(14,12,26,0.55) 45%, rgba(14,12,26,0) 100%)' }, ''));
+  layers.push(h({ position: 'absolute', left: 0, top: z.fadeTop, width: W0, height: z.photoH - z.fadeTop + 2,
+    background: 'linear-gradient(180deg, rgba(14,12,26,0) 0%, rgba(14,12,26,0.7) 55%, rgba(14,12,26,1) 100%)' }, ''));
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
+    ...layers,
+    h({ position: 'absolute', left: 80, top: 72, display: 'flex' }, referLockup(REFER.green, REFER.greenInk)),
+    col({ position: 'absolute', left: 80, right: 80, bottom: 72, gap: z.gap }, [
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.lead, lineHeight: 1.04, letterSpacing: -Math.round(z.lead * 0.035), color: REFER.fg, ...NOWRAP }, GRADE_COPY.lead),
+      row({ justifyContent: 'space-between', alignItems: 'flex-end', gap: 30 }, [
+        col({ gap: z.ngap, flexShrink: 1 }, [gradeName(d.name, z.name, 920 - z.chip - 60), gradeMeta(d, z.meta)]),
+        chip,
+      ]),
+      gradeTiers(d, { icon: z.icon, count: z.count, label: z.label, stacked: false }),
+      gradeOffer(z),
+      gradeFoot(z),
+    ]),
+  ]);
+}
+
+// C: stats-led, the face small. The card for an A&R with no big photo, and the one they can pick.
+function elementGradeStats(d, story) {
+  const W0 = 1080, H0 = story ? 1920 : 1350;
+  const z = story
+    ? { wedge: 290, bodyTop: 324, face: 320, lead: 66, name: 150, meta: 30, grade: 380, acc: 96, icon: 60, count: 58, label: 19, pitch: 42, prize: 42, url: 34, gap: 30, head: 48 }
+    : { wedge: 206, bodyTop: 236, face: 200, lead: 56, name: 104, meta: 26, grade: 200, acc: 68, icon: 44, count: 44, label: 18, pitch: 32, prize: 32, url: 38, gap: 20, head: 24 };
+  const panel = col({ border: `2px solid ${REFER.line}`, background: REFER.panel, padding: '30px 40px', gap: 24 }, [
+    row({ justifyContent: 'space-between', alignItems: 'flex-end' }, [
+      col({ gap: 14 }, [
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: 24, letterSpacing: 4, textTransform: 'uppercase', color: REFER.dim, ...NOWRAP },
+          'Grade' + (d.dayLabel ? ' · ' + d.dayLabel : '')),
+        text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: z.grade, lineHeight: 0.8, letterSpacing: -Math.round(z.grade * 0.06), color: REFER.green, ...NOWRAP }, d.grade || '—'),
+      ]),
+      col({ alignItems: 'flex-end', gap: 6 }, [
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: z.acc, lineHeight: 1, color: REFER.fg, ...NOWRAP }, accLabel(d.accuracy)),
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: 24, letterSpacing: 3, textTransform: 'uppercase', color: REFER.dim, ...NOWRAP }, 'Accuracy'),
+      ]),
+    ]),
+    h({ display: 'flex', borderTop: `2px solid ${REFER.line}`, paddingTop: 26, flexDirection: 'column' },
+      gradeTiers(d, { icon: z.icon, count: z.count, label: z.label, stacked: true })),
+  ]);
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
+    // The cut rises to the right and stops above the lead: no type ever straddles it.
+    h({ position: 'absolute', left: 0, top: 0, width: W0, height: z.wedge, background: REFER.green,
+      transform: 'skewY(-13deg)', transformOrigin: 'left top' }, ''),
+    h({ position: 'absolute', left: 80, top: 72, display: 'flex' }, referLockup(REFER.bg, REFER.green)),
+    col({ position: 'absolute', left: 80, right: 80, top: z.bodyTop, bottom: 72, justifyContent: 'space-between' }, [
+      col({ gap: z.head }, [
+        text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.lead, lineHeight: 1.04, letterSpacing: -Math.round(z.lead * 0.035), color: REFER.fg, ...NOWRAP }, GRADE_COPY.lead),
+        row({ gap: 44 }, [referFace(d, z.face), col({ gap: 18, flexShrink: 1 }, [gradeName(d.name, z.name, 920 - z.face - 44), gradeMeta(d, z.meta)])]),
+      ]),
+      panel,
+      gradeOffer(z),
+      gradeFoot(z),
+    ]),
+  ]);
+}
+
 // ============ The A&R Meeting results carousels — posted after the reveal stream ============
 // Two Instagram carousels off ONE element type, 'resultsSlide', 1080×1350 a slide:
 //   set 'song'  slide 1 the top record · list slides: the other records RANKED, NO SCORES
@@ -1616,6 +1778,10 @@ function element(type, data = {}) {
   if (type === 'referStory') return elementReferPerson(data, true);
   if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
   if (type === 'resultsSlide') return elementResultsSlide(data);
+  if (type === 'gradePhoto') return elementGradePhoto(data, false);
+  if (type === 'gradePhotoStory') return elementGradePhoto(data, true);
+  if (type === 'gradeStats') return elementGradeStats(data, false);
+  if (type === 'gradeStatsStory') return elementGradeStats(data, true);
   if (type === 'countdownSlide') return elementCountdownSlide(data);
   if (type === 'winnerPost') return elementWinnerPost(data);
   if (type === 'tournamentFeed') return elementTournamentPortrait(data, false);
@@ -1638,6 +1804,7 @@ function sizeOf(type) {
   if (type === 'winnerPost') return WINNER_SIZE;
   if (type === 'trackPage') return TRACK_SIZE;
   if (TOURNAMENT_SIZES[type]) return TOURNAMENT_SIZES[type];
+  if (GRADE_SIZES[type]) return GRADE_SIZES[type];
   return REFER_SIZES[type] || [W, H];
 }
 // `outWidth` rasterises the same layout at a smaller width (a thumbnail): the element is
@@ -1652,4 +1819,4 @@ async function renderPng(type, data, outWidth) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
+module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, GRADE_SIZES, GRADE_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
