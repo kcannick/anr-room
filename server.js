@@ -4902,7 +4902,7 @@ function asyncQueueOrder(seedKey, sessionId, rounds) {
 const artistEmailText = (d) => `Your Track Report — ${d.title}\n\n`
   + `${d.decision}\n\n`
   + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}. `
-  + `Official track rating: ${d.mean} out of 9 (${d.bandLabel}).\n\n`
+  + `Official track rating: ${d.mean} out of 9. ${d.verdict || d.bandLabel}.\n\n`
   + (d.watchUrl ? `${d.watchLabel || 'Watch the room hear your record'}: ${d.watchUrl}\n\n` : '')
   + artistCommentsText(d.comments)
   + `Your Track Report is attached as ${d.pages.length} images. Share them as one Instagram carousel, `
@@ -4938,7 +4938,7 @@ const artistCommentsText = (comments) => (!comments || !comments.length) ? ''
     + comments.map(c => `"${c.body}"\n— ${c.name}${[c.role, c.location].filter(Boolean).length ? ' (' + [c.role, c.location].filter(Boolean).join(', ') + ')' : ''}`).join('\n\n')
     + `\n\nComments are the personal opinions of individual A&Rs who scored the record.\n\n`;
 
-function artistEmailHtml({ title, artist, mean, bandLabel, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag }) {
+function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag }) {
   what = what || 'A&R Meeting';
   hashtag = hashtag || (what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting');
   const pageBlock = (pages || []).filter(Boolean).map((u, i) =>
@@ -4966,7 +4966,8 @@ function artistEmailHtml({ title, artist, mean, bandLabel, decision, votes, what
             <tr><td align="center" style="padding:16px;">
               <p style="margin:0;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:bold;">Official track rating</p>
               <p style="margin:6px 0 0;font-family:'Space Mono',Menlo,monospace;font-size:40px;font-weight:bold;line-height:1.1;color:#4BB749;">${escapeHtml(mean)}</p>
-              <p style="margin:4px 0 0;font-family:'Space Mono',Menlo,monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;">out of 9 · ${escapeHtml(bandLabel || '')}</p>
+              <p style="margin:4px 0 0;font-family:'Space Mono',Menlo,monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;">out of 9</p>
+              <p style="margin:10px 0 0;font-size:17px;font-weight:800;line-height:1.3;color:#F6F7FB;">${escapeHtml(verdict || bandLabel || '')}</p>
             </td></tr>
           </table>
           ${pageBlock}
@@ -5010,7 +5011,7 @@ async function sendArtistReportEmail(round, session, dest) {
   }
   const decision = d.band.headline.join(' ');
   const common = {
-    title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, decision, votes: d.votes,
+    title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, verdict: d.band.verdict, decision, votes: d.votes,
     what: d.what, dateLabel: d.dateLabel,
     // A daily record's week is announced on The A&R Room (Wednesday), so that is the link.
     watchUrl: isAsync(session) ? await dailyStreamUrl() : (session.watch_url || null),

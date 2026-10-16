@@ -1455,11 +1455,14 @@ function trackContent(d) {
       trackRecordLine(d),
       col({ marginTop: 26 }, [trackHeadline(band.headline || [], 96)]),
       trackBody(d.sub || '', { mt: 30 }),
+      // The verdict (the meaning of the average's whole number) sits on its own line: the
+      // longest meaning runs ~55 characters and cannot share the score's row.
       row({ marginTop: 'auto', alignItems: 'flex-end' }, [
         text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 132, lineHeight: 0.9, letterSpacing: -6, color: RECAP.fg, ...NOWRAP }, d.mean),
         text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, letterSpacing: 3, textTransform: 'uppercase', color: RECAP.dim, marginLeft: 24, marginBottom: 10, ...NOWRAP },
-          `/ ${CHART_SCALE_MAX} · ${band.label || ''}`),
+          `/ ${CHART_SCALE_MAX}`),
       ]),
+      trackBody(band.verdict || band.label || '', { size: 36, color: RECAP.fg, weight: 800, mt: 18 }),
     ];
   }
   if (k === 'split') {
@@ -1517,7 +1520,7 @@ function trackContent(d) {
         big(d.mean, 'Delivered', false),
         text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: TRACK.purple, marginBottom: 74, marginLeft: 'auto', ...NOWRAP }, su.label || ''),
       ]),
-      trackBody(`The A&Rs guessed ${d.predictMean} from the setup, then heard it and landed on ${d.mean}.`, { mt: 40 }),
+      trackBody(`The A&Rs expected it to score ${d.predictMean}. It scored ${d.mean}.`, { mt: 40 }),
       trackPull(su.pull || '', 'purple'),
     ];
   }
@@ -1532,7 +1535,7 @@ function trackContent(d) {
     return [
       trackHeadline(['Three things', 'to do next.'], 80),
       col({ marginTop: 40 }, steps),
-      trackPull('Every line on this page comes from the numbers on the other pages — the decision, the biggest gap between groups of A&Rs, and the setup. Nothing is written by hand.', 'plain'),
+      trackPull('Every line on this page comes from the numbers on the other pages — the score, the biggest gap between groups of A&Rs, and what the A&Rs expected. The amount is what to spend letting people know the record is out.', 'plain'),
     ];
   }
   if (k === 'comments') {
