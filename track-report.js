@@ -67,6 +67,28 @@ const SPEND = [
     moneyRest: 'Sit down and figure out what you can afford to spend and how long you’re willing to push this as a single. You may want to bring in an investor or a consultant.' },
 ];
 
+// What each whole rating means (operator, 2026-10-14 — canonical, verbatim; CLAUDE.md "What
+// each rating means"). The artist's VERDICT is the meaning of the average's whole number:
+// 6.4 and 6.9 are both 6, Potential Single. It never rounds up into the next verdict — the
+// same way the bands and spend tiers cut. The 0–10 switch needs an eleventh meaning from the
+// operator; do not invent one.
+const RATING_MEANINGS = [
+  'Scrap it!',
+  'Take the best ideas... Scrap the rest.',
+  'There’s something there but it needs significant work',
+  'Potential release',
+  'Solid release',
+  'Strong release',
+  'Potential Single',
+  'Single',
+  'Strong Single',
+  'It’s a Hit!',
+];
+function verdictFor(mean) {
+  const i = Math.max(0, Math.min(RATING_MEANINGS.length - 1, Math.floor(Number(mean) || 0)));
+  return RATING_MEANINGS[i];
+}
+
 function spendFor(mean) {
   const m = Number(mean);
   let i = 0;
@@ -78,7 +100,7 @@ function bandFor(mean, edges = DEFAULT_EDGES) {
   const m = Number(mean);
   const idx = m < edges[0] ? 0 : m < edges[1] ? 1 : 2;
   const spend = spendFor(m);
-  return { idx, ...BANDS[idx], spend: spend.key, headline: spend.headline, money: spend.money, moneyRest: spend.moneyRest };
+  return { idx, ...BANDS[idx], verdict: verdictFor(m), spend: spend.key, headline: spend.headline, money: spend.money, moneyRest: spend.moneyRest };
 }
 
 // ---- words ----
@@ -294,7 +316,7 @@ function seriesQuartiles(averages) {
 }
 
 module.exports = {
-  SCALE_MAX, DEFAULT_EDGES, BANDS, SPEND_EDGES, SPEND, spendFor, BUCKET, SEGMENT_GAP, GAP_EVEN, GAP_BIG,
+  SCALE_MAX, DEFAULT_EDGES, BANDS, SPEND_EDGES, SPEND, spendFor, RATING_MEANINGS, verdictFor, BUCKET, SEGMENT_GAP, GAP_EVEN, GAP_BIG,
   bandFor, shapeOf, distribution, bucketOf, againstRoom, whoFor, setupVsRecord, nextActions,
   decisionSub, pageComments, seriesQuartiles, numWord, plural, fmtScore,
 };

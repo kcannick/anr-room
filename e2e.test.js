@@ -3983,7 +3983,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The operator's explicit call: the report goes out free to drive visibility, and the
   // email must never mention price or an upsell. That's a product decision a future copy
   // edit could quietly undo, so it's asserted here rather than left to review.
-  const aeBase = { title: 'Midnight Run', artist: 'Jaylen Cole', mean: '7.4', bandLabel: 'Potential Single',
+  const aeBase = { title: 'Midnight Run', artist: 'Jaylen Cole', mean: '7.4', bandLabel: 'Potential Single', verdict: 'Single',
     decision: 'Release it. Push it as a single.', votes: 11, what: 'A&R Room', dateLabel: 'Jul 8, 2026',
     watchUrl: 'https://youtube.com/watch?v=abc123', pages: ['https://blob/p1.png', 'https://blob/p2.png', 'https://blob/p3.png'] };
   const aeHtml = server._artistEmailHtml(aeBase);
@@ -3992,7 +3992,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('artist email carries the replay link', aeHtml.includes('youtube.com/watch?v=abc123'));
   ok('artist email points the artist at the replay for clips', /short clips/i.test(aeHtml));
   ok('a live-show email asks for the collab post with the Room tag', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARRoom'));
-  ok('artist email shows the rating, the band and the A&R count', aeHtml.includes('7.4') && aeHtml.includes('Potential Single') && /11 A&amp;Rs/.test(aeHtml));
+  ok('artist email shows the rating, the verdict and the A&R count', aeHtml.includes('7.4') && />Single<\/p>/.test(aeHtml) && !aeHtml.includes('Potential Single') && /11 A&amp;Rs/.test(aeHtml));
   ok('artist email says nothing about the machine', !/pool|lottery|queue|submission|ratif/i.test(aeHtml));
   // A dollar amount IS allowed: the Track Report tells the artist what to spend on their own
   // release (operator, 2026-10-15). What stays banned is anything that sells OUR product.

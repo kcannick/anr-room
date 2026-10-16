@@ -1455,11 +1455,14 @@ function trackContent(d) {
       trackRecordLine(d),
       col({ marginTop: 26 }, [trackHeadline(band.headline || [], 96)]),
       trackBody(d.sub || '', { mt: 30 }),
+      // The verdict (the meaning of the average's whole number) sits on its own line: the
+      // longest meaning runs ~55 characters and cannot share the score's row.
       row({ marginTop: 'auto', alignItems: 'flex-end' }, [
         text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 132, lineHeight: 0.9, letterSpacing: -6, color: RECAP.fg, ...NOWRAP }, d.mean),
         text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, letterSpacing: 3, textTransform: 'uppercase', color: RECAP.dim, marginLeft: 24, marginBottom: 10, ...NOWRAP },
-          `/ ${CHART_SCALE_MAX} · ${band.label || ''}`),
+          `/ ${CHART_SCALE_MAX}`),
       ]),
+      trackBody(band.verdict || band.label || '', { size: 36, color: RECAP.fg, weight: 800, mt: 18 }),
     ];
   }
   if (k === 'split') {

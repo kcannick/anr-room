@@ -15,6 +15,11 @@ ok('3.0 is release-ready (lower-inclusive edge)', tr.bandFor(3.0).key === 'relea
 ok('5.9 is still release', tr.bandFor(5.9).key === 'release');
 ok('6.0 is invest (lower-inclusive edge)', tr.bandFor(6.0).key === 'invest');
 ok('the release headline is the instruction', tr.bandFor(4.3).headline.join(' ') === 'Release it. Spend at least $300 on it.');
+console.log('— the verdict: the whole number’s meaning, never rounded up —');
+ok('6.4 and 6.9 are both Potential Single', tr.bandFor(6.4).verdict === 'Potential Single' && tr.bandFor(6.9).verdict === 'Potential Single');
+ok('every whole number reads its own meaning', [0,1,2,3,4,5,6,7,8,9].every(i => tr.verdictFor(i + 0.5) === tr.RATING_MEANINGS[i]));
+ok('ends clamp', tr.verdictFor(9) === 'It’s a Hit!' && tr.verdictFor(0) === 'Scrap it!' && tr.verdictFor(-1) === 'Scrap it!');
+ok('ten meanings, operator wording', tr.RATING_MEANINGS.length === 10 && tr.RATING_MEANINGS[2] === 'There’s something there but it needs significant work');
 console.log('— what to spend (operator, 2026-10-15) —');
 const sp = (m) => tr.bandFor(m).spend;
 ok('under 3: do not invest', sp(2.9) === 'none' && /Don’t invest/.test(tr.bandFor(2.9).money));

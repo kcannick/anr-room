@@ -616,7 +616,10 @@ live on anr.makinitmag.com.
   don't do it on your own (investor or consultant).
   It is the decision headline and always step 02 on the What now page. A dollar
   amount in the email is advice about the artist's own release; the no-upsell test still
-  bans anything that sells ours. **Every headline
+  bans anything that sells ours. **The verdict** (2026-10-15, decided 10-14): the score on page 1
+  and in the email reads with the MEANING of the average's whole number (`RATING_MEANINGS` /
+  `verdictFor` in track-report.js — 6.4 and 6.9 are both "Potential Single", never rounded up),
+  replacing "out of 9 · <band>". The band name stays internal (charts, keys). **Every headline
   is derived** in `track-report.js` (pure, `track-report.test.js`) from numbers `songReportData`
   already had: the BAND (edges 3 / 6, the chart key's cuts; `TRACK_BAND_EDGES=a,b` overrides),
   the histogram's SHAPE (consensus / divided / spread / thin — "Agreement, with three
