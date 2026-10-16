@@ -1823,6 +1823,28 @@ const WEEKLY_SHOW_NAME = 'The A&R Room - Weekly Live Music Review'; // Wednesday
 // now holds this show's link.
 const WEEKLY_SHOW_LINE = "The A&R Room live stream is Wednesday at 7:00 PM ET. The week's Top 8 are announced there and the week's finalist for the $1,000 Music Tournament is picked.";
 const WEEKLY_SHOW_CTA = 'Watch The A&R Room live, Wednesday 7:00 PM ET';
+// Every touch point sends people to subscribe on YouTube (operator, 2026-10-15): the redirect
+// lands on the channel's live page with ?sub_confirmation=1, so one link both subscribes and
+// finds the stream. "Hit the bell" is the operator's wording. ONE block, used by every mail.
+const LIVE_SUBSCRIBE_URL = 'https://www.makinitmag.com/live';
+const LIVE_SUBSCRIBE_SHORT = 'makinitmag.com/live';
+const SUBSCRIBE_LINE = "Subscribe to our YouTube channel and hit the bell so you're notified when we go live and can see if you made it.";
+const SUBSCRIBE_CTA = 'Subscribe on YouTube';
+// mode: 'ar' (the dark A&R Daily mails) | 'artist' (the mim-themed artist mails)
+function subscribeBlockHtml(mode = 'ar') {
+  const p = mode === 'artist'
+    ? 'font-size:14px;line-height:1.6;color:#B0B7C3;margin:14px 0 10px;'
+    : 'font-size:14px;line-height:1.5;color:#a9a2c9;margin:14px 0 8px';
+  const a = mode === 'artist'
+    ? 'display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;'
+    : 'display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:15px;padding:13px;border-radius:13px;text-align:center';
+  return `<p style="${p}">${escapeHtml(WEEKLY_SHOW_LINE)} ${escapeHtml(SUBSCRIBE_LINE)}</p>
+      <a href="${LIVE_SUBSCRIBE_URL}" style="${a}">${SUBSCRIBE_CTA}</a>`;
+}
+function subscribeBlockText() {
+  return `${WEEKLY_SHOW_LINE} ${SUBSCRIBE_LINE}
+${SUBSCRIBE_CTA}: ${LIVE_SUBSCRIBE_URL}`;
+}
 
 // The date on a daily graphic: MM.DD.YY in ET. Graphics are dated the day they POST
 // (results_at), never drop_day (operator, 2026-09-27).
@@ -2421,7 +2443,7 @@ async function asyncPlayerState(participant, session, count) {
       ...(await (async () => {
         const sc = await dailySchedule();
         const fut = (t) => (t && t > ts ? etWhenLabel(t, etDay(ts)) : null);
-        return { weeklyShow: WEEKLY_SHOW_LINE,
+        return { weeklyShow: WEEKLY_SHOW_LINE, subscribeLine: SUBSCRIBE_LINE, subscribeUrl: LIVE_SUBSCRIBE_URL, subscribeCta: SUBSCRIBE_CTA,
           nextOpensWhen: day ? fut(dropWindowFor(etNextDay(day), sc).opensAt) : null };
       })()) },
     phase,
@@ -3682,8 +3704,7 @@ function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, s
       ${played && cardUrl ? `<img src="${escapeHtml(cardUrl)}" width="368" alt="Your grade card: ${escapeHtml(recap.grade || '')}" style="display:block;width:100%;max-width:368px;height:auto;margin:0 auto 12px;border:1px solid #2e2750;border-radius:12px">
       <p style="font-size:13.5px;line-height:1.5;color:#a9a2c9;margin:0 0 20px">Your grade card. Want to post it? Download it from ${ex.resultsUrl ? `<a href="${ex.resultsUrl}" style="color:#4bb749">your results page</a>` : 'your results page'} and we'll collab with you on Instagram.</p>` : ''}
       ${common}
-      <p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:12px 0 0">${escapeHtml(WEEKLY_SHOW_LINE)}</p>
-      ${ex.streamUrl ? `<a href="${ex.streamUrl}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:8px 0 0">${escapeHtml(WEEKLY_SHOW_CTA)}</a>` : ''}
+      ${subscribeBlockHtml('ar')}
       ${arBlock}
       <div style="height:1px;background:#2e2750;margin:26px 0 18px"></div>
       ${ex.remind ? `<p style="font-size:14.5px;font-weight:700;color:#f3f0fb;margin:0 0 12px">${escapeHtml(ex.remind)}</p>` : ''}
@@ -3703,8 +3724,7 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
     : `The results.`);
   if (!played) lines.push('', `You didn't rate the ${dayLabel || ''} records, so there are no results of your own this time.`.replace('the  records', 'these records'));
   lines.push('', `${DIGEST_IG_LABEL}: ${DIGEST_IG_URL}`);
-  lines.push('', WEEKLY_SHOW_LINE);
-  if (ex.streamUrl) lines.push(`${WEEKLY_SHOW_CTA}: ${ex.streamUrl}`);
+  lines.push('', subscribeBlockText());
   if (played) {
     const n = recap.rounds.length;
     lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Bullseyes ${recap.bullseyes || 0}`);
@@ -3945,6 +3965,7 @@ function dailyOpenEmailHtml(arg, manage) {
       <h1 style="font-size:22px;margin:8px 0 10px">${escapeHtml(c.lead)}</h1>
       ${c.lines.map(l => `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 8px">${escapeHtml(l)}</p>`).join('')}
       <a href="${c.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:18px">Rate today's records</a>
+      ${subscribeBlockHtml('ar')}
       <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
       ${manage ? notifyFooterHtml(manage) : ''}
     </div>
@@ -3952,7 +3973,7 @@ function dailyOpenEmailHtml(arg, manage) {
 }
 function dailyOpenEmailText(arg, manage) {
   const c = dailyOpenEmailContent(arg);
-  const lines = [`A&R Daily${arg.dayLabel ? ' — ' + arg.dayLabel : ''}`, '', c.lead, ...c.lines, '', `Rate today's records: ${c.playUrl}`];
+  const lines = [`A&R Daily${arg.dayLabel ? ' — ' + arg.dayLabel : ''}`, '', c.lead, ...c.lines, '', `Rate today's records: ${c.playUrl}`, '', subscribeBlockText()];
   if (manage) lines.push('', notifyFooterText(manage));
   return lines.join('\n');
 }
@@ -4037,6 +4058,7 @@ function weeklyUpdateEmailHtml(c, manage) {
       ${sec('Top A&amp;Rs', ars)}
       <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:22px 0 0">${today}</p>
       <a href="${c.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:14px;text-align:center">Rate today's records</a>
+      ${subscribeBlockHtml('ar')}
       <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
       ${manage ? notifyFooterHtml(manage) : ''}
     </div>
@@ -4048,7 +4070,7 @@ function weeklyUpdateEmailText(c, manage) {
   if (c.records.length) { lines.push('Top records:'); c.records.forEach((r, i) => lines.push(`${i + 1}. ${r.title}${r.artist ? ' — ' + r.artist : ''}`)); lines.push(''); }
   if (c.ars.length) { lines.push('Top A&Rs:'); c.ars.forEach((a, i) => lines.push(`${i + 1}. ${dispName(a.name) || 'A&R'}${a.location ? ' · ' + a.location : ''}`)); lines.push(''); }
   lines.push(c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + c.closesLabel + '.' : ''}` : 'New records open for rating every day at 3:00 PM ET.');
-  lines.push(`Rate today's records: ${c.playUrl}`);
+  lines.push(`Rate today's records: ${c.playUrl}`, '', subscribeBlockText());
   if (manage) lines.push('', notifyFooterText(manage));
   return lines.join('\n');
 }
@@ -5126,6 +5148,7 @@ const artistEmailText = (d) => `Your Track Report — ${d.title}\n\n`
   + `${d.decision}\n\n`
   + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}. `
   + `Official track rating: ${d.mean} out of 9. ${d.verdict || d.bandLabel}.\n\n`
+  + (d.subscribe ? `${subscribeBlockText()}\n\n` : '')
   + (d.watchUrl ? `${d.watchLabel || 'Watch the room hear your record'}: ${d.watchUrl}\n\n` : '')
   + artistCommentsText(d.comments)
   + `Your Track Report is attached as ${d.pages.length} images. Share them as one Instagram carousel, `
@@ -5161,13 +5184,14 @@ const artistCommentsText = (comments) => (!comments || !comments.length) ? ''
     + comments.map(c => `"${c.body}"\n— ${c.name}${[c.role, c.location].filter(Boolean).length ? ' (' + [c.role, c.location].filter(Boolean).join(', ') + ')' : ''}`).join('\n\n')
     + `\n\nComments are the personal opinions of individual A&Rs who scored the record.\n\n`;
 
-function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag }) {
+function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag, subscribe = false }) {
   what = what || 'A&R Meeting';
   hashtag = hashtag || (what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting');
   const pageBlock = (pages || []).filter(Boolean).map((u, i) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Track Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:10px;display:block;margin:0 auto 10px;border:1px solid #2C2F34"></a>`
   ).join('');
-  const watchBlock = watchUrl ? `
+  const watchBlock = subscribe ? `
+      ${subscribeBlockHtml('artist')}` : watchUrl ? `
       <p style="margin:6px 0 4px;"><a href="${watchUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">${escapeHtml(watchLabel || 'Watch the room hear your record')}</a></p>
       <p style="font-size:12px;line-height:1.55;color:#8A94A6;margin:0 0 14px;">Go to your record in the replay. Short clips of the live response are the easiest thing to post.</p>` : '';
   const first = artist ? escapeHtml(String(artist).split(/\s+/)[0]) : '';
@@ -5236,9 +5260,11 @@ async function sendArtistReportEmail(round, session, dest) {
   const common = {
     title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, verdict: d.band.verdict, decision, votes: d.votes,
     what: d.what, dateLabel: d.dateLabel,
-    // A daily record's week is announced on The A&R Room (Wednesday), so that is the link.
-    watchUrl: isAsync(session) ? await dailyStreamUrl() : (session.watch_url || null),
-    watchLabel: isAsync(session) ? WEEKLY_SHOW_CTA : null,
+    // A daily record's week is announced on The A&R Room (Wednesday): the subscribe block
+    // replaces the watch link. A live session keeps its own replay link.
+    subscribe: isAsync(session),
+    watchUrl: isAsync(session) ? null : (session.watch_url || null),
+    watchLabel: null,
     pages, comments: d.comments, hashtag: d.what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting',
   };
   const html = artistEmailHtml(common);
@@ -5320,7 +5346,7 @@ async function enqueueArtistNotices(sessionId, { sms = true } = {}) {
 // a dead link that nobody rated is never told it was.
 async function dailyStreamUrl() {
   const row = await db.get("SELECT v FROM settings WHERE k = 'daily_stream_url'");
-  return (row && cleanUrl(row.v)) || null;
+  return (row && cleanUrl(row.v)) || LIVE_SUBSCRIBE_URL;
 }
 
 async function enqueueArtistHeadsups(sessionId) {
@@ -5343,7 +5369,7 @@ async function enqueueArtistHeadsups(sessionId) {
 // GSM-7, one segment: the report day is the only variable text besides the title.
 function artistHeadsupSmsBody(title, reportAt) {
   const day = reportAt ? etDayLabel(etDay(Number(reportAt))) : null;
-  const frame = (t) => `"${t}" was rated by the A&R Team. Results by email${day ? ' ' + day : ''}. Top 8 of the week: The A&R Room live, Wed 7PM ET. Reply STOP to opt out.`;
+  const frame = (t) => `"${t}" was rated by the A&R Team. Report by email${day ? ' ' + day : ''}. Top 8 Wed 7PM ET - subscribe + hit the bell: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`;
   return frame(fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame('').length));
 }
 function artistHeadsupContent({ title, artist, reportAt, streamUrl }) {
@@ -5369,8 +5395,9 @@ function artistHeadsupHtml(c) {
         <tr><td style="padding:22px 18px 24px;text-align:center;">
           <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F6F7FB;">${escapeHtml(c.lead)}</h1>
           <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0 0 12px;">${escapeHtml(c.body)}</p>
-          <p style="font-size:14px;line-height:1.6;color:#F6F7FB;font-weight:bold;margin:0 0 16px;">${escapeHtml(c.tune)}</p>
-          ${c.streamUrl ? `<p style="margin:6px 0 14px;"><a href="${c.streamUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">${escapeHtml(WEEKLY_SHOW_CTA)}</a></p>` : ''}
+          <p style="font-size:14px;line-height:1.6;color:#F6F7FB;font-weight:bold;margin:0 0 6px;">${escapeHtml(c.tune)}</p>
+          <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0 0 14px;">${escapeHtml(SUBSCRIBE_LINE)}</p>
+          <p style="margin:6px 0 14px;"><a href="${LIVE_SUBSCRIBE_URL}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">${SUBSCRIBE_CTA}</a></p>
           ${c.report ? `<p style="font-size:12.5px;line-height:1.55;color:#8A94A6;margin:0;">${escapeHtml(c.report)}</p>` : ''}
           <p style="font-size:12.5px;color:#8A94A6;margin:20px 0 0;">Submit another record → <a href="https://${shareCards.SUBMIT_URL}" style="color:#4BB749;text-decoration:none;">${shareCards.SUBMIT_URL}</a></p>
         </td></tr>
@@ -5378,8 +5405,7 @@ function artistHeadsupHtml(c) {
     </div>
   </div>`;
 }
-const artistHeadsupText = (c) => [c.lead, '', c.body, '', c.tune,
-  ...(c.streamUrl ? ['', `${WEEKLY_SHOW_CTA}: ${c.streamUrl}`] : []),
+const artistHeadsupText = (c) => [c.lead, '', c.body, '', c.tune, SUBSCRIBE_LINE, `${SUBSCRIBE_CTA}: ${LIVE_SUBSCRIBE_URL}`,
   ...(c.report ? ['', c.report] : []), '', `Submit another record: https://${shareCards.SUBMIT_URL}`].join('\n');
 
 // Same claim discipline as drainArtistEmail / drainArtistSms: pending -> sending before the
@@ -6421,7 +6447,7 @@ async function dispatchGoLiveNotifications(session, base, channels) {
   const url = `${base}/?s=${encodeURIComponent(sessionId)}`;
   const name = session.name || 'The A&R Room';
   const subject = `${name} is live · Enter the A&R evaluation`;
-  const text = `${name} is live in The A&R Room. Enter the evaluation: ${url}`;
+  const text = `${name} is live in The A&R Room. Enter the evaluation: ${url}\n\n${subscribeBlockText()}`;
   let sent = 0, failed = 0;
   await runLimited(capped, NOTIFY_CONCURRENCY, async (p) => {
     if (Number(p.blocked) === 1) return;
@@ -6433,6 +6459,7 @@ async function dispatchGoLiveNotifications(session, base, channels) {
     <p>Evaluate records, predict the room's consensus, and build your monthly ranking.</p>
     <p><a href="${url}" style="display:inline-block;background:#4bb749;color:#06210b;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none">Enter the evaluation →</a></p>
     <p style="color:#666;font-size:13px">${url}</p>
+    <p style="color:#444;font-size:14px">${escapeHtml(SUBSCRIBE_LINE)} <a href="${LIVE_SUBSCRIBE_URL}" style="color:#2d7a2b;font-weight:700">${SUBSCRIBE_CTA} →</a></p>
     ${notifyFooterHtml(manage)}</div>`;
       const r = await sendEmail(p.email, subject, html, `${text}\n\n${notifyFooterText(manage)}`, notifySendOpts(base, p.user_id, 'room_live'));
       await noteEmailOutcome(p.email, r);
@@ -11967,7 +11994,12 @@ module.exports._dropAfterClose = dropAfterClose;
 module.exports._dropStreamAt = dropStreamAt;
 module.exports._artistHeadsupSmsBody = artistHeadsupSmsBody;
 module.exports._artistHeadsupContent = artistHeadsupContent;
+module.exports._artistHeadsupText = artistHeadsupText;
+module.exports._artistHeadsupHtml = artistHeadsupHtml;
 module.exports._WEEKLY_SHOW_LINE = WEEKLY_SHOW_LINE;
+module.exports._SUBSCRIBE = { url: LIVE_SUBSCRIBE_URL, line: SUBSCRIBE_LINE, cta: SUBSCRIBE_CTA };
+module.exports._artistEmailHtml = artistEmailHtml;
+module.exports._artistEmailText = artistEmailText;
 module.exports._dailyOpenEmailText = dailyOpenEmailText;
 module.exports._enqueueDailyOpen = enqueueDailyOpen;
 module.exports._NOTIFY_TOPICS = NOTIFY_TOPICS;
