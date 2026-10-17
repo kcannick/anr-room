@@ -1,15 +1,16 @@
 # Setup guide — A&R Daily
 
 A&R Daily runs on a clock, not on a button. Every day a set of records (4 to 16 — four drawn
-at random from the free pool plus up to twelve paid) opens at **3:00 PM ET** (A&Rs are
-emailed), closes at **3:00 PM ET** the next day (the moment the next set opens) and tallies
-(artists get a heads-up), the operator runs the Makin' It HOT 100 Daily Countdown at **3:00 PM ET** the day
-after that, and results publish at **12:00 PM ET** the day after the stream — 69 hours after
-the open — with the A&R results email and the artist Track Reports. All of these are settings
-on the platform panel (System settings → A&R Daily schedule), and those times are also the
-code's built-in defaults (the 69-hour schedule, 2026-09-27: more production time and a
-notification between every event). The landing page and the daily page read the schedule off the API, so a time change
-needs no copy edit.
+at random from the free pool plus up to twelve paid) opens at **6:00 PM ET** (A&Rs are
+emailed), closes at **6:00 PM ET** the next day (the moment the next set opens) and tallies
+(artists get a heads-up), the Makin' It Daily Countdown graphics render at **10:00 AM ET** the
+morning after that (the Asana post task is made then, so the carousel can go up any time that
+day), and results publish at **12:00 PM ET** the day after the render — 66 hours after the
+open — with the A&R results email and the artist Track Reports. All of these are settings on
+the platform panel (System settings → A&R Daily schedule), and those times are also the code's
+built-in defaults (the evening clock, 2026-10-16 — see docs/daily-schedule-2026-10-16.md for
+the reasoning). The landing page and the daily page read the schedule off the API, so a time
+change needs no copy edit.
 
 Nothing about that happens unless the pieces below are in place. This guide is the checklist.
 

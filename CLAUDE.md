@@ -973,6 +973,20 @@ live on anr.makinitmag.com.
   (≥23h apart, after 4AM ET; continues on later ticks while `remaining`; failures retry hourly).
   Brevo allows one SMS number per contact, so a phone already claimed (A&Rs first) is left off
   the next contact. `BREVO_API_KEY` env; `BREVO_API_BASE` is the test mock. Doc: docs/brevo-sync.md.
+- **The evening clock — daily drop opens 6:00 PM ET** (048, 2026-10-16; branch
+  `claude/ar-program-release-timing-d614ef`, PR open when written). Six weeks of prod votes: A&Rs
+  rate when the OPEN EMAIL lands (46% of a day's raters start within 3h of the open; the hourly
+  peak moved with the open from noon to 3PM), the only self-driven window is 7–11PM ET, nothing
+  happens 11PM–10AM, audience ~70% Eastern / 20% Central, Wed drops draw the most raters and Fri
+  the fewest. So: open **6:00 PM ET** (email burst lands on the evening window; 7PM would collide
+  with the show) · close 6:00 PM next day (24h) · Daily Countdown graphics render + Asana task
+  **10:00 AM** the morning after the close (was 3PM) · results **noon** two days after the close
+  (66h, was 69h) · bonus steps **6 / 16 / 21 h** (midnight / 10AM / 3PM; the old 12h step fell at
+  6AM in the dead zone). `DAILY_SCHEDULE_DEFAULTS` moved; 048 deletes the stored 09-27 rows.
+  **After deploy: SAVE the schedule once on the platform panel** (re-stamps cold days; the open
+  day keeps its 3PM close), and the review site's lock-in / push moves to **5:00 PM ET** (Drupal).
+  Treat it as a two-week test: compare raters/drop and the 3h-start share.
+  Doc: **docs/daily-schedule-2026-10-16.md**. The schedule bullets below describe older clocks.
 - **Daily live stream RETIRED from every communication** (no migration, 2026-10-15, operator's
   call): the only live stream is **The A&R Room on Wednesday at 7:00 PM ET**, where the week's
   Top 8 are announced and the week's finalist for the $1,000 Music Tournament is picked.
