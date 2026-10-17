@@ -429,7 +429,9 @@ const NOTIFY_TOPICS = {
   // ON by default, `nudge` = the default goes only to those OUTSIDE the daily reach (see
   // dailyReachSql) and stops after WEEKLY_SUNSET_SENDS unanswered sends. An explicit ON gets
   // it every week regardless. Sender: enqueueWeeklyUpdate / drainWeeklyUpdate.
-  digest_weekly: { label: 'Weekly update',    channels: { email: 1 }, nudge: true },
+  // Thursday (operator, 2026-10-17): the results of Wednesday's show, to EVERY subscribed A&R —
+  // the `nudge` narrowing (non-engaged only, sunset after 4) is off. Bounces are still skipped.
+  digest_weekly: { label: 'Weekly results (Thursday)', channels: { email: 1 } },
 };
 // "Engaged" = signed in or rated within ENGAGED_DAYS (users.last_seen is stamped at both), or
 // an account younger than NEW_ACCOUNT_DAYS (a new A&R gets the daily mail for two weeks to
@@ -1627,26 +1629,18 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
         out.weeklySent = (out.weeklySent || 0) + d.sent;
       }
     } catch (e) { console.error('[daily] weekly update failed:', e.message); }
-    // The artist heads-up ("rated, on tomorrow's Livestream Countdown"), for tallied days.
-    // Enqueue is idempotent (uniq_artist_headsup), so calling it every tick is how a failed
-    // enqueue retries. SMS obeys the ET window like every other artist text.
-    const sealedDays = await db.all(
-      `SELECT * FROM sessions WHERE mode = 'async' AND async_state = 'ratified' AND deleted_at IS NULL
-        ORDER BY window_opens_at DESC LIMIT 3`, []);
-    for (const s of sealedDays) {
-      if (left() < 4000) { out.budgetHit = true; break; }
-      try {
-        await enqueueArtistHeadsups(s.id);
-        const h = await drainArtistHeadsups({ sessionId: s.id, limit: 20, deadline: t0 + budgetMs });
-        out.headsupSent = (out.headsupSent || 0) + h.sent;
-      } catch (e) { console.error('[daily] artist heads-up failed:', e.message); }
-    }
+    // The artist heads-up at the close (041) is RETIRED (operator, 2026-10-17): the artist
+    // hears from the program once, with the Track Report, after the countdown has posted.
+    // enqueueArtistHeadsups / drainArtistHeadsups stay for the console's manual send only.
     const pubs = await db.all(
       `SELECT * FROM sessions WHERE mode = 'async' AND async_state = 'published' AND deleted_at IS NULL
         ORDER BY published_at DESC LIMIT 3`, []);
     for (const s of pubs) {
       if (left() < 4000) { out.budgetHit = true; break; }
-      const bc = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [s.id]);
+      // Both emails wait artistDelayMin past publish (6 AM publish, 3 PM mail): the carousel
+      // posts first and the mail follows (operator, 2026-10-17).
+      const holdUntil = Number(s.published_at || 0) + sched.artistDelayMin * 60000;
+      const bc = at >= holdUntil ? await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_daily' AND ref_id = ?", [s.id]) : null;
       if (bc) {
         try {
           const d = await drainDailyDigest({ sessionId: s.id, broadcastId: bc.id, limit: 60, deadline: t0 + budgetMs });
@@ -1655,13 +1649,12 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       }
       // 029's reject-by-exception loses its human checkpoint under a cron: comments default
       // to shared, an async day has no wrap-up moment where the host sees "N comments about
-      // to go out", and there is NO UNSEND. Holding the artist enqueue an hour past publish
-      // gives the operator a real rejection window with the count visible in the console.
-      const holdUntil = Number(s.published_at || 0) + sched.artistDelayMin * 60000;
+      // to go out", and there is NO UNSEND. The hold past publish is the rejection window,
+      // with the count visible in the console.
       if (at >= holdUntil && left() > 8000) {
         try {
-          // Email only: the artist's text went out at the close as the heads-up, and a second
-          // text two days later saying the same thing is an opt-out, not a notification.
+          // Email only (operator, 2026-10-17): the artist hears from the program once, with
+          // the report. The heads-up text at the close is retired.
           await enqueueArtistNotices(s.id, { sms: false });
           const a = await drainArtistEmail({ sessionId: s.id, limit: 4, deadline: t0 + budgetMs });
           out.artistSent += a.sent; out.artistFailed += a.failed;
@@ -2080,9 +2073,21 @@ function dailyAsanaTaskName(rd) {
   return `${rd.set === 'song' ? DAILY_STREAM_NAME : 'Top A&Rs'} — ${rd.date}`;
 }
 const TOP_AR_COLLAB = '@makinitmusicreview';
+// The countdown posts from @makinit4indies with @TheAnRTeam and the top 3 artists invited as
+// collaborators (operator, 2026-10-17; Instagram allows five). Post times are the operator's
+// scheduled job: countdown 6:00 AM ET on the results day, Top A&Rs 9:00 AM.
+const COUNTDOWN_FROM = '@makinit4indies';
+const COUNTDOWN_COLLAB = '@TheAnRTeam';
+const COUNTDOWN_COLLAB_TOP = 3;
+const COUNTDOWN_POST_TIME = '6:00 AM ET';
+const TOP_AR_POST_TIME = '9:00 AM ET';
 function dailyAsanaNotes(rd, caption) {
   const out = ['Caption (paste as-is):', '', caption, ''];
   if (rd.set === 'song') {
+    const top = rd.slides.filter(sl => sl.kind === 'rank' && sl.rank <= COUNTDOWN_COLLAB_TOP && sl.handle)
+      .sort((a, b) => a.rank - b.rank).map(sl => `${sl.handle} (#${sl.rank})`);
+    out.push('—', `Post from ${COUNTDOWN_FROM} at ${COUNTDOWN_POST_TIME} on the results day.`,
+      `Collab: invite ${COUNTDOWN_COLLAB}${top.length ? ' and the top 3 artists: ' + top.join(', ') : ''} as collaborators.`, '');
     const cm = countdownComments(rd).comments;
     if (cm.length) {
       out.push('—', 'Comments: post each one under the carousel once it is up.', '');
@@ -2096,7 +2101,8 @@ function dailyAsanaNotes(rd, caption) {
     const hero = rd.slides[0].hero || {};
     const rest = rd.slides.filter(sl => sl.kind === 'list').flatMap(sl => sl.rows).map(r => r.handle).filter(Boolean);
     // @makinitmusicreview is always a collaborator too (operator, 2026-10-03).
-    out.push('—', hero.handle ? `Collab: invite ${TOP_AR_COLLAB} and ${hero.handle} (#1) as collaborators.`
+    out.push('—', `Post from ${COUNTDOWN_FROM} at ${TOP_AR_POST_TIME} on the results day.`);
+    out.push(hero.handle ? `Collab: invite ${TOP_AR_COLLAB} and ${hero.handle} (#1) as collaborators.`
       : `Collab: invite ${TOP_AR_COLLAB} as a collaborator. The #1 A&R (${hero.title}) has no Instagram handle on file, so they are not a collaborator.`);
     if (rest.length) out.push(`Tag the other top A&Rs: ${rest.join(', ')}`);
     out.push('A&Rs with no Instagram handle on file are not tagged.', '');
@@ -3758,6 +3764,7 @@ function dailyMissedEmailHtml(arg) {
       <h1 style="font-size:22px;line-height:1.3;margin:8px 0 12px">${escapeHtml(c.lead)}</h1>
       ${c.remind ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.remind)}</p>` : ''}
       <a href="${arg.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:16px">Rate today's records</a>
+      ${weeklyShowBlockHtml(arg.streamUrl)}
       <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
       ${arg.manage ? notifyFooterHtml(arg.manage) : ''}
     </div>
@@ -3767,11 +3774,54 @@ function dailyMissedEmailText(arg) {
   const c = dailyMissedEmailContent(arg);
   const lines = ['A&R Daily', '', c.lead];
   if (c.remind) lines.push('', c.remind);
-  lines.push('', `Rate today's records: ${arg.playUrl}`);
+  lines.push('', `Rate today's records: ${arg.playUrl}`, '', weeklyShowBlockText(arg.streamUrl));
   if (arg.manage) lines.push('', notifyFooterText(arg.manage));
   return lines.join('\n');
 }
 const DAILY_MISSED_SUBJECT = "You missed yesterday's drop";
+
+// "You've missed the last two drops" — the third group (operator, 2026-10-17: "motivate them to
+// get back in the game"). The last daily mail they get until they rate again.
+function dailyMissedTwiceEmailContent({ name, closesLabel, closesInHours }) {
+  const ex = digestExtras({ closesLabel, closesInHours });
+  return {
+    lead: `${name ? 'Hey ' + dispName(name) + ', y' : 'Hey, y'}ou've missed the last two drops. Today's records are open now — rate them and get back in the game.`,
+    why: "Every record you rate scores points, and finishing the day earns the completion bonus. A new week starts every Monday, so you are never out of it.",
+    remind: ex.remind,
+  };
+}
+function dailyMissedTwiceEmailHtml(arg) {
+  const c = dailyMissedTwiceEmailContent(arg);
+  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
+    <div style="max-width:400px;margin:0 auto;text-align:center">
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily</div>
+      <h1 style="font-size:22px;line-height:1.3;margin:8px 0 12px">${escapeHtml(c.lead)}</h1>
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.why)}</p>
+      ${c.remind ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.remind)}</p>` : ''}
+      <a href="${arg.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:16px">Rate today's records</a>
+      ${weeklyShowBlockHtml(arg.streamUrl)}
+      <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
+      ${arg.manage ? notifyFooterHtml(arg.manage) : ''}
+    </div>
+  </div>`;
+}
+function dailyMissedTwiceEmailText(arg) {
+  const c = dailyMissedTwiceEmailContent(arg);
+  const lines = ['A&R Daily', '', c.lead, '', c.why];
+  if (c.remind) lines.push('', c.remind);
+  lines.push('', `Rate today's records: ${arg.playUrl}`, '', weeklyShowBlockText(arg.streamUrl));
+  if (arg.manage) lines.push('', notifyFooterText(arg.manage));
+  return lines.join('\n');
+}
+const DAILY_MISSED_TWICE_SUBJECT = "You've missed the last two drops";
+// Every daily mail carries the Wednesday show (operator, 2026-10-17): "see who makes the
+// countdown for the week". One small block, under the CTA.
+function weeklyShowBlockHtml(url) {
+  return `<p style="font-size:13.5px;line-height:1.5;color:#a9a2c9;margin:16px 0 0">${escapeHtml(WEEKLY_SHOW_LINE)}${url ? ` <a href="${url}" style="color:#4bb749">${escapeHtml(WEEKLY_SHOW_CTA)}</a>` : ''}</p>`;
+}
+function weeklyShowBlockText(url) {
+  return WEEKLY_SHOW_LINE + (url ? ` ${WEEKLY_SHOW_CTA}: ${url}` : '');
+}
 
 // Queue the digest. ONE broadcast row per day, made idempotent by uniq_broadcast_kind_ref
 // (kind='digest_daily', ref_id=<session id>) — a re-run of the publisher finds the existing
@@ -3790,21 +3840,23 @@ const DAILY_MISSED_SUBJECT = "You missed yesterday's drop";
 //   played   — rated at least one record of THIS drop: their results and grade card
 //   missed   — rated none of this drop but rated the public drop before it: "you missed
 //              yesterday's drop, but you have time to rate the new ones now"
-// Someone who missed two in a row falls out of the daily mail; the weekly update reaches them.
-// Which of the two a recipient gets is decided at send time (drainDailyDigest), from the same
-// facts this audience is built from.
+//   missed 2 — rated neither of the last two but the public drop before those: "you've missed
+//              the last two drops" (operator, 2026-10-17: motivate them to get back in the game).
+// After that they fall out of the daily mail until they rate again; the weekly reaches them.
+// Which of the three a recipient gets is decided at send time (drainDailyDigest), from the
+// same facts this audience is built from.
 //
 // The extra fragment appends after the topic audience, so its '?'s bind after a.params.
 async function enqueueDailyDigest(session) {
   const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
   const prev = await previousPublicDrop(session);
+  const prev2 = prev ? await previousPublicDrop(prev) : null;
   // "Rated the day" = at least one vote in it, for a verified participant. One ? per use.
   const played = `EXISTS (SELECT 1 FROM participants pa JOIN votes v ON v.participant_id = pa.id
           JOIN rounds r ON r.id = v.round_id AND r.session_id = pa.session_id
          WHERE pa.session_id = ? AND pa.user_id = u.uid AND pa.verified = 1)`;
-  const extra = prev
-    ? { sql: `\n       AND (${played} OR ${played})`, params: [session.id, prev.id] }
-    : { sql: `\n       AND ${played}`, params: [session.id] };
+  const ids = [session.id, prev && prev.id, prev2 && prev2.id].filter(Boolean);
+  const extra = { sql: `\n       AND (${ids.map(() => played).join(' OR ')})`, params: ids };
   return enqueueDayBroadcast(session, 'digest_daily',
     `A&R Daily — ${etDayLabel(day) || 'the'} results`, `A&R Daily results for ${day}`, extra);
 }
@@ -3889,6 +3941,7 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
   };
   const rows = await db.all(
     "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [broadcastId, limit]);
+  const prevDrop = await previousPublicDrop(session);
   let sent = 0, failed = 0;
   for (const r of rows) {
     if (deadline && Date.now() > deadline) break;
@@ -3911,8 +3964,8 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
       const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
       const manage = notifyManageUrl(base || publicBase(), r.uid);
       const name = (participant && participant.name) || (u && u.name) || null;
-      // The audience is only those who played this day or the one before (enqueueDailyDigest),
-      // so "did not play this one" here means "played the one before": the missed email.
+      // The audience is only those who played this day or one of the two before
+      // (enqueueDailyDigest), so "did not play this one" means one of the two missed mails.
       const played = !!(recap && recap.roundsPlayed);
       let subject, html, textBody;
       if (played) {
@@ -3924,8 +3977,11 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
         html = dailyDigestEmailHtml(arg); textBody = dailyDigestEmailText(arg);
       } else {
         const arg = { name, manage, playUrl, ...extras };
-        subject = DAILY_MISSED_SUBJECT;
-        html = dailyMissedEmailHtml(arg); textBody = dailyMissedEmailText(arg);
+        const playedPrev = prevDrop ? !!(await db.get(
+          `SELECT 1 FROM participants pa JOIN votes v ON v.participant_id = pa.id
+            WHERE pa.session_id = ? AND pa.user_id = ? AND pa.verified = 1 LIMIT 1`, [prevDrop.id, r.uid])) : false;
+        if (playedPrev) { subject = DAILY_MISSED_SUBJECT; html = dailyMissedEmailHtml(arg); textBody = dailyMissedEmailText(arg); }
+        else { subject = DAILY_MISSED_TWICE_SUBJECT; html = dailyMissedTwiceEmailHtml(arg); textBody = dailyMissedTwiceEmailText(arg); }
       }
       const out = await sendEmail(r.dest, subject, html, textBody, notifySendOpts(base || publicBase(), r.uid, 'digest_daily'));
       await noteEmailOutcome(r.dest, out);
@@ -3986,8 +4042,11 @@ function dailyOpenEmailText(arg, manage) {
 // WEEKLY_SEND_HOUR ET (Wednesday 1PM: the Sunday drop publishes at noon Wednesday, so the
 // week is complete), drained by the same tick. Content is names and ranks only — never a
 // score (scores are the Track Report's) — plus today's records, which is the point of the mail.
-const WEEKLY_SEND_DOW = 3;    // Wednesday, JS getDay() terms
-const WEEKLY_SEND_HOUR = 13;  // 1:00 PM ET
+// Thursday noon (operator, 2026-10-17): the mail announces the RESULTS of Wednesday's show —
+// the week's Top 8, the seats — to every subscribed A&R. It used to go Wednesday 1 PM, before
+// the show, to the non-engaged only.
+const WEEKLY_SEND_DOW = 4;    // Thursday, JS getDay() terms
+const WEEKLY_SEND_HOUR = 12;  // 12:00 PM ET
 async function weeklyUpdateDue(at = now()) {
   const day = etDay(at);
   if (etWeekday(day) !== WEEKLY_SEND_DOW || etHour(at) < WEEKLY_SEND_HOUR) return null;
@@ -4000,7 +4059,7 @@ async function enqueueWeeklyUpdate(week) {
   const a = notifyAudience('digest_weekly', 'email');
   if (!a || !week) return { broadcastId: null, queued: 0 };
   const win = weekWindow(week);
-  const subject = `A&R Daily — the week of ${win ? win.startLabel : week}`;
+  const subject = `The A&R Room — this week's Top 8 (${win ? win.startLabel : week})`;
   let existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
   let bcId = existing ? existing.id : id(9);
   if (!existing) {
@@ -4026,7 +4085,7 @@ async function enqueueWeeklyUpdate(week) {
 // Shared per-broadcast content: last week's top records and A&Rs (names and ranks, no
 // scores), the open day's count and close, and where to rate.
 async function weeklyUpdateContent(week, base) {
-  const rep = await weeklyReportData(week, { limit: 3 }).catch(() => null);
+  const rep = await weeklyReportData(week, { limit: 8 }).catch(() => null);
   const win = weekWindow(week);
   const open = await db.get(
     "SELECT id, window_closes_at, drop_day FROM sessions WHERE mode = 'async' AND status = 'live' AND async_state = 'open' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
@@ -4037,12 +4096,23 @@ async function weeklyUpdateContent(week, base) {
     records: ((rep && rep.songs) || []).map(r => ({ title: r.title, artist: r.artist || null })),
     ars: ((rep && rep.ars) || []).map(a => ({ name: a.name, location: a.location || null })),
     totals: rep && rep.totals ? { records: rep.totals.records, ars: rep.totals.ars, ratings: rep.totals.ratings } : null,
+    // The show's link (the panel's live-stream setting) doubles as the replay link.
+    showUrl: await dailyStreamUrl(),
     openCount,
     closesLabel: open && Number(open.window_closes_at) > now() ? etWhenLabel(Number(open.window_closes_at), open.drop_day) : null,
     // The daily open, as a label off the schedule setting — never a hardcoded hour.
     opensLabel: etClockLabel(dropWindowFor(etDay(), await dailySchedule()).opensAt),
     playUrl: await openDropUrl(base),
   };
+}
+// The Thursday mail announces what Wednesday's show announced: the seats are the #1s.
+const WEEKLY_RESULTS_LEAD = "Here are the results from Wednesday's show.";
+function weeklySeatLines(c) {
+  const out = [];
+  const r1 = c.records && c.records[0], a1 = c.ars && c.ars[0];
+  if (r1) out.push(`Top Track of the week: ${r1.title}${r1.artist ? ' — ' + r1.artist : ''}. Selected for the $1,000 Music Tournament.`);
+  if (a1) out.push(`Top A&R of the week: ${dispName(a1.name) || 'A&R'}${a1.location ? ' · ' + a1.location : ''}. Takes a seat in A&R Wars.`);
+  return out;
 }
 function weeklyUpdateEmailHtml(c, manage) {
   const li = (rows, f) => rows.map((r, i) => `<li style="margin:0 0 6px">${i + 1}. ${f(r)}</li>`).join('');
@@ -4051,13 +4121,16 @@ function weeklyUpdateEmailHtml(c, manage) {
   const ars = c.ars.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.ars, a => `<b>${escapeHtml(dispName(a.name) || 'A&R')}</b>${a.location ? ' · ' + escapeHtml(a.location) : ''}`)}</ol>` : '';
   const totals = c.totals && c.totals.records ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0">${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.</p>` : '';
   const today = c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + escapeHtml(c.closesLabel) + '.' : ''}` : `New records open for rating every day at ${escapeHtml(c.opensLabel || '6:00 PM ET')}.`;
+  const seats = weeklySeatLines(c);
   return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
     <div style="max-width:420px;margin:0 auto">
-      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">A&amp;R Daily · Weekly update</div>
+      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">The A&amp;R Room · This week's results</div>
       <h1 style="font-size:22px;margin:8px 0 10px">The week of ${escapeHtml(c.weekLabel)}</h1>
+      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 8px">${WEEKLY_RESULTS_LEAD}${c.showUrl ? ` <a href="${c.showUrl}" style="color:#4bb749">Watch the replay</a>.` : ''}</p>
       ${totals}
-      ${sec('Top records', recs)}
-      ${sec('Top A&amp;Rs', ars)}
+      ${seats.length ? `<p style="font-size:15px;line-height:1.5;color:#f3f0fb;margin:12px 0 0">${seats.map(escapeHtml).join('<br>')}</p>` : ''}
+      ${sec('Top 8 records', recs)}
+      ${sec('Top 8 A&amp;Rs', ars)}
       <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:22px 0 0">${today}</p>
       <a href="${c.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:14px;text-align:center">Rate today's records</a>
       ${subscribeBlockHtml('ar')}
@@ -4067,10 +4140,12 @@ function weeklyUpdateEmailHtml(c, manage) {
   </div>`;
 }
 function weeklyUpdateEmailText(c, manage) {
-  const lines = [`A&R Daily — weekly update`, `The week of ${c.weekLabel}`, ''];
+  const lines = [`The A&R Room — this week's results`, `The week of ${c.weekLabel}`, '', WEEKLY_RESULTS_LEAD + (c.showUrl ? ` Watch the replay: ${c.showUrl}` : ''), ''];
   if (c.totals && c.totals.records) lines.push(`${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.`, '');
-  if (c.records.length) { lines.push('Top records:'); c.records.forEach((r, i) => lines.push(`${i + 1}. ${r.title}${r.artist ? ' — ' + r.artist : ''}`)); lines.push(''); }
-  if (c.ars.length) { lines.push('Top A&Rs:'); c.ars.forEach((a, i) => lines.push(`${i + 1}. ${dispName(a.name) || 'A&R'}${a.location ? ' · ' + a.location : ''}`)); lines.push(''); }
+  const seatLines = weeklySeatLines(c);
+  if (seatLines.length) lines.push(...seatLines, '');
+  if (c.records.length) { lines.push('Top 8 records:'); c.records.forEach((r, i) => lines.push(`${i + 1}. ${r.title}${r.artist ? ' — ' + r.artist : ''}`)); lines.push(''); }
+  if (c.ars.length) { lines.push('Top 8 A&Rs:'); c.ars.forEach((a, i) => lines.push(`${i + 1}. ${dispName(a.name) || 'A&R'}${a.location ? ' · ' + a.location : ''}`)); lines.push(''); }
   lines.push(c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + c.closesLabel + '.' : ''}` : `New records open for rating every day at ${c.opensLabel || '6:00 PM ET'}.`);
   lines.push(`Rate today's records: ${c.playUrl}`, '', subscribeBlockText());
   if (manage) lines.push('', notifyFooterText(manage));
@@ -4252,17 +4327,21 @@ function etWhenLabel(ts, fromDay) {
 // The daily schedule, as ET minutes-of-day. Defaults, not hardcodes: the drop builder takes
 // explicit overrides so a test can run a 60-second window instead of waiting for noon.
 // ===== A&R DAILY — the schedule, TUNABLE from the platform panel =====
-// Defaults (the evening clock, 2026-10-16), as hours after the open:
-//   -1  the review site locks the day's track list (Drupal's side; nothing here enforces it)
-//    0  6:00 PM ET — records open, and A&Rs are emailed that voting is open (daily_open)
-//   24  6:00 PM ET next day — rating closes and tallies; each rated artist is told the record
-//       was rated and when the report comes (email + SMS, artist_headsups)
-//   40  10:00 AM ET the day after — the Daily Countdown graphics render (stream_at) and the
-//       Asana post task is made, so the operator has the whole day to post the carousel.
-//   66  12:00 PM ET the day after that — RESULTS: the seal lifts on /daily, the A&R results
-//       email and the artists' Track Reports go out, makinitmag gets the results callback.
-//       "Today's records close at 6:00 PM ET — in 6 hours" in that email is true by construction.
-// So at 6 PM every day one drop opens and one closes, and three are in flight.
+// Defaults (the evening clock, operator 2026-10-17), as hours after the open:
+//   -1  5:00 PM ET — the review site locks the day's track list and pushes it (Drupal's side)
+//    0  6:00 PM ET — records open, and new A&Rs are emailed that voting is open (daily_open)
+//   24  6:00 PM ET next day — rating closes and tallies. NO heads-up to artists any more
+//       (operator, 2026-10-17): the artist hears from us once, with the Track Report.
+//   24+ as soon as the tally finishes — both Instagram carousels render (stream_at = the close,
+//       streamDays 0) and the Asana post tasks are made. Held privately: nothing is revealed.
+//   36  6:00 AM ET the day after — RESULTS. The Daily Countdown POSTS (the operator's scheduled
+//       job, through SocialBee) and that post IS the publish: the seal lifts on /daily and My
+//       results, makinitmag gets the results callback. The Top A&Rs carousel posts at 9:00 AM.
+//   45  3:00 PM ET — the EMAILS: the A&R results mail (or the missed-a-day / missed-two mail)
+//       and the artists' Track Reports, `artistDelayMin` after publish. The results mail says
+//       "today's records close at 6:00 PM ET — in 3 hours", which is true by construction.
+//   46  4:00 PM ET — Brevo sync, so an artist's new top score is on the list the same day.
+// So at 6 PM every day one drop opens and one closes, and two are in flight.
 //
 // WHY 6 PM (2026-10-16, from six weeks of production votes): A&Rs rate when the "voting is
 // open" email lands, not at a natural hour — 46% of a day's raters start within three hours
@@ -4286,14 +4365,14 @@ function etWhenLabel(ts, fromDay) {
 // clamped: close <= stream <= results.
 const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
   openMin: 18 * 60, closeMin: 18 * 60,
-  streamMin: 10 * 60, streamDays: 1,      // the Daily Countdown graphics render, the morning after the close
-  resultsMin: 12 * 60, resultsDays: 2,    // results, two days after the close (66h)
+  streamMin: 18 * 60, streamDays: 0,      // the carousels render at the close, as soon as the tally finishes
+  resultsMin: 6 * 60, resultsDays: 1,     // results publish 6:00 AM the day after the close (36h) — when the countdown posts
   tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 16, points: 75 }, { hours: 21, points: 50 }]),
   finalPoints: 25,
-  // Minutes after publish before artist reports queue. Was 60 — the comment-rejection
-  // checkpoint 029 needs — but the report now goes out 45 hours after the tally, which is
-  // that checkpoint many times over. Kept as a setting so it can come back.
-  artistDelayMin: 0,
+  // Minutes after publish before the EMAILS go: the A&R results mail and the artists' Track
+  // Reports both wait this long (540 = 3:00 PM after a 6:00 AM publish). The Instagram posts
+  // go first, on purpose: the carousel is the reveal; the mail is the follow-up.
+  artistDelayMin: 540,
 });
 const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_stream_min', 'daily_stream_days',
   'daily_results_min', 'daily_results_days', 'daily_bonus_tiers', 'daily_artist_delay_min'];
@@ -5962,6 +6041,7 @@ const BREVO_CALL_TIMEOUT_MS = Number(process.env.BREVO_CALL_TIMEOUT_MS) || 8000;
 const BREVO_CHUNK = 2000;               // contacts per import call (~1MB, far under the 8MB limit)
 const BREVO_BUDGET_MS = 16000;           // per press / per cron tick, like the leads sync
 const BREVO_DAILY_GAP_MS = 23 * 3600000; // the cron's once-a-day spacing
+const BREVO_SYNC_HOUR = 16;              // 4:00 PM ET, after the 3 PM emails (operator, 2026-10-17)
 const BREVO_FOLDER = 'A&R Program';
 const BREVO_LISTS = {
   // The operator's existing artists list (2026-10-06). A setting overrides it; blank returns here.
@@ -6237,7 +6317,9 @@ async function withBrevoLock(fn) {
 async function brevoDailySync({ budgetMs = 8000, ts = Date.now() } = {}) {
   if (!process.env.BREVO_API_KEY) return null;
   const last = JSON.parse((await settingGet('brevo_last_sync')) || '{}');
-  const due = !last.at || last.remaining > 0 || last.error || (ts - last.at >= BREVO_DAILY_GAP_MS && etHour(ts) >= 4);
+  // After BREVO_SYNC_HOUR ET: the results publish at 6 AM and an artist's ARTIST_TOP_SCORE only
+  // moves once a day is published, so a late-afternoon sync carries the day's new scores.
+  const due = !last.at || last.remaining > 0 || last.error || (ts - last.at >= BREVO_DAILY_GAP_MS && etHour(ts) >= BREVO_SYNC_HOUR);
   if (!due) return null;
   // A failing Brevo retries once an hour, not on every 5-minute tick.
   if (last.error && last.errorAt && ts - last.errorAt < 3600000) return null;
@@ -12045,6 +12127,9 @@ module.exports._enqueueDailyDigest = enqueueDailyDigest;
 module.exports._dailyDigestEmailHtml = dailyDigestEmailHtml;
 module.exports._dailyMissedEmailHtml = dailyMissedEmailHtml;
 module.exports._dailyMissedEmailText = dailyMissedEmailText;
+module.exports._dailyMissedTwiceEmailHtml = dailyMissedTwiceEmailHtml;
+module.exports._dailyMissedTwiceEmailText = dailyMissedTwiceEmailText;
+module.exports._DAILY_MISSED_TWICE_SUBJECT = DAILY_MISSED_TWICE_SUBJECT;
 module.exports._DAILY_MISSED_SUBJECT = DAILY_MISSED_SUBJECT;
 module.exports._previousPublicDrop = previousPublicDrop;
 module.exports._gradeCardFacts = gradeCardFacts;

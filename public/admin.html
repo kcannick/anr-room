@@ -1372,7 +1372,7 @@
           <div><label>Daily Countdown graphics render at</label><input id="dsStream" type="time" step="300"><select id="dsStreamDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
           <div><label>Results publish at</label><input id="dsResults" type="time" step="300"><select id="dsResultsDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
         </div>
-        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. At the close, rated artists are told their record was rated and when their report comes. At the render time the ranked Daily Countdown graphics are made for posting on Instagram. Results (scores on the site, the results emails, the Track Reports) stay sealed until they publish, which is never before the countdown.</p>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. At the render time (the close, by default) both Instagram carousels are made and the Asana post tasks are created; nothing is revealed. Results publish when the countdown posts (6:00 AM by default): scores appear on the site and makinitmag is told. The emails (the A&amp;R results mail and the Track Reports) follow after the hold below.</p>
         <label style="margin-top:10px">The A&amp;R Room live stream link <span class="muted">(Wednesday 7 PM ET; sent to artists and A&amp;Rs; a channel's /live link works)</span></label>
         <input id="dsStreamUrl" placeholder="https://www.youtube.com/@yourchannel/live">
         <label style="margin-top:10px">Completion bonus <span class="muted">(for rating every record in the day)</span></label>
@@ -1385,7 +1385,7 @@
           </tbody>
         </table>
         <p class="muted" style="font-size:11px;margin:8px 0 0">Leave a step's hours blank to drop that step. Steps must increase and stay inside the window.</p>
-        <label style="margin-top:10px">Artist reports go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(0 = with the results. Comments can be rejected any time before then.)</span></label>
+        <label style="margin-top:10px">The emails go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(the A&amp;R results mail and the Track Reports; 540 = 3:00 PM after a 6:00 AM publish. Comments can be rejected any time before then.)</span></label>
         <div id="dsSummary" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>

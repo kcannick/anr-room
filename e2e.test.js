@@ -2055,15 +2055,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
     rsSealed.stats.pending >= 1 && !rsSealed.days.some(d => d.id === LDROP && d.points != null), JSON.stringify(rsSealed.stats));
   ok('a closed drop is no longer offered as open', !rsSealed.open || rsSealed.open.id !== LDROP, JSON.stringify(rsSealed.open));
 
-  // The artist heads-up at the close: every RATED artist with contact, once, carrying no score.
-  const hu = await dDb.all('SELECT * FROM artist_headsups WHERE session_id = ?', [LDROP]);
-  ok('each rated artist with an email gets a heads-up at the close',
-    hu.length === 2 && hu.every(h => h.channel === 'email') && hu.map(h => h.dest).sort().join() === 'artist41@test.com,artist42@test.com',
-    JSON.stringify(hu.map(h => [h.dest, h.channel])));
-  ok('and the close tick sent them', hu.every(h => h.status === 'sent'), JSON.stringify(hu.map(h => h.status)));
+  // The artist heads-up at the close is RETIRED (operator, 2026-10-17): the artist hears from
+  // the program once, with the Track Report. The cron queues nothing; the content stays for the
+  // console's manual send.
   await tick(closesAt + 5000);
-  ok('a repeat tick never queues a second heads-up',
-    (await dDb.all('SELECT id FROM artist_headsups WHERE session_id = ?', [LDROP])).length === 2);
+  ok('the close queues NO artist heads-up (retired 2026-10-17)',
+    (await dDb.all('SELECT id FROM artist_headsups WHERE session_id = ?', [LDROP])).length === 0);
   const streamAtL = Number((await lSess()).stream_at);
   const huc = srv._artistHeadsupContent({ title: 'My Song', artist: 'Me',
     reportAt: Number((await lSess()).results_at), streamUrl: 'https://yt.example/live' });
@@ -2145,6 +2142,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the day flips to completed/published with a published_at',
     pubbed.status === 'completed' && pubbed.async_state === 'published' && pubbed.published_at > 0,
     pubbed.status + '/' + pubbed.async_state);
+  // The emails wait artistDelayMin past publish (the carousel posts first): nothing drains at
+  // the publish tick, everything drains once the hold has passed.
+  const holdMs = srv._DAILY_SCHEDULE_DEFAULTS.artistDelayMin * 60000;
+  ok('the publish tick sends no results mail — the hold has not passed', (tPub.d.digestSent || 0) === 0, JSON.stringify(tPub.d));
+  const tMail = await tick(Number(pubbed.published_at) + holdMs + 1000);
+  ok('the tick after the hold drains the results mail', tMail.d.digestSent >= 1, JSON.stringify(tMail.d));
 
   console.log('\n— Retired 2026-10-02: the Top 8 cards, the Meeting Recap cover/thumbnail, the clip captions —');
   const pngDims = (buf) => buf.readUInt32BE(16) + 'x' + buf.readUInt32BE(20);
@@ -2302,8 +2305,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the A&R who played the day is on the list', rcpts.some(r => r.uid === uidPlayed), JSON.stringify(rcpts.length));
   ok('so is an A&R who skipped this day but rated the drop before (the missed mail)',
     rcpts.some(r => r.uid === uidIdle), JSON.stringify(rcpts.length));
-  ok('an A&R who last rated two drops back gets no daily mail (the weekly is theirs)',
-    !rcpts.some(r => r.uid === uidGone), JSON.stringify(rcpts.length));
+  ok('an A&R who last rated two drops back gets the missed-twice mail (2026-10-17), then nothing until they rate again',
+    rcpts.some(r => r.uid === uidGone), JSON.stringify(rcpts.length));
   ok('email_opt_out is the global kill switch and outranks a topic opt-in',
     !rcpts.some(r => r.uid === uidOut), JSON.stringify(rcpts.length));
   ok('someone who never played gets nothing, though the topic is ON by default',
@@ -2677,8 +2680,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const schedReset = await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
   const schedBack = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
   ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 18 * 60 && schedBack.closeMin === 18 * 60
-    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 0
-    && schedBack.streamDays === 1 && schedBack.resultsDays === 2 && schedBack.resultsHours === 66 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 18),
+    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 540
+    && schedBack.streamDays === 0 && schedBack.resultsDays === 1 && schedBack.resultsHours === 36 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 18),
     JSON.stringify(schedBack));
 
   // MOVING a cold day. The case: the review site's noon lock-in pressed at 12:01 pushes a
@@ -2702,8 +2705,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
     mvSess.drop_day === mvTo
       && Number(mvSess.window_opens_at) === srv._etEpoch(mvTo, 18)
       && Number(mvSess.window_closes_at) === srv._etEpoch(mvNext, 18)
-      && Number(mvSess.stream_at) === srv._etEpoch(srv._etNextDay(mvNext), 10)
-      && Number(mvSess.results_at) === srv._etEpoch(srv._etNextDay(mvNext, 2), 12)
+      && Number(mvSess.stream_at) === srv._etEpoch(mvNext, 18)
+      && Number(mvSess.results_at) === srv._etEpoch(srv._etNextDay(mvNext), 6)
       && Number(mvSess.scheduled_at) === Number(mvSess.window_opens_at)
       && mvSess.name === 'A&R Daily — ' + mvTo,
     JSON.stringify({ day: mvSess.drop_day, name: mvSess.name, o: mvSess.window_opens_at, c: mvSess.window_closes_at, r: mvSess.results_at }));
@@ -3542,6 +3545,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && /Today's records close at 3:00 PM ET — in 3 hours\./.test(msText) && /Rate today's records: https:\/\/x\/daily\?s=abc/.test(msText), msText);
   ok('and carries no grade, no results and no picture', !/grade|results|<img/i.test(msHtml.replace(/A&amp;R Daily/g, '')), msHtml.slice(0, 300));
   ok('its subject says what happened', srv._DAILY_MISSED_SUBJECT === "You missed yesterday's drop");
+  ok('the missed mail carries the Wednesday show line and link',
+    /Wednesday at 7:00 PM ET/.test(msText) && /Watch The A&R Room live, Wednesday 7:00 PM ET: https:\/\/yt\/live/.test(srv._dailyMissedEmailText({ ...msArg, streamUrl: 'https://yt/live' })));
+  const m2Arg = { ...msArg, streamUrl: 'https://yt/live' };
+  const m2Text = srv._dailyMissedTwiceEmailText(m2Arg), m2Html = srv._dailyMissedTwiceEmailHtml(m2Arg);
+  ok("the missed-twice mail: two drops missed, get back in the game, today's records, the show",
+    /Hey Kelby Cannick, you've missed the last two drops\. Today's records are open now — rate them and get back in the game\./.test(m2Text)
+      && /A new week starts every Monday/.test(m2Text) && /Today's records close at 3:00 PM ET — in 3 hours\./.test(m2Text)
+      && /Rate today's records: https:\/\/x\/daily\?s=abc/.test(m2Text) && /Wednesday 7:00 PM ET: https:\/\/yt\/live/.test(m2Text), m2Text);
+  ok('and carries no grade, no results and no picture', !/grade|<img/i.test(m2Html.replace(/A&amp;R Daily/g, '')), m2Html.slice(0, 300));
+  ok('its subject says what happened', srv._DAILY_MISSED_TWICE_SUBJECT === "You've missed the last two drops");
 
   console.log('\n— the grade card renders (share-cards grade*) —');
   const gcCards = require('./share-cards');
@@ -3783,18 +3796,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   console.log('\n— A&R Daily: the schedule —');
   const D = server._DAILY_SCHEDULE_DEFAULTS;
   const dw = server._dropWindowFor('2026-07-04', D);
-  ok('default window: opens 6 PM, closes 6 PM next day, graphics render 10 AM the day after, results noon the day after that (the 2026-10-16 clock)',
+  ok('default window: opens 6 PM, closes 6 PM next day, graphics render at the close, results 6 AM the day after (the 2026-10-17 clock)',
     dw.opensAt === at('2026-07-04', 18) && dw.closesAt === at('2026-07-05', 18)
-      && dw.streamAt === at('2026-07-06', 10) && dw.resultsAt === at('2026-07-07', 12), JSON.stringify(dw));
-  ok('which is 24 / 40 / 66 hours after the open',
-    (dw.closesAt - dw.opensAt) / 3600000 === 24 && (dw.streamAt - dw.opensAt) / 3600000 === 40
-      && (dw.resultsAt - dw.opensAt) / 3600000 === 66, JSON.stringify(dw));
+      && dw.streamAt === at('2026-07-05', 18) && dw.resultsAt === at('2026-07-06', 6), JSON.stringify(dw));
+  ok('which is 24 / 24 / 36 hours after the open',
+    (dw.closesAt - dw.opensAt) / 3600000 === 24 && (dw.streamAt - dw.opensAt) / 3600000 === 24
+      && (dw.resultsAt - dw.opensAt) / 3600000 === 36, JSON.stringify(dw));
   // The offsets are whole ET days, never durations: a window across the November switch
   // still streams and publishes on the wall clock.
   const dstW = server._dropWindowFor('2026-10-31', D);
   ok('the stream and results stay on the ET wall clock across a DST change',
-    dstW.streamAt === at('2026-11-02', 10) && dstW.resultsAt === at('2026-11-03', 12), JSON.stringify(dstW));
-  ok('artist reports go out with the results by default — the report is 42 hours after the tally', D.artistDelayMin === 0);
+    dstW.streamAt === at('2026-11-01', 18) && dstW.resultsAt === at('2026-11-02', 6), JSON.stringify(dstW));
+  ok('the emails follow the 6 AM publish by nine hours by default (3 PM)', D.artistDelayMin === 540);
   const sameDay = server._dropWindowFor('2026-07-04', { ...D, openMin: 9 * 60, closeMin: 21 * 60, streamMin: 20 * 60, streamDays: 0, resultsMin: 20 * 60, resultsDays: 0 });
   ok('a close later than the open is the same day, and the stream and results never land before the close',
     sameDay.closesAt === at('2026-07-04', 21) && sameDay.streamAt === at('2026-07-04', 21) && sameDay.resultsAt === at('2026-07-04', 21), JSON.stringify(sameDay));
@@ -5711,7 +5724,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The daily cron pass: nothing within 23 hours of the last sync; due a day later (after 4AM ET).
   ok('brevo daily: not due right after a sync', (await srv._brevoDailySync({ ts: Date.now() })) === null);
   let brvTs = Date.now() + 24 * 3600000;
-  while (srv._etHour(brvTs) < 4) brvTs += 3600000;
+  while (srv._etHour(brvTs) < 16) brvTs += 3600000;
   const brvDay = await srv._brevoDailySync({ ts: brvTs });
   ok('brevo daily: runs once the day has turned', brvDay && brvDay.sent && brvDay.sent.ars === 0, JSON.stringify(brvDay));
   ok('brevo daily: ...and only once', (await srv._brevoDailySync({ ts: brvTs })) === null);
@@ -5764,40 +5777,27 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('gate: the constants are the ones the copy quotes (30 / 14 / 4)',
     srv._ENGAGED.ENGAGED_DAYS === 30 && srv._ENGAGED.NEW_ACCOUNT_DAYS === 14 && srv._ENGAGED.WEEKLY_SUNSET_SENDS === 4, JSON.stringify(srv._ENGAGED));
 
-  console.log('\n— the weekly update: the non-engaged by default, the explicit always, sunset after 4 —');
+  console.log('\n— the weekly results mail (Thursday, 2026-10-17): every subscribed A&R, no narrowing —');
   await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_active','digest_weekly','email',1," + egNow + ")");
   let weeklyAud = await audOf('digest_weekly');
   ok('weekly: a stale account on the default is on it', weeklyAud.has('eg_stale'));
-  ok('weekly: a new account is NOT (it gets the daily)', !weeklyAud.has('eg_new'));
-  ok('weekly: an active account that chose Weekly is on it', weeklyAud.has('eg_active'));
+  ok('weekly: a new account is on it too (it is the show results, not a nudge)', weeklyAud.has('eg_new'));
+  ok('weekly: an active account is on it', weeklyAud.has('eg_active'));
   ok('weekly: a bounced address is out', !weeklyAud.has('eg_bounced'));
-  // The weekly's default now goes to everyone outside the DAILY reach (first week, or seen in
-  // the last 4 days), not outside 30 days: someone who stopped rating a week ago gets no daily
-  // email any more, so the weekly is theirs.
   await egUser('eg_lapsed', 'eg-lapsed@test.com', 90, 10);
   weeklyAud = await audOf('digest_weekly');
-  ok('weekly: an A&R seen 10 days ago (out of the daily reach) is on it', weeklyAud.has('eg_lapsed'));
-  // Sunset: four sent weeklies since they were last seen = stop. One sent BEFORE their last
-  // activity does not count against them.
+  ok('weekly: an A&R seen 10 days ago is on it', weeklyAud.has('eg_lapsed'));
+  // No sunset any more: four unanswered weeklies do not end it (operator: all subscribed A&Rs).
   for (let i = 0; i < 4; i++) {
     await egDb.run("INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id) VALUES (?,?,?,?,?,?,?,?,?)",
       ['eg_w' + i, 'w', 'w', 'email', null, 'done', egNow, 'digest_weekly', '2026-0' + (5 + i) + '-01']);
     await egDb.run("INSERT INTO notify_recipients (broadcast_id, uid, channel, dest, status, sent_at) VALUES (?,?,?,?,?,?)",
-      ['eg_w' + i, 'eg_stale', 'email', 'eg-stale@test.com', 'sent', i === 0 ? egNow - 70 * DAY : egNow - (10 - i) * DAY]);
+      ['eg_w' + i, 'eg_stale', 'email', 'eg-stale@test.com', 'sent', egNow - (10 - i) * DAY]);
   }
-  weeklyAud = await audOf('digest_weekly');
-  ok('sunset: three unanswered weeklies since last seen is not yet four — still on it', weeklyAud.has('eg_stale'));
-  await egDb.run("INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id) VALUES ('eg_w4','w','w','email',NULL,'done',?, 'digest_weekly','2026-09-01')", [egNow]);
-  await egDb.run("INSERT INTO notify_recipients (broadcast_id, uid, channel, dest, status, sent_at) VALUES ('eg_w4','eg_stale','email','eg-stale@test.com','sent',?)", [egNow - 2 * DAY]);
-  weeklyAud = await audOf('digest_weekly');
-  ok('sunset: the fourth unanswered weekly ends it', !weeklyAud.has('eg_stale'));
-  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_stale','digest_weekly','email',1," + egNow + ")");
-  ok('sunset: an explicit ON is never sunset', (await audOf('digest_weekly')).has('eg_stale'));
+  ok('weekly: four unanswered weeklies do not end it', (await audOf('digest_weekly')).has('eg_stale'));
+  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_stale','digest_weekly','email',0," + egNow + ")");
+  ok('weekly: an explicit OFF is the only way out', !(await audOf('digest_weekly')).has('eg_stale'));
   await egDb.run("DELETE FROM notify_prefs WHERE uid = 'eg_stale'");
-  await egDb.run("UPDATE users SET last_seen = ? WHERE uid = 'eg_stale'", [egNow - DAY]);
-  ok('sunset: coming back (last_seen moves past the sends) puts them in the daily reach, so the weekly waits',
-    !(await audOf('digest_weekly')).has('eg_stale'));
-  await egDb.run("UPDATE users SET last_seen = ? WHERE uid = 'eg_stale'", [egNow - 60 * DAY]);
 
   console.log('\n— the weekly sender: one broadcast per week, drained, names only —');
   const wq = await srv._enqueueWeeklyUpdate('2026-09-21');
@@ -5805,20 +5805,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const wq2 = await srv._enqueueWeeklyUpdate('2026-09-21');
   ok('weekly: a second enqueue for the same week adopts the same broadcast', wq2.broadcastId === wq.broadcastId, JSON.stringify([wq, wq2]));
   const wbc = await egDb.all("SELECT * FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = '2026-09-21'");
-  ok('weekly: exactly one broadcast row for the week', wbc.length === 1 && /week of Mon, Sep 21/.test(wbc[0].subject), JSON.stringify(wbc.map(b => b.subject)));
-  const wd = await srv._drainWeeklyUpdate({ broadcastId: wq.broadcastId, limit: 100, base: 'https://x' });
+  ok('weekly: exactly one broadcast row for the week, the show-results subject', wbc.length === 1 && /The A&R Room — this week's Top 8 \(Mon, Sep 21\)/.test(wbc[0].subject), JSON.stringify(wbc.map(b => b.subject)));
+  const wd = await srv._drainWeeklyUpdate({ broadcastId: wq.broadcastId, limit: 500, base: 'https://x' });
   ok('weekly: the drain sends them all and marks the broadcast done', wd.remaining === 0 && wd.failed === 0 && wd.sent === wq.queued
     && (await egDb.get("SELECT status FROM notify_broadcasts WHERE id = ?", [wq.broadcastId])).status === 'done', JSON.stringify(wd));
   const wc = { weekLabel: 'Mon, Sep 21 – Sun, Sep 27', records: [{ title: 'Song A', artist: 'Artist A' }], ars: [{ name: 'Kelby Cannick', location: 'Atlanta, GA' }],
-    totals: { records: 40, ars: 25, ratings: 300 }, openCount: 8, closesLabel: 'at 3:00 PM ET tomorrow', playUrl: 'https://x/daily?s=abc' };
+    totals: { records: 40, ars: 25, ratings: 300 }, openCount: 8, closesLabel: 'at 3:00 PM ET tomorrow', playUrl: 'https://x/daily?s=abc', showUrl: 'https://yt/live' };
   const wh = srv._weeklyUpdateEmailHtml(wc, 'https://x/profile#nt=t'), wt = srv._weeklyUpdateEmailText(wc, 'https://x/profile#nt=t');
-  ok('weekly mail: ranks, names, the open day and the CTA — no score anywhere',
+  ok('weekly mail: the show results, the seats, ranks, names, the open day and the CTA — no score anywhere',
     /1\. <b>Song A<\/b> — Artist A/.test(wh) && /Kelby Cannick/.test(wh) && /8 records are open/.test(wh) && /Rate today's records/.test(wh)
-      && !/\d\.\d/.test(wt) && /Rating closes at 3:00 PM ET tomorrow/.test(wt) && /Top records:\n1\. Song A — Artist A/.test(wt) && /Manage your notifications/.test(wt), wt);
-  ok('weekly: not due on a non-Wednesday', (await srv._weeklyUpdateDue(Date.parse('2026-10-05T18:00:00Z'))) === null);
-  const dueW = await srv._weeklyUpdateDue(Date.parse('2026-10-07T18:00:00Z')); // Wed 2PM ET
-  ok('weekly: due on Wednesday after 1PM ET, for the last complete week', dueW === '2026-09-28', String(dueW));
-  ok('weekly: not due on Wednesday morning', (await srv._weeklyUpdateDue(Date.parse('2026-10-07T14:00:00Z'))) === null);
+      && /results from Wednesday's show/.test(wh) && /href="https:\/\/yt\/live"/.test(wh)
+      && /Top Track of the week: Song A — Artist A\. Selected for the \$1,000 Music Tournament\./.test(wt)
+      && /Top A&R of the week: Kelby Cannick · Atlanta, GA\. Takes a seat in A&R Wars\./.test(wt)
+      && !/\d\.\d/.test(wt) && /Rating closes at 3:00 PM ET tomorrow/.test(wt) && /Top 8 records:\n1\. Song A — Artist A/.test(wt) && /Manage your notifications/.test(wt), wt);
+  ok('weekly: not due on a non-Thursday', (await srv._weeklyUpdateDue(Date.parse('2026-10-07T18:00:00Z'))) === null);
+  const dueW = await srv._weeklyUpdateDue(Date.parse('2026-10-08T18:00:00Z')); // Thu 2PM ET
+  ok('weekly: due on Thursday after noon ET, for the last complete week', dueW === '2026-09-28', String(dueW));
+  ok('weekly: not due on Thursday morning', (await srv._weeklyUpdateDue(Date.parse('2026-10-08T14:00:00Z'))) === null);
 
   console.log('\n— bounces: a dead address is noted once and mailed never again —');
   ok('bounce: a hard bounce stamps email_bounced_at', (await srv._noteEmailOutcome('EG-Active@test.com', { ok: false, error: 'x', reject: 'hard-bounce' })) === true

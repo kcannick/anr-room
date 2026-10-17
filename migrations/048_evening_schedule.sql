@@ -1,17 +1,21 @@
 -- 048_evening_schedule.sql
--- The evening clock (2026-10-16). Six weeks of production votes showed A&Rs rate when the
--- "voting is open" email lands (46% of a day's raters start within three hours of the open)
--- and the only time they come on their own is 7–11 PM ET. The 3 PM open put that burst in
--- the middle of the workday; a 6 PM open stacks it on the evening window. Hours after the open:
---   -1  track list locked (review site — 5:00 PM ET, Drupal's side)
---    0  6:00 PM ET  drop opens; A&Rs are emailed that voting is open (daily_open)
---   24  6:00 PM ET  voting closes and tallies; each rated artist gets the heads-up (email + SMS)
---   40  10:00 AM ET the Daily Countdown graphics render (stream_at) + the Asana post task
---   66  12:00 PM ET results publish: seal lifts, A&R digest, Track Reports, makinitmag callback
+-- The evening clock (operator, 2026-10-17). Six weeks of production votes showed A&Rs rate when
+-- the "voting is open" email lands (46% of a day's raters start within three hours of the open)
+-- and the only time they come on their own is 7–11 PM ET. Hours after the open:
+--   -1  5:00 PM ET  review site locks and pushes the day (Drupal's side)
+--    0  6:00 PM ET  drop opens; new A&Rs are emailed that voting is open (daily_open)
+--   24  6:00 PM ET  voting closes and tallies; both carousels render as soon as it finishes
+--                   (stream_at = the close). No artist heads-up any more.
+--   36  6:00 AM ET  results publish = the Daily Countdown POSTS (the operator's scheduled job):
+--                   seal lifts on /daily, makinitmag callback. Top A&Rs carousel posts 9:00 AM.
+--   45  3:00 PM ET  the emails: A&R results / missed-a-day / missed-two, and the Track Reports
+--                   (daily_artist_delay_min 540 after publish)
+--   46  4:00 PM ET  Brevo sync
 -- Completion bonus steps: 100 within 6h (midnight), 75 within 16h (10 AM), 50 within 21h (3 PM),
 -- 25 before the close. The old 12h step fell at 6 AM, inside the dead zone.
+-- The weekly mail moves to Thursday noon (the show's results, to every subscribed A&R).
 --
 -- The stored rows are the 2026-09-27 clock, saved from the panel. Deleting them lets the new
 -- defaults apply (the 041 precedent). Cold drops are re-stamped only when the schedule is
 -- SAVED once on the platform panel after deploy — do that; an open day keeps its window.
-DELETE FROM settings WHERE k IN ('daily_open_min', 'daily_close_min', 'daily_stream_min', 'daily_stream_days', 'daily_results_min', 'daily_results_days', 'daily_bonus_tiers')
+DELETE FROM settings WHERE k IN ('daily_open_min', 'daily_close_min', 'daily_stream_min', 'daily_stream_days', 'daily_results_min', 'daily_results_days', 'daily_bonus_tiers', 'daily_artist_delay_min')

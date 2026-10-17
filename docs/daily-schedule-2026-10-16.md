@@ -1,25 +1,32 @@
-# The evening clock — A&R Daily schedule (2026-10-16)
+# The evening clock — A&R Daily schedule (operator, 2026-10-17)
 
-The daily drop moves from a 3:00 PM ET open to a **6:00 PM ET open**. Everything downstream
-moves with it. This page is the schedule, the reasoning, and the deploy checklist.
+The daily drop opens at **6:00 PM ET**, results publish when the Daily Countdown **posts at
+6:00 AM** two mornings later, and the emails follow at **3:00 PM**. This page is the schedule,
+the reasoning, and the deploy checklist. It supersedes the 69-hour clock of 2026-09-27.
 
-## The schedule
+## The chain (Day 1 = the day a drop opens)
 
-| Hours after open | ET time | What happens | Who is told |
+| Day | ET time | Event | Who / channel |
 |---|---|---|---|
-| −1 | 5:00 PM | Review site locks the day's track list and pushes the drop | — (Drupal's side, see below) |
-| 0 | **6:00 PM** | Drop opens | A&Rs: "voting is open" email (`daily_open`) |
-| +6 | midnight | Completion bonus steps 100 → 75 | shown on /daily |
-| +16 | 10:00 AM | Bonus steps 75 → 50 | shown on /daily |
-| +21 | 3:00 PM | Bonus steps 50 → 25 | shown on /daily |
-| 24 | **6:00 PM next day** | Voting closes and tallies. The next drop opens at the same moment. | Artists whose record was rated: heads-up email + SMS (inside the 10AM–10:30PM text window) |
-| 40 | 10:00 AM | Daily Countdown graphics render; the Asana post task is made | Operator (Asana) |
-| 66 | **12:00 PM** | Results publish: seal lifts on /daily, A&R digest, artist Track Reports, makinitmag callback | A&Rs who rated (digest), artists (report), Drupal |
+| 1 | 5:00 PM | Review site locks the day's track list and pushes it | makinitmag (Drupal) |
+| 1 | 6:00 PM | **Drop opens.** "Voting is open" email | new A&Rs, first 7 days / email |
+| 2 | 12:00 AM | Completion bonus steps 100 → 75 | shown on /daily |
+| 2 | 10:00 AM | Bonus 75 → 50 | shown on /daily |
+| 2 | 3:00 PM | Bonus 50 → 25 | shown on /daily |
+| 2 | 6:00 PM | **Voting closes and tallies.** The next drop opens at the same moment. No heads-up to artists. | system |
+| 2 | after the tally | Both Instagram carousels render; the Asana post tasks are made. Nothing is revealed. | system / Asana |
+| 3 | 6:00 AM | **Daily Countdown posts** from @makinit4indies (the operator's scheduled job, through SocialBee). @TheAnRTeam and the top 3 artists are collaborators; every artist is tagged on their slide. **This is the publish:** scores appear on /daily and My results, the results callback goes to makinitmag. | public / Instagram |
+| 3 | 9:00 AM | **Top A&Rs carousel posts**, collab with the #1 A&R, seven tagged | public / Instagram |
+| 3 | 3:00 PM | **Artist email:** the Track Report, to every artist whose record was reviewed | artists / email |
+| 3 | 3:00 PM | **A&R email,** one of three: Your results · You missed yesterday's drop · You've missed the last two drops. Each carries the Wednesday show line. | A&Rs / email |
+| 3 | 4:00 PM | Brevo sync (the day's new artist top scores) | system |
 
-Three drops are in flight at any moment. The Wednesday show (7:00 PM ET) now starts an hour
-after that day's drop opens, so the open email is the show's warm-up rather than a separate
-afternoon event. The weekly update (Wednesday 1:00 PM ET) and the Monday–Sunday week by
-`drop_day` are unchanged.
+Two drops are in flight at any moment. The chain is 36 hours from open to publish, 45 to the
+emails.
+
+**Weekly:** Wednesday 7:00 PM ET the show. **Thursday noon** the weekly results email to every
+subscribed A&R: the results of Wednesday's show, the Top 8 records and A&Rs, the two seats, the
+replay link. It used to go Wednesday 1 PM, before the show, to the non-engaged only.
 
 ## Why 6 PM
 
@@ -28,46 +35,46 @@ Six weeks of production votes (40 drops, Sept 2 – Oct 15, about 4,000 ratings)
 - **A&Rs rate when the open email lands, not at a natural hour.** Under the noon open the busiest
   hours were 12–1 PM; when the open moved to 3 PM the peak moved to 3–5 PM. Since Oct 1, 46% of
   a day's raters start within three hours of the open (33% under noon).
-- **The only time people come on their own is 7–11 PM ET.** It shows up under both schedules.
-  Nothing happens 11 PM–10 AM.
-- **The audience is about 70% Eastern, 20% Central.** A 3 PM ET open landed at 2 PM Central and
-  noon Pacific, mid-workday. 6 PM ET is 5 PM Central and 3 PM Pacific.
-- **A deadline bump at noon–3 PM** the next day came from the digest's "today's records close
-  at 3:00 PM" line. That line is computed live and now reads "6:00 PM ET — in 6 hours".
-- Outside research agrees on the direction: push and app engagement peaks 6–9 PM; Spotify's
-  hourly listening peaks at 4 PM and 8 PM. Nothing music-audience-specific exists.
+- **The only time people come on their own is 7–11 PM ET.** Nothing happens 11 PM–10 AM.
+- **The audience is about 70% Eastern, 20% Central.** 6 PM ET is 5 PM Central, 3 PM Pacific.
 - 7 PM was ruled out because it collides with the Wednesday show.
+- Day of the week matters more than the hour: raters per drop by the day it opens were
+  Wednesday 20, Monday 17, Thursday 16, Tuesday 15, Sunday 15, Saturday 14, Friday 13.
 
-Day of the week matters more than the hour: average raters per drop by the day it opens were
-Wednesday 20, Monday 17, Thursday 16, Tuesday 15, Sunday 15, Saturday 14, Friday 13. If drop
-size ever varies, put the paid records on Monday–Thursday.
+Treat it as a two-week test. Compare raters per drop and the share who start within three hours.
 
-**Treat this as a two-week test** (Monday to Sunday twice). Compare raters per drop and the
-share who start within three hours against the last two weeks of October. The October rise in
-raters (about 10 to about 21 per drop) coincided with the email engagement gate and new signups,
-not with the 3 PM move, so the 3 PM slot was never shown to work on its own.
+## The emails (operator, 2026-10-17)
 
-## Bonus steps
+- **Artists hear from the program once**, with the Track Report at 3 PM on Day 3, after the
+  countdown has posted. The heads-up at the close (email + SMS) is retired; the cron queues none.
+  The console's manual send still works.
+- **A&Rs get one of three mails** at 3 PM: results (rated this drop), missed a day (rated the
+  one before), missed two in a row (rated the one before that). After the third they get no daily
+  mail until they rate again. Every one carries the Wednesday show line and link.
+- **The weekly results mail** goes Thursday noon to every subscribed A&R. The non-engaged
+  narrowing and the four-send sunset are off; an explicit OFF and a bounced address are the only
+  ways out.
 
-The old steps were 6 / 12 / 18 hours. With a 6 PM open the 12-hour step would fall at 6 AM,
-inside the dead zone, so it would pay nobody the 18-hour step did not. The new steps are
-**6 / 16 / 21 hours**: 100 by midnight, 75 by 10 AM, 50 by 3 PM, 25 before the 6 PM close.
+## The completion bonus
+
+Steps are 6 / 16 / 21 hours: 100 by midnight, 75 by 10 AM, 50 by 3 PM, 25 before the 6 PM close.
+Measured over the two October weeks before the change: the bonus was 8–25% of a top-10 total and
+the 100-point tier was 68% of what was paid. With a 6 PM open most same-night finishers will take
+100, so watch that share; past about 85% the tiers no longer separate the top finishers.
+
+## The Instagram posts
+
+Both carousels go through the Instagram API, which caps a carousel at **10 slides**. The rule:
+if cover + one slide per record + the two closing slides fits in 10, everyone keeps their own
+slide. Otherwise #3, #2 and #1 keep individual slides and the rest are grouped, four to a slide at
+most, from the lowest rank up. Mockup: `public/brand/countdown/group.html` (awaiting approval;
+the Satori build follows it).
 
 ## Deploy checklist
 
 1. Deploy. Migration 048 deletes the stored 2026-09-27 times so the new defaults apply.
-2. **Open the platform panel → System settings → A&R Daily schedule and press Save once.**
-   The save re-stamps every cold drop's window. The drop that is open at deploy keeps the window
-   it started with (it closes at 3 PM as announced); the first 6 PM open is the next cold day.
-3. **makinitmag (Drupal):** the noon/3 PM lock-in on the review site moves to **5:00 PM ET**,
-   and the daily push should fire then. The ingest refuses days more than three out, so the
-   push time is the only thing to move. This is outside this repository.
-4. Tell the A&Rs once: the open email itself says the time, and the landing and daily pages read
-   it off the API, so no copy edit is needed anywhere public.
-
-## What did not change
-
-- The 24-hour window, the noon results time, the Monday–Sunday week, the Wednesday show and the
-  weekly update time.
-- The seal: results stay sealed until the noon publish.
-- The artist SMS window (10 AM – 10:30 PM ET); the 6 PM heads-up sits inside it.
+2. **Platform panel → System settings → A&R Daily schedule → Save once.** That re-stamps every
+   cold drop. The drop open at deploy keeps the window it started with.
+3. **makinitmag (Drupal):** move the review-site lock-in and push to **5:00 PM ET**.
+4. **The scheduled posting job:** countdown 6:00 AM ET, Top A&Rs 9:00 AM ET, reading each day's
+   Asana task (slides in order, caption, collaborators, who to tag on which slide, the comments).
