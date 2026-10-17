@@ -67,8 +67,9 @@ the 100-point tier was 68% of what was paid. With a 6 PM open most same-night fi
 Both carousels go through the Instagram API, which caps a carousel at **10 slides**. The rule:
 if cover + one slide per record + the two closing slides fits in 10, everyone keeps their own
 slide. Otherwise #3, #2 and #1 keep individual slides and the rest are grouped, four to a slide at
-most, from the lowest rank up. Mockup: `public/brand/countdown/group.html` (awaiting approval;
-the Satori build follows it).
+most, from the lowest rank up, bigger groups first (16 records = 4/3/3/3 then #3 #2 #1 = 10 slides;
+8 records = 3/2 then #3 #2 #1 = 8). Mockup `public/brand/countdown/group.html`, approved and built
+2026-10-17 (`countdownSlidePlan` in server.js, the `group` kind of `countdownSlide`).
 
 ## Deploy checklist
 

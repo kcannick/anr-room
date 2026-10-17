@@ -997,6 +997,13 @@ live on anr.makinitmag.com.
   slide only when needed (mockup `public/brand/countdown/group.html`, Satori build pending).
   048 deletes the stored 09-27 rows. **After deploy: SAVE the schedule once on the panel**, move
   the Drupal lock-in to 5PM, schedule the posting job. Doc: **docs/daily-schedule-2026-10-16.md**.
+  **LIVE 2026-10-17** (PR #54 merged, prod verified; mim Live lock 17:00). **Grouped slides BUILT
+  the same day** (operator approved the mockup): `countdownSlidePlan(n)` in server.js — one a slide
+  while cover + n + 2 ≤ 10, else #3/#2/#1 alone and #n…#4 grouped from the bottom, ≤ `CD_GROUP_MAX`
+  (4) a slide, bigger groups first (16 → 4/3/3/3; 8 → 3/2); `countdownSlide` kind `group` (`lo`,
+  `hi`, `rows`, `handles`) in share-cards.js, ticks lit as a range, never gold, a long title wraps
+  to two lines on the four-up; the Asana notes and the console tag readout list every handle on a
+  grouped slide.
   The schedule bullets below describe older clocks.
 - **Daily live stream RETIRED from every communication** (no migration, 2026-10-15, operator's
   call): the only live stream is **The A&R Room on Wednesday at 7:00 PM ET**, where the week's

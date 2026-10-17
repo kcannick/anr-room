@@ -1930,8 +1930,11 @@ async function resultsCarouselData(session, set, { photo = true } = {}) {
 // Operator, 2026-10-02: the day's records counted down on Instagram, ONE RECORD A SLIDE, RANK
 // ONLY — never a score, an average or a vote count; scores are private to the artist's Track
 // Report. cover · #N … #1 · the A&R Team (thanks + Become an A&R) · artists (submit + $1,000).
-// The day has 8–16 records; Instagram takes 20 images, so at most COUNTDOWN_MAX_RECORDS rank
-// slides (the cover and two closing slides take the other three).
+// The day has 4–16 records. The post goes through Instagram's API, which caps a carousel at
+// COUNTDOWN_MAX_SLIDES (10) — so when cover + one slide per record + the two closing slides
+// would not fit, #3, #2 and #1 keep their own slides and the rest are GROUPED, lowest ranks
+// first, as few slides as it takes (operator, 2026-10-17; at most CD_GROUP_MAX a slide, the
+// designer's call). countdownSlidePlan() is that rule, pure and tested.
 // A rank slide NEVER shows how many records there were — "3rd place isn't last unless we say
 // only 3 were racing" — so it carries its own rank and the blocks from there to #1, nothing else.
 // Order matches the console's countdown sort and the clip captions: room average, then more
@@ -1939,6 +1942,26 @@ async function resultsCarouselData(session, set, { photo = true } = {}) {
 // Dated the day it POSTS (results_at), like every graphic the day makes.
 // Public surface: song title, artist name, Instagram handle. Never email, phone or a score.
 const COUNTDOWN_MAX_RECORDS = 17;
+const COUNTDOWN_MAX_SLIDES = 10;
+const COUNTDOWN_SOLO = 3;                       // #3, #2, #1 always stand alone
+// Given n ranked records, the rank slides in posting order: [{ kind: 'rank', rank }] or
+// [{ kind: 'group', ranks: [lo..hi] }] for the grouped tail. Group sizes are as even as
+// possible, the bigger groups first (the lowest ranks), never over the designer's maximum.
+function countdownSlidePlan(n) {
+  if (n + 3 <= COUNTDOWN_MAX_SLIDES) return Array.from({ length: n }, (_, i) => ({ kind: 'rank', rank: n - i }));
+  const rest = n - COUNTDOWN_SOLO;                                   // ranks n..4
+  const groups = Math.max(1, Math.ceil(rest / shareCards.CD_GROUP_MAX));
+  const base = Math.floor(rest / groups), extra = rest % groups;
+  const out = [];
+  let r = n;
+  for (let g = 0; g < groups; g++) {
+    const size = base + (g < extra ? 1 : 0);
+    const ranks = []; for (let k = 0; k < size; k++) ranks.push(r--);
+    out.push({ kind: 'group', ranks });
+  }
+  for (; r >= 1; r--) out.push({ kind: 'rank', rank: r });
+  return out;
+}
 async function countdownCarouselData(session) {
   const rows = await db.all(
     `SELECT r.idx, r.song_title, r.song_artist, r.song_note, r.artist_instagram, r.room_average,
@@ -1954,10 +1977,19 @@ async function countdownCarouselData(session) {
     return { rank: i + 1, title: (r.song_title || '—').trim(), artist: (r.song_artist || '').trim(), handle: ig ? '@' + ig : '' };
   });
   const date = await dailySetDate(session);
-  const n = recs.length, total = n + 3;
+  const n = recs.length;
+  const plan = countdownSlidePlan(n), total = plan.length + 3;
+  const byRank = Object.fromEntries(recs.map(r => [r.rank, r]));
   const slides = [{ slide: 1, total, date, kind: 'cover', count: n }];
-  recs.slice().reverse().forEach((r, i) => slides.push({ slide: i + 2, total, date, kind: 'rank', ...r }));
-  slides.push({ slide: n + 2, total, date, kind: 'team' }, { slide: n + 3, total, date, kind: 'cta' });
+  plan.forEach((p, i) => {
+    if (p.kind === 'rank') slides.push({ slide: i + 2, total, date, kind: 'rank', ...byRank[p.rank] });
+    else {
+      const rows = p.ranks.map(rk => byRank[rk]);
+      slides.push({ slide: i + 2, total, date, kind: 'group', lo: p.ranks[0], hi: p.ranks[p.ranks.length - 1], rows,
+        handles: rows.map(r => r.handle).filter(Boolean) });
+    }
+  });
+  slides.push({ slide: total - 1, total, date, kind: 'team' }, { slide: total, total, date, kind: 'cta' });
   return { set: 'song', card: 'countdownSlide', date, total, records: recs, slides };
 }
 // ---- A&R Daily → Asana task content (the route is /api/admin/daily/asana-task) ----
@@ -2094,8 +2126,9 @@ function dailyAsanaNotes(rd, caption) {
       out.push('—', 'Comments: post each one under the carousel once it is up.', '');
       cm.forEach((c, i) => out.push(`${i + 1}) ${c}`, ''));
     }
-    const tags = rd.slides.filter(sl => sl.kind === 'rank' && sl.handle).map(sl => `Slide ${sl.slide} (#${sl.rank}): ${sl.handle}`);
-    if (tags.length) out.push('—', 'Tag each artist on their own slide:', ...tags, '');
+    const tags = rd.slides.filter(sl => (sl.kind === 'rank' && sl.handle) || (sl.kind === 'group' && sl.handles && sl.handles.length))
+      .map(sl => sl.kind === 'rank' ? `Slide ${sl.slide} (#${sl.rank}): ${sl.handle}` : `Slide ${sl.slide} (#${sl.lo}–#${sl.hi}): ${sl.handles.join(', ')}`);
+    if (tags.length) out.push('—', 'Tag each artist on their own slide (every artist on a grouped slide):', ...tags, '');
     out.push('Artists with no Instagram handle on file are not tagged or mentioned.', '');
   } else {
     // Collab with the #1 A&R, tag the other seven (operator, 2026-10-03).
@@ -11148,7 +11181,7 @@ async function handleApi(req, res, url) {
           // The Daily Countdown's artist mentions (comments, four a comment) and who to tag on each
           // slide: the record's handle on a rank slide; '' on the cover, the closing slides and a record with no handle.
           songComments: rsSong ? countdownComments(rsSong).comments : [],
-          songTags: rsSong ? rsSong.slides.map(sl => (sl.kind === 'rank' ? (sl.handle || '') : '')) : [] },
+          songTags: rsSong ? rsSong.slides.map(sl => (sl.kind === 'rank' ? (sl.handle || '') : sl.kind === 'group' ? (sl.handles || []).join(', ') : '')) : [] },
         // The winner posts (039): hosted at publish, captions, and whether each has a subject yet.
         asana: !!(await dailyAsanaProject()),
         // The automatic tasks: { song: { url, next, total, done, error }, ar: {...} }, or null when
@@ -12198,6 +12231,7 @@ module.exports._recapDateLabel = recapDateLabel;
 module.exports._resultsCarouselData = resultsCarouselData;
 module.exports._countdownCarouselData = countdownCarouselData;
 module.exports._countdownComments = countdownComments;
+module.exports._countdownSlidePlan = countdownSlidePlan;
 module.exports._dailyAsanaNotes = dailyAsanaNotes;
 module.exports._advanceDailyAsanaTasks = advanceDailyAsanaTasks;
 module.exports._dailyAsanaTaskName = dailyAsanaTaskName;

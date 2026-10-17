@@ -2216,6 +2216,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The 'song' set is the Makin' It Daily Countdown (2026-10-02): cover · one slide per record,
   // bottom up · the A&R Team · submit. Rank only.
   const rsSong = await srv._resultsCarouselData(pubbed, 'song');
+  // The 10-slide plan (operator, 2026-10-17): one a slide while it fits, else #3 #2 #1 alone and
+  // the rest grouped from the bottom, at most four a slide, bigger groups first.
+  const planOf = (n) => srv._countdownSlidePlan(n).map(p => p.kind === 'rank' ? String(p.rank) : '[' + p.ranks.join(',') + ']').join(' ');
+  ok('7 records fit one a slide (7 + 3 = 10)', planOf(7) === '7 6 5 4 3 2 1', planOf(7));
+  ok('8 records: #8–#4 grouped as 3 + 2, then #3 #2 #1 (8 slides)', planOf(8) === '[8,7,6] [5,4] 3 2 1', planOf(8));
+  ok('9 records: two groups of three (9 slides)', planOf(9) === '[9,8,7] [6,5,4] 3 2 1', planOf(9));
+  ok('16 records: 4 + 3 + 3 + 3, then #3 #2 #1 = 10 slides with the cover and closers', planOf(16) === '[16,15,14,13] [12,11,10] [9,8,7] [6,5,4] 3 2 1' && srv._countdownSlidePlan(16).length + 3 === 10, planOf(16));
+  ok('17 records (the cap) still land on 10 slides', srv._countdownSlidePlan(17).length + 3 === 10 && srv._countdownSlidePlan(17).every(p => p.kind !== 'group' || p.ranks.length <= 4), planOf(17));
+  ok('a group never holds more than four', [8, 10, 12, 14, 16, 17].every(n => srv._countdownSlidePlan(n).every(p => p.kind !== 'group' || p.ranks.length <= 4)));
+  const gPng = await require('./share-cards').renderPng('countdownSlide', { kind: 'group', date: '10.19.26', lo: 16, hi: 13, slide: 2, total: 10,
+    rows: [16, 15, 14, 13].map(r => ({ rank: r, title: 'Song ' + r, artist: 'Artist ' + r, handle: r === 14 ? '' : '@artist' + r })) });
+  ok('a group slide renders at 1080x1350', gPng.readUInt32BE(16) === 1080 && gPng.readUInt32BE(20) === 1350);
   ok('three records make six countdown slides: cover, #3, #2, #1, A&R Team, submit',
     rsSong && rsSong.card === 'countdownSlide' && rsSong.total === 6
       && rsSong.slides.map(s => s.kind + (s.rank || '')).join(',') === 'cover,rank3,rank2,rank1,team,cta',

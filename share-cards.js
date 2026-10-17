@@ -735,13 +735,16 @@ function countdownGlowUri() {
 }          // the record block ends above the submit strip (1350 − 80 − 150 − 34)
 // One skewed block per rank, highest first; the lit one green (gold at #1). One row always:
 // the blocks narrow as the count grows, capped so a short run doesn't turn into bricks.
-function countdownTicks(from, lit, { max, gap, h: hMax }) {
+// `litTo` lights a RANGE (lit down to litTo) for a group slide; green, never gold — first place
+// has its own slide.
+function countdownTicks(from, lit, { max, gap, h: hMax, litTo = null }) {
   const w = Math.min(max, (912 - gap * (from - 1)) / from);
   const hgt = Math.min(hMax, Math.round(w * 0.95));
   const fs = Math.round(Math.max(17, Math.min(hMax * 0.46, w * 0.42)));
   const kids = [];
   for (let r = from; r >= 1; r--) {
-    const on = r === lit, col1 = r === 1 ? RESULTS_GOLD : RECAP.green;
+    const on = litTo != null ? (r <= lit && r >= litTo) : r === lit;
+    const col1 = r === 1 && litTo == null ? RESULTS_GOLD : RECAP.green;
     kids.push(h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: w, height: hgt, marginRight: r > 1 ? gap : 0,
       border: '2px solid ' + (on ? col1 : RECAP.line), background: on ? col1 : 'transparent', borderRadius: 5,
       transform: `skewX(${SKEW}deg)`, flexShrink: 0 }, [
@@ -779,6 +782,44 @@ function countdownFit(d, minTop) {
   return { title, artist: clip(artist, Math.floor(W / (artistFs * 0.52))), handle: clip(handle, Math.floor(W / (handleFs * 0.6 || 1))),
     fs, lines, artistFs, handleFs, top: Math.round(Math.max(minTop, CD_INFO_BOTTOM - h0)) };
 }
+// The submit strip under a record or a group: a rule, the question, the link, one button.
+function countdownStrip() {
+  return [
+    h({ position: 'absolute', left: 80, top: 1120, width: 920, height: 2, background: RECAP.line }, ''),
+    text(RES_DISPLAY(36, RECAP.fg, { position: 'absolute', left: 80, top: 1152, textTransform: 'uppercase', letterSpacing: -1 }), COUNTDOWN_COPY.question),
+    text({ position: 'absolute', left: 80, top: 1206, fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, ...NOWRAP }, SUBMIT_URL),
+    h({ position: 'absolute', right: 90, bottom: 80, height: 72, display: 'flex', alignItems: 'center', background: RECAP.green,
+      borderRadius: 6, paddingLeft: 32, paddingRight: 32, transform: `skewX(${SKEW}deg)` }, [
+      text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), COUNTDOWN_COPY.submit),
+    ]),
+  ];
+}
+// The GROUP slide (operator approved 2026-10-17, mockup public/brand/countdown/group.html):
+// Instagram's API caps a carousel at 10 slides, so when a day does not fit one-record-a-slide,
+// #3, #2 and #1 keep their own slides and the rest ride 2–4 to a slide, counting DOWN (lowest
+// rank at the top). The ticks run from the group's lowest rank to #1 with the group lit — the
+// single slides' device, so the size of the field is never stated. Four to a slide at most
+// (the designer's call: six is a text wall at grid size); five or six fall back to the dense
+// layout. Rank only. Gold never appears here.
+const CD_GROUP_MAX = 4;
+function countdownGroupRows(rows) {
+  const dense = rows.length >= 5;
+  const W = 920 - (dense ? 150 : 200) - 28;
+  return rows.map(r => {
+    let title = '“' + clip(r.title || '—', 70) + '”';
+    let fs = dense ? 40 : 52;
+    const floor = dense ? 30 : 40;
+    while (fs > floor && title.length * fs * 0.58 > W) fs -= 2;
+    // Past the floor the four-up wraps to two lines at 36 (the mockup's rule); six-up has no room.
+    let wrap = false;
+    if (title.length * fs * 0.58 > W) {
+      if (!dense) { fs = 36; wrap = true; title = clip(title, Math.floor(2 * W / (fs * 0.58))); }
+      else title = clip(title, Math.floor(W / (fs * 0.58)));
+    }
+    const artist = clip(String(r.artist || '').trim(), 40), handle = clip(r.handle || '', 30);
+    return { rank: r.rank, title, artist, handle, fs, wrap };
+  });
+}
 function elementCountdownSlide(d) {
   const kind = d.kind || 'rank';
   const kids = [];
@@ -815,6 +856,42 @@ function elementCountdownSlide(d) {
     ]));
     kids.push(field(360));
     kids.push(text({ position: 'absolute', left: 80, bottom: 80, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, SUBMIT_URL));
+  } else if (kind === 'group') {
+    const rows0 = (d.rows || []).slice().sort((a, b) => b.rank - a.rank);
+    const lo = d.lo || (rows0[0] || {}).rank || 1, hi = d.hi || (rows0[rows0.length - 1] || {}).rank || lo;
+    const dense = rows0.length >= 5;
+    kids.push(...countdownMast(d));
+    kids.push(row({ position: 'absolute', left: 84, top: 226 }, countdownTicks(lo, lo, { max: 78, gap: 9, h: 46, litTo: hi })));
+    const hash = (mt) => text({ fontFamily: MONO, fontWeight: 700, fontSize: 72, lineHeight: 1, color: RECAP.green, marginTop: mt, marginRight: 2, ...NOWRAP }, '#');
+    const big = (n) => text({ fontFamily: MONO, fontWeight: 700, fontSize: 132, lineHeight: 1, letterSpacing: -5, color: RECAP.fg, ...NOWRAP }, String(n));
+    kids.push(row({ position: 'absolute', left: 80, top: 306, alignItems: 'flex-start' }, [
+      hash(52), big(lo),
+      h({ width: 44, height: 14, background: RECAP.dim, borderRadius: 3, transform: `skewX(${SKEW}deg)`, marginLeft: 22, marginRight: 26, marginTop: 59 }, ''),
+      hash(52), big(hi),
+    ]));
+    const fitted = countdownGroupRows(rows0);
+    const areaTop = 460, areaH = 1350 - areaTop - 264, rh = Math.floor(areaH / fitted.length);
+    const nw = dense ? 150 : 200, tw = 920 - nw - 28;
+    kids.push(col({ position: 'absolute', left: 80, top: areaTop, width: 920, height: areaH }, fitted.flatMap((r, i) => [
+      ...(i ? [h({ width: 920, height: 2, background: RECAP.line, flexShrink: 0 }, '')] : []),
+      row({ width: 920, height: rh - (i ? 2 : 0), alignItems: 'center', flexShrink: 0 }, [
+        row({ width: nw, alignItems: 'flex-start', flexShrink: 0 }, [
+          text({ fontFamily: MONO, fontWeight: 700, fontSize: dense ? 28 : 36, lineHeight: 1, color: RECAP.green, marginTop: dense ? 6 : 10, marginRight: -2, ...NOWRAP }, '#'),
+          text({ fontFamily: MONO, fontWeight: 700, fontSize: dense ? 64 : 96, lineHeight: 1, letterSpacing: -3, color: RECAP.fg, ...NOWRAP }, String(r.rank)),
+        ]),
+        col({ marginLeft: 28, width: tw }, [
+          text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: r.fs, lineHeight: r.wrap ? 0.95 : 1, letterSpacing: -2, color: RECAP.fg, width: tw, ...(r.wrap ? {} : NOWRAP) }, r.title),
+          ...(dense
+            ? [row({ marginTop: 8, alignItems: 'flex-end' }, [
+                text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 26, lineHeight: 1.1, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, r.artist),
+                ...(r.handle ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, lineHeight: 1.1, color: RECAP.dim, marginLeft: 14, ...NOWRAP }, r.handle)] : []),
+              ])]
+            : [text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 32, lineHeight: 1.1, letterSpacing: -1, color: RECAP.fg, marginTop: 10, ...NOWRAP }, r.artist),
+               ...(r.handle ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, lineHeight: 1.1, color: RECAP.dim, marginTop: 4, ...NOWRAP }, r.handle)] : [])]),
+        ]),
+      ]),
+    ])));
+    kids.push(...countdownStrip());
   } else {
     const R = Math.max(1, d.rank || 1), top1 = R === 1;
     const accent = top1 ? RESULTS_GOLD : RECAP.green;
@@ -839,14 +916,8 @@ function elementCountdownSlide(d) {
       text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: f.artistFs, lineHeight: 1.1, letterSpacing: -1, color: RECAP.fg, marginTop: 26, ...NOWRAP }, f.artist),
       ...(f.handle ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: f.handleFs, lineHeight: 1.3, color: RECAP.dim, marginTop: 8, ...NOWRAP }, f.handle)] : []),
     ]));
-    // The submit strip: a rule, the question, the link, one button — under the record, never over it.
-    kids.push(h({ position: 'absolute', left: 80, top: 1120, width: 920, height: 2, background: RECAP.line }, ''));
-    kids.push(text(RES_DISPLAY(36, RECAP.fg, { position: 'absolute', left: 80, top: 1152, textTransform: 'uppercase', letterSpacing: -1 }), COUNTDOWN_COPY.question));
-    kids.push(text({ position: 'absolute', left: 80, top: 1206, fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, ...NOWRAP }, SUBMIT_URL));
-    kids.push(h({ position: 'absolute', right: 90, bottom: 80, height: 72, display: 'flex', alignItems: 'center', background: RECAP.green,
-      borderRadius: 6, paddingLeft: 32, paddingRight: 32, transform: `skewX(${SKEW}deg)` }, [
-      text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), COUNTDOWN_COPY.submit),
-    ]));
+    // The submit strip — under the record, never over it.
+    kids.push(...countdownStrip());
   }
   return h({ position: 'relative', display: 'flex', width: COUNTDOWN_SIZE[0], height: COUNTDOWN_SIZE[1], background: RECAP.bg, overflow: 'hidden' }, kids);
 }
@@ -1831,4 +1902,4 @@ async function renderPng(type, data, outWidth) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, GRADE_SIZES, GRADE_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
+module.exports = { CD_GROUP_MAX, renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, GRADE_SIZES, GRADE_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
