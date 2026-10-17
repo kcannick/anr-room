@@ -2074,8 +2074,9 @@ function dailyAsanaTaskName(rd) {
 }
 const TOP_AR_COLLAB = '@makinitmusicreview';
 // The countdown posts from @makinit4indies with @TheAnRTeam and the top 3 artists invited as
-// collaborators (operator, 2026-10-17; Instagram allows five). Post times are the operator's
-// scheduled job: countdown 6:00 AM ET on the results day, Top A&Rs 9:00 AM.
+// collaborators (operator, 2026-10-17; Instagram allows five). The task is made at the render
+// (the close); the operator's job schedules both posts in SocialBee that evening, with their
+// post times set: countdown 6:00 AM ET on the results day, Top A&Rs 9:00 AM.
 const COUNTDOWN_FROM = '@makinit4indies';
 const COUNTDOWN_COLLAB = '@TheAnRTeam';
 const COUNTDOWN_COLLAB_TOP = 3;
@@ -2086,7 +2087,7 @@ function dailyAsanaNotes(rd, caption) {
   if (rd.set === 'song') {
     const top = rd.slides.filter(sl => sl.kind === 'rank' && sl.rank <= COUNTDOWN_COLLAB_TOP && sl.handle)
       .sort((a, b) => a.rank - b.rank).map(sl => `${sl.handle} (#${sl.rank})`);
-    out.push('—', `Post from ${COUNTDOWN_FROM} at ${COUNTDOWN_POST_TIME} on the results day.`,
+    out.push('—', `Schedule in SocialBee from ${COUNTDOWN_FROM} to post at ${COUNTDOWN_POST_TIME} on ${rd.date}.`,
       `Collab: invite ${COUNTDOWN_COLLAB}${top.length ? ' and the top 3 artists: ' + top.join(', ') : ''} as collaborators.`, '');
     const cm = countdownComments(rd).comments;
     if (cm.length) {
@@ -2101,7 +2102,7 @@ function dailyAsanaNotes(rd, caption) {
     const hero = rd.slides[0].hero || {};
     const rest = rd.slides.filter(sl => sl.kind === 'list').flatMap(sl => sl.rows).map(r => r.handle).filter(Boolean);
     // @makinitmusicreview is always a collaborator too (operator, 2026-10-03).
-    out.push('—', `Post from ${COUNTDOWN_FROM} at ${TOP_AR_POST_TIME} on the results day.`);
+    out.push('—', `Schedule in SocialBee from ${COUNTDOWN_FROM} to post at ${TOP_AR_POST_TIME} on ${rd.date}.`);
     out.push(hero.handle ? `Collab: invite ${TOP_AR_COLLAB} and ${hero.handle} (#1) as collaborators.`
       : `Collab: invite ${TOP_AR_COLLAB} as a collaborator. The #1 A&R (${hero.title}) has no Instagram handle on file, so they are not a collaborator.`);
     if (rest.length) out.push(`Tag the other top A&Rs: ${rest.join(', ')}`);

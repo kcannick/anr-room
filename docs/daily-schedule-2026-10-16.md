@@ -14,7 +14,7 @@ the reasoning, and the deploy checklist. It supersedes the 69-hour clock of 2026
 | 2 | 10:00 AM | Bonus 75 → 50 | shown on /daily |
 | 2 | 3:00 PM | Bonus 50 → 25 | shown on /daily |
 | 2 | 6:00 PM | **Voting closes and tallies.** The next drop opens at the same moment. No heads-up to artists. | system |
-| 2 | after the tally | Both Instagram carousels render; the Asana post tasks are made. Nothing is revealed. | system / Asana |
+| 2 | after the tally | Both Instagram carousels render; the Asana post tasks are made. The operator's job schedules both posts in SocialBee for 6:00 AM and 9:00 AM. Nothing is revealed. | system / Asana / SocialBee |
 | 3 | 6:00 AM | **Daily Countdown posts** from @makinit4indies (the operator's scheduled job, through SocialBee). @TheAnRTeam and the top 3 artists are collaborators; every artist is tagged on their slide. **This is the publish:** scores appear on /daily and My results, the results callback goes to makinitmag. | public / Instagram |
 | 3 | 9:00 AM | **Top A&Rs carousel posts**, collab with the #1 A&R, seven tagged | public / Instagram |
 | 3 | 3:00 PM | **Artist email:** the Track Report, to every artist whose record was reviewed | artists / email |
@@ -76,5 +76,7 @@ the Satori build follows it).
 2. **Platform panel → System settings → A&R Daily schedule → Save once.** That re-stamps every
    cold drop. The drop open at deploy keeps the window it started with.
 3. **makinitmag (Drupal):** move the review-site lock-in and push to **5:00 PM ET**.
-4. **The scheduled posting job:** countdown 6:00 AM ET, Top A&Rs 9:00 AM ET, reading each day's
-   Asana task (slides in order, caption, collaborators, who to tag on which slide, the comments).
+4. **The scheduling job:** runs once each evening after the close (about 7:00 PM ET), reads the
+   day's two Asana tasks (slides in order, caption, collaborators, who to tag on which slide, the
+   comments) and schedules both posts in SocialBee with their post times set: countdown 6:00 AM
+   ET, Top A&Rs 9:00 AM ET on the results day.
