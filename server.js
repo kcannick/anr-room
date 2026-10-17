@@ -1847,12 +1847,12 @@ function recapDateLabel(ts) {
   const g = (t) => (p.find(x => x.type === t) || {}).value || '';
   return `${g('month')}.${g('day')}.${g('year')}`;
 }
-// A daily set is NAMED FOR THE DAY IT CLOSES (operator, 2026-10-03): it opens the day before,
-// closes on the named date and is posted the day after, like a sports result. Never results_at —
-// under the 69-hour clock that is two days after the close, and the posts for the Oct 2 and Oct 3
-// closes went out dated 10.04 and 10.05.
+// A daily set is NAMED FOR ITS RELEASE DATE (operator, 2026-10-14; was the close date, 10-03):
+// the day its countdown posts. Under the evening clock (2026-10-17) the countdown post IS the
+// publish, so the release date is results_at's ET day — the slides, the captions, the Asana task
+// names and "schedule to post on <date>" all print the day the post goes up.
 async function dailySetDate(session) {
-  return recapDateLabel(Number(session.window_closes_at) || dropWindowFor(session.drop_day, await dailySchedule()).closesAt || now());
+  return recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
 }
 // "Daily at 3PM" off the stream's own epoch, so the graphic and the caption follow the setting.
 function recapTimeLabel(ts) {
