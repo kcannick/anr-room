@@ -973,6 +973,31 @@ live on anr.makinitmag.com.
   (≥23h apart, after 4AM ET; continues on later ticks while `remaining`; failures retry hourly).
   Brevo allows one SMS number per contact, so a phone already claimed (A&Rs first) is left off
   the next contact. `BREVO_API_KEY` env; `BREVO_API_BASE` is the test mock. Doc: docs/brevo-sync.md.
+- **The evening clock — daily drop opens 6:00 PM ET, results publish with the countdown post**
+  (048, 2026-10-17; branch `claude/ar-program-release-timing-d614ef`, PR #54 open when written).
+  Six weeks of prod votes: A&Rs rate when the OPEN EMAIL lands (46% of a day's raters start within
+  3h of the open; the peak moved with the open from noon to 3PM), the only self-driven window is
+  7–11PM ET, nothing happens 11PM–10AM, audience ~70% Eastern / 20% Central, Wed drops draw the
+  most raters and Fri the fewest. The operator's chain (Day 1 = open day): **5PM** Drupal lock +
+  push · **6PM open** (email burst lands on the evening window; 7PM collides with the show) ·
+  **6PM next day close + tally**, both carousels render AT THE CLOSE (`streamDays 0`) and are held
+  privately · **6AM Day 3 = PUBLISH** (`resultsDays 1, resultsMin 6:00`): the Daily Countdown
+  POSTS from @makinit4indies via SocialBee (the operator's scheduled Claude job in Chrome) with
+  @TheAnRTeam + the top 3 artists as collabs — the post IS the reveal; seal lifts, callback fires ·
+  **9AM** Top A&Rs carousel · **3PM** the EMAILS (`artistDelayMin` 540 now holds BOTH the A&R
+  mail and the Track Reports) · **4PM** Brevo (`BREVO_SYNC_HOUR`). 36h open→publish, two drops in
+  flight. Bonus steps **6 / 16 / 21 h** (midnight / 10AM / 3PM).
+  **Artist heads-up at the close RETIRED** (operator): the artist hears from the program once,
+  with the report; the cron queues no `artist_headsups` (manual send kept). **Three A&R mails:**
+  results · missed yesterday · **missed the last two** (`dailyMissedTwiceEmail*`, "get back in the
+  game"), then nothing until they rate again; every daily mail carries the Wednesday show line.
+  **Weekly mail → THURSDAY noon** (`WEEKLY_SEND_DOW 4`): the results of Wednesday's show (Top 8 +
+  the two seats + replay) to EVERY subscribed A&R — `nudge` (non-engaged only, 4-send sunset) is
+  OFF. Instagram API caps a carousel at **10 slides**: top 3 individual, the rest grouped ≤4 a
+  slide only when needed (mockup `public/brand/countdown/group.html`, Satori build pending).
+  048 deletes the stored 09-27 rows. **After deploy: SAVE the schedule once on the panel**, move
+  the Drupal lock-in to 5PM, schedule the posting job. Doc: **docs/daily-schedule-2026-10-16.md**.
+  The schedule bullets below describe older clocks.
 - **Daily live stream RETIRED from every communication** (no migration, 2026-10-15, operator's
   call): the only live stream is **The A&R Room on Wednesday at 7:00 PM ET**, where the week's
   Top 8 are announced and the week's finalist for the $1,000 Music Tournament is picked.
