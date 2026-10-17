@@ -1071,7 +1071,51 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const rp = (await call('/api/me/referrals', null, 'GET', { 'X-Player-Token': inviterTok })).d;
   ok('a player token resolves to the account (no separate login)', rp.me && rp.me.uid === INVITER_UID, JSON.stringify(rp.me));
   ok('the join link carries the uid into this app', rp.links && rp.links.join === rsrv._referralLinks(INVITER_UID).join && /\?ref=/.test(rp.links.join), JSON.stringify(rp.links));
-  ok('the submit link goes to makinitmag.com/review with the same uid', rp.links.submit === 'https://www.makinitmag.com/review?ref=' + encodeURIComponent(INVITER_UID), rp.links.submit);
+  ok('the submit link goes through /r/<uid> on this app', rp.links.submit === rsrv._referralLinks(INVITER_UID).submit && rp.links.submit.endsWith('/r/' + encodeURIComponent(INVITER_UID)), rp.links.submit);
+  ok('the page carries the click counts, zero before anyone opens it', rp.clicks && rp.clicks.week === 0 && rp.clicks.total === 0, JSON.stringify(rp.clicks));
+
+  console.log('\n— /r/<uid>: count the click, 302 to the review form with the ref —');
+  const FORM = 'https://www.makinitmag.com/opportunities/anr-meeting';
+  const ptsBefore = JSON.stringify([await rDb.get('SELECT lifetime_points FROM users WHERE uid = ?', [INVITER_UID]), await rDb.get('SELECT COUNT(*) AS c FROM point_events WHERE user_id = ?', [INVITER_UID])]);
+  const clickRows = async (kind) => Number((await rDb.get('SELECT COUNT(*) AS c FROM referral_clicks WHERE user_id = ? AND kind = ?', [INVITER_UID, kind])).c);
+  const hit = (path, ua, method = 'GET', ip = '203.0.113.7') => fetch(base + path, { method, redirect: 'manual', headers: { 'User-Agent': ua, 'X-Forwarded-For': ip + ', 10.0.0.1' } });
+  const BROWSER = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148';
+  const r1 = await hit('/r/' + encodeURIComponent(INVITER_UID), BROWSER);
+  ok('a valid uid 302s to the form with the ref, case intact', r1.status === 302 && r1.headers.get('location') === FORM + '?ref=' + encodeURIComponent(INVITER_UID), r1.status + ' -> ' + r1.headers.get('location'));
+  ok('the redirect is never cached', /no-store/.test(r1.headers.get('cache-control') || ''), r1.headers.get('cache-control'));
+  ok('the redirect keeps www. (the bare domain adds a 301)', /^https:\/\/www\.makinitmag\.com\//.test(r1.headers.get('location') || ''));
+  await hit('/r/' + encodeURIComponent(INVITER_UID), BROWSER);
+  await hit('/r/' + encodeURIComponent(INVITER_UID), BROWSER);
+  ok('the same visitor three times in a day is one human row', await clickRows('human') === 1, String(await clickRows('human')));
+  await hit('/r/' + encodeURIComponent(INVITER_UID), BROWSER, 'GET', '198.51.100.4');
+  ok('a second visitor is a second row', await clickRows('human') === 2, String(await clickRows('human')));
+  await hit('/r/' + encodeURIComponent(INVITER_UID), 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+  ok('a link previewer is recorded as a bot', await clickRows('bot') === 1 && await clickRows('human') === 2, (await clickRows('bot')) + ' bot');
+  await hit('/r/' + encodeURIComponent(INVITER_UID), '', 'GET', '192.0.2.9');
+  ok('an empty user agent is a bot', await clickRows('bot') === 2, String(await clickRows('bot')));
+  const rHead = await hit('/r/' + encodeURIComponent(INVITER_UID), BROWSER, 'HEAD', '192.0.2.77');
+  ok('HEAD still redirects', rHead.status === 302 && rHead.headers.get('location') === FORM + '?ref=' + encodeURIComponent(INVITER_UID), rHead.status + ' ' + rHead.headers.get('location'));
+  ok('HEAD is not counted', await clickRows('human') === 2 && await clickRows('bot') === 2);
+  const totalRows = async () => Number((await rDb.get('SELECT COUNT(*) AS c FROM referral_clicks', [])).c);
+  const clicksBefore = await totalRows();
+  for (const bad of ['/r/bad%20value', '/r/short', '/r/', '/r/%E0%A4%A']) {
+    const rb = await hit(bad, BROWSER);
+    ok(`an invalid uid (${bad}) still 302s to the form, without the ref`, rb.status === 302 && rb.headers.get('location') === FORM, rb.status + ' -> ' + rb.headers.get('location'));
+  }
+  const rUnknown = await hit('/r/NotARealUid123', BROWSER);
+  ok('a well-formed uid with no account redirects with its ref', rUnknown.status === 302 && rUnknown.headers.get('location') === FORM + '?ref=NotARealUid123');
+  ok('invalid and unknown uids record nothing', await totalRows() === clicksBefore, (await totalRows()) + " vs " + clicksBefore);
+  // A tracking failure must never stop the artist: take the table away and click.
+  await rDb.run('ALTER TABLE referral_clicks RENAME TO referral_clicks_hold', []);
+  const _err = console.error; console.error = () => {};
+  const rFail = await hit('/r/' + encodeURIComponent(INVITER_UID), BROWSER, 'GET', '192.0.2.200');
+  console.error = _err;
+  await rDb.run('ALTER TABLE referral_clicks_hold RENAME TO referral_clicks', []);
+  ok('a failing insert still redirects', rFail.status === 302 && rFail.headers.get('location') === FORM + '?ref=' + encodeURIComponent(INVITER_UID), rFail.status);
+  const rpClicks = (await call('/api/me/referrals', null, 'GET', { 'X-Player-Token': inviterTok })).d;
+  ok('/refer counts human opens only (this week and all time)', rpClicks.clicks.week === 2 && rpClicks.clicks.total === 2, JSON.stringify(rpClicks.clicks));
+  ok('the raw IP and user agent are never stored', !JSON.stringify(await rDb.all('SELECT * FROM referral_clicks', [])).match(/203\.0\.113|iPhone|facebook/));
+  ok('clicks award nothing', JSON.stringify([await rDb.get('SELECT lifetime_points FROM users WHERE uid = ?', [INVITER_UID]), await rDb.get('SELECT COUNT(*) AS c FROM point_events WHERE user_id = ?', [INVITER_UID])]) === ptsBefore);
   ok('the rules ride the payload (nothing hardcoded on the page)', rp.rules.cap === 240 && rp.rules.windowDays === 30 && rp.rules.errMax === 1.5 && rp.rules.scoutMultiplier === 5, JSON.stringify(rp.rules));
   ok('the A&R lane counts the invitee and what they paid', rp.ars.referred === 1 && rp.ars.active === 1 && rp.ars.earned === 1, JSON.stringify(rp.ars));
   ok('invitee rows carry a display name and the day of the window, never an email',
@@ -5628,7 +5672,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('brevo: an A&R carries name, phone and their three links — nothing else', brvDana
     && Object.keys(brvDana.attributes).sort().join(',') === 'ANR_CARD_IMAGE,ANR_REFERRAL_LINK,ARTIST_REFERRAL_LINK,FIRSTNAME,LASTNAME,SMS'
     && brvDana.attributes.FIRSTNAME === 'Dana' && brvDana.attributes.LASTNAME === 'Q Public', JSON.stringify(brvDana));
-  ok('brevo: the referral links carry the A&R\'s uid', brvDana && /\/\?ref=bvuser1$/.test(brvDana.attributes.ANR_REFERRAL_LINK) && /review\?ref=bvuser1$/.test(brvDana.attributes.ARTIST_REFERRAL_LINK), JSON.stringify(brvDana && brvDana.attributes));
+  ok('brevo: the referral links carry the A&R\'s uid', brvDana && /\/\?ref=bvuser1$/.test(brvDana.attributes.ANR_REFERRAL_LINK) && /\/r\/bvuser1$/.test(brvDana.attributes.ARTIST_REFERRAL_LINK), JSON.stringify(brvDana && brvDana.attributes));
   // The card is a public image URL an email can show: no login, cached by version.
   const brvImgPath = brvDana && (/^https?:\/\/[^/]+(\/api\/card\/anr\/bvuser1\.png\?v=[0-9a-f]{12})$/.exec(brvDana.attributes.ANR_CARD_IMAGE) || [])[1];
   ok('brevo: the card is an image URL for that A&R, versioned', !!brvImgPath, String(brvDana && brvDana.attributes.ANR_CARD_IMAGE));
@@ -5966,7 +6010,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const has = (t, re) => re.test(t);
     const want = [/90 seconds of 1 song/, /play a full song/, /3 full songs/, /No song may be repeated/, /top 18 songs/, /This is WAR/, /\$500 Cash Prize and a feature in the next issue of Makin' It Magazine/,
       /points accumulated for the current series/, /live on camera/, /RSVP to watch live:\s*\S+\/wars/, /Comment #ANR/, /makinitmag\.com\/push/, /\/daily/, /Bonus Points/, /Review daily drops early/,
-      new RegExp('\\?ref=' + mu.uid + '(\\s|$)'), new RegExp('makinitmag\\.com/review\\?ref=' + mu.uid), /Here's your personal link to refer new artists: https:\/\/www\.makinitmag\.com\/review\?ref=/, /Here's your personal link to refer new A&Rs: /, /^Hi Maya,/, /Reply with your makinitmag\.com username so we can add a Win to your account: Top A&R and Chosen to compete in the A&R Wars Tournament\./];
+      new RegExp('\\?ref=' + mu.uid + '(\\s|$)'), new RegExp('/r/' + mu.uid), /Here's your personal link to refer new artists: https?:\/\/[^\s]+\/r\//, /Here's your personal link to refer new A&Rs: /, /^Hi Maya,/, /Reply with your makinitmag\.com username so we can add a Win to your account: Top A&R and Chosen to compete in the A&R Wars Tournament\./];
     const missing = want.filter(re => !has(m.text, re));
     ok('package: the briefing email carries the operator\'s copy, the personal links and the caption', missing.length === 0 && m.subject === "You're in A&R Wars #1: tournament details and your promo graphics"
       && m.text.includes(tnPkgCap.caption) && /<pre/.test(m.html) && m.html.includes('/wars') && m.html.includes('makinitmag.com/push'), 'missing: ' + missing.map(String).join(' | '));

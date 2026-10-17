@@ -172,6 +172,9 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 .pf-row .v{text-align:right;min-width:0}
 .pill{display:inline-block;font-family:"Space Mono",monospace;font-size:10.5px;border:1px solid var(--line);border-radius:999px;padding:3px 9px;margin:2px 0 2px 4px;color:var(--ink)}
 .pill.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+/* Opens of the scout link (human only; diagnosis, never points). Approved 2026-09-23. */
+.opens{margin:-2px 0 0;font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-dim)}
+.opens b{color:var(--ink);font-weight:700}
 .endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
 .endorse img{height:13px;width:auto;opacity:.75}
 </style>
@@ -242,6 +245,7 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
       <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="artistRule"></p>
       <label>Your scout link</label>
       <div class="linkrow"><span class="url" id="linkSubmit"></span><button class="copy" data-copy="linkSubmit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <p class="opens hide" id="submitOpens"></p>
       <div class="prize"><span class="tick prize"></span><span>Every artist who submits is entered in the <b>$1,000 Giveaway</b> for a $1,000 Promo Budget.</span></div>
       <div class="stats">
         <div class="stat"><div class="k">Submitted</div><div class="v" id="artSubmitted">0</div></div>
@@ -409,6 +413,12 @@ function render(d){
   $('#linkJoin').textContent = stripProto(d.links.join);
   $('#linkSubmit').textContent = stripProto(d.links.submit);
   $('#linkJoin').dataset.full = d.links.join; $('#linkSubmit').dataset.full = d.links.submit;
+  const c = d.clicks;
+  if (c) {
+    $('#submitOpens').innerHTML = !c.total ? 'No one has opened this link yet.'
+      : '<b>' + c.week + '</b> ' + (c.week === 1 ? 'person' : 'people') + ' opened your link this week · <b>' + c.total + '</b> all time';
+    $('#submitOpens').classList.remove('hide');
+  }
   $('#arRule').textContent = 'You earn ' + r.pointsPerRound + ' point for every round your recruit comes within ' + r.errMax + ' of the average, for their first ' + r.windowDays + ' days, up to ' + r.cap + ' points each.';
   $('#artistRule').textContent = 'You earn ' + r.scoutMultiplier + ' times each referred record’s average. A 7.1 earns ' + Math.round(7.1 * r.scoutMultiplier) + ' points.';
   $('#arReferred').textContent = d.ars.referred; $('#arActive').textContent = d.ars.active; $('#arEarned').textContent = fmtPts(d.ars.earned);

@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 047; suite green)
+## Current state (migrations through 047, plus 049; 048 is open in PR #54; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -1112,6 +1112,25 @@ live on anr.makinitmag.com.
   - **Brevo:** closing an account deletes the Brevo contact (`brevoForget`, best-effort) and
     clears its `brevo_sync` ledger rows; the sync skips deactivated/deleted accounts (but still
     NOT blocked ones — the operator's Brevo rule). A reactivated A&R re-syncs on the next run.
+- **Referral link clicks** (049, built 2026-09-23 as 041, renumbered at merge 2026-10-17): the submit link an A&R shares is now
+  `<publicBase>/r/<uid>`, which records the open in `referral_clicks` and 302s (no-store) to
+  `https://www.makinitmag.com/opportunities/anr-meeting?ref=<uid>` — the FINAL form URL, with
+  `www.` (the bare domain 301s), not `/review` (which only reaches the form through two old
+  redirects). One row per (ET day, uid, visitor); visitor = sha256(ip|ua|day)[:32], so the raw
+  IP/UA are never stored. Previewers/crawlers are kept as `kind='bot'` rows so the filter can be
+  checked; A&Rs only ever see human rows. GET only (HEAD redirects, uncounted); an invalid uid
+  still 302s, without the ref; unknown/blocked uids redirect uncounted; the insert is
+  best-effort — a tracking failure never stops the artist. **Diagnosis only: clicks award
+  nothing** (credit still comes only from a submission Drupal attributes). Links posted before
+  this (`makinitmag.com/review?ref=`) go straight to Drupal and are never counted — accepted
+  (Kelby, 2026-09-23); no Drupal-side counter. `/api/me/referrals` carries `clicks.{week,total}`
+  (last 7 ET days / all time). **On a preview deploy** the link is built off `publicBase()`
+  (`PUBLIC_BASE_URL`, else the production host): with it unset, preview-issued links point at
+  prod and count there — only for a uid that exists in prod; with it set to the preview host,
+  they count in the preview DB. Both are fine for a diagnosis number. Spec:
+  docs/specs/referral-click-tracking-prompt.md. The account page (`/account`, which `/refer` serves) prints one line under the scout link
+  ("N people opened your link this week · M all time", or "No one has opened this link yet."),
+  built to the approved mockup `public/_mock-refer-clicks.html`.
 
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
