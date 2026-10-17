@@ -195,13 +195,22 @@ if (USE_PG) {
   //   'no-verify'    -> TLS but skip certificate verification (pre-2026-07 behavior)
   //   default        -> TLS with FULL certificate verification (Neon serves public-CA
   //                     certs; Node's bundled roots validate them)
+  // DIRECT, NOT POOLED (2026-09-27 outage): Neon's pooled endpoint (`-pooler` host) began
+  // forcing default_transaction_read_only=on for every session while the direct endpoint
+  // stayed read-write, so every cold start's init failed with "cannot execute CREATE TABLE
+  // in a read-only transaction" and the whole site answered "Database not ready". The Neon
+  // integration manages DATABASE_URL (Vercel offers no edit), so the switch lives here: use
+  // the integration's DATABASE_URL_UNPOOLED when present. `max: 5` per instance keeps direct
+  // connections well inside the compute's limit at our traffic. PG_USE_POOLER=1 goes back.
+  const rawPgUrl = (process.env.PG_USE_POOLER !== '1' && process.env.DATABASE_URL_UNPOOLED)
+    || process.env.DATABASE_URL;
   const pgUrl = (() => {
     try {
-      const u = new URL(process.env.DATABASE_URL);
+      const u = new URL(rawPgUrl);
       u.searchParams.delete('sslmode');
       u.searchParams.delete('channel_binding');
       return u.toString();
-    } catch (e) { return process.env.DATABASE_URL; }
+    } catch (e) { return rawPgUrl; }
   })();
   const pgSsl = process.env.PGSSL === 'disable' ? false
     : process.env.PGSSL === 'no-verify' ? { rejectUnauthorized: false }

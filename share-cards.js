@@ -2,9 +2,10 @@
 // to PNG, using Satori (HTML/flex -> SVG) + resvg (SVG -> PNG). No headless browser, so it
 // stays serverless-friendly (the whole point — see docs/multi-tenant-roadmap + the outage rule).
 //
-// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo';
-// the artist's Track Report is 'trackPage' (see below), the daily graphics 'recap*' / 'resultsSlide' /
-// 'winnerPost' (the Top Track / Top A&R of the Day and of the Week collab posts).
+// Card types: 'score' (personal), 'ars' (Top 8 A&Rs), 'songs' (Top 8 Records), 'promo', 'chartSlide' (the HOT 100);
+// the artist's Track Report is 'trackPage' (see below), the daily graphics 'resultsSlide' / 'countdownSlide' /
+// 'winnerPost' (the Top Track / Top A&R of the Day and of the Week collab posts), and the A&R Wars
+// set 'tournamentFeed' / 'tournamentStory' / 'tournamentThumb' / 'tournamentBracket'.
 // Rank-only by default; raw numbers optional. Every card carries the eyebrow "The A&R Room",
 // the big card title, the session/scope subhead, the $500 award pill, makinitmag.com/ANR, @Makinit4indies.
 //
@@ -216,107 +217,14 @@ function bodyPromo() {
   ]);
 }
 
-// ---- Chart carousel: cover slide + list slides ("Makin' It HOT 100") ----
-// The cover carries the oversized title itself (frame's header title is suppressed), the
-// period, what the room is, the score key, and the join CTA. List slides repeat the key in
-// one line so someone who swipes past the cover can still decode an 8.6.
-const BAND_COLOR = [C.inkFaint, C.gold, C.signal];
-
-function bandKeyRow(b, i) {
-  return row({
-    background: C.panel, border: `1px solid ${i === 2 ? 'rgba(75,183,73,0.45)' : C.line}`,
-    borderRadius: 14, padding: '14px 22px', width: '100%',
-  }, [
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, color: BAND_COLOR[i], width: 110, flexShrink: 0 }, b.range),
-    text({ fontFamily: SANS, fontWeight: 700, fontSize: 26, color: C.ink, ...NOWRAP }, b.label),
-  ]);
-}
-
-function bodyChartCover(d) {
-  const words = esc(d.title).trim().split(/\s+/);
-  const hot = words.length > 2 ? words.slice(-2).join(' ') : words.slice(-1).join(' ');
-  const top = words.length > 2 ? words.slice(0, -2).join(' ') : words.slice(0, -1).join(' ');
-  const bands = d.bands || CHART_BANDS;
-  return col({ alignItems: 'center', width: '100%' }, [
-    top ? text({ fontFamily: SANS, fontWeight: 900, fontSize: 96, color: C.ink, lineHeight: 1.02, ...NOWRAP }, top.toUpperCase()) : text({}, ''),
-    text({ fontFamily: SANS, fontWeight: 900, fontSize: 96, color: C.hot, lineHeight: 1.02, ...NOWRAP }, hot.toUpperCase()),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, letterSpacing: 8, textTransform: 'uppercase', color: C.gold, marginTop: 18, ...NOWRAP }, clip(d.sub, 30)),
-    h({ width: 150, height: 4, background: C.signal, marginTop: 30, marginBottom: 30 }, ''),
-    text({ fontFamily: SANS, fontWeight: 400, fontSize: 27, color: C.inkDim }, 'Tracks submitted to the A&R Room'),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 29, color: C.ink, marginTop: 8 }, SUBMIT_URL),
-    col({ gap: 12, width: '100%', marginTop: 38 }, bands.map(bandKeyRow)),
-    text({ fontFamily: SANS, fontWeight: 800, fontSize: 34, color: C.ink, marginTop: 40 }, 'Join the A&R Team'),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: C.signal, marginTop: 8 }, JOIN_URL),
-  ]);
-}
-
-// Rows arrive pre-normalized ({rank, line1, line2, value}) so this stays dumb about
-// whether it's ranking records or A&Rs. Density flips to one line past 12 per slide —
-// 20 two-line rows don't fit 1440px, and a clipped chart is worse than a terse one.
-function bodyChartList(d) {
-  const rows = d.rows || [], per = rows.length;
-  const tight = per > 12;
-  // Row heights are budgeted against the ~1045px the frame leaves below the header and
-  // key line. 20 two-line rows can't fit 1440px, and 20 loose one-line rows overflow the
-  // footer — hence the explicit lineHeight, which Satori otherwise pads unpredictably.
-  const s = tight
-    ? { pad: '5px 18px', gap: 5, rank: 22, title: 22, sub: 18, val: 24, rankW: 56, rad: 12, clipT: 28, clipS: 22 }
-    : { pad: '11px 24px', gap: 10, rank: 36, title: 33, sub: 22, val: 40, rankW: 74, rad: 16, clipT: 25, clipS: 32 };
-  const key = row({ justifyContent: 'center', gap: 26, marginBottom: 18 },
-    (d.bands || CHART_BANDS).map((b, i) => row({ gap: 8 }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: 19, color: BAND_COLOR[i] }, b.range),
-      text({ fontFamily: SANS, fontWeight: 400, fontSize: 19, color: C.inkFaint, ...NOWRAP }, b.short),
-    ])));
-  const list = col({ gap: s.gap, width: '100%' }, rows.map(r => {
-    // `top` is explicit, not `rank === 1` — a Room #1s slide is ten different #1s and
-    // must not gold-plate all ten (or, worse, only the first).
-    const first = !!r.top;
-    const line = col({ flexGrow: 1, flexShrink: 1, marginLeft: 8, overflow: 'hidden' }, tight
-      ? [text({ fontFamily: SANS, fontWeight: 700, fontSize: s.title, lineHeight: 1.15, color: C.ink, ...NOWRAP },
-          clip(r.line1, s.clipT) + (r.line2 ? '  ·  ' + clip(r.line2, s.clipS) : ''))]
-      : [
-          text({ fontFamily: SANS, fontWeight: 800, fontSize: s.title, lineHeight: 1.2, color: C.ink, ...NOWRAP }, clip(r.line1, s.clipT)),
-          text({ fontFamily: SANS, fontWeight: 400, fontSize: s.sub, lineHeight: 1.2, color: C.inkDim, ...NOWRAP }, clip(r.line2 || '', s.clipS)),
-        ]);
-    return row({
-      background: C.panel, border: `1px solid ${first ? 'rgba(245,197,24,0.45)' : C.line}`,
-      borderRadius: s.rad, padding: s.pad, width: '100%', flexShrink: 0,
-    }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: s.rank, color: first ? C.gold : C.inkFaint, width: s.rankW, flexShrink: 0 }, r.rank),
-      line,
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: s.val, color: C.signal, flexShrink: 0 }, r.value),
-    ]);
-  }));
-  return col({ width: '100%' }, [key, list]);
-}
-
 // ---- element builders per type ----
 
-// ============ The A&R Meeting Recap — daily stream graphics ============
-// Two formats off ONE data shape { date, artists[], ars[] }:
-//   'recapCover'  1080×1920 (9:16) — the Instagram Live cover
-//   'recapThumb'  1920×1080 (16:9) — the YouTube thumbnail
-// Built to the brand (anr-brand skill): Archivo display + Space Mono data, signal green as
-// the ONLY accent (a live stream = green; nothing here is head-to-head or money), and the
-// 13° device as the block, the rule, the tick bullets and a cut on one edge of the names
-// panel. Copy is the operator's, verbatim. The approved look is the Chrome-rendered
-// public/graphics/meeting-recap.html in the main checkout; this is that design in Satori so
-// it renders on the serverless publish path with no headless browser.
-//
-// The names panel takes the day's ARTISTS in drop order and the Top 8 A&Rs ALPHABETISED:
-// the stream is a countdown that reveals the ranking, so nothing on the cover may be in
-// rank order. Empty lists render as ruled blank lines so the panel reads as intentional.
-const RECAP_SIZES = { recapCover: [1080, 1920], recapThumb: [1920, 1080] };
+// ============ Brand tokens for the Archivo cards (results, countdown, winner, refer) ============
+// The A&R Meeting Recap cover/thumbnail that first carried these was retired 2026-10-02.
 const RECAP = {
   bg: '#0e0c1a', panel: '#171328', line: '#2e2750', fg: '#eae9f2', dim: '#9793b4',
   green: '#4bb749', greenInk: '#06210b',
 };
-const RECAP_TITLE = 'The A&R Meeting Recap';
-const RECAP_TIME = 'Daily at 2PM';   // the reveal stream (operator schedule, 2026-09-13)
-const RECAP_CTA = [
-  { label: 'Submit Music', url: 'makinitmag.com/Review' },
-  { label: 'Become an A&R', url: JOIN_URL },
-];
 const SKEW = -13, TAN13 = Math.tan(13 * Math.PI / 180);
 
 let _logo = null;
@@ -335,146 +243,6 @@ function arBlock(size, fontSize) {
 function tick(w, hgt, mr) {
   return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, flexShrink: 0, marginRight: mr }, '');
 }
-function recapTitle(lines, fontSize) {
-  // "A&R" is the mark, so it takes the green; every other word stays ink.
-  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize, lineHeight: 0.88, textTransform: 'uppercase',
-    letterSpacing: -Math.round(fontSize * 0.04), ...NOWRAP };
-  return col({}, lines.map(words => row({ alignItems: 'flex-end' }, words.map((w, i) =>
-    text({ ...st, color: w === 'A&R' ? RECAP.green : RECAP.fg, marginLeft: i ? Math.round(fontSize * 0.18) : 0 }, w)))));
-}
-function recapRule(w, hgt, mt, mb) {
-  return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, marginTop: mt, marginBottom: mb, marginLeft: 4 }, '');
-}
-function recapDate(date, fontSize) {
-  return text({ fontFamily: MONO, fontWeight: 700, fontSize, lineHeight: 1, letterSpacing: -Math.round(fontSize * 0.02), color: RECAP.fg, ...NOWRAP }, date);
-}
-function recapTime(fontSize, mt) {
-  return text({ fontFamily: MONO, fontWeight: 700, fontSize, color: RECAP.green, textTransform: 'uppercase', letterSpacing: Math.round(fontSize * 0.18), lineHeight: 1, marginTop: mt, ...NOWRAP }, RECAP_TIME);
-}
-function recapCta(c, { tickW, tickH, tickMr, labelSize, labelW, urlSize, urlMl }) {
-  return row({}, [
-    tick(tickW, tickH, tickMr),
-    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: labelSize, letterSpacing: -Math.round(labelSize * 0.03), lineHeight: 1, color: RECAP.fg, ...(labelW ? { width: labelW } : {}), ...NOWRAP }, c.label),
-    text({ fontFamily: MONO, fontWeight: 400, fontSize: urlSize, lineHeight: 1, color: RECAP.dim, marginLeft: urlMl || 0, ...NOWRAP }, c.url),
-  ]);
-}
-
-// The credits panel. Think movie-poster credits: big enough to read when you go looking,
-// small enough never to compete with the title or the date. Space Mono regular (a name here
-// is a catalog string, not a headline), muted ink, no rules. ONE font size for the whole
-// block, fitted so the LONGEST name fits its column — a handle is never clipped unless it
-// would not fit even at the floor size. The panel's height fits the count, so a four-record
-// day gets a small block and a sixteen-record day a taller one, and the 13° cut on its right
-// edge (Satori has no clip-path polygon, so it is a skewed rectangle inside an overflow-
-// hidden box) only ever costs the lowest rows of the last column a little width.
-//
-// `groups` are the columns, left to right: [{ label, names }]. Equal widths.
-const CREDITS_INK = '#b9b5d2';
-const MONO_EM = 0.6;   // Space Mono advance width, in em
-function creditsPanel({ left, top, bottom, width, padT, padR, padB, padL, gap, capSize, minRows, fs: [lo, hi], groups }) {
-  const n = groups.length;
-  const colW = Math.floor((width - padL - padR - gap * (n - 1)) / n);
-  const rows = Math.max(minRows, ...groups.map(g => g.names.length));
-  const capH = capSize + Math.round(capSize * 0.7);
-  // Geometry for a candidate size; the inset only touches the LAST column.
-  const geo = (fs) => {
-    const rowH = Math.round(fs * 1.55);
-    const height = padT + capH + rows * rowH + padB;
-    const off = Math.ceil(height * TAN13);
-    const inset = (ci, i) => ci === n - 1 ? Math.ceil(off * ((padT + capH + (i + 1) * rowH) / height)) + 4 : 0;
-    return { fs, rowH, height, off, inset };
-  };
-  // Two passes: size for the longest name at the largest geometry, then settle.
-  let g = geo(hi);
-  let fit = hi;
-  groups.forEach((grp, ci) => grp.names.forEach((nm, i) => {
-    const avail = colW - g.inset(ci, i);
-    fit = Math.min(fit, avail / (MONO_EM * Math.max(1, String(nm).length)));
-  }));
-  g = geo(Math.max(lo, Math.min(hi, Math.floor(fit))));
-  const { fs, rowH, height, off, inset } = g;
-  const y = top != null ? top : bottom - height;
-  const bg = h({ position: 'absolute', top: 0, left: -off - 40, width: width + 40, height, background: RECAP.panel,
-    transform: `skewX(${SKEW}deg)`, transformOrigin: 'top left' }, '');
-  const cols = [];
-  groups.forEach((grp, ci) => {
-    if (ci) cols.push(h({ width: gap, flexShrink: 0 }, ''));
-    const lines = [];
-    for (let i = 0; i < rows; i++) {
-      const avail = colW - inset(ci, i);
-      const maxChars = Math.max(4, Math.floor(avail / (MONO_EM * fs)));
-      lines.push(h({ display: 'flex', alignItems: 'center', width: avail, height: rowH, flexShrink: 0, overflow: 'hidden' },
-        text({ fontFamily: MONO, fontWeight: 400, fontSize: fs, lineHeight: 1, color: CREDITS_INK, ...NOWRAP }, clip(grp.names[i] || '', maxChars))));
-    }
-    cols.push(col({ width: colW, height: height - padT - padB, flexShrink: 0, overflow: 'hidden' }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: capSize, textTransform: 'uppercase', letterSpacing: Math.round(capSize * 0.22),
-        color: RECAP.dim, opacity: 0.75, height: capH, ...NOWRAP }, grp.label || ''),
-      ...lines,
-    ]));
-  });
-  return h({ position: 'absolute', left, top: y, width, height, overflow: 'hidden', display: 'flex' }, [
-    bg,
-    h({ position: 'absolute', left: 0, top: 0, width, height, display: 'flex', flexDirection: 'row',
-      padding: `${padT}px ${padR}px ${padB}px ${padL}px` }, cols),
-  ]);
-}
-
-function elementRecapCover(d) {
-  const W0 = 1080, H0 = 1920;
-  const artists = d.artists || [], ars = d.ars || [];
-  // Up to 8 artists is one column beside the A&Rs. A bigger day splits the artists across
-  // two columns (drop order, top to bottom then across) so the block stays short.
-  const split = artists.length > 8;
-  const half = Math.ceil(artists.length / 2);
-  const groups = split
-    ? [{ label: 'Artists', names: artists.slice(0, half) }, { label: '', names: artists.slice(half) }, { label: 'A&Rs', names: ars }]
-    : [{ label: 'Artists', names: artists }, { label: 'A&Rs', names: ars }];
-  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
-    // head — under IG Live's top chrome (~220px)
-    h({ position: 'absolute', left: 80, right: 80, top: 250, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, [
-      arBlock(190, 78),
-      { type: 'img', props: { src: logoDataUri(), style: { height: 44, opacity: 0.94 } } },
-    ]),
-    // mid — title + date in the middle third, clear of both IG strips
-    h({ position: 'absolute', left: 80, right: 80, top: 600, display: 'flex', flexDirection: 'column' }, [
-      recapTitle([['The', 'A&R'], ['Meeting'], ['Recap']], 136),
-      recapRule(260, 12, 36, 34),
-      recapDate(d.date, 196),
-      recapTime(34, 22),
-    ]),
-    h({ position: 'absolute', left: 80, right: 80, top: 1330, display: 'flex', flexDirection: 'column', gap: 22 },
-      RECAP_CTA.map(c => recapCta(c, { tickW: 14, tickH: 34, tickMr: 22, labelSize: 46, labelW: 440, urlSize: 30 }))),
-    // credits — bottom-anchored, so a short day leaves ground rather than an empty field
-    creditsPanel({ left: 80, bottom: 1880, width: 920, padT: 26, padR: 30, padB: 26, padL: 50, gap: 30,
-      capSize: 19, minRows: 4, fs: [17, 24], groups }),
-  ]);
-}
-
-function elementRecapThumb(d) {
-  const W0 = 1920, H0 = 1080;
-  const artists = d.artists || [], ars = d.ars || [];
-  const groups = [{ label: 'Artists', names: artists }, { label: 'A&Rs', names: ars }];
-  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: RECAP.bg }, [
-    h({ position: 'absolute', left: 90, top: 80, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 40 }, [
-      arBlock(120, 50),
-      { type: 'img', props: { src: logoDataUri(), style: { height: 38, opacity: 0.94 } } },
-    ]),
-    h({ position: 'absolute', left: 90, top: 250, width: 1140, display: 'flex', flexDirection: 'column' }, [
-      recapTitle([['The', 'A&R', 'Meeting'], ['Recap']], 118),
-      recapRule(220, 11, 30, 26),
-      recapDate(d.date, 220),
-      recapTime(30, 16),
-    ]),
-    h({ position: 'absolute', left: 90, top: 905, display: 'flex', flexDirection: 'row', gap: 70 },
-      RECAP_CTA.map(c => recapCta(c, { tickW: 12, tickH: 30, tickMr: 18, labelSize: 38, urlSize: 26, urlMl: 18 }))),
-    // credits — top-right, right of the title; the bottom-right (x>1500, y>880) stays clear
-    // for YouTube's duration badge.
-    creditsPanel({ left: 1250, top: 80, width: 600, padT: 28, padR: 30, padB: 28, padL: 34, gap: 30,
-      capSize: 18, minRows: 4, fs: [18, 26], groups }),
-  ]);
-}
-
-
 // ============ Referral graphics — the A&R's own promo set ============
 // Four per-user graphics off ONE data shape { name, category, location, photo, qrJoin, qrSubmit }
 // (photo and the two QRs are data URIs, prepared by the caller — this module never fetches):
@@ -611,6 +379,177 @@ function elementReferFlyer(d, kind) {
     ]),
   ]);
 }
+// ============ The daily grade card — "Do you have a better ear than <name>?" ============
+// The card an A&R gets the day a drop's results come out (operator, 2026-10-15). Built to the
+// approved mockup (mim repo docs/mockups/anr-grade-card-round2.html), options A and C; the
+// A&R picks which one is theirs:
+//   'gradePhoto' / 'gradePhotoStory'  A — the photo fills the top and fades into the ground;
+//                                     the name sits where they meet, the grade in the A&R block
+//   'gradeStats' / 'gradeStatsStory'  C — the green cut, a small face, the grade large
+// Data shape (built by server.js renderGradeCard), one per A&R per published day:
+//   { name, category, location, photo (data URI or null), grade, accuracy (0..100),
+//     counts: { bullseye, sharp, close }, dayLabel }
+// THE STANDING CARD (operator, 2026-10-15) is the same card, all-time: `standing: true` and
+// `drops` (how many published drops they rated) replace the date with "Standing". Never a rank.
+// Rules the operator set, all enforced here rather than by the caller:
+//   - only the good three counts print (Bullseye, Sharp, Close). Off and Way off NEVER do.
+//   - no headcount, no QR, no invite link: the one address is makinitmag.com/ANR.
+//   - gold on the money only ("$500 cash"). Drawn target icons, never emoji.
+// THE SEAL: a grade exists only for a published day. The callers check that; this module
+// only draws what it is given.
+const GRADE_SIZES = { gradePhoto: [1080, 1350], gradePhotoStory: [1080, 1920], gradeStats: [1080, 1350], gradeStatsStory: [1080, 1920] };
+const GRADE_COPY = {
+  lead: 'Do you have a better ear than',
+  pitch: 'Join the A&R Team. Put your ear to the test against industry tastemakers, professionals and creatives.',
+  prizeLead: 'Qualify to win', prize: '$500 cash',
+  url: 'makinitmag.com/ANR',
+  tiers: [['bullseye', 'Bullseye'], ['sharp', 'Sharp'], ['close', 'Close']],
+};
+// One target; the dot moves out with the miss (centre = Bullseye). Same drawings as the mockup.
+const _gradeIcons = {};
+function gradeIconUri(kind, color) {
+  const key = kind + color;
+  if (!_gradeIcons[key]) {
+    const dot = { bullseye: [12, 12, 2.4], sharp: [14.4, 10.2, 2.2], close: [16.4, 8, 2.2] }[kind] || [12, 12, 2.4];
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+      + '<circle cx="12" cy="12" r="10" fill="none" stroke="' + color + '" stroke-width="1.6"/>'
+      + '<circle cx="12" cy="12" r="5.5" fill="none" stroke="' + color + '" stroke-width="1.6"/>'
+      + '<circle cx="' + dot[0] + '" cy="' + dot[1] + '" r="' + dot[2] + '" fill="' + color + '"/></svg>';
+    _gradeIcons[key] = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _gradeIcons[key];
+}
+// The name as at most two lines, the last ending in a green "?" (the name finishes the
+// question). Sized down for a long name so it never runs under the grade.
+function gradeName(name, maxSize, maxWidth) {
+  const words = esc(name).trim().split(/\s+/).filter(Boolean);
+  const lines = words.length > 1 ? [clip(words[0], 14), clip(words.slice(1).join(' '), 14)] : [clip(words[0] || 'A&R', 14)];
+  const longest = Math.max(...lines.map((l, i) => l.length + (i === lines.length - 1 ? 1 : 0)));
+  const size = Math.max(56, Math.min(maxSize, Math.floor(maxWidth / (longest * 0.6))));
+  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize: size, lineHeight: 0.9, letterSpacing: -Math.round(size * 0.045), color: REFER.fg, ...NOWRAP };
+  return col({}, lines.map((l, i) => i < lines.length - 1
+    ? text(st, l)
+    : row({ alignItems: 'flex-end' }, [text(st, l), text({ ...st, color: REFER.green }, '?')])));
+}
+function gradeMeta(d, size) {
+  return text({ fontFamily: MONO, fontWeight: 400, fontSize: size, letterSpacing: Math.round(size * 0.12), textTransform: 'uppercase', color: REFER.green, ...NOWRAP },
+    clip([d.category, d.location].filter(Boolean).join(' / '), 34));
+}
+function gradeTiers(d, z) {
+  const c = d.counts || {};
+  return row({ alignItems: 'stretch' }, GRADE_COPY.tiers.map(([k, label], i) => {
+    const hit = k === 'bullseye', color = hit ? REFER.green : REFER.dim;
+    const icon = { type: 'img', props: { src: gradeIconUri(k, color), width: z.icon, height: z.icon, style: { width: z.icon, height: z.icon } } };
+    const n = text({ fontFamily: MONO, fontWeight: 700, fontSize: z.count, lineHeight: 1, color: hit ? REFER.green : REFER.fg }, String(Number(c[k]) || 0));
+    return col({ flexGrow: 1, flexBasis: 0, alignItems: 'center', gap: 8, borderLeft: i ? `2px solid ${REFER.line}` : 'none' }, [
+      z.stacked ? col({ alignItems: 'center', gap: 8 }, [icon, n]) : row({ gap: 12 }, [icon, n]),
+      text({ fontFamily: MONO, fontWeight: 400, fontSize: z.label, letterSpacing: Math.round(z.label * 0.1), textTransform: 'uppercase', color, ...NOWRAP }, label),
+    ]);
+  }));
+}
+function gradeOffer(z) {
+  const prizeSt = { fontFamily: MONO, fontWeight: 700, fontSize: z.prize, lineHeight: 1.2, ...NOWRAP };
+  return col({ gap: Math.round(z.gap * 0.6) }, [
+    text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.pitch, lineHeight: 1.22, letterSpacing: -Math.round(z.pitch * 0.02), color: REFER.fg, maxWidth: 920 }, GRADE_COPY.pitch),
+    row({}, [
+      text({ ...prizeSt, color: REFER.fg, marginRight: Math.round(z.prize * 0.6) }, GRADE_COPY.prizeLead),
+      text({ ...prizeSt, color: REFER.gold }, GRADE_COPY.prize),
+      text({ ...prizeSt, color: REFER.fg }, '.'),
+    ]),
+  ]);
+}
+function gradeFoot(z) {
+  return row({ justifyContent: 'space-between', alignItems: 'flex-end' }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: z.url, color: REFER.green, ...NOWRAP }, GRADE_COPY.url),
+    referEndorse(20),
+  ]);
+}
+const accLabel = a => (a == null ? '—' : Math.round(Number(a)) + '%');
+// What the grade is OF: the day ("Oct 14") or, on the Standing card, all time ("Standing · 14 drops").
+function gradeWhen(d) {
+  if (d.standing) { const n = Number(d.drops) || 0; return 'Standing' + (n ? ` · ${n} ${n === 1 ? 'drop' : 'drops'}` : ''); }
+  return d.dayLabel || 'Grade';
+}
+
+// A: the photo is the ground of the top of the card.
+function elementGradePhoto(d, story) {
+  const W0 = 1080, H0 = story ? 1920 : 1350;
+  const z = story
+    ? { photoH: 1300, fadeTop: 800, lead: 58, name: 150, meta: 32, chip: 250, icon: 60, count: 66, label: 22, pitch: 40, prize: 42, url: 34, gap: 40, ngap: 20 }
+    : { photoH: 900, fadeTop: 520, lead: 46, name: 112, meta: 26, chip: 190, icon: 44, count: 50, label: 18, pitch: 30, prize: 32, url: 38, gap: 22, ngap: 14 };
+  const chip = col({ alignItems: 'center', gap: 16, flexShrink: 0 }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: z.label, letterSpacing: Math.round(z.label * 0.16), textTransform: 'uppercase',
+      color: REFER.green, ...NOWRAP }, gradeWhen(d)),
+    h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: z.chip, height: z.chip, background: REFER.green,
+        borderRadius: Math.round(z.chip * 0.06), transform: `skewX(${SKEW}deg)` },
+      text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: Math.round(z.chip * 0.52),
+        letterSpacing: -Math.round(z.chip * 0.03), color: REFER.bg, lineHeight: 1, ...NOWRAP }, d.grade || '—')),
+    row({ gap: 10 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: z.label, color: REFER.fg, ...NOWRAP }, accLabel(d.accuracy)),
+      text({ fontFamily: MONO, fontWeight: 400, fontSize: z.label, letterSpacing: Math.round(z.label * 0.12), textTransform: 'uppercase', color: REFER.dim, ...NOWRAP }, 'Accuracy'),
+    ]),
+  ]);
+  const layers = [];
+  if (d.photo) layers.push({ type: 'img', props: { src: d.photo, width: W0, height: z.photoH,
+    style: { position: 'absolute', left: 0, top: 0, width: W0, height: z.photoH, objectFit: 'cover' } } });
+  layers.push(h({ position: 'absolute', left: 0, top: 0, width: W0, height: 260,
+    background: 'linear-gradient(180deg, rgba(14,12,26,1) 0%, rgba(14,12,26,0.55) 45%, rgba(14,12,26,0) 100%)' }, ''));
+  layers.push(h({ position: 'absolute', left: 0, top: z.fadeTop, width: W0, height: z.photoH - z.fadeTop + 2,
+    background: 'linear-gradient(180deg, rgba(14,12,26,0) 0%, rgba(14,12,26,0.7) 55%, rgba(14,12,26,1) 100%)' }, ''));
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
+    ...layers,
+    h({ position: 'absolute', left: 80, top: 72, display: 'flex' }, referLockup(REFER.green, REFER.greenInk)),
+    col({ position: 'absolute', left: 80, right: 80, bottom: 72, gap: z.gap }, [
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.lead, lineHeight: 1.04, letterSpacing: -Math.round(z.lead * 0.035), color: REFER.fg, ...NOWRAP }, GRADE_COPY.lead),
+      row({ justifyContent: 'space-between', alignItems: 'flex-end', gap: 30 }, [
+        col({ gap: z.ngap, flexShrink: 1 }, [gradeName(d.name, z.name, 920 - z.chip - 60), gradeMeta(d, z.meta)]),
+        chip,
+      ]),
+      gradeTiers(d, { icon: z.icon, count: z.count, label: z.label, stacked: false }),
+      gradeOffer(z),
+      gradeFoot(z),
+    ]),
+  ]);
+}
+
+// C: stats-led, the face small. The card for an A&R with no big photo, and the one they can pick.
+function elementGradeStats(d, story) {
+  const W0 = 1080, H0 = story ? 1920 : 1350;
+  const z = story
+    ? { wedge: 290, bodyTop: 324, face: 320, lead: 66, name: 150, meta: 30, grade: 380, acc: 96, icon: 60, count: 58, label: 19, pitch: 42, prize: 42, url: 34, gap: 30, head: 48 }
+    : { wedge: 206, bodyTop: 236, face: 200, lead: 56, name: 104, meta: 26, grade: 200, acc: 68, icon: 44, count: 44, label: 18, pitch: 32, prize: 32, url: 38, gap: 20, head: 24 };
+  const panel = col({ border: `2px solid ${REFER.line}`, background: REFER.panel, padding: '30px 40px', gap: 24 }, [
+    row({ justifyContent: 'space-between', alignItems: 'flex-end' }, [
+      col({ gap: 14 }, [
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: 24, letterSpacing: 4, textTransform: 'uppercase', color: REFER.dim, ...NOWRAP },
+          d.standing ? gradeWhen(d) : 'Grade' + (d.dayLabel ? ' · ' + d.dayLabel : '')),
+        text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: z.grade, lineHeight: 0.8, letterSpacing: -Math.round(z.grade * 0.06), color: REFER.green, ...NOWRAP }, d.grade || '—'),
+      ]),
+      col({ alignItems: 'flex-end', gap: 6 }, [
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: z.acc, lineHeight: 1, color: REFER.fg, ...NOWRAP }, accLabel(d.accuracy)),
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: 24, letterSpacing: 3, textTransform: 'uppercase', color: REFER.dim, ...NOWRAP }, 'Accuracy'),
+      ]),
+    ]),
+    h({ display: 'flex', borderTop: `2px solid ${REFER.line}`, paddingTop: 26, flexDirection: 'column' },
+      gradeTiers(d, { icon: z.icon, count: z.count, label: z.label, stacked: true })),
+  ]);
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
+    // The cut rises to the right and stops above the lead: no type ever straddles it.
+    h({ position: 'absolute', left: 0, top: 0, width: W0, height: z.wedge, background: REFER.green,
+      transform: 'skewY(-13deg)', transformOrigin: 'left top' }, ''),
+    h({ position: 'absolute', left: 80, top: 72, display: 'flex' }, referLockup(REFER.bg, REFER.green)),
+    col({ position: 'absolute', left: 80, right: 80, top: z.bodyTop, bottom: 72, justifyContent: 'space-between' }, [
+      col({ gap: z.head }, [
+        text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.lead, lineHeight: 1.04, letterSpacing: -Math.round(z.lead * 0.035), color: REFER.fg, ...NOWRAP }, GRADE_COPY.lead),
+        row({ gap: 44 }, [referFace(d, z.face), col({ gap: 18, flexShrink: 1 }, [gradeName(d.name, z.name, 920 - z.face - 44), gradeMeta(d, z.meta)])]),
+      ]),
+      panel,
+      gradeOffer(z),
+      gradeFoot(z),
+    ]),
+  ]);
+}
+
 // ============ The A&R Meeting results carousels — posted after the reveal stream ============
 // Two Instagram carousels off ONE element type, 'resultsSlide', 1080×1350 a slide:
 //   set 'song'  slide 1 the top record · list slides: the other records RANKED, NO SCORES
@@ -660,6 +599,17 @@ function resultsField(height, cutTop) {
   return h({ position: 'absolute', left: 0, top: 1350 - height, width: 1080, height, overflow: 'hidden', display: 'flex' }, [
     h({ position: 'absolute', left: 0, top: cutTop - Math.round(540 * TAN13), width: 1080, height: boxH, background: RECAP.green,
       transform: 'skewY(-13deg)' }, ''),
+  ]);
+}
+// The Top A&R carousel's footer: the page count bottom-left, and the ask WITH the link
+// right-justified (operator, 2026-10-03 — a bare URL on the green field had no call to action).
+function resultsJoinFoot(pageTxt) {
+  return h({ position: 'absolute', left: 80, right: 80, bottom: 72, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, letterSpacing: 1, color: RECAP.bg, ...NOWRAP }, pageTxt || ''),
+    col({ alignItems: 'flex-end' }, [
+      text(RES_DISPLAY(40, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1 }), 'Join the A&R Team'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.bg, marginTop: 8, ...NOWRAP }, RESULTS_URL),
+    ]),
   ]);
 }
 function resultsFoot(leftTxt, rightTxt) {
@@ -716,7 +666,7 @@ function elementResultsSlide(d) {
         { type: 'img', props: { src: hero.photo, style: { position: 'absolute', left: -40, top: 0, width: 380, height: 300, objectFit: 'cover', transform: 'skewX(13deg)' } } },
       ]));
     }
-    kids.push(resultsField(300, 120), resultsFoot('1 / ' + d.total, RESULTS_URL));
+    kids.push(resultsField(300, 120), resultsJoinFoot('1 / ' + d.total));
   } else if (kind === 'list') {
     kids.push(resultsEyebrow((d.listLabel || 'Also played') + ' · ' + (d.date || '')), resultsPager(d.slide, d.total));
     const rows = (d.rows || []).map(r => row({ paddingTop: 16, paddingBottom: 16, borderBottom: '1px solid ' + RECAP.line, width: 920 }, [
@@ -728,31 +678,364 @@ function elementResultsSlide(d) {
       text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, color: RECAP.fg, marginLeft: 18, flexShrink: 0, ...NOWRAP }, r.value == null ? '' : String(r.value)),
     ]));
     kids.push(col({ position: 'absolute', left: 80, top: 490, width: 920 }, rows));
-    kids.push(resultsField(250, 90), resultsFoot(d.footLeft || (d.slide + ' / ' + d.total), RESULTS_URL));
+    kids.push(resultsField(250, 90), resultsJoinFoot(d.slide + ' / ' + d.total));
   } else {
     const c = d.cta || {};
     kids.push(resultsEyebrow(c.eyebrow || ''), resultsPager(d.slide, d.total));
     kids.push(col({ position: 'absolute', left: 80, top: 470, width: 920 }, (c.head || []).map(line => resultsHeadLine(line, 104))));
-    kids.push(text({ position: 'absolute', left: 80, top: 880, width: 760, fontFamily: SANS, fontWeight: 400, fontSize: 36, lineHeight: 1.3, color: RECAP.dim }, c.body || ''));
-    kids.push(resultsField(440, 240));
-    kids.push(text({ position: 'absolute', left: 80, bottom: 96, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, c.url || ''));
+    // The body sits right under however many headline lines there are (108px a line at 104).
+    kids.push(text({ position: 'absolute', left: 80, top: 470 + (c.head || []).length * 108 + 34, width: 920, fontFamily: DISPLAY, fontWeight: 800, fontSize: 46, lineHeight: 1.2, letterSpacing: -1, color: RECAP.dim }, c.body || ''));
+    kids.push(resultsField(440, 240), resultsJoinFoot(d.slide + ' / ' + d.total));
   }
   return h({ position: 'relative', display: 'flex', width: RESULTS_SIZE[0], height: RESULTS_SIZE[1], background: RECAP.bg }, kids);
+}
+
+// ============ The Makin' It Daily Countdown — one 'countdownSlide' element, 1080×1350 ============
+// The carousel that replaced the daily stream AND the Top Track results carousel (operator,
+// 2026-10-02): the day's records counted down, ONE RECORD A SLIDE, RANK ONLY — scores are
+// private to the artist's Track Report. Built to the approved mockup
+// public/brand/countdown/countdown.html; the layout numbers here are that file's.
+//   cover   Daily Countdown · the date · the countdown blocks · Ranked by the Makin' It A&R Team · Submit free
+//   rank    one per record, #N first: series · blocks · #rank · title · artist · @handle · submit strip.
+//           #1 is the gold variant with TOP TRACK OF THE DAY. Every rank slide stands ALONE — an
+//           artist reposts only theirs — and NEVER shows the size of the field: the blocks run
+//           from the slide's own rank to #1, so #16 of 16 does not read as last (operator).
+//   team    Thanks to our A&R Team · Become an A&R · makinitmag.com/ANR
+//   cta     Think your music belongs on the Countdown? · $1,000 Music Tournament · makinitmag.com/review
+// Gold = first place and money only (the #1 slide, the $1,000). Satori cannot measure a wrap,
+// so text sizes step down off character counts, the same estimate the winner post uses.
+//
+// Data shape (server.js countdownCarouselData):
+//   { kind: 'cover'|'rank'|'team'|'cta', date: '10.02.26', count (cover: how many records),
+//     rank, title, artist, handle }
+const COUNTDOWN_SIZE = [1080, 1350];
+const COUNTDOWN_COPY = {
+  series: 'Daily Countdown',
+  credit: 'Ranked by the Makin’ It A&R Team',
+  submit: 'Submit free',
+  question: 'Think you should be here?',
+  honor: 'Top Track of the Day',
+  thanks: ['Thanks to our', 'A&R Team'],
+  join: 'Become an A&R',                                          // operator, 2026-10-02
+  ask: 'Think your music belongs on the Countdown?',
+  lead: ['Submit FREE for your chance to get ranked', 'and qualify for the'],
+  prize: ['$1,000', 'Music Tournament'],
+};
+const CD_INFO_BOTTOM = 1086;
+// Satori draws a CSS radial gradient with a visible box edge, so the #1 glow is an SVG.
+let _cdGlow = null;
+function countdownGlowUri() {
+  if (!_cdGlow) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="760"><defs><radialGradient id="g" cx="50%" cy="50%" r="50%">'
+      + '<stop offset="0" stop-color="#f5c518" stop-opacity="0.16"/><stop offset="1" stop-color="#f5c518" stop-opacity="0"/></radialGradient></defs>'
+      + '<ellipse cx="450" cy="380" rx="450" ry="380" fill="url(#g)"/></svg>';
+    _cdGlow = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _cdGlow;
+}          // the record block ends above the submit strip (1350 − 80 − 150 − 34)
+// One skewed block per rank, highest first; the lit one green (gold at #1). One row always:
+// the blocks narrow as the count grows, capped so a short run doesn't turn into bricks.
+function countdownTicks(from, lit, { max, gap, h: hMax }) {
+  const w = Math.min(max, (912 - gap * (from - 1)) / from);
+  const hgt = Math.min(hMax, Math.round(w * 0.95));
+  const fs = Math.round(Math.max(17, Math.min(hMax * 0.46, w * 0.42)));
+  const kids = [];
+  for (let r = from; r >= 1; r--) {
+    const on = r === lit, col1 = r === 1 ? RESULTS_GOLD : RECAP.green;
+    kids.push(h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: w, height: hgt, marginRight: r > 1 ? gap : 0,
+      border: '2px solid ' + (on ? col1 : RECAP.line), background: on ? col1 : 'transparent', borderRadius: 5,
+      transform: `skewX(${SKEW}deg)`, flexShrink: 0 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: fs, lineHeight: 1, color: on ? RECAP.bg : RECAP.dim, transform: `skewX(${-SKEW}deg)`, ...NOWRAP },
+        String(r).padStart(2, '0')),
+    ]));
+  }
+  return kids;
+}
+function countdownMast(d, { date = true, series = true } = {}) {
+  const kids = [h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 34 } } }])];
+  if (date) kids.push(text({ position: 'absolute', right: 80, top: 78, fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.2, color: RECAP.dim, ...NOWRAP }, d.date || ''));
+  if (series) kids.push(text(RES_DISPLAY(58, RECAP.fg, { position: 'absolute', left: 80, top: 142, textTransform: 'uppercase' }), COUNTDOWN_COPY.series));
+  return kids;
+}
+// How the record's title, artist and handle fit: the title steps down until it is two lines AND
+// the block clears the numeral; past the floor it takes a third line and is clipped there.
+function countdownFit(d, minTop) {
+  const W = 920;
+  const title = '“' + clip(d.title || '—', 90) + '”';
+  const artist = String(d.artist || '').trim();
+  const handle = d.handle || '';
+  let artistFs = 34;
+  for (const s of [46, 42, 38, 34]) { if (artist.length * s * 0.52 <= W) { artistFs = s; break; } }
+  const handleFs = handle ? Math.max(22, Math.min(32, Math.floor(W / (handle.length * 0.6)))) : 0;
+  const below = 26 + artistFs * 1.1 + (handle ? 8 + handleFs * 1.3 : 0);
+  let fs = 56, lines = 3;
+  for (const s of [96, 88, 80, 72, 66, 60, 56]) {
+    const n = Math.max(1, Math.ceil(title.length * s * 0.58 / W));
+    fs = s; lines = n;
+    if (n <= 2 && minTop + n * s * 0.95 + below <= CD_INFO_BOTTOM) break;
+  }
+  lines = Math.min(lines, 3);
+  const h0 = lines * fs * 0.95 + below;
+  return { title, artist: clip(artist, Math.floor(W / (artistFs * 0.52))), handle: clip(handle, Math.floor(W / (handleFs * 0.6 || 1))),
+    fs, lines, artistFs, handleFs, top: Math.round(Math.max(minTop, CD_INFO_BOTTOM - h0)) };
+}
+function elementCountdownSlide(d) {
+  const kind = d.kind || 'rank';
+  const kids = [];
+  const field = (height) => resultsField(height, 249);         // the 13° cut, full width
+  if (kind === 'cover') {
+    kids.push(...countdownMast(d, { date: false, series: false }));
+    kids.push(col({ position: 'absolute', left: 74, top: 196 }, ['Daily', 'Countdown'].map(w =>
+      text(RES_DISPLAY(136, RECAP.fg, { lineHeight: 0.86, letterSpacing: -6, textTransform: 'uppercase' }), w))));
+    kids.push(text({ position: 'absolute', left: 80, top: 490, fontFamily: MONO, fontWeight: 700, fontSize: 104, lineHeight: 1, letterSpacing: -3, color: RECAP.fg, ...NOWRAP }, d.date || ''));
+    kids.push(row({ position: 'absolute', left: 84, top: 640 }, countdownTicks(Math.max(1, d.count || 1), 0, { max: 108, gap: 12, h: 64 })));
+    kids.push(text(RES_DISPLAY(50, RECAP.fg, { position: 'absolute', left: 80, top: 756 }), COUNTDOWN_COPY.credit));
+    kids.push(field(470));
+    kids.push(col({ position: 'absolute', left: 80, bottom: 80 }, [
+      text(RES_DISPLAY(58, RECAP.bg, { textTransform: 'uppercase' }), COUNTDOWN_COPY.submit),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 36, color: RECAP.bg, marginTop: 12, ...NOWRAP }, SUBMIT_URL),
+    ]));
+  } else if (kind === 'team') {
+    kids.push(...countdownMast(d));
+    kids.push(col({ position: 'absolute', left: 76, top: 250 }, ['Thanks to', 'our A&R', 'Team'].map(w =>
+      text(RES_DISPLAY(150, RECAP.fg, { lineHeight: 0.86, letterSpacing: -8, textTransform: 'uppercase' }), w))));
+    kids.push(field(470));
+    kids.push(col({ position: 'absolute', left: 80, bottom: 80 }, [
+      text(RES_DISPLAY(58, RECAP.bg, { textTransform: 'uppercase' }), COUNTDOWN_COPY.join),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 36, color: RECAP.bg, marginTop: 12, ...NOWRAP }, JOIN_URL),
+    ]));
+  } else if (kind === 'cta') {
+    kids.push(...countdownMast(d));
+    kids.push(text({ position: 'absolute', left: 80, top: 250, width: 920, fontFamily: DISPLAY, fontWeight: 900, fontSize: 88, lineHeight: 0.94, letterSpacing: -4, color: RECAP.fg }, COUNTDOWN_COPY.ask));
+    kids.push(col({ position: 'absolute', left: 80, top: 540 }, COUNTDOWN_COPY.lead.map(l =>
+      text({ fontFamily: SANS, fontWeight: 400, fontSize: 36, lineHeight: 1.25, color: RECAP.dim, ...NOWRAP }, l))));
+    kids.push(col({ position: 'absolute', left: 80, top: 656 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 112, lineHeight: 1, letterSpacing: -6, color: RESULTS_GOLD, ...NOWRAP }, COUNTDOWN_COPY.prize[0]),
+      text(RES_DISPLAY(76, RESULTS_GOLD, { lineHeight: 0.92, textTransform: 'uppercase', letterSpacing: -3 }), COUNTDOWN_COPY.prize[1]),
+    ]));
+    kids.push(field(360));
+    kids.push(text({ position: 'absolute', left: 80, bottom: 80, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, SUBMIT_URL));
+  } else {
+    const R = Math.max(1, d.rank || 1), top1 = R === 1;
+    const accent = top1 ? RESULTS_GOLD : RECAP.green;
+    if (top1) {
+      // The #1 glow: soft gold behind the numeral, nothing else changes shape.
+      kids.push(h({ position: 'absolute', left: -120, top: 120, display: 'flex' }, [{ type: 'img', props: { src: countdownGlowUri(), width: 900, height: 760, style: { width: 900, height: 760 } } }]));
+    }
+    kids.push(...countdownMast(d));
+    kids.push(row({ position: 'absolute', left: 84, top: 226 }, countdownTicks(R, R, { max: 78, gap: 9, h: 46 })));
+    kids.push(row({ position: 'absolute', left: 62, top: 250, alignItems: 'flex-start' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 190, lineHeight: 1, color: accent, marginTop: 92, marginRight: -8, ...NOWRAP }, '#'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 560, lineHeight: 1, letterSpacing: -22, color: top1 ? RESULTS_GOLD : RECAP.fg, ...NOWRAP }, String(R)),
+    ]));
+    const f = countdownFit(d, top1 ? 834 : 720);
+    const honor = top1 ? [h({ display: 'flex', alignSelf: 'flex-start', marginLeft: 4, marginBottom: 26, background: RESULTS_GOLD, borderRadius: 5,
+        transform: `skewX(${SKEW}deg)`, paddingLeft: 26, paddingRight: 26, paddingTop: 12, paddingBottom: 12 }, [
+        text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), COUNTDOWN_COPY.honor),
+      ])] : [];
+    kids.push(col({ position: 'absolute', left: 80, bottom: 1350 - CD_INFO_BOTTOM, width: 920 }, [
+      ...honor,
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: f.fs, lineHeight: 0.95, letterSpacing: -Math.round(f.fs * 0.04), color: RECAP.fg, width: 920 }, f.title),
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: f.artistFs, lineHeight: 1.1, letterSpacing: -1, color: RECAP.fg, marginTop: 26, ...NOWRAP }, f.artist),
+      ...(f.handle ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: f.handleFs, lineHeight: 1.3, color: RECAP.dim, marginTop: 8, ...NOWRAP }, f.handle)] : []),
+    ]));
+    // The submit strip: a rule, the question, the link, one button — under the record, never over it.
+    kids.push(h({ position: 'absolute', left: 80, top: 1120, width: 920, height: 2, background: RECAP.line }, ''));
+    kids.push(text(RES_DISPLAY(36, RECAP.fg, { position: 'absolute', left: 80, top: 1152, textTransform: 'uppercase', letterSpacing: -1 }), COUNTDOWN_COPY.question));
+    kids.push(text({ position: 'absolute', left: 80, top: 1206, fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, ...NOWRAP }, SUBMIT_URL));
+    kids.push(h({ position: 'absolute', right: 90, bottom: 80, height: 72, display: 'flex', alignItems: 'center', background: RECAP.green,
+      borderRadius: 6, paddingLeft: 32, paddingRight: 32, transform: `skewX(${SKEW}deg)` }, [
+      text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), COUNTDOWN_COPY.submit),
+    ]));
+  }
+  return h({ position: 'relative', display: 'flex', width: COUNTDOWN_SIZE[0], height: COUNTDOWN_SIZE[1], background: RECAP.bg, overflow: 'hidden' }, kids);
+}
+
+// ============ The Makin' It HOT 100 — one 'chartSlide' element, 1080×1350 ============
+// The monthly chart carousel, rebuilt to the brand (operator approved, 2026-10-10) from the
+// mockup public/brand/hot100/hot100.html, a sibling of the Daily Countdown: same masthead,
+// same 80px safe area, the same 13° cut on the bookends. Replaces the 2026-08-05 DM Sans
+// cards (1080×1440, "The A&R Room" eyebrow, $500 pill — the A&R prize has no place on an
+// artist chart — red HOT 100, gold band key).
+//   cover  HOT 100 · the period · Ranked by the Makin' It A&R Team · Submit free (the cut)
+//   list   a page of rows: a 13° rank block (gold at #1 only), title, artist, @handle
+//   team   Ranked by the Makin' It A&R Team · Join the A&R Team (closing)
+// RANK ONLY for records by default — scores are private to the Track Report, as on the Countdown;
+// `scores: true` (the console's "Show scores") prints each average plus the band key, built to the
+// mockup's &scores=1 variant. The A&R chart always prints points (or accuracy): that board is public. Satori cannot measure a wrap, so
+// lines are clipped off character-width estimates.
+//
+// Data shape (server.js /api/card/chart):
+//   { kind: 'cover'|'list'|'team', mode: 'records'|'ars'|'weekly1s', title, period,
+//     count, sort, span, scores, bands, rows: [{ rank, top, line1, sub, handle, value, unit }] }
+const CHART_SIZE = [1080, 1350];
+const CHART_COPY = {
+  credit: 'Ranked by the Makin’ It A&R Team',
+  lead: { records: 'The highest-rated records submitted to The A&R Meeting.', weekly1s: 'The top record from each session.',
+    points: 'Points come from predicting the average on every record.', accuracy: 'How close each A&R came to the average.' },
+  by: { points: 'The A&Rs with the most points', accuracy: 'The A&Rs closest to the average' },
+  question: 'Think you should be here?',
+  submit: 'Submit free', joinBtn: 'Join the team', join: 'Join the A&R Team',
+  closing: ['Ranked by', 'the Makin’ It', 'A&R Team'],
+  closingLead: ['A&Rs rate every record submitted to The A&R Meeting.', 'Join the team and rate new records every day.'],
+};
+// "Makin’ It HOT 100" → { pre: 'HOT', num: '100' }; anything else keeps its own words.
+function chartTitleParts(title) {
+  const t = String(title || '').replace(/^Makin[’']\s*It\s+/i, '').trim();
+  const m = /^(HOT)\s+(\d+)$/i.exec(t);
+  return m ? { short: t.toUpperCase(), pre: 'HOT', num: m[2] } : { short: t, pre: t, num: '' };
+}
+function chartMast(d, { period = true, series = true, span = '' } = {}) {
+  const kids = [h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 34 } } }])];
+  if (period) kids.push(text({ position: 'absolute', right: 80, top: 78, fontFamily: MONO, fontWeight: 700, fontSize: 30, lineHeight: 1.25,
+    color: RECAP.dim, textTransform: 'uppercase', ...NOWRAP }, clip(d.period, 30)));
+  if (series) kids.push(row({ position: 'absolute', left: 80, top: 142, alignItems: 'flex-end' }, [
+    text(RES_DISPLAY(58, RECAP.fg, { textTransform: 'uppercase' }), clip(chartTitleParts(d.title).short, 22)),
+    ...(span ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, marginLeft: 22, marginBottom: 4, ...NOWRAP }, span)] : []),
+  ]));
+  return kids;
+}
+// The score key, only on a scored chart (&scores=1): skewed outline chips, the range in green
+// (scoring) Space Mono. Big on the cover (range over label, three across), one line on a page.
+function chartKey(bands, big) {
+  const skew = { transform: `skewX(${SKEW}deg)` }, unskew = { transform: `skewX(${-SKEW}deg)` };
+  return row({ gap: big ? 14 : 10 }, (bands || CHART_BANDS).map(b => h({ display: 'flex', flexDirection: big ? 'column' : 'row',
+    alignItems: big ? 'flex-start' : 'center', border: `2px solid ${RECAP.line}`, borderRadius: 6, ...skew,
+    ...(big ? { width: 297 } : {}), paddingLeft: big ? 24 : 14, paddingRight: big ? 18 : 14, paddingTop: big ? 12 : 7, paddingBottom: big ? 12 : 7 }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: big ? 24 : 18, lineHeight: 1.1, color: RECAP.green, ...unskew, ...NOWRAP }, b.range),
+    text({ fontFamily: DISPLAY, fontWeight: big ? 800 : 700, fontSize: big ? 24 : 18, lineHeight: 1.15, letterSpacing: big ? -0.5 : 0,
+      color: big ? RECAP.fg : RECAP.dim, marginTop: big ? 6 : 0, marginLeft: big ? 0 : 10, ...unskew, ...NOWRAP }, b.label),
+  ])));
+}
+function chartCutCta(head, url) {
+  return col({ position: 'absolute', left: 80, bottom: 80 }, [
+    text(RES_DISPLAY(58, RECAP.bg, { textTransform: 'uppercase' }), head),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 36, color: RECAP.bg, marginTop: 12, ...NOWRAP }, url),
+  ]);
+}
+function chartRow(r, s, last) {
+  const first = !!r.top;
+  const block = h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: s.bw, height: s.bh, marginLeft: 6,
+    border: '2px solid ' + (first ? RESULTS_GOLD : RECAP.line), background: first ? RESULTS_GOLD : 'transparent', borderRadius: 6,
+    transform: `skewX(${SKEW}deg)` }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: s.bf, lineHeight: 1, color: first ? RECAP.bg : RECAP.fg, transform: `skewX(${-SKEW}deg)`, ...NOWRAP }, r.rank),
+  ]);
+  // Width left for the words: 920 less the block, its gaps, and the value when there is one.
+  const valW = r.value ? Math.round((String(r.value).length * 0.6 + (r.unit ? 0.5 * r.unit.length * 0.6 + 0.3 : 0)) * s.vf) + 26 : 0;
+  const room = 920 - 6 - s.bw - 26 - valW;
+  const handle = r.handle ? '@' + r.handle : '';
+  let words;
+  if (s.compact) {
+    const t1 = clip(r.line1, Math.floor(room / (s.t1 * 0.56)));
+    const left = room - t1.length * s.t1 * 0.56 - 18;
+    const x = handle || r.sub || '';
+    words = row({ alignItems: 'baseline' }, [
+      text(RES_DISPLAY(s.t1, RECAP.fg, { letterSpacing: -1 }), t1),
+      ...(x && left > 60 ? [text({ fontFamily: handle ? MONO : DISPLAY, fontWeight: 700, fontSize: 18, color: RECAP.dim, marginLeft: 18, ...NOWRAP },
+        clip(x, Math.floor(left / (18 * 0.6))))] : []),
+    ]);
+  } else {
+    const sub = String(r.sub || '');
+    const hW = handle ? Math.min(handle.length * s.t3 * 0.6, room * 0.55) : 0;
+    const subMax = Math.floor((room - (handle ? Math.min(hW, room * 0.55) + 16 : 0)) / (s.t2 * 0.55));
+    const subTxt = clip(sub, Math.max(8, subMax));
+    const hMax = Math.floor((room - (sub ? subTxt.length * s.t2 * 0.55 + 16 : 0)) / (s.t3 * 0.62));
+    words = col({ justifyContent: 'center' }, [
+      text(RES_DISPLAY(s.t1, RECAP.fg, { lineHeight: 1.02, letterSpacing: -Math.round(s.t1 * 0.035) }), clip(r.line1, Math.floor(room / (s.t1 * 0.56)))),
+      row({ alignItems: 'baseline', marginTop: 6 }, [
+        ...(sub ? [text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: s.t2, color: RECAP.fg, opacity: 0.82, letterSpacing: -0.4, ...NOWRAP }, subTxt)] : []),
+        ...(handle && hMax > 4 ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: s.t3, color: RECAP.dim, marginLeft: sub ? 16 : 0, ...NOWRAP }, clip(handle, hMax))] : []),
+      ]),
+    ]);
+  }
+  // Satori ignores baseline alignment, so the unit sits on the number's foot by hand.
+  const value = r.value ? [row({ flexShrink: 0, alignItems: 'flex-end', marginLeft: 26 }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: s.vf, lineHeight: 1, color: RECAP.green, letterSpacing: -1, ...NOWRAP }, r.value),
+    ...(r.unit ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: Math.round(s.vf * 0.5), lineHeight: 1, color: RECAP.dim, marginLeft: 6, marginBottom: Math.round(s.vf * 0.1), ...NOWRAP }, r.unit)] : []),
+  ])] : [];
+  return row({ width: 920, height: s.rh, flexShrink: 0, borderTop: `2px solid ${RECAP.line}`, ...(last ? { borderBottom: `2px solid ${RECAP.line}` } : {}) }, [
+    block, col({ flexGrow: 1, flexShrink: 1, marginLeft: 26, overflow: 'hidden' }, [words]), ...value,
+  ]);
+}
+function elementChartSlide(d) {
+  const kind = d.kind || 'list';
+  const ars = d.mode === 'ars';
+  const kids = [];
+  const field = (height) => resultsField(height, 249);
+  if (kind === 'cover') {
+    kids.push(...chartMast(d, { period: false, series: false }));
+    const t = chartTitleParts(d.title);
+    // Sized to the width: Archivo 900 caps ~0.74em, Space Mono digits 0.6em less tracking.
+    const est = t.pre.length * 0.74 + (t.num ? t.num.length * 0.52 + 0.1 : 0);
+    const fs = Math.max(110, Math.min(250, Math.floor(920 / est)));
+    kids.push(row({ position: 'absolute', left: 72, top: 210, alignItems: 'flex-end' }, [
+      text(RES_DISPLAY(fs, RECAP.fg, { lineHeight: 0.8, letterSpacing: -Math.round(fs * 0.06), textTransform: 'uppercase' }), t.pre),
+      ...(t.num ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: fs, lineHeight: 0.8, letterSpacing: -Math.round(fs * 0.08), color: RECAP.green, marginLeft: 26, ...NOWRAP }, t.num)] : []),
+    ]));
+    const top = 210 + Math.round(fs * 0.8);
+    const per = String(d.period || '');
+    const perFs = Math.min(52, Math.floor(920 / Math.max(1, per.length * 0.6)));
+    const key = ars ? (d.sort === 'accuracy' ? 'accuracy' : 'points') : (d.mode === 'weekly1s' ? 'weekly1s' : 'records');
+    kids.push(col({ position: 'absolute', left: 80, top: top + 52, width: 920 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: perFs, lineHeight: 1, color: RECAP.fg, textTransform: 'uppercase', ...NOWRAP }, per),
+      text(RES_DISPLAY(44, RECAP.fg, { marginTop: 44, letterSpacing: -2 }), ars ? CHART_COPY.by[key] : CHART_COPY.credit),
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 32, lineHeight: 1.3, color: RECAP.dim, marginTop: 14, width: 920 }, CHART_COPY.lead[key]),
+      ...(d.scores && !ars ? [row({ marginTop: 40, marginLeft: 4 }, [chartKey(d.bands, true)])] : []),
+    ]));
+    kids.push(field(470));
+    kids.push(ars ? chartCutCta(CHART_COPY.join, JOIN_URL) : chartCutCta(CHART_COPY.submit, SUBMIT_URL));
+  } else if (kind === 'team') {
+    kids.push(...chartMast(d));
+    kids.push(col({ position: 'absolute', left: 76, top: 250 }, CHART_COPY.closing.map(w =>
+      text(RES_DISPLAY(132, RECAP.fg, { lineHeight: 0.88, letterSpacing: -7, textTransform: 'uppercase' }), w))));
+    kids.push(col({ position: 'absolute', left: 80, top: 640 }, CHART_COPY.closingLead.map(l =>
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 32, lineHeight: 1.3, color: RECAP.dim, ...NOWRAP }, l))));
+    kids.push(field(440));
+    kids.push(chartCutCta(CHART_COPY.join, JOIN_URL));
+  } else {
+    const rows = d.rows || [], n = Math.max(1, rows.length);
+    kids.push(...chartMast(d, { span: d.span || '' }));
+    // Rows run from under the masthead (and the key line, on a scored chart) to above the
+    // submit strip (1350 − 80 − 110, less a gap).
+    const scored = d.scores && !ars;
+    if (scored) kids.push(row({ position: 'absolute', left: 86, top: 226 }, [chartKey(d.bands, false)]));
+    const top = scored ? 290 : 236, rh = Math.floor((1130 - top) / Math.max(n, 5));
+    const s = n > 12 ? { compact: true, rh, bw: 66, bh: Math.min(34, rh - 8), bf: 19, t1: 25, t2: 20, t3: 18, vf: 26 }
+      : n > 10 ? { rh, bw: 92, bh: Math.min(50, rh - 14), bf: 28, t1: 32, t2: 22, t3: 20, vf: 38 }
+      : { rh, bw: 92, bh: 56, bf: 28, t1: 38, t2: 25, t3: 22, vf: 44 };
+    kids.push(col({ position: 'absolute', left: 80, top, width: 920 }, rows.map((r, i) => chartRow(r, s, i === rows.length - 1))));
+    kids.push(text(RES_DISPLAY(34, RECAP.fg, { position: 'absolute', left: 80, top: 1184, textTransform: 'uppercase', letterSpacing: -1 }), CHART_COPY.question));
+    kids.push(text({ position: 'absolute', left: 80, top: 1232, fontFamily: MONO, fontWeight: 700, fontSize: 28, color: RECAP.dim, ...NOWRAP }, ars ? JOIN_URL : SUBMIT_URL));
+    kids.push(h({ position: 'absolute', right: 90, bottom: 80, height: 72, display: 'flex', alignItems: 'center', background: RECAP.green,
+      borderRadius: 6, paddingLeft: 32, paddingRight: 32, transform: `skewX(${SKEW}deg)` }, [
+      text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), ars ? CHART_COPY.joinBtn : CHART_COPY.submit),
+    ]));
+  }
+  return h({ position: 'relative', display: 'flex', width: CHART_SIZE[0], height: CHART_SIZE[1], background: RECAP.bg, overflow: 'hidden' }, kids);
 }
 
 // ============ The winner posts — one 'winnerPost' element, 1080×1350 ============
 // One portrait graphic per person, posted as an Instagram COLLAB post so it lands on their
 // feed too (operator, 2026-09-18). Four posts off one element: Top Track / Top A&R of the Day
 // (the daily #1s from the recap) and of the Week (with a strap saying what the week earns).
-// Built to the approved mockup public/brand/winners/winner.html AFTER it was stripped
-// ("flyers look too busy"): the lockup, the stacked title with its date, the person, ONE
-// line of numbers, the field. No trophy, no labelled cells, no rank (TOP TRACK already says
-// #1). The letter grade sits in the block device. Gold on the money only.
+// Built to the approved mockup public/brand/winners/winner.html after two strips ("flyers
+// look too busy" 2026-09-18; "information overload for promotional graphics" 2026-09-21):
+// the lockup, the stacked title, the person, ONE line, the field. No trophy, no date, no
+// score, no grade, no city. A track says "Rated by X A&Rs"; an A&R says "N points". Same day,
+// "branding is too big — the title of the promo is TOP TRACK / TOP A&R": the lockup is a small
+// header and TOP TRACK OF THE DAY is the hero. Handles print in parentheses, as the operator
+// wrote them (twice).
 //
 // Data shape (server.js winnerDayData / winnerWeekData):
-//   { kind: 'track'|'ar', period: 'day'|'week', label, sub: 'of the Day', date: '09.12.26' or a range,
-//     strap: null | 'Placed in the next $1,000 Tournament', title, by, handle, photo? (data URI),
-//     line: { score?, drop? } | { grade, points, bullseyes }, cta: { label, url } }
+//   { kind: 'track'|'ar', period: 'day'|'week', label, sub: 'of the Day', date (caption only),
+//     title, by, handle, photo? (data URI), line: { rated } | { points }, cta: { label, url },
+//     selected?: ['Selected for the next', '$1,000 Music Tournament'] (week cards only) }
+// WEEK cards (operator, 2026-09-21: "the weekly flyers are about the person placing in the
+// tournament — that needs to be BIG"; 10-03: "artist name big with Instagram is the important
+// thing"): Congratulations / the NAME in caps / the selection, two or three lines with the money
+// in gold / "@handle" with the Instagram glyph, no parentheses. No song title (it rides in the
+// caption), no title line, no numbers.
+// The profile photo sits top right beside the header so the name runs full width.
 const WINNER_SIZE = [1080, 1350];
 // A line with every dollar amount in gold and the rest in ink (Satori collapses leading and
 // trailing spaces, so they become non-breaking ones).
@@ -761,99 +1044,502 @@ function winnerGoldLine(str, style) {
   return row({ alignItems: 'flex-end' }, String(str).split(/(\$[\d,]+)/).filter(Boolean).map(part =>
     text({ ...style, color: /^\$[\d,]+$/.test(part) ? RESULTS_GOLD : style.color }, keep(part))));
 }
-function elementWinnerPost(d) {
-  const line = d.line || {}, hasPhoto = !!d.photo, strap = d.strap ? 64 : 0;
-  const kids = [
-    h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 36 } } }]),
-    resultsLockup(),
-    // the title, stacked: TOP TRACK / of the Day · 09.12.26
-    col({ position: 'absolute', left: 80, top: 430 }, [
-      text(RES_DISPLAY(104, RECAP.fg, { lineHeight: 0.88, textTransform: 'uppercase' }), d.label || ''),
-      row({ marginTop: 16, alignItems: 'flex-end' }, [
-        text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 46, lineHeight: 1, letterSpacing: -1, color: RECAP.dim, ...NOWRAP }, d.sub || ''),
-        text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1, color: RECAP.dim, marginLeft: 10, marginBottom: 4, ...NOWRAP }, d.date ? '· ' + d.date : ''),
-      ]),
+function winnerHeader() {
+  return [
+    h({ position: 'absolute', left: 80, top: 64, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 30 } } }]),
+    h({ position: 'absolute', left: 80, top: 108, display: 'flex', flexDirection: 'row', alignItems: 'center' }, [
+      arBlock(60, 24),
+      text(RES_DISPLAY(56, RECAP.fg, { textTransform: 'uppercase', marginLeft: 16 }), 'Meeting'),
     ]),
   ];
-  if (d.strap) {
-    kids.push(row({ position: 'absolute', left: 80, top: 616 }, [
-      tick(10, 30, 16),
-      winnerGoldLine(d.strap, { fontFamily: DISPLAY, fontWeight: 700, fontSize: 35, lineHeight: 1, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }),
-    ]));
-  }
-  // The person: the title steps down with its length (Satori cannot measure a wrap), and
-  // everything under it flows in the same column so a two-line title pushes the rest down.
-  const title = clip(d.title, hasPhoto ? 44 : 70);
-  const colW = hasPhoto ? 560 : 920;
-  const handleDrops = d.kind === 'track' && (clip(d.by, 26).length + (d.handle || '').length) > 34;
-  // Satori cannot measure a wrap, so the title's line count is estimated from its length
-  // (Archivo 900 runs ~0.56em a character) and the size steps down until the numbers line
-  // clears the 13° cut at its right edge (cut y = 1160 − x·tan13°), as the mockup does.
-  const numChars = d.kind === 'ar' ? 4 + String(line.points).length + 8 + 3 + String(line.bullseyes).length + 10
-    : (line.score != null ? 6 + String(line.score).length : 0) + (line.drop ? 3 + 8 + String(line.drop).length : 0);
-  const numRight = 80 + numChars * (hasPhoto ? 30 : 36) * 0.6 + (d.kind === 'ar' ? 110 : 0);
-  const cutAt = x => 1160 - x * TAN13;
-  let fs = 58;
-  for (const size of [84, 68, 58]) {
-    const lines = Math.max(1, Math.ceil(title.length * size * 0.56 / colW));
-    const bottom = 640 + strap + lines * size * 0.96 + 26 + 48 + (handleDrops ? 42 : 0) + 44 + (hasPhoto ? 30 : 36);
-    if (bottom <= cutAt(numRight) - 16) { fs = size; break; }
-  }
-  // Satori collapses a leading or trailing space, so the joins are non-breaking spaces. Beside a
-  // photo the line has 620px (the photo starts at x=700), so it steps down a size there.
-  const NB = '\u00A0', numSize = hasPhoto ? 30 : 36;
-  const numStyle = { fontFamily: MONO, fontWeight: 700, fontSize: numSize, lineHeight: 1, color: RECAP.dim, ...NOWRAP };
-  const numVal = { ...numStyle, color: RECAP.fg };
-  let numbers;
-  if (d.kind === 'ar') {
-    numbers = row({ marginTop: 44, alignItems: 'center' }, [
-      h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: hasPhoto ? 72 : 84, height: hasPhoto ? 58 : 68, background: RECAP.green,
-        borderRadius: 4, transform: `skewX(${SKEW}deg)`, marginRight: hasPhoto ? 22 : 30, flexShrink: 0 },
-        text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: hasPhoto ? 44 : 50, letterSpacing: -2, color: RECAP.greenInk, lineHeight: 1 }, line.grade || '')),
-      text(numVal, String(line.points == null ? '' : line.points)), text(numStyle, NB + 'points'),
-      text(numStyle, NB + '·' + NB),
-      text(numVal, String(line.bullseyes == null ? '' : line.bullseyes)), text(numStyle, NB + 'bullseyes'),
-    ]);
-  } else {
-    const bits = [];
-    if (line.score != null && line.score !== '') bits.push(text(numStyle, 'Score' + NB), text(numVal, String(line.score)));
-    if (line.drop) { if (bits.length) bits.push(text(numStyle, NB + '·' + NB)); bits.push(text(numStyle, 'Dropped' + NB), text(numVal, line.drop)); }
-    numbers = bits.length ? row({ marginTop: 44, alignItems: 'center' }, bits) : text({}, '');
-  }
-  const subRow = d.kind === 'ar'
-    ? row({ marginTop: 26, alignItems: 'flex-end' }, [
-        text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, clip(d.by, 22)),
-        text({ fontFamily: DISPLAY, fontWeight: 500, fontSize: 42, lineHeight: 1.15, color: RECAP.dim, ...NOWRAP }, d.handle ? '\u00A0· ' + clip(d.handle, 24) : ''),
-      ])
-    // A long artist name and the handle would run off the edge on one line, so the handle drops
-    // under the name when the two together would not fit (as the mockup wraps it).
-    : (handleDrops
-        ? col({ marginTop: 26, alignItems: 'flex-start' }, [
-            text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, 'by ' + clip(d.by, 26)),
-            text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginTop: 10, ...NOWRAP }, d.handle || ''),
-          ])
-        : row({ marginTop: 26, alignItems: 'flex-end' }, [
-            text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 42, lineHeight: 1.15, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, 'by ' + clip(d.by, 26)),
-            text({ fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.15, color: RECAP.dim, marginLeft: 14, marginBottom: 2, ...NOWRAP }, d.handle || ''),
-          ]));
-  kids.push(col({ position: 'absolute', left: 80, top: 640 + strap, width: hasPhoto ? 560 : 920 }, [
-    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.96, letterSpacing: -Math.round(fs * 0.04), color: RECAP.fg }, title),
-    subRow,
-    numbers,
-  ]));
-  if (hasPhoto) {
-    kids.push(h({ position: 'absolute', right: 80, top: 640 + strap, width: 300, height: 300, overflow: 'hidden', borderRadius: 12,
-      background: RECAP.panel, transform: `skewX(${SKEW}deg)`, display: 'flex' }, [
-      { type: 'img', props: { src: d.photo, style: { position: 'absolute', left: -40, top: 0, width: 380, height: 300, objectFit: 'cover', transform: `skewX(${-SKEW}deg)` } } },
-    ]));
-  }
-  const cta = d.cta || {};
-  kids.push(resultsField(300, 110));
-  kids.push(col({ position: 'absolute', left: 80, bottom: 64 }, [
+}
+function winnerCta(cta) {
+  return col({ position: 'absolute', left: 80, bottom: 64 }, [
     text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 42, lineHeight: 1, letterSpacing: -1, color: RECAP.bg, ...NOWRAP }, cta.label || ''),
     text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, color: RECAP.bg, marginTop: 12, ...NOWRAP }, cta.url || ''),
+  ]);
+}
+// The Instagram glyph on the 24 grid, stroked in the handle's colour: the brand draws icons, never emoji.
+const _igIcons = {};
+function igIconDataUri(color) {
+  if (!_igIcons[color]) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="' + color
+      + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+      + '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1" fill="' + color + '" stroke="none"/></svg>';
+    _igIcons[color] = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _igIcons[color];
+}
+function elementWinnerWeek(d) {
+  const kids = winnerHeader();
+  kids.push(row({ position: 'absolute', left: 80, top: 300, alignItems: 'center' }, [
+    tick(16, 50, 22),
+    text(RES_DISPLAY(64, RECAP.fg, { lineHeight: 1, letterSpacing: -2 }), 'Congratulations'),
   ]));
+  // The name in caps, at most two lines: the size steps down with the length (Archivo 900 caps ~0.62em a character).
+  const name = clip(d.title, 40);
+  let fs = 76;
+  for (const size of [140, 112, 92, 76]) { if (Math.ceil(name.length / Math.floor(920 / (size * 0.62))) <= 2) { fs = size; break; } }
+  const sel = d.selected || [];
+  const selStyle = { fontFamily: DISPLAY, fontWeight: 700, fontSize: 56, lineHeight: 1.12, letterSpacing: -2, color: RECAP.fg, ...NOWRAP };
+  const small = { fontFamily: MONO, fontWeight: 700, fontSize: 36, lineHeight: 1.3, color: RECAP.dim };
+  kids.push(col({ position: 'absolute', left: 80, top: 400, width: 920 }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 0.92, letterSpacing: -Math.round(fs * 0.04), textTransform: 'uppercase', color: RECAP.fg }, name),
+    col({ marginTop: 26 }, sel.map((l, i) => i === 0 ? text(selStyle, l) : winnerGoldLine(l, selStyle))),
+    // "@handle" with the Instagram glyph, no parentheses (operator, 2026-10-03)
+    d.handle ? row({ marginTop: 30, alignItems: 'center' }, [
+      { type: 'img', props: { src: igIconDataUri(RECAP.dim), style: { width: 40, height: 40, marginRight: 14 } } },
+      text(small, d.handle),
+    ]) : text({}, ''),
+  ]));
+  if (d.photo) {
+    kids.push(h({ position: 'absolute', right: 80, top: 64, width: 260, height: 260, overflow: 'hidden', borderRadius: 12,
+      background: RECAP.panel, transform: `skewX(${SKEW}deg)`, display: 'flex' }, [
+      { type: 'img', props: { src: d.photo, style: { position: 'absolute', left: -35, top: 0, width: 330, height: 260, objectFit: 'cover', transform: `skewX(${-SKEW}deg)` } } },
+    ]));
+  }
+  kids.push(resultsField(300, 110), winnerCta(d.cta || {}));
   return h({ position: 'relative', display: 'flex', width: WINNER_SIZE[0], height: WINNER_SIZE[1], background: RECAP.bg }, kids);
+}
+// Since 2026-10-03 every winner post is a week card (the daily pair was retired for the
+// Daily Countdown carousel); the element name stays so the hosted paths and routes do.
+function elementWinnerPost(d) { return elementWinnerWeek(d); }
+
+// ============ A&R Wars — the tournament graphics: feed / story / thumb / bracket ============
+// Spec: docs/specs/tournament-spec.md §5 (what each state says) and §10 "Satori data shapes".
+// Ported from the approved mockups in public/brand/wars/ (flyer-feed.html, flyer-story.html,
+// thumb.html, bracket.html) — every number below is that file's CSS, so the Satori render and
+// the Chrome preview in public/brand/wars/preview/ are the same picture.
+//
+// The weekly seat flyer: ONE BIG slot (that week's qualifier) and EIGHT SMALL seats (everyone
+// picked so far; unfilled seats are numbered silhouettes). `big: null` is the final promo's
+// question mark ("Who has the Best Ear?", the date and time big). After the event the champion
+// takes the big slot with the gold ring. Colour has a job: PURPLE = the contest (the lockup
+// block, the tags, the qualifier ring, the question mark, the bracket), GOLD = the prize amount
+// and the champion ONLY, GREEN = the date, LIVE and the call to action. The prize prints ONCE
+// per graphic (the field block, or the champion headline — the champion state hides the block).
+//
+//   tournamentFeed    1080×1350   tournamentStory   1080×1920
+//   tournamentThumb   1920×1080   tournamentBracket 1080×1350
+//
+// Data (feed / story / thumb):
+//   { lockupWord, eyebrow, dateLabel, timeLabel, stage: 'seat'|'final'|'champion', headline,
+//     premise, prizeAmount, prizeLabel,
+//     big: { name, handle|null, photo|null, tag|null } | null,
+//     seats: [{ n, name|null, photo|null, filled, ring: 'qualifier'|'champion'|null }] ×8,
+//     cta: { label, url } }
+// Data (bracket):
+//   { lockupWord, eyebrow, dateLabel, timeLabel, prizeAmount, prizeLabel?,
+//     r1: [{ a: { name, seed, sub, photo }, b, winner: 'a'|'b'|null }] ×4,
+//     r2: [{ a|null, b|null, winner }] ×2, final: { a|null, b|null, winner },
+//     champion: { name, photo } | null, cta }
+// Photos are data URIs prepared by the caller (null → the silhouette); this module never fetches.
+const TOURNAMENT_SIZES = { tournamentFeed: [1080, 1350], tournamentStory: [1080, 1920], tournamentThumb: [1920, 1080], tournamentBracket: [1080, 1350] };
+const WARS = { ...RECAP, purple: '#6d5fe0', gold: RESULTS_GOLD };
+const WARS_PRIZE_LABEL = 'Cash Prize';
+
+// The silhouette: a head and shoulders drawn as stroke SVG in the dim ink — never an emoji.
+let _silhouette = null;
+function silhouetteDataUri() {
+  if (!_silhouette) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" stroke="' + WARS.dim
+      + '" stroke-width="3" stroke-linecap="round"><circle cx="50" cy="38" r="17"/><path d="M19 96c3-20 16-30 31-30s28 10 31 30"/></svg>';
+    _silhouette = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _silhouette;
+}
+// Type that must stay on one line steps down a size until the estimate fits (Archivo mixed case
+// ~0.58em a character, caps ~0.62em, Space Mono exactly 0.6em).
+function warsFit(str, maxFs, minFs, maxW, em = 0.58) {
+  const n = String(str == null ? '' : str).length;
+  let fs = maxFs;
+  while (fs > minFs && n * fs * em > maxW) fs -= 1;
+  return fs;
+}
+function warsImg(src, size, extra = {}) {
+  return { type: 'img', props: { src, width: size, height: size, style: { width: size, height: size, objectFit: 'cover', ...extra } } };
+}
+// A round slot. `photo` fills it; without one it carries the silhouette on a dim DASHED circle,
+// or (`qm`) the purple question mark on a purple dashed circle. `ring` draws OUTSIDE the photo
+// (the mockup's `outline`) — negative margins keep the layout where the photo alone would sit.
+function warsCircle(size, { photo = null, qm = false, ring = null, ringWidth = 4, dashWidth = 2 } = {}) {
+  const dashed = !photo;
+  const dashColor = qm ? WARS.purple : WARS.line;
+  const dw = dashed ? dashWidth : 0;
+  const inner = size - 2 * dw;
+  let child;
+  if (photo) child = warsImg(photo, size);
+  else if (qm) child = text({ fontFamily: MONO, fontWeight: 700, fontSize: Math.round(size * 0.65), lineHeight: 1, color: WARS.purple, marginTop: Math.round(size * -0.04) }, '?');
+  else child = warsImg(silhouetteDataUri(), inner);
+  const face = h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: size, height: size,
+    borderRadius: size, overflow: 'hidden', background: WARS.panel,
+    ...(dashed ? { border: `${dw}px dashed ${dashColor}` } : {}) }, [child]);
+  if (!ring) return face;
+  const rw = ringWidth, outer = size + 2 * rw;
+  return h({ display: 'flex', flexShrink: 0, width: outer, height: outer, borderRadius: outer, border: `${rw}px solid ${ring}`,
+    margin: -rw }, [face]);
+}
+// The [A&R] WARS lockup: the CONTEST PURPLE block (the mark master is purple here, not green)
+// with the word in Archivo 900 at build.py's lockup geometry (.9375S, −.04em, .16S past the block).
+function warsLockup(S, word) {
+  const fs = Math.round(S * 0.39);
+  return row({}, [
+    h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: S, height: S, background: WARS.purple,
+      borderRadius: Math.round(S * 0.075), transform: `skewX(${SKEW}deg)` },
+      text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, letterSpacing: -Math.round(fs * 0.05), color: WARS.fg, lineHeight: 1 }, 'A&R')),
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: Math.round(S * 0.9375), lineHeight: 1, letterSpacing: -Math.round(S * 0.9375 * 0.04),
+      textTransform: 'uppercase', color: WARS.fg, marginLeft: Math.round(S * 0.16), ...NOWRAP }, word || 'Wars'),
+  ]);
+}
+// The LIVE badge: a green skewed block, the word un-skewed inside it, in the ground colour.
+function warsLive(hgt, fs, padX, mr, radius = 4) {
+  return h({ display: 'flex', alignItems: 'center', flexShrink: 0, height: hgt, background: WARS.green, borderRadius: radius,
+    paddingLeft: padX, paddingRight: padX, marginRight: mr, transform: `skewX(${SKEW}deg)` }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: fs, letterSpacing: Math.round(fs * 0.06), lineHeight: 1, color: WARS.bg, transform: `skewX(${-SKEW}deg)`, ...NOWRAP }, 'LIVE'),
+  ]);
+}
+// The seat tag: "QUALIFIED · WEEK 4" on purple, "CHAMPION" on gold with the ground ink.
+function warsTag(label, { fill, ink, hgt, fs, mt = 0, ml = 0 }) {
+  return h({ display: 'flex', alignItems: 'center', alignSelf: 'flex-start', flexShrink: 0, height: hgt, background: fill, borderRadius: 4,
+    paddingLeft: 18, paddingRight: 18, marginTop: mt, marginLeft: ml, transform: `skewX(${SKEW}deg)` }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, letterSpacing: -Math.round(fs * 0.01), lineHeight: 1, textTransform: 'uppercase', color: ink, transform: `skewX(${-SKEW}deg)`, ...NOWRAP }, label),
+  ]);
+}
+// A one-line headline with the prize amount in gold and the rest in ink, stepped down to fit.
+function warsHeadline(str, prize, maxFs, minFs, maxW, extra = {}) {
+  const line = clip(str, 60);
+  const fs = warsFit(line, maxFs, minFs, maxW);
+  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize: fs, lineHeight: 1, letterSpacing: -Math.round(fs * 0.04), color: WARS.fg, ...NOWRAP };
+  const keep = t => t.replace(/^ /, ' ').replace(/ $/, ' ');
+  const parts = prize ? line.split(prize) : [line];
+  const kids = [];
+  parts.forEach((part, i) => {
+    if (i) kids.push(text({ ...st, color: WARS.gold }, prize));
+    if (part) kids.push(text(st, keep(part)));
+  });
+  return row({ alignItems: 'flex-end', ...extra }, kids);
+}
+// The 13° green field at the foot of a portrait graphic (height, and where the cut meets the
+// left edge, measured from the field's top). Same shear as resultsField, any canvas height.
+function warsField(Hd, height, cutTop) {
+  const boxH = height * 2 + 300;
+  return h({ position: 'absolute', left: 0, top: Hd - height, width: 1080, height, overflow: 'hidden', display: 'flex' }, [
+    h({ position: 'absolute', left: 0, top: cutTop - Math.round(540 * TAN13), width: 1080, height: boxH, background: WARS.green, transform: 'skewY(-13deg)' }, ''),
+  ]);
+}
+// The eight seats in one row, in the order they qualified; an unfilled seat is a numbered silhouette.
+function warsSeats(d, g) {
+  const seats = (d.seats || []).slice(0, 8);
+  while (seats.length < 8) seats.push({ n: seats.length + 1, filled: false });
+  return seats.map((s, i) => {
+    const n = s.n || i + 1;
+    const filled = !!s.filled;
+    const ring = s.ring === 'champion' ? WARS.gold : s.ring === 'qualifier' ? WARS.purple : null;
+    // Satori ignores textAlign on a nowrap box, so every label is a nowrap line the column
+    // centres. A two-word name wider than the seat breaks at a space on the portrait pieces
+    // (the thumbnail keeps one line and steps the size down instead).
+    const label = filled ? clip(s.name || '', 24) : 'Seat ' + n;
+    const words = label.split(' ');
+    let lines = [label];
+    if (filled && !g.nowrap && words.length > 1 && label.length * g.nameFs * 0.55 > g.w) {
+      const k = Math.max(1, Math.round(words.length / 2));
+      lines = [words.slice(0, k).join(' '), words.slice(k).join(' ')];
+    }
+    const maxW = g.nameMax || g.w + 8;
+    const nameFs = Math.min(...lines.map(l => warsFit(l, g.nameFs, 12, maxW, 0.55)));
+    const lineStyle = filled
+      ? { fontFamily: DISPLAY, fontWeight: 800, fontSize: nameFs, lineHeight: 1.05, letterSpacing: -Math.round(nameFs * 0.03),
+          color: s.ring === 'champion' ? WARS.gold : WARS.fg, ...NOWRAP }
+      : { fontFamily: MONO, fontWeight: 700, fontSize: g.seatFs, lineHeight: 1.05, letterSpacing: 1, color: WARS.dim, ...NOWRAP };
+    return col({ width: g.w, alignItems: 'center', flexShrink: 0 }, [
+      warsCircle(g.ph, { photo: filled ? s.photo : null, ring, ringWidth: g.ring, dashWidth: g.dash }),
+      col({ marginTop: g.nameMt, alignItems: 'center' }, lines.map(l => text(lineStyle, l))),
+    ]);
+  });
+}
+// The big slot laid as a ROW (feed + story): the photo left, the person right. A null `big` is
+// the final promo: the question mark, then the date and time big, then the premise.
+function warsBigRow(d, g) {
+  const champion = d.stage === 'champion';
+  const big = d.big;
+  const premise = text({ fontFamily: SANS, fontWeight: 400, fontSize: 26, lineHeight: 1.3, letterSpacing: -0.3, color: WARS.fg, marginTop: 20, width: g.premiseW }, d.premise || '');
+  let photo, tx;
+  if (!big) {
+    photo = warsCircle(g.ph, { qm: true, dashWidth: 4 });
+    tx = [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.when, lineHeight: 1.15, letterSpacing: -Math.round(g.when * 0.02), color: WARS.green, ...NOWRAP }, d.dateLabel || ''),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.when, lineHeight: 1.15, letterSpacing: -Math.round(g.when * 0.02), color: WARS.green, ...NOWRAP }, d.timeLabel || ''),
+      premise,
+    ];
+  } else {
+    photo = warsCircle(g.ph, { photo: big.photo, ring: champion ? WARS.gold : null, ringWidth: 8 });
+    const name = clip(big.name || '', 30);
+    const nameFs = warsFit(name, g.nm, 24, g.txW, 0.6);
+    tx = [text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: nameFs, lineHeight: 0.95, letterSpacing: -Math.round(nameFs * 0.04), color: champion ? WARS.gold : WARS.fg, ...NOWRAP }, name)];
+    if (big.handle) {
+      const handle = '@' + String(big.handle).replace(/^@/, '');
+      const hFs = warsFit(handle, g.ig, 18, g.txW - g.igi - 10, 0.6);
+      tx.push(row({ marginTop: 14 }, [
+        { type: 'img', props: { src: igIconDataUri(WARS.dim), style: { width: g.igi, height: g.igi, marginRight: 10, flexShrink: 0 } } },
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: hFs, lineHeight: 1, color: WARS.dim, ...NOWRAP }, handle),
+      ]));
+    }
+    if (big.tag) tx.push(warsTag(clip(big.tag, 28), champion ? { fill: WARS.gold, ink: WARS.bg, hgt: g.tagH, fs: g.tagFs, mt: 22, ml: 6 } : { fill: WARS.purple, ink: WARS.fg, hgt: g.tagH, fs: g.tagFs, mt: 22, ml: 6 }));
+    tx.push(premise);
+  }
+  return row({ position: 'absolute', left: g.pad, top: g.top, width: g.W - 2 * g.pad }, [
+    photo,
+    col({ marginLeft: 44, alignItems: 'flex-start' }, tx),
+  ]);
+}
+// The masthead shared by the three promo pieces: the logo, the event number, the lockup.
+function warsMast(d, g) {
+  return [
+    h({ position: 'absolute', left: g.pad, top: g.logoTop, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: g.logoH } } }]),
+    text({ position: 'absolute', ...(g.numLeft ? { left: g.pad } : { right: g.pad }), top: g.numTop, fontFamily: MONO, fontWeight: 700, fontSize: g.numFs, lineHeight: 1.2, letterSpacing: 0.6, color: WARS.dim, ...NOWRAP }, clip(d.eyebrow || '', 24)),
+    h({ position: 'absolute', left: g.pad, top: g.lockTop, display: 'flex' }, [warsLockup(g.S, d.lockupWord)]),
+  ];
+}
+// The event line under the lockup: the LIVE badge + the event on the final promo, else
+// "<event> · <date> · <time>" in green mono.
+function warsEye(d, g) {
+  const st = { fontFamily: MONO, fontWeight: 700, fontSize: 30, lineHeight: 1, letterSpacing: -0.3, color: WARS.green, ...NOWRAP };
+  const kids = d.stage === 'final'
+    ? [warsLive(38, 22, 12, 16), text(st, clip(d.eyebrow || '', 40))]
+    : [text(st, clip([d.eyebrow, d.dateLabel, d.timeLabel].filter(Boolean).join(' · '), 50))];
+  return row({ position: 'absolute', left: g.pad, top: g.eyeTop, height: 38 }, kids);
+}
+// The foot of the portrait pieces: the call to action bottom-left on the green field, the
+// prize bottom-right (hidden on the champion graphic, whose headline carries the amount).
+// A second ask (`d.cta2`, the final package) takes the prize's spot, right-aligned — that
+// graphic's headline carries the amount instead, so the prize still prints exactly once.
+function warsFoot(d, g) {
+  const cta = d.cta || {};
+  const two = !!(d.cta2 && d.cta2.label);
+  const ctaFs = two && g.pkgCtaFs ? g.pkgCtaFs : g.ctaFs;
+  const urlFs = two && g.pkgUrlFs ? g.pkgUrlFs : g.urlFs;
+  const stack = (c, right) => col({ position: 'absolute', [right ? 'right' : 'left']: g.pad, bottom: g.ctaBottom, alignItems: right ? 'flex-end' : 'flex-start' }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: ctaFs, lineHeight: 1, letterSpacing: -Math.round(ctaFs * 0.03), color: WARS.bg, ...NOWRAP }, clip(c.label || '', 24)),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: urlFs, lineHeight: 1, letterSpacing: -0.3, color: WARS.bg, marginTop: g.urlMt, ...NOWRAP }, clip(c.url || '', 28)),
+  ]);
+  const kids = [stack(cta, false)];
+  if (two) kids.push(stack(d.cta2, true));
+  else if (d.stage !== 'champion' && d.prizeAmount) {
+    kids.push(col({ position: 'absolute', right: g.pad, bottom: g.prizeBottom, alignItems: 'flex-end' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.prizeFs, lineHeight: 1, letterSpacing: -Math.round(g.prizeFs * 0.04), color: WARS.bg, ...NOWRAP }, d.prizeAmount),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.prizeLabelFs, lineHeight: 1.2, letterSpacing: -0.3, color: WARS.bg, marginTop: 4, ...NOWRAP }, d.prizeLabel || WARS_PRIZE_LABEL),
+    ]));
+  }
+  return kids;
+}
+// Feed and story share one build; `g` carries the geometry that differs between 4:5 and 9:16
+// (the story keeps Instagram's top and bottom 250px clear).
+function elementTournamentPortrait(d, story) {
+  const [Wd, Hd] = story ? TOURNAMENT_SIZES.tournamentStory : TOURNAMENT_SIZES.tournamentFeed;
+  const g = story
+    ? { W: Wd, pad: 72, logoTop: 262, logoH: 34, numTop: 258, numFs: 32, lockTop: 330, S: 140, eyeTop: 520, headTop: 572, headFs: 66,
+        top: 700, ph: 380, nm: 58, ig: 28, igi: 32, tagH: 44, tagFs: 23, when: 46, premiseW: 512, txW: 936 - 380 - 44,
+        seatsTop: 1136, seat: { w: 112, ph: 104, nameFs: 19, nameMt: 10, seatFs: 16, ring: 4, dash: 2 },
+        field: [620, 249], ctaBottom: 262, ctaFs: 52, urlFs: 40, urlMt: 14, prizeBottom: 268, prizeFs: 72, prizeLabelFs: 30, pkgCtaFs: 44, pkgUrlFs: 34 }
+    : { W: Wd, pad: 72, logoTop: 64, logoH: 32, numTop: 60, numFs: 32, lockTop: 128, S: 120, eyeTop: 288, headTop: 338, headFs: 64,
+        top: 440, ph: 340, nm: 60, ig: 30, igi: 34, tagH: 44, tagFs: 24, when: 44, premiseW: 552, txW: 936 - 340 - 44,
+        seatsTop: 820, seat: { w: 112, ph: 100, nameFs: 19, nameMt: 10, seatFs: 16, ring: 4, dash: 2 },
+        field: [300, 110], ctaBottom: 64, ctaFs: 42, urlFs: 34, urlMt: 12, prizeBottom: 72, prizeFs: 64, prizeLabelFs: 28 };
+  const kids = warsMast(d, g);
+  kids.push(warsEye(d, g));
+  kids.push(warsHeadline(d.headline || '', d.prizeAmount, g.headFs, 36, Wd - 2 * g.pad, { position: 'absolute', left: g.pad, top: g.headTop }));
+  kids.push(warsBigRow(d, g));
+  kids.push(row({ position: 'absolute', left: g.pad, top: g.seatsTop, width: Wd - 2 * g.pad, justifyContent: 'space-between', alignItems: 'flex-start' }, warsSeats(d, g.seat)));
+  kids.push(warsField(Hd, g.field[0], g.field[1]));
+  kids.push(...warsFoot(d, g));
+  return h({ position: 'relative', display: 'flex', width: Wd, height: Hd, background: WARS.bg, overflow: 'hidden' }, kids);
+}
+// The livestream thumbnail, 16:9, designed to read at 180px: the lockup, the big face (or the
+// question mark), the prize, the date, and a row of eight circles survive; the names are small.
+function elementTournamentThumb(d) {
+  const [Wd, Hd] = TOURNAMENT_SIZES.tournamentThumb;
+  const pad = 96, champion = d.stage === 'champion', big = d.big;
+  const kids = warsMast(d, { pad, logoTop: 64, logoH: 40, numTop: 124, numFs: 30, numLeft: true, lockTop: 180, S: 220 });
+  // the date, green, with the LIVE badge until the event has happened
+  const whenSt = { fontFamily: MONO, fontWeight: 700, fontSize: 56, lineHeight: 1, letterSpacing: -2, color: WARS.green, ...NOWRAP };
+  kids.push(row({ position: 'absolute', left: pad, top: 440, height: 64 }, [
+    ...(champion ? [] : [warsLive(64, 36, 20, 24, 6)]),
+    text(whenSt, clip([d.dateLabel, d.timeLabel].filter(Boolean).join(' · '), 40)),
+  ]));
+  kids.push(warsHeadline(d.headline || '', d.prizeAmount, 76, 40, 1260, { position: 'absolute', left: pad, top: 530 }));
+  if (!champion && d.prizeAmount) {
+    kids.push(row({ position: 'absolute', left: pad, top: 620, alignItems: 'flex-end' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 120, lineHeight: 1, letterSpacing: -7, color: WARS.gold, ...NOWRAP }, d.prizeAmount),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, letterSpacing: 3, textTransform: 'uppercase', color: WARS.gold, marginLeft: 22, marginBottom: 6, ...NOWRAP }, d.prizeLabel || WARS_PRIZE_LABEL),
+    ]));
+  }
+  kids.push(text({ position: 'absolute', left: pad, top: champion ? 640 : 752, width: 1260, fontFamily: SANS, fontWeight: 400, fontSize: 27, lineHeight: 1.3, letterSpacing: -0.4, color: WARS.fg }, d.premise || ''));
+  // the big slot, top right: the photo, then the person under it
+  const bigKids = [];
+  if (!big) bigKids.push(warsCircle(420, { qm: true, dashWidth: 5 }));
+  else {
+    bigKids.push(warsCircle(420, { photo: big.photo, ring: champion ? WARS.gold : null, ringWidth: 10 }));
+    const name = clip(big.name || '', 30);
+    const nameFs = warsFit(name, 48, 24, 460, 0.6);
+    bigKids.push(text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: nameFs, lineHeight: 1, letterSpacing: -Math.round(nameFs * 0.04), textAlign: 'center', color: champion ? WARS.gold : WARS.fg, marginTop: 22, ...NOWRAP }, name));
+    if (big.handle) {
+      const handle = '@' + String(big.handle).replace(/^@/, '');
+      const hFs = warsFit(handle, 26, 16, 460 - 36, 0.6);
+      bigKids.push(row({ marginTop: 10 }, [
+        { type: 'img', props: { src: igIconDataUri(WARS.dim), style: { width: 28, height: 28, marginRight: 8, flexShrink: 0 } } },
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: hFs, lineHeight: 1, color: WARS.dim, ...NOWRAP }, handle),
+      ]));
+    }
+    if (big.tag) bigKids.push(warsTag(clip(big.tag, 28), champion ? { fill: WARS.gold, ink: WARS.bg, hgt: 42, fs: 22, mt: 16 } : { fill: WARS.purple, ink: WARS.fg, hgt: 42, fs: 22, mt: 16 }));
+  }
+  kids.push(col({ position: 'absolute', right: pad, top: 96, width: 460, alignItems: 'center' }, bigKids));
+  // the eight seats along the bottom
+  kids.push(row({ position: 'absolute', left: pad, bottom: 56, width: Wd - 2 * pad, justifyContent: 'space-between', alignItems: 'flex-start' },
+    warsSeats(d, { w: 190, ph: 150, nameFs: 24, nameMt: 12, seatFs: 20, ring: 5, dash: 3, nowrap: true, nameMax: 200 })));
+  return h({ position: 'relative', display: 'flex', width: Wd, height: Hd, background: WARS.bg, overflow: 'hidden' }, kids);
+}
+// The bracket: 8 → 4 → 2 → 1 drawn left to right. The draw column carries photos, names and
+// "#seed · handle-or-city"; later columns the name and seed; empty slots are dashed purple
+// boxes; a competitor who lost dims to 40%; a winner's slot takes the purple border. Gold on
+// the champion slot and the prize only. Connectors are plain boxes: full purple past a decided
+// match, dimmed before it, so the eye follows the result.
+function elementTournamentBracket(d) {
+  const [Wd, Hd] = TOURNAMENT_SIZES.tournamentBracket;
+  const pad = 60;
+  const r1 = (d.r1 || []).slice(0, 4), r2 = (d.r2 || []).slice(0, 2), fin = d.final || {}, champ = d.champion || null;
+  while (r1.length < 4) r1.push({ a: null, b: null, winner: null });
+  while (r2.length < 2) r2.push({ a: null, b: null, winner: null });
+  const kids = [
+    h({ position: 'absolute', left: pad, top: 60, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 30 } } }]),
+    text({ position: 'absolute', right: pad, top: 56, fontFamily: MONO, fontWeight: 700, fontSize: 30, lineHeight: 1.27, letterSpacing: 0.6, color: WARS.dim, ...NOWRAP }, clip(d.eyebrow || '', 24)),
+    h({ position: 'absolute', left: pad, top: 116, display: 'flex' }, [warsLockup(100, d.lockupWord)]),
+    text({ position: 'absolute', left: pad, top: 244, fontFamily: DISPLAY, fontWeight: 900, fontSize: 40, lineHeight: 1, letterSpacing: -1.6, textTransform: 'uppercase', color: WARS.fg, ...NOWRAP }, 'Bracket'),
+    col({ position: 'absolute', right: pad, top: 244, alignItems: 'flex-end' }, [d.dateLabel, d.timeLabel].filter(Boolean).map(l =>
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 28, lineHeight: 1.25, letterSpacing: -0.6, color: WARS.green, ...NOWRAP }, clip(l, 30)))),
+  ];
+  // Geometry (bracket.html): the draw (wide, with photos), the Final 4, the Final 2, the champion.
+  const X = [{ x: 60, w: 280 }, { x: 372, w: 190 }, { x: 594, w: 190 }, { x: 816, w: 204 }];
+  const SH = 76, PAIR = 12, GAP = 34, TOP = 372;
+  const y1 = [];
+  for (let i = 0; i < 8; i++) y1.push(TOP + i * SH + Math.floor(i / 2) * (GAP - PAIR) + i * PAIR);
+  const mid = y => y + SH / 2;
+  const y2 = [0, 1, 2, 3].map(i => (mid(y1[2 * i]) + mid(y1[2 * i + 1])) / 2 - SH / 2);
+  const y3 = [0, 1].map(i => (mid(y2[2 * i]) + mid(y2[2 * i + 1])) / 2 - SH / 2);
+  const yF = (mid(y3[0]) + mid(y3[1])) / 2;
+  // Round labels over each column: the live round on purple, the champion label gold once there is one.
+  const live = champ ? 3 : (fin.a || fin.b) ? 2 : r2.some(m => m.a || m.b) ? 1 : 0;
+  [['Round 1', 0], ['Final 4', 1], ['Final 2', 2], ['Champion', 3]].forEach(([t, i]) => {
+    const gold = i === 3 && champ, on = i === live;
+    kids.push(h({ position: 'absolute', left: X[i].x + 6, top: 316, width: X[i].w - 12, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      border: `2px solid ${gold ? WARS.gold : on ? WARS.purple : WARS.line}`, background: gold ? WARS.gold : on ? WARS.purple : 'transparent',
+      borderRadius: 4, transform: `skewX(${SKEW}deg)` }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, lineHeight: 1, letterSpacing: 0.7, textTransform: 'uppercase', color: gold ? WARS.bg : on ? WARS.fg : WARS.dim, transform: `skewX(${-SKEW}deg)`, ...NOWRAP }, t),
+    ]));
+  });
+  // A slot: a person (state '' | 'won' | 'out'), or an empty dashed box with a label.
+  const slot = (x, y, w, state, inner, hgt = SH, extra = {}) => h({ position: 'absolute', left: x, top: y, width: w, height: hgt, display: 'flex', alignItems: 'center',
+    borderRadius: 8, background: WARS.panel, border: `2px solid ${state === 'won' ? WARS.purple : WARS.line}`, paddingLeft: 14, paddingRight: 14,
+    opacity: state === 'out' ? 0.4 : 1, ...extra }, inner);
+  const empty = (x, y, w, label, hgt = SH, inner = null) => h({ position: 'absolute', left: x, top: y, width: w, height: hgt, display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: `2px dashed ${WARS.purple}` }, inner || [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 16, lineHeight: 1, letterSpacing: 0.6, textTransform: 'uppercase', color: WARS.purple, ...NOWRAP }, label),
+  ]);
+  const person = (c, w, withSub) => {
+    const name = clip(c.name || '', 26);
+    const nameFs = warsFit(name, 24, 12, w - 96, 0.55);
+    const seed = c.seed != null ? '#' + c.seed : '';
+    const sub = withSub && c.sub ? seed + ' · ' + c.sub : seed;
+    const subFs = warsFit(sub, 16, 11, w - 96, 0.6);
+    return [
+      warsCircle(52, { photo: c.photo, dashWidth: 0 }),
+      col({ marginLeft: 12, alignItems: 'flex-start' }, [
+        text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: nameFs, lineHeight: 1, letterSpacing: -Math.round(nameFs * 0.03), color: WARS.fg, ...NOWRAP }, name),
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: subFs, lineHeight: 1, color: WARS.dim, marginTop: 6, ...NOWRAP }, sub),
+      ]),
+    ];
+  };
+  // Everyone a decided match went against, by seed — a loser dims in EVERY column they
+  // appear in, so a finalist who lost dims all the way back to the draw (the mockup's lostIn).
+  const outSeeds = new Set();
+  for (const m of [...r1, ...r2, fin]) {
+    if (!m || !m.winner) continue;
+    const loser = m[m.winner === 'a' ? 'b' : 'a'];
+    if (loser && loser.seed != null) outSeeds.add(loser.seed);
+  }
+  const stateOf = (m, side) => {
+    const c = m && m[side];
+    if (c && outSeeds.has(c.seed)) return 'out';
+    return m && m.winner === side ? 'won' : '';
+  };
+  // Column 1: the draw
+  r1.forEach((m, i) => ['a', 'b'].forEach((side, j) => {
+    const c = m[side];
+    const y = y1[2 * i + j];
+    if (!c) { kids.push(empty(X[0].x, y, X[0].w, 'TBD')); return; }
+    kids.push(slot(X[0].x, y, X[0].w, stateOf(m, side), person(c, X[0].w, true)));
+  }));
+  // Column 2: the Final 4 (the winner of each draw matchup; the empty label names the matchup by seed)
+  for (let i = 0; i < 4; i++) {
+    const m = r2[Math.floor(i / 2)], side = i % 2 ? 'b' : 'a';
+    const c = m[side];
+    if (!c) {
+      const a = r1[i].a, b = r1[i].b;
+      kids.push(empty(X[1].x, y2[i], X[1].w, a && b && a.seed != null && b.seed != null ? a.seed + 'v' + b.seed : 'TBD'));
+      continue;
+    }
+    kids.push(slot(X[1].x, y2[i], X[1].w, stateOf(m, side), person(c, X[1].w, false)));
+  }
+  // Column 3: the Final 2
+  for (let i = 0; i < 2; i++) {
+    const side = i ? 'b' : 'a', c = fin[side];
+    if (!c) { kids.push(empty(X[2].x, y3[i], X[2].w, 'TBD')); continue; }
+    kids.push(slot(X[2].x, y3[i], X[2].w, stateOf(fin, side), person(c, X[2].w, false)));
+  }
+  // Column 4: the champion — gold only here and on the prize
+  const prize = d.prizeAmount || '';
+  if (!champ) {
+    kids.push(empty(X[3].x, yF - 60, X[3].w, 'Champion', 120, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 16, lineHeight: 1, letterSpacing: 0.6, textTransform: 'uppercase', color: WARS.purple, ...NOWRAP }, 'Champion'),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, lineHeight: 1, letterSpacing: -2, color: WARS.gold, marginTop: 8, ...NOWRAP }, prize),
+    ]));
+  } else {
+    const name = clip(champ.name || '', 26);
+    const nameFs = warsFit(name, 26, 12, X[3].w - 20, 0.55);
+    kids.push(h({ position: 'absolute', left: X[3].x, top: yF - 100, width: X[3].w, height: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      borderRadius: 8, background: WARS.gold, border: `2px solid ${WARS.gold}`, paddingLeft: 10, paddingRight: 10 }, [
+      champ.photo ? warsImg(champ.photo, 72, { borderRadius: 72 }) : h({ display: 'flex', width: 72, height: 72, borderRadius: 72, background: 'rgba(14,12,26,0.18)' }, ''),
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 18, lineHeight: 1, letterSpacing: 0.4, textTransform: 'uppercase', color: WARS.bg, marginTop: 10, ...NOWRAP }, 'Champion'),
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: nameFs, lineHeight: 1, letterSpacing: -Math.round(nameFs * 0.03), color: WARS.bg, marginTop: 8, ...NOWRAP }, name),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 34, lineHeight: 1, letterSpacing: -1.7, color: WARS.bg, marginTop: 8, ...NOWRAP }, prize),
+    ]));
+  }
+  // Connectors: each pair joins at the gap's centre line, then runs into the next slot.
+  const T = 3;
+  const line = (x, y, w, hgt, dim) => kids.push(h({ position: 'absolute', left: x, top: y, width: w, height: hgt, background: WARS.purple, opacity: dim ? 0.35 : 1 }, ''));
+  const join = (colIdx, ys, i, decided) => {
+    const x1 = X[colIdx].x + X[colIdx].w, xm = x1 + (X[colIdx + 1].x - x1) / 2, x2 = X[colIdx + 1].x;
+    const a = mid(ys[2 * i]), c = mid(ys[2 * i + 1]), m = (a + c) / 2;
+    line(x1, a - T / 2, xm - x1, T, !decided);
+    line(x1, c - T / 2, xm - x1, T, !decided);
+    line(xm - T / 2, a, T, c - a, !decided);
+    line(xm, m - T / 2, x2 - xm, T, !decided);
+  };
+  for (let i = 0; i < 4; i++) join(0, y1, i, !!r1[i].winner);
+  for (let i = 0; i < 2; i++) join(1, y2, i, !!r2[i].winner);
+  join(2, y3, 0, !!fin.winner);
+  // The call to action over a rule, the prize right
+  const cta = d.cta || {};
+  kids.push(h({ position: 'absolute', left: pad, right: pad, bottom: 60, borderTop: `2px solid ${WARS.line}`, paddingTop: 28, display: 'flex', flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }, [
+    col({ alignItems: 'flex-start' }, [
+      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 36, lineHeight: 1, letterSpacing: -1, textTransform: 'uppercase', color: WARS.fg, ...NOWRAP }, clip(cta.label || '', 24)),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 30, lineHeight: 1, color: WARS.green, marginTop: 12, ...NOWRAP }, clip(cta.url || '', 28)),
+    ]),
+    col({ alignItems: 'flex-end' }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 52, lineHeight: 1, letterSpacing: -2.6, color: WARS.gold, ...NOWRAP }, prize),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, lineHeight: 1.2, color: WARS.dim, marginTop: 2, ...NOWRAP }, d.prizeLabel || WARS_PRIZE_LABEL),
+    ]),
+  ]));
+  return h({ position: 'relative', display: 'flex', width: Wd, height: Hd, background: WARS.bg, overflow: 'hidden' }, kids);
 }
 
 // ============ The Track Report — the artist's report, one 'trackPage' element ============
@@ -940,11 +1626,14 @@ function trackContent(d) {
       trackRecordLine(d),
       col({ marginTop: 26 }, [trackHeadline(band.headline || [], 96)]),
       trackBody(d.sub || '', { mt: 30 }),
+      // The verdict (the meaning of the average's whole number) sits on its own line: the
+      // longest meaning runs ~55 characters and cannot share the score's row.
       row({ marginTop: 'auto', alignItems: 'flex-end' }, [
         text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 132, lineHeight: 0.9, letterSpacing: -6, color: RECAP.fg, ...NOWRAP }, d.mean),
         text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, letterSpacing: 3, textTransform: 'uppercase', color: RECAP.dim, marginLeft: 24, marginBottom: 10, ...NOWRAP },
-          `/ ${CHART_SCALE_MAX} · ${band.label || ''}`),
+          `/ ${CHART_SCALE_MAX}`),
       ]),
+      trackBody(band.verdict || band.label || '', { size: 36, color: RECAP.fg, weight: 800, mt: 18 }),
     ];
   }
   if (k === 'split') {
@@ -1002,7 +1691,7 @@ function trackContent(d) {
         big(d.mean, 'Delivered', false),
         text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: TRACK.purple, marginBottom: 74, marginLeft: 'auto', ...NOWRAP }, su.label || ''),
       ]),
-      trackBody(`The A&Rs guessed ${d.predictMean} from the setup, then heard it and landed on ${d.mean}.`, { mt: 40 }),
+      trackBody(`The A&Rs expected it to score ${d.predictMean}. It scored ${d.mean}.`, { mt: 40 }),
       trackPull(su.pull || '', 'purple'),
     ];
   }
@@ -1017,7 +1706,7 @@ function trackContent(d) {
     return [
       trackHeadline(['Three things', 'to do next.'], 80),
       col({ marginTop: 40 }, steps),
-      trackPull('Every line on this page comes from the numbers on the other pages — the decision, the biggest gap between groups of A&Rs, and the setup. Nothing is written by hand.', 'plain'),
+      trackPull('Every line on this page comes from the numbers on the other pages — the score, the biggest gap between groups of A&Rs, and what the A&Rs expected. The amount is what to spend letting people know the record is out.', 'plain'),
     ];
   }
   if (k === 'comments') {
@@ -1096,15 +1785,21 @@ function element(type, data = {}) {
   if (type === 'songs') return frame({ title: 'Top 8 Records', sub: data.session || null, body: bodySongs(data.list || [], showNumbers) });
   if (type === 'promo') return frame({ title: 'Join the A&R Team', sub: 'Free to join', body: bodyPromo() });
   if (type === 'trackPage') return elementTrackPage(data);
-  if (type === 'chartCover') return frame({ title: null, sub: null, body: bodyChartCover(data) });
-  if (type === 'chartList') return frame({ titleSize: 66, title: clip(data.title, 18), sub: data.sub, body: bodyChartList(data) });
-  if (type === 'recapCover') return elementRecapCover(data);
-  if (type === 'recapThumb') return elementRecapThumb(data);
+  if (type === 'chartSlide') return elementChartSlide(data);
   if (type === 'referCard') return elementReferPerson(data, false);
   if (type === 'referStory') return elementReferPerson(data, true);
   if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
   if (type === 'resultsSlide') return elementResultsSlide(data);
+  if (type === 'gradePhoto') return elementGradePhoto(data, false);
+  if (type === 'gradePhotoStory') return elementGradePhoto(data, true);
+  if (type === 'gradeStats') return elementGradeStats(data, false);
+  if (type === 'gradeStatsStory') return elementGradeStats(data, true);
+  if (type === 'countdownSlide') return elementCountdownSlide(data);
   if (type === 'winnerPost') return elementWinnerPost(data);
+  if (type === 'tournamentFeed') return elementTournamentPortrait(data, false);
+  if (type === 'tournamentStory') return elementTournamentPortrait(data, true);
+  if (type === 'tournamentThumb') return elementTournamentThumb(data);
+  if (type === 'tournamentBracket') return elementTournamentBracket(data);
   throw new Error('unknown card type: ' + type);
 }
 
@@ -1116,17 +1811,24 @@ let _satori = null, _Resvg = null;
 // off at the QR codes (found 2026-09-20). The test suite now pins the refer sizes.
 function sizeOf(type) {
   if (type === 'resultsSlide') return RESULTS_SIZE;
+  if (type === 'countdownSlide') return COUNTDOWN_SIZE;
+  if (type === 'chartSlide') return CHART_SIZE;
   if (type === 'winnerPost') return WINNER_SIZE;
   if (type === 'trackPage') return TRACK_SIZE;
-  return RECAP_SIZES[type] || REFER_SIZES[type] || [W, H];
+  if (TOURNAMENT_SIZES[type]) return TOURNAMENT_SIZES[type];
+  if (GRADE_SIZES[type]) return GRADE_SIZES[type];
+  return REFER_SIZES[type] || [W, H];
 }
-async function renderPng(type, data) {
+// `outWidth` rasterises the same layout at a smaller width (a thumbnail): the element is
+// still laid out at its real size, so a thumbnail is the download, scaled — never a
+// separately designed picture that could drift from it.
+async function renderPng(type, data, outWidth) {
   if (!_satori) { const m = require('satori'); _satori = m.default || m; }
   if (!_Resvg) { _Resvg = require('@resvg/resvg-js').Resvg; }
   const [w, hgt] = sizeOf(type);
   const svg = await _satori(element(type, data), { width: w, height: hgt, fonts: fonts() });
-  const png = new _Resvg(svg, { fitTo: { mode: 'width', value: w } }).render().asPng();
+  const png = new _Resvg(svg, { fitTo: { mode: 'width', value: outWidth && outWidth < w ? outWidth : w } }).render().asPng();
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RECAP_TITLE, RECAP_TIME, RECAP_CTA, RESULTS_PER_SLIDE, TRACK_SIZE, TRACK_TAG, WINNER_SIZE };
+module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, GRADE_SIZES, GRADE_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };

@@ -22,7 +22,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
 
 ## Commands
 - `node server.js` — run locally (persistent server; this is also how a non-serverless host would run it)
-- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,696 passed as of 2026-09-22; the count grows with features — green is the invariant).
+- `npm test` — full suite (scoring.test.js + sidebet.test.js + migrate.test.js + e2e.test.js). **Expected: 0 failed** (1,796 passed as of 2026-10-03; the count grows with features — green is the invariant).
 - `node migrate.js` — apply migrations (light, boot-safe)
 - `node migrate.js --run-heavy` — apply migrations INCLUDING heavy data work (deploy-time only)
 - `node migrate.js --status` — show migration state
@@ -89,13 +89,42 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 041; suite green)
+## Current state (migrations through 047, plus 049; 048 is open in PR #54; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
 > claimed 028 had shipped while the migration was still untracked locally and `main` was
 > level with `origin/main` — a whole feature, and a migration prod had never run, sitting
 > unpushed. "SHIPPED" here must mean pushed to origin, not merely built and green.
+- **The daily grade card + the daily email rules** (047, 2026-10-15; built on branch
+  `claude/grade-card`, NOT yet merged or deployed when written). Mockup: mim repo
+  `docs/mockups/anr-grade-card-round2.html`, options A and C.
+  - **Card** (`share-cards.js` `gradePhoto[Story]` / `gradeStats[Story]`): "Do you have a better
+    ear than <name>?", the grade, accuracy, and ONLY Bullseye / Sharp / Close (Off and Way off
+    are never printed — operator). "$500 cash" in gold, makinitmag.com/ANR, no QR, no invite
+    link, no headcount. A = the A&R's big photo is the top of the card; C = stats-led, small face.
+    The A&R picks (`users.grade_card_style`); A needs `users.photo_large_url`, else C.
+  - **Big photo:** both crop modals (join.html, play.html) now also send `imageLarge`, the SAME
+    crop at up to 1200px (skipped under 800px). The A&R's own crop is the focus point; nothing
+    detects faces. Stored on Blob only; every upload replaces or clears it.
+  - **Doors:** `/api/card/grade/<day>/<uid>.png?k=` (public, HMAC with NOTIFY_LINK_SECRET, for
+    the email `<img>`), `/api/me/grade-card` (own card, download), `/api/me/grade-card/latest`,
+    `POST /api/me/grade-card-style` (login only). All 404 before the day PUBLISHES (the seal).
+    Account page: "Your grade card" at the top of My results (no separate mockup was made).
+    Admin: Users → Edit profile shows the A&R's latest card (preview, look, download):
+    `/api/admin/users/grade-card?uid=` (admin only; the style is per download, never saved).
+  - **Standing card** (operator, 2026-10-15): the same card ALL-TIME (`standingFacts`: every
+    published daily drop rated; grade from the average accuracy of every rated record; the good
+    three summed; "Standing · N drops" where the date goes). NO RANK, by decision. `scope=standing`
+    on `/api/me/grade-card` and the admin door; the account page and admin panel switch
+    Latest day / Standing.
+  - **Daily email rules (operator):** `digest_daily` is ON by default but goes ONLY to who rated
+    the published drop (results + card; subject "Your A&R grade for <day>: <grade>") or who rated
+    none of it but rated the public drop before (`dailyMissedEmail*`, his line: "you missed
+    yesterday's drop, but you have time to rate the new ones now"). Missed two in a row = no
+    daily mail. `daily_open` is RETIRED except a new account's first 7 days until they play
+    (`firstWeek`; an explicit ON no longer widens it). The weekly's default now goes to everyone
+    outside the daily reach (`dailyReachSql`: first week or seen in the last 4 days).
 - **Reliability spine:** outage fix + self-healing ensureInit + boot-safe deploy-step
   migrations; soft-delete clears live; unique email index. Neon TLS now fully verified
   (`rejectUnauthorized: true`; `PGSSL=no-verify` is the escape hatch). pg BIGINT/NUMERIC
@@ -224,10 +253,21 @@ live on anr.makinitmag.com.
   never disagree with the public $500 board. **Platform-admin only** — it spans every room
   regardless of owner; a per-host flavour would need the scope query filtered by `owner_uid`.
   Endpoints: `/api/admin/charts` (`?format=csv|caption`) + `/api/card/chart?slide=N`.
-  Band key printed on the graphics: `0–2.9 Keep it in the studio` / `3–5.9 Release Ready` /
-  `6+ Potential Single` — the operator's original "0-3 / 3-6 / 6+" double-counted both edges,
-  so the shipped bands are half-open. `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling
-  and the band cuts move with the 0–10 switch.
+  **Rebuilt to the brand 2026-10-10** (operator-approved mockup `public/brand/hot100/`): one
+  `chartSlide` element, 1080×1350, a sibling of the Daily Countdown — cover (HOT + the count in
+  green) · list pages (13° rank blocks, gold at #1 only) · a closing "Ranked by the Makin' It A&R
+  Team / Join the A&R Team" slide (`slide = pages + 1`). **Records are RANK ONLY** on the slides
+  and in the caption, like the Countdown (scores are private to the Track Report); the A&R chart
+  keeps points/accuracy. No $500 pill, no "The A&R Room" eyebrow, no red. The caption follows the
+  global caption rules: keyword first line, `Comment #REVIEW` / `Comment #ANR` instead of links,
+  no emoji or topic hashtags, @handles on the first 10 rows only (Instagram's mention limit).
+  **"Show scores"** (console checkbox → `&scores=1`, 2026-10-12, operator's ask) prints each
+  record's average and the band key (`0–2.9 Keep it in the studio` / `3–5.9 Release Ready` /
+  `6+ Potential Single`, half-open) on the cover, every page and in the caption; off by default.
+  Never applies to the A&R chart. **Min rounds works on both A&R rankings** (2026-10-12): points
+  defaults to 0 so a series chart still matches the public $500 board until a floor is set,
+  accuracy to 10; the console remembers each separately.
+  `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling and moves with the 0–10 switch.
 
 - **Staged rounds + one-button show control + host buzzer** (030): a round now opens into a
   new **`listening`** status — the record is on the overlay and in everyone's hands while it
@@ -495,13 +535,22 @@ live on anr.makinitmag.com.
     was unconditional, so a non-player got "Yesterday's results, <their name>." over the Top 8
     and nothing of their own. Fixed: personalise the greeting only when there is something
     personal beneath it, and say plainly why there isn't when there is not.
+  - **Banner + the Live step flow** (2026-09-30, operator's call): `/daily` carries the sponsor
+    banner at the TOP of the page (same `#adTop` box and cascade as play.html — `adSlotFor()`:
+    the drop's banner_id → Revive game zone → global banner; hidden when nothing is set), and
+    rates in the same steps as Live: Rate it → Next → Predict the Average → Lock it in (Back
+    keeps both) → note → Next record. Live adopted DAILY's wording (Rate it / Predict the
+    Average / Lock it in; Versus step 2 = "Predict the split") — "Room" vocabulary is out of
+    the rating steps. Mockup: `public/_mock-daily-banner.html`.
   - **Still open:** `sessions.live_bonus` has no value set (~300 makes one live show ≈ three
     perfect async days; without it the broadcast is decorative on the unified board), the
     scouting-points curve, and Nero retirement (`#btnNeroPull` + the scrape helper are still
     in admin.html — the plan calls for removing them as the first piece of the subtraction
     pass, deliberately not done here since it touches the live console).
 
-- **The A&R Meeting Recap graphics** (036): the daily noon live stream (count down yesterday's
+- **The A&R Meeting Recap graphics** (036) — **RETIRED 2026-10-02** with the daily stream, along with
+  the countdown clip captions and the daily Top 8 cards + post caption: no longer rendered, routes
+  and console sections removed, `recap_jobs` columns left in place (additive schema). Kept for history: the daily noon live stream (count down yesterday's
   records, reveal the Top 8 A&Rs, close on the top artists) gets an Instagram Live cover
   (9:16, 1080×1920) and a YouTube thumbnail (16:9, 1920×1080) plus a caption, rendered by the
   daily publish alongside the Top 8 cards and hosted at `daily/<day>/recap-{cover,thumb}.png`
@@ -562,31 +611,44 @@ live on anr.makinitmag.com.
   `public/brand/daily/carousel.html`. The promo brand system (marks, ads, key art, share
   graphics) lives in `public/brand/` — see `docs/promo-asset-list.md`.
 
-- **The winner posts** (039, 2026-09-18): **Top Track of the Day / Top A&R of the Day**, one
-  1080×1350 portrait graphic each, posted as Instagram **collab posts** so they land on the
-  winner's own feed, and **Top Track / Top A&R of the Week** with a strap saying what the week
-  earns ("Placed in the next $1,000 Tournament" / "Placed in the A&R Wars tournament for $500
-  Cash"). One Satori element, `winnerPost`, built to `public/brand/winners/winner.html` after the
-  operator's "flyers look too busy" pass: lockup, stacked title with its date, the person, ONE
-  line of numbers (score; or the letter grade in the block device + points + bullseyes), the
-  field. No trophy, no rank (TOP TRACK already says #1). **The day pair renders at the 3PM
-  publish** (same best-effort contract: `recap_jobs.winner_{track,ar}_url` NULL on failure,
-  captions kept) and hosts at `daily/<day>/winner-{track,ar}.png`; **the week pair renders on
-  demand** (`/api/card/winner?week=&post=`, `/api/admin/weekly/winners?week=`) and stores
-  nothing. **The weekly rule is a default the operator has not yet confirmed:** Top Track of the
-  Week = highest room average across the week's PUBLISHED drops (ties: votes, earlier day, drop
-  order); Top A&R of the Week = most points summed across them. A week runs Monday–Sunday and a
-  week card is **dated by the week it tracks**, never the day it is announced (operator's call
-  when asked). Day cards carry the DROP day. Grade and bullseyes come from the same vote rows
-  the score card uses. Console: "Winner posts" + "Winners of the week" on the daily graphics
-  card, with a week picker defaulting to the last completed week.
+- **The winner posts** (039, 2026-09-18; simplified 2026-09-21; weekly only 2026-10-03): **Top
+  Track / Top A&R of the Week**, one 1080×1350 portrait graphic each, posted as Instagram
+  **collab posts** so they land on the winner's own feed. One Satori element, `winnerPost`,
+  built to `public/brand/winners/winner.html` after four operator rounds. **The card is the
+  person placing:** Congratulations / NAME in caps / "Selected for the next $1,000 Music
+  Tournament" (the artist; no song title — "artist name big with Instagram is the important
+  thing") or "Selected for the A&R Wars Tournament / $500 Cash Prize!" (the A&R), "@handle" with a drawn
+  Instagram glyph under the name (no parentheses), the profile photo top right beside the small
+  Meeting header. No
+  date, score, grade, bullseyes, city or title on the card; the caption carries the record, the
+  numbers, the house comment keyword instead of a link, and at most five hashtags. **The
+  winners ARE the weekly report's #1s** (`weeklyReportData`, Monday–Sunday — the ranking the
+  weekly live show reads on air), so the posted winner is always the announced one; an
+  unsettled week still previews, flagged `settled:false` and warned on the console. Renders on
+  demand (`/api/card/winner?week=&post=`, `/api/admin/weekly/winners?week=`), stores nothing.
+  **The daily pair was retired 2026-10-03** (the Daily Countdown carousel centres the day's
+  winner); the publish no longer renders it, the day render returns 400, and the 039
+  `recap_jobs.winner_*` columns stay unused. Console: "Winners of the week" on the daily
+  graphics card, week picker defaulting to the last complete week.
 
 
 - **The Track Report** (no migration, 2026-09-15) — the artist's report, rebuilt around the
   decision. Spec: **docs/specs/track-report-spec.md** (built from the Room Report Redesign
   mockup). The old three pages opened with a big green number and buried the instruction on
   the last card; the report now opens with a sentence the artist can act on — "Release it.
-  Don't put money behind it yet." — and the score sits under it as evidence. **Every headline
+  Don't put money behind it yet." — and the score sits under it as evidence. **What to spend
+  (operator, 2026-10-15) replaced that line:** every report gives an amount off the room
+  average (`SPEND` in track-report.js, fixed edges, independent of the band edges): under 3
+  don't invest · 3–4 up to $300 over the first 3 months · 4–5 at least $300 · 5–6 worth putting
+  some money behind, not over $1,000 in 3 months without a response · 6–7 invest at least
+  $1,500 · 7–8 work out what you can afford and how long to push it as a single · 8+ the same,
+  don't do it on your own (investor or consultant).
+  It is the decision headline and always step 02 on the What now page. A dollar
+  amount in the email is advice about the artist's own release; the no-upsell test still
+  bans anything that sells ours. **The verdict** (2026-10-15, decided 10-14): the score on page 1
+  and in the email reads with the MEANING of the average's whole number (`RATING_MEANINGS` /
+  `verdictFor` in track-report.js — 6.4 and 6.9 are both "Potential Single", never rounded up),
+  replacing "out of 9 · <band>". The band name stays internal (charts, keys). **Every headline
   is derived** in `track-report.js` (pure, `track-report.test.js`) from numbers `songReportData`
   already had: the BAND (edges 3 / 6, the chart key's cuts; `TRACK_BAND_EDGES=a,b` overrides),
   the histogram's SHAPE (consensus / divided / spread / thin — "Agreement, with three
@@ -615,7 +677,8 @@ live on anr.makinitmag.com.
 
 - **The weekly report** (no migration, 2026-09-16) — the screen the Wednesday show is read off.
   `/api/admin/weekly/status` (platform-admin; it spans every host and carries artist handles and
-  what they paid) over a **Wed → Tue window keyed on `drop_day`** — the day a record OPENED, not
+  what they paid) over a **Mon → Sun window keyed on `drop_day`** (was Wed → Tue until the
+  69-hour schedule, 2026-09-27) — the day a record OPENED, not
   when it published, so the Tuesday drop's 3PM-Wednesday publish still lands inside the week the
   7PM show reads. The screen defaults to the **last COMPLETE week**, never the one that opened at
   noon the same day. `weekStartFor` / `weekWindow` / `lastCompleteWeekStart` in server.js are the
@@ -663,7 +726,7 @@ live on anr.makinitmag.com.
   the landing page and join page stash `?ref=` under `rt_ref` (session-less — the old
   `rt_ref_<sid>` key died with the session, and a daily drop is a new session every day);
   auth.js sends the per-session key first, `rt_ref` second, and clears both on join.
-  **`/refer` page** (`public/refer.html`, mockup `design/refer/`): links with copy buttons, the
+  **`/refer` page** (now `public/account.html`'s Earn points section — see the account bullet; mockup `design/refer/`): links with copy buttons, the
   two lanes with totals and per-invitee / per-record rows, four graphics. Auth is EITHER token
   (`resolveUserId`) — a daily player holds only a per-session player token, so the page picks
   any `rt_token_*` on the device; with nothing it runs an email-code login. `GET
@@ -741,6 +804,75 @@ live on anr.makinitmag.com.
   mirrors the sms.js rule; the per-recipient footer is not counted, so a message near 160 is
   already an MMS by the time it goes.
 
+- **The 69-hour schedule** (041, 2026-09-27, operator's call — "more production time and
+  notification between events"). **SHIPPED 2026-10-01** (PR #12, merged to main). After any deploy of it: the
+  schedule must be SAVED once on the platform panel and the livestream link set. Hours after the open: **−1** track list locked
+  (review site) · **0** 3PM ET open + A&Rs emailed "voting is open" (new topic `daily_open`,
+  email only, **default ON**) · **24** 3PM close + tally + each rated artist gets a heads-up by
+  email AND SMS ("rated and will appear on tomorrow's Livestream Countdown", the operator's
+  "Tune in for results. Have your fans tune in to participate in the comments." verbatim) ·
+  **48** 3PM **Makin' It HOT 100 Daily Countdown** (`DAILY_STREAM_NAME`, one constant shared with the clip captions; `sessions.stream_at`; cover/caption are DATED BY THE DAY THEY POST = `results_at`, the time beside it is the stream's) — the ranked graphics render HERE
+  (`recap_jobs.rendered_at`) so clips/carousels can go up after the stream · **69** noon
+  results: seal lifts on /daily, A&R digest (now with the stream link, a personal results link
+  and "today's records close at 3:00 PM ET — in 3 hours"), artist Track Reports (email only —
+  the text went at the close), makinitmag callback. **The seal holds through the stream**
+  (operator's call): the page must not spoil the countdown. Three drops are in flight at once.
+  Stream/results are a DAY OFFSET after the close day + an ET minute (`daily_stream_days/_min`,
+  `daily_results_days/_min`), never a duration (DST). `artistDelayMin` default 60 → 0 (the
+  report is 45h after the tally — that IS the rejection window). 041 deletes the stored
+  `daily_results_min` / `daily_artist_delay_min` rows so the new defaults apply. Heads-up is its
+  own queue (`artist_headsups`), not a second kind on `artist_notices` (whose unique index the
+  resend UPSERTs against); it stops sending once the stream has happened. Livestream link =
+  `daily_stream_url` system setting. **Deploy note:** a day already open/tallied keeps its old
+  results_at until the schedule is SAVED once on the panel (the save re-stamps unpublished
+  days); publish renders the graphics itself when the stream step never ran.
+  **Week is now Mon → Sun** (`WEEK_START_DOW = 1`, was Wed → Tue): the Sunday drop publishes
+  at noon Wednesday, before the show that announces the week. `digest_daily` stays default OFF.
+
+- **The Makin' It Daily Countdown carousel** (no migration, SHIPPED 2026-10-02):
+  replaces the daily stream as the results announcement AND replaces the Top Track results
+  carousel (the `song` set — the Top A&R `ar` carousel is unchanged). One Instagram carousel,
+  **rank only — never a score, average or vote count** (scores are private to the Track Report):
+  cover · one slide per record from #N up to #1 · the A&R Team (thanks + "Become an A&R",
+  makinitmag.com/ANR) · artists (submit + $1,000 Music Tournament). 8–16 records → 11–19 slides,
+  inside Instagram's 20 (`COUNTDOWN_MAX_RECORDS = 17`). **A rank slide never shows the size of the
+  field** (operator: "3rd place isn't last unless we say only 3 were racing"): its blocks run from
+  its own rank to #1. Every rank slide stands alone, since artists repost only theirs. Order = the
+  console countdown sort (average, then ratings, then drop order). Satori element `countdownSlide`
+  (share-cards.js), data `countdownCarouselData` + caption `countdownCarouselCaption` (server.js),
+  hosted at `daily/<day>/countdown-N.png` in the existing `recap_jobs.results_song_*` columns and
+  served by the existing `/api/card/results?set=song` + `results-caption` routes. **The caption
+  names nobody** — Instagram stops notifying once a caption mentions more than 10 accounts — so
+  artists are tagged on their own slides (the console prints who under each slide) and mentioned
+  in comments, FOUR a comment, bottom up (`countdownComments`): "Follow all the artists who made
+  the countdown: @a, @b, Name, @c" — names only, no ranks or titles; an artist with two records
+  is mentioned once; an artist with no Instagram handle is not mentioned. The caption asks by
+  COMMENT KEYWORD, not link ("Comment #REVIEW to Submit Music" / "Comment #ANR to join the A&R
+  Team", operator's wording). **Instagram allows 5 hashtags a post** — the keywords count, so the
+  countdown carries 3 more (`COUNTDOWN_TAGS`); every other IG caption uses `IG_TAGS` (5). Approved mockup:
+  `public/brand/countdown/`. **"HOT 100" is for the MONTHLY countdown post only** —
+  `DAILY_STREAM_NAME` is now "Makin' It Daily Countdown".
+  **Retired with it (2026-10-02):** the daily Top 8 A&Rs / Top 8 Records cards and their caption,
+  the Meeting Recap Live cover / YouTube thumbnail / caption, and the countdown clip captions. The
+  A&R digest no longer carries the Top 8 images; it links Instagram ("See the Top Tracks on
+  Instagram", @Makinit4indies) instead. The live-show post kit (Asana) still uses the Top 8 cards.
+  **Asana (2026-10-02; AUTOMATIC from 042, 2026-10-03):** the daily cron makes ONE TASK PER POST on
+  its own once a day's slides render (`advanceDailyAsanaTasks`, queued by `recap_jobs.asana_tasks`
+  = '{}' at render/publish; days rendered before 042 are never back-filled; gid saved the moment
+  Asana returns it, so a long countdown resumes over several ticks on the SAME task; claimed via
+  `asana_claimed_at`; 12 failed attempts then it stops and the console offers the manual button).
+  The console shows each task's state with a link. The manual route makes — "Makin' It Daily Countdown —
+  <date>" (slides attached in order; notes = caption, the four-artist comments, who to tag on each
+  slide) and "Top A&Rs — <date>". `POST /api/admin/daily/asana-task {s, set, taskId?, next?}`
+  attaches what fits in 20s and returns `{done, taskId, next}`; the console presses on until done.
+  Same `asana_project` setting as the live post kit. The **Top A&R carousel is the TOP 8 only,
+  PLACEMENT ONLY** — no points on the slides or in its caption (`RESULTS_MAX_ARS = 8`).
+  Its caption lists the 8 by INSTAGRAM NAME (display name when there is no handle), and the post
+  is a COLLAB with the #1 A&R with the other seven tagged — the Asana task's notes say who
+  (operator, 2026-10-03). The slides' footer reads "Join the A&R Team" over makinitmag.com/ANR (a
+  bare URL had no call to action). An Asana task state can carry `replaceGid`: the engine deletes
+  that task (Asana trash) before making the new one — how tasks made with old content are redone.
+
 - **Backfill artist contacts** (no migration, 2026-09-22): rounds from before the contact
   fields existed had no email/phone/Instagram, which is what the sales-leads project is worked
   from. Platform panel → "Backfill artist contacts": upload a CSV (`artist, title, email,
@@ -752,7 +884,235 @@ live on anr.makinitmag.com.
   re-runnable). Handles the exports' quirks: leading `'`, `@`, profile URLs → handle, `1`-prefixed
   phones → 10 digits. Platform-admin only (PII across every room).
 
-- **Referral link clicks** (041, 2026-09-23): the submit link an A&R shares is now
+- **The A&R account — one page with sections** (no migration, 2026-10-01; mockup
+  `public/_mock-account.html`). `/account` (`public/account.html`) is the A&R's home:
+  a header (photo, name, "Official A&R · city", rank/points pill) over tabs. **Earn points**
+  is the default section and IS the old referral page — `/refer` serves the same file, so
+  email footers, the signed `[card link]` (`#rt=`) and every link already out still land
+  there. Intro copy is the operator's verbatim. **My profile** renders the public record
+  from the public `/api/profile?u=` (the same data as `/u/<uid>`). **Edit profile** is NOT
+  re-implemented: the tab goes to `/profile` (join.html's edit mode — photo crop, city
+  lookup, notification settings and the `#nt=` manage-link mode all live there), which shows
+  the same tab strip in edit mode so it reads as one account. The greyed "Sessions" and
+  "Rounds" tabs became ONE tab, **My results** (next bullet). **Graphics are SHOWN, not described** (operator: nobody should have
+  to download a graphic to see it): `/api/card/refer?kind=&thumb=1&v=` is the SAME Satori
+  render rasterised at 432px (`renderPng(type, data, outWidth)`), fetched with the auth
+  header and shown as blob URLs one at a time. `v` = `referGraphicVersion(u)`, a hash of
+  what the graphic prints (uid, name, role, city, photo): a matching `v` is
+  `private, max-age=86400`, anything else and the full download are `no-store`, so the
+  cache is per-A&R and a new photo shows on the next visit.
+  **Scouting first, and bigger** (operator, 2026-10-02): referring artists to submit is the
+  secondary game — the thing an A&R is always doing outside of rating — so the Scout talent
+  panel leads (larger heading, signal border, its link inside it, the $1,000 strip) and
+  Recruit A&Rs follows, smaller; the submit flyer precedes the join flyer. Copy is the
+  operator's verbatim ("Refer artists to submit to earn bonus points. The higher their music
+  scores, the more points you get." / "Know someone with a good ear for music? Share your
+  Recruit link with them. Earn more points the better they do."). **Top talent scouts** on
+  the landing page: `/api/home.topScouts`, the top 3 by lifetime `point_events` reason
+  `scout` (complete, unblocked profiles; name/role/city/photo/points/records, nothing
+  private), hidden until someone has scouting points. Card names are the operator's:
+  **"Official A&R Card - Feed" / "Official A&R Card - Story"**. Nav: home, landing and the
+  play page link one "My account"; the daily page's bonus-points CTAs still go to `/refer`.
+  A device holding only a per-session player token can use the account page but `/profile`
+  still asks for an email code (join.html's edit mode reads `rt_auth_token` only).
+
+- **My results — the results live on the site, the email points at them** (no migration,
+  2026-10-02; mockup `public/_mock-account-results.html`). **LIVE: merged to main as PR #16
+  on 2026-10-02, which carried the account page (PR #13's commits) with it.**
+  The operator's reason: the results email handed an A&R everything, so nothing brought them
+  back to the site, where today's records are waiting. Two halves:
+  - **`/account#results`** (`GET /api/me/results?week=YYYY-MM-DD`, `arResultsData`). One A&R,
+    one week (Monday to Sunday by the day a drop OPENED, `weekStartFor`/`weekWindow`). Top to
+    bottom: the OPEN drop (how many they have dealt with, when voting closes, a button into
+    `/daily?s=`), the week's four numbers (points, played, bullseyes, grade), then each day
+    newest first, opening into the daily page's record table (rating, guess, room average,
+    points, completion bonus). Arrows page a week at a time and stop at the week the account
+    was made. Earn points stays the DEFAULT tab (operator: the push is on getting people to
+    refer artists). Auth is `resolveReferUid` — either token or the signed `rf1` link — so the
+    refer-scope link now reads three things: referrals, graphics, own results.
+  - **THE SEAL:** a day carries numbers only when `async_state = 'published'` (or a completed
+    live session). A closed-but-unpublished day is already tallied in the database, so that
+    branch selects COUNTS ONLY ("You rated 5 of 5", when results come out) — never add a score
+    column to it. The open drop likewise ships a count and nothing else. Tested at each stage.
+  - **NO RANK, by decision** (operator, 2026-10-02): the section shows points; the weekly
+    announcement is where rank is REVEALED, and showing it daily would make that an
+    announcement of something already known. Not for a day, not for the week. (The header
+    pill's series rank and the daily page's own recap screen still show a rank — not changed
+    here, operator not yet asked.)
+  - **A missed day is listed and carries nothing** (operator: results are for the days an A&R
+    took part in, not a history of the platform) — no records, no averages, and it does not
+    open. Only public daily drops are listed as missed. A record they skipped on a day they
+    DID play shows its average with no points of theirs.
+  - **The digest is a HEADLINE now.** `dailyDigestEmailHtml/Text` lost the round-by-round
+    table and the Rank tile: points, grade, bullseyes, the completion bonus, one sentence, and
+    a green **See your results** button to `accountResultsUrl(base, uid)` =
+    `/account#results&rt=<rf1>` (signed per recipient so it lands logged in; plain
+    `/account#results` without `NOTIFY_LINK_SECRET`, which asks for a code). account.html
+    keeps the section when it scrubs the token from the hash. The Top 8 graphics, the stream
+    link and "Rate today's records" are unchanged. A non-player still gets no personal block.
+  - The daily page's done, sealed and recap screens link **My past results**; the edit form's
+    copy of the tab strip (join.html) carries the tab too.
+
+- **Brevo contact sync** (044, 2026-10-06): two Brevo lists — **Artists** (the operator's
+  existing list **119**, `BREVO_LISTS.artists.defaultId`; a setting overrides it) — every played artist, reference tracks out; **email + phone ONLY**,
+  operator: round names are unreliable — plus ONE number, `ARTIST_TOP_SCORE`, for segmenting
+  good artists: the best room average among records with ≥ `brevo_score_min_ratings`
+  ratings, default **5**, NO fallback below the floor (blank = unproven); daily scores only once
+  the day is PUBLISHED (the seal)) and **A&Rs** (existing list **111**; every `users` row with an email, **opt-outs
+  and blocked NOT filtered** — operator's call, Brevo's unsubscribe governs. Sends name, phone and
+  THREE LINKS only (operator 2026-10-09: the full profile was too much): `ANR_CARD_IMAGE` — a
+  PUBLIC, non-expiring PNG URL of the Official A&R Card for email blasts,
+  `/api/card/anr/<uid>.png?v=<referGraphicVersion>` (800px; prints only public-profile data;
+  current `v` = CDN-cached a year, stale `v` = today's card for 1h; blocked/unknown = 404) —
+  `ANR_REFERRAL_LINK` (join), `ARTIST_REFERRAL_LINK` (submit)). `brevo_sync` ledger holds a payload
+  hash per (list, contact) so only new/changed contacts go; `POST /contacts/import` with
+  `emptyContactsAttributes:false`; never removes anyone. Plus a **"Side Bet #N"** list per sidebet iteration
+  (email only; N = creation order among packs with entries; created in folder "A&R Program" when
+  its first entrant syncs; id in `brevo_list_sidebet_<packId>`). First **Sync now** (Platform
+  panel card) creates the attributes; then `runAsyncDropLifecycle` runs it once a day
+  (≥23h apart, after 4AM ET; continues on later ticks while `remaining`; failures retry hourly).
+  Brevo allows one SMS number per contact, so a phone already claimed (A&Rs first) is left off
+  the next contact. `BREVO_API_KEY` env; `BREVO_API_BASE` is the test mock. Doc: docs/brevo-sync.md.
+- **Daily live stream RETIRED from every communication** (no migration, 2026-10-15, operator's
+  call): the only live stream is **The A&R Room on Wednesday at 7:00 PM ET**, where the week's
+  Top 8 are announced and the week's finalist for the $1,000 Music Tournament is picked.
+  `WEEKLY_SHOW_LINE` / `WEEKLY_SHOW_CTA` are the ONE definition; the artist heads-up (email +
+  SMS) now says "rated · Track Report by email on <day> · Top 8 of the week on The A&R Room
+  live, Wed 7PM ET" and stops sending at `results_at` (was `stream_at`); the daily digest and
+  the Track Report email carry the Wednesday show line and link; `/api/home` async carries
+  `weeklyShow` instead of `streamWhen/streamName`; the `daily_stream_url` setting is now the
+  Wednesday show's link (panel label changed). **Kept:** `stream_at` as the time the Daily
+  Countdown graphics render (console label "Daily Countdown graphics render at"), the Instagram
+  countdown carousel and its Asana task, `DAILY_STREAM_NAME` as that carousel's name. The 041
+  bullet below describes the hours as built; its "Livestream Countdown" wording is history.
+  **YouTube subscribe touch point (same day):** every recurring mail (daily open, digest,
+  weekly update, go-live, artist heads-up email + SMS, Track Report for daily records) and the
+  /daily post-close screen carry `SUBSCRIBE_LINE` ("Subscribe to our YouTube channel and hit
+  the bell so you're notified when we go live and can see if you made it.") and a "Subscribe
+  on YouTube" link to `LIVE_SUBSCRIBE_URL` = **https://www.makinitmag.com/live**, which 301s
+  to the channel's live page with `?sub_confirmation=1` (verified; `makinitmag.com.live` is
+  NOT a domain). One block, `subscribeBlockHtml('ar'|'artist')` / `subscribeBlockText()`.
+  `dailyStreamUrl()` falls back to that URL when the panel setting is empty. The heads-up SMS
+  says "subscribe + hit the bell: makinitmag.com/live" and stays inside one GSM-7 segment.
+
+- **Email engagement gate** (043, 2026-10-06). The audit (Mandrill activity export joined to
+  users/prefs/votes, per-address table kept local in `docs/reports/`, gitignored): the daily
+  "records are open" notice went to every address (~766/day), 4% clicked, 607 of 776 recipients
+  had neither clicked nor rated in 30 days. Now: **`daily_open` is default-ON for ENGAGED
+  accounts only** — `users.last_seen` within `ENGAGED_DAYS` (30; stamped at login AND at vote)
+  or `first_seen` within `NEW_ACCOUNT_DAYS` (14) — an explicit ON keeps it regardless
+  (`engagedSql()` composed into `notifyAudience`; `(p.enabled = 1 OR gate)`). **`digest_weekly`
+  flipped to default ON with a real sender** (`enqueueWeeklyUpdate`/`drainWeeklyUpdate`, kind
+  `digest_weekly`, ref_id = the Monday; queued by the daily cron on Wednesday ≥1PM ET for the
+  last complete week; names/ranks only, no scores): by default it goes to the NON-engaged only
+  and **sunsets after `WEEKLY_SUNSET_SENDS` (4) sent weeklies with no activity since**
+  (counted via `notify_recipients.sent_at > users.last_seen`, index `idx_notify_rcpt_uid`); an
+  explicit ON is never sunset. **`users.email_bounced_at`** is set by `noteEmailOutcome` when
+  the provider rejects an ADDRESS (hard-bounce/invalid/spam/unsub — `isDeadAddress` in
+  email.js; soft bounces never) and every email audience skips it; nothing clears it (email
+  is the identity key) — the operator clears by hand. **Every A&R mail carries
+  `List-Unsubscribe` + `List-Unsubscribe-Post: One-Click`** → `POST /api/notify/unsubscribe?nt=
+  <np1>` sets `email_opt_out` (the global switch — that is what the inbox button means); GET
+  redirects into `/profile#nt=`. **Sends are tagged** per stream in Mandrill/Resend
+  (`sendEmail(..., { tag, unsubscribe })`: daily_open, digest_daily, digest_weekly,
+  announcement, room_live, recap, otp, artist_report, artist_headsup) so provider reporting can
+  split by stream. **Mass announcements default to the engaged audience** (`audience:
+  'engaged'|'all'` on `notify/start`; the composer's "Send to" select; `notify/audience` reports
+  both counts). One-off data pass run against prod the same day: stale pending rows from the
+  Aug/Sep broadcasts cancelled, the 7 bouncing addresses stamped, explicit OFF prefs written
+  for the 132 accounts with zero opens and no play.
+
+- **Tournament tooling — A&R Wars + the $1,000 Music Review Tournament** (045, 2026-10-07;
+  REVERSES the 2026-07-01 "no bracket layer" decision — the operator asked for the layer).
+  ONE model keyed on `tournaments.kind` (`ar` | `artist`): `tournament_competitors` (a ROW copied
+  from the profile, editable, never written back; `seat` = order filled, drives the weekly
+  flyers; `seed` = the bracket), `tournament_matches` (7 rows, 1v8 4v5 3v6 2v7),
+  `tournament_subscribers` (the landing page's reminder list — email only, no account, one-click
+  unsubscribe), `rounds.tournament_match_id`. Pure bracket rules in `bracket.js` (tested); data +
+  routes in `tournament.js`, installed by server.js with the helpers it needs. **A matchup is an
+  ordinary binary round** queued by `queueRound()` (the queue-form route refactored into it) with
+  `pack_song_a/b` stamped for a pack pick, so Pick the Hits settles off the same rows; **ratify
+  decides the match** (`split_a > 50` = A; a 50 or a zero-vote poll leaves it to the host's
+  Decide button; a host decision is sticky; override clears everything downstream); the final is
+  `final_polls` (3) decided at a majority but the console still asks for poll 3 (the side bet
+  needs 18 songs); the final's winner sets `status='complete'` + `winner_competitor_id`, and
+  `/api/home.winners` (hardcoded `[]` until now) lists complete tournaments. **The seal holds
+  on the public page**: a poll's `split_a` is null until ratified, only the count ships.
+  **Graphics are a WEEKLY qualifier series** (operator): one big slot (that week's qualifier) +
+  8 small seats (everyone picked so far, silhouettes for the rest); final promo = all 8 filled,
+  big slot a question mark + "Who has the Best Ear?" (operator's wording); champion set after;
+  $500 printed ONCE per graphic; a one-line premise on every state. Satori elements
+  `tournamentFeed/Story/Thumb/Bracket` (purple lockup block — head-to-head), rendered live and
+  admin-only at `/api/card/tournament?t=&kind=&filled=&stage=`; Publish hosts to Blob at
+  `tournaments/<slug>/<key>-<kind>.png` and makes one Asana task per row (caption per the SEO
+  rule, no topic hashtags, ≤4 mentions a comment).
+  **The final package** (no migration, 2026-10-14, operator's ask): once all 8 seats are filled,
+  each competitor gets their OWN feed + story to post — stage `package` + `featured=N` on the same
+  flyer element (them big, all 8 seats, purple ring on theirs, headline "<Name> plays for $500."
+  so the amount still prints once, and TWO asks on the field: "RSVP to watch live ·
+  <host>/wars" left, "Join the A&R Team · makinitmag.com/ANR" right, where the prize block sits on
+  the other states — `d.cta2` in `warsFoot`). Rows `pkg1..8` (`asana:false` — NO Asana task, the
+  competitor's post is not the operator's queue; publish hosts the files only). Delivery is
+  **`POST /api/admin/tournament/package-send {tournamentId, key, force?}`**: the competitor
+  briefing in the operator's words verbatim (`PACKAGE_COPY` — on camera, download the Service
+  Pack + pick 18, 3 rounds = 90s / a full song / 3 full songs, 5 songs no repeats, $500 + a
+  magazine feature, ties by current-series points, RSVP link, the competitor's PERSONAL join link
+  `?ref=<uid>` and review referral link, makinitmag.com/push for Service Pack artists, the daily
+  drop, a Bonus Points block, "Reply with your makinitmag.com username so we can add a Win to
+  your account", the caption) with **both PNGs ATTACHED** (`sendEmail` now takes
+  `opts.attachments`, mapped for Resend and Mandrill; renders on the fly when unpublished, so
+  Blob is not a gate). One row per request (the console's "Publish all 8" / "Email every
+  competitor" loop); idempotent on `graphics[key].sentAt` unless `force`; `sentTo` is the MASKED
+  address. **A heads-up TEXT follows the email** (2026-10-15: "<Wars> #N: we just sent an email
+  to <address> with all the details for the tournament. Check Spam and the Promotions tab if you
+  don't see it. Good luck!", GSM-7, one segment for a short address else MMS by sms.js, to `users.phone`
+  with no marketing-consent gate — their own seat; no phone = no text, state `sms` on the row).
+  **"Send test to me"** (`package-test`, 2026-10-15) mails the ADMIN their own copy of one
+  competitor's package (`[TEST]` subject, same text) and records nothing — the dress rehearsal the
+  operator asked for.
+  A competitor with no account (`contact: none`), closed, or bounced is refused with a
+  reason — the per-competitor zip (`graphics.zip?key=pkgN`: feed, story, caption) is the hand-DM
+  path; the bare zip leaves the package rows out. The round format lives ONLY in the email copy.
+  `email_opt_out` is not honoured here (their own participation). Mockup `?stage=package&me=N`
+  in `public/brand/wars/flyer-{feed,story}.html`. Public page `/wars` (latest Wars) and
+  `/tournament/<slug>` (`public/tournament.html`, 15s refetch while live, no Ably); reminder
+  sent by the daily cron `remind_min` before `event_at` (claimed rows, tagged
+  `tournament_reminder`) or by hand. Console: the Tournaments mode (setup · field with
+  weekly-winner candidates + search · live bracket with Queue matchup / Decide / Override ·
+  graphics rows · reminder list + CSV · wrap). Platform-admin only. Spec + API contract:
+  **docs/specs/tournament-spec.md**; mockups `public/_mock-tournament*.html`,
+  `public/brand/wars/`. Dev seed: `scripts/dev-seed-tournament.js`.
+
+- **Close your own account — Deactivate / Delete** (046, 2026-10-05/06, operator's call).
+  Panel at the bottom of `/profile` edit mode (join.html), built to the approved mockup
+  `public/_mock-account-close.html` (approved 2026-10-11).
+  **"Delete" = ANONYMIZE — "we delete the person, not the history"** (operator, 2026-10-06):
+  a true delete would reshape published reports. The A&R's own Delete AND the console's admin
+  Delete both run `anonymizeUser` (the admin route used to hard-delete votes).
+  Two timestamps on `users`, separate from the admin's `blocked`:
+  - **Deactivate** (`deactivated_at`, reversible): nothing removed; off every board, page and
+    audience; all tokens revoked. **Logging in with the email code brings it back**, same points.
+  - **Delete** (`deleted_at`, permanent, `anonymizeUser`): name, email, phone,
+    photo, handles, links, prefs and an unsettled Sidebet entry go; the email becomes
+    `deleted+<uid>@deleted.invalid` so the address can sign up fresh from zero. **KEPT:** the
+    row, votes, point_events, round_reports, round_comments AND the generic demographics
+    (role, categories, city) — they feed the Track Report's averages and "Who it's for"
+    segments, and the report is moving onto the site as a live page, so it must not change
+    because someone left. A closed account's comment is credited "A&R" · role · city, no name;
+    the report's comment query is the one site filtering on `blocked` alone (`closed-ok`).
+  - **Both leave the boards** — a closed account can't win the $500 or a Wars seat.
+  - **One predicate:** `activeUserSql(alias)` / `activeParticipantSql(p)` / `userInactive(u)` in
+    server.js. Every board, payout (scout, referral), audience, profile and signed link goes
+    through it; an e2e guard fails on a hand-written `blocked = 0`. The per-session participant
+    boards (live leaderboard, daily "yesterday" board) had NO blocked filter before — they do now.
+  - Endpoints: `POST /api/me/account/deactivate {confirm:true}`; `/delete-code` then
+    `/delete {code, confirmText:'DELETE'}`. **Account token only** (never a player token or an
+    rf1/np1 link); hosts/admins refused. The code is its own otp scope (`__close__`) and is
+    NEVER shown on screen on a failed send (sendOtp's login fallback would defeat it).
+  - **Brevo:** closing an account deletes the Brevo contact (`brevoForget`, best-effort) and
+    clears its `brevo_sync` ledger rows; the sync skips deactivated/deleted accounts (but still
+    NOT blocked ones — the operator's Brevo rule). A reactivated A&R re-syncs on the next run.
+- **Referral link clicks** (049, built 2026-09-23 as 041, renumbered at merge 2026-10-17): the submit link an A&R shares is now
   `<publicBase>/r/<uid>`, which records the open in `referral_clicks` and 302s (no-store) to
   `https://www.makinitmag.com/opportunities/anr-meeting?ref=<uid>` — the FINAL form URL, with
   `www.` (the bare domain 301s), not `/review` (which only reaches the form through two old
@@ -768,24 +1128,19 @@ live on anr.makinitmag.com.
   (`PUBLIC_BASE_URL`, else the production host): with it unset, preview-issued links point at
   prod and count there — only for a uid that exists in prod; with it set to the preview host,
   they count in the preview DB. Both are fine for a diagnosis number. Spec:
-  docs/specs/referral-click-tracking-prompt.md. `/refer` prints one line under the submit link
+  docs/specs/referral-click-tracking-prompt.md. The account page (`/account`, which `/refer` serves) prints one line under the scout link
   ("N people opened your link this week · M all time", or "No one has opened this link yet."),
   built to the approved mockup `public/_mock-refer-clicks.html`.
 
 ## What's next (roadmap order)
-1. **A&R Wars tournament tooling — the one big unbuilt feature.** The format is designed
-   (docs/anr-room-roadmap.md 6.4) and its substrate exists (binary polls; series qualify_count
-   for the cut), but NONE of the tournament machinery is built: the 8-competitor bracket +
-   seeding (top-N from the series board + invited Tastemakers), the matchup→advancement flow
-   wiring binary-poll outcomes to the bracket, the service-pack / scouting workflow, and a
-   **winners model** (the homepage `winners[]` is still an empty array — nothing writes it).
-   This is the largest remaining build; not started.
+1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
+   bracket for the stream; the Promo Budget crediting for the artist tournament; the Series
+   `qualify_count` cut is superseded by weekly seats and left as is; Brevo list for the
+   reminder subscribers (operator undecided).
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
-3. **Digest senders** — the DAILY one shipped with A&R Daily (033): `digest_daily` now has a
-   real sender, a chunked drain and a `*/5` cron, and is `notifyAudience()`'s first production
-   caller. **`digest_weekly` still has nothing behind it** — same shape, no sender. Its default
-   is OFF and should stay off until there is one. Web push is a third channel on the same
+3. **Digest senders** — both shipped: `digest_daily` (033; default ON and narrowed to recent players 2026-10-15) and `digest_weekly` (043,
+   default ON for the non-engaged, sunsets after 4). Web push is a third channel on the same
    table, still gated behind the PWA shell.
 4. **PWA install + iOS web push** — DEFERRED behind a branding / site facelift pass (which
    gates the install prompt work).

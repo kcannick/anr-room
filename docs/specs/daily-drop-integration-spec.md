@@ -135,8 +135,20 @@ Surface those too — an artist with a mistyped address gets no report and nobod
 ```json
 { "ok": true, "replaced": false, "sessionId": "e7iOi_Su2dnf", "day": "2026-09-08",
   "rounds": 11, "opensAt": 1757347200000, "closesAt": 1757422800000,
-  "resultsAt": 1757433600000, "seriesId": "ser_abc123", "warnings": [] }
+  "resultsAt": 1757433600000, "seriesId": "ser_abc123", "warnings": [],
+  "records": [
+    { "ref": "entry/88213", "resultsUrl": "https://anr.makinitmag.com/admin?day=2026-09-08&ref=entry%2F88213" }
+  ] }
 ```
+
+**`records` — a results link per record (added 2026-10-12).** One entry per pushed record
+that carried a `ref`, in batch order. `resultsUrl` opens the A&R Daily console on that day with
+the record's Results view open: room average, ratings, comments and flags, and once the record
+is tallied each A&R's rating and comment. **PLATFORM-ADMIN ONLY**: anyone else gets the
+console's sign-in wall. Save it with the submission for staff; never show it to the artist.
+It is built from the day and the `ref`, not from our internal record id, so it stays valid
+across a re-push of the same day. It is also sent again on the §12 results callback. A replace
+(`"replaced": true`) returns `records` too.
 
 **Artist email and phone are never echoed back.** They arrived over this wire; that does not make
 them safe to reflect. Titles and artists only.
@@ -412,6 +424,10 @@ X-ANR-Key: <RESULTS_TOKEN>
   ]
 }
 ```
+
+Every record also carries `resultsUrl`, the same platform-admin console link the push reply
+returned (added 2026-10-12; omitted above for width). Overwrite what you saved: if a record was
+withdrawn from one day and pushed on another, the latest link is the right one.
 
 ### Status is derived, and here is exactly how
 

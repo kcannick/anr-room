@@ -14,7 +14,23 @@ ok('2.9 keeps it in the studio', tr.bandFor(2.9).key === 'studio');
 ok('3.0 is release-ready (lower-inclusive edge)', tr.bandFor(3.0).key === 'release');
 ok('5.9 is still release', tr.bandFor(5.9).key === 'release');
 ok('6.0 is invest (lower-inclusive edge)', tr.bandFor(6.0).key === 'invest');
-ok('the release headline is the instruction', tr.bandFor(4.3).headline.join(' ') === 'Release it. Don’t put money behind it yet.');
+ok('the release headline is the instruction', tr.bandFor(4.3).headline.join(' ') === 'Release it. Spend at least $300 on it.');
+console.log('— the verdict: the whole number’s meaning, never rounded up —');
+ok('6.4 and 6.9 are both Potential Single', tr.bandFor(6.4).verdict === 'Potential Single' && tr.bandFor(6.9).verdict === 'Potential Single');
+ok('every whole number reads its own meaning', [0,1,2,3,4,5,6,7,8,9].every(i => tr.verdictFor(i + 0.5) === tr.RATING_MEANINGS[i]));
+ok('ends clamp', tr.verdictFor(9) === 'It’s a Hit!' && tr.verdictFor(0) === 'Scrap it!' && tr.verdictFor(-1) === 'Scrap it!');
+ok('ten meanings, operator wording', tr.RATING_MEANINGS.length === 10 && tr.RATING_MEANINGS[2] === 'There’s something there but it needs significant work');
+console.log('— what to spend (operator, 2026-10-15) —');
+const sp = (m) => tr.bandFor(m).spend;
+ok('under 3: do not invest', sp(2.9) === 'none' && /Don’t invest/.test(tr.bandFor(2.9).money));
+ok('3–4: up to $300', sp(3) === 'up300' && sp(3.9) === 'up300' && /up to \$300 over the first 3 months/.test(tr.bandFor(3.5).money));
+ok('4–5: at least $300', sp(4) === 'min300' && sp(4.9) === 'min300');
+ok('5–6: some money, not over $1,000 without a response', sp(5) === 'some' && tr.bandFor(5.5).money === 'Worth putting some money behind.' && /over \$1,000 within the first 3 months unless/.test(tr.bandFor(5.5).moneyRest) && !/\$800/.test(JSON.stringify(tr.bandFor(5.5))));
+ok('6–7: invest at least $1,500', sp(6) === 'min1500' && /Invest at least \$1,500 over the first 3 months/.test(tr.bandFor(6.2).money) && sp(6.9) === 'min1500' && /\$1,500/.test(tr.bandFor(6.2).headline.join(' ')));
+ok('7–8: work out what you can afford', sp(7) === 'single' && sp(7.9) === 'single' && /how long you’re willing to push this as a single/.test(tr.bandFor(7.4).moneyRest));
+ok('8+: not on your own — investor or consultant', sp(8) === 'backing' && sp(9) === 'backing' && /investor or a consultant/.test(tr.bandFor(8.4).moneyRest));
+ok('3.x reads as a potential release', /potential release/.test(tr.bandFor(3.5).moneyRest));
+ok('spend tiers ignore calibrated band edges', tr.bandFor(3.2, [3.5, 6]).spend === 'up300' && tr.bandFor(3.2, [3.5, 6]).key === 'studio');
 ok('edges are a parameter (calibration is a two-number change)', tr.bandFor(4.3, [4.5, 7]).key === 'studio' && tr.bandFor(7.2, [4.5, 7]).key === 'invest');
 ok('band labels match the chart key', tr.BANDS.map(b => b.label).join('|') === 'Keep it in the studio|Release Ready|Potential Single');
 
@@ -76,11 +92,12 @@ ok('roles pluralise', tr.plural('DJ') === 'DJs' && tr.plural('Listener / Fan') =
 
 console.log('— setup vs record: the prediction gap has a meaning —');
 const g1 = tr.setupVsRecord(4.6, 4.3);
-ok('predicted above delivered = it promised more', g1.key === 'over' && g1.headline.join(' ') === 'It promised a little more than it gave.', flat(g1.headline));
-ok('a big miss drops the "little"', tr.setupVsRecord(5.5, 4.3).headline.join(' ') === 'It promised more than it gave.');
+ok('predicted above delivered = the A&Rs expected more', g1.key === 'over' && g1.headline.join(' ') === 'The A&Rs expected a little more.', flat(g1.headline));
+ok('a big miss: saw more in it than it delivered', tr.setupVsRecord(5.5, 4.3).headline.join(' ') === 'The A&Rs saw more in it than it delivered.');
 ok('the label is signed', g1.label === '-0.3');
 const g2 = tr.setupVsRecord(4.0, 4.4);
-ok('delivered above predicted = better than its packaging', g2.key === 'under' && /costing you plays/.test(g2.pull));
+ok('delivered above predicted = it outperformed', g2.key === 'under' && /outperformed what the A&Rs expected/.test(g2.pull));
+ok('a big beat says outperformed', tr.setupVsRecord(3.0, 4.5).headline.join(' ') === 'It outperformed expectations.');
 ok('+ sign on the label', g2.label === '+0.4');
 ok('within 0.15 is even', tr.setupVsRecord(4.4, 4.5).key === 'even');
 ok('no prediction -> null', tr.setupVsRecord(null, 4.5) === null);
@@ -90,17 +107,19 @@ const band = tr.bandFor(4.3);
 const n1 = tr.nextActions({ band, who: w1, setup: g1 });
 ok('exactly three', n1.length === 3);
 ok('01 is the band', n1[0].lead === 'Release it.');
-ok('02 is the segment gap', n1[1].lead === 'Send it to artists, not managers.', n1[1].lead);
-ok('03 is the prediction direction', /Another pass at the song/.test(n1[2].lead));
+ok('02 is what to spend', n1[1].lead === 'Spend at least $300 over the first 3 months.', n1[1].lead);
+ok('03 is the segment gap', n1[2].lead === 'Send it to artists, not managers.', n1[2].lead);
 const n2 = tr.nextActions({ band, who: w2, setup: null });
-ok('no gap -> the band’s money line', n2[1].lead === 'Hold the ad budget.');
+ok('no gap -> still the money line', n2[1].lead === 'Spend at least $300 over the first 3 months.');
 ok('no prediction and no gap -> bring the next one', n2[2].lead === 'Bring the next one.');
 const n3 = tr.nextActions({ band: tr.bandFor(7.1), who: null, setup: tr.setupVsRecord(7.0, 7.1) });
 ok('invest band opens with the push', n3[0].lead === 'Release it and plan a push.');
-ok('even setup -> keep the packaging', n3[2].lead === 'Keep the packaging.');
+ok('even -> trust the score', n3[2].lead === 'Trust the score.');
 const n4 = tr.nextActions({ band: tr.bandFor(2.1), who: w3, setup: null });
 ok('studio band: do not release this version', n4[0].lead === 'Don’t release this version.');
-ok('city gap + no prediction -> money line fills slot 3', n4[1].lead === 'Start in Atlanta.' && n4[2].lead === 'Keep the money.');
+ok('studio: do not invest, then the city gap', n4[1].lead === 'Don’t invest in this version.' && n4[2].lead === 'Start in Atlanta.');
+const n5 = tr.nextActions({ band, who: null, setup: g1 });
+ok('no gap -> the prediction direction fills slot 3', /Another pass at the song/.test(n5[2].lead));
 
 console.log('— the decision card’s sub-line —');
 const d1 = tr.decisionSub(30, s1, band);
@@ -110,7 +129,7 @@ ok('divided copy', /did not agree/.test(tr.decisionSub(15, s2, band)));
 
 console.log('— copy rules: nothing about the machine —');
 const allCopy = [s1, s2, s3, s4, ar1, w1, w2, w3, g1, g2].filter(Boolean).map(o => o.pull + ' ' + (o.headline || []).join(' ')).join(' ')
-  + n1.concat(n2, n3, n4).map(s => s.lead + ' ' + s.rest).join(' ') + d1 + tr.BANDS.map(b => b.headline.join(' ') + b.action + b.actionRest + b.money + b.moneyRest).join(' ');
+  + n1.concat(n2, n3, n4).map(s => s.lead + ' ' + s.rest).join(' ') + d1 + tr.BANDS.map(b => b.action + b.actionRest).join(' ') + tr.SPEND.map(t => t.headline.join(' ') + t.money + t.moneyRest).join(' ');
 ok('no pool / lottery / queue / submission / ratified anywhere', !noSell.test(allCopy), (allCopy.match(noSell) || [''])[0]);
 ok('no emoji, no exclamation marks', !/[!\u{1F300}-\u{1FAFF}]/u.test(allCopy));
 

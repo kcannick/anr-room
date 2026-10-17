@@ -61,6 +61,12 @@
   /* buttons come from the shared system (/ui.css) */
   .stack{display:flex;flex-direction:column;gap:11px}
   /* pills + .data-table come from the shared system (/ui.css) */
+  .dlrec-stats{display:flex;flex-wrap:wrap;gap:10px}
+  .dlrec-stat{background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:92px}
+  .dlrec-stat b{display:block;font:700 20px 'Space Mono',monospace;color:var(--signal)}
+  .dlrec-stat span{font-size:11.5px;color:var(--ink-faint)}
+  .dlrec-cmt{color:var(--ink-dim);font-size:12.5px;line-height:1.45}
+  #dlRecBody{max-height:52vh;overflow:auto}
   .rank1{color:var(--signal);font-weight:700}
   /* room-activity tabs */
   .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px}
@@ -167,6 +173,14 @@
   .dllink.bad{color:var(--hot)}
   a.dllink{color:var(--accent);text-decoration:none}
   a.dllink:hover{text-decoration:underline}
+  a.dlig{color:var(--accent);text-decoration:none;font-family:"Space Mono",monospace;font-size:11px}
+  a.dlig:hover{text-decoration:underline}
+  .dlig.none{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-faint)}
+  /* The artist's note sits on its own full-width line under the record, so a long note
+     wraps across the table instead of stretching the Record column. */
+  .dltable tr.dlsub td{border-top:0;padding-top:0}
+  .dlnote{font-size:12px;color:var(--ink-dim);white-space:pre-wrap;line-height:1.45;
+    border-left:2px solid var(--line);padding-left:9px}
   /* ---- admin users panel ---- */
   .urow{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#0f0c1c}
   .urow+.urow{margin-top:8px}
@@ -186,6 +200,92 @@
   .uactions{display:flex;gap:6px;flex:none}
   .ufilters{display:flex;gap:8px;flex-wrap:wrap}
   .ufilters select,.ufilters input{flex:1;min-width:130px;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:9px 10px;border-radius:9px}
+  /* ---- Tournaments console (A&R Wars + the $1,000 Music Review Tournament) ----
+     Scoped under #tournaments so none of these names can collide with the rest of the file. */
+  #tournaments h3.sec{margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:"Space Mono",monospace;font-weight:700}
+  #tournaments .steps{display:flex;gap:6px;flex-wrap:wrap}
+  #tournaments .step{flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px;color:var(--ink-faint);background:var(--inset)}
+  #tournaments .step b{display:block;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:3px}
+  #tournaments .step.done{border-color:var(--signal);color:var(--ink)} #tournaments .step.done b{color:var(--signal)}
+  #tournaments .step.now{border-color:var(--accent);color:var(--ink);background:rgba(109,95,224,.10)} #tournaments .step.now b{color:var(--accent)}
+  #tournaments .seats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  @media(max-width:700px){#tournaments .seats{grid-template-columns:1fr}}
+  #tournaments .seat{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:var(--inset);flex-wrap:wrap}
+  #tournaments .seat .n{width:40px;flex:none;font-family:"Space Mono",monospace;font-weight:700;color:var(--accent);text-align:center;font-size:14px;padding:5px 2px;border-radius:8px}
+  #tournaments .seat img.av,#tournaments .seat .ph{width:40px;height:40px;border-radius:50%;flex:none}
+  #tournaments .seat img.av{object-fit:cover;background:#222}
+  #tournaments .seat .ph{border:1.5px dashed var(--gold);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--gold);font-family:"Space Mono",monospace}
+  #tournaments .seat .who{flex:1;min-width:0}
+  #tournaments .seat .nm{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .seat .sub{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .seat .src{font-size:10.5px;color:var(--ink-faint);font-family:"Space Mono",monospace;letter-spacing:.08em;text-transform:uppercase;flex:none}
+  #tournaments .seat .ed{background:none;border:0;color:var(--ink-faint);cursor:pointer;font-size:12px;padding:4px;flex:none}
+  #tournaments .seat .ed:hover{color:var(--ink)}
+  #tournaments .seat .ed[disabled]{opacity:.3;cursor:default}
+  #tournaments .seat.empty{border-style:dashed;justify-content:center;color:var(--ink-faint);font-size:13px;min-height:60px}
+  #tournaments .seat .edit{flex-basis:100%;border-top:1px dashed var(--line);margin-top:6px;padding-top:9px}
+  #tournaments .seat .edit input{font-size:13px;padding:8px 10px}
+  #tournaments .picks{border:1px solid var(--line);border-radius:12px;background:var(--inset);max-height:260px;overflow-y:auto}
+  #tournaments .pk{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #1a1530;font-size:13.5px;cursor:pointer}
+  #tournaments .pk:last-child{border-bottom:0}
+  #tournaments .pk.off{cursor:default;opacity:.6}
+  #tournaments .pk .box{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line);flex:none}
+  #tournaments .pk.on .box{background:var(--signal);border-color:var(--signal)}
+  #tournaments .pk img,#tournaments .pk .ph{width:28px;height:28px;border-radius:50%;object-fit:cover;flex:none;background:#222}
+  #tournaments .pk .ph{border:1.5px dashed var(--gold)}
+  #tournaments .pk .lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .pk .wk{margin-left:auto;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-faint);flex:none}
+  #tournaments .pk .rep{color:var(--gold);font-size:11px;flex:none}
+  #tournaments .bracket{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  @media(max-width:700px){#tournaments .bracket{grid-template-columns:1fr}}
+  #tournaments .rnd h4{margin:0 0 8px;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  #tournaments .m{border:1px solid var(--line);border-radius:12px;background:var(--inset);padding:10px;margin-bottom:10px}
+  #tournaments .m .side{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13.5px}
+  #tournaments .m .side img,#tournaments .m .side .ph{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;background:#222}
+  #tournaments .m .side .ph{border:1.5px dashed var(--gold)}
+  #tournaments .m .side .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .m .side .pct{font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-faint)}
+  #tournaments .m .side.w .nm{color:var(--signal);font-weight:700} #tournaments .m .side.w .pct{color:var(--signal)}
+  #tournaments .m .side.l{opacity:.45}
+  #tournaments .m .side.tbd .nm{color:var(--ink-faint);font-style:italic;padding-left:34px}
+  #tournaments .m .vs{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--accent);text-align:center;padding:1px 0}
+  #tournaments .m .song{font-size:11.5px;color:var(--ink-faint);padding-left:34px;margin-top:-4px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .m .foot{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid #1a1530;font-size:12px;color:var(--ink-faint);flex-wrap:wrap}
+  #tournaments .m .foot .pill{font-size:11px;padding:3px 9px}
+  #tournaments .m .foot .pill.tie{border-color:var(--gold);color:var(--gold)}
+  #tournaments .m.live{border-color:var(--signal);box-shadow:0 0 0 2px rgba(75,183,73,.15)}
+  #tournaments .m.next{border-color:var(--accent)}
+  #tournaments .m.final .side.w .nm{color:var(--gold)} #tournaments .m.final .side.w .pct{color:var(--gold)}
+  #tournaments .polls{display:flex;gap:5px;margin:6px 0 0 34px;flex-wrap:wrap}
+  #tournaments .polls span{font-family:"Space Mono",monospace;font-size:10.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;color:var(--ink-faint)}
+  #tournaments .polls span.a{border-color:var(--signal);color:var(--signal)} #tournaments .polls span.b{border-color:var(--accent);color:var(--accent)}
+  #tournaments .polls span.open{border-color:var(--gold);color:var(--gold)}
+  #tournaments .qf{border-top:1px dashed var(--line);margin-top:8px;padding-top:9px;display:flex;flex-direction:column;gap:7px}
+  #tournaments .qf .qt{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  #tournaments .qf label{margin-bottom:3px}
+  #tournaments .qf select,#tournaments .qf input{font-size:13px;padding:8px 10px}
+  #tournaments .gfx{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  @media(max-width:700px){#tournaments .gfx{grid-template-columns:repeat(2,1fr)}}
+  #tournaments .g{border:1px solid var(--line);border-radius:12px;background:var(--inset);padding:8px;text-align:center}
+  #tournaments .g img{width:100%;border-radius:8px;display:block;background:#222;min-height:80px}
+  #tournaments .g .t{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin:7px 0 2px}
+  #tournaments .g .s{font-size:11.5px;color:var(--ink-dim)}
+  #tournaments .tnstat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-width:0}
+  #tournaments .tnstat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-faint)}
+  #tournaments .tnstat .v{font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tournaments .tnstat .v.ok{color:var(--signal)} #tournaments .tnstat .v.gold{color:var(--gold)}
+  #tournaments table.list{width:100%;border-collapse:collapse}
+  #tournaments .list tr td{padding:8px 10px;border-bottom:1px solid #1a1530;font-size:13.5px}
+  #tournaments .list tr:last-child td{border-bottom:0}
+  #tournaments .list tr.sel td{background:rgba(109,95,224,.10)}
+  #tournaments .list tr.pick{cursor:pointer}
+  #tournaments .warnbox{background:rgba(245,197,24,.06);border:1px solid var(--gold);border-radius:10px;padding:11px 13px;font-size:13px;line-height:1.5}
+  #tournaments .warnbox b{color:var(--gold)}
+  #tournaments .out{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--ink-dim);white-space:pre-wrap;line-height:1.5;margin-top:10px;border-left:2px solid var(--line);padding-left:9px}
+  #tournaments .out a{color:var(--signal)}
+  #tournaments a.lnk{color:var(--signal);text-decoration:none}
+  #tournaments a.lnk:hover{text-decoration:underline}
+  #tournaments .srch{border:1px solid var(--line);border-radius:12px;background:var(--inset);margin:0 0 10px}
 </style>
 </head>
 <body>
@@ -225,6 +325,7 @@
         <button class="on" id="mdDaily">A&amp;R Daily</button>
         <button id="mdWeekly">Weekly</button>
         <button id="mdLive">Live show</button>
+        <button id="mdTournaments">Tournaments</button>
         <button id="mdPlatform">Platform</button>
       </div>
       <div class="row" style="gap:8px;flex:0 0 auto">
@@ -289,7 +390,7 @@
       </div>
 
       <div class="card" id="dlCards">
-        <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The day's graphics</h3>
+        <h3 style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Instagram posts</h3>
         <div id="dlCardBody"></div>
       </div>
     </div>
@@ -367,6 +468,23 @@
   </div>
 </div>
 
+<!-- One record's results. Also where a makinitmag submission's saved results link lands
+     (/admin?day=…&ref=entry/…). Each A&R's rating and comment show only once the record is
+     ratified; the server enforces the same seal. -->
+<div class="modal-scrim" id="dlRecModal">
+  <div class="modal-card md stack">
+    <div>
+      <h3 style="margin:0" id="dlRecTitle">Results</h3>
+      <div class="muted" id="dlRecSub" style="font-size:13px;margin-top:3px"></div>
+    </div>
+    <div id="dlRecStats" class="dlrec-stats"></div>
+    <a id="dlRecDrupal" class="hide" target="_blank" rel="noopener" style="color:var(--signal);text-decoration:none;font-size:13.5px">Submission on makinitmag.com ↗</a>
+    <div id="dlRecBody"></div>
+    <div class="err" id="dlRecErr"></div>
+    <div class="row" style="gap:8px"><button class="btn ghost" id="dlRecClose">Close</button></div>
+  </div>
+</div>
+
 <!-- Fix a broken play link mid-window. THE most operationally important surface here: a dead
      link at 12:05 PM is a dead record for 21 hours, nobody is watching the way a host watches
      a live show, and the fix cannot round-trip through a CMS. Descriptive fields only. -->
@@ -389,7 +507,7 @@
 </div>
 
 <!-- ===== THE WEEKLY REPORT — the screen the Wednesday show is read off =====
-     Same window every week: drops from Wednesday through Tuesday. Two ranked lists, because
+     Same window every week: drops from Monday through Sunday. Two ranked lists, because
      both #1s pay out — the top record's artist is seeded into the Artist Tournament and the
      top A&R takes a seat in A&R Wars. The tables are the daily ones (same .dltable, same
      support marks) so the host reads the same shapes on air seven days a week. -->
@@ -401,6 +519,7 @@
         <button id="wkDaily">A&amp;R Daily</button>
         <button class="on" id="wkWeekly">Weekly</button>
         <button id="wkLive">Live show</button>
+        <button id="wkTournaments">Tournaments</button>
         <button id="wkPlatform">Platform</button>
       </div>
       <div class="row" style="gap:8px;flex:0 0 auto">
@@ -486,6 +605,204 @@
   </div>
 </div>
 
+<!-- ===== TOURNAMENTS — A&R Wars and the $1,000 Music Review Tournament =====
+     One screen runs both kinds: pick the field, seed the bracket, run the night off the
+     linked Versus session, publish the weekly qualifier graphics, send the reminder. Built
+     to public/_mock-tournament-admin.html against docs/specs/tournament-spec.md §10. Every
+     id here is prefixed tn. The bracket never shows a split before the poll is ratified
+     (the seal) — it prints the vote count and "split sealed until ratify" while it is open. -->
+<div id="tournaments" class="grid hide">
+  <div class="stack" style="grid-column:1/-1;max-width:980px;margin:30px auto 0;gap:14px">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div class="modeswitch">
+        <button id="tnDaily">A&amp;R Daily</button>
+        <button id="tnWeekly">Weekly</button>
+        <button id="tnLive">Live show</button>
+        <button class="on" id="tnTournaments">Tournaments</button>
+        <button id="tnPlatform">Platform</button>
+      </div>
+      <div class="row" style="gap:8px;flex:0 0 auto">
+        <select id="tnSel" title="Which tournament to show"
+          style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;max-width:300px"></select>
+        <button class="btn ghost sm" id="btnTnNew">+ New tournament</button>
+        <button class="btn ghost sm" id="btnTnRefresh">Refresh</button>
+      </div>
+    </div>
+
+    <div id="tnNone" class="card hide" style="border-color:var(--hot)">
+      <h3 style="margin:0 0 8px;color:var(--hot);font-size:13px;letter-spacing:.16em;text-transform:uppercase">Nothing to show</h3>
+      <p id="tnNoneMsg" style="margin:0;font-size:14px;line-height:1.55"></p>
+    </div>
+
+    <div id="tnBody" class="stack hide" style="gap:14px">
+
+      <!-- 1. where it is -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          <div style="min-width:0">
+            <div id="tnTitle" style="font-size:22px;font-weight:800;letter-spacing:-.02em"></div>
+            <div id="tnSub" class="mono" style="font-size:12px;color:var(--ink-dim);margin-top:4px"></div>
+          </div>
+          <div class="row" style="gap:8px;flex:0 0 auto">
+            <button class="btn ghost sm hide" id="btnTnConsole">Open the live console</button>
+            <button class="btn ghost sm" id="btnTnEditSetup">Edit setup</button>
+          </div>
+        </div>
+        <div class="steps" id="tnSteps"></div>
+      </div>
+
+      <!-- 2. setup (collapsed once past draft; "Edit setup" opens it) -->
+      <div class="card" id="tnSetupCard">
+        <h3 class="sec">Setup</h3>
+        <div class="stack">
+          <div class="row">
+            <div><label>Tournament</label>
+              <select id="tnKind">
+                <option value="ar">A&amp;R Wars (A&amp;Rs · $500 Cash Prize · plays the Service Pack)</option>
+                <option value="artist">$1,000 Music Review Tournament (artists · $1,000 Promo Budget · plays own catalog)</option>
+              </select></div>
+            <div><label>Number</label><input id="tnNumber" inputmode="numeric" placeholder="1"></div>
+            <div><label>Prize line <span class="muted">(printed on the graphics)</span></label><input id="tnPrize" placeholder="$500 Cash Prize"></div>
+          </div>
+          <div class="row">
+            <div><label>Event date &amp; time (ET)</label><input id="tnEvent" type="datetime-local" step="300"></div>
+            <div><label>Live session <span class="muted">(the Versus room the polls run in)</span></label><select id="tnSession"></select></div>
+          </div>
+          <div class="row">
+            <div id="tnPackWrap"><label>Service Pack <span class="muted">(A&amp;R Wars only — the songs competitors pick from)</span></label><select id="tnPack"></select></div>
+            <div><label>Watch link <span class="muted">(shown on the landing page when live)</span></label><input id="tnWatch" placeholder="https://www.youtube.com/@makinitmag/live"></div>
+          </div>
+          <div class="row">
+            <div><label>Polls in the final</label><input id="tnFinalPolls" inputmode="numeric" placeholder="3"><div class="hint">4 + 2 + 3 = 9 polls = 18 songs, the number Pick the Hits counts on.</div></div>
+            <div><label>Reminder email goes out</label>
+              <select id="tnRemind">
+                <option value="120">2 hours before</option>
+                <option value="60">1 hour before</option>
+                <option value="1440">24 hours before</option>
+                <option value="0">Off — send by hand</option>
+              </select></div>
+            <div><label>Landing page</label><input id="tnLanding" disabled value="—">
+              <div class="hint">/wars always shows the latest A&amp;R Wars; <span id="tnLandingHint">/tournament/&lt;slug&gt;</span> is this one.</div></div>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn sm" id="btnTnSave" style="flex:0 0 auto">Save</button>
+            <button class="btn ghost sm hide" id="btnTnPromo" style="flex:0 0 auto" title="Needs 8 seats and a date">Open promo</button>
+            <button class="btn ghost sm hide" id="btnTnMarkLive" style="flex:0 0 auto" title="Needs a live session">Mark live</button>
+            <button class="btn ghost sm hide" id="btnTnDraft" style="flex:0 0 auto">Back to draft</button>
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn ghost sm hide" id="btnTnCopyLink2" style="flex:0 0 auto">Copy link</button>
+            <a class="btn ghost sm hide" id="tnOpenLanding2" target="_blank" rel="noopener" style="flex:0 0 auto">Open</a>
+          </div>
+          <p class="hint" id="tnSetupHint" style="margin:0"></p>
+        </div>
+      </div>
+
+      <!-- 3. the field -->
+      <div class="card" id="tnFieldCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <h3 class="sec" style="margin:0" id="tnFieldHead">The field</h3>
+          <div class="row" style="gap:8px;flex:0 0 auto">
+            <button class="btn ghost sm" id="btnTnSeedPoints">Seed by Series points</button>
+            <button class="btn ghost sm" id="btnTnRebuild" title="Rebuild the bracket from the seeds">Rebuild bracket</button>
+          </div>
+        </div>
+        <div class="seats" id="tnSeats"></div>
+        <p class="hint" style="margin-top:8px">Seed numbers are editable on each row, and the arrows move a row up or down. The pencil edits name, handle, city, the qualified label and the photo — a competitor row is a copy of the profile, so a fix here never touches the A&amp;R's account. A dashed <span style="color:var(--gold)">no photo</span> ring means the graphic will print a placeholder until one is added. Seeds lock once a match is decided.</p>
+
+        <div style="margin-top:14px">
+          <h3 class="sec">Add competitors</h3>
+          <div id="tnAddAr">
+            <div class="row" style="margin-bottom:8px">
+              <input id="tnSearch" placeholder="Search A&amp;Rs by name (complete profiles only)" autocomplete="off">
+            </div>
+            <div id="tnSearchOut" class="srch hide"></div>
+          </div>
+          <div id="tnAddArtist" class="hide">
+            <label>Add an artist</label>
+            <div class="row" style="margin-bottom:8px">
+              <input id="tnArtName" placeholder="Artist name">
+              <input id="tnArtIg" placeholder="Instagram (without @)">
+              <input id="tnArtCity" placeholder="City">
+              <button class="btn ghost sm" id="btnTnAddArtist" style="flex:0 0 auto">Add</button>
+            </div>
+            <p class="hint" style="margin:0 0 10px">Artists have no photo on file — add one with the pencil on the seat once they are in.</p>
+          </div>
+          <label id="tnCandLbl">From the weekly winners <span class="muted">(last 8 complete weeks · tick to seat)</span></label>
+          <div class="picks" id="tnCands"></div>
+          <p class="hint" id="tnCandHint"></p>
+        </div>
+      </div>
+
+      <!-- 4. the bracket — the live control -->
+      <div class="card" id="tnBracketCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+          <h3 class="sec" style="margin:0" id="tnBracketHead">Bracket</h3>
+          <span class="pill" id="tnBracketPill"></span>
+        </div>
+        <p class="hint" style="margin:0 0 12px">Each matchup is one binary poll in the live session. <b>Queue matchup</b> fills the room's queue; the night then runs on the normal Advance button (listening → voting → ratify). When a poll ratifies, the winner moves into the next slot on its own. The split stays sealed until ratify, same as every poll — only the vote count shows while it is open.</p>
+        <div class="bracket" id="tnBracket"></div>
+      </div>
+
+      <!-- 5. graphics — one row per seat, then the final promo, then the champion -->
+      <div class="card" id="tnGfxCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+          <h3 class="sec" style="margin:0">Graphics · weekly qualifier series</h3>
+          <div class="row" style="gap:8px;flex:0 0 auto">
+            <button class="btn ghost sm" id="btnTnZip" title="Every ready graphic, plus the captions, in one zip">Download all graphics (zip)</button>
+            <button class="btn ghost sm" id="btnTnCaption">Copy caption</button>
+            <button class="btn sm" id="btnTnPublish">Publish + make Asana task</button>
+          </div>
+        </div>
+        <p class="hint" style="margin:0 0 12px">One set per seat as it fills: the qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?") and each competitor gets a <b>package</b> — their own feed + story to post (them big, all 8 seats, RSVP + Join the A&amp;R Team) that you email them with the tournament briefing and the graphics attached, followed by a heads-up text. After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
+        <div class="gfx" id="tnGfx"></div>
+        <table class="list" id="tnGfxList" style="margin-top:12px"></table>
+        <div class="row hide" id="tnPkgBar" style="gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+          <span class="mono" style="color:var(--ink-faint);font-size:12px">Package:</span>
+          <button class="btn sm" id="btnTnSend" title="Emails this competitor the tournament briefing with both graphics attached, then texts the phone on their account that the email went out">Email + text competitor</button>
+          <button class="btn ghost sm" id="btnTnPkgZip" title="This competitor's feed, story and caption — for a hand DM">Download this package (zip)</button>
+          <button class="btn ghost sm" id="btnTnPkgTest" title="Sends this competitor's package to YOUR OWN email and phone, exactly as they would get it; nothing is sent to them or recorded">Send test to me (email + text)</button>
+          <span style="flex:1 1 auto"></span>
+          <button class="btn ghost sm" id="btnTnPkgAll" title="Render and host all 8 packages, one at a time">Publish all 8 packages</button>
+          <button class="btn ghost sm" id="btnTnSendAll" title="Emails and texts every competitor with an account, one at a time; skips anyone already sent">Email + text every competitor</button>
+        </div>
+        <p class="hint" id="tnPkgHint" style="margin:6px 0 0">Each send is <b>two messages</b>: the tournament briefing by email with the feed and story attached, then a text to the phone on the competitor's account saying the email went out ("check Spam and the Promotions tab"). No phone on file means email only, and the row says so. Texts go right away, so send during the day. <b>Send test to me</b> does the same to your own email and phone first.</p>
+        <div id="tnPubOut" class="out hide"></div>
+        <p class="hint">A seat added by hand (not a weekly winner) still gets a row: the series is "one flyer per seat", whatever week it was filled.</p>
+      </div>
+
+      <!-- 6. landing page + reminder list -->
+      <div class="card" id="tnLandCard">
+        <h3 class="sec">Landing page &amp; reminder list</h3>
+        <div class="row" style="gap:8px;margin-bottom:12px" id="tnStats"></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <a class="btn ghost sm" id="tnOpenLanding" target="_blank" rel="noopener" style="flex:0 0 auto">Open the landing page</a>
+          <button class="btn ghost sm" id="btnTnCopyLink" style="flex:0 0 auto">Copy link</button>
+          <button class="btn ghost sm" id="btnTnRemind" style="flex:0 0 auto">Send the reminder now</button>
+          <button class="btn ghost sm" id="btnTnCsv" style="flex:0 0 auto">Download the list (CSV)</button>
+        </div>
+        <div id="tnLandOut" class="out hide"></div>
+        <p class="hint">The list is email + name, no account — anyone can join it from the landing page. The reminder is one email with the watch link and a one-click unsubscribe. A&amp;Rs with "when a session goes live" on get the normal go-live text and email as well. The page is public once the tournament is in promo; a draft answers 404.</p>
+      </div>
+
+      <!-- 7. wrap — shown once the final is decided -->
+      <div class="card hide" id="tnWrapCard" style="border-color:var(--gold);background:rgba(245,197,24,.04)">
+        <h3 class="sec" style="color:var(--gold)">Wrap · after the final</h3>
+        <div class="warnbox" style="margin-bottom:10px" id="tnWrapMsg"></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button class="btn sm" id="btnTnPubChampion" style="flex:0 0 auto">Publish champion set + bracket</button>
+          <button class="btn ghost sm" id="btnTnSidebet" style="flex:0 0 auto">Open Pick the Hits settle checklist</button>
+          <button class="btn ghost sm" id="btnTnEndSession" style="flex:0 0 auto">End the session</button>
+        </div>
+        <div id="tnWrapOut" class="out hide"></div>
+        <p class="hint">Settling Pick the Hits stays on the Sidebet screen (it reads the played songs off the same polls). Ending the session is done on the live console. The payout is outside the app.</p>
+      </div>
+
+      <div class="err" id="tnErr"></div>
+    </div>
+  </div>
+</div>
+
 <div id="picker" class="grid hide">
   <div class="card stack" style="grid-column:1/-1;max-width:640px;margin:40px auto 0">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -494,6 +811,7 @@
         <button class="btn ghost sm hide" id="btnAnalytics">Analytics</button>
         <button class="btn ghost sm hide" id="btnCharts">Charts</button>
         <button class="btn ghost sm hide" id="btnSidebet">Sidebet</button>
+        <button class="btn ghost sm hide" id="btnTournaments">Tournaments</button>
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
         <button class="btn ghost sm" id="btnHostDefaults">Defaults</button>
@@ -982,7 +1300,7 @@
       </div>
       <input id="uSearch" placeholder="Search by name or email…" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;border-radius:10px">
       <div class="ufilters" style="margin-top:9px">
-        <select id="uStatus"><option value="">All statuses</option><option value="active">Active</option><option value="blocked">Blocked</option></select>
+        <select id="uStatus"><option value="">All statuses</option><option value="active">Active</option><option value="blocked">Blocked</option><option value="closed">Closed by the A&amp;R</option></select>
         <select id="uSkill"><option value="">All skills</option></select>
         <select id="uSkillMode" style="flex:0 0 auto;min-width:0;max-width:118px"><option value="primary">Primary</option><option value="any">Any role</option></select>
       </div>
@@ -1049,9 +1367,14 @@
         <div class="row" style="margin-top:8px">
           <div><label>Records open at</label><input id="dsOpen" type="time" step="300"></div>
           <div><label>Rating closes at</label><input id="dsClose" type="time" step="300"></div>
-          <div><label>Results publish at</label><input id="dsResults" type="time" step="300"></div>
         </div>
-        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. Results never publish before the close. Set them equal to publish as soon as the day is tallied.</p>
+        <div class="row" style="margin-top:8px">
+          <div><label>Daily Countdown graphics render at</label><input id="dsStream" type="time" step="300"><select id="dsStreamDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
+          <div><label>Results publish at</label><input id="dsResults" type="time" step="300"><select id="dsResultsDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. At the close, rated artists are told their record was rated and when their report comes. At the render time the ranked Daily Countdown graphics are made for posting on Instagram. Results (scores on the site, the results emails, the Track Reports) stay sealed until they publish, which is never before the countdown.</p>
+        <label style="margin-top:10px">The A&amp;R Room live stream link <span class="muted">(Wednesday 7 PM ET; sent to artists and A&amp;Rs; a channel's /live link works)</span></label>
+        <input id="dsStreamUrl" placeholder="https://www.youtube.com/@yourchannel/live">
         <label style="margin-top:10px">Completion bonus <span class="muted">(for rating every record in the day)</span></label>
         <table class="data-table" style="margin-top:6px">
           <tbody>
@@ -1062,7 +1385,7 @@
           </tbody>
         </table>
         <p class="muted" style="font-size:11px;margin:8px 0 0">Leave a step's hours blank to drop that step. Steps must increase and stay inside the window.</p>
-        <label style="margin-top:10px">Artist reports go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(0 = with the results; a hold is your window to reject comments)</span></label>
+        <label style="margin-top:10px">Artist reports go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(0 = with the results. Comments can be rejected any time before then.)</span></label>
         <div id="dsSummary" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
@@ -1082,6 +1405,23 @@
       <pre id="leadsCheckOut" class="hide" style="font-size:11px;white-space:pre-wrap;margin:8px 0 0;padding:8px;border:1px solid var(--line);border-radius:6px"></pre>
       <div id="leadsStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       <div id="leadsList" style="margin-top:10px;max-height:420px;overflow:auto"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card" id="brevoCard">
+      <h2>Brevo contacts</h2>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">Brevo lists, kept up to date once a day: <b>Artists</b> (everyone whose record was played — email, phone, and the score of their best record once it has enough ratings: <b>ARTIST_TOP_SCORE</b>) and <b>A&amp;Rs</b> (every registered account, with their profile), plus everyone who entered each Side Bet. Only new or changed contacts are sent. Nobody is ever removed from a list. Artists go to list <b>119</b> and A&amp;Rs to list <b>111</b>. Each Side Bet gets its own list (“Side Bet #1”, “Side Bet #2”…), created in a Brevo folder called “A&amp;R Program” when its first entrant is synced.</p>
+      <div class="row">
+        <div><label>Artists list ID <span class="muted">(blank = 119)</span></label><input id="brevoListArtists" placeholder="119"></div>
+        <div><label>A&amp;Rs list ID <span class="muted">(blank = 111)</span></label><input id="brevoListArs" placeholder="111"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn sm" id="brevoSync">Sync now</button>
+        <label style="margin:0;display:flex;align-items:center;gap:6px">Score needs <input id="brevoMinRatings" type="number" min="1" max="100000" value="5" style="width:64px;display:inline-block"> ratings</label>
+        <button class="btn ghost sm" id="brevoSaveIds">Save</button>
+        <button class="btn ghost sm" id="brevoRefresh">Refresh</button>
+      </div>
+      <div id="brevoStatus" style="font-size:12px;margin-top:8px;font-weight:600"></div>
+      <div id="brevoInfo" style="margin-top:10px"></div>
+      <p class="muted" style="font-size:11px;margin:8px 0 0">The API key is an environment variable (<b>BREVO_API_KEY</b>) — it never lives in the database.</p>
     </div>
     <div class="card" id="cbCard">
       <h2>Backfill artist contacts</h2>
@@ -1108,6 +1448,14 @@
         <button type="button" class="nb-tok" data-tok="[submit link]" style="font:inherit;color:var(--signal);background:none;border:0;padding:0 2px;cursor:pointer">[submit link]</button> ·
         <button type="button" class="nb-tok" data-tok="[join link]" style="font:inherit;color:var(--signal);background:none;border:0;padding:0 2px;cursor:pointer">[join link]</button>
         — the card link opens their A&amp;R Team page (links + graphics) signed in; the other two are their referral links.</p>
+      <div class="row" style="margin-top:10px;align-items:center;gap:8px">
+        <label for="nbAudience" style="font-weight:500">Send to</label>
+        <select id="nbAudience" style="flex:1">
+          <option value="engaged" selected>Active A&amp;Rs — rated or signed in within 30 days, or joined within 14</option>
+          <option value="all">Everyone on the list</option>
+        </select>
+      </div>
+      <p class="muted" style="font-size:11px;margin:6px 0 0">Active is the default: the October audit found blasts to the whole list got 1–2% clicks. Everyone is for the message that must reach every account.</p>
       <div class="row" style="margin-top:10px">
         <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer"><input type="checkbox" id="nbEmail" checked style="width:auto;margin:0"><span>Email <span class="muted" id="nbEmailCount">(…)</span></span></label>
         <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer"><input type="checkbox" id="nbSms" style="width:auto;margin:0"><span>SMS <span class="muted" id="nbSmsCount">(…)</span></span></label>
@@ -1215,6 +1563,7 @@
     #charts .ctitle{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #charts .csub{font-size:12px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #charts .cmeta{font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-faint);width:94px;flex:none;text-align:right}
+    #charts .cacc{font-family:'Space Mono',monospace;font-size:11px;color:var(--ink-dim);width:84px;flex:none;text-align:right}
     #charts .cscore{font-family:'Space Mono',monospace;font-size:16px;color:var(--signal);width:54px;flex:none;text-align:right}
     #charts .cutline{display:flex;align-items:center;gap:10px;margin:12px 0 2px;font-family:'Space Mono',monospace;
       font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
@@ -1247,7 +1596,7 @@
             <option value="100" selected>Top 100</option><option value="50">Top 50</option>
             <option value="20">Top 20</option><option value="10">Top 10</option><option value="1000">All</option>
           </select></div>
-        <div><label>Min votes</label><input type="number" id="chMinVotes" value="10" min="0" step="1"></div>
+        <div><label id="chMinLabel">Min votes</label><input type="number" id="chMinVotes" value="10" min="0" step="1"></div>
         <div><label>Order</label><select id="chOrder">
           <option value="top">#1 first</option><option value="countdown">Countdown</option></select></div>
       </div>
@@ -1258,6 +1607,12 @@
       <div class="row" style="gap:14px;margin-top:10px;align-items:center">
         <div style="flex:0 0 auto"><label style="margin:0 0 4px">Per slide</label>
           <select id="chPer" style="width:auto"><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option></select></div>
+        <div id="chSortWrap" style="flex:0 0 auto;display:none"><label style="margin:0 0 4px">Rank A&amp;Rs by</label>
+          <select id="chSort" style="width:auto"><option value="points" selected>Points</option><option value="accuracy">Accuracy</option></select></div>
+        <label class="pref-row" id="chScoresRow" style="flex:1;min-width:220px">
+          <input type="checkbox" id="chScores">
+          <span><b>Show scores</b><small>Print each record's average and the score key on the carousel and in the caption. Off: rank only, like the Daily Countdown.</small></span>
+        </label>
         <label class="pref-row" id="chDedupeRow" style="flex:1;min-width:220px">
           <input type="checkbox" id="chDedupe" checked>
           <span><b>Merge repeat plays</b><small>A record played in more than one room charts once, at its best showing. The CSV keeps a <code>plays</code> count.</small></span>
@@ -1424,6 +1779,49 @@
     <button class="btn danger" id="udDelete" style="width:100%;margin-top:10px" disabled>Delete permanently</button>
     <button class="btn ghost" id="udCancel" style="width:100%;margin-top:9px">Cancel</button>
     <div class="err" id="udErr"></div>
+  </div>
+</div>
+
+<!-- ADMIN EDIT PROFILE: fix an A&R's profile on their behalf (same fields as /profile). -->
+<div id="userEditModal" class="modal-scrim" style="z-index:30">
+  <div class="card" style="max-width:480px;width:100%;max-height:92vh;overflow:auto">
+    <div style="display:flex;align-items:center;gap:11px;margin-bottom:6px"><span id="ueAv"></span><div style="min-width:0"><h2 style="margin:0">Edit profile</h2><div class="muted" style="font-size:12px;color:var(--ink-dim)"><span id="ueEmail"></span> · <span id="uePhone"></span></div></div></div>
+    <div id="ueComplete" style="font-size:12px;margin:0 0 10px"></div>
+    <label>Display name</label>
+    <input id="ueName" maxlength="32" autocomplete="off">
+    <label>Roles <span class="muted" style="font-weight:400">(tap to toggle)</span></label>
+    <div id="ueCats" class="permrow" style="margin:4px 0 10px"></div>
+    <label>Primary role</label>
+    <select id="uePrimary"></select>
+    <label>Location</label>
+    <input id="ueLocation" maxlength="120" placeholder="City, State" autocomplete="off">
+    <label>Instagram</label>
+    <input id="ueInstagram" maxlength="60" placeholder="handle, no @" autocomplete="off">
+    <label>TikTok</label>
+    <input id="ueTiktok" maxlength="60" placeholder="handle, no @" autocomplete="off">
+    <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:10px 0 0">Email and phone are not editable here. The photo is changed by the A&amp;R on their own profile page.</p>
+    <!-- Latest grade card (2026-10-15): the A&R's card for the newest published day they played. -->
+    <div id="ueCard" style="display:none;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <label style="margin-top:0">Grade card <span class="muted" style="font-weight:400" id="ueCardDay"></span></label>
+      <div class="permrow" style="margin:6px 0 4px">
+        <button type="button" class="permchip" data-uecscope="day">Latest day</button>
+        <button type="button" class="permchip" data-uecscope="standing">Standing</button>
+      </div>
+      <div class="permrow" style="margin:4px 0 8px">
+        <button type="button" class="permchip" data-uecs="photo">Big photo</button>
+        <button type="button" class="permchip" data-uecs="stats">Stats</button>
+      </div>
+      <div id="ueCardPic" style="aspect-ratio:4/5;max-width:220px;background:#07060d;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--ink-dim)">Loading…</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="button" class="btn sm" data-uecdl="feed">Download feed</button>
+        <button type="button" class="btn ghost sm" data-uecdl="story">Download story</button>
+      </div>
+      <div class="muted" id="ueCardNote" style="font-size:12px;color:var(--ink-faint);margin-top:6px"></div>
+    </div>
+    <button class="btn" id="ueSave" style="width:100%;margin-top:12px">Save profile</button>
+    <a class="btn ghost" id="ueOpen" target="_blank" rel="noopener" style="width:100%;margin-top:9px;display:block;text-align:center;box-sizing:border-box">Open public profile</a>
+    <button class="btn ghost" id="ueCancel" style="width:100%;margin-top:9px">Cancel</button>
+    <div class="err" id="ueErr"></div>
   </div>
 </div>
 
@@ -1965,7 +2363,7 @@ const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
 // ---------- AUTH FLOW: login → picker → console ----------
 function showScreen(id){
-  ['login','daily','weekly','picker','create','console','series','users','platform','analytics','charts','sidebet'].forEach(s=>$('#'+s).classList.add('hide'));
+  ['login','daily','weekly','tournaments','picker','create','console','series','users','platform','analytics','charts','sidebet'].forEach(s=>$('#'+s).classList.add('hide'));
   $('#'+id).classList.remove('hide');
 }
 
@@ -1981,6 +2379,7 @@ let dlEditRound = null;              // the record open in the fix dialog
 async function landing(){
   if(!isAdmin()) return openPicker();
   await loadSeriesCache();          // the drop's series is named, not printed as an id
+  if(await dlOpenFromLink()) return;
   return openDaily();
 }
 
@@ -2080,7 +2479,8 @@ function renderDaily(){
     ? esc(seriesTitleFor(dr.series_id) || 'Series ' + dr.series_id)
     : '<b style="color:var(--hot)">Not tagged into a series — these points never reach the board</b>';
   $('#dlSched').innerHTML = `Opens ${esc(dlFmtWhen(dr.opensLabel))} · tallies ${esc(dlFmtWhen(dr.closesLabel))}`
-    + ` · results and the next drop both land ${esc(dlFmtWhen(dr.resultsLabel))}. ${ser}.`
+    + (dr.streamLabel ? ` · graphics ${esc(dlFmtWhen(dr.streamLabel))}` : '')
+    + ` · results ${esc(dlFmtWhen(dr.resultsLabel))}. ${ser}.`
     + ' <span class="muted">The clock runs this, not a button.</span>';
 
   // The hold. Comments ship by DEFAULT (029) and there is no unsend; a cron has no wrap-up
@@ -2117,86 +2517,47 @@ function renderDaily(){
   const c = d.cards || {};
   let cardHtml = '';
   const fig = (url, name, label) => `<figure style="flex:1;margin:0;min-width:0"><a href="${esc(url)}" target="_blank" rel="noopener" download="${esc(name)}"><img src="${esc(url)}" alt="${esc(label)}" style="width:100%;border-radius:12px;border:1px solid var(--line);display:block"></a><figcaption class="muted" style="font-size:11px;margin-top:4px">${esc(label)}</figcaption></figure>`;
-  if(c.ars || c.songs){
-    cardHtml += '<div class="row" style="gap:10px;align-items:flex-start">'
-      + (c.ars ? fig(c.ars, 'top8-ars.png', 'Top 8 A&Rs') : '')
-      + (c.songs ? fig(c.songs, 'top8-songs.png', 'Top 8 Records') : '')
-      + '</div>';
-  } else if(dr.async_state === 'published'){
-    cardHtml += `<div class="empty" style="color:var(--gold)">The Top 8 graphics did not render${d.blobConfigured?'':' — BLOB_READ_WRITE_TOKEN is not set'}. The day published anyway; the caption is still below.</div>`;
-  } else {
-    cardHtml += '<div class="empty">Rendered when the day publishes.</div>';
-  }
-  if(c.caption){
-    cardHtml += `<div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" onclick="dlCopyCaption()">Copy caption</button></div>`;
-  }
-  // The A&R Meeting Recap — the noon stream's Instagram Live cover (9:16) and YouTube
-  // thumbnail (16:9), dated for the day the stream airs, with the day's artists and A&Rs
-  // filled in (drop order / alphabetical — never ranked; the stream is the reveal). Hosted
-  // at publish; before that, or if hosting failed, the console renders them live off
-  // /api/card/recap-* so there is always a cover to download.
+  // Retired 2026-10-02: the Top 8 cards, the A&R Meeting Recap cover/thumbnail and the
+  // countdown clip captions. The Daily Countdown carousel below replaces all of them.
   const dateTag = (dr.dayLabel || dr.day || '').replace(/[^A-Za-z0-9]+/g,'-');
-  const recapCover = c.recapCover || dlRecapUrl('recap-cover'), recapThumb = c.recapThumb || dlRecapUrl('recap-thumb');
-  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">The A&R Meeting Recap</h4>
-    <div class="row" style="gap:10px;align-items:flex-start">
-      ${fig(recapCover, 'meeting-recap-' + dateTag + '-1080x1920.png', 'Instagram Live cover · 9:16')}
-      ${fig(recapThumb, 'meeting-recap-' + dateTag + '-1920x1080.png', 'YouTube thumbnail · 16:9')}
-    </div>
-    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:8px 0 0">${c.recapCover ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed' + (d.blobConfigured ? '' : ' — BLOB_READ_WRITE_TOKEN is not set') + '; these are rendered live instead.' : 'Rendered live from the day so far. The A&Rs column fills in once the day tallies.')}
-      Artists print in drop order and A&Rs alphabetically — nothing on the cover is ranked.</p>
-    <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost sm" onclick="dlCopyRecapCaption()">Copy recap caption</button></div>`;
-  // The results carousels — posted after the 2PM reveal stream. Slide 1 is the top record /
-  // top A&R, then the rest ranked, then the call to action; a big day gets more list slides.
-  // Hosted at the 3PM publish; before that, or if hosting failed, every slide renders live off
-  // /api/card/results (admin-only) so the set can always be downloaded.
+  const tallied = dr.async_state === 'ratified' || dr.async_state === 'published';
+  // The Makin' It Daily Countdown (set 'song', 2026-10-02 — it replaced the Top Track carousel
+  // and the daily stream): cover, one slide per record from the bottom up, rank only, then the
+  // A&R Team and submit slides. And the Top A&R carousel (set 'ar'). Hosted with the day's
+  // graphics; before that, or if hosting failed, every slide renders live off /api/card/results
+  // (admin-only) so the set can always be downloaded.
   const rs = c.results || {};
   const slideFigs = (set, urls, count, label) => {
     const n = urls ? urls.length : (count || 0);
     if(!n) return '<div class="empty">Nothing to show yet.</div>';
     let out = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">';
-    for(let i = 1; i <= n; i++) out += fig(urls ? urls[i-1] : dlResultsUrl(set, i), 'results-' + set + '-' + dateTag + '-' + i + '.png', label + ' · ' + i + ' / ' + n);
+    const file = set === 'song' ? 'countdown-' : 'results-' + set + '-';
+    // On the countdown, each record slide names who to tag on it.
+    const tags = set === 'song' ? (rs.songTags || []) : [];
+    for(let i = 1; i <= n; i++) out += fig(urls ? urls[i-1] : dlResultsUrl(set, i), file + dateTag + '-' + String(i).padStart(2, '0') + '.png', label + ' · ' + i + ' / ' + n + (tags[i-1] ? ' · tag ' + tags[i-1] : ''));
     return out + '</div>';
   };
-  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Results carousels</h4>
-    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">Post after the reveal stream. Slide 1 is the top record or top A&R, then the rest ranked, then the call to action. ${rs.song ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed; rendered live instead.' : 'Rendered live from the day so far; the ranking is final once the day tallies.')}</p>
-    <div class="muted" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:8px 0 4px">Top Track</div>${slideFigs('song', rs.song, rs.songCount, 'Top Track')}
-    <div class="row" style="gap:8px;margin:8px 0 12px"><button class="btn ghost sm" onclick="dlCopyResultsCaption('song')">Copy Top Track caption</button></div>
-    <div class="muted" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:8px 0 4px">Top A&R</div>${slideFigs('ar', rs.ar, rs.arCount, 'Top A&R')}
-    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="dlCopyResultsCaption('ar')">Copy Top A&R caption</button></div>`;
-  // The winner posts (039) — one portrait post per winner, posted as a collab post with them.
-  // Hosted at the 3PM publish; before that (or if hosting failed) rendered live off
-  // /api/card/winner (admin-only). The weekly pair renders live for the week chosen.
+  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Daily Countdown carousel</h4>
+    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">One Instagram carousel: the cover, every record from the bottom up to #1 (rank only, no scores), then the A&amp;R Team and submit slides. Every record slide stands alone, so artists can repost theirs. ${rs.song ? 'Hosted.' : (dr.async_state === 'published' ? 'Hosting failed; rendered live instead.' : 'Rendered live from the day so far; the ranking is final once the day tallies.')}</p>
+    ${slideFigs('song', rs.song, rs.songCount, 'Daily Countdown')}
+    <div class="row" style="gap:8px;margin:8px 0 6px;flex-wrap:wrap"><button class="btn ghost sm" onclick="dlCopyResultsCaption('song')">Copy caption</button>${(rs.songComments || []).map((t, i) => `<button class="btn ghost sm" onclick="dlCopyCountdownComment(${i})">Copy comment ${i + 1} of ${rs.songComments.length}</button>`).join('')}</div>
+    ${dlAsanaLine('song', c, tallied)}
+    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 12px">The caption names nobody: Instagram stops notifying people when a caption mentions more than 10 accounts. Tag each artist on their own slide (shown under each slide), then post the comments, four artists each. Artists with no Instagram handle on file are not mentioned.</p>
+    <h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Top A&amp;R carousel</h4>
+    ${slideFigs('ar', rs.ar, rs.arCount, 'Top A&R')}
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost sm" onclick="dlCopyResultsCaption('ar')">Copy Top A&R caption</button></div>
+    ${dlAsanaLine('ar', c, tallied)}
+    <p class="muted" id="dlAsanaNote" style="font-size:11.5px;line-height:1.5;margin:8px 0 0"></p>`;
+  // The weekly winner posts (039; the daily pair was retired 2026-10-03 for the Daily Countdown
+  // carousel). Rendered live for the week chosen, off /api/card/winner?week= (admin-only).
   const wn = c.winners || {};
-  const wnFig = (post, label) => (post === 'track' ? wn.trackReady : wn.arReady) || wn[post]
-    ? fig(wn[post] || dlWinnerUrl(post), 'winner-' + post + '-' + dateTag + '.png', label)
-    : '<div class="empty" style="flex:1">Nothing to show yet.</div>';
-  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Winner posts</h4>
-    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">One portrait post per winner. Post it as a collab with them so it lands on their feed too. ${wn.track ? 'Hosted at publish.' : (dr.async_state === 'published' ? 'Hosting failed; rendered live instead.' : 'Rendered live from the day so far; final once the day tallies.')}</p>
-    <div class="row" style="gap:10px;align-items:flex-start">${wnFig('track', 'Top Track of the Day')}${wnFig('ar', 'Top A&R of the Day')}</div>
-    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="dlCopyWinnerCaption('track')">Copy Top Track caption</button><button class="btn ghost sm" onclick="dlCopyWinnerCaption('ar')">Copy Top A&R caption</button></div>
-    <h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Winners of the week</h4>
-    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">Monday to Sunday. Top Track is the week's highest room average across the published drops; Top A&R is the most points across them. The card is dated by the week it tracks.</p>
+  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Winners of the week</h4>
+    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">Monday to Sunday. The same two #1s the weekly show announces: the weekly report's Top Track (the artist, selected for the $1,000 Music Tournament) and Top A&R (selected for A&R Wars). Post each as a collab with the winner once the week has settled.</p>
     <div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><label class="muted" style="font-size:12px">Week of <input type="date" id="dlWeekStart" value="${esc(wn.weekDefault || '')}" onchange="dlWeekRedraw()" style="margin-left:6px"></label></div>
     <div id="dlWeekBody"><div class="empty">Loading…</div></div>`;
   $('#dlCardBody').innerHTML = cardHtml;
   dlWeekRedraw();
   renderBuild();
-}
-// The live-render fallback carries the admin credential as a header, which an <img> cannot
-// send, so it is fetched and shown as an object URL. Same pattern as the chart carousel.
-const dlRecapCache = {};
-function dlRecapUrl(kind){
-  const sid = DL && DL.drop && DL.drop.id; if(!sid) return '';
-  const key = kind + ':' + sid;
-  if(dlRecapCache[key]) return dlRecapCache[key];
-  dlRecapCache[key] = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-  fetch('/api/card/' + kind + '?s=' + encodeURIComponent(sid), { headers: chAuthHeaders() })
-    .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
-    .then(b => { dlRecapCache[key] = URL.createObjectURL(b);
-      document.querySelectorAll('#dlCardBody img[alt^="' + (kind === 'recap-cover' ? 'Instagram' : 'YouTube') + '"]').forEach(img => {
-        img.src = dlRecapCache[key]; img.closest('a').href = dlRecapCache[key]; }); })
-    .catch(() => { delete dlRecapCache[key]; });
-  return dlRecapCache[key];
 }
 // One results slide, rendered live with the admin credential (an <img> cannot send it), shown
 // as an object URL. Keyed by set + slide + drop so a redraw does not refetch.
@@ -2206,7 +2567,7 @@ function dlResultsUrl(set, slide){
   const key = 'results:' + set + ':' + slide + ':' + sid;
   if(dlResultsCache[key]) return dlResultsCache[key];
   dlResultsCache[key] = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-  const label = (set === 'ar' ? 'Top A&R' : 'Top Track') + ' · ' + slide + ' / ';
+  const label = (set === 'ar' ? 'Top A&R' : 'Daily Countdown') + ' · ' + slide + ' / ';
   fetch('/api/card/results?s=' + encodeURIComponent(sid) + '&set=' + set + '&slide=' + slide, { headers: chAuthHeaders() })
     .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
     .then(b => { dlResultsCache[key] = URL.createObjectURL(b);
@@ -2233,18 +2594,6 @@ function dlWinnerUrl(post, week){
     .catch(() => { delete dlWinnerCache[key]; });
   return dlWinnerCache[key];
 }
-async function dlCopyWinnerCaption(post){
-  const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
-  const c = (DL && DL.cards && DL.cards.winners) || {};
-  let text = post === 'ar' ? c.arCaption : c.trackCaption;
-  if(!text){
-    try{ text = await (await fetch('/api/admin/daily/winner-caption?s=' + encodeURIComponent(sid) + '&post=' + post, { headers: chAuthHeaders() })).text(); }
-    catch(e){}
-  }
-  if(!text){ alert('Nothing to copy yet.'); return; }
-  try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
-  catch(e){ alert('Could not copy the caption.'); }
-}
 // The week's winners: who they are (from /api/admin/weekly/winners) and the two cards, live.
 let dlWeekData = null;
 async function dlWeekRedraw(){
@@ -2259,7 +2608,10 @@ async function dlWeekRedraw(){
   const part = (post, label) => d[post]
     ? fig(dlWinnerUrl(post, d.week.start), 'winner-' + post + '-week-' + d.week.start + '.png', label)
     : '<div class="empty" style="flex:1">No published drops that week.</div>';
-  box.innerHTML = `<p class="muted" style="font-size:11.5px;margin:0 0 8px">${esc(d.week.label)}${d.track ? ' · ' + d.track.drops + ' drop' + (d.track.drops === 1 ? '' : 's') : ''}</p>
+  const unsettled = (d.track && d.track.settled === false) || (d.ar && d.ar.settled === false);
+  const pend = (d.track && d.track.pending) || (d.ar && d.ar.pending) || [];
+  box.innerHTML = `<p class="muted" style="font-size:11.5px;margin:0 0 8px">${esc(d.week.label)}${d.track ? ' · ' + d.track.drops + ' drop' + (d.track.drops === 1 ? '' : 's') : ''}</p>` +
+    (unsettled ? `<p style="font-size:11.5px;line-height:1.5;margin:0 0 8px;color:var(--warn,#e0b64b)">This week has not settled: ${esc(pend.join(', '))} not published yet. The winners can still change.</p>` : '') + `
     <div class="row" style="gap:10px;align-items:flex-start">${part('track', 'Top Track of the Week')}${part('ar', 'Top A&R of the Week')}</div>
     <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="dlCopyWeekCaption('track')" ${d.track ? '' : 'disabled'}>Copy Top Track caption</button><button class="btn ghost sm" onclick="dlCopyWeekCaption('ar')" ${d.ar ? '' : 'disabled'}>Copy Top A&R caption</button></div>`;
 }
@@ -2268,6 +2620,51 @@ async function dlCopyWeekCaption(post){
   if(!text){ alert('Nothing to copy yet.'); return; }
   try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
   catch(e){ alert('Could not copy the caption.'); }
+}
+// The Asana task for one post. The cron makes it on its own once the day's slides render
+// (asanaTasks on the status); this line says where that stands. The manual button is only a
+// fallback: for a day rendered before the automatic step existed, or one that gave up retrying.
+function dlAsanaLine(set, c, tallied){
+  const box = (html) => `<p class="muted" style="font-size:11.5px;line-height:1.5;margin:6px 0 10px">${html}</p>`;
+  const link = (st) => st.url ? ` — <a href="${esc(st.url)}" target="_blank" rel="noopener" style="color:var(--signal)">open in Asana</a>` : '';
+  const manual = `<button class="btn ghost sm" style="margin-left:6px" onclick="dlAsanaTask('${set}', this)">Create Asana task</button>`;
+  if(!c.asana) return box('Asana: set ASANA_TOKEN and the project ID (Platform panel) and the task is made automatically.');
+  const st = c.asanaTasks && c.asanaTasks[set];
+  if(st && st.done) return box(st.skipped ? 'Asana: nothing to post for this day.' : '✅ In Asana with ' + (st.total || 0) + ' slides' + link(st));
+  if(st && (st.attempts || 0) >= 12) return box('Asana stopped retrying: ' + esc(st.error || 'unknown error') + (st.gid ? link(st) : manual));
+  if(st && st.gid) return box('Asana task made; attaching slides (' + (st.next || 0) + ' of ' + (st.total || '?') + ')' + link(st) + '. The rest attach on the next run.');
+  if(st && st.error) return box('Asana did not take it yet (' + esc(st.error) + '). Retrying every five minutes.');
+  if(c.asanaTasks) return box('The Asana task is made automatically within a few minutes.');
+  return box(tallied ? 'This day was ready before automatic Asana tasks existed.' + manual : 'The Asana task is made automatically once the slides are ready.');
+}
+// One Asana task per post: the Daily Countdown (slides + caption + comments + who to tag) or
+// the Top A&Rs. A big countdown outruns one request, so the server attaches what fits and
+// hands back { taskId, next }; this keeps pressing on with those until every slide is on.
+async function dlAsanaTask(set, btn){
+  const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
+  const note = $('#dlAsanaNote'), label = set === 'ar' ? 'Top A&Rs' : 'Daily Countdown';
+  const old = btn.textContent; btn.disabled = true;
+  let taskId = null, next = 0, url = null;
+  try{
+    for(let pass = 0; pass < 12; pass++){
+      btn.textContent = taskId ? 'Attaching ' + next + '…' : 'Creating…';
+      const d = await api('/api/admin/daily/asana-task', { s: sid, set, taskId, next });
+      taskId = d.taskId; next = d.next; url = d.url || url;
+      if(d.done){
+        if(note) note.innerHTML = '✅ ' + esc(label) + ' task created with ' + d.attached + ' slide' + (d.attached === 1 ? '' : 's') + ' — <a href="' + esc(url) + '" target="_blank" rel="noopener" style="color:var(--signal)">open in Asana</a>';
+        return;
+      }
+    }
+    if(note) note.innerHTML = 'The task was created but not every slide attached — <a href="' + esc(url) + '" target="_blank" rel="noopener" style="color:var(--signal)">open in Asana</a>.';
+  }catch(e){ alert(e.message); }
+  finally{ btn.disabled = false; btn.textContent = old; }
+}
+async function dlCopyCountdownComment(i){
+  const list = (DL && DL.cards && DL.cards.results && DL.cards.results.songComments) || [];
+  const text = list[i];
+  if(!text){ alert('Nothing to copy yet.'); return; }
+  try{ await navigator.clipboard.writeText(text); alert('Comment ' + (i + 1) + ' of ' + list.length + ' copied.'); }
+  catch(e){ alert('Could not copy the comment.'); }
 }
 async function dlCopyResultsCaption(set){
   const sid = DL && DL.drop && DL.drop.id; if(!sid) return;
@@ -2329,6 +2726,25 @@ function dlSupport(r){
   return `<span class="dlsup ${r.top_supporter ? 'top' : 'paid'}">${esc(dlMoney(r.support_cents))}</span>`
     + (r.top_supporter ? '<span class="pill top" title="Paid the most of anyone on this day">Top supporter</span>' : '');
 }
+// The comment posted under the stream on Instagram while a record plays: tagging the
+// artist's handle notifies them, so they can come into the live. No handle → plain name.
+function dlNowPlayingText(r){
+  const by = r.instagram ? '@' + r.instagram : (r.song_artist || '').trim();
+  return `Now playing "${(r.song_title || '').trim()}"` + (by ? ` by ${by}` : '');
+}
+async function dlCopyNowPlaying(id, btn){
+  const r = ((DL && DL.rounds) || []).find(x => x.id === id); if(!r) return;
+  try{ await navigator.clipboard.writeText(dlNowPlayingText(r)); }
+  catch(e){ alert('Could not copy. The text is:\n\n' + dlNowPlayingText(r)); return; }
+  // No alert on success — this is pressed on air, once per record.
+  const was = btn.textContent;
+  btn.textContent = 'Copied'; btn.disabled = true;
+  setTimeout(() => { btn.textContent = was; btn.disabled = false; }, 1500);
+}
+function dlIgLink(h){
+  if(!h) return '<span class="dlig none">no Instagram</span>';
+  return `<a class="dlig" href="https://www.instagram.com/${encodeURIComponent(h)}/" target="_blank" rel="noopener">@${esc(h)}</a>`;
+}
 function renderDlRecords(){
   const rounds = dlSortedRounds();
   const bySc = dlSort === 'score_desc' || dlSort === 'score_asc';
@@ -2336,23 +2752,25 @@ function renderDlRecords(){
     const alarm = r.reports >= 3 || !r.play_url;
     const score = r.room_average != null ? (+r.room_average).toFixed(1) : '—';
     const cls = [alarm ? 'alarm' : '', r.top_supporter ? 'top' : ''].filter(Boolean).join(' ');
-    return `<tr${cls?` class="${cls}"`:''}>
+    return `<tr id="dlrow-${r.id}"${cls?` class="${cls}"`:''}>
       <td class="num muted" style="width:34px">${bySc ? (r.rank != null ? '#' + r.rank : '—') : r.idx}</td>
-      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')}</div></td>
+      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')} · ${dlIgLink(r.instagram)}</div></td>
       <td>${dlSupport(r)}</td>
       <td>${dlPlayLink(r.play_url)}</td>
       <td class="num" style="color:var(--signal);font-weight:700">${score}</td>
       <td class="num">${r.votes}</td>
       <td class="num"${r.reports?' style="color:var(--hot);font-weight:700"':' class="num muted"'}>${r.reports}</td>
-      <td class="num"><button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
-    </tr>`;
+      <td class="num" style="white-space:nowrap"><button class="btn ghost sm" title="${esc(dlNowPlayingText(r))}" onclick="dlCopyNowPlaying('${r.id}', this)">Now playing</button>
+        <button class="btn ghost sm" onclick="dlRecord('${r.id}')">Results</button>
+        <button class="btn ${alarm?'danger':'ghost'} sm" onclick="dlEdit('${r.id}')">${alarm?'Fix link':'Edit'}</button></td>
+    </tr>${r.artist_note ? `<tr class="dlsub${cls?' '+cls:''}"><td></td><td colspan="7"><div class="dlnote">${esc(r.artist_note)}</div></td></tr>` : ''}`;
   }).join('');
   $('#dlRounds').innerHTML = rounds.length
     ? `<table class="dltable"><tr><th class="num">${bySc ? 'Rank' : '#'}</th><th style="width:32%">Record</th><th>Support</th><th>Play link</th><th class="num">Score</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
     : '<div class="empty">No records on this day.</div>';
 }
 /* ===== THE WEEKLY REPORT — the Wednesday show's read sheet =====
-   One window (Wed → Tue) and two ranked lists, off /api/admin/weekly/status. The tables are
+   One window (Mon → Sun) and two ranked lists, off /api/admin/weekly/status. The tables are
    deliberately the daily ones — same .dltable, same support marks — because the host reads
    the same shapes on air every day and a different layout on show night is a new thing to
    learn at 7PM. Nothing here computes a ranking client-side: the server owns the order, so
@@ -2390,6 +2808,15 @@ $('#btnWkArsAll').onclick = () => { wkArsAll = !wkArsAll; renderWkArs(); };
 const wkIg = (h) => h
   ? `<a class="dllink" href="https://instagram.com/${esc(h)}" target="_blank" rel="noopener">@${esc(h)}</a>`
   : '<span class="dllink">—</span>';
+// The record on makinitmag.com: the submission (the same admin deep link the daily console
+// opens) and the artist's public profile, when the push carried them.
+function wkSiteLinks(r){
+  const a = (href, label) => `<a class="dllink" href="${esc(href)}" target="_blank" rel="noopener" title="${esc(href)}">${label} ↗</a>`;
+  const out = [];
+  if(r.ingest_url) out.push(a(r.ingest_url, 'Submission'));
+  if(r.artist_profile_url) out.push(a(r.artist_profile_url, 'Artist profile'));
+  return out.length ? out.join('<br>') : '<span class="dllink">—</span>';
+}
 
 function renderWeekly(){
   const w = WK || {};
@@ -2417,8 +2844,8 @@ function renderWeekly(){
     + stat('Ratings cast', t.ratings)
     + stat('Support', t.support_cents ? dlMoney(t.support_cents) : '—',
         t.support_cents ? 'var(--gold)' : null);
-  $('#wkNote').textContent = 'Wednesday through Tuesday, by the day each record dropped. '
-    + "Tuesday's drop publishes on Wednesday, before the show and after this week closes.";
+  $('#wkNote').textContent = 'Monday through Sunday, by the day each record dropped. '
+    + "Sunday's drop publishes at noon on Wednesday, before The A&R Room - Weekly Live Music Review at 7:00 PM ET.";
 
   if(w.pending && w.pending.length){
     $('#wkPending').classList.remove('hide');
@@ -2434,8 +2861,8 @@ function renderWeekly(){
     ratified: 'Closed', published: 'Published' };
   $('#wkDrops').innerHTML = drops.length
     ? `<table class="dltable"><tr><th>Day</th><th>State</th><th class="num">Records scored</th></tr>`
-      + drops.map(d => `<tr><td>${esc(d.dayLabel || d.day)}</td>`
-          + `<td>${esc(STATE[d.state] || d.state)}</td><td class="num">${d.records || 0}</td></tr>`).join('')
+      + drops.map(d => `<tr><td>${esc(d.dayLabel || d.day)}${d.live ? ` <span class="muted">· ${esc(d.name)}</span>` : ''}</td>`
+          + `<td>${esc(d.live ? 'Live show' : (STATE[d.state] || d.state))}</td><td class="num">${d.records || 0}</td></tr>`).join('')
       + '</table>'
     : '<div class="empty">No drops landed in this week.</div>';
 }
@@ -2447,12 +2874,13 @@ function renderWkSongs(){
   $('#btnWkSongsAll').textContent = wkSongsAll ? 'Back to the Top 8' : 'Show the whole week';
   if(!rows.length){ $('#wkSongs').innerHTML = '<div class="empty">Nothing scored in this week yet.</div>'; return; }
   $('#wkSongs').innerHTML = `<table class="dltable">
-    <tr><th class="num">Rank</th><th style="width:28%">Record</th><th>Instagram</th><th>Day</th>
+    <tr><th class="num">Rank</th><th style="width:26%">Record</th><th>Instagram</th><th>makinitmag.com</th><th>Day</th>
         <th>Support</th><th>Play link</th><th class="num">Score</th><th class="num">Ratings</th></tr>`
     + rows.map(r => `<tr${r.rank === 1 ? ' class="top"' : ''}>
         <td class="num" style="width:44px${r.rank === 1 ? ';color:var(--gold);font-weight:700' : ''}">#${r.rank}</td>
         <td><div class="dlttl">${esc(r.title)}</div><div class="dlart">${esc(r.artist)}</div></td>
         <td>${wkIg(r.ig)}</td>
+        <td>${wkSiteLinks(r)}</td>
         <td class="muted" style="font-size:11.5px;white-space:nowrap">${esc(r.weekday || '')} ${esc((r.dayLabel || '').replace(/^\w+,?\s*/, ''))}${r.plays > 1 ? `<div style="color:var(--gold)">also ${esc(r.alsoOn.join(', '))}</div>` : ''}</td>
         <td>${dlSupport(r)}</td>
         <td>${dlPlayLink(r.play_url)}</td>
@@ -2518,7 +2946,9 @@ $('#btnWkCopySongs').onclick = () => {
     `#${r.rank}  ${r.title} — ${r.artist || 'unknown artist'}\n`
     + `     IG: ${r.ig ? '@' + r.ig : '—'}   Score: ${(+r.score).toFixed(1)} (${r.votes} ratings)   ${money(r.support_cents)}${r.top_supporter ? ' · TOP SUPPORTER' : ''}\n`
     + `     ${r.dayLabel || r.day}${r.plays > 1 ? ' (also ' + r.alsoOn.join(', ') + ')' : ''}\n`
-    + `     ${r.play_url || 'no play link'}`).join('\n\n')
+    + `     ${r.play_url || 'no play link'}`
+    + (r.ingest_url ? `\n     Submission: ${r.ingest_url}` : '')
+    + (r.artist_profile_url ? `\n     Artist profile: ${r.artist_profile_url}` : '')).join('\n\n')
     + '\n\n#1 is seeded into the Artist Tournament.');
 };
 $('#btnWkCopyArs').onclick = () => {
@@ -2533,6 +2963,885 @@ $('#btnWkCopyArs').onclick = () => {
     + (r.category || r.location ? '\n     ' + [r.category, r.location].filter(Boolean).join(' · ') : '')).join('\n\n')
     + '\n\n#1 takes a seat in A&R Wars.');
 };
+
+/* ===== TOURNAMENTS — A&R Wars and the $1,000 Music Review Tournament =====
+   Built against docs/specs/tournament-spec.md §10. One payload (GET /api/admin/tournament?id=)
+   feeds every card; every action re-reads it, so the screen never computes bracket state on
+   its own — the server owns who won. The split of a poll is shown ONLY once split_a is
+   non-null (ratified); while a poll is open the card prints the vote count and nothing else.
+   While the tournament is live the detail is re-read every 10s, but never while the operator
+   has a field focused on this screen (a refresh would eat a half-filled queue form). */
+let TNL = [];                 // GET /api/admin/tournaments → tournaments[]
+let TN = null;                // the selected tournament's detail payload
+let tnId = '';                // selected id ('' = none / new)
+let tnNew = false;            // "+ New tournament": setup card only, nothing saved yet
+let tnTimer = null;           // the 10s live poll
+let tnEditId = null;          // competitor row with the inline edit form open
+let tnGfxKey = '';            // selected graphics row
+let tnSetupOpen = false;      // setup card shown past draft
+const tnImgCache = {};        // card url → object URL
+const TN_PX = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+const TN_KIND_NAME = { ar: 'A&R Wars', artist: '$1,000 Music Review Tournament' };
+const TN_KIND_PRIZE = { ar: '$500 Cash Prize', artist: '$1,000 Promo Budget' };
+
+function tnStopPoll(){ if(tnTimer){ clearInterval(tnTimer); tnTimer = null; } }
+function tnErr(msg){ $('#tnErr').textContent = msg || ''; }
+function tnShort(label){ // 'Sunday, October 25' → 'Sun Oct 25'
+  const m = /^(\w{3})\w*,?\s+(\w{3})\w*\s+(\d+)/.exec(label || '');
+  return m ? `${m[1]} ${m[2]} ${m[3]}` : (label || 'no date');
+}
+function tnListLabel(t){ return `${t.name || TN_KIND_NAME[t.kind] || 'Tournament'}${t.number ? ' #' + t.number : ''} · ${tnShort(t.dateLabel)} · ${t.status}`; }
+function tnLandingPath(t){ return t && t.slug ? '/tournament/' + t.slug : ''; }
+function tnLandingUrl(t){ return tnLandingPath(t) ? location.origin + tnLandingPath(t) : ''; }
+function tnKind(){ return TN ? TN.kind : $('#tnKind').value; }
+function tnSeated(){ return ((TN && TN.competitors) || []).slice().sort((a, b) => (a.seed || 99) - (b.seed || 99)); }
+function tnComp(id){ return ((TN && TN.competitors) || []).find(c => c.id === id) || null; }
+function tnLocked(){ return ((TN && TN.matches) || []).some(m => m.winner_id); }
+function tnAvatar(c, px){
+  return c && c.photoUrl
+    ? `<img class="av" src="${esc(c.photoUrl)}" alt="" style="width:${px}px;height:${px}px">`
+    : `<div class="ph" style="width:${px}px;height:${px}px" title="No photo yet">${px >= 40 ? 'no photo' : ''}</div>`;
+}
+// 'YYYY-MM-DDTHH:MM' in ET for the datetime-local field. The server labels every time in
+// ET; this is the one place the console turns an epoch back into a wall clock, and it asks
+// Intl for the ET parts rather than guessing an offset.
+function tnEventLocal(t){
+  if(!t) return '';
+  if(t.eventLocal) return t.eventLocal;
+  if(!t.eventAt) return '';
+  try{
+    const p = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric',
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      .formatToParts(new Date(+t.eventAt)).forEach(x => { p[x.type] = x.value; });
+    return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
+  }catch(e){ return ''; }
+}
+
+async function openTournaments(){
+  showScreen('tournaments');
+  tnStopPoll();
+  tnErr('');
+  try{
+    const d = await api('/api/admin/tournaments', null, 'GET');
+    TNL = d.tournaments || [];
+  }catch(e){
+    TNL = [];
+    $('#tnBody').classList.add('hide'); $('#tnNone').classList.remove('hide');
+    $('#tnNoneMsg').textContent = e.message; renderTnPicker(); return;
+  }
+  if(!tnNew && !TNL.some(t => t.id === tnId)) tnId = TNL.length ? TNL[0].id : '';
+  renderTnPicker();
+  if(tnNew || !tnId){ TN = null; tnNew = tnNew || !TNL.length; renderTournament(); return; }
+  await tnLoad();
+}
+async function tnLoad(quiet){
+  if(!tnId) return;
+  try{
+    const d = await api('/api/admin/tournament?id=' + encodeURIComponent(tnId), null, 'GET');
+    const pub = d.tournament || {};
+    TN = Object.assign({}, pub, { sessions: d.sessions || [], packs: d.packs || [],
+      candidates: d.candidates || [],
+      subscribers: d.subscribers || (typeof pub.subscribers === 'number' ? { count: pub.subscribers } : {}),
+      graphics: d.graphics || [],
+      packSongs: d.packSongs || (d.tournament && d.tournament.packSongs) || [] });
+    tnNew = false;
+    renderTournament();
+  }catch(e){
+    if(quiet) return;
+    TN = null;
+    $('#tnBody').classList.add('hide'); $('#tnNone').classList.remove('hide');
+    $('#tnNoneMsg').textContent = e.message;
+  }
+}
+function renderTnPicker(){
+  const sel = $('#tnSel');
+  sel.innerHTML = TNL.map(t => `<option value="${esc(t.id)}">${esc(tnListLabel(t))}</option>`).join('')
+    + (tnNew ? '<option value="">New tournament</option>' : '')
+    + (!TNL.length && !tnNew ? '<option value="">No tournaments yet</option>' : '');
+  sel.value = tnNew ? '' : tnId;
+}
+$('#tnSel').onchange = () => { tnNew = false; tnId = $('#tnSel').value; tnSetupOpen = false; tnGfxKey = ''; tnEditId = null; openTournaments(); };
+$('#btnTnRefresh').onclick = () => openTournaments();
+$('#btnTnNew').onclick = () => { tnNew = true; TN = null; tnEditId = null; renderTnPicker(); renderTournament(); };
+$('#tnTournaments').onclick = () => openTournaments();
+$('#tnDaily').onclick = () => { tnStopPoll(); openDaily(); };
+$('#tnWeekly').onclick = () => { tnStopPoll(); openWeekly(); };
+$('#tnLive').onclick = () => { tnStopPoll(); openPicker(); };
+$('#tnPlatform').onclick = () => { tnStopPoll(); if(typeof openPlatform === 'function') openPlatform(); };
+$('#mdTournaments').onclick = () => openTournaments();
+$('#wkTournaments').onclick = () => openTournaments();
+$('#btnTournaments') && ($('#btnTournaments').onclick = () => openTournaments());
+
+function renderTournament(){
+  $('#tnNone').classList.add('hide');
+  $('#tnBody').classList.remove('hide');
+  tnErr('');
+  const t = TN;
+  const isNew = !t;
+  const show = (id, on) => $('#' + id).classList.toggle('hide', !on);
+  show('tnFieldCard', !isNew); show('tnBracketCard', !isNew); show('tnGfxCard', !isNew);
+  show('tnLandCard', !isNew); show('tnWrapCard', !isNew && t.status === 'complete');
+  show('btnTnConsole', !isNew && !!t.sessionId);
+
+  // 1. where it is
+  if(isNew){
+    $('#tnTitle').textContent = 'New tournament';
+    $('#tnSub').textContent = 'Pick the kind, the number and the date, then Save. The field, the bracket and the graphics open once it exists.';
+    $('#btnTnEditSetup').classList.add('hide');
+    $('#tnSteps').innerHTML = tnSteps(null);
+  }else{
+    $('#tnTitle').innerHTML = `${esc(t.name || TN_KIND_NAME[t.kind])}${t.number ? ' #' + esc(t.number) : ''} <span class="pill ${tnPillClass(t.status)}" style="vertical-align:middle;margin-left:6px">${esc(t.status)}</span>`;
+    $('#tnSub').innerHTML = [t.dateLabel, t.timeLabel, t.prizeText].filter(Boolean).map(esc).join(' · ')
+      + (t.slug ? ` · <a class="lnk" href="${esc(tnLandingPath(t))}" target="_blank" rel="noopener">${esc(location.host + tnLandingPath(t))}</a>` : '');
+    $('#btnTnEditSetup').classList.remove('hide');
+    $('#tnSteps').innerHTML = tnSteps(t);
+  }
+  // 2. setup: open for a draft or a new one, collapsed otherwise until "Edit setup"
+  const setupOn = isNew || t.status === 'draft' || tnSetupOpen;
+  show('tnSetupCard', setupOn);
+  $('#btnTnEditSetup').textContent = setupOn && !isNew && t.status !== 'draft' ? 'Hide setup' : 'Edit setup';
+  renderTnSetup();
+  if(isNew){ tnStopPoll(); return; }
+
+  renderTnField();
+  renderTnBracket();
+  renderTnGfx();
+  renderTnLanding();
+  renderTnWrap();
+
+  // the live poll: re-read every 10s while the event runs and this screen is on
+  tnStopPoll();
+  if(t.status === 'live'){
+    tnTimer = setInterval(() => {
+      if($('#tournaments').classList.contains('hide')){ tnStopPoll(); return; }
+      const a = document.activeElement;
+      if(tnEditId || (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.closest('#tournaments'))) return;
+      tnLoad(true);
+    }, 10000);
+  }
+}
+function tnPillClass(s){ return s === 'live' ? 'live' : s === 'promo' ? 'upcoming' : s === 'complete' ? 'completed' : ''; }
+function tnSteps(t){
+  const st = t ? t.status : 'draft';
+  const filled = t ? (t.filled || tnSeated().length) : 0;
+  const subs = t && t.subscribers ? (t.subscribers.count || 0) : 0;
+  const pub = t ? (t.graphics || []).filter(g => g.publishedAt).length : 0;
+  const order = ['draft', 'promo', 'live', 'complete'];
+  const at = order.indexOf(st);
+  const matches = t ? (t.matches || []) : [];
+  const rnd = matches.filter(m => m.winner_id).length >= 6 ? 3 : matches.filter(m => m.winner_id).length >= 4 ? 2 : 1;
+  const steps = [
+    { k: '1 · Setup', s: t && t.eventAt ? 'done' : 'now', v: t && t.eventAt ? 'Date, prize, pack, session' : 'Date, prize, pack, session — not saved yet' },
+    { k: '2 · Field', s: filled >= 8 ? 'done' : (t && t.eventAt ? 'now' : ''), v: `${filled} of 8 seats filled` },
+    { k: '3 · Promo', s: at > 1 ? 'done' : st === 'promo' ? 'now' : '', v: `${pub} set${pub === 1 ? '' : 's'} published · ${subs} on the list` },
+    { k: '4 · Event', s: st === 'complete' ? 'done' : st === 'live' ? 'now' : '', v: st === 'live' ? `Round ${rnd} of 3 in play` : st === 'complete' ? 'Final decided' : (t && t.dateLabel ? `${t.dateLabel} · ${t.timeLabel || ''}` : 'Date not set') },
+    { k: '5 · Wrap', s: st === 'complete' ? 'now' : '', v: 'Champion · winner graphics · archive' }
+  ];
+  return steps.map(s => `<div class="step ${s.s}"><b>${esc(s.k)}</b>${esc(s.v)}</div>`).join('');
+}
+
+/* ---- 2. setup ---- */
+function renderTnSetup(){
+  const t = TN;
+  const kind = t ? t.kind : ($('#tnKind').value || 'ar');
+  $('#tnKind').value = kind;
+  $('#tnKind').disabled = !!t;                   // the kind is set at creation; the slug derives from it
+  $('#tnNumber').value = t && t.number != null ? t.number : '';
+  $('#tnPrize').value = t ? (t.prizeText || '') : '';
+  $('#tnPrize').placeholder = TN_KIND_PRIZE[kind];
+  $('#tnEvent').value = tnEventLocal(t);
+  $('#tnWatch').value = t ? (t.watchUrl || '') : '';
+  $('#tnFinalPolls').value = t && t.finalPolls != null ? t.finalPolls : '';
+  $('#tnRemind').value = String(t && t.remindMin != null ? t.remindMin : 120);
+  const sessions = t ? t.sessions : [];
+  $('#tnSession').innerHTML = '<option value="">— none yet —</option>'
+    + sessions.map(s => `<option value="${esc(s.id)}">${esc(s.name || s.id)} · ${esc(s.status || '')}</option>`).join('');
+  $('#tnSession').value = t && t.sessionId ? t.sessionId : '';
+  $('#tnPackWrap').classList.toggle('hide', kind !== 'ar');
+  const packs = t ? t.packs : [];
+  $('#tnPack').innerHTML = '<option value="">— none —</option>'
+    + packs.map(p => `<option value="${esc(p.id)}">${esc(p.name || p.id)} · ${esc(p.status || '')}</option>`).join('');
+  $('#tnPack').value = t && t.packId ? t.packId : '';
+  $('#tnLanding').value = t && t.slug ? tnLandingPath(t) : '—';
+  $('#tnLandingHint').textContent = t && t.slug ? tnLandingPath(t) : '/tournament/<slug>';
+  const st = t ? t.status : null;
+  $('#btnTnPromo').classList.toggle('hide', st !== 'draft');
+  $('#btnTnMarkLive').classList.toggle('hide', st !== 'promo');
+  $('#btnTnDraft').classList.toggle('hide', !(st === 'promo' || st === 'live'));
+  $('#btnTnCopyLink2').classList.toggle('hide', !(t && t.slug));
+  $('#tnOpenLanding2').classList.toggle('hide', !(t && t.slug));
+  if(t && t.slug) $('#tnOpenLanding2').href = tnLandingPath(t);
+  $('#tnSetupHint').textContent = !t ? 'Save first — the live session and Service Pack lists load once the tournament exists.'
+    : st === 'draft' ? 'Open promo once all 8 seats are filled and the date is set: the landing page goes public and the reminder list opens.'
+    : st === 'promo' ? 'Mark live on event day once the linked session is live (the console also flips it when the session goes live).'
+    : st === 'live' ? 'The event is running. The bracket card is the control.'
+    : 'Complete — the final is decided.';
+}
+$('#tnKind').onchange = () => { if(!TN){ $('#tnPackWrap').classList.toggle('hide', $('#tnKind').value !== 'ar'); $('#tnPrize').placeholder = TN_KIND_PRIZE[$('#tnKind').value]; } };
+$('#btnTnEditSetup').onclick = () => { tnSetupOpen = !tnSetupOpen; renderTournament(); };
+$('#btnTnSave').onclick = async () => {
+  const b = $('#btnTnSave'); b.disabled = true; tnErr('');
+  try{
+    const body = {
+      kind: $('#tnKind').value,
+      number: +($('#tnNumber').value || 0) || undefined,
+      prizeText: $('#tnPrize').value.trim() || undefined,
+      eventLocal: $('#tnEvent').value || undefined,
+      sessionId: $('#tnSession').value || null,
+      packId: $('#tnKind').value === 'ar' ? ($('#tnPack').value || null) : null,
+      watchUrl: $('#tnWatch').value.trim() || null,
+      finalPolls: +($('#tnFinalPolls').value || 0) || undefined,
+      remindMin: +$('#tnRemind').value
+    };
+    if(TN) body.id = TN.id;
+    const d = await api('/api/admin/tournament', body);
+    tnId = d.id || (TN && TN.id); tnNew = false;
+    await openTournaments();
+  }catch(e){ tnErr(e.message); }
+  finally{ b.disabled = false; }
+};
+async function tnSetStatus(status, btn){
+  if(!TN) return;
+  if(btn) btn.disabled = true; tnErr('');
+  try{ await api('/api/admin/tournament/status', { tournamentId: TN.id, status }); await openTournaments(); }
+  catch(e){ tnErr(e.message); }
+  finally{ if(btn) btn.disabled = false; }
+}
+$('#btnTnPromo').onclick = (e) => tnSetStatus('promo', e.target);
+$('#btnTnMarkLive').onclick = (e) => tnSetStatus('live', e.target);
+$('#btnTnDraft').onclick = (e) => { if(confirm('Back to draft? The landing page stops answering until promo is opened again.')) tnSetStatus('draft', e.target); };
+function tnCopyLink(){ if(TN && TN.slug) wkCopy(tnLandingUrl(TN)); }
+$('#btnTnCopyLink2').onclick = tnCopyLink;
+$('#btnTnCopyLink').onclick = tnCopyLink;
+$('#btnTnConsole').onclick = () => { if(TN && TN.sessionId){ tnStopPoll(); window.loadSession(TN.sessionId); } };
+
+/* ---- 3. the field ---- */
+function renderTnField(){
+  const t = TN, kind = t.kind;
+  const seated = tnSeated(), locked = tnLocked();
+  $('#tnFieldHead').textContent = `The field · ${seated.length} of 8`;
+  $('#btnTnSeedPoints').classList.toggle('hide', kind !== 'ar');
+  $('#btnTnSeedPoints').disabled = locked || seated.length < 2;
+  $('#btnTnRebuild').disabled = locked || seated.length < 8;
+  $('#btnTnRebuild').title = locked ? 'Locked once a match is decided' : seated.length < 8 ? 'Needs 8 seats' : 'Rebuild the bracket from the seeds';
+  const rows = [];
+  seated.forEach((c, i) => {
+    const sub = (c.handle ? '@' + c.handle : '— no Instagram') + (c.city ? ' · ' + c.city : '');
+    const edit = tnEditId === c.id ? `
+      <div class="edit stack" style="gap:8px">
+        <div class="row">
+          <div><label>Name</label><input class="e-name" value="${esc(c.name || '')}"></div>
+          <div><label>Instagram</label><input class="e-handle" value="${esc(c.handle || '')}" placeholder="without @"></div>
+        </div>
+        <div class="row">
+          <div><label>City</label><input class="e-city" value="${esc(c.city || '')}"></div>
+          <div><label>Qualified label</label><input class="e-ql" value="${esc(c.qualifiedLabel || '')}" placeholder="Week 3 · Selected"></div>
+        </div>
+        <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
+          <div><label>Photo</label><input class="e-photo" type="file" accept="image/*"></div>
+          <button class="btn sm e-save" style="flex:0 0 auto">Save</button>
+          <button class="btn ghost sm e-cancel" style="flex:0 0 auto">Cancel</button>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn danger sm e-remove" style="flex:0 0 auto"${locked ? ' disabled title="Locked once a match is decided"' : ''}>Remove</button>
+        </div>
+      </div>` : '';
+    rows.push(`<div class="seat" data-id="${esc(c.id)}">
+      <input class="n seedn" type="number" min="1" max="8" value="${c.seed || i + 1}"${locked ? ' disabled' : ''} title="Seed — type a number to move the row">
+      ${tnAvatar(c, 40)}
+      <div class="who"><div class="nm">${esc(c.name || '—')}</div><div class="sub">${esc(sub)}</div></div>
+      <span class="src">${esc(c.qualifiedLabel || (c.source === 'weekly' ? 'weekly' : 'picked'))}</span>
+      <button class="ed mv" data-dir="-1" title="Move up"${locked || i === 0 ? ' disabled' : ''}>▲</button>
+      <button class="ed mv" data-dir="1" title="Move down"${locked || i === seated.length - 1 ? ' disabled' : ''}>▼</button>
+      <button class="ed pen" title="Edit this row">✎</button>
+      ${edit}
+    </div>`);
+  });
+  for(let i = seated.length; i < 8; i++) rows.push(`<div class="seat empty">Seat ${i + 1} · open</div>`);
+  $('#tnSeats').innerHTML = rows.join('');
+
+  // add: search (ar) or type an artist in (artist)
+  $('#tnAddAr').classList.toggle('hide', kind !== 'ar');
+  $('#tnAddArtist').classList.toggle('hide', kind !== 'artist');
+  $('#tnCandLbl').innerHTML = kind === 'ar'
+    ? 'From the weekly winners <span class="muted">(last 8 complete weeks · tick to seat)</span>'
+    : 'From the weekly top tracks <span class="muted">(last 8 complete weeks · tick to seat the artist)</span>';
+  const cands = t.candidates || [];
+  $('#tnCands').innerHTML = cands.length ? cands.map((c, i) => {
+    const score = kind === 'ar'
+      ? (c.points != null ? (+c.points).toLocaleString('en-US') + ' pts' : '')
+      : (c.score != null ? (+c.score).toFixed(1) : '');
+    const what = kind === 'artist' && c.record ? ` · "${c.record}"` : '';
+    return `<div class="pk${c.seated ? ' on off' : ''}" data-i="${i}" title="${c.seated ? 'Already seated' : 'Seat this ' + (kind === 'ar' ? 'A&R' : 'artist')}">
+      <span class="box"></span>
+      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : '<span class="ph"></span>'}
+      <span class="lbl">${esc(c.name || '—')}${esc(what)}${score ? ' · ' + esc(score) : ''}</span>
+      ${c.repeat ? '<span class="rep">repeat winner — the seat passes to that week\'s #2</span>' : ''}
+      <span class="wk">${esc(c.label || c.week || '')}</span>
+    </div>`;
+  }).join('') : '<div class="empty">No complete weeks to draw from yet.</div>';
+  $('#tnCandHint').textContent = kind === 'ar'
+    ? 'A repeat winner is flagged in gold: the seat passes to that week\'s runner-up, who is listed in its place when the server offers one.'
+    : 'The weekly #1 record\'s artist, with the Instagram off the record. Artists have no photo on file — add one on the seat.';
+}
+async function tnPostSeed(body){
+  if(!TN) return; tnErr('');
+  try{ await api('/api/admin/tournament/seed', Object.assign({ tournamentId: TN.id }, body)); await tnLoad(); }
+  catch(e){ tnErr(e.message); }
+}
+function tnReorder(cid, pos){
+  const ids = tnSeated().map(c => c.id);
+  const i = ids.indexOf(cid); if(i < 0) return;
+  ids.splice(i, 1);
+  ids.splice(Math.max(0, Math.min(ids.length, pos - 1)), 0, cid);
+  return tnPostSeed({ order: ids });
+}
+$('#btnTnSeedPoints').onclick = () => { if(confirm('Seed by Series points? Seats re-order highest first and the bracket is rebuilt.')) tnPostSeed({ byPoints: true }); };
+$('#btnTnRebuild').onclick = () => tnPostSeed({ order: tnSeated().map(c => c.id) });
+
+$('#tnSeats').addEventListener('change', (e) => {
+  const seat = e.target.closest('.seat'); if(!seat) return;
+  if(e.target.classList.contains('seedn')){
+    const pos = +e.target.value; if(!(pos >= 1 && pos <= 8)) return renderTnField();
+    tnReorder(seat.dataset.id, pos);
+  }
+});
+$('#tnSeats').addEventListener('click', async (e) => {
+  const seat = e.target.closest('.seat'); if(!seat) return;
+  const cid = seat.dataset.id, c = tnComp(cid); if(!c) return;
+  const b = e.target.closest('button'); if(!b || b.disabled) return;
+  if(b.classList.contains('mv')){
+    const i = tnSeated().findIndex(x => x.id === cid);
+    return tnReorder(cid, i + 1 + (+b.dataset.dir));
+  }
+  if(b.classList.contains('pen')){ tnEditId = tnEditId === cid ? null : cid; return renderTnField(); }
+  if(b.classList.contains('e-cancel')){ tnEditId = null; return renderTnField(); }
+  if(b.classList.contains('e-remove')){
+    if(!confirm(`Remove ${c.name} from the field?`)) return;
+    tnErr('');
+    try{ await api('/api/admin/tournament/competitor/remove', { tournamentId: TN.id, competitorId: cid }); tnEditId = null; await tnLoad(); }
+    catch(err){ tnErr(err.message); }
+    return;
+  }
+  if(b.classList.contains('e-save')){
+    b.disabled = true; tnErr('');
+    try{
+      await api('/api/admin/tournament/competitor', { tournamentId: TN.id, competitorId: cid,
+        name: seat.querySelector('.e-name').value.trim(),
+        handle: seat.querySelector('.e-handle').value.trim().replace(/^@/, '') || null,
+        city: seat.querySelector('.e-city').value.trim() || null,
+        qualifiedLabel: seat.querySelector('.e-ql').value.trim() || null });
+      const f = seat.querySelector('.e-photo').files[0];
+      if(f){
+        const image = await tnResizeImage(f, 600);
+        await api('/api/admin/tournament/competitor/photo', { tournamentId: TN.id, competitorId: cid, image });
+      }
+      tnEditId = null; await tnLoad();
+    }catch(err){ tnErr(err.message); b.disabled = false; }
+  }
+});
+// A photo off the operator's phone is 3–5MB; the graphic prints it at 600px at most.
+function tnResizeImage(file, max){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * s)), h = Math.max(1, Math.round(img.height * s));
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(cv.toDataURL('image/jpeg', 0.86));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not an image the browser can read.')); };
+    img.src = url;
+  });
+}
+async function tnAddCompetitor(body){
+  if(!TN) return; tnErr('');
+  if(tnSeated().length >= 8){ tnErr('All 8 seats are filled. Remove someone first.'); return; }
+  try{ await api('/api/admin/tournament/competitor', Object.assign({ tournamentId: TN.id }, body)); await tnLoad(); }
+  catch(e){ tnErr(e.message); }
+}
+$('#tnCands').addEventListener('click', (e) => {
+  const row = e.target.closest('.pk'); if(!row || !TN) return;
+  const c = (TN.candidates || [])[+row.dataset.i]; if(!c || c.seated) return;
+  tnAddCompetitor({ userId: c.userId || null, name: c.name, handle: c.handle || null, city: c.city || null,
+    photoUrl: c.photoUrl || null, qualifiedLabel: c.qualifiedLabel || c.label || null, week: c.week, source: 'weekly' });
+});
+let tnSearchT = null, tnSearchSeq = 0;
+$('#tnSearch').oninput = () => {
+  clearTimeout(tnSearchT);
+  const q = $('#tnSearch').value.trim();
+  if(q.length < 2){ $('#tnSearchOut').classList.add('hide'); return; }
+  tnSearchT = setTimeout(async () => {
+    const seq = ++tnSearchSeq;
+    try{
+      const d = await api('/api/admin/tournament/search?id=' + encodeURIComponent(TN.id) + '&q=' + encodeURIComponent(q), null, 'GET');
+      if(seq !== tnSearchSeq) return;
+      const seatedUids = new Set(tnSeated().map(c => c.user_id || c.userId).filter(Boolean));
+      const res = d.results || [];
+      $('#tnSearchOut').innerHTML = res.length ? res.map((r, i) => `<div class="pk${seatedUids.has(r.userId) ? ' on off' : ''}" data-i="${i}">
+          ${r.photoUrl ? `<img src="${esc(r.photoUrl)}" alt="">` : '<span class="ph"></span>'}
+          <span class="lbl">${esc(r.name)}${r.handle ? ' · @' + esc(r.handle) : ''}${r.city ? ' · ' + esc(r.city) : ''}${r.points != null ? ' · ' + esc((+r.points).toLocaleString('en-US')) + ' pts' : ''}</span>
+          <button class="btn ghost sm" style="margin-left:auto;flex:0 0 auto"${seatedUids.has(r.userId) ? ' disabled' : ''}>${seatedUids.has(r.userId) ? 'Seated' : 'Add'}</button>
+        </div>`).join('') : '<div class="empty">No complete profile matches that.</div>';
+      $('#tnSearchOut').dataset.res = JSON.stringify(res);
+      $('#tnSearchOut').classList.remove('hide');
+    }catch(e){ tnErr(e.message); }
+  }, 250);
+};
+$('#tnSearchOut').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if(!b || b.disabled) return;
+  const row = e.target.closest('.pk'); if(!row) return;
+  const r = JSON.parse($('#tnSearchOut').dataset.res || '[]')[+row.dataset.i]; if(!r) return;
+  $('#tnSearch').value = ''; $('#tnSearchOut').classList.add('hide');
+  tnAddCompetitor({ userId: r.userId, name: r.name, handle: r.handle || null, city: r.city || null,
+    photoUrl: r.photoUrl || null, qualifiedLabel: 'Selected', source: 'search' });
+});
+$('#btnTnAddArtist').onclick = async () => {
+  const name = $('#tnArtName').value.trim(); if(!name){ tnErr('The artist needs a name.'); return; }
+  await tnAddCompetitor({ name, handle: $('#tnArtIg').value.trim().replace(/^@/, '') || null,
+    city: $('#tnArtCity').value.trim() || null, qualifiedLabel: 'Selected', source: 'typed' });
+  $('#tnArtName').value = ''; $('#tnArtIg').value = ''; $('#tnArtCity').value = '';
+};
+
+/* ---- 4. the bracket ---- */
+function tnMatchState(m){
+  const polls = m.polls || [];
+  const need = m.round_no === 3 ? (+TN.finalPolls || 3) : 1;
+  const ratified = polls.filter(p => p.status === 'ratified' || p.split_a != null);
+  const open = polls.find(p => p.status && p.status !== 'ratified' && p.split_a == null) || null;
+  const votes = ratified.reduce((s, p) => s + (+p.votes || 0), 0);
+  const last = ratified[ratified.length - 1] || null;
+  let wa = 0, wb = 0;
+  ratified.forEach(p => { if(p.split_a > 50) wa++; else if(p.split_a != null && p.split_a < 50) wb++; });
+  const pct = last && last.split_a != null && m.round_no < 3 ? { a: Math.round(+last.split_a), b: 100 - Math.round(+last.split_a) } : null;
+  return { polls, need, ratified, open, votes, pct, wa, wb, played: ratified.length };
+}
+function tnFeeder(m, side){
+  if(m.round_no === 1) return 'seat open';
+  const slot = (m.slot - 1) * 2 + (side === 'a' ? 1 : 2);
+  return 'winner of ' + (m.round_no === 2 ? 'quarterfinal ' : 'semifinal ') + slot;
+}
+function tnSideHtml(m, c, which, st){
+  const cls = ['side'];
+  if(!c) cls.push('tbd'); else if(m.winner_id) cls.push(m.winner_id === c.id ? 'w' : 'l');
+  const pct = st.pct ? (which === 'a' ? st.pct.a : st.pct.b) : null;
+  const lbl = c ? (m.round_no === 1 && c.seed ? c.seed + ' · ' : '') + (c.name || '—') : tnFeeder(m, which);
+  const tail = pct != null ? `<span class="pct">${pct}%</span>`
+    : (m.round_no === 3 && c && st.played ? `<span class="pct">${which === 'a' ? st.wa : st.wb}</span>` : (st.open && c ? '<span class="pct">—</span>' : ''));
+  // the song under a side is optional — the server may or may not name it on the poll
+  const p = st.open || st.ratified[st.ratified.length - 1] || null;
+  const song = p && (which === 'a' ? (p.songA || p.a_title) : (p.songB || p.b_title));
+  return `<div class="${cls.join(' ')}">${c ? tnAvatar(c, 26) : ''}<span class="nm">${esc(lbl)}</span>${tail}</div>`
+    + (song ? `<div class="song">${esc(song)}</div>` : '');
+}
+function tnQueueForm(m, a, b, st){
+  const kind = TN.kind;
+  const title = m.round_no === 3 && st.need > 1 ? `Queue matchup · poll ${st.played + 1} of ${st.need}` : 'Queue matchup';
+  if(!TN.sessionId) return `<div class="qf"><div class="qt">${esc(title)}</div><span class="muted" style="font-size:12px">Link a live session in Setup first.</span></div>`;
+  const pick = (who) => kind === 'ar'
+    ? `<select class="q-${who}"><option value="">— pick a pack song —</option>${(TN.packSongs || []).map(s =>
+        `<option value="${esc(s.id)}"${s.played ? ' disabled' : ''}>${esc(s.title)} — ${esc(s.artist || '')}${s.played ? ' · played' : ''}</option>`).join('')}</select>`
+    : `<div class="row" style="gap:6px"><input class="q-${who}-title" placeholder="Song title"><input class="q-${who}-artist" placeholder="Artist" value="${esc((who === 'a' ? a : b).name || '')}"></div>`;
+  return `<div class="qf" data-m="${esc(m.id)}">
+    <div class="qt">${esc(title)}</div>
+    <div><label>${esc(a.name)} plays</label>${pick('a')}</div>
+    <div><label>${esc(b.name)} plays</label>${pick('b')}</div>
+    <button class="btn sm tnq" style="align-self:flex-start">Queue matchup</button>
+    ${kind === 'ar' && !(TN.packSongs || []).length ? '<span class="muted" style="font-size:12px">No Service Pack linked, or the pack has no songs — set it in Setup.</span>' : ''}
+  </div>`;
+}
+function renderTnBracket(){
+  const t = TN, matches = (t.matches || []).slice().sort((x, y) => x.round_no - y.round_no || x.slot - y.slot);
+  const decided = matches.filter(m => m.winner_id).length;
+  const rnd = t.status === 'complete' ? 'decided' : decided >= 6 ? 'the final' : decided >= 4 ? 'round 2 of 3' : 'round 1 of 3';
+  $('#tnBracketHead').textContent = matches.length ? `Bracket · ${rnd}` : 'Bracket';
+  const pill = $('#tnBracketPill');
+  if(t.status === 'live'){ pill.className = 'pill live'; pill.textContent = 'session live' + (t.liveSession && t.liveSession.ars != null ? ` · ${t.liveSession.ars} A&Rs in` : ''); }
+  else if(t.status === 'complete'){ pill.className = 'pill completed'; pill.textContent = 'complete'; }
+  else { pill.className = 'pill'; pill.textContent = matches.length ? 'not started' : 'no bracket yet'; }
+  if(!matches.length){
+    $('#tnBracket').innerHTML = '<div class="empty" style="grid-column:1/-1">The bracket is generated from the seeds once 8 seats are filled.</div>';
+    return;
+  }
+  const heads = ['Round 1 · quarterfinals', 'Round 2 · semifinals', `Final · best of ${+t.finalPolls || 3} poll${(+t.finalPolls || 3) === 1 ? '' : 's'}`];
+  const cols = [1, 2, 3].map(r => {
+    const ms = matches.filter(m => m.round_no === r);
+    return `<div class="rnd"><h4>${esc(heads[r - 1])}</h4>${ms.map(m => tnMatchHtml(m)).join('')}</div>`;
+  });
+  // A queue form half filled when the 10s live refresh lands must come back as it was —
+  // the host picks two songs, looks up at the stream, and presses Queue; the refresh in
+  // between must not have emptied the selects under them.
+  const kept = {};
+  $('#tnBracket').querySelectorAll('.qf').forEach(f => {
+    const mid = f.dataset.m; if(!mid) return;
+    kept[mid] = {};
+    f.querySelectorAll('select, input').forEach(el => { if(el.className && el.value) kept[mid][el.className] = el.value; });
+  });
+  $('#tnBracket').innerHTML = cols.join('');
+  $('#tnBracket').querySelectorAll('.qf').forEach(f => {
+    const k = kept[f.dataset.m]; if(!k) return;
+    f.querySelectorAll('select, input').forEach(el => { if(k[el.className] != null) el.value = k[el.className]; });
+  });
+}
+function tnMatchHtml(m){
+  const a = tnComp(m.a_id), b = tnComp(m.b_id), st = tnMatchState(m);
+  const cls = ['m']; if(m.round_no === 3) cls.push('final');
+  let foot = '', chips = '';
+  if(m.round_no === 3 && st.need > 1){
+    chips = '<div class="polls">' + Array.from({ length: Math.max(st.need, st.polls.length) }, (_, i) => {
+      const p = st.polls[i];
+      const c = !p ? '' : (p.split_a == null ? 'open' : p.split_a > 50 ? 'a' : p.split_a < 50 ? 'b' : 'tie');
+      return `<span class="${c}" title="${p ? (p.split_a == null ? 'open · ' + (p.votes || 0) + ' votes' : p.split_a + '% / ' + (100 - p.split_a) + '%') : 'not played yet'}">poll ${i + 1}</span>`;
+    }).join('') + '</div>';
+  }
+  if(m.winner_id){
+    const w = tnComp(m.winner_id);
+    const score = m.round_no === 3 && st.need > 1 ? ` ${st.wa}–${st.wb}` : '';
+    foot = m.decided_by === 'host'
+      ? `<span class="pill tie">${st.ratified.length ? 'tie · ' : ''}host decided</span><span>${esc(w ? w.name : '')}</span>`
+      : `<span class="pill done">decided${score} · ${st.votes.toLocaleString('en-US')} votes</span>`;
+    if(st.open) foot += `<span class="pill live">poll open · ${st.open.votes || 0} votes</span>`;
+    foot += `<button class="btn ghost sm tn-override" data-m="${esc(m.id)}" style="margin-left:auto">Override</button>`;
+  }else if(st.open){
+    cls.push('live');
+    foot = `<span class="pill live">${esc(st.open.status)} · ${(+st.open.votes || 0).toLocaleString('en-US')} votes</span><span class="muted">split sealed until ratify</span>`;
+  }else if(a && b && st.played >= st.need){
+    foot = `<span class="pill tie">tie · pick the winner</span>`
+      + `<button class="btn ghost sm tn-decide" data-m="${esc(m.id)}" data-w="${esc(a.id)}" style="margin-left:auto">${esc(a.name)} wins</button>`
+      + `<button class="btn ghost sm tn-decide" data-m="${esc(m.id)}" data-w="${esc(b.id)}">${esc(b.name)} wins</button>`;
+  }else if(a && b){
+    cls.push('next');
+    foot = `<span class="muted">${st.played ? `${st.played} of ${st.need} polls played · ` : ''}next: queue the matchup</span>`;
+  }else{
+    foot = '<span class="muted">Queue opens when both sides are in</span>';
+  }
+  const queue = a && b && !m.winner_id && !st.open && st.played < st.need ? tnQueueForm(m, a, b, st) : '';
+  return `<div class="${cls.join(' ')}" data-m="${esc(m.id)}">
+    ${tnSideHtml(m, a, 'a', st)}<div class="vs">VS</div>${tnSideHtml(m, b, 'b', st)}
+    ${chips}<div class="foot">${foot}</div>${queue}</div>`;
+}
+$('#tnBracket').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if(!b || !TN) return;
+  const mid = b.dataset.m || (b.closest('[data-m]') || {}).dataset?.m, m = (TN.matches || []).find(x => x.id === mid); if(!m) return;
+  if(b.classList.contains('tn-decide')){
+    const w = tnComp(b.dataset.w);
+    if(!confirm(`${w ? w.name : 'This side'} wins this matchup?`)) return;
+    b.disabled = true; tnErr('');
+    try{ await api('/api/admin/tournament/decide', { tournamentId: TN.id, matchId: mid, winnerId: b.dataset.w }); await tnLoad(); }
+    catch(err){ tnErr(err.message); b.disabled = false; }
+    return;
+  }
+  if(b.classList.contains('tn-override')){
+    const other = m.winner_id === m.a_id ? tnComp(m.b_id) : tnComp(m.a_id);
+    if(!other) return;
+    if(!confirm(`Override: ${other.name} wins this matchup instead? Everything downstream of it is cleared.`)) return;
+    b.disabled = true; tnErr('');
+    try{ await api('/api/admin/tournament/decide', { tournamentId: TN.id, matchId: mid, winnerId: other.id }); await tnLoad(); }
+    catch(err){ tnErr(err.message); b.disabled = false; }
+    return;
+  }
+  if(b.classList.contains('tnq')){
+    const f = b.closest('.qf'); if(!f) return;
+    const side = (who) => {
+      if(TN.kind === 'ar'){ const v = f.querySelector('.q-' + who).value; return v ? { packSongId: v } : null; }
+      const title = f.querySelector(`.q-${who}-title`).value.trim(), artist = f.querySelector(`.q-${who}-artist`).value.trim();
+      return title ? { title, artist } : null;
+    };
+    const A = side('a'), B = side('b');
+    if(!A || !B){ tnErr(TN.kind === 'ar' ? 'Pick a pack song for each side.' : 'Each side needs a song title.'); return; }
+    b.disabled = true; tnErr('');
+    try{
+      await api('/api/admin/tournament/queue', { tournamentId: TN.id, matchId: mid, a: A, b: B });
+      await tnLoad();
+    }catch(err){ tnErr(err.message); b.disabled = false; }
+  }
+});
+
+/* ---- 5. graphics ---- */
+function tnCardUrl(key, kind){
+  const t = TN; if(!t) return '';
+  let q = '/api/card/tournament?t=' + encodeURIComponent(t.id) + '&kind=' + kind;
+  const seat = /^seat(\d+)$/.exec(key), pkg = /^pkg(\d)$/.exec(key);
+  if(kind === 'bracket') return q;
+  if(seat) q += '&filled=' + seat[1] + '&stage=seat';
+  else if(pkg) q += '&filled=8&stage=package&featured=' + pkg[1];
+  else if(key === 'final') q += '&filled=8&stage=final';
+  else if(key === 'champion') q += '&stage=champion';
+  return q;
+}
+// An <img> cannot send the admin token, so the card is fetched into an object URL. Each
+// url is fetched once per page load; a re-render after Publish reuses it.
+function tnLoadImgs(root){
+  root.querySelectorAll('img[data-tnsrc]').forEach(img => {
+    const u = img.dataset.tnsrc;
+    if(tnImgCache[u]){ img.src = tnImgCache[u]; const a = img.closest('a'); if(a) a.href = tnImgCache[u]; return; }
+    fetch(u, { headers: chAuthHeaders() })
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
+      .then(bl => { tnImgCache[u] = URL.createObjectURL(bl);
+        root.querySelectorAll('img[data-tnsrc]').forEach(i => { if(i.dataset.tnsrc !== u) return; i.src = tnImgCache[u]; const a = i.closest('a'); if(a) a.href = tnImgCache[u]; }); })
+      .catch(() => { const d = document.createElement('div'); d.className = 'empty'; d.textContent = 'Could not render'; img.replaceWith(d); });
+  });
+}
+function renderTnGfx(){
+  const t = TN, rows = t.graphics || [];
+  if(!rows.some(g => g.key === tnGfxKey)){
+    const ready = rows.filter(g => g.ready);
+    const pick = ready.filter(g => !g.publishedAt).pop() || ready[ready.length - 1] || rows[0];
+    tnGfxKey = pick ? pick.key : '';
+  }
+  const g = rows.find(x => x.key === tnGfxKey) || null;
+  const isPkg = x => !!x && x.asana === false;
+  $('#btnTnPublish').textContent = g ? (isPkg(g) ? `Publish ${g.label} (host the files)` : `Publish ${g.label} + make Asana task`) : 'Publish + make Asana task';
+  $('#btnTnPublish').disabled = !g || !g.ready;
+  $('#btnTnCaption').disabled = !g;
+  // The package bar: email / zip for the selected competitor, publish-all / email-all for the set.
+  const pkgRows = rows.filter(isPkg), pkgReady = pkgRows.some(x => x.ready);
+  $('#tnPkgBar').classList.toggle('hide', !pkgRows.length);
+  const contactNote = x => x.contact === 'email' ? '' : x.contact === 'none' ? 'no account — download and DM' : x.contact === 'inactive' ? 'account closed' : x.contact === 'bounced' ? 'email bounced' : '';
+  $('#btnTnSend').disabled = !(g && isPkg(g) && g.ready && g.contact === 'email');
+  $('#btnTnSend').textContent = g && isPkg(g) ? (g.sentAt ? `Sent ${tnWhen(g.sentAt)} · send again` : `Email + text ${g.label.replace(/^Package · /, '')}`) : 'Email + text competitor';
+  $('#btnTnSend').title = g && isPkg(g) && contactNote(g) ? contactNote(g) : 'Emails this competitor the tournament briefing with both graphics attached, then texts the phone on their account';
+  $('#btnTnPkgZip').disabled = !(g && isPkg(g) && g.ready);
+  $('#btnTnPkgTest').disabled = !(g && isPkg(g) && g.ready);
+  $('#btnTnPkgAll').disabled = !pkgReady;
+  $('#btnTnSendAll').disabled = !pkgRows.some(x => x.ready && x.contact === 'email' && !x.sentAt);
+  $('#tnGfxList').innerHTML = rows.length ? rows.map(x => {
+    let state = x.publishedAt ? `published ${esc(x.publishedLabel || tnWhen(x.publishedAt))}` : x.ready ? 'ready, not published' : (x.note || x.hint || (x.key === 'final' ? 'unlocks with seat 8' : x.key === 'champion' ? 'after the final' : x.key === 'bracket' ? 'event night' : isPkg(x) ? 'unlocks with seat 8' : 'seat not filled'));
+    if(isPkg(x) && x.ready) state += x.sentAt ? ` · <b>sent ${esc(tnWhen(x.sentAt))}</b>${x.sentTo ? ' to ' + esc(x.sentTo) : ''}${x.sms === 'sent' ? ' · text sent' + (x.smsTo ? ' to ' + esc(x.smsTo) : '') : x.sms === 'no phone' ? ' · no phone on file' : x.sms === 'failed' ? ' · text failed' : ''}` : contactNote(x) ? ` · ${esc(contactNote(x))}` : ' · not sent';
+    const files = x.urls ? Object.keys(x.urls).length + ' file' + (Object.keys(x.urls).length === 1 ? '' : 's') : (x.ready ? 'renders live' : '');
+    return `<tr class="pick${x.key === tnGfxKey ? ' sel' : ''}" data-key="${esc(x.key)}">
+      <td class="mono" style="color:${x.key === tnGfxKey ? 'var(--accent)' : 'var(--ink-faint)'};width:120px">${esc(x.label)}</td>
+      <td${x.ready ? '' : ' class="muted"'}>${x.who ? esc(x.who) + ' · ' : ''}${state}${x.asanaUrl ? ` · <a class="lnk" href="${esc(x.asanaUrl)}" target="_blank" rel="noopener">Asana task</a>` : ''}</td>
+      <td class="mono" style="text-align:right;color:var(--ink-faint)">${esc(files)}</td></tr>`;
+  }).join('') : '<tr><td class="muted">No graphics rows yet — they appear as seats fill.</td></tr>';
+  const box = $('#tnGfx');
+  if(!g || !g.ready){
+    box.innerHTML = `<div class="empty" style="grid-column:1/-1">${g ? esc(g.label) + ' is not ready to render yet.' : 'Nothing to render yet.'}</div>`;
+    return;
+  }
+  const tile = (kind, title, sub) => {
+    const u = (g.urls && g.urls[kind]) || tnCardUrl(g.key, kind);
+    const live = !(g.urls && g.urls[kind]);
+    return `<div class="g"><a href="${live ? '#' : esc(u)}" target="_blank" rel="noopener">${live
+      ? `<img data-tnsrc="${esc(u)}" src="${TN_PX}" alt="${esc(title)}">`
+      : `<img src="${esc(u)}" alt="${esc(title)}">`}</a><div class="t">${esc(title)}</div><div class="s">${esc(sub)}</div></div>`;
+  };
+  const sub = g.label + (g.who ? ' · ' + g.who : '');
+  box.innerHTML = g.key === 'bracket'
+    ? tile('bracket', 'Bracket · 1080×1350', sub)
+    : tile('feed', 'Feed · 1080×1350', sub) + tile('story', 'Story · 1080×1920', g.label) + (isPkg(g) ? '' : tile('thumb', 'Thumbnail · 1920×1080', g.label));
+  tnLoadImgs(box);
+}
+// One competitor's package by email. `force` re-sends one already sent (the button says so).
+async function tnSendPackage(key, out, { force = false } = {}){
+  const d = await api('/api/admin/tournament/package-send', { tournamentId: TN.id, key, force });
+  return d;
+}
+$('#btnTnSend').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const g = (TN.graphics || []).find(x => x.key === tnGfxKey); if(!g) return;
+  const who = g.label.replace(/^Package · /, '');
+  if(g.sentAt && !confirm(`${who} was already sent this package on ${tnWhen(g.sentAt)}. Send the email and text again?`)) return;
+  const b = e.target, out = $('#tnPubOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = `Rendering ${who}'s package, emailing it, then texting…`;
+  const k = tnGfxKey;
+  try{
+    const d = await tnSendPackage(k, out, { force: !!g.sentAt });
+    out.textContent = `Sent to ${d.to || who} with ${d.attachments || 0} graphics attached.` + (d.sms === 'sent' ? ` Heads-up text sent to ${d.smsTo || 'their number'}.` : d.sms === 'no phone' ? ' No phone on file, so no text.' : d.sms === 'failed' ? ' The heads-up text failed (see the server log).' : '');
+    await tnLoad(true); tnGfxKey = k; renderTnGfx();
+  }catch(err){ out.textContent = 'Send failed: ' + err.message; b.disabled = false; }
+};
+$('#btnTnPkgTest').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const g = (TN.graphics || []).find(x => x.key === tnGfxKey); if(!g) return;
+  const who = g.label.replace(/^Package · /, '');
+  const b = e.target, out = $('#tnPubOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = `Rendering ${who}'s package and sending it to you…`;
+  try{
+    const d = await api('/api/admin/tournament/package-test', { tournamentId: TN.id, key: tnGfxKey });
+    out.textContent = `Test sent to ${d.to} with ${d.attachments || 0} graphics attached (${who}'s package, [TEST] in the subject).` + (d.sms === 'sent' ? ` Heads-up text sent to ${d.smsTo}.` : d.sms === 'no phone' ? ' No phone on your account, so no text.' : ' The text failed (see the server log).') + ' Nothing was sent to the competitor.';
+  }catch(err){ out.textContent = 'Test failed: ' + err.message; }
+  finally{ b.disabled = false; }
+};
+$('#btnTnPkgZip').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const b = e.target, was = b.textContent; b.disabled = true; b.textContent = 'Building the zip…'; tnErr('');
+  try{
+    const r = await fetch('/api/admin/tournament/graphics.zip?id=' + encodeURIComponent(TN.id) + '&key=' + encodeURIComponent(tnGfxKey), { headers: chAuthHeaders() });
+    if(!r.ok){ let m = 'Could not build the zip (' + r.status + ')'; try{ m = (await r.json()).error || m; }catch{} throw new Error(m); }
+    const bl = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(bl); a.download = (TN.slug || 'tournament') + '-' + tnGfxKey + '.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }catch(err){ tnErr(err.message); }
+  finally{ b.disabled = false; b.textContent = was; }
+};
+// The two set-wide loops: one request per competitor (eight renders in one request would
+// overrun the function cap), and never both at once — each publish and send rewrites the
+// tournament's graphics map, so a race could drop a sentAt.
+let tnPkgBusy = false;
+async function tnPkgLoop(btn, out, label, step){
+  if(!TN || tnPkgBusy) return; tnPkgBusy = true;
+  const all = [$('#btnTnPkgAll'), $('#btnTnSendAll'), $('#btnTnSend'), $('#btnTnPublish')]; all.forEach(b => b.disabled = true); tnErr('');
+  out.classList.remove('hide');
+  const rows = (TN.graphics || []).filter(x => x.asana === false && x.ready);
+  const done = [], skipped = [];
+  try{
+    for(const g of rows){
+      out.textContent = `${label} ${g.label.replace(/^Package · /, '')}… (${done.length + skipped.length + 1} of ${rows.length})`;
+      const r = await step(g);
+      (r.skip ? skipped : done).push(`${g.label.replace(/^Package · /, '')}${r.note ? ' — ' + r.note : ''}`);
+    }
+    out.innerHTML = `${esc(label)} done: ${done.length}.` + (done.length ? '\n' + done.map(esc).join('\n') : '') + (skipped.length ? `\n\nSkipped ${skipped.length}:\n${skipped.map(esc).join('\n')}` : '');
+  }catch(err){ out.textContent = `Stopped after ${done.length}: ${err.message}`; }
+  finally{ tnPkgBusy = false; const k = tnGfxKey; await tnLoad(true); tnGfxKey = k; renderTnGfx(); }
+}
+$('#btnTnPkgAll').onclick = (e) => tnPkgLoop(e.target, $('#tnPubOut'), 'Publishing', async g => {
+  const d = await api('/api/admin/tournament/publish', { tournamentId: TN.id, key: g.key });
+  return { note: d.hosted ? 'hosted' : 'rendered, not hosted (BLOB_READ_WRITE_TOKEN unset?)' };
+});
+$('#btnTnSendAll').onclick = (e) => {
+  const n = (TN.graphics || []).filter(x => x.asana === false && x.ready && x.contact === 'email' && !x.sentAt).length;
+  if(!confirm(`Email AND text the package to ${n} competitor${n === 1 ? '' : 's'} with an account? Each gets the briefing with the graphics attached, then a text if a phone is on file. Anyone already sent is skipped.`)) return;
+  tnPkgLoop(e.target, $('#tnPubOut'), 'Emailing + texting', async g => {
+    if(g.sentAt) return { skip: true, note: 'already sent ' + tnWhen(g.sentAt) };
+    if(g.contact !== 'email') return { skip: true, note: g.contact === 'none' ? 'no account — download and DM' : g.contact === 'inactive' ? 'account closed' : 'email bounced' };
+    const d = await tnSendPackage(g.key, $('#tnPubOut'));
+    return { note: 'sent to ' + (d.to || '') + (d.sms === 'sent' ? ', text sent' : d.sms === 'no phone' ? ', no phone' : d.sms === 'failed' ? ', text FAILED' : '') };
+  });
+};
+function tnWhen(ms){ try{ return fmtET(ms, { month: 'short', day: 'numeric' }); }catch(e){ return ''; } }
+$('#tnGfxList').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr.pick'); if(!tr || e.target.closest('a')) return;
+  tnGfxKey = tr.dataset.key; $('#tnPubOut').classList.add('hide'); renderTnGfx();
+});
+$('#btnTnCaption').onclick = async () => {
+  if(!TN || !tnGfxKey) return; tnErr('');
+  try{
+    const d = await api('/api/admin/tournament/caption?id=' + encodeURIComponent(TN.id) + '&key=' + encodeURIComponent(tnGfxKey), null, 'GET');
+    const text = (d.caption || '') + (d.comments && d.comments.length ? '\n\n— comments —\n' + d.comments.join('\n\n') : '');
+    wkCopy(text);
+  }catch(e){ tnErr(e.message); }
+};
+async function tnPublish(key, out, btn){
+  if(!TN) return null;
+  if(btn) btn.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = 'Rendering and hosting ' + key + '…';
+  try{
+    const d = await api('/api/admin/tournament/publish', { tournamentId: TN.id, key });
+    const urls = d.urls || {};
+    const lines = [];
+    Object.keys(urls).forEach(k => lines.push(k + ': ' + (urls[k] ? `<a href="${esc(urls[k])}" target="_blank" rel="noopener">${esc(urls[k])}</a>` : 'not hosted (BLOB_READ_WRITE_TOKEN unset?)')));
+    if(!Object.keys(urls).length) lines.push('urls: none hosted (BLOB_READ_WRITE_TOKEN unset?)');
+    if(/^pkg\d$/.test(key)) lines.push('Asana: not for a package — email the competitor or download the zip');
+    else lines.push(d.asana && d.asana.url ? `Asana: <a href="${esc(d.asana.url)}" target="_blank" rel="noopener">${esc(d.asana.url)}</a>` : 'Asana: no task made' + (d.asanaError ? ' — ' + esc(d.asanaError) : ''));
+    if(d.error || d.errors) lines.push('errors: ' + esc(JSON.stringify(d.error || d.errors)));
+    if(d.caption) lines.push('\n' + esc(d.caption));
+    out.innerHTML = lines.join('\n');
+    return d;
+  }catch(e){ out.textContent = 'Publish failed: ' + e.message; return null; }
+  finally{ if(btn) btn.disabled = false; }
+}
+$('#btnTnPublish').onclick = async (e) => {
+  if(!tnGfxKey) return;
+  const k = tnGfxKey;
+  await tnPublish(k, $('#tnPubOut'), e.target);
+  await tnLoad(true); tnGfxKey = k; renderTnGfx();
+};
+
+/* ---- 6. landing page + reminder list ---- */
+function renderTnLanding(){
+  const t = TN, s = t.subscribers || {};
+  const stat = (k, v, cls, hint) => `<div class="tnstat"><div class="k">${esc(k)}</div><div class="v${cls ? ' ' + cls : ''}">${esc(String(v))}</div>${hint ? `<div class="hint" style="margin:0">${esc(hint)}</div>` : ''}</div>`;
+  const remind = +t.remindMin === 0 ? 'off' : (t.remindLabel || '—');
+  const remindHint = +t.remindMin === 0 ? 'send by hand' : (s.reminded ? `${s.reminded} sent` : 'automatic');
+  $('#tnStats').innerHTML = stat('On the list', s.count || 0)
+    + stat('Of them A&Rs', s.ars != null ? s.ars : '—', 'ok')
+    + stat('Reminder', remind, '', remindHint)
+    + (t.kind === 'ar' && t.packOpen ? stat('Pick the Hits', t.packOpen.entries != null ? t.packOpen.entries : 'open', 'gold', t.packOpen.closesLabel ? 'closes ' + t.packOpen.closesLabel : 'entries') : '');
+  const a = $('#tnOpenLanding');
+  a.href = tnLandingPath(t) || '#';
+  a.classList.toggle('hide', !t.slug);
+  a.title = t.status === 'draft' ? 'A draft answers 404 until promo is opened' : '';
+  $('#btnTnCopyLink').disabled = !t.slug;
+  $('#btnTnRemind').disabled = !(s.count > 0);
+  $('#btnTnCsv').disabled = !(s.count > 0);
+}
+$('#btnTnRemind').onclick = async (e) => {
+  if(!TN) return;
+  const s = TN.subscribers || {};
+  if(!confirm(`Send the reminder now to ${s.count || 0} on the list?`)) return;
+  const b = e.target, out = $('#tnLandOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = 'Sending…';
+  let sent = 0, guard = 0;
+  try{
+    for(;;){
+      const d = await api('/api/admin/tournament/remind-now', { tournamentId: TN.id });
+      sent += d.sent || 0;
+      out.textContent = `Sent ${sent}` + (d.remaining ? ` · ${d.remaining} to go…` : '');
+      if(!d.remaining || ++guard > 200) break;
+    }
+    out.textContent = `Reminder sent to ${sent}.`;
+    await tnLoad(true);
+  }catch(err){ out.textContent = `Stopped after ${sent}: ${err.message}`; }
+  finally{ b.disabled = false; }
+};
+// Every available graphic in one zip: all the ready seat sets, the final promo, the champion
+// set and the bracket, plus captions.txt. Up to 31 renders — the button says so while it waits.
+$('#btnTnZip').onclick = async (e) => {
+  if(!TN) return;
+  const b = e.target, was = b.textContent; b.disabled = true; b.textContent = 'Building the zip…'; tnErr('');
+  try{
+    const r = await fetch('/api/admin/tournament/graphics.zip?id=' + encodeURIComponent(TN.id), { headers: chAuthHeaders() });
+    if(!r.ok){ let m = 'Could not build the zip (' + r.status + ')'; try{ m = (await r.json()).error || m; }catch{} throw new Error(m); }
+    const bl = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(bl); a.download = (TN.slug || 'tournament') + '-graphics.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }catch(err){ tnErr(err.message); }
+  finally{ b.disabled = false; b.textContent = was; }
+};
+$('#btnTnCsv').onclick = async (e) => {
+  if(!TN) return;
+  const b = e.target; b.disabled = true; tnErr('');
+  try{
+    const r = await fetch('/api/admin/tournament/subscribers?id=' + encodeURIComponent(TN.id) + '&format=csv', { headers: chAuthHeaders() });
+    if(!r.ok) throw new Error('Could not download the list (' + r.status + ')');
+    const bl = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(bl); a.download = (TN.slug || 'tournament') + '-reminder-list.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }catch(err){ tnErr(err.message); }
+  finally{ b.disabled = false; }
+};
+
+/* ---- 7. wrap ---- */
+function renderTnWrap(){
+  const t = TN; if(t.status !== 'complete') return;
+  const c = t.champion, fin = (t.matches || []).find(m => m.round_no === 3);
+  const st = fin ? tnMatchState(fin) : null;
+  const how = fin && fin.decided_by === 'host' ? 'Decided by the host' : st && st.need > 1 ? `Decided ${st.wa}–${st.wb} in the final` : 'Decided in the final';
+  const when = fin && fin.decided_at ? ' at ' + fmtET(fin.decided_at, { hour: 'numeric', minute: '2-digit' }) + ' ET' : '';
+  $('#tnWrapMsg').innerHTML = `<b>Champion: ${esc(c ? c.name : '—')}${c && c.handle ? ' (@' + esc(c.handle) + ')' : ''}.</b> ${esc(how + when)}. The Champion set and the bracket graphic render on their own; publish them from here. The homepage winners strip and the landing page show the champion as soon as the final is decided.`;
+  $('#btnTnSidebet').classList.toggle('hide', t.kind !== 'ar');
+  $('#btnTnEndSession').classList.toggle('hide', !t.sessionId);
+}
+$('#btnTnPubChampion').onclick = async (e) => {
+  const out = $('#tnWrapOut');
+  const a = await tnPublish('champion', out, e.target);
+  const first = out.innerHTML;
+  const b = await tnPublish('bracket', out, e.target);
+  out.innerHTML = '<b>Champion set</b>\n' + first + '\n\n<b>Bracket</b>\n' + out.innerHTML;
+  if(a || b){ await tnLoad(true); }
+};
+$('#btnTnSidebet').onclick = () => { tnStopPoll(); openSidebet(); };
+$('#btnTnEndSession').onclick = () => { if(TN && TN.sessionId){ tnStopPoll(); window.loadSession(TN.sessionId); } };
 
 /* ---- Build the next drop, a record at a time ---- */
 function renderBuild(){
@@ -2620,22 +3929,58 @@ $('#bAdd').onclick = async () => {
   $('#bAdd').disabled = false;
 };
 
-window.dlCopyCaption = async () => {
-  try{ await navigator.clipboard.writeText((DL.cards && DL.cards.caption) || ''); alert('Caption copied.'); }
-  catch(e){ alert('Could not copy — the caption is on the day’s recap job.'); }
+// One record's results (counts always; each A&R's rating and comment once ratified).
+window.dlRecord = async (roundId) => {
+  $('#dlRecTitle').textContent = 'Results';
+  $('#dlRecSub').textContent = ''; $('#dlRecStats').innerHTML = ''; $('#dlRecErr').textContent = '';
+  $('#dlRecBody').innerHTML = '<div class="empty">Loading…</div>';
+  $('#dlRecDrupal').classList.add('hide');
+  $('#dlRecModal').style.display = 'flex';
+  try{
+    const d = await api('/api/admin/daily/record?roundId=' + encodeURIComponent(roundId), null, 'GET');
+    const r = d.record;
+    $('#dlRecTitle').textContent = r.song_title || 'Results';
+    const sup = r.support_cents == null ? null : (r.support_cents === 0 ? 'free' : dlMoney(r.support_cents) + ' support');
+    $('#dlRecSub').textContent = [r.song_artist, 'Record ' + r.idx, r.dayLabel || r.day, sup].filter(Boolean).join(' · ');
+    const stat = (v, l) => `<div class="dlrec-stat"><b>${esc(String(v))}</b><span>${esc(l)}</span></div>`;
+    $('#dlRecStats').innerHTML = stat(fmtAvg(r.room_average), 'room average') + stat(r.ratings, 'ratings')
+      + stat(r.comments_shared, 'comments shared') + stat(r.reports, 'flags');
+    const dp = $('#dlRecDrupal');
+    if(r.ingest_url){ dp.href = r.ingest_url; dp.classList.remove('hide'); }
+    if(d.sealed){
+      $('#dlRecBody').innerHTML = '<div class="empty">Each A&amp;R\u2019s rating and comment show here once the day tallies.</div>';
+    } else if(!d.rows.length){
+      $('#dlRecBody').innerHTML = '<div class="empty">No A&amp;R rated or commented on this record.</div>';
+    } else {
+      $('#dlRecBody').innerHTML = `<table class="data-table"><thead><tr><th>A&amp;R</th><th class="num">Rating</th><th>Comment</th></tr></thead><tbody>${
+        d.rows.map(x => `<tr><td>${esc(x.name)}</td><td class="num">${x.rating == null ? '—' : x.rating}</td><td class="dlrec-cmt">${
+          x.comment ? esc(x.comment) + (x.hidden ? ' <span class="pill">hidden</span>' : '') : '—'}</td></tr>`).join('')
+      }</tbody></table>`;
+    }
+  }catch(e){ $('#dlRecBody').innerHTML = ''; $('#dlRecErr').textContent = e.message; }
 };
-// The recap caption is stored at publish; before that it is built here from the same status
-// payload so the operator can post the cover early. Same lists, same order rule.
-window.dlCopyRecapCaption = async () => {
-  const c = DL.cards || {};
-  let text = c.recapCaption;
-  if(!text){
-    try{ text = await (await fetch('/api/admin/daily/recap-caption?s=' + encodeURIComponent(DL.drop.id), { headers: chAuthHeaders() })).text(); }
-    catch(e){ text = ''; }
+$('#dlRecClose').onclick = () => { $('#dlRecModal').style.display = 'none'; };
+
+// A saved results link from makinitmag (/admin?day=YYYY-MM-DD&ref=entry/N): open that day,
+// light the record's row and open its Results. Read once, then dropped from the address bar
+// so a refresh lands on the normal console.
+async function dlOpenFromLink(){
+  const q = new URLSearchParams(location.search);
+  const day = q.get('day'), ref = q.get('ref');
+  if(!day || !ref || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  try{ history.replaceState(null, '', location.pathname); }catch(e){}
+  dlDay = day;
+  await openDaily();
+  const r = (DL && DL.rounds || []).find(x => x.ingest_ref === ref);
+  if(!r){
+    $('#dlErr').textContent = `${ref} isn\u2019t on ${(DL && DL.drop && DL.drop.dayLabel) || day}. It may have been withdrawn or sent back to the line after the push. Showing the whole day.`;
+    return true;
   }
-  try{ await navigator.clipboard.writeText(text || ''); alert('Recap caption copied.'); }
-  catch(e){ alert('Could not copy the recap caption.'); }
-};
+  const row = document.getElementById('dlrow-' + r.id);
+  if(row){ row.scrollIntoView({ block: 'center' }); row.classList.add('ingest-lit'); }
+  dlRecord(r.id);
+  return true;
+}
 
 // Fix a broken play link mid-window.
 window.dlEdit = (roundId) => {
@@ -2876,6 +4221,7 @@ async function openPicker(){
   $('#btnCharts').classList.toggle('hide',!isAdmin());
   $('#btnBackToDaily').classList.toggle('hide',!isAdmin());
   $('#btnSidebet').classList.toggle('hide',!isAdmin());
+  $('#btnTournaments').classList.toggle('hide',!isAdmin());
   await loadSeriesCache();
   try{
     const d=await api('/api/auth/sessions',null,'GET');
@@ -3131,13 +4477,17 @@ async function openPlatform(){
     plReviveStatus(d.settings);
     $('#plAsanaProject').value=d.settings.asanaProject||'';
     $('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';
+    $('#dsStreamUrl').value=d.settings.dailyStreamUrl||'';
     dsFill(d.dailySchedule);
-    leadsLoad();
+    leadsLoad();brevoLoad();
     plAsanaStatus(d);
     $('#plSmsProvider').textContent=d.smsProvider||'none';
     api('/api/admin/notify/audience',null,'GET').then(a=>{
-      $('#nbEmailCount').textContent='('+a.email+')';
-      $('#nbSmsCount').textContent='('+a.sms+' opted in)';
+      window._nbAud=a;
+      const fill=()=>{const eng=$('#nbAudience').value!=='all';
+        $('#nbEmailCount').textContent='('+(eng?a.engaged.email:a.email)+')';
+        $('#nbSmsCount').textContent='('+(eng?a.engaged.sms:a.sms)+' opted in)';};
+      fill(); $('#nbAudience').onchange=fill;
     }).catch(()=>{});
     plNotifyTopics();
     const bs=d.banners||[];
@@ -3282,11 +4632,13 @@ $('#nbSend')&&($('#nbSend').onclick=async()=>{
   if(!wantEmail&&!wantSms)return $('#nbErr').textContent='Pick at least one channel.';
   if(wantEmail&&!subject)return $('#nbErr').textContent='Email needs a subject.';
   let a; try{ a=await api('/api/admin/notify/audience',null,'GET'); }catch(e){ return $('#nbErr').textContent=e.message; }
-  const parts=[]; if(wantEmail)parts.push(a.email+' emails'); if(wantSms)parts.push(a.sms+' texts');
-  if(!confirm('Send this announcement to '+parts.join(' + ')+'? This can\u2019t be unsent.'))return;
+  const audience=$('#nbAudience').value==='all'?'all':'engaged';
+  const n=audience==='all'?a:a.engaged;
+  const parts=[]; if(wantEmail)parts.push(n.email+' emails'); if(wantSms)parts.push(n.sms+' texts');
+  if(!confirm('Send this announcement to '+parts.join(' + ')+(audience==='all'?' (everyone on the list)':' (active A&Rs)')+'? This can\u2019t be unsent.'))return;
   $('#nbSend').disabled=true;$('#nbStatus').textContent='Queuing…';
   try{
-    const st=await api('/api/admin/notify/start',{subject,message,email:wantEmail,sms:wantSms});
+    const st=await api('/api/admin/notify/start',{subject,message,email:wantEmail,sms:wantSms,audience});
     let out={remaining:st.queued,sent:0,failed:0}, total=st.queued||1;
     while(out.remaining>0){
       out=await api('/api/admin/notify/process',{broadcastId:st.broadcastId,limit:12});
@@ -3303,9 +4655,10 @@ const dsTime=n=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padSta
 function dsFill(sc){
   if(!sc)return;
   $('#dsOpen').value=dsTime(sc.openMin);$('#dsClose').value=dsTime(sc.closeMin);$('#dsResults').value=dsTime(sc.resultsMin);
+  $('#dsStream').value=dsTime(sc.streamMin);$('#dsStreamDays').value=String(sc.streamDays);$('#dsResultsDays').value=String(sc.resultsDays);
   for(let i=1;i<=3;i++){const t=(sc.tiers||[])[i-1];$('#dsT'+i+'H').value=t?t.hours:'';$('#dsT'+i+'P').value=t?t.points:'';}
   $('#dsFinal').value=sc.finalPoints;$('#dsDelay').value=sc.artistDelayMin;
-  $('#dsSummary').textContent='Opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · results '+sc.resultsLabel+' · bonus '+(sc.tierLabels||[]).join(', ');
+  $('#dsSummary').textContent='Track list locks '+sc.lockLabel+' · opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · daily countdown '+sc.streamLabel+' ('+sc.streamHours+' h) · results '+sc.resultsLabel+' ('+sc.resultsHours+' h) · bonus '+(sc.tierLabels||[]).join(', ');
 }
 function dsRead(){
   const tiers=[];
@@ -3313,6 +4666,7 @@ function dsRead(){
     if(Number.isFinite(h)&&h>0)tiers.push({hours:h,points:Number.isFinite(p)?p:0});}
   const f=parseInt($('#dsFinal').value,10);
   return {openMin:dsMin($('#dsOpen').value),closeMin:dsMin($('#dsClose').value),resultsMin:dsMin($('#dsResults').value),
+    streamMin:dsMin($('#dsStream').value),streamDays:parseInt($('#dsStreamDays').value,10),resultsDays:parseInt($('#dsResultsDays').value,10),
     tiers,finalPoints:Number.isFinite(f)?f:undefined,
     artistDelayMin:(v=>Number.isFinite(v)?v:undefined)(parseInt($('#dsDelay').value,10))};
 }
@@ -3325,10 +4679,11 @@ $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
       reviveZoneGame:$('#plReviveGame').value.trim(),
       asanaProject:$('#plAsanaProject').value.trim(),
       asanaLeadsProject:$('#plAsanaLeadsProject').value.trim(),
+      dailyStreamUrl:$('#dsStreamUrl').value.trim(),
       dailySchedule:dsRead()});
     plReviveStatus({reviveDeliveryUrl:$('#plReviveUrl').value.trim(),reviveZoneLobby:$('#plReviveLobby').value.trim(),reviveZoneGame:$('#plReviveGame').value.trim()});
     // Re-read: the server normalizes the project id, and only it knows if the token is set.
-    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';$('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';plAsanaStatus(d);dsFill(d.dailySchedule);leadsLoad();}catch(e){}
+    try{const d=await api('/api/admin/platform',null,'GET');$('#plAsanaProject').value=d.settings.asanaProject||'';$('#plAsanaLeadsProject').value=d.settings.asanaLeadsProject||'';plAsanaStatus(d);dsFill(d.dailySchedule);leadsLoad();brevoLoad();}catch(e){}
     $('#plStatus').textContent='Saved ✓';setTimeout(()=>$('#plStatus').textContent='',2000);
   }catch(e){$('#plStatus').textContent=e.message;}
   $('#plSaveSettings').disabled=false;
@@ -3385,6 +4740,45 @@ $('#cbPreview')&&($('#cbPreview').onclick=()=>cbRun(false));
 $('#cbApply')&&($('#cbApply').onclick=()=>{ if(confirm('Fill the blank contact fields on the matched records? Nothing already filled in will change.')) cbRun(true); });
 $('#cbFile')&&($('#cbFile').onchange=()=>{$('#cbApply').disabled=true;$('#cbStatus').textContent='';$('#cbList').innerHTML='';});
 
+// ===== Brevo contacts (044) =====
+async function brevoLoad(){
+  const box=$('#brevoInfo'),st=$('#brevoStatus'); if(!box)return;
+  box.innerHTML='<div class="empty">Loading…</div>';
+  try{
+    const d=await api('/api/admin/brevo',null,'GET');
+    $('#brevoListArtists').value=d.lists.artists.id||'';$('#brevoListArs').value=d.lists.ars.id||'';$('#brevoMinRatings').value=d.scoreMinRatings;
+    $('#brevoSync').disabled=!d.configured;
+    const L=d.last;
+    st.innerHTML=(d.configured?'':'BREVO_API_KEY is not set — the sync is off. ')
+      +(L&&L.at?'Last sync '+new Date(L.at).toLocaleString()+(L.remaining?' · '+L.remaining+' still to send':''):'Never synced.')
+      +(L&&L.error?' · <span style="color:var(--accent)">last error: '+esc(L.error)+'</span>':'');
+    const row=l=>'<tr><td><b>'+esc(l.name)+'</b></td><td class="num">'+(l.id||'<span class="muted">new</span>')+'</td><td class="num">'+l.total+'</td><td class="num">'+(l.pending?'<span style="color:var(--accent)">'+l.pending+'</span>':'0')+'</td></tr>';
+    let h='<table class="dltable"><tr><th>List</th><th class="num">ID</th><th class="num">Contacts</th><th class="num">To send</th></tr>'+Object.values(d.lists).map(row).join('')+'</table>';
+    if(d.imports&&d.imports.length) h+='<div class="muted" style="font-size:11px;margin-top:8px">Last imports: '+d.imports.map(i=>esc(i.name||i.list)+' #'+i.processId+' ('+i.count+') '+esc(i.status||'')+(i.report?' — <a href="'+esc(i.report)+'" target="_blank" rel="noopener" style="color:var(--signal)">report</a>':'')).join(' · ')+'</div>';
+    box.innerHTML=h;
+  }catch(e){box.innerHTML='';st.textContent=e.message;}
+}
+$('#brevoRefresh')&&($('#brevoRefresh').onclick=brevoLoad);
+$('#brevoSaveIds')&&($('#brevoSaveIds').onclick=async()=>{
+  try{await api('/api/admin/settings',{brevoListArtists:$('#brevoListArtists').value.trim(),brevoListArs:$('#brevoListArs').value.trim(),brevoScoreMinRatings:$('#brevoMinRatings').value});$('#brevoStatus').textContent='Saved. A changed list is sent in full on the next sync; a changed score floor re-sends the artists whose score moved.';brevoLoad();}
+  catch(e){$('#brevoStatus').textContent=e.message;}
+});
+$('#brevoSync')&&($('#brevoSync').onclick=async()=>{
+  const btn=$('#brevoSync'),st=$('#brevoStatus'),old=btn.textContent;btn.disabled=true;
+  const tot={};
+  try{
+    for(let i=0;i<30;i++){
+      btn.textContent='Sending… ('+Object.values(tot).reduce((x,n)=>x+n,0)+')';
+      const d=await api('/api/admin/brevo/sync',{});
+      for(const k in d.sent)tot[k]=(tot[k]||0)+d.sent[k];
+      if(!d.remaining)break;
+    }
+    await brevoLoad();
+    const a=tot.artists||0,r=tot.ars||0,sb=Object.keys(tot).filter(k=>k.startsWith('sidebet:')).reduce((x,k)=>x+tot[k],0);
+    st.innerHTML='✅ Sent '+a+' artist'+(a===1?'':'s')+', '+r+' A&amp;R'+(r===1?'':'s')+(sb?' and '+sb+' Side Bet entr'+(sb===1?'y':'ies'):'')+' to Brevo. Brevo imports them in the background — the counts there update in a minute or two.';
+  }catch(e){st.textContent=e.message;}
+  btn.textContent=old;btn.disabled=false;
+});
 // ===== Sales leads → Asana (040) =====
 const LEADS_UI_BUILD='2026-09-19g';   // printed by Check Asana so a cached console is visible
 const leadsPct=()=>Math.min(100,Math.max(1,parseInt($('#leadsPct').value,10)||30));
@@ -3414,14 +4808,18 @@ $('#leadsPreview')&&($('#leadsPreview').onclick=leadsLoad);
 $('#leadsRebuild')&&($('#leadsRebuild').onclick=async()=>{
   if(!confirm('Rebuild the Asana project? Every task in it is deleted — including any notes, comments or assignments you added in Asana — and the list is written again from the current records.'))return;
   const btn=$('#leadsRebuild'),st=$('#leadsStatus');btn.disabled=true;$('#leadsSync').disabled=true;
-  let deleted=0;
+  let deleted=0,dry=0;
   try{
-    for(let i=0;i<80;i++){
+    for(let i=0;i<120;i++){
       btn.textContent='Emptying… ('+deleted+')';
       const d=await api('/api/admin/leads/rebuild',{});
       deleted+=d.deleted;
       if(d.done)break;
-      if(!d.deleted)throw new Error('Nothing could be deleted this press — check the trace and press again.');
+      // A stalled or rate-limited delete: wait it out and go again. Give up only after
+      // several presses in a row that removed nothing.
+      dry=d.deleted?0:dry+1;
+      if(dry>=4)throw new Error('Asana is not answering deletes right now ('+(d.stalled||'no progress')+'). Wait a minute and press Rebuild again — it continues where it stopped.');
+      if(d.pause){st.textContent='Emptying… '+deleted+' removed — Asana is slow, waiting '+d.pause+'s';await new Promise(r=>setTimeout(r,d.pause*1000));}
     }
     st.textContent=deleted+' task'+(deleted===1?'':'s')+' removed. Writing the list again…';
     btn.textContent='Rebuild project';btn.disabled=false;$('#leadsSync').disabled=false;
@@ -3495,12 +4893,14 @@ async function loadUsers(){
     if(!d.users.length){box.innerHTML='<div class="empty">No users match.</div>';return;}
     box.innerHTML=d.users.map(u=>{
       const av=u.photoUrl?`<img class="uav" src="${esc(u.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(u.name||u.email))}</div>`;
-      const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.role==='host'?'<span class="badge host">Host</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', (!u.blocked&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
+      const badges=[u.role==='admin'?'<span class="badge admin">Admin</span>':'', u.role==='host'?'<span class="badge host">Host</span>':'', u.blocked?'<span class="badge blocked">Blocked</span>':'', u.account==='deactivated'?'<span class="badge incomplete">Deactivated</span>':'', u.account==='deleted'?'<span class="badge blocked">Deleted</span>':'', (!u.blocked&&u.account==='active'&&!u.profileComplete)?'<span class="badge incomplete">Incomplete</span>':''].join('');
       const sub=[u.email, u.primaryCategory||'', u.location||'', u.sessions+' sess', u.seriesParticipated?(u.seriesParticipated+' series'):'', lastSeenLabel(u.lastSeen)].filter(Boolean).join(' · ');
-      const actions=u.role==='admin'?'<span class="muted" style="font-size:12px">protected</span>':
+      const editBtn=`<button class="btn ghost sm" onclick="openUserEdit('${u.id}')">Edit profile</button>`;
+      const actions=u.account==='deleted'?'<span class="muted" style="font-size:12px">deleted by the A&amp;R</span>':
+        editBtn+(u.role==='admin'?'<span class="muted" style="font-size:12px">protected</span>':
         `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
         `<button class="btn ${u.blocked?'ghost':'warn'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
-        `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`;
+        `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`);
       // Per-host feature toggles (only for hosts). None granted by default. The giveaway
       // chip (distinct accent) controls whether this host's sessions count toward $500.
       const permRow=u.role==='host'&&u.perms
@@ -3511,7 +4911,7 @@ async function loadUsers(){
           +`<button class="permchip give${u.giveaway?' on':''}" title="Count this host's series-tagged rooms toward the monthly $500" onclick="toggleGiveaway('${u.id}',${u.giveaway?0:1})">💵 $500</button>`
           +'</div>'
         : '';
-      return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname">${esc(u.name||'(no name)')}${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
+      return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname"><a href="/u/${esc(u.id)}" target="_blank" rel="noopener" title="Open public profile" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--ink-faint)">${esc(u.name||'(no name)')}</a>${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
     }).join('');
   }catch(e){box.innerHTML='<div class="err">'+e.message+'</div>';}
 }
@@ -3523,10 +4923,81 @@ window.toggleGiveaway=async(uid,on)=>{try{await api('/api/admin/users/giveaway',
 ['uStatus','uSkill','uSkillMode','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
 // delete-user modal (type-name confirm)
 let udState={id:null,name:''};
-window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='Permanently delete <b style="color:var(--ink)">'+esc(name)+'</b>, including their account, participation history, and evaluations. This changes any rankings that included them and cannot be undone.';$('#udName').textContent=name;$('#udConfirm').value='';$('#udDelete').disabled=true;$('#udErr').textContent='';$('#userDelModal').style.display='flex';};
+window.askDeleteUser=(uid,name)=>{udState={id:uid,name};$('#udBody').innerHTML='Permanently delete <b style="color:var(--ink)">'+esc(name)+'</b>: their name, email, phone, photo and handles are removed and they come off every board. Their ratings and comments stay, with no name, so past room averages and artist reports do not change. This cannot be undone.';$('#udName').textContent=name;$('#udConfirm').value='';$('#udDelete').disabled=true;$('#udErr').textContent='';$('#userDelModal').style.display='flex';};
 $('#udConfirm').oninput=function(){$('#udDelete').disabled=this.value!==udState.name;};
 $('#udCancel').onclick=()=>{$('#userDelModal').style.display='none';};
 $('#udDelete').onclick=async()=>{$('#udErr').textContent='';try{await api('/api/admin/users/delete',{uid:udState.id,confirmName:$('#udConfirm').value});$('#userDelModal').style.display='none';await loadUsers();}catch(e){$('#udErr').textContent=e.message;}};
+// edit-profile modal (admin): same fields + same server rules as the A&R's own /profile.
+let ueState={id:null,cats:[],primary:''};
+function ueRenderCats(){
+  const avail=usersCats.length?usersCats:[];
+  $('#ueCats').innerHTML=avail.map(c=>`<button type="button" class="permchip${ueState.cats.includes(c)?' on':''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
+  $('#ueCats').querySelectorAll('button').forEach(b=>b.onclick=()=>{const c=b.dataset.c;if(ueState.cats.includes(c)){ueState.cats=ueState.cats.filter(x=>x!==c);if(ueState.primary===c)ueState.primary=ueState.cats[0]||'';}else ueState.cats.push(c);ueRenderCats();});
+  $('#uePrimary').innerHTML='<option value="">— pick a primary role —</option>'+ueState.cats.map(c=>`<option value="${esc(c)}"${ueState.primary===c?' selected':''}>${esc(c)}</option>`).join('');
+}
+window.openUserEdit=async(uid)=>{
+  $('#ueErr').textContent='';$('#ueSave').disabled=false;
+  try{
+    const d=await api('/api/admin/users/profile?uid='+encodeURIComponent(uid),null,'GET');
+    const pr=d.profile; if(d.categoriesAvailable&&!usersCats.length)usersCats=d.categoriesAvailable;
+    ueState={id:pr.id,cats:(pr.categories||[]).slice(),primary:pr.primaryCategory||''};
+    $('#ueName').value=pr.name||'';$('#ueLocation').value=pr.location||'';$('#ueInstagram').value=pr.instagram||'';$('#ueTiktok').value=pr.tiktok||'';
+    $('#ueEmail').textContent=pr.email||'';$('#uePhone').textContent=pr.phone?pr.phone:'no phone on file';
+    $('#ueAv').innerHTML=pr.photoUrl?`<img class="uav" src="${esc(pr.photoUrl)}" alt="">`:`<div class="uav">${esc(initials(pr.name||pr.email))}</div>`;
+    $('#ueOpen').href='/u/'+encodeURIComponent(pr.id);
+    $('#ueComplete').textContent=pr.complete?'Profile complete':'Profile incomplete — needs a name, at least one role with a primary, and a location';
+    $('#ueComplete').style.color=pr.complete?'var(--signal)':'var(--ink-faint)';
+    ueRenderCats();
+    ueCardShow(pr.id,d.gradeCard);
+    $('#userEditModal').style.display='flex';$('#ueName').focus();
+  }catch(e){alert(e.message);}
+};
+// Latest grade card: preview + download, fetched with the admin's token (an <img> cannot send it).
+let ueCard={uid:null,info:null,style:null,url:null,scope:'day'};
+const ueCardSrc=(fmt,extra)=>'/api/admin/users/grade-card?uid='+encodeURIComponent(ueCard.uid)+(ueCard.scope==='standing'?'&scope=standing':'')+'&style='+ueCard.style+(fmt==='story'?'&fmt=story':'')+(extra||'');
+const ueCardHdr=()=>{const h={};if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;return h;};
+function ueCardShow(uid,info){
+  ueCard={uid,info,style:info?info.style:null,url:ueCard.url,scope:info&&info.grade?'day':'standing'};
+  $('#ueCard').style.display=info?'block':'none';
+  if(!info)return;
+  ueCardHead();
+  $('#ueCardNote').textContent=info.hasBigPhoto?'':'No big photo on file, so only the stats card is available.';
+  ueCardChips();ueCardPic();
+}
+function ueCardHead(){
+  const i=ueCard.info,st=ueCard.scope==='standing';
+  $('#ueCardDay').textContent=st?(i.standing?'· Standing '+i.standing.grade+' · '+i.standing.drops+(i.standing.drops===1?' drop':' drops'):''):('· Grade '+i.grade+(i.dayLabel?' · '+i.dayLabel:''));
+  document.querySelectorAll('[data-uecscope]').forEach(b=>{b.classList.toggle('on',b.dataset.uecscope===ueCard.scope);b.disabled=b.dataset.uecscope==='standing'?!i.standing:!i.grade;});
+}
+document.querySelectorAll('[data-uecscope]').forEach(b=>b.onclick=()=>{if(b.disabled||!ueCard.info)return;ueCard.scope=b.dataset.uecscope;ueCardHead();ueCardPic();});
+function ueCardChips(){document.querySelectorAll('[data-uecs]').forEach(b=>{b.classList.toggle('on',b.dataset.uecs===ueCard.style);b.disabled=b.dataset.uecs==='photo'&&!ueCard.info.hasBigPhoto;});}
+async function ueCardPic(){
+  const box=$('#ueCardPic');box.textContent='Loading…';
+  try{const r=await fetch(ueCardSrc('feed','&w=432'),{headers:ueCardHdr()});if(!r.ok)throw 0;
+    if(ueCard.url)URL.revokeObjectURL(ueCard.url);ueCard.url=URL.createObjectURL(await r.blob());
+    box.innerHTML='<img alt="" style="width:100%;height:100%;object-fit:contain;display:block" src="'+ueCard.url+'">';
+  }catch(e){box.textContent='Preview unavailable';}
+}
+document.querySelectorAll('[data-uecs]').forEach(b=>b.onclick=()=>{if(b.disabled||!ueCard.info)return;ueCard.style=b.dataset.uecs;ueCardChips();ueCardPic();});
+document.querySelectorAll('[data-uecdl]').forEach(b=>b.onclick=async()=>{
+  if(!ueCard.info||b.disabled)return;b.disabled=true;
+  try{const r=await fetch(ueCardSrc(b.dataset.uecdl,'&dl=1'),{headers:ueCardHdr()});if(!r.ok)throw new Error('Could not build the card');
+    const cd=r.headers.get('content-disposition')||'',m=cd.match(/filename="([^"]+)"/);
+    const u=URL.createObjectURL(await r.blob()),l=document.createElement('a');l.href=u;l.download=m?m[1]:'grade-card.png';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);
+  }catch(e){alert(e.message);}
+  b.disabled=false;
+});
+$('#uePrimary').onchange=function(){ueState.primary=this.value;};
+$('#ueCancel').onclick=()=>{$('#userEditModal').style.display='none';};
+$('#ueSave').onclick=async()=>{
+  $('#ueErr').textContent='';$('#ueSave').disabled=true;
+  try{
+    const d=await api('/api/admin/users/profile',{uid:ueState.id,name:$('#ueName').value,categories:ueState.cats,primaryCategory:ueState.primary||(ueState.cats[0]||''),location:$('#ueLocation').value,instagram:$('#ueInstagram').value,tiktok:$('#ueTiktok').value});
+    $('#userEditModal').style.display='none';
+    await loadUsers();
+    if(!d.complete)alert('Saved. This profile is still incomplete (needs a name, at least one role with a primary, and a location), so the A&R does not qualify for the board yet.');
+  }catch(e){$('#ueErr').textContent=e.message;$('#ueSave').disabled=false;}
+};
 
 // ---- Analytics (admin): cross-session engagement + retention ----
 let anData=null;
@@ -3615,6 +5086,12 @@ function chScopeOptions(){
   const sel=$('#chScope'),prev=sel.value;
   let html='';
   (SERIES||[]).forEach(s=>{html+=`<option value="series:${s.id}">Series — ${esc(s.title)}</option>`;});
+  // Calendar months by ET date: last month (the usual monthly chart) and this month so far.
+  const etNow=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
+  const mon=k=>{const d=new Date(etNow.getFullYear(),etNow.getMonth()-k,1);
+    return {v:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),l:d.toLocaleDateString('en-US',{month:'long',year:'numeric'})};};
+  const lm=mon(1),tm=mon(0);
+  html+=`<option value="month:${lm.v}">Last month — ${lm.l}</option><option value="month:${tm.v}">This month — ${tm.l}</option>`;
   html+='<option value="last:4">Last 4 rooms</option><option value="last:8">Last 8 rooms</option>'
       +'<option value="last:12">Last 12 rooms</option><option value="range">Date range…</option>'
       +'<option value="all">All time</option>';
@@ -3634,13 +5111,17 @@ function chParams(extra){
   const sc=$('#chScope').value||'all';
   if(sc.startsWith('series:')){p.set('scope','series');p.set('seriesId',sc.slice(7));}
   else if(sc.startsWith('last:')){p.set('scope','last');p.set('lastN',sc.slice(5));}
+  else if(sc.startsWith('month:')){p.set('scope','month');p.set('month',sc.slice(6));}
   else if(sc==='range'){
     p.set('scope','range');
     p.set('from',String(chDayMs($('#chFrom').value,false)||0));
     p.set('to',String(chDayMs($('#chTo').value,true)||Date.now()));
   } else p.set('scope','all');
   p.set('limit',$('#chLimit').value);
-  p.set('minVotes',String(Math.max(0,parseInt($('#chMinVotes').value,10)||0)));
+  // One input, two floors: votes per record, or rounds per A&R on the accuracy chart.
+  p.set(chMode==='ars'?'minRounds':'minVotes',String(Math.max(0,parseInt($('#chMinVotes').value,10)||0)));
+  if(chMode==='ars')p.set('sort',$('#chSort').value);
+  else if($('#chScores').checked)p.set('scores','1');
   p.set('order',$('#chOrder').value);
   p.set('per',$('#chPer').value);
   p.set('dedupe',$('#chDedupe').checked?'1':'0');
@@ -3673,7 +5154,9 @@ function renderCharts(d){
   const when=sc.from?`${chFmtDay(sc.from)} – ${chFmtDay(sc.to)}`:'no rooms yet';
   let sum=`scope · <b>${esc(sc.label)}</b> — ${sc.rooms} room${sc.rooms===1?'':'s'}, ${esc(when)}<br>`;
   if(d.mode==='ars'){
-    sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`;
+    sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`
+      +(d.sort==='accuracy'?` · ranked on <b>accuracy</b>`:'')
+      +(s.excluded?` · <span class="warn">${s.excluded} excluded</span> (under ${d.minRounds} round${d.minRounds===1?'':'s'})`:'');
   }else if(d.mode==='weekly1s'){
     sum+=`rooms · <b>${s.charting}</b> with a #1`+(s.excluded?` · <span class="warn">${s.excluded} had nothing clear the floor</span>`:' · every room cleared the floor');
   }else{
@@ -3690,11 +5173,13 @@ function renderCharts(d){
   let html='';
   for(const r of d.rows){
     if(d.mode==='ars'){
+      const byAcc=d.sort==='accuracy',acc=r.accuracy==null?'—':r.accuracy.toFixed(1)+'%';
       html+=`<div class="crow"><div class="crank ${chRankClass(r.rank)}">${r.rank}</div>
         <div class="cmain"><div class="ctitle">${esc(r.name)}</div>
         <div class="csub">${esc([r.ig?'@'+r.ig:'',r.category,r.location].filter(Boolean).join(' · ')||'—')}</div></div>
         <div class="cmeta">${r.rounds==null?'':r.rounds+' rounds'}</div>
-        <div class="cscore">${r.points.toLocaleString()}</div></div>`;
+        <div class="cacc">${byAcc?r.points.toLocaleString()+' pts':acc+' acc'}</div>
+        <div class="cscore"${byAcc?' style="width:70px"':''}>${byAcc?acc:r.points.toLocaleString()}</div></div>`;
     }else if(d.mode==='weekly1s'){
       const rec=r.record;
       html+=`<div class="crow${rec?'':' excl'}"><div class="crank r1">${rec?'#1':'—'}</div>
@@ -3764,7 +5249,7 @@ async function chBuildCarousel(){
   if(!chData||!chData.rows.length)return;
   const per=parseInt($('#chPer').value,10)||10;
   const box=$('#chSlides'),btn=$('#chBuild');
-  const total=1+Math.ceil(chData.rows.length/per);
+  const pages=Math.ceil(chData.rows.length/per),total=pages+2; // cover · pages · closing
   box.innerHTML='<div class="muted" style="font-size:12px;margin-top:12px">Rendering 1 of '+total+'…</div>';
   btn.disabled=true;
   const figs=[];
@@ -3773,7 +5258,8 @@ async function chBuildCarousel(){
       const r=await fetch('/api/card/chart?'+chParams({slide:String(i)}).toString(),{headers:chAuthHeaders()});
       if(!r.ok)break;
       const url=URL.createObjectURL(await r.blob());
-      figs.push({url,name:(i===0?'cover':'slide-'+i)+'.png',label:i===0?'Cover':'Slide '+i});
+      const end=i===pages+1;
+      figs.push({url,name:(i===0?'cover':end?'closing':'slide-'+i)+'.png',label:i===0?'Cover':end?'Closing':'Slide '+i});
       box.innerHTML='<div class="muted" style="font-size:12px;margin-top:12px">Rendering '+Math.min(i+2,total)+' of '+total+'…</div>';
     }
     box.innerHTML='<div class="row" style="margin-top:14px;align-items:center"><b style="font-size:13px">'+figs.length+' slides</b>'
@@ -3791,14 +5277,28 @@ document.querySelectorAll('.chart-mode').forEach(b=>b.onclick=()=>{
   chMode=b.dataset.mode;
   document.querySelectorAll('.chart-mode').forEach(x=>{x.classList.toggle('ghost',x!==b);x.classList.toggle('on',x===b);});
   $('#chDedupeRow').style.display=chMode==='records'?'':'none';
+  $('#chScoresRow').style.display=chMode==='ars'?'none':'';
   $('#chContacts').style.display=chMode==='ars'?'':'none';
+  $('#chSortWrap').style.display=chMode==='ars'?'':'none';
+  chFloorUi();
   $('#chLimitLabel').textContent=chMode==='weekly1s'?'Rooms':'Chart size';
   loadCharts();
 });
-['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo'].forEach(sel=>{
+// The floor input means votes per record, or rounds per A&R on either ranking. Each keeps
+// its own value: points starts at 0 so a series chart matches the public $500 board until a
+// floor is asked for; accuracy starts at 10 (one lucky round is 100%).
+const chFloor={votes:10,points:0,accuracy:10};
+const chFloorKey=()=>chMode==='ars'?$('#chSort').value:'votes';
+function chFloorUi(){
+  $('#chMinLabel').textContent=chMode==='ars'?'Min rounds':'Min votes';
+  $('#chMinVotes').value=chFloor[chFloorKey()];
+}
+$('#chMinVotes').addEventListener('input',()=>{chFloor[chFloorKey()]=Math.max(0,parseInt($('#chMinVotes').value,10)||0);});
+['#chScope','#chLimit','#chMinVotes','#chOrder','#chDedupe','#chFrom','#chTo','#chSort','#chScores'].forEach(sel=>{
   const el=$(sel);if(!el)return;
   el.addEventListener('change',()=>{
     if(sel==='#chScope')$('#chRangeRow').style.display=$('#chScope').value==='range'?'':'none';
+    if(sel==='#chSort')chFloorUi();
     loadCharts();
   });
 });

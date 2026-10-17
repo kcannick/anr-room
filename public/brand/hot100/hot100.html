@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HOT 100 slide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   Makin' It HOT 100 — the MONTHLY chart carousel, redesigned to the brand (2026-10-10).
+   A sibling of the Daily Countdown (public/brand/countdown/): same masthead, same 80px safe
+   area, same 1080x1350, same cut on the bookends. Replaces the 2026-08-05 DM Sans cards
+   (1080x1440, "The A&R Room" eyebrow, $500 pill, red HOT 100, gold band key).
+
+     ?slide=cover            HOT 100 · the period · ranked by the A&R Team · submit (the cut)
+     ?slide=list&page=1      ten records a page (#1–10, #11–20 …); &per=20 for a compact page
+     ?slide=team             Join the A&R Team (closing)
+
+     &mode=records|ars       records (default) or the Top A&Rs chart
+     &scores=1               print the average + the band key (records). Default: rank only,
+                             like the Countdown — scores are private to the Track Report.
+     &period=September 2026  the scope label
+     &n=100                  rows in the chart (the "100" in the title follows it, as today)
+
+   Brand: Archivo 900 display, Space Mono for every number (rank, period, score). Green = go
+   and scoring (the score, the submit button, the cut). Gold = FIRST PLACE ONLY: the #1 rank
+   block. No $500 pill — the A&R prize does not belong on an artist chart (the wall). No red.
+   13° device: the rank blocks, the button, the cut.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+.slide{display:none;position:absolute;inset:0}
+#c[data-kind="cover"] .s-cover, #c[data-kind="list"] .s-list, #c[data-kind="team"] .s-team{display:block}
+
+/* ---------- masthead (as the Countdown) ---------- */
+.logo{position:absolute;left:80px;top:80px;height:34px;width:auto}
+.period{position:absolute;right:80px;top:78px;font-family:'Space Mono',monospace;font-weight:700;font-size:30px;line-height:38px;color:var(--dim);text-transform:uppercase;letter-spacing:.02em}
+.series{position:absolute;left:80px;top:142px;display:flex;align-items:baseline;gap:22px;white-space:nowrap}
+.series b{font-weight:900;font-size:58px;line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.series span{font-family:'Space Mono',monospace;font-weight:700;font-size:30px;color:var(--dim)}
+
+/* ---------- cover ---------- */
+.s-cover .stack{position:absolute;left:80px;right:80px;top:210px}
+.s-cover .pre{font-weight:900;font-size:92px;line-height:1;letter-spacing:-.045em;text-transform:uppercase}
+.s-cover .hot{display:flex;align-items:flex-end;gap:26px;margin-top:6px;white-space:nowrap}
+.s-cover .hot .w{font-weight:900;font-size:var(--hs,250px);line-height:.8;letter-spacing:-.06em;text-transform:uppercase;margin-left:-8px}
+.s-cover .hot .n{font-family:'Space Mono',monospace;font-weight:700;font-size:var(--hs,250px);line-height:.8;letter-spacing:-.08em;color:var(--green)}
+.s-cover .per{font-family:'Space Mono',monospace;font-weight:700;font-size:52px;line-height:1;margin-top:52px;text-transform:uppercase;letter-spacing:-.01em}
+.s-cover .by{font-weight:900;font-size:44px;line-height:1.05;letter-spacing:-.035em;margin-top:44px}
+.s-cover .lead{font-weight:500;font-size:32px;line-height:1.3;color:var(--dim);margin-top:14px}
+
+/* band key: three skewed outline chips; only on a scored chart */
+.key{display:flex;gap:14px;margin-top:40px}
+.key .k{display:flex;align-items:center;gap:14px;border:2px solid var(--line);border-radius:6px;padding:12px 22px;transform:skewX(-13deg)}
+.key .k > *{transform:skewX(13deg)}
+.key .r{font-family:'Space Mono',monospace;font-weight:700;font-size:26px;color:var(--green)}
+.key .l{font-weight:800;font-size:26px;letter-spacing:-.02em;white-space:nowrap}
+.key.small{gap:10px;margin:0}
+.key.small .k{padding:7px 14px;gap:10px}
+.key.small .r{font-size:19px}
+.key.small .l{font-size:19px;font-weight:700;color:var(--dim)}
+
+/* the cut + its call to action (as the Countdown) */
+.field{position:absolute;left:0;right:0;bottom:0;height:420px;background:var(--green);clip-path:polygon(0 249px,100% 0,100% 100%,0 100%)}
+.fcta{position:absolute;left:80px;bottom:80px;color:var(--ground)}
+.fcta .k2{font-weight:900;font-size:58px;line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.fcta .u{font-family:'Space Mono',monospace;font-weight:700;font-size:36px;margin-top:12px}
+
+/* ---------- list ---------- */
+.s-list .keywrap{position:absolute;left:84px;top:226px}
+.rows{position:absolute;left:80px;right:80px;top:var(--rows-top,232px);display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:26px;border-top:2px solid var(--line);height:var(--rh,84px)}
+.row:last-child{border-bottom:2px solid var(--line)}
+.rb{flex:none;display:flex;align-items:center;justify-content:center;width:var(--rbw,92px);height:var(--rbh,56px);border:2px solid var(--line);border-radius:6px;transform:skewX(-13deg);margin-left:6px}
+.rb span{transform:skewX(13deg);font-family:'Space Mono',monospace;font-weight:700;font-size:var(--rbf,28px);color:var(--ink);line-height:1}
+.row.first .rb{background:var(--gold);border-color:var(--gold)}
+.row.first .rb span{color:var(--ground)}
+.txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.t1{font-weight:900;font-size:var(--t1,38px);line-height:1.02;letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t2{display:flex;gap:16px;align-items:baseline;margin-top:6px;white-space:nowrap;overflow:hidden}
+.t2 .a{font-weight:700;font-size:var(--t2,25px);letter-spacing:-.015em;color:var(--ink);opacity:.82;overflow:hidden;text-overflow:ellipsis}
+.t2 .h{font-family:'Space Mono',monospace;font-weight:700;font-size:var(--t3,22px);color:var(--dim);overflow:hidden;text-overflow:ellipsis}
+.val{flex:none;font-family:'Space Mono',monospace;font-weight:700;font-size:var(--vf,44px);color:var(--green);letter-spacing:-.03em}
+.val small{font-size:.5em;color:var(--dim);letter-spacing:0;margin-left:6px}
+/* compact: one line per row (20 a page) */
+.compact .t1{display:flex;align-items:baseline;gap:18px}
+.compact .t1 .x{font-family:'Space Mono',monospace;font-weight:700;font-size:18px;color:var(--dim);letter-spacing:0;overflow:hidden;text-overflow:ellipsis}
+
+/* the submit strip (as the Countdown) */
+.strip{position:absolute;left:80px;right:80px;bottom:80px;height:110px;padding-top:24px}
+.strip .q{font-weight:900;font-size:34px;line-height:1;letter-spacing:-.03em;text-transform:uppercase}
+.strip .u{font-family:'Space Mono',monospace;font-weight:700;font-size:28px;color:var(--dim);margin-top:12px}
+.btn{position:absolute;right:10px;bottom:0;background:var(--green);color:var(--ground);transform:skewX(-13deg);border-radius:6px;padding:0 32px;height:72px;display:flex;align-items:center}
+.btn span{transform:skewX(13deg);font-weight:900;font-size:34px;letter-spacing:-.03em;text-transform:uppercase;white-space:nowrap}
+
+/* ---------- closing ---------- */
+.s-team .big{position:absolute;left:76px;right:60px;top:250px;font-weight:900;font-size:132px;line-height:.88;letter-spacing:-.055em;text-transform:uppercase}
+.s-team .lead{position:absolute;left:80px;right:120px;top:640px;font-weight:500;font-size:36px;line-height:1.3;color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <div class="period" id="period"></div>
+
+  <!-- cover -->
+  <div class="slide s-cover">
+    <div class="stack">
+            <div class="hot"><span class="w">HOT</span><span class="n" id="coverN">100</span></div>
+      <div class="per" id="coverPer"></div>
+      <div class="by" id="coverBy"></div>
+      <div class="lead" id="coverLead"></div>
+      <div class="key" id="coverKey"></div>
+    </div>
+    <div class="field" style="height:470px"></div>
+    <div class="fcta"><div class="k2">Submit free</div><div class="u">makinitmag.com/review</div></div>
+  </div>
+
+  <!-- list -->
+  <div class="slide s-list">
+    <div class="series"><b id="listTitle">HOT 100</b><span id="listSpan"></span></div>
+    <div class="keywrap"><div class="key small" id="listKey"></div></div>
+    <div class="rows" id="rows"></div>
+    <div class="strip">
+      <div class="q" id="stripQ">Think you should be here?</div>
+      <div class="u" id="stripU">makinitmag.com/review</div>
+      <div class="btn"><span id="stripB">Submit free</span></div>
+    </div>
+  </div>
+
+  <!-- closing -->
+  <div class="slide s-team">
+    <div class="series"><b id="teamTitle">HOT 100</b></div>
+    <div class="big">Ranked by the Makin’ It A&amp;R&nbsp;Team</div>
+    <div class="lead">A&amp;Rs rate every record submitted to The A&amp;R Meeting. Join the team and rate new records every day.</div>
+    <div class="field" style="height:440px"></div>
+    <div class="fcta"><div class="k2">Join the A&amp;R Team</div><div class="u">makinitmag.com/ANR</div></div>
+  </div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const g = (k, d) => (q.get(k) == null ? d : q.get(k));
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+const MODE = g('mode', 'records') === 'ars' ? 'ars' : 'records';
+const SCORES = g('scores', '0') === '1' && MODE === 'records';
+const PERIOD = g('period', 'September 2026');
+const N = Math.max(1, Math.min(100, parseInt(g('n', '100'), 10) || 100));
+const PER = Math.max(5, Math.min(20, parseInt(g('per', '10'), 10) || 10));
+const PAGE = Math.max(1, parseInt(g('page', '1'), 10) || 1);
+const BANDS = [['0–2.9', 'Keep it in the studio'], ['3–5.9', 'Release Ready'], ['6+', 'Potential Single']];
+
+// Realistic placeholders so type is judged at production lengths (one long title + handle).
+const TITLES = ['Know My Name', 'Same Side of the River', 'Corner Store Gospel', 'Westside Prayer', 'Late Checkout', 'Highway 85', 'Ask Me Again', 'No Signal', 'Everything I Never Said Before the Summer Ended (Remix)', 'Cold Front', 'Overtime', 'Back Porch Lights', 'Two Left Turns', 'Paper Thin', 'Different Now', 'Southbound', 'Mama Said Pray', 'Sunday Best', 'Rain Check', 'Hold On'];
+const ARTISTS = [['Taliyah Rae', 'taliyahrae'], ['Jaylen Brooks', 'jaylenbrooks9'], ['Kaden Avery', 'kadenaverymusic'], ['Dre Calloway', 'drecalloway'], ['Nia Monroe', 'niamonroe'], ['Marcus Lane', ''], ['Sienna Cole', 'siennacole'], ['Bryce Holloway', 'brycehollowayofficial'], ['Marcus Whitfield featuring The Southside Collective', 'marcuswhitfieldofficialmusic'], ['Tre Wallace', 'trewallace']];
+const ARS = [['Keisha Morgan', 'keishamorgan', 'Atlanta, GA'], ['DJ Ruckus', 'djruckus', 'Houston, TX'], ['Brandon Ellis', '', 'Charlotte, NC'], ['Tasha Greene', 'tashagreene', 'Detroit, MI'], ['Mike Santos', 'mikesantosmusic', 'Miami, FL'], ['Jasmine Carter', 'jascarter', 'Chicago, IL'], ['Devon Price', '', 'Memphis, TN'], ['Alicia Wright', 'aliciawright', 'Newark, NJ'], ['Chris Holloway', 'chrisholloway', 'Dallas, TX'], ['Renee Jackson', 'reneejackson', 'Baltimore, MD']];
+const rowData = r => {
+  if (MODE === 'ars') { const a = ARS[(r - 1) % ARS.length]; return { t1: a[0], a: a[2], h: a[1], v: (5200 - r * 37).toLocaleString(), unit: 'pts' }; }
+  const a = ARTISTS[(r - 1) % ARTISTS.length];
+  return { t1: TITLES[(r - 1) % TITLES.length], a: a[0], h: a[1], v: (8.7 - r * 0.045).toFixed(1) };
+};
+
+const TITLE = MODE === 'ars' ? 'Top A&Rs' : 'HOT ' + N;
+const SLIDE = g('slide', 'cover');
+const c = $('c');
+c.dataset.kind = ['cover', 'team'].includes(SLIDE) ? SLIDE : 'list';
+$('period').textContent = PERIOD;
+const key = el => { el.innerHTML = BANDS.map(b => `<div class="k"><span class="r">${b[0]}</span><span class="l">${b[1]}</span></div>`).join(''); };
+
+if (c.dataset.kind === 'cover') {
+  $('period').style.display = 'none';
+  $('coverPer').textContent = PERIOD;
+  if (MODE === 'ars') {
+        document.querySelector('.s-cover .hot').innerHTML = '<span class="w">Top A&amp;Rs</span>';
+    $('coverBy').textContent = 'The A&Rs with the most points';
+    $('coverLead').textContent = 'Points come from predicting the average on every record.';
+  } else {
+    $('coverN').textContent = N;
+    $('coverBy').textContent = 'Ranked by the Makin’ It A&R Team';
+    $('coverLead').textContent = 'The highest-rated records submitted to The A&R Meeting.';
+    if (SCORES) key($('coverKey'));
+  }
+  document.fonts.ready.then(() => { const h = document.querySelector('.s-cover .hot'); for (let fs = 250; fs > 120; fs -= 6) { c.style.setProperty('--hs', fs + 'px'); if (h.scrollWidth <= 920) break; } });
+} else if (c.dataset.kind === 'team') {
+  $('teamTitle').textContent = TITLE;
+} else {
+  $('listTitle').textContent = TITLE;
+  const from = (PAGE - 1) * PER + 1, to = Math.min(N, PAGE * PER);
+  $('listSpan').textContent = from === to ? '#' + from : `#${from}–${to}`;
+  if (MODE === 'ars') { $('stripQ').textContent = 'Think you should be here?'; $('stripU').textContent = 'makinitmag.com/ANR'; $('stripB').textContent = 'Join the team'; }
+  const compact = PER > 12;
+  // Vertical budget: rows start under the masthead (and the key line when scored) and end
+  // above the submit strip (1350 - 80 - 110 = 1160, less a gap).
+  const top = SCORES ? 290 : 236, bottom = 1130;
+  const rh = Math.floor((bottom - top) / PER);
+  const s = c.style;
+  s.setProperty('--rows-top', top + 'px'); s.setProperty('--rh', rh + 'px');
+  if (compact) { s.setProperty('--rbw', '66px'); s.setProperty('--rbh', Math.min(34, rh - 8) + 'px'); s.setProperty('--rbf', '19px'); s.setProperty('--t1', '25px'); s.setProperty('--t2', '20px'); s.setProperty('--vf', '26px'); }
+  else if (PER > 10) { s.setProperty('--rbh', Math.min(50, rh - 14) + 'px'); s.setProperty('--t1', '32px'); s.setProperty('--t2', '22px'); s.setProperty('--t3', '20px'); s.setProperty('--vf', '38px'); }
+  if (SCORES) key($('listKey'));
+  const rows = $('rows'); if (compact) rows.classList.add('compact');
+  let html = '';
+  for (let r = from; r <= to; r++) {
+    const d = rowData(r);
+    const val = (SCORES || MODE === 'ars') ? `<div class="val">${esc(d.v)}${d.unit ? `<small>${d.unit}</small>` : ''}</div>` : '';
+    const inner = compact
+      ? `<div class="t1"><span>${esc(d.t1)}</span><span class="x">${esc(d.h ? '@' + d.h : d.a)}</span></div>`
+      : `<div class="t1">${esc(d.t1)}</div><div class="t2"><span class="a">${esc(d.a)}</span>${d.h ? `<span class="h">@${esc(d.h)}</span>` : ''}</div>`;
+    html += `<div class="row${r === 1 ? ' first' : ''}"><div class="rb"><span>${String(r).padStart(2, '0')}</span></div><div class="txt">${inner}</div>${val}</div>`;
+  }
+  rows.innerHTML = html;
+}
+document.title = 'HOT 100 — ' + SLIDE;
+</script>
+</body>
+</html>

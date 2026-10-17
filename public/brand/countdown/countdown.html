@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Daily Countdown slide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   Makin' It Daily Countdown — the results carousel that replaces the daily stream.
+   One template, seven slides, 1080x1350:
+
+     ?slide=cover          Daily Countdown · date · the countdown · Ranked by the Makin' It A&R Team · submit
+     ?slide=5 … ?slide=1   one record per slide; #1 is the gold variant (Top Track of the Day)
+     ?slide=team           Thanks to our A&R Team · Join the A&R Team (makinitmag.com/ANR)
+     ?slide=cta            Think your music belongs on the Countdown? · $1,000 Music Tournament
+
+   Order: cover · #N … #1 · team · cta — n+3 slides, 19 at most (Instagram allows 20). One ask per
+   closing slide: A&Rs join on one, artists submit on the other.
+
+     &date=YYYY-MM-DD      the day the post goes up (graphics are dated the day they POST)
+     &n=12                 how many records the day had — 8 to 16, set by the daily drop. The
+                           carousel is n+2 slides (18 at most, inside Instagram's 20).
+     &song= &artist= &ig=  the record on a rank slide
+
+   RANK ONLY. No score, no average, no vote count — scores are private to the artist's report.
+   Every rank slide stands alone: an artist will screenshot only theirs, so each one carries
+   the series name, the date, the rank, the record and the submit link.
+
+   Brand: Archivo 900 display + Space Mono for every number (rank, date, ticks). Green = go
+   (the submit button, the current tick). Gold = first place and money ONLY: the #1 slide and
+   the $1,000. The 13° device: the countdown ticks, the button block, the cut on the bookends.
+   Safe area: 80px all round — inside the 3:4 profile-grid crop (34px a side) with room to spare.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+.slide{display:none;position:absolute;inset:0}
+#c[data-kind="cover"] .s-cover, #c[data-kind="rank"] .s-rank, #c[data-kind="cta"] .s-cta, #c[data-kind="team"] .s-team{display:block}
+.mono{font-family:'Space Mono',monospace;font-weight:700}
+
+/* ---------- the masthead: the same on every slide ---------- */
+.logo{position:absolute;left:80px;top:80px;height:34px;width:auto}
+.date{position:absolute;right:80px;top:78px;font-family:'Space Mono',monospace;font-weight:700;font-size:32px;line-height:38px;color:var(--dim);letter-spacing:.02em}
+.series{position:absolute;left:80px;top:142px;font-weight:900;font-size:58px;line-height:1;letter-spacing:-.04em;text-transform:uppercase;white-space:nowrap}
+
+/* ---------- the countdown ticks: the series' own device ----------
+   One skewed block per record, highest rank first. The slide's own rank is lit, so a
+   screenshot of #3 still shows where #3 sits in the day. */
+.ticks{display:flex;gap:12px}
+.tick{display:flex;align-items:center;justify-content:center;width:var(--tw,78px);height:var(--th,46px);border:2px solid var(--line);border-radius:5px;transform:skewX(-13deg)}
+.tick span{transform:skewX(13deg);font-family:'Space Mono',monospace;font-weight:700;font-size:var(--tf,22px);color:var(--dim);line-height:1}
+.tick.on{background:var(--green);border-color:var(--green)}
+.tick.on span{color:var(--ground)}
+.tick.on.gold{background:var(--gold);border-color:var(--gold)}
+.s-rank .ticks{position:absolute;left:84px;top:226px}
+
+/* ---------- rank slide ---------- */
+.rank{position:absolute;left:62px;top:268px;display:flex;align-items:flex-start;font-family:'Space Mono',monospace;font-weight:700;line-height:1;white-space:nowrap}
+.rank .h{font-size:190px;color:var(--green);margin-top:62px;margin-right:-8px}
+.rank .d{font-size:560px;letter-spacing:-.04em;color:var(--ink);line-height:.82}
+.honor{display:none;position:absolute;left:84px;top:var(--honor-top,760px)}
+.honor b{display:inline-block;background:var(--gold);color:var(--ground);transform:skewX(-13deg);border-radius:5px;padding:12px 26px;font-weight:900;font-size:34px;letter-spacing:-.02em;text-transform:uppercase;line-height:1}
+.honor b span{display:inline-block;transform:skewX(13deg)}
+.top1::before{content:'';position:absolute;left:-120px;top:120px;width:900px;height:760px;background:radial-gradient(closest-side,rgba(245,197,24,.16),rgba(245,197,24,0));pointer-events:none}
+.top1 .rank .h{color:var(--gold)}
+.top1 .rank .d{color:var(--gold)}
+.top1 .honor{display:block}
+
+.info{position:absolute;left:80px;right:80px;top:var(--info-top,744px)}
+.song{font-weight:900;font-size:96px;line-height:.95;letter-spacing:-.04em}
+.artist{font-weight:700;font-size:46px;line-height:1.1;letter-spacing:-.02em;margin-top:26px}
+.ig{font-family:'Space Mono',monospace;font-weight:700;font-size:32px;color:var(--dim);margin-top:8px;white-space:nowrap}
+
+/* the submit strip: clear, but under the record — a rule, a question, one button */
+.strip{position:absolute;left:80px;right:80px;bottom:80px;height:150px;border-top:2px solid var(--line);padding-top:30px}
+.strip .q{font-weight:900;font-size:36px;line-height:1;letter-spacing:-.03em;text-transform:uppercase}
+.strip .u{font-family:'Space Mono',monospace;font-weight:700;font-size:30px;color:var(--dim);margin-top:14px}
+.btn{position:absolute;right:10px;bottom:0;background:var(--green);color:var(--ground);transform:skewX(-13deg);border-radius:6px;padding:0 32px;height:72px;display:flex;align-items:center}
+.btn span{transform:skewX(13deg);font-weight:900;font-size:34px;letter-spacing:-.03em;text-transform:uppercase;white-space:nowrap}
+
+/* ---------- cover + closing slide: the big cut carries the call to action ---------- */
+.field{position:absolute;left:0;right:0;bottom:0;height:420px;background:var(--green);clip-path:polygon(0 249px,100% 0,100% 100%,0 100%)}  /* 1080·tan13° = 249 */
+.fcta{position:absolute;left:80px;bottom:80px;color:var(--ground)}
+.fcta .k{font-weight:900;font-size:58px;line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.fcta .u{font-family:'Space Mono',monospace;font-weight:700;font-size:36px;margin-top:12px}
+
+.s-cover .stack{position:absolute;left:80px;right:80px;top:196px}
+.s-cover .big{font-weight:900;font-size:180px;line-height:.86;letter-spacing:-.05em;text-transform:uppercase;white-space:nowrap;margin-left:-6px}
+.s-cover .bigdate{font-family:'Space Mono',monospace;font-weight:700;font-size:104px;line-height:1;letter-spacing:-.03em;margin-top:44px}
+.s-cover .ticks{margin:44px 0 0 4px}
+.s-cover .top{font-weight:900;font-size:50px;line-height:1;letter-spacing:-.04em;margin-top:52px}
+.s-cover .by{font-weight:500;font-size:34px;color:var(--dim);letter-spacing:-.01em;margin-top:12px}
+
+.s-team .thanks{position:absolute;left:76px;right:60px;top:250px;font-weight:900;font-size:150px;line-height:.86;letter-spacing:-.055em;text-transform:uppercase}
+.s-cta .ask{position:absolute;left:80px;right:80px;top:250px;font-weight:900;font-size:88px;line-height:.92;letter-spacing:-.045em}
+.s-cta .lead{position:absolute;left:80px;right:80px;top:540px;font-weight:500;font-size:36px;line-height:1.25;color:var(--dim)}
+.s-cta .prize{position:absolute;left:80px;right:80px;top:656px;font-weight:900;font-size:76px;line-height:.92;letter-spacing:-.045em;text-transform:uppercase;color:var(--gold)}
+.s-cta .prize .m{font-family:'Space Mono',monospace;font-weight:700;letter-spacing:-.06em;font-size:112px;line-height:1}
+</style>
+</head>
+<body>
+<div id="c">
+  <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+  <div class="date" id="date"></div>
+
+  <!-- 1 · cover -->
+  <div class="slide s-cover">
+    <div class="stack">
+      <div class="big" id="coverBig">Daily<br>Countdown</div>
+      <div class="bigdate" id="coverDate"></div>
+      <div class="ticks" id="coverTicks"></div>
+      <div class="top">Ranked by the Makin’ It A&amp;R Team</div>
+    </div>
+    <div class="field" style="height:470px"></div>
+    <div class="fcta"><div class="k">Submit free</div><div class="u">makinitmag.com/review</div></div>
+  </div>
+
+  <!-- 2–6 · one record -->
+  <div class="slide s-rank" id="rankSlide">
+    <div class="series">Daily Countdown</div>
+    <div class="ticks" id="rankTicks"></div>
+    <div class="honor"><b><span>Top Track of the Day</span></b></div>
+    <div class="rank"><span class="h">#</span><span class="d" id="rankNum"></span></div>
+    <div class="info" id="info">
+      <div class="song" id="song"></div>
+      <div class="artist" id="artist"></div>
+      <div class="ig" id="ig"></div>
+    </div>
+    <div class="strip">
+      <div class="q">Think you should be here?</div>
+      <div class="u">makinitmag.com/review</div>
+      <div class="btn"><span>Submit free</span></div>
+    </div>
+  </div>
+
+  <!-- closing 1 · the A&R Team: thank them, recruit more -->
+  <div class="slide s-team">
+    <div class="series">Daily Countdown</div>
+    <div class="thanks">Thanks to our A&amp;R Team</div>
+    <div class="field" style="height:470px"></div>
+    <div class="fcta"><div class="k" id="joinLine">Join the A&amp;R Team</div><div class="u">makinitmag.com/ANR</div></div>
+  </div>
+
+  <!-- closing 2 · artists: submit -->
+  <div class="slide s-cta">
+    <div class="series">Daily Countdown</div>
+    <div class="ask">Think your music belongs on the Countdown?</div>
+    <div class="lead">Submit FREE for your chance to get ranked<br>and qualify for the</div>
+    <div class="prize"><span class="m">$1,000</span><br>Music Tournament</div>
+    <div class="field" style="height:360px"></div>
+    <div class="fcta"><div class="u" style="font-size:44px">makinitmag.com/review</div></div>
+  </div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const g = (k, d) => (q.get(k) == null ? d : q.get(k));
+const $ = id => document.getElementById(id);
+const p2 = n => String(n).padStart(2, '0');
+const mmddyy = iso => { const d = new Date(iso + 'T12:00:00'); return isNaN(d) ? iso : p2(d.getMonth() + 1) + '.' + p2(d.getDate()) + '.' + String(d.getFullYear()).slice(-2); };
+
+// Sample day — realistic placeholders so the type is judged at production lengths.
+const SAMPLE = {
+  1: { song: 'Know My Name', artist: 'Taliyah Rae', ig: 'taliyahrae' },
+  2: { song: 'Same Side of the River', artist: 'Jaylen Brooks', ig: 'jaylenbrooks9' },
+  3: { song: 'Corner Store Gospel', artist: 'Kaden Avery', ig: 'kadenaverymusic' },
+  4: { song: 'Westside Prayer', artist: 'Dre Calloway', ig: 'drecalloway' },
+  5: { song: 'Late Checkout', artist: 'Nia Monroe', ig: 'niamonroe' },
+  6: { song: 'Highway 85', artist: 'Marcus Lane', ig: 'marcuslanemusic' },
+  7: { song: 'Ask Me Again', artist: 'Sienna Cole', ig: 'siennacole' },
+  8: { song: 'No Signal', artist: 'Bryce Holloway', ig: 'brycehollowayofficial' },
+  9: { song: 'Mama Said Pray', artist: 'Deja Simone', ig: 'dejasimone' },
+  10: { song: 'Cold Front', artist: 'Tre Wallace', ig: 'trewallace' },
+  11: { song: 'Overtime', artist: 'Kiana Ross', ig: 'kianarossmusic' },
+  12: { song: 'Back Porch Lights', artist: 'Andre Mitchell', ig: 'andremitchell' },
+  13: { song: 'Two Left Turns', artist: 'Jordyn Price', ig: 'jordynprice' },
+  14: { song: 'Paper Thin', artist: 'Isaiah Grant', ig: 'isaiahgrant' },
+  15: { song: 'Different Now', artist: 'Mya Bennett', ig: 'myabennett' },
+  16: { song: 'Southbound', artist: 'Cam Rivers', ig: 'camrivers' },
+};
+
+const SLIDE = g('slide', 'cover');
+const N = Math.max(1, Math.min(18, parseInt(g('n', '12'), 10) || 12));
+const DATE = mmddyy(g('date', '2026-10-02'));
+const c = $('c');
+c.dataset.kind = ['cover', 'team', 'cta'].includes(SLIDE) ? SLIDE : 'rank';
+$('date').textContent = DATE;
+
+// One row, always: the blocks narrow as the day grows (8 records → wide, 16 → slim), capped so a
+// small day doesn't turn them into bricks. Two digits still fit inside at 16.
+const ticks = (el, lit, { max, gap, h, from = N }) => {
+  const w = Math.min(max, (912 - gap * (from - 1)) / from);
+  el.style.gap = gap + 'px';
+  el.style.setProperty('--tw', w + 'px');
+  el.style.setProperty('--th', Math.min(h, Math.round(w * .95)) + 'px');
+  el.style.setProperty('--tf', Math.max(17, Math.min(h * .46, w * .42)) + 'px');
+  el.innerHTML = '';
+  for (let r = from; r >= 1; r--) {
+    const t = document.createElement('div');
+    t.className = 'tick' + (r === lit ? ' on' + (r === 1 ? ' gold' : '') : '');
+    t.innerHTML = '<span>' + p2(r) + '</span>';
+    el.appendChild(t);
+  }
+};
+
+// Two wordings under review for the recruiting line (operator, 2026-10-02): &join=become.
+if (g('join', '') === 'become') $('joinLine').textContent = 'Become an A&R';
+if (c.dataset.kind === 'cover') {
+  $('date').style.display = 'none';            // the date is the hero here
+  $('coverDate').textContent = DATE;
+  ticks($('coverTicks'), 0, { max: 108, gap: 12, h: 64 });
+  document.fonts.ready.then(() => { const b = $('coverBig'); for (let fs = 180; fs > 100; fs -= 4) { b.style.fontSize = fs + 'px'; if (b.scrollWidth <= 926) break; } });
+} else if (c.dataset.kind === 'rank') {
+  const R = Math.max(1, Math.min(N, parseInt(SLIDE, 10) || 1));
+  const s = SAMPLE[R] || SAMPLE[1];
+  if (R === 1) $('rankSlide').classList.add('top1');
+  $('rankNum').textContent = R;
+  // A rank slide counts from ITS rank to #1 and never shows the size of the field: #16 of 16 must
+  // not read as last (operator, 2026-10-02 — "3rd place isn't last unless we say only 3 were racing").
+  ticks($('rankTicks'), R, { max: 78, gap: 9, h: 46, from: R });
+  $('song').textContent = '“' + g('song', s.song) + '”';
+  $('artist').textContent = g('artist', s.artist);
+  const ig = g('ig', s.ig).replace(/^@/, '');
+  $('ig').textContent = ig ? '@' + ig : '';
+  if (!ig) $('ig').style.display = 'none';
+  // Two-digit ranks (a 10-record day) need a narrower numeral.
+
+  // Fit: the record block must end above the submit strip (top at 1350-80-150 = 1120).
+  // The title steps down a size until it fits in two lines; past that it takes a third at the floor.
+  // The artist steps down to one line; the handle shrinks to the width (handles cannot wrap).
+  document.fonts.ready.then(() => requestAnimationFrame(() => {
+    const info = $('info'), song = $('song'), artist = $('artist'), igEl = $('ig');
+    const W = 920, LIMIT = 1120 - 34;
+    const lines = (el, fs, lh) => Math.round(el.getBoundingClientRect().height / (fs * lh));
+    for (const fs of [46, 42, 38, 34]) { artist.style.fontSize = fs + 'px'; if (lines(artist, fs, 1.1) <= 1) break; }
+    for (const fs of [32, 28, 24, 22]) { igEl.style.fontSize = fs + 'px'; if (igEl.scrollWidth <= W) break; }
+    // #1 carries the TOP TRACK OF THE DAY block under the numeral, so its record starts lower.
+    const MIN = R === 1 ? 834 : 720;
+    for (const fs of [96, 88, 80, 72, 66, 60, 56]) {
+      song.style.fontSize = fs + 'px';
+      if ((lines(song, fs, .95) <= 2 && MIN + info.getBoundingClientRect().height <= LIMIT) || fs === 56) break;
+    }
+    // Anchor the block's BOTTOM just above the strip so a short title doesn't leave a hole,
+    // but never let it climb into the numeral.
+    const h = info.getBoundingClientRect().height;
+    const top = Math.max(MIN, LIMIT - h);
+    if (R === 1) c.style.setProperty('--honor-top', (top - 84) + 'px');
+    info.style.setProperty('--info-top', top + 'px');
+    info.style.top = top + 'px';
+  }));
+}
+document.title = 'Daily Countdown — ' + SLIDE;
+</script>
+</body>
+</html>

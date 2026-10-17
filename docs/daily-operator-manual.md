@@ -5,35 +5,38 @@ token) lives in **[daily-setup.md](daily-setup.md)** — do that first, once. Th
 what you use afterwards.
 
 **The short version:** the day runs on a clock, not on a button. Your real jobs are stacking
-tomorrow's records, glancing at the flag counts, and running the 2:00 PM reveal stream off
-this screen. Everything else on it exists for the days that are not normal.
+tomorrow's records, glancing at the flag counts, and running the 3:00 PM Livestream
+Countdown off this screen. Everything else on it exists for the days that are not normal.
 
 ---
 
 ## 1. The day, start to finish
 
-| ET time | What happens | Who does it |
-|---|---|---|
-| Any time before noon | Tomorrow's records are staged (Drupal push, or you build them by hand) | Drupal / you |
-| **12:00 PM** | The day opens. Every record goes live at once. A&Rs rate and predict | The cron |
-| 12:00 PM → 12:00 PM | The 24-hour window. A&Rs play whenever they want | — |
-| **12:00 PM** next day | Rating closes. The day tallies (may take a cron tick or two). The next day opens in the same minute | The cron |
-| 12:00 PM → 3:00 PM | Results are **held**. The console shows every score; this is the livestream reveal window, and the time to reject any comment | You |
-| **3:00 PM** | Results publish, graphics render, the Daily Blast (A&R digest) queues | The cron |
-| **4:00 PM** (publish + 1 hour) | Artist reports and texts go out | The cron |
+The 69-hour schedule (2026-09-27). Times are for a drop that opens on **Monday**; every day
+runs the same clock one day later, so at 3:00 PM each day one drop opens, one closes and one
+is counted down on the stream.
+
+| Hours | ET time | What happens | Who does it |
+|---|---|---|---|
+| −1 | Mon 2:00 PM | The track list is locked on the review site | Drupal / you |
+| **0** | **Mon 3:00 PM** | The day opens. Every record goes live at once. A&Rs are emailed that voting is open | The cron |
+| 0 → 24 | | The 24-hour window. A&Rs play whenever they want | — |
+| **24** | **Tue 3:00 PM** | Rating closes and tallies. Each rated artist is emailed and texted that the record is on tomorrow's Makin' It HOT 100 Daily Countdown | The cron |
+| **48** | **Wed 3:00 PM** | **Makin' It HOT 100 Daily Countdown**: song rankings, A&R rankings, clips for Instagram. The ranked graphics render at this moment for posting after the stream. Results are still sealed on the site | You |
+| **69** | **Thu 12:00 PM** | Results publish: scores on the site, the A&R results email (rankings, stream link, their results link, "today's records close in 3 hours"), the artists' Track Reports, the makinitmag callback | The cron |
 
 These times are settings, not code: **Platform → System settings → A&R Daily schedule**
-(open, close, results, the completion-bonus steps, and how long artist reports wait after
-the results — 60 minutes by default). Saving applies to every drop that has
-not opened yet; a day already open keeps the window it started with. A closing time at or
-before the opening time means the next day. Results never publish before the close.
+(open, close, the livestream time and day, the results time and day, the livestream link,
+the completion-bonus steps, and an optional hold on artist reports after the results — 0 by
+default). Saving applies to every drop that has not opened yet, and moves the livestream and
+results of any day that is open or tallied but not yet published. A closing time at or
+before the opening time means the next day. Results never publish before the livestream.
 
-The window is noon-to-noon, so **the close and the next open are the same moment**. The
-three hours between the close and the publish exist for one reason: they are the runway for
-the 2:00 PM stream, which has to happen while the results are still sealed.
+**Set the livestream link** on the panel. It rides the artist heads-up, the Track Report and
+the A&R results email. A channel's `/live` link works.
 
-The hour between publish and artist reports is your **only** window to reject an A&R
-comment. After that there is no unsend.
+The 45 hours between the close and the results are your window to reject an A&R comment.
+After the results publish there is no unsend.
 
 ### The five states
 
@@ -43,14 +46,14 @@ Each one is named for what is true, not for what the machine is doing:
 
 | Pill | Meaning | Can you still…? |
 |---|---|---|
-| **Scheduled** | Staged; noon has not arrived | Add, remove, edit, re-date the whole day |
+| **Scheduled** | Staged; the open has not arrived | Add, remove, edit, re-date the whole day |
 | **Open** | A&Rs are rating it | Fix a link or an amount. Not add, remove or re-date |
 | **Processing** | Rating is over; votes are being scored | Wait — it moves on its own, a few records per cron tick |
-| **Closed** | Scored, **not yet announced**; results are still sealed | Run the 2:00 PM stream. This is the state it happens in |
+| **Closed** | Scored, **not yet announced**; results are still sealed | Run the Makin' It HOT 100 Daily Countdown. This is the state it happens in |
 | **Published** | Terminal. Results are out and the sends are draining | Reject a comment, for one hour only |
 
 Closed does not mean finished — it means the rating is finished and the scores exist. The day
-card next to the pill reads **Results 3:00 PM** the whole time it sits there, which is the
+card next to the pill reads **Results** with the publish time the whole time it sits there, which is the
 reminder that nobody has seen them yet.
 
 ---
@@ -97,7 +100,7 @@ three or more flags. The day's top supporter gets a gold row and a pill.
 |---|---|
 | As dropped | The day as it was staged |
 | Score, highest first | Reading the day's result |
-| **Countdown, lowest first** | **Running the 2:00 PM stream** |
+| **Countdown, lowest first** | **Running the Makin' It HOT 100 Daily Countdown** |
 | Support, highest first | Seeing who paid, top down |
 
 Scores only exist once the day has tallied; before that everything sorts as unscored. Ties
@@ -116,7 +119,7 @@ chunk every five minutes and these numbers move on their own. Texts obey the 10 
 ET window; outside it the pill tells you when the window reopens.
 
 ### The day's graphics
-Three sets, all rendered at the 3:00 PM publish and all downloadable by clicking:
+Three sets, all rendered when the Makin' It HOT 100 Daily Countdown starts (again at the results if that step was missed) and all downloadable by clicking:
 
 1. **Top 8 A&Rs and Top 8 Records** — the cards that ride the digest email, plus **Copy
    caption**.
@@ -148,15 +151,15 @@ screen. Add records one at a time; the day is created around the first one.
   records wholesale; a non-reference hand-add does not.
 - **Day** is blank by default, meaning "the next day being built". Only fill it to work on a
   specific date (`YYYY-MM-DD`, within 3 days of today).
-- **Edit** / **Remove** work on any staged record right up until noon.
+- **Edit** / **Remove** work on any staged record right up until the open.
 - A typical day is 4 free records plus up to 12 paid. The hard ceiling is 24; the counter
   shows where you are, not a target.
 
 ---
 
-## 3. Running the 2:00 PM reveal stream
+## 3. Running the Makin' It HOT 100 Daily Countdown
 
-The day is tallied and sealed from noon; the stream is where the results come out. Run it off
+The day is tallied and sealed from the close; the stream is where the results come out. Run it off
 this console:
 
 1. Pull up the day (the picker defaults to it) and confirm the pill reads **Closed**. If it
@@ -175,8 +178,8 @@ you can post them in the morning.
 
 ## 4. Rejecting an A&R comment
 
-Comments ship by default and there is no unsend. The window is the hour between the 3:00 PM
-publish and the first artist reports at 4:00 PM.
+Comments ship by default and there is no unsend. The window runs from the close until the
+results publish (69 hours after the open), when the Track Reports go out.
 
 1. Mode switch → **Live show** → open the session named **A&R Daily — YYYY-MM-DD**.
 2. **Rounds** tab → the 💬 badge on a record shows how many comments are going to that artist.
@@ -202,7 +205,7 @@ leave it — A&Rs can flag it, and a flagged record counts as handled so it neve
 anyone's bonus.
 
 **Wrong date on a whole day?** A cold drop can be moved to another day — it re-times the
-window and opens the drop immediately if that day's noon has already passed. There is no
+window and opens the drop immediately if that day's open has already passed. There is no
 button for it yet; ask and it runs against `/api/admin/daily/move`. Refused once the day has
 opened or anyone has voted, and refused if the target day already has a drop.
 
@@ -215,14 +218,14 @@ are safe to press more than once.
 
 ### Run the lifecycle now
 Runs one tick of the same job the cron runs every five minutes. It does whatever is **due
-right now** by the clock: opens a scheduled day at/after noon, closes and tallies at/after
-noon the next day, publishes at/after 3:00 PM, drains the send queues, and retries the
+right now** by the clock: opens a scheduled day at/after its open, closes and tallies at/after
+the close, renders the graphics at/after the livestream, publishes at/after the results time, drains the send queues, and retries the
 results callback to makinitmag. If nothing is due, it does nothing.
 
 Big tallies are capped at about 22 seconds per run and continue on the next press or tick, so
 pressing it twice on a large day is normal and correct.
 
-**Use it when:** a cron run was missed or late, the day needs to be tallied before the 2:00 PM
+**Use it when:** a cron run was missed or late, the day needs to be tallied before the Makin' It HOT 100 Daily Countdown
 stream, or you want the queues drained now instead of within five minutes.
 
 ### Publish the day
@@ -236,7 +239,7 @@ A&R digest, posts each record's outcome back to makinitmag, and flips the day to
   what is still queued and re-renders the graphics.
 - It does **not** send artist reports. Those are still held an hour.
 
-**Use it when:** the 3:00 PM publish did not fire, or the graphics failed and you have fixed
+**Use it when:** the results publish did not fire, or the graphics failed and you have fixed
 the cause.
 
 ---
@@ -245,9 +248,10 @@ the cause.
 
 | Email | Who gets it | When |
 |---|---|---|
-| A&R digest | Everyone who chose **Daily Digest** in their notification settings | 3:00 PM publish |
-| Artist report | Every artist whose record was rated and has an email on file | 4:00 PM |
-| Artist text | Same, where there is a phone — inside the 10 AM–10:30 PM ET window | 4:00 PM or the next morning |
+| Voting is open | Every A&R, unless they turned off **Daily records open** | At the open (0h) |
+| Artist heads-up (email + text) | Every artist whose record was rated; text only inside the 10 AM–10:30 PM ET window | At the close (24h) |
+| A&R results (digest) | Everyone who chose **Daily Digest** in their notification settings | Results (69h) |
+| Artist Track Report (email) | Every artist whose record was rated and has an email on file | Results (69h) |
 
 A&Rs pick their contact level in notification settings as **one choice**: None, Weekly, or
 Daily Digest. It is not a pair of switches, so nobody can end up on both.
@@ -288,7 +292,7 @@ has no sender yet**: someone can choose it, but nothing goes out on that cadence
 | Symptom | Do this |
 |---|---|
 | Console says **Nothing is staged** | Chase Drupal, and build the day by hand in the meantime. Do not wait |
-| The day did not open at noon | **Run the lifecycle now**. If it stays scheduled, check `CRON_SECRET` and Vercel → Settings → Cron Jobs → View Logs |
+| The day did not open on time | **Run the lifecycle now**. If it stays scheduled, check `CRON_SECRET` and Vercel → Settings → Cron Jobs → View Logs |
 | Stuck on **Processing** before the stream | **Run the lifecycle now** again — a large day takes several ticks by design |
 | Results never published at 3 PM | **Run the lifecycle now**, then **Publish the day** |
 | No cover for the stream | The recap graphics render live before publish — they are on the graphics card already |

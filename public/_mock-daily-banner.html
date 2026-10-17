@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — A&R Daily: Live flow + banner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Token values mirrored from public/tokens.css so the mockup renders standalone. */
+  :root{
+    --bg:#0E0C1A; --panel:#171328; --line:#2e2750; --inset:#0a0814;
+    --ink:#EAE9F2; --ink-dim:#9793B4; --ink-faint:#8c84ad;
+    --signal:#4bb749; --signal-deep:#379235; --accent:#6d5fe0; --gold:#F5C518; --hot:#ff5d6c;
+    --r-md:12px; --r-lg:18px; --r-pill:999px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:Archivo,system-ui,sans-serif;padding:30px 16px 90px;-webkit-font-smoothing:antialiased}
+  .mono{font-family:"Space Mono",monospace}
+  .dim{color:var(--ink-dim)}
+  .mocklabel{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);margin:60px 0 6px;text-align:center}
+  .mocklabel.first{margin-top:0}
+  .mocknote{font-size:14px;line-height:1.55;color:var(--ink-dim);text-align:center;max-width:720px;margin:0 auto 26px}
+  .mocknote b{color:var(--ink)}
+  .cols{display:flex;gap:28px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+  .col{display:flex;flex-direction:column;align-items:center;max-width:100%}
+  .caption{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;text-align:center;margin:14px 0 4px;color:var(--ink-dim)}
+  .caption.rec{color:var(--signal)}
+  .caption.no{color:var(--hot)}
+  .why{font-size:12.5px;line-height:1.5;color:var(--ink-dim);text-align:center;max-width:330px;margin:0}
+
+  /* phone frame */
+  .phone{width:360px;max-width:100%;background:var(--bg);border:1px solid var(--line);border-radius:30px;
+    padding:18px 16px 20px;display:flex;flex-direction:column;gap:14px;position:relative}
+  .fold{position:absolute;left:-10px;right:-10px;border-top:1px dashed var(--hot);pointer-events:none}
+  .fold span{position:absolute;right:0;top:-17px;font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.14em;color:var(--hot);text-transform:uppercase}
+
+  /* pieces of daily.html, trimmed */
+  .topbar{display:flex;align-items:center;justify-content:space-between}
+  .mark{width:28px;height:28px;background:var(--signal);transform:skewX(-13deg);display:flex;align-items:center;justify-content:center}
+  .mark span{transform:skewX(13deg);font-weight:900;font-size:10px;color:var(--bg)}
+  .wordmark{font-weight:800;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase}
+  .standing{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--signal);border:1px solid var(--signal-deep);border-radius:var(--r-pill);padding:5px 10px}
+  .tierbar{display:flex;align-items:center;gap:9px;font-size:12.5px;background:linear-gradient(180deg,rgba(109,95,224,.16),rgba(109,95,224,.05));
+    border:1px solid rgba(109,95,224,.45);border-radius:var(--r-md);padding:9px 12px}
+  .tierbar .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .tierbar b{font-family:"Space Mono",monospace;color:var(--accent)}
+  .tierbar .until{font-family:"Space Mono",monospace;margin-left:auto;font-size:10px;color:var(--ink-dim)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px}
+  .eyebrow{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+  .rail{display:flex;gap:3px;margin-top:7px}
+  .seg{flex:1;height:5px;border-radius:3px;border:1px solid var(--line);background:var(--inset)}
+  .seg.done{background:var(--signal);border-color:var(--signal)}
+  .seg.now{background:var(--accent);border-color:var(--accent)}
+  h2{margin:0;font-weight:800;letter-spacing:-.03em}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;border-radius:13px;padding:14px;font-weight:800;font-size:14.5px;background:var(--signal);color:var(--bg)}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+  .hint{font-size:11px;text-align:center;margin-top:7px;color:var(--ink-dim)}
+  .steprow{display:flex;align-items:center;gap:8px;margin-top:18px;font-weight:800;font-size:14px}
+  .stepnum{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:10.5px;display:flex;align-items:center;justify-content:center}
+  .pips{display:flex;gap:5px;margin-top:9px}
+  .pip{flex:1;height:40px;border:1px solid var(--line);background:var(--inset);border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:"Space Mono",monospace;font-size:14px;color:var(--ink-dim)}
+  .pip.on{background:var(--signal);border-color:var(--signal);color:var(--bg);font-weight:700}
+  .pred{font-family:"Space Mono",monospace;font-size:30px;font-weight:700;text-align:center;color:var(--signal);margin:8px 0 0}
+  .slider{height:4px;border-radius:2px;background:var(--line);margin:10px 4px 0;position:relative}
+  .slider::after{content:"";position:absolute;left:58%;top:-6px;width:16px;height:16px;border-radius:50%;background:var(--signal)}
+  .endorse{font-family:"Space Mono",monospace;font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim);text-align:center}
+  .rule{height:1px;background:var(--line);transform:skewX(-13deg)}
+  .note{background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;font-size:12.5px;color:var(--ink-dim);text-align:left}
+
+  /* THE BANNER SLOT — same box as play.html's .ad-slot: full width, max 120px tall,
+     Revive's 320x100 iframe centred. Hidden entirely when nothing is set. */
+  .ad{display:flex;flex-direction:column;gap:5px}
+  .ad .lab{font-family:"Space Mono",monospace;font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);text-align:center}
+  .ad .box{height:100px;border-radius:12px;border:1px dashed #4a4170;
+    background:repeating-linear-gradient(-13deg,rgba(255,255,255,.035) 0 10px,transparent 10px 20px);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+  .ad .box b{font-size:13px;font-weight:800;letter-spacing:-.01em}
+  .ad .box span{font-family:"Space Mono",monospace;font-size:9.5px;color:var(--ink-dim)}
+
+  /* comparison table */
+  table{border-collapse:collapse;margin:0 auto;font-size:13px;max-width:760px;width:100%}
+  th,td{border-bottom:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+  th{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);font-weight:400}
+  td b{color:var(--ink)}
+  td{color:var(--ink-dim)}
+  .wrapx{overflow-x:auto}
+</style>
+</head>
+<body>
+
+<!-- reusable fragments are written out by hand per frame so each reads standalone -->
+
+<div class="mocklabel first">Mockup · A&amp;R Daily · the Live flow + a banner</div>
+<p class="mocknote">
+  Daily currently shows Rate it, Predict the Average and Lock it in all at once, in one tall card.
+  This changes it to the same steps as the live player: <b>Rate it → Next → Predict the Average → Lock it in →
+  note to the artist → Next record</b>. Only one step shows at a time, in the same spot, and Back keeps both answers.
+  <b>APPROVED 2026-09-30:</b> the banner sits at the <b>top of the page</b>, like the live player, with no "Sponsor" label.
+  Live adopts Daily's wording (Rate it · Predict the Average · Lock it in; Versus: Predict the split).
+</p>
+
+<div class="cols">
+
+  <!-- STEP 1 -->
+  <div class="col">
+    <div class="phone">
+      <div class="topbar"><div style="display:flex;align-items:center;gap:9px"><div class="mark"><span>A&amp;R</span></div><span class="wordmark">A&amp;R Daily</span></div><span class="standing">Bonus points</span></div>
+      <div class="ad"><div class="box"><b>Sponsor banner</b><span>320 × 100</span></div></div>
+      <div class="tierbar"><span class="dot"></span><span>Finish today for <b>100</b></span><span class="until">until 9 PM</span></div>
+      <div class="panel">
+        <div class="eyebrow">Record 4 of 12</div>
+        <div class="rail"><i class="seg done"></i><i class="seg done"></i><i class="seg done"></i><i class="seg now"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i></div>
+        <h2 style="font-size:21px;margin-top:13px">Late Checkout</h2>
+        <div class="dim" style="font-size:13px;margin-top:2px">Artist Name</div>
+        <div class="btn" style="margin-top:14px">▶ Play the record</div>
+        <div class="hint">Opens in a new tab. This page stays right here.</div>
+        <div class="steprow"><span class="stepnum">1</span>Rate it</div>
+        <p class="dim" style="margin:6px 0 0;font-size:12px">Your honest take, 0 to 9.</p>
+        <div class="pips"><i class="pip">0</i><i class="pip">1</i><i class="pip">2</i><i class="pip">3</i><i class="pip">4</i></div>
+        <div class="pips" style="margin-top:5px"><i class="pip">5</i><i class="pip on">6</i><i class="pip">7</i><i class="pip">8</i><i class="pip">9</i></div>
+        <div class="btn" style="margin-top:16px">Next →</div>
+      </div>
+      <div class="endorse">A Makin' It property</div>
+      <div class="fold" style="top:700px"><span>phone screen ends</span></div>
+    </div>
+    <div class="caption rec">Step 1 · Rate it</div>
+    <p class="why">Next stays disabled until a number is picked, same as Live.</p>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="col">
+    <div class="phone">
+      <div class="topbar"><div style="display:flex;align-items:center;gap:9px"><div class="mark"><span>A&amp;R</span></div><span class="wordmark">A&amp;R Daily</span></div><span class="standing">Bonus points</span></div>
+      <div class="ad"><div class="box"><b>Sponsor banner</b><span>320 × 100</span></div></div>
+      <div class="tierbar"><span class="dot"></span><span>Finish today for <b>100</b></span><span class="until">until 9 PM</span></div>
+      <div class="panel">
+        <div class="eyebrow">Record 4 of 12</div>
+        <div class="rail"><i class="seg done"></i><i class="seg done"></i><i class="seg done"></i><i class="seg now"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i></div>
+        <h2 style="font-size:21px;margin-top:13px">Late Checkout</h2>
+        <div class="dim" style="font-size:13px;margin-top:2px">Artist Name</div>
+        <div class="btn" style="margin-top:14px">▶ Play the record</div>
+        <div class="hint">Opens in a new tab. This page stays right here.</div>
+        <div class="steprow"><span class="stepnum">2</span>Predict the Average</div>
+        <p class="dim" style="margin:6px 0 0;font-size:12px;line-height:1.5">What will every other A&amp;R average it at? The closer you land, the more you score.
+          <b style="color:var(--ink)">Evaluations are final.</b></p>
+        <div class="pred">5.8</div><div class="slider"></div>
+        <div class="btn" style="margin-top:18px">Lock it in</div>
+        <div class="btn ghost" style="margin-top:9px;padding:11px">← Back</div>
+      </div>
+      <div class="endorse">A Makin' It property</div>
+      <div class="fold" style="top:700px"><span>phone screen ends</span></div>
+    </div>
+    <div class="caption rec">Step 2 · Predict the Average</div>
+    <p class="why">Back returns to Rate it with the number still picked. Lock it in stays disabled until the slider is moved.</p>
+  </div>
+
+  <!-- LOCKED -->
+  <div class="col">
+    <div class="phone">
+      <div class="topbar"><div style="display:flex;align-items:center;gap:9px"><div class="mark"><span>A&amp;R</span></div><span class="wordmark">A&amp;R Daily</span></div><span class="standing">Bonus points</span></div>
+      <div class="ad"><div class="box"><b>Sponsor banner</b><span>320 × 100</span></div></div>
+      <div class="tierbar"><span class="dot"></span><span>Finish today for <b>100</b></span><span class="until">until 9 PM</span></div>
+      <div class="panel">
+        <div class="eyebrow">Record 4 of 12</div>
+        <div class="rail"><i class="seg done"></i><i class="seg done"></i><i class="seg done"></i><i class="seg done"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i><i class="seg"></i></div>
+        <h2 style="font-size:21px;margin-top:13px">Late Checkout</h2>
+        <div class="dim" style="font-size:13px;margin-top:2px">Artist Name</div>
+        <div style="display:flex;gap:9px;margin-top:16px">
+          <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px;text-align:center"><div class="eyebrow" style="font-size:9px">You rated</div><div class="mono" style="font-size:22px;font-weight:700;margin-top:3px">6</div></div>
+          <div style="flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px;text-align:center"><div class="eyebrow" style="font-size:9px">You predicted</div><div class="mono" style="font-size:22px;font-weight:700;margin-top:3px;color:var(--signal)">5.8</div></div>
+        </div>
+        <div style="border:1px solid var(--accent);border-radius:14px;padding:13px;margin-top:14px;font-size:13px">
+          <b style="font-size:13.5px">Send the artist a note</b>
+          <div class="dim" style="font-size:11.5px;margin-top:4px">What did you hear? They get it with your name on it.</div>
+          <div style="height:58px;background:var(--inset);border:1px solid var(--line);border-radius:10px;margin-top:9px"></div>
+        </div>
+        <div class="btn ghost" style="margin-top:12px;color:var(--ink);font-weight:700">Next record →</div>
+      </div>
+      <div class="endorse">A Makin' It property</div>
+      <div class="fold" style="top:700px"><span>phone screen ends</span></div>
+    </div>
+    <div class="caption rec">After lock · note, then Next record</div>
+    <p class="why">Unchanged from today. On the last record the button reads "See my day" and goes to the finished screen.
+      The note box is between Lock and Next, not behind the banner.</p>
+  </div>
+</div>
+
+
+<div class="mocklabel">The other screens</div>
+<p class="mocknote">(Superseded: the banner is at the top of every screen, not under the card as drawn below.)</p>
+
+<div class="cols">
+  <div class="col">
+    <div class="phone">
+      <div class="topbar"><div style="display:flex;align-items:center;gap:9px"><div class="mark"><span>A&amp;R</span></div><span class="wordmark">A&amp;R Daily</span></div><span class="standing">Bonus points</span></div>
+      <div class="panel" style="text-align:center">
+        <div class="eyebrow">Tuesday · Sept 29</div>
+        <h2 style="font-size:21px;margin-top:6px">You finished today.</h2>
+        <div class="mono" style="font-size:54px;font-weight:700;color:var(--gold);margin-top:10px;line-height:1.05">+100</div>
+        <div class="dim" style="font-size:12.5px">Completion bonus</div>
+        <div class="rule" style="margin:16px 0 14px"></div>
+        <div class="note">Results go out tomorrow. We'll email you.</div>
+        <div class="btn ghost" style="margin-top:14px">Review my evaluations</div>
+      </div>
+      <div class="ad"><div class="lab">Sponsor</div><div class="box"><b>Sponsor banner</b><span>320 × 100</span></div></div>
+      <div class="endorse">A Makin' It property</div>
+    </div>
+    <div class="caption">Day finished</div>
+  </div>
+
+  <div class="col">
+    <div class="phone">
+      <div class="topbar"><div style="display:flex;align-items:center;gap:9px"><div class="mark"><span>A&amp;R</span></div><span class="wordmark">A&amp;R Daily</span></div><span class="standing">Bonus points</span></div>
+      <div>
+        <h1 style="margin:0;font-weight:900;font-size:28px;letter-spacing:-.04em;line-height:1.02">How close you got.</h1>
+        <p class="dim" style="font-size:13px;margin:8px 0 0">12 records, 214 A&amp;Rs.</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div class="panel" style="flex:1;padding:12px;text-align:center"><div class="eyebrow" style="font-size:9px">Points</div><div class="mono" style="font-size:22px;font-weight:700;margin-top:4px">842</div></div>
+        <div class="panel" style="flex:1;padding:12px;text-align:center"><div class="eyebrow" style="font-size:9px">Bullseyes</div><div class="mono" style="font-size:22px;font-weight:700;margin-top:4px">2</div></div>
+        <div class="panel" style="flex:1;padding:12px;text-align:center"><div class="eyebrow" style="font-size:9px">Grade</div><div class="mono" style="font-size:22px;font-weight:700;margin-top:4px">B+</div></div>
+      </div>
+      <div class="ad"><div class="lab">Sponsor</div><div class="box"><b>Sponsor banner</b><span>320 × 100</span></div></div>
+      <div class="eyebrow">Record by record</div>
+      <div class="panel" style="padding:12px;font-size:13px" ><b>Late Checkout</b><span class="dim" style="float:right" class="mono">avg 5.7 · you 5.8</span></div>
+      <div class="panel" style="padding:12px;font-size:13px"><b>Second Record</b><span class="dim" style="float:right">avg 6.2 · you 4.9</span></div>
+      <div class="dim" style="text-align:center;font-size:12px">…</div>
+    </div>
+    <div class="caption">Results</div>
+    <p class="why">Here it goes above the record-by-record list, not below it. On a 16-record day the
+      bottom of this page is a long way down.</p>
+  </div>
+</div>
+
+<div class="mocklabel">What fills the slot</div>
+<p class="mocknote">The live player checks the room's own banner, then the Revive zone, then the global banner.
+  A daily drop is a new session every day, so nobody will set a banner on each one. Proposed order for <code>/daily</code>:</p>
+<div class="wrapx">
+<table>
+  <tr><th>#</th><th>Source</th><th>Notes</th></tr>
+  <tr><td>1</td><td><b>Room banner</b> (if one is set on that day's drop)</td><td>Lets a sponsor buy one specific day. Most days this is empty.</td></tr>
+  <tr><td>2</td><td><b>Revive zone</b>, a new "Daily" zone</td><td>A separate zone from lobby (8) and game (9) so Daily can be sold and counted on its own. Needs creating in ads.cannick.com. Until then, use zone 9.</td></tr>
+  <tr><td>3</td><td><b>Global house banner</b></td><td>Same one the live player falls back to.</td></tr>
+  <tr><td>—</td><td>Nothing set</td><td>No slot, no blank space. Same as today.</td></tr>
+</table>
+</div>
+<p class="mocknote" style="margin-top:18px">The banner does not change when the A&amp;R moves to the next record. It
+  loads once per page, so it does not flicker on every record or reload the Revive iframe 16 times a day.
+  The small "Sponsor" label is new (the live player has none). It can be removed if you'd rather not have it.</p>
+
+</body>
+</html>

@@ -63,6 +63,12 @@
   #cropModal{z-index:30} /* scrim styles come from /ui.css .modal-scrim */
   .cropbox{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:16px;padding:18px;max-width:340px;width:100%}
   #cropStage{position:relative;width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;background:#000;touch-action:none;cursor:move}
+  /* account close (046) — built to public/_mock-account-close.html */
+  .acrow{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+  .acrow b{font-size:14.5px}
+  .aclist{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.55;color:var(--ink-dim)}
+  .aclist li{margin:3px 0}
+  .aclh{font-size:12px;font-weight:700;margin:14px 0 0;letter-spacing:.04em}
   #cropImg{position:absolute;left:0;top:0;-webkit-user-drag:none;user-select:none;pointer-events:none}
 </style>
 </head>
@@ -115,6 +121,14 @@
 
   <!-- STEP 3: PROFILE -->
   <section id="s-profile" class="hide">
+    <!-- Edit mode only: the account's tab strip (public/account.html), so editing reads as a
+         section of the same account rather than a different page. Hidden during signup. -->
+    <nav id="acctTabs" class="hide" style="display:flex;border-bottom:1px solid var(--line);margin:0 0 16px;overflow-x:auto;scrollbar-width:none">
+      <a href="/account" style="flex:none;padding:11px 13px 12px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);text-decoration:none;white-space:nowrap">Earn points</a>
+      <a href="/account#results" style="flex:none;padding:11px 13px 12px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);text-decoration:none;white-space:nowrap">My results</a>
+      <a href="/account#profile" style="flex:none;padding:11px 13px 12px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);text-decoration:none;white-space:nowrap">My profile</a>
+      <span style="flex:none;padding:11px 13px 12px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);border-bottom:2px solid var(--signal);margin-bottom:-1px;white-space:nowrap">Edit profile</span>
+    </nav>
     <p class="eyebrow g" id="profileEyebrow">Step 2 of 2 · complete your public record</p>
     <div class="panel">
       <h2 style="font-size:18px" id="profileH2">Complete your A&amp;R profile</h2>
@@ -188,6 +202,10 @@
             <input type="checkbox" id="nRoomEmail">
             <span><b>A room goes live</b><small>The show is starting now — public and invite-only rooms</small></span>
           </label>
+          <label class="pref-row" for="nDailyOpen">
+            <input type="checkbox" id="nDailyOpen">
+            <span><b>Daily records open</b><small>Every day, when the new records open for rating. On by default while you're active (rated or signed in within 30 days); turn it on here to keep it coming either way</small></span>
+          </label>
           <!-- ONE CHOICE, not two switches. Daily and weekly are the same mail at two
                cadences, so as independent checkboxes "both on" was a reachable state that
                meant eight emails a week nobody deliberately asked for. A radio makes the
@@ -201,7 +219,7 @@
             </label>
             <label class="pref-row" for="nDigestWeekly" style="border:0;padding:6px 0">
               <input type="radio" name="ndigest" id="nDigestWeekly">
-              <span><b>Weekly</b><small>Wednesdays — the week's top records, the A&amp;R board, and tonight's live review</small></span>
+              <span><b>Weekly</b><small>Wednesdays — last week's top records and A&amp;Rs, and today's records</small></span>
             </label>
             <label class="pref-row" for="nDigestDaily" style="border:0;padding:6px 0">
               <input type="radio" name="ndigest" id="nDigestDaily">
@@ -223,6 +241,77 @@
       <div class="err" id="notifyErr"></div>
       <button class="btn" id="btnSaveNotify">Save notifications</button>
       <p class="hint" id="notifyStatus" style="text-align:center;min-height:14px"></p>
+    </div>
+
+    <!-- ── ACCOUNT (046) — edit mode only. Deactivate is undone by logging in; Delete removes
+         the person, not the history (their ratings stay inside past averages, nameless). ── -->
+    <div class="panel hide" id="acctPanel" style="margin-top:16px">
+      <div id="acMain">
+        <p class="eyebrow" style="margin-bottom:4px">Account</p>
+        <h2 style="font-size:18px">Leave the A&amp;R Team</h2>
+        <div id="acHostNote" class="hide"><p class="dim" style="font-size:12.5px;margin-top:6px">Host accounts can't be closed here. Contact Makin' It to close this account.</p></div>
+        <div id="acActions">
+          <div class="acrow" style="border-top:0;margin-top:6px;padding-top:0">
+            <b>Deactivate</b>
+            <p class="dim" style="font-size:12.5px;margin:4px 0 0">Hide your profile, stop all emails and texts, and take your points off the boards. Log back in with your email any time and everything comes back.</p>
+            <button class="btn ghost" id="acDeactivateOpen">Deactivate my account</button>
+          </div>
+          <div class="acrow">
+            <b style="color:var(--hot)">Delete</b>
+            <p class="dim" style="font-size:12.5px;margin:4px 0 0">Permanently remove your name, contact details and photo. This can't be undone.</p>
+            <button class="btn danger" id="acDeleteOpen">Delete my account</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="acDeactivate" class="hide">
+        <h2 style="font-size:18px">Deactivate your account?</h2>
+        <ul class="aclist">
+          <li>Your profile and name come off every board and page.</li>
+          <li>Your points stop counting toward this month's prize while you're away.</li>
+          <li>No emails or texts from us.</li>
+        </ul>
+        <p class="dim" style="font-size:12.5px;margin-top:12px">To come back, log in with your email. Your points, results and profile will all be where you left them.</p>
+        <div class="err" id="acDeactErr"></div>
+        <button class="btn" id="acDeactivateGo">Deactivate</button>
+        <button class="btn ghost" id="acDeactivateCancel">Cancel</button>
+      </div>
+
+      <div id="acDelete" class="hide">
+        <h2 style="font-size:18px;color:var(--hot)">Delete your account</h2>
+        <p class="dim" style="font-size:12.5px;margin:0">This is permanent.</p>
+        <p class="aclh" style="color:var(--hot)">What we delete</p>
+        <ul class="aclist">
+          <li>Your name, email, phone, photo and social handles</li>
+          <li>Your points, results and place on every board</li>
+          <li>Your Sidebet entry, if the contest is still open</li>
+        </ul>
+        <p class="aclh">What stays, with no name attached</p>
+        <ul class="aclist">
+          <li>Your ratings, inside past room averages, so the results artists and other A&amp;Rs already received don't change.</li>
+          <li>Your notes to artists, on their reports, signed &ldquo;A&amp;R&rdquo;.</li>
+          <li>Your role and city, which are counted in artists' reports.</li>
+        </ul>
+        <p class="dim" style="font-size:12.5px;margin-top:12px" id="acCodeSent">Sending a code to your email…</p>
+        <label>Code</label>
+        <input class="code" id="acCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+        <label>Type DELETE to confirm</label>
+        <input id="acConfirm" autocomplete="off" autocapitalize="characters">
+        <div class="dev hide" id="acDevBox"></div>
+        <div class="err" id="acDelErr"></div>
+        <button class="btn hot" id="acDeleteGo" style="margin-top:6px" disabled>Delete my account permanently</button>
+        <button class="btn ghost" id="acDeleteCancel">Cancel</button>
+        <p class="hint">You can sign up again later with the same email, but you'll start from zero.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACCOUNT CLOSED (046) -->
+  <section id="s-closed" class="hide">
+    <div class="panel" style="text-align:center">
+      <h2 id="closedTitle">Your account has been deleted.</h2>
+      <p class="dim" id="closedSub" style="margin:6px 0 0">You've been signed out on this device.</p>
+      <a class="btn ghost" href="/" style="display:flex;text-decoration:none">Back to the homepage</a>
     </div>
   </section>
 
@@ -264,7 +353,7 @@ async function api(path,body,method='POST'){
   const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
   const d=await r.json().catch(()=>({})); if(!r.ok)throw new Error(d.error||'Something went wrong'); return d;
 }
-function show(id){['email','code','profile','done'].forEach(s=>$('#s-'+s).classList.toggle('hide',s!==id));}
+function show(id){['email','code','profile','done','closed'].forEach(s=>$('#s-'+s).classList.toggle('hide',s!==id));}
 
 // STEP 1
 $('#btnSend').onclick=async()=>{
@@ -396,6 +485,7 @@ function renderNotify(d){
   const get=(k,ch)=>!!(t[k]&&t[k].channels&&t[k].channels[ch]);
   $('#nRoomSms').checked=get('room_live','sms');
   $('#nRoomEmail').checked=get('room_live','email');
+  $('#nDailyOpen').checked=get('daily_open','email');
   // Daily wins if a legacy row somehow has both — the next save normalises it to one.
   const digest=get('digest_daily','email')?'daily':(get('digest_weekly','email')?'weekly':'none');
   $('#nDigestDaily').checked=digest==='daily';
@@ -425,6 +515,7 @@ $('#btnSaveNotify').onclick=async()=>{
       emailOptOut:$('#nEmailOff').checked,
       topics:{
         room_live:{email:$('#nRoomEmail').checked,sms:$('#nRoomSms').checked},
+        daily_open:{email:$('#nDailyOpen').checked},
         digest_daily:{email:$('#nDigestDaily').checked},
         digest_weekly:{email:$('#nDigestWeekly').checked},
       },
@@ -443,6 +534,60 @@ $('#btnSaveNotify').onclick=async()=>{
   btn.disabled=false;
 };
 
+// ── Account close (046). Account token only — the server refuses anything else. ──
+function acView(v){ ['acMain','acDeactivate','acDelete'].forEach(id=>$('#'+id).classList.toggle('hide',id!==v)); }
+function initAccountPanel(role){
+  $('#acctPanel').classList.remove('hide');
+  const host = role==='host' || role==='admin';
+  $('#acHostNote').classList.toggle('hide',!host);
+  $('#acActions').classList.toggle('hide',host);
+}
+// Signed out everywhere server-side; clear this device too, so nothing here acts as them.
+function acSignOutDevice(){
+  try{
+    const ks=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && (k==='rt_auth_token'||k==='rt_ref'||k.indexOf('rt_token_')===0||k.indexOf('rt_ref_')===0)) ks.push(k); }
+    ks.forEach(k=>localStorage.removeItem(k));
+    sessionStorage.removeItem('rt_refer_link');
+  }catch(e){}
+  AUTHTOK=null;
+}
+function acClosed(title,sub){
+  acSignOutDevice();
+  $('#acctTabs').classList.add('hide'); $('#acctTabs').style.display='none';
+  $('#closedTitle').textContent=title; $('#closedSub').textContent=sub;
+  show('closed'); window.scrollTo(0,0);
+}
+$('#acDeactivateOpen').onclick=()=>{ $('#acDeactErr').textContent=''; acView('acDeactivate'); };
+$('#acDeactivateCancel').onclick=()=>acView('acMain');
+$('#acDeactivateGo').onclick=async()=>{
+  const b=$('#acDeactivateGo'); b.disabled=true; $('#acDeactErr').textContent='';
+  try{ await api('/api/me/account/deactivate',{confirm:true}); track('account_deactivate');
+    acClosed('Your account is deactivated.','Log in with your email any time to come back.'); }
+  catch(e){ $('#acDeactErr').textContent=e.message; }
+  b.disabled=false;
+};
+function acDeleteReady(){ $('#acDeleteGo').disabled = !(/^\d{6}$/.test($('#acCode').value.trim()) && $('#acConfirm').value.trim()==='DELETE'); }
+$('#acCode').addEventListener('input',acDeleteReady);
+$('#acConfirm').addEventListener('input',acDeleteReady);
+$('#acDeleteOpen').onclick=async()=>{
+  $('#acDelErr').textContent=''; $('#acCode').value=''; $('#acConfirm').value=''; $('#acDevBox').classList.add('hide'); acDeleteReady();
+  $('#acCodeSent').textContent='Sending a code to your email…';
+  acView('acDelete');
+  try{
+    const d=await api('/api/me/account/delete-code',{});
+    $('#acCodeSent').innerHTML='We sent a code to <b style="color:var(--ink)">'+esc(d.to||'your email')+'</b>.';
+    if(d.devCode){ $('#acDevBox').classList.remove('hide'); $('#acDevBox').textContent='Dev mode — your code is '+d.devCode; }
+  }catch(e){ $('#acCodeSent').textContent=''; $('#acDelErr').textContent=e.message; }
+};
+$('#acDeleteCancel').onclick=()=>acView('acMain');
+$('#acDeleteGo').onclick=async()=>{
+  const b=$('#acDeleteGo'); b.disabled=true; $('#acDelErr').textContent='';
+  try{ await api('/api/me/account/delete',{code:$('#acCode').value.trim(),confirmText:$('#acConfirm').value.trim()}); track('account_delete');
+    acClosed('Your account has been deleted.',"You've been signed out on this device."); return; }
+  catch(e){ $('#acDelErr').textContent=e.message; }
+  acDeleteReady();
+};
+
 // Edit mode: a logged-in A&R lands straight on their (pre-filled) profile to view/edit.
 async function initJoin(){
   const tok=localStorage.getItem('rt_auth_token');
@@ -452,12 +597,14 @@ async function initJoin(){
       const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
       if(me&&me.uid){ AUTHTOK=tok; MEUID=me.uid; editMode=true; await loadProfile();
         $('#jNameRow').classList.remove('hide'); $('#jName').value=profile.name||'';
-        $('#profileEyebrow').textContent='Your A&R record';
-        $('#profileH2').textContent='Edit your A&R record';
+        $('#profileEyebrow').classList.add('hide');
+        $('#acctTabs').classList.remove('hide'); $('#acctTabs').style.display='flex';
+        $('#profileH2').textContent='Edit profile';
         $('#profileSub').innerHTML='Update your roles, location, social links, or photo. <a href="/u/'+encodeURIComponent(me.uid)+'" style="color:var(--cool)">View public A&R record ↗</a>';
         $('#btnFinish').textContent='Save changes';
         $('#btnSkip').textContent='Cancel';
         try{ renderNotify(await notifyApi()); }catch(e){}
+        initAccountPanel(me.role);
         show('profile'); return;
       }
     }catch(e){}
@@ -486,13 +633,34 @@ async function initJoin(){
 // copy-pasted along with the URL. NLINK still holds it for this page's requests.
 if(NLINK){ try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){} }
 initJoin();
-function finishDone(listed){
+// Today's drop, if one is open. /api/home is anonymous and CDN-cacheable, so this costs nothing.
+// Every way out of this page must lead to the open records: the done screen used to say "we'll
+// notify you when the next session opens" while a drop was open, and returning A&Rs coming in
+// from the results email read it as "there is nothing to rate" (2026-09-23).
+let OPEN_DROP=null;
+const openDropReady=fetch('/api/home').then(r=>r.ok?r.json():null)
+  .then(d=>{ if(d&&d.daily&&d.daily.id&&d.daily.songs) OPEN_DROP=d.daily; }).catch(()=>{});
+async function pointDoneAtDrop(){
+  await openDropReady;
+  if(!OPEN_DROP) return false;
+  const n=OPEN_DROP.songs;
+  const cta=$('#doneCta');
+  cta.textContent='Rate today\'s '+n+' record'+(n===1?'':'s');
+  cta.href='/daily?s='+encodeURIComponent(OPEN_DROP.id);
+  return n;
+}
+async function finishDone(listed){
   if(!listed){ $('#doneTitle').textContent='Welcome to The A&R Room.'; $('#doneSub').innerHTML='Your account is active. <b style="color:var(--ink)">Complete your profile</b> when you\'re ready to publish your A&R record and activate ranking eligibility.'; }
+  const n=await pointDoneAtDrop();
+  if(n && listed) $('#doneSub').textContent='Your A&R profile is live. '+n+' record'+(n===1?' is':'s are')+' open to rate right now.';
   show('done');
 }
-function doneReturning(){
+async function doneReturning(){
   $('#doneTitle').textContent='Welcome back, A&R.';
-  $('#doneSub').innerHTML='Your public record is active. We\'ll notify you when the next evaluation session opens.';
+  const n=await pointDoneAtDrop();
+  $('#doneSub').innerHTML=n
+    ? 'Your public record is active. '+n+' record'+(n===1?' is':'s are')+' open to rate right now.'
+    : 'Your public record is active. We\'ll notify you when the next evaluation session opens.';
   show('done');
 }
 
@@ -543,8 +711,13 @@ $('#cropSave').onclick=async()=>{
   const out=400,cv=document.createElement('canvas');cv.width=out;cv.height=out;const ctx=cv.getContext('2d');
   ctx.drawImage(crop.img,-crop.ox/crop.scale,-crop.oy/crop.scale,crop.S/crop.scale,crop.S/crop.scale,0,0,out,out);
   const dataUrl=cv.toDataURL('image/jpeg',0.85);
+  // The big copy of the SAME crop, for the big-photo grade card (up to 1200px). Skipped when the
+  // source is too small to give one; the A&R then gets the stats card.
+  const src=crop.S/crop.scale, big=Math.min(1200,Math.floor(src));
+  let imageLarge=null;
+  if(big>=800){const bc=document.createElement('canvas');bc.width=big;bc.height=big;bc.getContext('2d').drawImage(crop.img,-crop.ox/crop.scale,-crop.oy/crop.scale,src,src,0,0,big,big);imageLarge=bc.toDataURL('image/jpeg',0.85);}
   $('#cropSave').disabled=true;
-  try{const d=await api('/api/me/photo',{image:dataUrl});profile.photoUrl=d.photoUrl;renderAvatar();$('#cropModal').style.display='none';}
+  try{const d=await api('/api/me/photo',{image:dataUrl,imageLarge});profile.photoUrl=d.photoUrl;renderAvatar();$('#cropModal').style.display='none';}
   catch(err){$('#cropErr').textContent=err.message;}
   $('#cropSave').disabled=false;
 };

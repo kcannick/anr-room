@@ -24,29 +24,83 @@ const SCALE_MAX = 9;
 const DEFAULT_EDGES = [3, 6];
 
 // The three decisions. `label` is the short band name the charts already use (the artist
-// may have seen it on a HOT 100 graphic); `headline` is the instruction, as lines.
+// may have seen it on a HOT 100 graphic). The headline and the money line come from the
+// spend tier below, not the band.
 const BANDS = [
   { key: 'studio', label: 'Keep it in the studio',
-    headline: ['Keep working', 'on it.'],
     action: 'Don’t release this version.',
-    actionRest: 'The A&Rs did not hear a finished record. Work on it and bring back the next version.',
-    money: 'Keep the money.', moneyRest: 'Spend it on the next version, not on this one.' },
+    actionRest: 'The A&Rs did not hear a finished record. Work on it and bring back the next version.' },
   { key: 'release', label: 'Release Ready',
-    headline: ['Release it.', 'Don’t put money', 'behind it yet.'],
     action: 'Release it.',
-    actionRest: 'It cleared the bar most records don’t. It’s a discography record, not a campaign record.',
-    money: 'Hold the ad budget.', moneyRest: 'Nothing here says this one converts strangers. Put the money behind the next 6+.' },
+    actionRest: 'It cleared the bar most records don’t.' },
   { key: 'invest', label: 'Potential Single',
-    headline: ['Release it.', 'This one is worth', 'investing in.'],
     action: 'Release it and plan a push.',
-    actionRest: 'It scored where the A&R Meeting’s singles score. Treat it as a campaign record.',
-    money: 'Put a budget behind it.', moneyRest: 'This is the record to spend on. Start with the people who scored it highest.' },
+    actionRest: 'It scored where the A&R Meeting’s singles score. Treat it as a campaign record.' },
 ];
+
+// What to spend (operator, 2026-10-15): anyone at 3 or higher is told to invest in the
+// record, with an actual amount. Under 3, don't. The amounts are the operator's; the tiers
+// are LOWER-INCLUSIVE on the room average and fixed (they do not move with
+// TRACK_BAND_EDGES — calibrating the band names must not quietly change a dollar figure).
+// The amount is advice to the artist about their own release, never a price of ours.
+const SPEND_EDGES = [3, 4, 5, 6, 7, 8];
+const SPEND = [
+  { key: 'none', headline: ['Keep working', 'on it.'],
+    money: 'Don’t invest in this version.', moneyRest: 'Keep the money for the next version.' },
+  { key: 'up300', headline: ['Release it.', 'Spend up to', '$300 on it.'],
+    money: 'Spend up to $300 over the first 3 months.',
+    moneyRest: 'It’s a potential release. Use it to let people know it’s out, then see how the response is.' },
+  { key: 'min300', headline: ['Release it.', 'Spend at least', '$300 on it.'],
+    money: 'Spend at least $300 over the first 3 months.',
+    moneyRest: 'It’s a solid release. Use it to let people know it’s out.' },
+  { key: 'some', headline: ['Release it.', 'Worth putting', 'money behind.'],
+    money: 'Worth putting some money behind.',
+    moneyRest: 'But don’t spend over $1,000 within the first 3 months unless you start seeing a response that justifies investing more.' },
+  { key: 'min1500', headline: ['Release it.', 'Invest at least', '$1,500 in it.'],
+    money: 'Invest at least $1,500 over the first 3 months.',
+    moneyRest: 'It’s worth investing in. See where it goes, starting with the people who scored it highest.' },
+  { key: 'single', headline: ['Release it.', 'Push it as', 'a single.'],
+    money: 'Work out what you can afford to spend.',
+    moneyRest: 'Sit down and figure out what you can afford to spend and how long you’re willing to push this as a single.' },
+  { key: 'backing', headline: ['Release it.', 'Don’t push it', 'on your own.'],
+    money: 'Don’t try to do this on your own.',
+    moneyRest: 'Sit down and figure out what you can afford to spend and how long you’re willing to push this as a single. You may want to bring in an investor or a consultant.' },
+];
+
+// What each whole rating means (operator, 2026-10-14 — canonical, verbatim; CLAUDE.md "What
+// each rating means"). The artist's VERDICT is the meaning of the average's whole number:
+// 6.4 and 6.9 are both 6, Potential Single. It never rounds up into the next verdict — the
+// same way the bands and spend tiers cut. The 0–10 switch needs an eleventh meaning from the
+// operator; do not invent one.
+const RATING_MEANINGS = [
+  'Scrap it!',
+  'Take the best ideas... Scrap the rest.',
+  'There’s something there but it needs significant work',
+  'Potential release',
+  'Solid release',
+  'Strong release',
+  'Potential Single',
+  'Single',
+  'Strong Single',
+  'It’s a Hit!',
+];
+function verdictFor(mean) {
+  const i = Math.max(0, Math.min(RATING_MEANINGS.length - 1, Math.floor(Number(mean) || 0)));
+  return RATING_MEANINGS[i];
+}
+
+function spendFor(mean) {
+  const m = Number(mean);
+  let i = 0;
+  while (i < SPEND_EDGES.length && m >= SPEND_EDGES[i]) i++;
+  return SPEND[i];
+}
 
 function bandFor(mean, edges = DEFAULT_EDGES) {
   const m = Number(mean);
   const idx = m < edges[0] ? 0 : m < edges[1] ? 1 : 2;
-  return { idx, ...BANDS[idx] };
+  const spend = spendFor(m);
+  return { idx, ...BANDS[idx], verdict: verdictFor(m), spend: spend.key, headline: spend.headline, money: spend.money, moneyRest: spend.moneyRest };
 }
 
 // ---- words ----
@@ -188,42 +242,40 @@ function setupVsRecord(predictMean, mean) {
   if (predictMean == null || !Number.isFinite(Number(predictMean))) return null;
   const d = Number(mean) - Number(predictMean);
   let key, headline, pull;
+  // Framed as what the A&Rs EXPECTED vs what the record DELIVERED (operator, 2026-10-15) —
+  // the prediction is each A&R's read of where the room would land, made after hearing it.
   if (Math.abs(d) < GAP_EVEN) {
     key = 'even';
-    headline = ['It gave what', 'it promised.'];
-    pull = 'The setup and the record match. Whatever the score is, the title, the artwork and the intro are telling the truth about it.';
+    headline = ['It delivered what', 'the A&Rs expected.'];
+    pull = 'The A&Rs called it. What they expected from this record is what it delivered.';
   } else if (d < 0) {
     key = 'over';
-    headline = d <= -GAP_BIG ? ['It promised more', 'than it gave.'] : ['It promised a little', 'more than it gave.'];
-    pull = `A ${d <= -GAP_BIG ? 'gap' : 'small gap'} the wrong way. The title, the artwork and the intro are doing more work than the record is — worth another pass at the song before another pass at the marketing.`;
+    headline = d <= -GAP_BIG ? ['The A&Rs saw more', 'in it than it delivered.'] : ['The A&Rs expected', 'a little more.'];
+    pull = 'The A&Rs saw more in it than it delivered. They expected it to score higher than it did — worth another pass at the song before you spend on the marketing.';
   } else {
     key = 'under';
-    headline = d >= GAP_BIG ? ['It gave more', 'than it promised.'] : ['It gave a little', 'more than it promised.'];
-    pull = 'The record is better than its setup. The title, the artwork and the intro are costing you plays — fix the packaging before you spend on the song.';
+    headline = d >= GAP_BIG ? ['It outperformed', 'expectations.'] : ['It beat', 'expectations.'];
+    pull = 'It outperformed what the A&Rs expected. People like it more once they hear it, so the job is getting it heard.';
   }
   return { key, headline, pull, diff: d, label: (d >= 0 ? '+' : '') + fmt1(d) };
 }
 
 // ---- card 6: what now ----
-// Three next actions from three rules: the band, the biggest segment gap, the prediction
-// direction. Every record gets exactly three; when a rule has nothing to say, the band's
-// money line fills the slot.
+// Three next actions: the band, what to spend (every record gets an amount, operator
+// 2026-10-15), then the biggest segment gap — or, without one, the prediction direction.
 function nextActions({ band, who, setup }) {
   const steps = [];
   steps.push({ lead: band.action, rest: band.actionRest });
+  steps.push({ lead: band.money, rest: band.moneyRest });
   const g = who && who.gap;
   if (g && g.kind === 'role') {
     steps.push({ lead: `Send it to ${g.top.toLowerCase()}, not ${g.bottom.toLowerCase()}.`,
       rest: `They scored it ${fmt1(g.diff)} higher. That’s your first push.` });
   } else if (g && g.kind === 'city') {
     steps.push({ lead: `Start in ${g.top}.`, rest: `A&Rs there scored it ${fmt1(g.diff)} higher than in ${g.bottom}. Push it there first.` });
-  } else {
-    steps.push({ lead: band.money, rest: band.moneyRest });
-  }
-  if (setup && setup.key === 'over') steps.push({ lead: 'Another pass at the song before another pass at the marketing.', rest: 'The setup promised more than the record gave.' });
-  else if (setup && setup.key === 'under') steps.push({ lead: 'Fix the packaging.', rest: 'The record is better than its setup. The title, artwork and intro are costing plays.' });
-  else if (setup) steps.push({ lead: 'Keep the packaging.', rest: 'The setup told the truth about the record. Change the song before you change the presentation.' });
-  else if (g) steps.push({ lead: band.money, rest: band.moneyRest });
+  } else if (setup && setup.key === 'over') steps.push({ lead: 'Another pass at the song before another pass at the marketing.', rest: 'The A&Rs saw more in it than it delivered.' });
+  else if (setup && setup.key === 'under') steps.push({ lead: 'Get it heard.', rest: 'It outperformed what the A&Rs expected. The more people hear it, the better it does.' });
+  else if (setup) steps.push({ lead: 'Trust the score.', rest: 'It delivered what the A&Rs expected. No surprises either way.' });
   else steps.push({ lead: 'Bring the next one.', rest: 'The room scores what it hears. The fastest way to a better report is a better record.' });
   return steps.slice(0, 3);
 }
@@ -264,7 +316,7 @@ function seriesQuartiles(averages) {
 }
 
 module.exports = {
-  SCALE_MAX, DEFAULT_EDGES, BANDS, BUCKET, SEGMENT_GAP, GAP_EVEN, GAP_BIG,
+  SCALE_MAX, DEFAULT_EDGES, BANDS, SPEND_EDGES, SPEND, spendFor, RATING_MEANINGS, verdictFor, BUCKET, SEGMENT_GAP, GAP_EVEN, GAP_BIG,
   bandFor, shapeOf, distribution, bucketOf, againstRoom, whoFor, setupVsRecord, nextActions,
   decisionSub, pageComments, seriesQuartiles, numWord, plural, fmtScore,
 };

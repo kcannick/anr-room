@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOCKUP · My A&R account</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* tokens inlined so the mockup renders from a file too */
+:root{--bg:#0E0C1A;--panel:#171328;--line:#2e2750;--inset:#0a0814;--ink:#EAE9F2;--ink-dim:#9793B4;--signal:#4bb749;--signal-deep:#379235;--accent:#6d5fe0;--gold:#F5C518;--hot:#ff5d6c}
+/* MOCKUP (2026-09-20): the A&R's account, reorganised as ONE place with sections.
+   Default section = Earn more points (today's /refer), then the public profile and the
+   edit form (today's /u/<uid> and /profile). "Sessions" and "Rounds" are placeholders
+   for later. Built on the refer page's dialect: Archivo + Space Mono, green signal,
+   purple only for the contest, gold on the $1,000 only. */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:430px;margin:0 auto;padding:20px 20px 40px;display:flex;flex-direction:column;gap:16px}
+.mono{font-family:"Space Mono",monospace}
+.dim{color:var(--ink-dim)}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em}
+a{color:var(--signal);text-decoration:none}
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;color:var(--bg)}
+.tick{display:block;width:3px;height:12px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.tick.contest{background:var(--accent)} .tick.prize{background:var(--gold)}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wordmark{font-weight:800;font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+.standing{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:5px 11px;white-space:nowrap}
+.standing b{color:var(--ink)}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.section-head{display:flex;align-items:center;gap:9px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.note{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:13px;color:var(--ink-dim);line-height:1.5}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;border:0;border-radius:13px;padding:15px;font-family:inherit;font-weight:800;font-size:15px;background:var(--signal);color:var(--bg)}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.linkrow{display:flex;align-items:center;gap:8px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:8px 8px 8px 13px}
+.linkrow .url{font-family:"Space Mono",monospace;font-size:12.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy{background:var(--signal);color:var(--bg);border:0;border-radius:10px;padding:0 12px;height:40px;font-family:inherit;font-weight:800;font-size:13px}
+.stats{display:flex;gap:10px}
+.stat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 10px;text-align:center}
+.stat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim)}
+.stat .v{font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:5px}
+.stat .v.earned{color:var(--signal)}
+.prize{display:flex;align-items:center;gap:9px;background:rgba(245,197,24,.08);border:1px solid var(--gold);border-radius:11px;padding:10px 12px;font-size:13px;line-height:1.45}
+.prize b{font-family:"Space Mono",monospace;color:var(--gold)}
+label{display:block;font-size:12.5px;font-weight:600}
+input,select{width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:15px;padding:12px 13px;border-radius:12px}
+
+/* ---- the new part: the account header + section tabs ---- */
+.me{display:flex;align-items:center;gap:14px}
+.me .face{width:56px;height:56px;border-radius:50%;background:var(--accent);flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:20px;color:#fff}
+.me .who b{display:block;font-size:20px;font-weight:900;letter-spacing:-.03em}
+.me .who small{display:block;font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);margin-top:3px}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;padding:11px 13px 12px;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--signal)}
+.tab.soon{opacity:.4;cursor:default}
+.tab.soon small{display:block;font-size:8px;letter-spacing:.1em;margin-top:2px;text-transform:none}
+.sec{display:none;flex-direction:column;gap:16px}
+.sec.on{display:flex}
+.gfx{display:flex;align-items:center;gap:12px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:10px 12px 10px 10px}
+.gfx .th{width:44px;height:55px;flex:none;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.gfx .t{flex:1} .gfx .t b{display:block;font-size:14px} .gfx .t small{display:block;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:3px}
+.gfxgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.gcard{background:var(--inset);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.gcard img{width:100%;aspect-ratio:4/5;object-fit:contain;display:block;background:#07060d;padding:6px}
+.gcard .gt{padding:10px 11px 6px}
+.gcard .gt b{display:block;font-size:13.5px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
+.gcard .gt small{display:block;font-family:"Space Mono",monospace;font-size:10px;color:var(--ink-dim);margin-top:4px}
+.gdl{display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 11px 11px;height:38px;border-radius:10px;background:var(--signal);color:var(--bg);font-weight:800;font-size:13px}
+.dl{width:40px;height:40px;border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--ink);flex:none}
+.pf-row{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:10px 0;border-bottom:1px solid var(--line)}
+.pf-row:last-child{border-bottom:0}
+.pf-row .k{color:var(--ink-dim)}
+.pill{display:inline-block;font-family:"Space Mono",monospace;font-size:10.5px;border:1px solid var(--line);border-radius:999px;padding:3px 9px;margin:2px 4px 2px 0;color:var(--ink)}
+.banner{background:var(--accent);color:#fff;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;text-align:center;padding:6px}
+</style>
+</head>
+<body>
+<div class="banner">Mockup · not live · tap the tabs</div>
+<div class="wrap">
+
+  <div class="topbar">
+    <a href="#" style="display:flex;align-items:center;gap:10px;color:inherit"><div class="mark"><span>A&amp;R</span></div><span class="wordmark">A&amp;R Team</span></a>
+    <div class="standing">#12 · <b>1,480</b> PTS</div>
+  </div>
+
+  <!-- ACCOUNT HEADER: who you are, once, above every section -->
+  <div class="me">
+    <div class="face">J</div>
+    <div class="who"><b>Jordan Reyes</b><small>Official A&amp;R · Atlanta, GA · since Jul 2026</small></div>
+  </div>
+
+  <!-- SECTIONS -->
+  <div class="tabs">
+    <div class="tab on" data-sec="earn">Earn points</div>
+    <div class="tab" data-sec="profile">My profile</div>
+    <div class="tab" data-sec="edit">Edit profile</div>
+    <div class="tab soon">Sessions<small>coming</small></div>
+    <div class="tab soon">Rounds<small>coming</small></div>
+  </div>
+
+  <!-- 1. EARN POINTS — the default. Today's /refer, with the operator's intro copy. -->
+  <section class="sec on" id="sec-earn">
+    <div class="stack" style="gap:8px">
+      <h1 style="font-weight:900;font-size:28px;letter-spacing:-.04em;line-height:1.05">Earn more points</h1>
+      <p class="dim" style="margin:0;font-size:14.5px;line-height:1.55">Invite new A&amp;Rs to the platform and earn bonus points. Know good talent? Refer them to submit music and earn bonus points as a talent scout. Use the links below.</p>
+      <p class="dim" style="margin:0;font-size:14.5px;line-height:1.55">Your A&amp;R promo graphics also contain QR codes with your link. Post them to let everyone know you're an official member of our A&amp;R Team.</p>
+    </div>
+
+    <div class="stack">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Your links</span></div>
+      <label>Invite new A&amp;Rs</label>
+      <div class="linkrow"><span class="url">anr.makinitmag.com/?ref=k3Qx9v</span><button class="copy">Copy</button></div>
+      <label style="margin-top:4px">Refer talent to submit music</label>
+      <div class="linkrow"><span class="url">www.makinitmag.com/review?ref=k3Qx9v</span><button class="copy">Copy</button></div>
+      <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who joins or submits through your link counts as yours.</p>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Invite A&amp;Rs</span></div>
+      <h2 style="font-size:19px;line-height:1.15">1 point for every record they score well, up to 240 each.</h2>
+      <div class="stats">
+        <div class="stat"><div class="k">Referred</div><div class="v">4</div></div>
+        <div class="stat"><div class="k">Active</div><div class="v">3</div></div>
+        <div class="stat"><div class="k">Earned</div><div class="v earned">+96</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Scout talent</span></div>
+      <h2 style="font-size:19px;line-height:1.15">Points on every record they submit, 5× its score.</h2>
+      <div class="prize"><span class="tick prize"></span><span>Every artist who submits is entered in the <b>$1,000 Giveaway</b> for a $1,000 Promo Budget.</span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Submitted</div><div class="v">2</div></div>
+        <div class="stat"><div class="k">Rated</div><div class="v">1</div></div>
+        <div class="stat"><div class="k">Earned</div><div class="v earned">+36</div></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="section-head"><span class="tick contest"></span><span class="eyebrow">Your A&amp;R promo graphics</span></div>
+      <p class="dim" style="margin:0;font-size:13px;line-height:1.5">Each one carries your link as a QR code. Post it, put the link in your bio, or send the link by DM.</p>
+      <div class="gfxgrid">
+        <div class="gcard"><img src="_mock-gfx/card.jpg" alt=""><div class="gt"><b>Official A&amp;R Card - Feed</b><small>1080×1350 · both QR codes</small></div><a class="gdl" href="#">Download</a></div>
+        <div class="gcard"><img src="_mock-gfx/story.jpg" alt=""><div class="gt"><b>Official A&amp;R Card - Story</b><small>1080×1920 · both QR codes</small></div><a class="gdl" href="#">Download</a></div>
+        <div class="gcard"><img src="_mock-gfx/join.jpg" alt=""><div class="gt"><b>Join the A&amp;R Team</b><small>1080×1350 · your invite QR</small></div><a class="gdl" href="#">Download</a></div>
+        <div class="gcard"><img src="_mock-gfx/submit.jpg" alt=""><div class="gt"><b>Submit your music</b><small>1080×1350 · your talent QR</small></div><a class="gdl" href="#">Download</a></div>
+      </div>
+      <div class="note">Your card uses your profile photo. <a href="#" data-go="edit">Add a photo</a> to use your face on it.</div>
+    </div>
+  </section>
+
+  <!-- 2. MY PROFILE — what the public sees at /u/<uid>, with a way to the edit section -->
+  <section class="sec" id="sec-profile">
+    <div class="note">This is your public A&amp;R profile, exactly as anyone sees it at <span class="mono">anr.makinitmag.com/u/k3Qx9v</span>. <a href="#" data-go="edit">Edit it →</a></div>
+    <div class="panel">
+      <div class="pf-row"><span class="k">Roles</span><span><span class="pill">Manager</span><span class="pill">DJ</span></span></div>
+      <div class="pf-row"><span class="k">Location</span><span>Atlanta, GA</span></div>
+      <div class="pf-row"><span class="k">Instagram</span><span class="mono">@jordanreyes</span></div>
+      <div class="pf-row"><span class="k">TikTok</span><span class="mono">@jordan.reyes</span></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="k">Series rank</div><div class="v">#12</div></div>
+      <div class="stat"><div class="k">Points</div><div class="v">1,480</div></div>
+      <div class="stat"><div class="k">Bullseyes</div><div class="v">7</div></div>
+    </div>
+    <a class="btn ghost" href="#">Open public page ↗</a>
+  </section>
+
+  <!-- 3. EDIT PROFILE — today's /profile form, unchanged in content -->
+  <section class="sec" id="sec-edit">
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Edit profile</span></div>
+      <label>Display name</label><input value="Jordan Reyes">
+      <label>Photo</label><div class="note">jordan.jpg · <a href="#">Replace</a></div>
+      <label>Roles</label><div><span class="pill" style="border-color:var(--signal)">Manager ✓</span><span class="pill" style="border-color:var(--signal)">DJ ✓</span><span class="pill">Artist</span><span class="pill">Producer</span><span class="pill">Engineer</span><span class="pill">Promoter</span></div>
+      <label>Location</label><input value="Atlanta, GA">
+      <label>Instagram</label><input value="@jordanreyes">
+      <label>TikTok</label><input value="@jordan.reyes">
+      <button class="btn">Save</button>
+    </div>
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Private</span></div>
+      <div class="pf-row"><span class="k">Email</span><span class="mono">j•••@gmail.com</span></div>
+      <div class="pf-row"><span class="k">Phone</span><span class="mono">••• 0142</span></div>
+      <div class="pf-row"><span class="k">Notifications</span><a href="#">Manage →</a></div>
+    </div>
+  </section>
+
+</div>
+<script>
+document.querySelectorAll('.tab[data-sec]').forEach(t=>t.onclick=()=>show(t.dataset.sec));
+document.querySelectorAll('[data-go]').forEach(a=>a.onclick=(e)=>{e.preventDefault();show(a.dataset.go);});
+function show(k){document.querySelectorAll('.tab[data-sec]').forEach(t=>t.classList.toggle('on',t.dataset.sec===k));document.querySelectorAll('.sec').forEach(s=>s.classList.toggle('on',s.id==='sec-'+k));window.scrollTo(0,0);}
+</script>
+</body>
+</html>

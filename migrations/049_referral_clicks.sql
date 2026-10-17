@@ -1,4 +1,4 @@
--- 041_referral_clicks.sql
+-- 049_referral_clicks.sql
 -- Clicks on an A&R's submit link (2026-09-23). The submit link used to go straight to
 -- makinitmag.com, so this app never saw it opened; it now goes through /r/<uid>, which counts
 -- the click and 302s on to the review form with ?ref=<uid> intact.

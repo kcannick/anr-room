@@ -138,8 +138,7 @@
       <a id="navBoard" onclick="document.getElementById('secBoard')?.scrollIntoView({behavior:'smooth'})">Rankings</a>
       <a id="navWinners" onclick="document.getElementById('secWinners')?.scrollIntoView({behavior:'smooth'})">Champions</a>
       <!-- signed-in members get their profile instead of the Join CTA -->
-      <a id="navRefer" class="hide" href="/refer">Earn bonus points</a>
-      <a id="navProfile" class="hide" href="/profile">My A&amp;R Record</a>
+      <a id="navProfile" class="hide" href="/account">My account</a>
       <a class="nav-join" id="navJoin" href="/join">Join the A&amp;R Team</a>
     </div>
   </div>
@@ -156,7 +155,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // Signed-in members see "My profile" in the nav (the auth token is the signal; /profile
 // itself re-verifies it server-side and falls back to the email step if it's stale).
-if(localStorage.getItem('rt_auth_token')){$('#navProfile').classList.remove('hide');$('#navRefer').classList.remove('hide');}
+if(localStorage.getItem('rt_auth_token')){$('#navProfile').classList.remove('hide');}
 // GA4 engagement events (no-op when analytics is disabled or gtag hasn't loaded).
 function track(name, params){ try{ if(window.gtag) window.gtag('event', name, params||{}); }catch(e){} }
 const initials=n=>String(n||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
@@ -371,7 +370,7 @@ async function _ensureRealtime(liveId){
     const me=await fetch('/api/auth/me',{headers:{'X-Auth-Token':tok}}).then(r=>r.ok?r.json():null);
     // The join CTA becomes the profile link — so drop the plain #navProfile link that the
     // token check already un-hid, or the nav reads "My A&R Record" twice.
-    if(me&&me.uid){ const j=document.getElementById('navJoin'); j.textContent='My A&R Record'; j.href='/profile';
+    if(me&&me.uid){ const j=document.getElementById('navJoin'); j.textContent='My account'; j.href='/account';
       document.getElementById('navProfile').classList.add('hide'); }
   }catch(e){}
 })();
