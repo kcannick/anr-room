@@ -2,7 +2,7 @@
 
 A weekly live music-review broadcast (Wed 7–11 PM ET, multistreamed to 6 platforms) with a
 participation layer: viewers rate songs 0–9 and predict the room average, scoring on how
-well they "read the room." Points accrue across a monthly **Series**, whose top A&Rs help
+well they "read the room." Points accrue across a **Series** (the $500 is awarded per series), whose top A&Rs help
 populate **A&R Wars**: an 8-competitor single-elimination tournament (curated — e.g. top 4
 from the board + 4 invited Tastemakers) where competitors scout songs from a "service pack"
 and play them head-to-head; the A&R Room audience votes each matchup via binary ("Verzuz")
@@ -600,7 +600,8 @@ live on anr.makinitmag.com.
   **ranked WITHOUT scores**, six to a slide, split evenly across as many slides as the day needs
   → "Submit your music / Free Review by the A&R Team", closing line B) and the day's **top A&R**
   (name, city, handle, **the profile photo when there is one** → the other top A&Rs with points
-  → "Join the A&R Team / Win $500 as the month's top A&R"). Rendered by the 3PM publish through
+  → "Join the A&R Team / Qualify to win $500 Cash!" — the original "Win $500 as the month's
+  top A&R" is retired by the prize rule). Rendered by the 3PM publish through
   Satori (`shareCards` type `resultsSlide`, 1080×1350) and hosted at
   `daily/<day>/results-{song,ar}-N.png`; `recap_jobs.results_{song,ar}_urls` (JSON arrays, null
   when any slide failed to host) + `results_{song,ar}_caption`. Live admin-only render at
@@ -1171,6 +1172,52 @@ product needs. Say what the thing is and what the person should do. When the ope
 wording, use it **verbatim** rather than improving it. Prefer the literal noun ("songs",
 "picks", "entry") over an invented one. Rejected examples, for calibration: "Got a good ear for
 music?", "Call all 18 and the money's yours", "surest bet", "dark horses", "your card".
+
+## Canonical naming + prize rules (operator, 2026-10-03, naming revised 2026-10-14 — do not drift)
+- **A daily set is named for its RELEASE date** (2026-10-14; replaces the 10-03 close-date
+  rule). It opens two days before release: a full day for A&Rs to review, then a full day to
+  prepare the announcement. Opens Wed Oct 14 3PM, closes Thu Oct 15 3PM, released (countdown
+  posted) Fri Oct 16 3PM → **"October 16th"**. Public title, verbatim: **"Makin' It Daily
+  Countdown"** / **"October 16th Results"**. Ordinal day ("16th"). Every surface — console,
+  player, emails, Track Report, captions, carousels, Asana — prints that ONE date; compute it
+  from `etDay(stream_at)` (the release step), never `drop_day` (the OPEN day) or the close.
+  Open/close times appear only as labelled times ("closes tomorrow at 3:00 PM"), never as a
+  second date. Sets from before the 2026-10-01 clock released on their close day.
+- **Internal session names = TYPE + date**, verbatim format **"Daily Drop - Oct 16, 2026"**
+  (release date for a drop). The type is in the name because drops share the console with
+  Live Reviews, Takeovers, Tournaments and Versus competitions ("Live Review - Jul 3, 2026");
+  a one-off event's own title stands in as the type.
+- **BETA.** Everything that closed before Mon 2026-09-28 is the closed series **BETA** (done
+  in prod 2026-10-10; the active series is Series 2), and its sessions are numbered
+  **"Show N — <internal name>"** (Show 1 – Show 75, date order). After BETA, no number.
+  Renames are retroactive. Rename table: docs/specs/show-naming-rename-table.md.
+- **The $500 prize is never described as monthly, and no date or timing is ever attached to
+  it** — not "monthly", "the month's top A&R", "this month's rankings", "Monthly A&R Award",
+  nor a week, a date or a deadline. Say "$500 to the top A&R", "the $500 A&R Award", "Top A&Rs
+  qualify for A&R Wars". This overrides earlier verbatim operator copy that said "month's".
+  The prize is awarded PER SERIES (operator, 2026-10-14), and a series is not a month. Internal
+  series cadence is unaffected; this is about what a reader is told about the prize.
+
+## What each rating means (operator, 2026-10-14 — canonical; use verbatim)
+| Rating | Meaning |
+|---|---|
+| 0 | Scrap it! |
+| 1 | Take the best ideas... Scrap the rest. |
+| 2 | There's something there but it needs significant work |
+| 3 | Potential release |
+| 4 | Solid release |
+| 5 | Strong release |
+| 6 | Potential Single |
+| 7 | Single |
+| 8 | Strong Single |
+| 9 | It's a Hit! |
+
+Use this wording wherever a rating is explained: the rating step (daily + live), how-to
+copy, the Track Report and artist email, the operator manual and promo explainers. Only the
+first letter of a line may be capitalised for display ("potential release" → "Potential
+release"). The chart / Track Report bands (0–2.9 / 3–5.9 / 6+) already cut where these
+meanings turn (3 = first release, 6 = first single). **The 0–10 switch needs an eleventh
+meaning from the operator** — do not invent one. Mockup: `public/_mock-rating-meanings.html`.
 
 ## Design system + assets (match these)
 The design system is extracted to `docs/design-system/` (also synced to Claude Design):

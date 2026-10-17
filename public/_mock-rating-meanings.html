@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rating Meanings Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* MOCKUP — the operator's score definitions (2026-10-14) on the rating step.
+   Styles copied from public/daily.html so this reads as the real page. */
+body{background:var(--bg);color:var(--ink);margin:0;
+  font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.hide{display:none !important}
+.mono{font-family:"Space Mono",ui-monospace,Menlo,monospace}
+.dim{color:var(--ink-dim)}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;cursor:pointer;
+  border:0;border-radius:13px;padding:16px;font-family:inherit;font-weight:800;font-size:15.5px;
+  letter-spacing:-.01em;background:var(--signal);color:var(--bg)}
+.btn[disabled]{opacity:.35;cursor:default}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px}
+.pips{display:flex;gap:6px}
+.pip{flex:1;min-width:0;height:46px;border:1px solid var(--line);background:var(--inset);
+  border-radius:11px;display:flex;align-items:center;justify-content:center;
+  font-family:"Space Mono",monospace;font-size:16px;color:var(--ink-dim);cursor:pointer;
+  transition:transform .12s ease,background .12s ease}
+.pip.on{background:var(--signal);border-color:var(--signal);color:var(--bg);font-weight:700;transform:translateY(-3px)}
+.stepnum{width:21px;height:21px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;
+  font-weight:800;display:flex;align-items:center;justify-content:center;flex:none}
+.steprow{display:flex;align-items:center;gap:9px}
+
+/* NEW: the meaning of the chosen number, under the dial */
+.meaning{margin-top:12px;min-height:46px;border:1px solid var(--line);border-radius:11px;
+  padding:11px 13px;display:flex;align-items:center;gap:11px;font-size:14px;line-height:1.4}
+.meaning .n{font-family:"Space Mono",monospace;font-weight:700;font-size:18px;color:var(--signal);flex:none;width:18px;text-align:center}
+.meaning.empty{color:var(--ink-faint);border-style:dashed}
+/* NEW: the full key, opened from a link */
+.keylink{background:none;border:0;padding:0;margin-top:10px;color:var(--ink-dim);font:inherit;font-size:12.5px;
+  text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.key{margin-top:10px;border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.key div{display:flex;gap:12px;padding:9px 13px;font-size:13.5px;line-height:1.35;border-top:1px solid var(--line)}
+.key div:first-child{border-top:0}
+.key b{font-family:"Space Mono",monospace;color:var(--ink-dim);width:14px;flex:none;text-align:center}
+.key div.on{background:rgba(75,183,73,.10)} .key div.on b{color:var(--signal)}
+
+/* D: the artist's verdict, mirroring the Official track rating box in the artist email */
+.rate{background:#24272C;border:1px solid #2C2F34;border-radius:10px;padding:16px;text-align:center;margin-top:12px}
+.rate .k{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:700}
+.rate .v{font-family:"Space Mono",monospace;font-size:40px;font-weight:700;line-height:1.1;color:var(--signal);margin-top:6px}
+.rate .o{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;margin-top:4px}
+.rate .verdict{font-weight:800;font-size:17px;color:var(--ink);margin-top:10px;line-height:1.3}
+.was{font-size:11.5px;color:var(--ink-faint);margin-top:6px}
+/* mockup page frame */
+.page{max-width:1400px;margin:0 auto;padding:28px 16px 48px}
+.page h1{font-weight:900;font-size:28px;letter-spacing:-.02em;margin:0 0 6px}
+.page > p{color:var(--ink-dim);margin:0 0 24px;max-width:760px;line-height:1.5;font-size:14.5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;align-items:start}
+.cap{margin:0 0 10px}
+.note{font-size:12.5px;color:var(--ink-dim);line-height:1.5;margin:12px 2px 0}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>What the numbers mean</h1>
+  <p>Mockup for the A&amp;R Daily rating step (the Live page gets the same). The operator's
+  definitions, word for word. The meaning of the chosen number appears under the dial, and
+  the full list opens from a link. Tap the numbers to try it. Frame D is what the artist sees.</p>
+
+  <div class="grid">
+    <div>
+      <div class="eyebrow cap">A · Before choosing</div>
+      <div class="panel" data-frame="a"></div>
+      <div class="note">The empty box keeps the button from jumping when a number is picked.</div>
+    </div>
+    <div>
+      <div class="eyebrow cap">B · After choosing 6</div>
+      <div class="panel" data-frame="b" data-pick="6"></div>
+      <div class="note">One line, the operator's words. Nothing else on the step changes.</div>
+    </div>
+    <div>
+      <div class="eyebrow cap">C · The full list open</div>
+      <div class="panel" data-frame="c" data-pick="3" data-key="1"></div>
+      <div class="note">The chosen number is highlighted in the list. "Close" collapses it again.</div>
+    </div>
+    <div>
+      <div class="eyebrow cap">D · The artist's verdict</div>
+      <div class="panel" id="verdicts"></div>
+      <div class="note">The Track Report and the artist email print the meaning of the
+      average's whole number: 6.4 and 6.9 are both 6, Potential Single. It never rounds up into
+      the next verdict, the same way the bands already cut.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// The operator's definitions, 2026-10-14. Wording verbatim; only the first letter of each
+// line is capitalised so the list reads evenly.
+const MEANINGS = [
+  'Scrap it!',
+  'Take the best ideas... Scrap the rest.',
+  'There’s something there but it needs significant work',
+  'Potential release',
+  'Solid release',
+  'Strong release',
+  'Potential Single',
+  'Single',
+  'Strong Single',
+  'It’s a Hit!',
+];
+function frame(el){
+  let pick = el.dataset.pick != null ? +el.dataset.pick : null;
+  let keyOpen = !!el.dataset.key;
+  function render(){
+    const pips = n => `<div class="pip${pick === n ? ' on' : ''}" data-n="${n}">${n}</div>`;
+    el.innerHTML = `
+      <div class="steprow"><span class="stepnum">1</span><span style="font-weight:800;font-size:15px;letter-spacing:-.01em">Rate it</span></div>
+      <p class="dim" style="margin:7px 0 11px;font-size:12.5px;line-height:1.5">Your honest take, 0 to 9.</p>
+      <div class="pips" style="margin-bottom:6px">${[0,1,2,3,4].map(pips).join('')}</div>
+      <div class="pips">${[5,6,7,8,9].map(pips).join('')}</div>
+      ${pick === null
+        ? '<div class="meaning empty">Pick a number to see what it means.</div>'
+        : `<div class="meaning"><span class="n">${pick}</span><span>${MEANINGS[pick]}</span></div>`}
+      <button class="keylink">${keyOpen ? 'Close' : 'What the numbers mean'}</button>
+      ${keyOpen ? `<div class="key">${MEANINGS.map((m, i) => `<div class="${i === pick ? 'on' : ''}"><b>${i}</b><span>${m}</span></div>`).join('')}</div>` : ''}
+      <button class="btn" style="margin-top:18px" ${pick === null ? 'disabled' : ''}>Next →</button>`;
+    el.querySelectorAll('.pip').forEach(p => p.onclick = () => { pick = +p.dataset.n; render(); });
+    el.querySelector('.keylink').onclick = () => { keyOpen = !keyOpen; render(); };
+  }
+  render();
+}
+document.querySelectorAll('[data-frame]').forEach(frame);
+const BAND = m => m < 3 ? 'Keep it in the studio' : m < 6 ? 'Release Ready' : 'Potential Single';
+document.getElementById('verdicts').innerHTML =
+  '<div class="eyebrow" style="font-size:10px">Official track rating · three examples</div>' +
+  [6.4, 4.5, 2.3].map(m => `<div class="rate"><div class="k">Official track rating</div>
+    <div class="v">${m.toFixed(1)}</div><div class="o">out of 9</div>
+    <div class="verdict">${MEANINGS[Math.floor(m)]}</div>
+    <div class="was">today: "out of 9 · ${BAND(m)}"</div></div>`).join('');
+</script>
+</body>
+</html>

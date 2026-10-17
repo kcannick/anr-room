@@ -849,7 +849,7 @@
       <div class="lockmsg hide" id="typeLockMsg" style="font-size:12px;margin-top:6px;color:var(--amber)">🔒 This room already has rounds — the starting type is set. Change type per round from the round form.</div>
     </div>
     <div id="seriesField">
-      <label>Series <span class="muted">(counts toward the monthly rankings)</span></label>
+      <label>Series <span class="muted">(counts toward the rankings)</span></label>
       <select id="newSeries" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px">
         <option value="">— Unassigned —</option>
       </select>
@@ -1178,7 +1178,7 @@
         <div><label>Evaluation format <span class="muted">(set at creation)</span></label>
           <div id="seType" class="mono" style="font-size:13px;color:var(--ink-dim);border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:var(--inset)">—</div></div>
       </div>
-      <div id="seSeriesRow" class="hide"><label>Series <span class="muted">(the monthly board this room counts toward)</span></label>
+      <div id="seSeriesRow" class="hide"><label>Series <span class="muted">(the board this room counts toward)</span></label>
         <select id="seSeries" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:14px;padding:10px;border-radius:10px"></select></div>
       <div><label>Description <span class="muted">(A&amp;Rs see this while they wait)</span></label>
         <textarea id="cfgLobby" placeholder="e.g. Doors at 8, first drop at 8:30"></textarea></div>
@@ -1834,7 +1834,7 @@
     <ol class="host-intro">
       <li><b>Create a room.</b> Use <b>New room</b> to spin up a room for your stream — pick 0–9 rating or Versus (A/B).</li>
       <li><b>Share your links.</b> Give viewers the <b>Entry</b> link to participate and add the <b>Overlay</b> to your broadcast for live results.</li>
-      <li><b>Present the $500 as the monthly A&amp;R Award.</b> Top A&amp;Rs in the monthly rankings qualify for <b>A&amp;R Wars</b>, where the champion earns it.</li>
+      <li><b>Present the $500 as the A&amp;R Award.</b> Top A&amp;Rs in the rankings qualify for <b>A&amp;R Wars</b>, where the champion earns it.</li>
     </ol>
     <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:12px 0 14px">You manage only your own rooms. Viewer contact info stays with Makin' It.</p>
     <button class="btn" id="hostIntroGo" style="width:100%">Got it — let's go</button>
@@ -4908,7 +4908,7 @@ async function loadUsers(){
             const on=!!u.perms[k];
             return `<button class="permchip${on?' on':''}" onclick="togglePerm('${u.id}','${k}',${on?0:1})">${lbl}</button>`;
           }).join('')
-          +`<button class="permchip give${u.giveaway?' on':''}" title="Count this host's series-tagged rooms toward the monthly $500" onclick="toggleGiveaway('${u.id}',${u.giveaway?0:1})">💵 $500</button>`
+          +`<button class="permchip give${u.giveaway?' on':''}" title="Count this host's series-tagged rooms toward the $500" onclick="toggleGiveaway('${u.id}',${u.giveaway?0:1})">💵 $500</button>`
           +'</div>'
         : '';
       return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname"><a href="/u/${esc(u.id)}" target="_blank" rel="noopener" title="Open public profile" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--ink-faint)">${esc(u.name||'(no name)')}</a>${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
