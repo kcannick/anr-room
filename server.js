@@ -7013,24 +7013,18 @@ async function handleApi(req, res, url) {
     await db.run('INSERT INTO otps (email, session_id, code, expires_at, attempts) VALUES (?,?,?,?,0)',
       [email.toLowerCase(), sessionId, code, now() + 10 * 60 * 1000]);
     const r = await sendOtp(email, code, session.name);
-    // Returning-player prefill (safe subset only). This response is pre-verification, so
-    // we must NOT leak raw PII to anyone who types an email. We return the name and, for
-    // the phone, only a MASKED hint (last 4 digits) — never the full number. Because
-    // providing a number IS the SMS opt-in, a phone on file means they're already opted
-    // in; the masked hint signals that without exposing the number.
     const prior = await db.get('SELECT name, phone FROM users WHERE email = ?', [email.toLowerCase()]);
-    let prefill = null;
-    if (prior) {
-      const digits = (prior.phone || '').replace(/\D/g, '');
-      prefill = {
-        name: prior.name || '',
-        hasPhone: !!digits,
-        phoneHint: digits ? ('••• ' + digits.slice(-4)) : null,
-      };
-    }
+    // What's on file, as BOOLEANS (the /api/auth/request `known` shape): the code screen
+    // shows only the fields still missing. Nothing personal goes back before the code is
+    // checked — this used to return the display name to anyone who typed an email.
+    const known = {
+      exists: !!prior,
+      hasName: !!(prior && (prior.name || '').trim()),
+      hasPhone: !!(prior && (prior.phone || '').replace(/\D/g, '').length >= 7),
+    };
     return send(res, 200, { sent: true, devCode: r.devCode || null,
       sessionName: session.name, watchUrl: session.watch_url || null,
-      returning: !!prior, prefill });
+      returning: !!prior, known });
   }
 
   // ----- verify OTP + create/return participant -----
@@ -7059,6 +7053,11 @@ async function handleApi(req, res, url) {
     let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
     if (user && user.blocked) return bad(res, 'This account has been suspended.', 403);
     if (user) await reactivateUser(user);   // a verified code brings a deactivated A&R back (046)
+    // A returning A&R's code screen hides the name field when one is on file, so a blank
+    // name means "keep mine" — and THIS session's participant row still needs it.
+    const typedName = (name || '').trim().slice(0, MAX_NAME);
+    const joinName = typedName || (user ? (user.name || '').trim().slice(0, MAX_NAME) : '');
+    if (!joinName) return bad(res, 'Add a display name');
     const storedDigits = user ? (user.phone || '').replace(/\D/g, '') : '';
     // Providing a phone number IS the SMS opt-in (disclosure sits under the field). The
     // effective phone is: a newly typed number, OR the stored number kept by a returning
@@ -7076,7 +7075,7 @@ async function handleApi(req, res, url) {
 
     if (user) {
       await db.run('UPDATE users SET last_seen = ?, name = COALESCE(NULLIF(?,\'\'), name) WHERE uid = ?',
-        [now(), (name || '').trim().slice(0, MAX_NAME), user.uid]);
+        [now(), typedName, user.uid]);
       // Save a newly typed number (masked/echoed values were filtered out above). A number
       // is data — storing it is always fine; only the CONSENT flag is protected.
       if (newPhone) await db.run('UPDATE users SET phone = ? WHERE uid = ?', [newPhone, user.uid]);
@@ -7095,7 +7094,7 @@ async function handleApi(req, res, url) {
     } else {
       const uid = id(12);
       await db.run('INSERT INTO users (uid, email, name, phone, sms_marketing_consent, sms_consent_at, first_seen, last_seen, sessions_played, lifetime_points) VALUES (?,?,?,?,?,?,?,?,0,0)',
-        [uid, em, (name || '').trim().slice(0, MAX_NAME), effectivePhone || null, consent, consent ? now() : null, now(), now()]);
+        [uid, em, joinName, effectivePhone || null, consent, consent ? now() : null, now(), now()]);
       user = { uid, email: em, isNewAccount: true };
     }
     // The per-session participant records the phone + consent for THIS signup. For an A&R
@@ -7109,7 +7108,7 @@ async function handleApi(req, res, url) {
     const token = id(18);
     if (participant) {
       await db.run('UPDATE participants SET verified = 1, token = ?, user_id = ?, name = COALESCE(NULLIF(?,\'\'), name), phone = COALESCE(NULLIF(?,\'\'), phone), sms_marketing_consent = CASE WHEN ? = 1 THEN 1 ELSE sms_marketing_consent END WHERE id = ?',
-        [token, user.uid, (name || '').trim().slice(0, MAX_NAME), ph, effConsent, participant.id]);
+        [token, user.uid, joinName, ph, effConsent, participant.id]);
       // An explicit opt-out must also clear a stale snapshot left by an earlier signup —
       // the CASE above only ever raises the flag, never lowers it.
       if (prefSet && !effConsent) await db.run('UPDATE participants SET sms_marketing_consent = 0 WHERE id = ?', [participant.id]);
@@ -7138,7 +7137,7 @@ async function handleApi(req, res, url) {
         myCode = refCode();
       }
       await db.run('INSERT INTO participants (id, session_id, user_id, email, name, phone, sms_marketing_consent, ref_code, referred_by, token, verified, total_points, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,1,0,?)',
-        [pid, sessionId, user.uid, em, (name || '').trim().slice(0, MAX_NAME), ph || null, effConsent, myCode, referredBy, token, now()]);
+        [pid, sessionId, user.uid, em, joinName, ph || null, effConsent, myCode, referredBy, token, now()]);
       // First time this user appears in this session → count it toward sessions_played.
       await db.run('UPDATE users SET sessions_played = sessions_played + 1 WHERE uid = ?', [user.uid]);
     }

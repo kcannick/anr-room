@@ -607,13 +607,24 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const pfSessB = await call('/api/session', { name: 'Combo Two' }, 'POST', BOOTH);
   const pfReqB = await call('/api/join/request', { sessionId: pfSessB.d.sessionId, email: pfEmail });
   ok('return visit flagged returning', pfReqB.d.returning === true, JSON.stringify(pfReqB.d.returning));
-  ok('prefill name present', pfReqB.d.prefill && pfReqB.d.prefill.name === 'Combo Kid', JSON.stringify(pfReqB.d.prefill));
-  ok('phone hint masked', pfReqB.d.prefill && pfReqB.d.prefill.phoneHint === '••• 0101', JSON.stringify(pfReqB.d.prefill && pfReqB.d.prefill.phoneHint));
-  ok('full phone not leaked in request', !JSON.stringify(pfReqB.d).includes('4045550101') && !JSON.stringify(pfReqB.d).includes('5550101'));
-  await call('/api/join/verify', { sessionId: pfSessB.d.sessionId, email: pfEmail, code: pfReqB.d.devCode, name: 'Combo Kid', phone: '', keepPhone: true });
+  ok('request says what is on file (booleans)', pfReqB.d.known && pfReqB.d.known.exists === true && pfReqB.d.known.hasName === true && pfReqB.d.known.hasPhone === true, JSON.stringify(pfReqB.d.known));
+  ok('display name NOT returned before the code is checked', !JSON.stringify(pfReqB.d).includes('Combo Kid'), JSON.stringify(pfReqB.d));
+  ok('no phone digits returned before the code is checked', !JSON.stringify(pfReqB.d).includes('0101') && !JSON.stringify(pfReqB.d).includes('5550101'));
+  // The code screen hides fields on file, so a returning A&R verifies with a BLANK name.
+  const pfVerB = await call('/api/join/verify', { sessionId: pfSessB.d.sessionId, email: pfEmail, code: pfReqB.d.devCode, name: '', phone: '', keepPhone: true });
+  ok('returning A&R joins with a blank name', pfVerB.status === 200 && pfVerB.d.token, JSON.stringify(pfVerB.d));
+  const pfExpB = await fetch(base + `/api/admin/export?sessionId=${pfSessB.d.sessionId}&format=json`, { headers: BOOTH }).then(r => r.json());
+  const pfRowB = pfExpB.participants.find(p => p.email === pfEmail);
+  ok('blank name keeps the name on file for the new session', pfRowB && pfRowB.name === 'Combo Kid', JSON.stringify(pfRowB && pfRowB.name));
+  ok('hidden phone kept (still on file + consented)', pfRowB && /0101$/.test(String(pfRowB.phone || '').replace(/\D/g, '')) && (pfRowB.sms_marketing_consent === 1 || pfRowB.sms_marketing_consent === true), JSON.stringify(pfRowB));
   const pfSessC = await call('/api/session', { name: 'Combo Three' }, 'POST', BOOTH);
   const pfReqC = await call('/api/join/request', { sessionId: pfSessC.d.sessionId, email: pfEmail });
-  ok('kept phone preserved (still on file)', pfReqC.d.prefill && pfReqC.d.prefill.phoneHint === '••• 0101', JSON.stringify(pfReqC.d.prefill && pfReqC.d.prefill.phoneHint));
+  ok('kept phone preserved (still on file)', pfReqC.d.known && pfReqC.d.known.hasPhone === true, JSON.stringify(pfReqC.d.known));
+  ok('new email: nothing on file', pfReqA.d.known && pfReqA.d.known.exists === false && pfReqA.d.known.hasName === false, JSON.stringify(pfReqA.d.known));
+  const pfNewSess = await call('/api/session', { name: 'Combo Four' }, 'POST', BOOTH);
+  const pfNewReq = await call('/api/join/request', { sessionId: pfNewSess.d.sessionId, email: 'combo-new@test.com' });
+  const pfNewVer = await call('/api/join/verify', { sessionId: pfNewSess.d.sessionId, email: 'combo-new@test.com', code: pfNewReq.d.devCode, name: '' });
+  ok('new account with no name is refused', pfNewVer.status === 400, JSON.stringify(pfNewVer));
 
   console.log('\n— end session: shareable recap revealed —');
   await call('/api/admin/session/end', { sessionId: SID }, 'POST', AH);

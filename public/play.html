@@ -335,12 +335,12 @@
   <!-- JOIN: code -->
   <section id="screen-code" class="center stack hide">
     <div class="panel stack">
-      <div><div class="eyebrow">Step 2</div><h2 style="margin-top:6px">Enter your access code</h2>
+      <div><div class="eyebrow">Step 2</div><h2 style="margin-top:6px" id="codeTitle">Enter your access code</h2>
         <p class="dim" style="margin:8px 0 0;font-size:14px">Code sent to <span id="emailEcho" style="color:var(--ink)"></span>. If it isn't in your inbox, check <strong style="color:var(--ink)">Spam</strong> or <strong style="color:var(--ink)">Promotions</strong>.</p></div>
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
       <div id="devCodeBox" class="note hide"></div>
-      <div><label>Display name (shown in the A&amp;R rankings)</label><input id="name" placeholder="e.g. Maya"></div>
-      <div>
+      <div id="nameRow"><label>Display name (shown in the A&amp;R rankings)</label><input id="name" placeholder="e.g. Maya"></div>
+      <div id="phoneRow">
         <label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label>
         <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
         <p class="dim" style="font-size:12px;line-height:1.5;margin:7px 2px 0">By entering your number you agree to receive texts when this room goes live and about future A&amp;R Room events. Message &amp; data rates may apply; reply STOP to opt out. Optional—not required to participate.</p>
@@ -348,7 +348,7 @@
       <!-- The subscribe moment (028). Checked by default: it matches what the register
            screen already promises ("You'll get a notification when it opens"). Unchecking
            it writes room_live=off on BOTH channels, so it really does mean "don't ping me". -->
-      <label class="pref-row" for="notifyRooms">
+      <label class="pref-row" for="notifyRooms" id="notifyRow">
         <input type="checkbox" id="notifyRooms" checked>
         <span><b>Notify me when this and future rooms go live</b>
           <small>Email, plus a text if you added a number. Change this any time in your A&amp;R record.</small></span>
@@ -741,7 +741,7 @@
   </div>
 </div>
 
-<script src="/auth.js?v=1"></script>
+<script src="/auth.js?v=2"></script>
 <script>
 // The join/auth plumbing — per-session tokens, the api()/apiRaw() wrappers, the three
 // join calls, the one-tap account register — now lives in /auth.js so A&R Daily can
