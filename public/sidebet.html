@@ -167,7 +167,10 @@ let PACK = null, SONGS = [], BANNER = null, ENTRY = null, RESULTS = null;
 let picks = [];                           // pack_song ids, in the entrant's order
 let screen = 'offer';
 let filter = '';
-let form = { first: '', last: '', email: '', phone: '', notify: true, sms: false };
+let form = { first: '', last: '', email: '', phone: '', code: '', notify: true, sms: false };
+// What's on file for this email (booleans from /api/auth/request). The code screen asks
+// only for what's missing, so a returning A&R types the code and nothing else.
+let known = { exists: false, hasName: false, hasPhone: false };
 let codeSent = false, devCode = null, busy = false, err = '';
 
 const tok = () => localStorage.getItem(LS_TOKEN) || '';
@@ -340,17 +343,8 @@ function viewForm() {
   return `<div class="panel">
     <span class="eyebrow">Almost in</span>
     <h2 style="margin-top:9px">${PACK.prizeText ? `Where do we send the ${esc(PACK.prizeText)}?` : 'Tell us who you are'}</h2>
-    <p style="font-size:13.5px">We'll email you a 6-digit code to confirm it's you.</p>
-    <div class="two">
-      <div class="field"><label>First name</label><input type="text" id="fFirst" autocomplete="given-name" value="${esc(form.first)}"></div>
-      <div class="field"><label>Last name</label><input type="text" id="fLast" autocomplete="family-name" value="${esc(form.last)}"></div>
-    </div>
+    <p style="font-size:13.5px">Enter your email and we'll send a 6-digit code to confirm it's you.</p>
     <div class="field"><label>Email</label><input type="email" id="fEmail" autocomplete="email" inputmode="email" value="${esc(form.email)}"></div>
-    <div class="field"><label>Mobile <span class="muted">(optional)</span></label><input type="tel" id="fPhone" autocomplete="tel" inputmode="tel" value="${esc(form.phone)}"></div>
-    <div class="check ${form.notify ? 'on' : ''}" id="ckNotify"><span class="box">✓</span>
-      <span class="txt">Email me when the A&amp;R Room goes live.</span></div>
-    <div class="check ${form.sms ? 'on' : ''}" id="ckSms"><span class="box">✓</span>
-      <span class="txt">Text me about A&amp;R Wars and the results. Msg &amp; data rates may apply, reply STOP to opt out.</span></div>
     ${err ? `<div class="err">${esc(err)}</div>` : ''}
     <button class="btn" id="go5" ${busy ? 'disabled' : ''}>${busy ? 'Sending…' : 'Send my code'}</button>
     <button class="btn ghost" id="back4">Back</button>
@@ -359,18 +353,30 @@ function viewForm() {
 }
 
 function viewCode() {
-  return `<div class="panel center">
+  // Only the fields we don't already have. Name and number changes live in the
+  // A&R's profile; the notify choice is made once, at signup.
+  const askName = !known.hasName, askPhone = !known.hasPhone, askNotify = !known.exists;
+  return `<div class="panel">
     <span class="eyebrow">Check your email</span>
-    <h2 style="margin-top:10px">Enter your code</h2>
-    <p style="font-size:13.5px">Sent to <b class="mono" style="font-size:13px">${esc(form.email)}</b></p>
+    <h2 style="margin-top:10px">${known.exists ? 'Welcome back' : 'Enter your code'}</h2>
+    <p style="font-size:13.5px">Sent to <b class="mono" style="font-size:13px">${esc(form.email)}</b>. If it isn't in your inbox, check Spam or Promotions.</p>
     ${devCode ? `<p class="mono" style="color:var(--gold)">DEV CODE: ${esc(devCode)}</p>` : ''}
     <div class="field" style="margin-top:16px">
-      <input class="code-in" type="text" id="fCode" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code">
+      <input class="code-in" type="text" id="fCode" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code" value="${esc(form.code)}">
     </div>
+    ${askName ? `<div class="two">
+      <div class="field"><label>First name</label><input type="text" id="fFirst" autocomplete="given-name" value="${esc(form.first)}"></div>
+      <div class="field"><label>Last name</label><input type="text" id="fLast" autocomplete="family-name" value="${esc(form.last)}"></div>
+    </div>` : ''}
+    ${askPhone ? `<div class="field"><label>Mobile <span class="muted">(optional)</span></label><input type="tel" id="fPhone" autocomplete="tel" inputmode="tel" value="${esc(form.phone)}"></div>
+    <div class="check ${form.sms ? 'on' : ''}" id="ckSms"><span class="box">✓</span>
+      <span class="txt">Text me about A&amp;R Wars and the results. Msg &amp; data rates may apply, reply STOP to opt out.</span></div>` : ''}
+    ${askNotify ? `<div class="check ${form.notify ? 'on' : ''}" id="ckNotify"><span class="box">✓</span>
+      <span class="txt">Email me when the A&amp;R Room goes live.</span></div>` : ''}
     ${err ? `<div class="err">${esc(err)}</div>` : ''}
     <button class="btn" id="go6" ${busy ? 'disabled' : ''}>${busy ? 'Confirming…' : 'Confirm my entry'}</button>
     <button class="btn ghost" id="resend">Resend code</button>
-    <div class="legal">Already have an account? Same code, same box — your entry attaches to it.</div>
+    <button class="btn ghost" id="back5">Use a different email</button>
   </div>`;
 }
 
@@ -499,7 +505,7 @@ function wire() {
 
   on('#ckNotify', 'click', () => { form.notify = !form.notify; render(); });
   on('#ckSms', 'click', () => { form.sms = !form.sms; render(); });
-  ['first', 'last', 'email', 'phone'].forEach(k => {
+  ['first', 'last', 'email', 'phone', 'code'].forEach(k => {
     const el = $('#f' + k[0].toUpperCase() + k.slice(1));
     if (el) el.addEventListener('input', () => { form[k] = el.value; });
   });
@@ -507,9 +513,10 @@ function wire() {
   on('#go5', 'click', requestCode);
   on('#resend', 'click', requestCode);
   on('#back4', 'click', () => go('order'));
+  on('#back5', 'click', () => { form.code = ''; err = ''; go('form'); });
   on('#go6', 'click', verifyCode);
   const fc = $('#fCode');
-  if (fc) { fc.focus(); fc.addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyCode(); }); }
+  if (fc) { if (!form.code) fc.focus(); fc.addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyCode(); }); }
 }
 
 async function requestCode() {
@@ -520,21 +527,24 @@ async function requestCode() {
   busy = false;
   if (status !== 200) { err = d.error || 'Could not send the code.'; render(); return; }
   devCode = d.devCode || null; codeSent = true;
+  known = { exists: !!(d.known && d.known.exists), hasName: !!(d.known && d.known.hasName), hasPhone: !!(d.known && d.known.hasPhone) };
   go('code');
 }
 
 async function verifyCode() {
-  const code = ($('#fCode') || {}).value || '';
+  const code = ($('#fCode') || {}).value || form.code || '';
   if (code.trim().length < 6) { err = 'Enter the 6-digit code.'; render(); return; }
+  if (!known.hasName && !form.first.trim()) { err = 'Enter your first name.'; render(); return; }
   busy = true; err = ''; render();
   // The name goes in as one string: `users.name` is a single display-name column and
   // the rest of the app reads it that way. Splitting it here would be a schema change
   // for no gain — nothing else in the product ever needs the halves apart.
-  const name = [form.first.trim(), form.last.trim()].filter(Boolean).join(' ');
+  // A field we didn't show sends nothing, and the server leaves what's on file alone.
+  const name = known.hasName ? '' : [form.first.trim(), form.last.trim()].filter(Boolean).join(' ');
   const { status, d } = await api('/api/auth/verify', {
     email: form.email.trim(), code: code.trim(), name,
-    phone: form.sms ? form.phone.trim() : '',
-    notifyRooms: form.notify ? 1 : 0,
+    phone: (!known.hasPhone && form.sms) ? form.phone.trim() : '',
+    notifyRooms: known.exists ? undefined : (form.notify ? 1 : 0),
   }, 'POST');
   busy = false;
   if (status !== 200 || !d.token) { err = d.error || 'That code did not work.'; render(); return; }
