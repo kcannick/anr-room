@@ -1850,12 +1850,10 @@ function recapDateLabel(ts) {
 // A daily set is dated by its RELEASE DAY = drop day + 2 (operator, 2026-10-23): the 10-17 drop
 // opens 10-17, closes 10-18 and its countdown posts 10-19, so the set is "10.19". Fixed off
 // drop_day rather than results_at, because an extended drop (10-17's results went 10-20) must
-// not shift its name. Noon + 48h stays on the right calendar day across a DST change.
-const DAILY_SET_OFFSET_DAYS = 2;
+// not shift its name. dailyPublishDay() is the one source for every surface (see etDayLabel).
 async function dailySetDate(session) {
-  return recapDateLabel(session.drop_day
-    ? etEpoch(session.drop_day, 12) + DAILY_SET_OFFSET_DAYS * 86400000
-    : (Number(session.window_opens_at) || now()));
+  const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
+  return recapDateLabel(etEpoch(dailyPublishDay(day), 12));
 }
 // "Daily at 3PM" off the stream's own epoch, so the graphic and the caption follow the setting.
 function recapTimeLabel(ts) {
@@ -2253,7 +2251,7 @@ async function winnerWeekData(weekStart, post, { photo = true } = {}) {
     const r = rep.songs[0];
     if (!r) return null;
     return { ...base, title: r.artist || r.title, by: '', handle: paren(r.ig),
-      record: '“' + r.title + '”', line: { rated: r.votes, score: Number(r.score).toFixed(1), drop: dayLabel(r.day) } };
+      record: '“' + r.title + '”', line: { rated: r.votes, score: Number(r.score).toFixed(1), drop: dayLabel(dailyPublishDay(r.day)) } };
   }
   const a = rep.ars[0];
   if (!a) return null;
@@ -2870,7 +2868,7 @@ async function gradeCardFacts(sessionId, uid) {
     `SELECT v.tier, COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id
       WHERE v.participant_id = ? AND r.status = 'ratified' GROUP BY v.tier`, [pa.id]);
   for (const t of tiers) if (Object.prototype.hasOwnProperty.call(counts, t.tier)) counts[t.tier] = Number(t.c) || 0;
-  return { sessionId: s.id, day: s.drop_day, dayLabel: gradeDayLabel(s.drop_day), grade: recap.grade, accuracy: recap.accuracy, counts };
+  return { sessionId: s.id, day: s.drop_day, dayLabel: gradeDayLabel(dailyPublishDay(s.drop_day)), grade: recap.grade, accuracy: recap.accuracy, counts };
 }
 // THE STANDING CARD (operator, 2026-10-15): the same card, ALL-TIME — every published daily drop
 // the A&R rated. Grade from the average accuracy of every rated record (the same per-round
@@ -3939,7 +3937,7 @@ async function enqueueDailyDigest(session) {
   const ids = [session.id, prev && prev.id, prev2 && prev2.id].filter(Boolean);
   const extra = { sql: `\n       AND (${ids.map(() => played).join(' OR ')})`, params: ids };
   return enqueueDayBroadcast(session, 'digest_daily',
-    `A&R Daily — ${etDayLabel(day) || 'the'} results`, `A&R Daily results for ${day}`, extra);
+    `A&R Daily — ${dailyDayLabel(day) || 'the'} results`, `A&R Daily results for ${day}`, extra);
 }
 // The public daily drop before this one, or null. "Public" = what /daily lists: an unlisted
 // test drop is never someone's "yesterday".
@@ -4009,7 +4007,7 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
   const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   const job = await db.get('SELECT * FROM recap_jobs WHERE session_id = ?', [sessionId]);
   const day = session && session.drop_day;
-  const dayLabel = etDayLabel(day);
+  const dayLabel = dailyDayLabel(day);
   const playUrl = await openDropUrl(base || publicBase());
   // "Today's records close at 3:00 PM ET — in 3 hours": the drop that is open as this sends.
   const openDrop = await db.get(
@@ -4272,7 +4270,7 @@ async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = n
     "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [sessionId])).c) || 0;
   const tiers = completionTiers(session, await dailySchedule());
   const top = tiers.length > 1 ? tiers[0] : null;
-  const shared = { dayLabel: etDayLabel(session.drop_day), count,
+  const shared = { dayLabel: dailyDayLabel(session.drop_day), count,
     closesLabel: etWhenLabel(Number(session.window_closes_at), session.drop_day),
     bonusLabel: top && top.label ? 'by ' + top.label : null,
     playUrl: root + '/daily?s=' + encodeURIComponent(sessionId) };
@@ -4381,6 +4379,22 @@ const etDay = (ts = Date.now()) => chartDay(ts);
 // Human labels, rendered SERVER-side and shipped as strings. The player surface never
 // converts an epoch to ET wall clock itself: a browser in Lagos would print a different
 // deadline than the one the server actually pays out on, and this is a cash-prize board.
+// THE NAME OF A DAILY SET (operator, confirmed 2026-10-23): its CALCULATED publish date, the drop
+// day + 2. A drop that opens on the 23rd is the 25th's set. It is worked out from drop_day, never
+// read off results_at: a schedule change re-stamps results_at, and reading it is how the Oct 17
+// and Oct 18 drops both came out as 10.20.26. Every place a daily set is named or dated for a
+// reader goes through these two; drop_day itself stays the key everything is stored and queried by.
+const DAILY_PUBLISH_OFFSET_DAYS = 2;
+function dailyPublishDay(dropDay) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(dropDay || '') ? etNextDay(dropDay, DAILY_PUBLISH_OFFSET_DAYS) : null;
+}
+function dailyDayLabel(dropDay) { return etDayLabel(dailyPublishDay(dropDay)); }
+// The internal session name: type + date, "Daily Drop - Oct 25, 2026" (operator, 2026-10-03).
+function dailyDropName(dropDay) {
+  const ts = etEpoch(dailyPublishDay(dropDay), 12);
+  return ts == null ? 'Daily Drop' : 'Daily Drop - ' + new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(ts));
+}
 function etDayLabel(day) {
   const ts = etEpoch(day, 12);
   if (ts == null) return null;
@@ -4846,7 +4860,7 @@ async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, 
       // owner_uid NULL is deliberate: canAdminSession then admits only a platform admin, and
       // this batch carries every artist's email and phone. Same reasoning that tightened
       // /api/admin/ingest/latest.
-      [sid, name || `A&R Daily — ${day}`, id(12), null, day, wo, wc, rp, sa, wo, seriesId || null, ts]);
+      [sid, name || dailyDropName(day), id(12), null, day, wo, wc, rp, sa, wo, seriesId || null, ts]);
     let i = 0;
     for (const s of songs) {
       i++;
@@ -5019,7 +5033,7 @@ async function arResultsData(uid, weekDay) {
   for (const sess of sessions) {
     const isDaily = sess.mode === 'async';
     const day = isDaily ? sess.drop_day : etDay(Number(sess.scheduled_at || sess.created_at));
-    const base = { id: sess.id, kind: isDaily ? 'daily' : 'live', day, label: etDayLabel(day) };
+    const base = { id: sess.id, kind: isDaily ? 'daily' : 'live', day, label: isDaily ? dailyDayLabel(day) : etDayLabel(day) };
     const pid = partBy.get(sess.id) || null;
     const listed = !sess.visibility || sess.visibility !== 'unlisted';
     const state = isDaily ? (sess.async_state || 'scheduled') : 'published';
@@ -5102,7 +5116,7 @@ async function arResultsData(uid, weekDay) {
          LEFT JOIN votes v ON v.round_id = r.id AND v.participant_id = ?
          LEFT JOIN round_reports rr ON rr.round_id = r.id AND rr.participant_id = ?
         WHERE r.session_id = ? AND r.status IN ('voting','closed','ratified')`, [me ? me.id : '', me ? me.id : '', od.id]);
-    open = { id: od.id, url: '/daily?s=' + encodeURIComponent(od.id), dayLabel: etDayLabel(od.drop_day),
+    open = { id: od.id, url: '/daily?s=' + encodeURIComponent(od.id), dayLabel: dailyDayLabel(od.drop_day),
       total: Number(c.total) || 0, rated: Number(c.handled) || 0,
       closesWhen: whenFromToday(Number(od.window_closes_at)), resultsWhen: whenFromToday(Number(od.results_at) || null) };
   } else {
@@ -10008,7 +10022,7 @@ async function handleApi(req, res, url) {
           WHERE p.session_id = ? AND p.verified = 1 AND p.total_points > 0 AND ${activeUserSql('u')}
           ORDER BY p.total_points DESC, p.created_at ASC LIMIT 8`, [lastPub.id]);
       yesterday = {
-        day: lastPub.drop_day, dayLabel: etDayLabel(lastPub.drop_day),
+        day: lastPub.drop_day, dayLabel: dailyDayLabel(lastPub.drop_day),
         board: rows.map((r, i) => ({
           rank: i + 1, name: dispName(r.uname || r.pname),
           category: r.primary_category || null, location: r.location || null,
@@ -10994,7 +11008,9 @@ async function handleApi(req, res, url) {
 
     const win = dropWindowFor(toDay, await dailySchedule());
     // The operator's own name stays; only the untouched default follows the day.
-    const name = session.name === `A&R Daily — ${session.drop_day}` ? `A&R Daily — ${toDay}` : session.name;
+    // An auto-named drop follows its new day (either naming); a hand-named one keeps its name.
+    const name = (session.name === `A&R Daily — ${session.drop_day}` || session.name === dailyDropName(session.drop_day))
+      ? dailyDropName(toDay) : session.name;
     try {
       await db.tx(async (tx) => {
         // status back to 'upcoming': a cold drop is upcoming by definition, and the open
@@ -11057,7 +11073,7 @@ async function handleApi(req, res, url) {
            FROM rounds WHERE session_id = ? ORDER BY idx ASC`, [nextRow.id]);
       const qTop = topSupportCents(qr);
       building = {
-        id: nextRow.id, day: nextRow.drop_day, dayLabel: etDayLabel(nextRow.drop_day),
+        id: nextRow.id, day: nextRow.drop_day, dayLabel: dailyDayLabel(nextRow.drop_day),
         opensLabel: etClockLabel(nextRow.window_opens_at),
         series_id: nextRow.series_id || null,
         max: DROP_MAX_SONGS,
@@ -11077,7 +11093,7 @@ async function handleApi(req, res, url) {
       `SELECT drop_day, async_state, window_opens_at FROM sessions
         WHERE mode = 'async' AND deleted_at IS NULL
         ORDER BY window_opens_at DESC LIMIT 14`, []);
-    const days = recent.map(r => ({ day: r.drop_day, label: etDayLabel(r.drop_day),
+    const days = recent.map(r => ({ day: r.drop_day, label: dailyDayLabel(r.drop_day),
       state: r.async_state || 'scheduled' }));
 
     // No drop is an INCIDENT, not an empty state — if Drupal has not pushed, the site is
@@ -11138,7 +11154,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, {
       days, day,
       drop: {
-        id: session.id, day, dayLabel: etDayLabel(day), name: session.name,
+        id: session.id, day, dayLabel: dailyDayLabel(day), name: session.name,
         status: session.status, async_state: session.async_state || 'scheduled',
         opens_at: Number(session.window_opens_at) || null,
         closes_at: Number(session.window_closes_at) || null,
@@ -11281,7 +11297,7 @@ async function handleApi(req, res, url) {
     }
     return send(res, 200, {
       record: {
-        id: r.id, idx: r.idx, status: r.status, day: r.drop_day, dayLabel: etDayLabel(r.drop_day),
+        id: r.id, idx: r.idx, status: r.status, day: r.drop_day, dayLabel: dailyDayLabel(r.drop_day),
         song_title: r.song_title, song_artist: r.song_artist,
         support_cents: supportCentsOf(r),
         room_average: r.room_average != null ? Number(r.room_average) : null,
@@ -12204,6 +12220,10 @@ module.exports._asyncQueueOrder = asyncQueueOrder;
 module.exports._completionBonusPoints = completionBonusPoints;
 module.exports._dropWindowFor = dropWindowFor;
 module.exports._DAILY_SCHEDULE_DEFAULTS = DAILY_SCHEDULE_DEFAULTS;
+module.exports._dailyPublishDay = dailyPublishDay;
+module.exports._dailyDayLabel = dailyDayLabel;
+module.exports._dailyDropName = dailyDropName;
+module.exports._dailySetDate = dailySetDate;
 module.exports._parseDailySchedule = parseDailySchedule;
 // Exported for tests: the scouting curve is the dial that decides whether "eye for talent"
 // is a real second lane or a garnish, so its shape is asserted rather than eyeballed.

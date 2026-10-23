@@ -2785,7 +2785,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && Number(mvSess.stream_at) === srv._etEpoch(mvNext, 18)
       && Number(mvSess.results_at) === srv._etEpoch(srv._etNextDay(mvNext), 6)
       && Number(mvSess.scheduled_at) === Number(mvSess.window_opens_at)
-      && mvSess.name === 'A&R Daily — ' + mvTo,
+      && mvSess.name === srv._dailyDropName(mvTo),
     JSON.stringify({ day: mvSess.drop_day, name: mvSess.name, o: mvSess.window_opens_at, c: mvSess.window_closes_at, r: mvSess.results_at }));
   const mvRounds = await dDb.all('SELECT opens_at, closes_at FROM rounds WHERE session_id = ?', [handSess.id]);
   ok('and every record carries the new window',
@@ -5560,11 +5560,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
     atTask && /^Makin' It Daily Countdown — \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
       && /Caption \(paste as-is\)/.test(atTask.data.notes) && /Comment #REVIEW to Submit Music/.test(atTask.data.notes)
       && /Post the 6 attached slides in order/.test(atTask.data.notes), JSON.stringify(atTask && atTask.data));
-  // A daily set is dated by its RELEASE DAY, drop day + 2 (operator, 2026-10-23).
+  // A daily set is named by its CALCULATED publish date, drop day + 2 (operator, confirmed 2026-10-23).
   const atWin = await anDb.get('SELECT drop_day FROM sessions WHERE id = ?', [LDROP]);
-  const atDropLbl = require('./server')._recapDateLabel(require('./server')._etEpoch(atWin.drop_day, 12) + 2 * 86400000);
-  ok('daily asana: the task and the slides are dated by the release day (drop day + 2)',
-    atTask && atTask.data.name.endsWith('— ' + atDropLbl), JSON.stringify([atTask && atTask.data.name, atDropLbl]));
+  const atPubLbl = require('./server')._recapDateLabel(require('./server')._etEpoch(require('./server')._dailyPublishDay(atWin.drop_day), 12));
+  ok('daily asana: the task and the slides are dated by the publish date (drop day + 2)',
+    atTask && atTask.data.name.endsWith('— ' + atPubLbl), JSON.stringify([atTask && atTask.data.name, atPubLbl]));
+  {
+    const S = require('./server');
+    ok('a daily set is named for drop day + 2: the 23rd is the 25th, across a month end too',
+      S._dailyPublishDay('2026-10-23') === '2026-10-25' && S._dailyPublishDay('2026-10-30') === '2026-11-01'
+        && S._dailyDropName('2026-10-23') === 'Daily Drop - Oct 25, 2026' && S._dailyPublishDay('') === null,
+      JSON.stringify([S._dailyPublishDay('2026-10-23'), S._dailyPublishDay('2026-10-30'), S._dailyDropName('2026-10-23')]));
+    const d1 = await S._dailySetDate({ drop_day: '2026-10-17' }), d2 = await S._dailySetDate({ drop_day: '2026-10-18' });
+    ok('two consecutive drops never share a date (the 10.20.26 double post), whatever results_at says',
+      d1 === '10.19.26' && d2 === '10.20.26'
+        && d1 === await S._dailySetDate({ drop_day: '2026-10-17', results_at: S._etEpoch('2026-10-20', 6) }),
+      JSON.stringify([d1, d2]));
+  }
   const atAr = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'ar' }, 'POST', BOOTH);
   const atArTask = asanaCalls.filter(c => c.method === 'POST' && c.path === '/tasks').pop();
   ok('daily asana: the Top A&Rs task is its own task, placement only',

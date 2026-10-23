@@ -1196,6 +1196,17 @@ live on anr.makinitmag.com.
   revised docs/copy-inventory.xlsx when returned.
 - Before a celebrity-scale event: upgrade Revive's shared hosting (fine at current traffic).
 
+## How a daily set is named (operator, confirmed 2026-10-23 — do not drift)
+**A daily set is named and dated by its CALCULATED publish date: the drop day + 2.** A drop that
+opens on the 23rd is the 25th's set ("Daily Drop - Oct 25, 2026"; 10.25.26 on the carousels). One
+helper, `dailyPublishDay(drop_day)` (with `dailyDayLabel` / `dailyDropName` / `dailySetDate`), feeds
+every place a reader sees the set's date: carousels, captions, Asana task names, the results and
+open emails, the grade card, My results, the landing page and the daily console. It is CALCULATED
+from `drop_day`, never read off `results_at` — a schedule change re-stamps `results_at`, which is how
+the Oct 17 and Oct 18 drops both printed 10.20.26. `drop_day` stays the storage and query key (week
+windows, the weekly report, sales-lead "Date played" are unchanged). This rule flipped three times
+in October (close date → release date → drop day → publish date); check here before changing it.
+
 ## Copy voice (operator, 2026-08-30)
 **Plain and direct. No hip, cultural, or slangy phrasing** in any user-facing text — it reads
 as an outsider imitating the culture and costs credibility with exactly the audience the
