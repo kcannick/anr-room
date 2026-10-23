@@ -701,8 +701,9 @@ function elementResultsSlide(d) {
 //           artist reposts only theirs — and NEVER shows the size of the field: the blocks run
 //           from the slide's own rank to #1, so #16 of 16 does not read as last (operator).
 //   team    Thanks to our A&R Team · Become an A&R · makinitmag.com/ANR
-//   cta     Think your music belongs on the Countdown? · $1,000 Music Tournament · makinitmag.com/review
-// Gold = first place and money only (the #1 slide, the $1,000). Satori cannot measure a wrap,
+//   cta     Think your music belongs on the Countdown? · featured in the Makin' It HOT 100 · makinitmag.com/review
+//           (no prize since 2026-10-19 — the operator retired the tournaments and the cash)
+// Gold = first place only (the #1 slide). Satori cannot measure a wrap,
 // so text sizes step down off character counts, the same estimate the winner post uses.
 //
 // Data shape (server.js countdownCarouselData):
@@ -718,8 +719,9 @@ const COUNTDOWN_COPY = {
   thanks: ['Thanks to our', 'A&R Team'],
   join: 'Become an A&R',                                          // operator, 2026-10-02
   ask: 'Think your music belongs on the Countdown?',
-  lead: ['Submit FREE for your chance to get ranked', 'and qualify for the'],
-  prize: ['$1,000', 'Music Tournament'],
+  // Operator, 2026-10-19: "Submit for a report and a chance to be featured in the Makin' It HOT 100."
+  lead: ['Submit for a report and a chance', 'to be featured in the'],
+  prize: ['HOT 100', 'Makin’ It Magazine'],
 };
 const CD_INFO_BOTTOM = 1086;
 // Satori draws a CSS radial gradient with a visible box edge, so the #1 glow is an SVG.
@@ -851,8 +853,8 @@ function elementCountdownSlide(d) {
     kids.push(col({ position: 'absolute', left: 80, top: 540 }, COUNTDOWN_COPY.lead.map(l =>
       text({ fontFamily: SANS, fontWeight: 400, fontSize: 36, lineHeight: 1.25, color: RECAP.dim, ...NOWRAP }, l))));
     kids.push(col({ position: 'absolute', left: 80, top: 656 }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: 112, lineHeight: 1, letterSpacing: -6, color: RESULTS_GOLD, ...NOWRAP }, COUNTDOWN_COPY.prize[0]),
-      text(RES_DISPLAY(76, RESULTS_GOLD, { lineHeight: 0.92, textTransform: 'uppercase', letterSpacing: -3 }), COUNTDOWN_COPY.prize[1]),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 112, lineHeight: 1, letterSpacing: -6, color: RECAP.green, ...NOWRAP }, COUNTDOWN_COPY.prize[0]),
+      text(RES_DISPLAY(56, RECAP.fg, { lineHeight: 0.92, textTransform: 'uppercase', letterSpacing: -2, marginTop: 10 }), COUNTDOWN_COPY.prize[1]),
     ]));
     kids.push(field(360));
     kids.push(text({ position: 'absolute', left: 80, bottom: 80, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, SUBMIT_URL));
