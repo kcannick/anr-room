@@ -11583,7 +11583,7 @@ async function handleApi(req, res, url) {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const session = await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async'", [url.searchParams.get('s') || '']);
     if (!session) return bad(res, 'No such drop', 404);
-    return send(res, 200, { sessionId: session.id, day: session.drop_day, dayLabel: etDayLabel(session.drop_day),
+    return send(res, 200, { sessionId: session.id, day: session.drop_day, dayLabel: dailyDayLabel(session.drop_day),
       lines: await dropLog(session) });
   }
   // Record (or clear) an Instagram post being scheduled in SocialBee. Called by the daily browser

@@ -2459,7 +2459,7 @@ async function loadDropLog(){
 const DLLOG_TAG = { late: 'Late', failed: 'Failed', unrecorded: 'not recorded' };
 function renderDropLog(){
   const d = DLLOG || {}, lines = d.lines || [];
-  $('#dlLogHead').textContent = 'Log · ' + (d.dayLabel || d.day || '') + ' drop';
+  $('#dlLogHead').textContent = 'Log · ' + (d.dayLabel || d.day || '');
   if(!lines.length){ $('#dlLogBody').innerHTML = '<div class="empty">Nothing has happened to this day yet.</div>'; return; }
   const rows = lines.map(l => {
     const cls = l.scheduled ? 'sched' : l.state;
@@ -2502,7 +2502,7 @@ $('#btnDlLogSave').onclick = async () => {
 };
 $('#btnDlLogCopy').onclick = async () => {
   const d = DLLOG || {};
-  const text = ['Log · ' + (d.dayLabel || d.day || '') + ' drop'].concat((d.lines || []).map(l =>
+  const text = ['Log · ' + (d.dayLabel || d.day || '')].concat((d.lines || []).map(l =>
     (l.atLabel || (l.dueLabel ? 'due ' + l.dueLabel : '—')) + ' — ' + l.label
     + (l.scheduled ? ' (scheduled)' : l.state !== 'done' ? ' (' + (DLLOG_TAG[l.state] || l.state) + ')' : '')
     + (l.detail ? ' — ' + l.detail : ''))).join('\n');

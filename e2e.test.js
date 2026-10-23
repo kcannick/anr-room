@@ -2219,6 +2219,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // The drop log (050): every step the lifecycle just ran is a line with a recorded time.
   const lg = await call('/api/admin/daily/log?s=' + LDROP, null, 'GET', BOOTH);
   const lgBy = (k) => (lg.d.lines || []).filter(l => l.key === k);
+  ok('the log is titled by the publish date (drop day + 2), like the rest of the console',
+    lg.d.dayLabel === srv._dailyDayLabel(pubbed.drop_day), lg.d.dayLabel);
   ok('the drop log is admin-only', (await call('/api/admin/daily/log?s=' + LDROP, null, 'GET')).status === 403);
   ok('the log has the push as Received with its record count',
     lgBy('received').length === 1 && lgBy('received')[0].state === 'done' && /3 records pushed/.test(lgBy('received')[0].detail), JSON.stringify(lgBy('received')));
