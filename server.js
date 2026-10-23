@@ -1883,9 +1883,11 @@ const TOP_AR_TAGS = '#ARMeeting #MakinIt #NewMusic #UnsignedArtists';
 const RESULTS_MAX_ARS = 8;    // the Top 8 A&Rs — the top A&R + seven more
 const RESULTS_COPY = {
   ar: { label: 'Top A&R', listLabel: 'Top A&Rs',
-    // Operator's wording, verbatim (2026-10-03).
-    cta: { eyebrow: 'Join the A&R Team', head: ['Qualify to win', '$500 Cash!'],
-      body: 'Rate records and Predict the hits', url: shareCards.JOIN_URL } },
+    // No prize since 2026-10-19 (operator retired the $500). The A&R premise, near-verbatim
+    // (operator, 2026-10-21): "The A&R Team powers the HOT 100 rankings and helps determine
+    // artists we potentially work with."
+    cta: { eyebrow: 'The A&R Team', head: ['Powers the', 'HOT 100'],
+      body: 'Rate records and help determine the artists we potentially work with.', url: shareCards.JOIN_URL } },
 };
 // Split a list across as few pages of `per` as possible, evenly, so no page is left with one.
 function parseJsonArray(v) { try { const a = JSON.parse(v || 'null'); return Array.isArray(a) ? a : null; } catch (e) { return null; } }
@@ -2155,7 +2157,8 @@ function countdownCarouselCaption(d) {
     '',
     'The Makin’ It A&R Team rated the latest records from independent artists. Here is how they ranked, counted down to the Top Track of the Day. Swipe to see where each record placed.',
     '',
-    'Think you should be here? Submit FREE for your chance to get ranked and qualify for the $1,000 Music Tournament.',
+    // Operator, 2026-10-19 (the tournaments and their prizes are retired).
+    'Think you should be here? Submit for a report and a chance to be featured in the Makin’ It HOT 100.',
     '',
     // Comment keywords instead of links (operator's wording, 2026-10-02): a caption link is not
     // clickable on Instagram. These two count toward the five-hashtag limit.
@@ -2202,7 +2205,8 @@ function resultsCaption(d) {
     const top8 = [{ title: hero.title, handle: hero.handle }, ...lists.map(r => ({ title: r.line1, handle: r.handle }))];
     lines.push(`Top 8 A&Rs · ${d.date}`, '', ...top8.map((p, i) => `${i + 1}. ${p.handle || p.title}`));
     // No points and no URL (operator, 2026-10-03): the one ask, in the operator's words.
-    lines.push('', 'Comment or DM "ANR" to Join the A&R Team and the chance to get paid $500 Cash!', '', TOP_AR_TAGS);
+    // No prize since 2026-10-19; the A&R premise in the operator's words (2026-10-21).
+    lines.push('', 'Comment or DM "ANR" to join the A&R Team. The A&R Team powers the HOT 100 rankings and helps determine artists we potentially work with.', '', TOP_AR_TAGS);
     return lines.join('\n');
   }
   lines.push('', IG_TAGS);

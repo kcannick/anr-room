@@ -2254,6 +2254,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
     rsSong.slides.every(sl => !('room_average' in sl) && !('votes' in sl) && !('score' in sl) && !('value' in sl))
       && !cdRows.some(r => rjob2.results_song_caption.split('\n').slice(1).join('\n').includes(Number(r.room_average).toFixed(1))) && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsSong)),
     JSON.stringify(rsSong.slides) + rjob2.results_song_caption);
+  // The tournaments and their prizes were retired 2026-10-19 (operator): no $ amount, no
+  // tournament, no cash anywhere in the countdown's caption or on its closing slide.
+  const cdCap = srv._resultsCaption(rsSong);
+  ok('the countdown caption promises no prize — a report and a chance at the HOT 100 instead',
+    !/\$\d|Tournament|Cash|Giveaway/i.test(cdCap) && /Submit for a report and a chance to be featured in the Makin’ It HOT 100\./.test(cdCap), cdCap);
+  const cdCopy = require('./share-cards').COUNTDOWN_COPY;
+  ok('the countdown closing slide carries no prize either', !/\$|Tournament/.test(JSON.stringify(cdCopy)) && cdCopy.prize[0] === 'HOT 100', JSON.stringify(cdCopy));
   ok('the caption names NOBODY (Instagram stops notifying past 10 mentions) and asks by comment keyword, not link',
     !/@/.test(rjob2.results_song_caption) && !cdRows.some(r => rjob2.results_song_caption.includes(r.song_title))
       && /^Comment #REVIEW to Submit Music$/m.test(rjob2.results_song_caption) && /^Comment #ANR to join the A&R Team$/m.test(rjob2.results_song_caption)
@@ -2288,10 +2295,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the Top A&R caption is the top 8 in placement order, by Instagram name where there is one, no points',
     /^Top 8 A&Rs · /.test(arCap) && /\n1\. /.test(arCap) && !/pts|points/i.test(arCap.replace(/\$500/, '')) && !/·\s*\d+\s*$/m.test(arCap), arCap);
   ok('the Top A&R caption has no URL and asks to comment or DM ANR',
-    !/https?:|\.com/i.test(arCap) && /^Comment or DM "ANR" to Join the A&R Team and the chance to get paid \$500 Cash!$/m.test(arCap), arCap);
+    !/https?:|\.com/i.test(arCap) && /^Comment or DM "ANR" to join the A&R Team\. The A&R Team powers the HOT 100 rankings/m.test(arCap) && !/\$500|Cash/.test(arCap), arCap);
   const arNotes = srv._dailyAsanaNotes(rsAr, arCap);
   ok('the Top A&Rs task says who to collab with', /Collab: invite @makinitmusicreview( and @\S+ \(#1\) as collaborators| as a collaborator)/.test(arNotes), arNotes);
-  ok('the A&R carousel closes on Join the A&R Team with the $500', rsAr.slides[2].cta.eyebrow === 'Join the A&R Team' && rsAr.slides[2].cta.head.join(' ').includes('$500'));
+  // The $500 was retired 2026-10-19: the closing slide carries the A&R premise instead.
+  ok('the A&R carousel closes on the A&R Team powering the HOT 100, with no prize',
+    rsAr.slides[2].cta.eyebrow === 'The A&R Team' && rsAr.slides[2].cta.head.join(' ') === 'Powers the HOT 100'
+      && !/\$|Cash|Win/.test(JSON.stringify(rsAr.slides[2].cta)), JSON.stringify(rsAr.slides[2].cta));
   ok('a fourteen-record day is five slides with the list split evenly (5/4/4)',
     JSON.stringify(srv._resultsPages(Array.from({ length: 13 }, (_, i) => i), 6).map(p => p.length)) === '[5,4,4]');
   ok('a four-record day is three slides', srv._resultsPages([1, 2, 3], 6).length === 1);
