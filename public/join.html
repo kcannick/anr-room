@@ -711,8 +711,13 @@ $('#cropSave').onclick=async()=>{
   const out=400,cv=document.createElement('canvas');cv.width=out;cv.height=out;const ctx=cv.getContext('2d');
   ctx.drawImage(crop.img,-crop.ox/crop.scale,-crop.oy/crop.scale,crop.S/crop.scale,crop.S/crop.scale,0,0,out,out);
   const dataUrl=cv.toDataURL('image/jpeg',0.85);
+  // The big copy of the SAME crop, for the big-photo grade card (up to 1200px). Skipped when the
+  // source is too small to give one; the A&R then gets the stats card.
+  const src=crop.S/crop.scale, big=Math.min(1200,Math.floor(src));
+  let imageLarge=null;
+  if(big>=800){const bc=document.createElement('canvas');bc.width=big;bc.height=big;bc.getContext('2d').drawImage(crop.img,-crop.ox/crop.scale,-crop.oy/crop.scale,src,src,0,0,big,big);imageLarge=bc.toDataURL('image/jpeg',0.85);}
   $('#cropSave').disabled=true;
-  try{const d=await api('/api/me/photo',{image:dataUrl});profile.photoUrl=d.photoUrl;renderAvatar();$('#cropModal').style.display='none';}
+  try{const d=await api('/api/me/photo',{image:dataUrl,imageLarge});profile.photoUrl=d.photoUrl;renderAvatar();$('#cropModal').style.display='none';}
   catch(err){$('#cropErr').textContent=err.message;}
   $('#cropSave').disabled=false;
 };

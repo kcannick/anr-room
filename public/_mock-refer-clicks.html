@@ -1,0 +1,197 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refer link opens (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>/* ============================================================
+   The A&R Team — design tokens (single source of truth)
+   (The app is The A&R Team; A&R Room is the weekly broadcast.)
+   Generated from the Design System unification (docs/design-system/).
+   Every surface links this BEFORE its own <style>. New code uses
+   the canonical names; the legacy aliases exist only so shipped
+   CSS keeps working — don't reach for them in new work.
+   ============================================================ */
+:root{
+  /* Foundation. --bg, --ink and --ink-dim moved a hair to the brand system's exact
+     values (#0E0C1A / #EAE9F2 / #9793B4) so every surface grounds identically — they
+     were the only three tokens that drifted; signal, accent, gold, hot, panel and line
+     already matched the brand exactly. */
+  --bg:#0E0C1A;
+  --panel:#171328;
+  --panel-2:#1d1733;
+  --line:#2e2750;
+  --inset:#0a0814;            /* inputs, pips, wells */
+
+  /* Ink. --ink-faint was #6f688f (≈3.3:1 on panel — under WCAG AA for the small
+     hint text it's used on); lifted to the overlay dialect's value, ≈4.5:1. */
+  --ink:#EAE9F2;
+  --ink-dim:#9793B4;
+  --ink-faint:#8c84ad;
+
+  /* Signal — THE green */
+  --signal:#4bb749;
+  --signal-deep:#379235;
+  --on-signal:#06210b;
+
+  /* Accents */
+  --accent:#6d5fe0;           /* THE purple */
+  /* Gold means MONEY AND FIRST PLACE, and nothing else: the $500, the $150, rank 1,
+     a winner reveal, a bonus a player is actually paid. It used to be documented as
+     "the warm accent (host/system attention)", which is exactly the usage that erodes
+     it — once gold is also "look here", it stops reading as the prize. New surfaces
+     hold the strict rule; existing gold usages get audited in the brand pass. */
+  --gold:#F5C518;
+  --hot:#ff5d6c;
+  --on-hot:#2a0a0e;
+
+  /* Legacy aliases — shipped CSS only */
+  --good:var(--signal);
+  --brand-green:var(--signal);
+  --amber:var(--gold);
+  --cool:var(--accent);
+  --brand-purple:#403694;
+
+  /* Radius scale */
+  --r-sm:10px;                /* chips, small buttons */
+  --r-md:12px;                /* buttons, inputs, cells */
+  --r-lg:16px;                /* cards */
+  --r-xl:18px;                /* page panels */
+  --r-pill:999px;
+  --r-overlay:22px;           /* overlay dialect only */
+
+  /* Spacing — 4px base */
+  --sp-1:4px;  --sp-2:8px;  --sp-3:12px; --sp-4:16px;
+  --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-12:48px;
+  --pad-card:18px;
+  --pad-panel:20px;
+
+  /* Content widths */
+  --w-player:480px;
+  --w-page:560px;
+  --w-form:440px;
+}
+
+/* Mobile Safari inflates text on pages it deems "desktop" (font boosting),
+   widening min-content until layouts burst the viewport. Lock it off everywhere. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+
+/* Overlay dialect — translucent components over live video.
+   Lighter inks + glass panels are earned there; nowhere else. */
+.overlay-scope{
+  --ink-dim:#bdb6d8;
+  --ink-faint:#8c84ad;
+  --panel:rgba(16,12,26,.92);
+  --panel-2:rgba(10,8,20,.82);
+  --line:rgba(255,255,255,.10);
+}
+</style>
+<style>
+/* ============================================================================
+   /refer — the A&R's referral page (2026-09-18). Two links, two lanes, four graphics.
+   Built to the approved canvas (design/refer/Main.dc.html) on the daily page's dialect:
+   Archivo display, Space Mono for every number and label, gold on the $1,000 only.
+   Auth is whichever token this device holds: the account token from /join, or any
+   per-session player token from a daily drop (the server resolves both to the same
+   user). With neither, the page asks for an email code and mints an account token.
+   ============================================================================ */
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased;min-height:100dvh}
+.wrap{max-width:430px;margin:0 auto;padding:20px 20px calc(28px + env(safe-area-inset-bottom));min-height:100dvh;display:flex;flex-direction:column;gap:16px}
+.hide{display:none !important}
+.mono{font-family:"Space Mono",ui-monospace,"SF Mono",Menlo,monospace}
+.dim{color:var(--ink-dim)}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em}
+a{color:var(--signal);text-decoration:none}
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;letter-spacing:-.02em;color:var(--bg)}
+.tick{display:block;width:3px;height:12px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.tick.contest{background:var(--accent)} .tick.prize{background:var(--gold)}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wordmark{font-weight:800;font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+.standing{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:var(--r-pill);padding:5px 11px;white-space:nowrap}
+.standing b{color:var(--ink);font-weight:700}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.section-head{display:flex;align-items:center;gap:9px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:14px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.note{background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;font-size:13px;color:var(--ink-dim);line-height:1.5}
+.err{color:var(--hot);font-size:13.5px;min-height:1em}
+label{display:block;font-size:12.5px;font-weight:600;margin:0}
+input:not([type=checkbox]){width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:15px;padding:12px 13px;border-radius:var(--r-md);outline:none}
+input:focus{border-color:var(--accent)}
+input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34em;text-align:center}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;cursor:pointer;border:0;border-radius:13px;padding:16px;font-family:inherit;font-weight:800;font-size:15.5px;letter-spacing:-.01em;background:var(--signal);color:var(--bg);text-decoration:none}
+.btn:hover{filter:brightness(1.07)} .btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.35;cursor:default}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.linkrow{display:flex;align-items:center;gap:8px;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:8px 8px 8px 13px}
+.linkrow .url{font-family:"Space Mono",monospace;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy{display:flex;align-items:center;gap:6px;background:var(--signal);color:var(--bg);border:0;border-radius:10px;padding:0 12px;height:44px;font-family:inherit;font-weight:800;font-size:13px;cursor:pointer;flex:none}
+.copy.done{background:var(--signal-deep);color:var(--ink)}
+.stats{display:flex;gap:10px}
+.stat{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 10px;text-align:center}
+.stat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim)}
+.stat .v{font-family:"Space Mono",monospace;font-size:22px;font-weight:700;margin-top:5px}
+.stat .v.earned{color:var(--signal)}
+.rows{display:flex;flex-direction:column;gap:6px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-family:"Space Mono",monospace;font-size:12px}
+.row .l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.row .r{color:var(--ink-dim);white-space:nowrap;flex:none}
+.row .r b{color:var(--ink);font-weight:700}
+.prize{display:flex;align-items:center;gap:9px;background:rgba(245,197,24,.08);border:1px solid var(--gold);border-radius:11px;padding:10px 12px;font-size:13px;line-height:1.45}
+.prize b{font-family:"Space Mono",monospace;color:var(--gold);font-weight:700}
+.gfx{display:flex;align-items:center;gap:12px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:10px 12px 10px 10px}
+.gfx .th{width:44px;height:55px;flex:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.gfx .th.story{width:31px;margin:0 6px}
+.gfx .th .face{width:20px;height:20px;border-radius:50%;background:var(--accent)}
+.gfx .th.story .face{width:16px;height:16px}
+.gfx .th .line{width:24px;height:3px;background:var(--ink)}
+.gfx .th.story .line{width:18px}
+.gfx .th .mk{width:18px;height:18px;transform:skewX(-13deg);display:flex;align-items:center;justify-content:center}
+.gfx .th .mk span{transform:skewX(13deg);font-weight:900;font-size:6.5px;color:var(--bg)}
+.gfx .t{flex:1;min-width:0}
+.gfx .t b{display:block;font-weight:800;font-size:14px}
+.gfx .t small{display:block;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:3px}
+.dl{display:flex;align-items:center;justify-content:center;width:44px;height:44px;background:transparent;border:1px solid var(--line);border-radius:10px;color:var(--ink);flex:none}
+.endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
+.endorse img{height:13px;width:auto;opacity:.75}
+
+/* MOCKUP ONLY: three states side by side. */
+body{min-height:auto} .wrap{min-height:auto;padding:14px 20px}
+.board{display:flex;flex-wrap:wrap;gap:18px;padding:18px;justify-content:center}
+.col{width:430px;border:1px dashed var(--line);border-radius:14px}
+.cap{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);padding:12px 20px 0}
+/* NEW: the one line under the submit link */
+.opens{margin:-2px 0 0;font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-dim)}
+.opens b{color:var(--ink);font-weight:700}
+</style></head><body><div class="board">
+<div class="col"><div class="cap">A · typical</div><div class="wrap">
+    <div class="stack">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Your links</span></div>
+      <label>Join the A&amp;R Team</label>
+      <div class="linkrow"><span class="url">anr.makinitmag.com/?ref=Xk3pQ9vT2mWa</span><button class="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <label style="margin-top:4px">Submit music</label>
+      <div class="linkrow"><span class="url">anr.makinitmag.com/r/Xk3pQ9vT2mWa</span><button class="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <p class="opens"><b>12</b> people opened your link this week · <b>48</b> all time</p>
+      <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who joins or submits through your link counts as yours.</p>
+    </div></div></div>
+<div class="col"><div class="cap">B · singular</div><div class="wrap">
+    <div class="stack">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Your links</span></div>
+      <label>Join the A&amp;R Team</label>
+      <div class="linkrow"><span class="url">anr.makinitmag.com/?ref=Xk3pQ9vT2mWa</span><button class="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <label style="margin-top:4px">Submit music</label>
+      <div class="linkrow"><span class="url">anr.makinitmag.com/r/Xk3pQ9vT2mWa</span><button class="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <p class="opens"><b>1</b> person opened your link this week · <b>1</b> all time</p>
+      <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who joins or submits through your link counts as yours.</p>
+    </div></div></div>
+<div class="col"><div class="cap">C · nothing yet</div><div class="wrap">
+    <div class="stack">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Your links</span></div>
+      <label>Join the A&amp;R Team</label>
+      <div class="linkrow"><span class="url">anr.makinitmag.com/?ref=Xk3pQ9vT2mWa</span><button class="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <label style="margin-top:4px">Submit music</label>
+      <div class="linkrow"><span class="url">anr.makinitmag.com/r/Xk3pQ9vT2mWa</span><button class="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
+      <p class="opens">No one has opened this link yet.</p>
+      <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who joins or submits through your link counts as yours.</p>
+    </div></div></div>
+</div></body></html>

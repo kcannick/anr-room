@@ -458,7 +458,7 @@
         </div>
         <div class="err" id="bErr"></div>
         <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0">
-          The day opens on its own at the scheduled time (3:00 PM ET unless the platform panel says otherwise). Records can be added or removed right up until
+          The day opens on its own at the scheduled time (6:00 PM ET unless the platform panel says otherwise). Records can be added or removed right up until
           then — once it opens, adding one would un-finish every A&amp;R who already completed it.
         </p>
       </div>
@@ -754,9 +754,19 @@
             <button class="btn sm" id="btnTnPublish">Publish + make Asana task</button>
           </div>
         </div>
-        <p class="hint" style="margin:0 0 12px">One set per seat as it fills: the qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?"). After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
+        <p class="hint" style="margin:0 0 12px">One set per seat as it fills: the qualifier is the big picture, everyone picked before fills the small seats, the rest are silhouettes. When the eighth seat fills, the final promo puts a question mark in the big slot ("Who has the Best Ear?") and each competitor gets a <b>package</b> — their own feed + story to post (them big, all 8 seats, RSVP + Join the A&amp;R Team) that you email them with the tournament briefing and the graphics attached, followed by a heads-up text. After the event, the champion set. Shown as images, never a download-to-see. The bracket graphic is event-night only and is published from the Wrap card.</p>
         <div class="gfx" id="tnGfx"></div>
         <table class="list" id="tnGfxList" style="margin-top:12px"></table>
+        <div class="row hide" id="tnPkgBar" style="gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+          <span class="mono" style="color:var(--ink-faint);font-size:12px">Package:</span>
+          <button class="btn sm" id="btnTnSend" title="Emails this competitor the tournament briefing with both graphics attached, then texts the phone on their account that the email went out">Email + text competitor</button>
+          <button class="btn ghost sm" id="btnTnPkgZip" title="This competitor's feed, story and caption — for a hand DM">Download this package (zip)</button>
+          <button class="btn ghost sm" id="btnTnPkgTest" title="Sends this competitor's package to YOUR OWN email and phone, exactly as they would get it; nothing is sent to them or recorded">Send test to me (email + text)</button>
+          <span style="flex:1 1 auto"></span>
+          <button class="btn ghost sm" id="btnTnPkgAll" title="Render and host all 8 packages, one at a time">Publish all 8 packages</button>
+          <button class="btn ghost sm" id="btnTnSendAll" title="Emails and texts every competitor with an account, one at a time; skips anyone already sent">Email + text every competitor</button>
+        </div>
+        <p class="hint" id="tnPkgHint" style="margin:6px 0 0">Each send is <b>two messages</b>: the tournament briefing by email with the feed and story attached, then a text to the phone on the competitor's account saying the email went out ("check Spam and the Promotions tab"). No phone on file means email only, and the row says so. Texts go right away, so send during the day. <b>Send test to me</b> does the same to your own email and phone first.</p>
         <div id="tnPubOut" class="out hide"></div>
         <p class="hint">A seat added by hand (not a weekly winner) still gets a row: the series is "one flyer per seat", whatever week it was filled.</p>
       </div>
@@ -1359,11 +1369,11 @@
           <div><label>Rating closes at</label><input id="dsClose" type="time" step="300"></div>
         </div>
         <div class="row" style="margin-top:8px">
-          <div><label>HOT 100 Daily Countdown at</label><input id="dsStream" type="time" step="300"><select id="dsStreamDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
+          <div><label>Daily Countdown graphics render at</label><input id="dsStream" type="time" step="300"><select id="dsStreamDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
           <div><label>Results publish at</label><input id="dsResults" type="time" step="300"><select id="dsResultsDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
         </div>
-        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. At the close, rated artists are told their record is on the next Makin' It HOT 100 Daily Countdown. At the countdown the ranked graphics render for posting. Results (scores on the site, the results emails, the Track Reports) stay sealed until they publish, which is never before the countdown.</p>
-        <label style="margin-top:10px">Livestream link <span class="muted">(sent to artists and A&amp;Rs; a channel's /live link works)</span></label>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. At the render time (the close, by default) both Instagram carousels are made and the Asana post tasks are created; nothing is revealed. Results publish when the countdown posts (6:00 AM by default): scores appear on the site and makinitmag is told. The emails (the A&amp;R results mail and the Track Reports) follow after the hold below.</p>
+        <label style="margin-top:10px">The A&amp;R Room live stream link <span class="muted">(Wednesday 7 PM ET; sent to artists and A&amp;Rs; a channel's /live link works)</span></label>
         <input id="dsStreamUrl" placeholder="https://www.youtube.com/@yourchannel/live">
         <label style="margin-top:10px">Completion bonus <span class="muted">(for rating every record in the day)</span></label>
         <table class="data-table" style="margin-top:6px">
@@ -1375,7 +1385,7 @@
           </tbody>
         </table>
         <p class="muted" style="font-size:11px;margin:8px 0 0">Leave a step's hours blank to drop that step. Steps must increase and stay inside the window.</p>
-        <label style="margin-top:10px">Artist reports go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(0 = with the results. Comments can be rejected any time before then.)</span></label>
+        <label style="margin-top:10px">The emails go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(the A&amp;R results mail and the Track Reports; 540 = 3:00 PM after a 6:00 AM publish. Comments can be rejected any time before then.)</span></label>
         <div id="dsSummary" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       </div>
       <button class="btn ghost sm" id="plSaveSettings" style="margin-top:10px;width:100%">Save settings</button>
@@ -1790,6 +1800,24 @@
     <label>TikTok</label>
     <input id="ueTiktok" maxlength="60" placeholder="handle, no @" autocomplete="off">
     <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:10px 0 0">Email and phone are not editable here. The photo is changed by the A&amp;R on their own profile page.</p>
+    <!-- Latest grade card (2026-10-15): the A&R's card for the newest published day they played. -->
+    <div id="ueCard" style="display:none;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <label style="margin-top:0">Grade card <span class="muted" style="font-weight:400" id="ueCardDay"></span></label>
+      <div class="permrow" style="margin:6px 0 4px">
+        <button type="button" class="permchip" data-uecscope="day">Latest day</button>
+        <button type="button" class="permchip" data-uecscope="standing">Standing</button>
+      </div>
+      <div class="permrow" style="margin:4px 0 8px">
+        <button type="button" class="permchip" data-uecs="photo">Big photo</button>
+        <button type="button" class="permchip" data-uecs="stats">Stats</button>
+      </div>
+      <div id="ueCardPic" style="aspect-ratio:4/5;max-width:220px;background:#07060d;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--ink-dim)">Loading…</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="button" class="btn sm" data-uecdl="feed">Download feed</button>
+        <button type="button" class="btn ghost sm" data-uecdl="story">Download story</button>
+      </div>
+      <div class="muted" id="ueCardNote" style="font-size:12px;color:var(--ink-faint);margin-top:6px"></div>
+    </div>
     <button class="btn" id="ueSave" style="width:100%;margin-top:12px">Save profile</button>
     <a class="btn ghost" id="ueOpen" target="_blank" rel="noopener" style="width:100%;margin-top:9px;display:block;text-align:center;box-sizing:border-box">Open public profile</a>
     <button class="btn ghost" id="ueCancel" style="width:100%;margin-top:9px">Cancel</button>
@@ -2453,7 +2481,7 @@ function renderDaily(){
     ? esc(seriesTitleFor(dr.series_id) || 'Series ' + dr.series_id)
     : '<b style="color:var(--hot)">Not tagged into a series — these points never reach the board</b>';
   $('#dlSched').innerHTML = `Opens ${esc(dlFmtWhen(dr.opensLabel))} · tallies ${esc(dlFmtWhen(dr.closesLabel))}`
-    + (dr.streamLabel ? ` · livestream ${esc(dlFmtWhen(dr.streamLabel))}` : '')
+    + (dr.streamLabel ? ` · graphics ${esc(dlFmtWhen(dr.streamLabel))}` : '')
     + ` · results ${esc(dlFmtWhen(dr.resultsLabel))}. ${ser}.`
     + ' <span class="muted">The clock runs this, not a button.</span>';
 
@@ -3538,9 +3566,10 @@ $('#tnBracket').addEventListener('click', async (e) => {
 function tnCardUrl(key, kind){
   const t = TN; if(!t) return '';
   let q = '/api/card/tournament?t=' + encodeURIComponent(t.id) + '&kind=' + kind;
-  const seat = /^seat(\d+)$/.exec(key);
+  const seat = /^seat(\d+)$/.exec(key), pkg = /^pkg(\d)$/.exec(key);
   if(kind === 'bracket') return q;
   if(seat) q += '&filled=' + seat[1] + '&stage=seat';
+  else if(pkg) q += '&filled=8&stage=package&featured=' + pkg[1];
   else if(key === 'final') q += '&filled=8&stage=final';
   else if(key === 'champion') q += '&stage=champion';
   return q;
@@ -3566,11 +3595,24 @@ function renderTnGfx(){
     tnGfxKey = pick ? pick.key : '';
   }
   const g = rows.find(x => x.key === tnGfxKey) || null;
-  $('#btnTnPublish').textContent = g ? `Publish ${g.label} + make Asana task` : 'Publish + make Asana task';
+  const isPkg = x => !!x && x.asana === false;
+  $('#btnTnPublish').textContent = g ? (isPkg(g) ? `Publish ${g.label} (host the files)` : `Publish ${g.label} + make Asana task`) : 'Publish + make Asana task';
   $('#btnTnPublish').disabled = !g || !g.ready;
   $('#btnTnCaption').disabled = !g;
+  // The package bar: email / zip for the selected competitor, publish-all / email-all for the set.
+  const pkgRows = rows.filter(isPkg), pkgReady = pkgRows.some(x => x.ready);
+  $('#tnPkgBar').classList.toggle('hide', !pkgRows.length);
+  const contactNote = x => x.contact === 'email' ? '' : x.contact === 'none' ? 'no account — download and DM' : x.contact === 'inactive' ? 'account closed' : x.contact === 'bounced' ? 'email bounced' : '';
+  $('#btnTnSend').disabled = !(g && isPkg(g) && g.ready && g.contact === 'email');
+  $('#btnTnSend').textContent = g && isPkg(g) ? (g.sentAt ? `Sent ${tnWhen(g.sentAt)} · send again` : `Email + text ${g.label.replace(/^Package · /, '')}`) : 'Email + text competitor';
+  $('#btnTnSend').title = g && isPkg(g) && contactNote(g) ? contactNote(g) : 'Emails this competitor the tournament briefing with both graphics attached, then texts the phone on their account';
+  $('#btnTnPkgZip').disabled = !(g && isPkg(g) && g.ready);
+  $('#btnTnPkgTest').disabled = !(g && isPkg(g) && g.ready);
+  $('#btnTnPkgAll').disabled = !pkgReady;
+  $('#btnTnSendAll').disabled = !pkgRows.some(x => x.ready && x.contact === 'email' && !x.sentAt);
   $('#tnGfxList').innerHTML = rows.length ? rows.map(x => {
-    const state = x.publishedAt ? `published ${esc(x.publishedLabel || tnWhen(x.publishedAt))}` : x.ready ? 'ready, not published' : (x.note || x.hint || (x.key === 'final' ? 'unlocks with seat 8' : x.key === 'champion' ? 'after the final' : x.key === 'bracket' ? 'event night' : 'seat not filled'));
+    let state = x.publishedAt ? `published ${esc(x.publishedLabel || tnWhen(x.publishedAt))}` : x.ready ? 'ready, not published' : (x.note || x.hint || (x.key === 'final' ? 'unlocks with seat 8' : x.key === 'champion' ? 'after the final' : x.key === 'bracket' ? 'event night' : isPkg(x) ? 'unlocks with seat 8' : 'seat not filled'));
+    if(isPkg(x) && x.ready) state += x.sentAt ? ` · <b>sent ${esc(tnWhen(x.sentAt))}</b>${x.sentTo ? ' to ' + esc(x.sentTo) : ''}${x.sms === 'sent' ? ' · text sent' + (x.smsTo ? ' to ' + esc(x.smsTo) : '') : x.sms === 'no phone' ? ' · no phone on file' : x.sms === 'failed' ? ' · text failed' : ''}` : contactNote(x) ? ` · ${esc(contactNote(x))}` : ' · not sent';
     const files = x.urls ? Object.keys(x.urls).length + ' file' + (Object.keys(x.urls).length === 1 ? '' : 's') : (x.ready ? 'renders live' : '');
     return `<tr class="pick${x.key === tnGfxKey ? ' sel' : ''}" data-key="${esc(x.key)}">
       <td class="mono" style="color:${x.key === tnGfxKey ? 'var(--accent)' : 'var(--ink-faint)'};width:120px">${esc(x.label)}</td>
@@ -3592,9 +3634,88 @@ function renderTnGfx(){
   const sub = g.label + (g.who ? ' · ' + g.who : '');
   box.innerHTML = g.key === 'bracket'
     ? tile('bracket', 'Bracket · 1080×1350', sub)
-    : tile('feed', 'Feed · 1080×1350', sub) + tile('story', 'Story · 1080×1920', g.label) + tile('thumb', 'Thumbnail · 1920×1080', g.label);
+    : tile('feed', 'Feed · 1080×1350', sub) + tile('story', 'Story · 1080×1920', g.label) + (isPkg(g) ? '' : tile('thumb', 'Thumbnail · 1920×1080', g.label));
   tnLoadImgs(box);
 }
+// One competitor's package by email. `force` re-sends one already sent (the button says so).
+async function tnSendPackage(key, out, { force = false } = {}){
+  const d = await api('/api/admin/tournament/package-send', { tournamentId: TN.id, key, force });
+  return d;
+}
+$('#btnTnSend').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const g = (TN.graphics || []).find(x => x.key === tnGfxKey); if(!g) return;
+  const who = g.label.replace(/^Package · /, '');
+  if(g.sentAt && !confirm(`${who} was already sent this package on ${tnWhen(g.sentAt)}. Send the email and text again?`)) return;
+  const b = e.target, out = $('#tnPubOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = `Rendering ${who}'s package, emailing it, then texting…`;
+  const k = tnGfxKey;
+  try{
+    const d = await tnSendPackage(k, out, { force: !!g.sentAt });
+    out.textContent = `Sent to ${d.to || who} with ${d.attachments || 0} graphics attached.` + (d.sms === 'sent' ? ` Heads-up text sent to ${d.smsTo || 'their number'}.` : d.sms === 'no phone' ? ' No phone on file, so no text.' : d.sms === 'failed' ? ' The heads-up text failed (see the server log).' : '');
+    await tnLoad(true); tnGfxKey = k; renderTnGfx();
+  }catch(err){ out.textContent = 'Send failed: ' + err.message; b.disabled = false; }
+};
+$('#btnTnPkgTest').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const g = (TN.graphics || []).find(x => x.key === tnGfxKey); if(!g) return;
+  const who = g.label.replace(/^Package · /, '');
+  const b = e.target, out = $('#tnPubOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = `Rendering ${who}'s package and sending it to you…`;
+  try{
+    const d = await api('/api/admin/tournament/package-test', { tournamentId: TN.id, key: tnGfxKey });
+    out.textContent = `Test sent to ${d.to} with ${d.attachments || 0} graphics attached (${who}'s package, [TEST] in the subject).` + (d.sms === 'sent' ? ` Heads-up text sent to ${d.smsTo}.` : d.sms === 'no phone' ? ' No phone on your account, so no text.' : ' The text failed (see the server log).') + ' Nothing was sent to the competitor.';
+  }catch(err){ out.textContent = 'Test failed: ' + err.message; }
+  finally{ b.disabled = false; }
+};
+$('#btnTnPkgZip').onclick = async (e) => {
+  if(!TN || !tnGfxKey) return;
+  const b = e.target, was = b.textContent; b.disabled = true; b.textContent = 'Building the zip…'; tnErr('');
+  try{
+    const r = await fetch('/api/admin/tournament/graphics.zip?id=' + encodeURIComponent(TN.id) + '&key=' + encodeURIComponent(tnGfxKey), { headers: chAuthHeaders() });
+    if(!r.ok){ let m = 'Could not build the zip (' + r.status + ')'; try{ m = (await r.json()).error || m; }catch{} throw new Error(m); }
+    const bl = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(bl); a.download = (TN.slug || 'tournament') + '-' + tnGfxKey + '.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }catch(err){ tnErr(err.message); }
+  finally{ b.disabled = false; b.textContent = was; }
+};
+// The two set-wide loops: one request per competitor (eight renders in one request would
+// overrun the function cap), and never both at once — each publish and send rewrites the
+// tournament's graphics map, so a race could drop a sentAt.
+let tnPkgBusy = false;
+async function tnPkgLoop(btn, out, label, step){
+  if(!TN || tnPkgBusy) return; tnPkgBusy = true;
+  const all = [$('#btnTnPkgAll'), $('#btnTnSendAll'), $('#btnTnSend'), $('#btnTnPublish')]; all.forEach(b => b.disabled = true); tnErr('');
+  out.classList.remove('hide');
+  const rows = (TN.graphics || []).filter(x => x.asana === false && x.ready);
+  const done = [], skipped = [];
+  try{
+    for(const g of rows){
+      out.textContent = `${label} ${g.label.replace(/^Package · /, '')}… (${done.length + skipped.length + 1} of ${rows.length})`;
+      const r = await step(g);
+      (r.skip ? skipped : done).push(`${g.label.replace(/^Package · /, '')}${r.note ? ' — ' + r.note : ''}`);
+    }
+    out.innerHTML = `${esc(label)} done: ${done.length}.` + (done.length ? '\n' + done.map(esc).join('\n') : '') + (skipped.length ? `\n\nSkipped ${skipped.length}:\n${skipped.map(esc).join('\n')}` : '');
+  }catch(err){ out.textContent = `Stopped after ${done.length}: ${err.message}`; }
+  finally{ tnPkgBusy = false; const k = tnGfxKey; await tnLoad(true); tnGfxKey = k; renderTnGfx(); }
+}
+$('#btnTnPkgAll').onclick = (e) => tnPkgLoop(e.target, $('#tnPubOut'), 'Publishing', async g => {
+  const d = await api('/api/admin/tournament/publish', { tournamentId: TN.id, key: g.key });
+  return { note: d.hosted ? 'hosted' : 'rendered, not hosted (BLOB_READ_WRITE_TOKEN unset?)' };
+});
+$('#btnTnSendAll').onclick = (e) => {
+  const n = (TN.graphics || []).filter(x => x.asana === false && x.ready && x.contact === 'email' && !x.sentAt).length;
+  if(!confirm(`Email AND text the package to ${n} competitor${n === 1 ? '' : 's'} with an account? Each gets the briefing with the graphics attached, then a text if a phone is on file. Anyone already sent is skipped.`)) return;
+  tnPkgLoop(e.target, $('#tnPubOut'), 'Emailing + texting', async g => {
+    if(g.sentAt) return { skip: true, note: 'already sent ' + tnWhen(g.sentAt) };
+    if(g.contact !== 'email') return { skip: true, note: g.contact === 'none' ? 'no account — download and DM' : g.contact === 'inactive' ? 'account closed' : 'email bounced' };
+    const d = await tnSendPackage(g.key, $('#tnPubOut'));
+    return { note: 'sent to ' + (d.to || '') + (d.sms === 'sent' ? ', text sent' : d.sms === 'no phone' ? ', no phone' : d.sms === 'failed' ? ', text FAILED' : '') };
+  });
+};
 function tnWhen(ms){ try{ return fmtET(ms, { month: 'short', day: 'numeric' }); }catch(e){ return ''; } }
 $('#tnGfxList').addEventListener('click', (e) => {
   const tr = e.target.closest('tr.pick'); if(!tr || e.target.closest('a')) return;
@@ -3618,7 +3739,8 @@ async function tnPublish(key, out, btn){
     const lines = [];
     Object.keys(urls).forEach(k => lines.push(k + ': ' + (urls[k] ? `<a href="${esc(urls[k])}" target="_blank" rel="noopener">${esc(urls[k])}</a>` : 'not hosted (BLOB_READ_WRITE_TOKEN unset?)')));
     if(!Object.keys(urls).length) lines.push('urls: none hosted (BLOB_READ_WRITE_TOKEN unset?)');
-    lines.push(d.asana && d.asana.url ? `Asana: <a href="${esc(d.asana.url)}" target="_blank" rel="noopener">${esc(d.asana.url)}</a>` : 'Asana: no task made' + (d.asanaError ? ' — ' + esc(d.asanaError) : ''));
+    if(/^pkg\d$/.test(key)) lines.push('Asana: not for a package — email the competitor or download the zip');
+    else lines.push(d.asana && d.asana.url ? `Asana: <a href="${esc(d.asana.url)}" target="_blank" rel="noopener">${esc(d.asana.url)}</a>` : 'Asana: no task made' + (d.asanaError ? ' — ' + esc(d.asanaError) : ''));
     if(d.error || d.errors) lines.push('errors: ' + esc(JSON.stringify(d.error || d.errors)));
     if(d.caption) lines.push('\n' + esc(d.caption));
     out.innerHTML = lines.join('\n');
@@ -3727,7 +3849,7 @@ $('#btnTnEndSession').onclick = () => { if(TN && TN.sessionId){ tnStopPoll(); wi
 function renderBuild(){
   const b = (DL && DL.building) || null;
   const q = b ? b.rounds : [];
-  $('#bDayLbl').textContent = b ? ('· ' + (b.dayLabel || b.day) + ' · opens ' + (b.opensLabel || '3:00 PM ET')) : '';
+  $('#bDayLbl').textContent = b ? ('· ' + (b.dayLabel || b.day) + ' · opens ' + (b.opensLabel || '6:00 PM ET')) : '';
   $('#bCount').textContent = b ? (q.length + ' of ' + b.max) : 'Nothing staged yet';
   $('#bCount').className = 'pill' + (b && q.length ? ' upcoming' : '');
   if(!b || !q.length){
@@ -4835,9 +4957,45 @@ window.openUserEdit=async(uid)=>{
     $('#ueComplete').textContent=pr.complete?'Profile complete':'Profile incomplete — needs a name, at least one role with a primary, and a location';
     $('#ueComplete').style.color=pr.complete?'var(--signal)':'var(--ink-faint)';
     ueRenderCats();
+    ueCardShow(pr.id,d.gradeCard);
     $('#userEditModal').style.display='flex';$('#ueName').focus();
   }catch(e){alert(e.message);}
 };
+// Latest grade card: preview + download, fetched with the admin's token (an <img> cannot send it).
+let ueCard={uid:null,info:null,style:null,url:null,scope:'day'};
+const ueCardSrc=(fmt,extra)=>'/api/admin/users/grade-card?uid='+encodeURIComponent(ueCard.uid)+(ueCard.scope==='standing'?'&scope=standing':'')+'&style='+ueCard.style+(fmt==='story'?'&fmt=story':'')+(extra||'');
+const ueCardHdr=()=>{const h={};if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;return h;};
+function ueCardShow(uid,info){
+  ueCard={uid,info,style:info?info.style:null,url:ueCard.url,scope:info&&info.grade?'day':'standing'};
+  $('#ueCard').style.display=info?'block':'none';
+  if(!info)return;
+  ueCardHead();
+  $('#ueCardNote').textContent=info.hasBigPhoto?'':'No big photo on file, so only the stats card is available.';
+  ueCardChips();ueCardPic();
+}
+function ueCardHead(){
+  const i=ueCard.info,st=ueCard.scope==='standing';
+  $('#ueCardDay').textContent=st?(i.standing?'· Standing '+i.standing.grade+' · '+i.standing.drops+(i.standing.drops===1?' drop':' drops'):''):('· Grade '+i.grade+(i.dayLabel?' · '+i.dayLabel:''));
+  document.querySelectorAll('[data-uecscope]').forEach(b=>{b.classList.toggle('on',b.dataset.uecscope===ueCard.scope);b.disabled=b.dataset.uecscope==='standing'?!i.standing:!i.grade;});
+}
+document.querySelectorAll('[data-uecscope]').forEach(b=>b.onclick=()=>{if(b.disabled||!ueCard.info)return;ueCard.scope=b.dataset.uecscope;ueCardHead();ueCardPic();});
+function ueCardChips(){document.querySelectorAll('[data-uecs]').forEach(b=>{b.classList.toggle('on',b.dataset.uecs===ueCard.style);b.disabled=b.dataset.uecs==='photo'&&!ueCard.info.hasBigPhoto;});}
+async function ueCardPic(){
+  const box=$('#ueCardPic');box.textContent='Loading…';
+  try{const r=await fetch(ueCardSrc('feed','&w=432'),{headers:ueCardHdr()});if(!r.ok)throw 0;
+    if(ueCard.url)URL.revokeObjectURL(ueCard.url);ueCard.url=URL.createObjectURL(await r.blob());
+    box.innerHTML='<img alt="" style="width:100%;height:100%;object-fit:contain;display:block" src="'+ueCard.url+'">';
+  }catch(e){box.textContent='Preview unavailable';}
+}
+document.querySelectorAll('[data-uecs]').forEach(b=>b.onclick=()=>{if(b.disabled||!ueCard.info)return;ueCard.style=b.dataset.uecs;ueCardChips();ueCardPic();});
+document.querySelectorAll('[data-uecdl]').forEach(b=>b.onclick=async()=>{
+  if(!ueCard.info||b.disabled)return;b.disabled=true;
+  try{const r=await fetch(ueCardSrc(b.dataset.uecdl,'&dl=1'),{headers:ueCardHdr()});if(!r.ok)throw new Error('Could not build the card');
+    const cd=r.headers.get('content-disposition')||'',m=cd.match(/filename="([^"]+)"/);
+    const u=URL.createObjectURL(await r.blob()),l=document.createElement('a');l.href=u;l.download=m?m[1]:'grade-card.png';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);
+  }catch(e){alert(e.message);}
+  b.disabled=false;
+});
 $('#uePrimary').onchange=function(){ueState.primary=this.value;};
 $('#ueCancel').onclick=()=>{$('#userEditModal').style.display='none';};
 $('#ueSave').onclick=async()=>{

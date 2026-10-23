@@ -194,7 +194,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
   <section id="screen-waiting" class="center stack hide">
     <div class="panel stack" style="text-align:center">
       <div class="eyebrow" id="waitDay">A&amp;R Daily</div>
-      <h2 style="font-size:25px;margin:4px 0 0" id="waitHead">Today's records open at 3:00 PM.</h2>
+      <h2 style="font-size:25px;margin:4px 0 0" id="waitHead">Today's records open at 6:00 PM.</h2>
       <p class="dim" style="font-size:14px;line-height:1.55;margin:0" id="waitSub"></p>
       <div class="rule" style="margin:4px 0"></div>
       <p class="dim" style="font-size:13px;line-height:1.55;margin:0">
@@ -421,7 +421,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
   <div class="err" id="cmtErr" style="font-size:12.5px;margin-top:6px"></div>
 </div>
 
-<script src="/auth.js?v=1"></script>
+<script src="/auth.js?v=2"></script>
 <script>
 const {$, SID, track, getToken, clearToken, api, apiRaw, tryAccountRegister} = window.ANRAuth;
 
@@ -831,7 +831,7 @@ function render(){
 
   if(st.phase === 'waiting'){
     $('#waitDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
-    $('#waitHead').textContent = "Today's records open at " + (as.opensLabel || '3:00 PM ET') + '.';
+    $('#waitHead').textContent = "Today's records open at " + (as.opensLabel || '6:00 PM ET') + '.';
     $('#waitSub').textContent = as.opensLabel
       ? ('Today’s records open at ' + as.opensLabel + '. Rate every one before the window closes and you earn a completion bonus on top of what you score.')
       : 'Today’s records are not open yet.';
@@ -852,7 +852,7 @@ function render(){
 
   if(st.phase === 'sealed'){
     $('#sealedDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
-    $('#sealedSub').textContent = afterLines(as, 'Rating is closed.');
+    afterNode($('#sealedSub'), as, 'Rating is closed.');
     show('sealed'); return;
   }
 
@@ -892,17 +892,27 @@ function renderDone(st){
     row.appendChild(l); row.appendChild(v); tiers.appendChild(row);
   });
 
-  $('#doneNext').textContent = afterLines(as, '');
+  afterNode($('#doneNext'), as, '');
+}
+// afterLines as text, then the YouTube subscribe line with a real link (operator, 2026-10-15:
+// every touch point asks people to subscribe and hit the bell). Built as nodes, never HTML.
+function afterNode(el, as, lead){
+  el.textContent = afterLines(as, lead);
+  if(!as.subscribeUrl) return;
+  el.appendChild(document.createTextNode(' ' + (as.subscribeLine || '') + ' '));
+  const a = document.createElement('a'); a.href = as.subscribeUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.textContent = as.subscribeCta || 'Subscribe on YouTube'; a.style.color = 'var(--signal)'; a.style.fontWeight = '700';
+  el.appendChild(a);
 }
 
-// What happens after the close, in order: the next records, the Livestream Countdown, the
-// results. Every time is a server-rendered label (never the browser's clock).
+// What happens after the close, in order: the next records, the results, the Wednesday
+// show. Every time is a server-rendered label (never the browser's clock). The daily
+// stream is retired (2026-10-15).
 function afterLines(as, lead){
   const out = lead ? [lead] : [];
   if(as.nextOpensWhen) out.push('The next records open ' + as.nextOpensWhen + '.');
-  const show = as.streamName || 'daily countdown';
-  if(as.streamWhen) out.push('These records are counted down on the ' + show + ' ' + as.streamWhen + '.');
-  out.push(as.resultsWhen ? ('Your results land ' + as.resultsWhen + '.') : ('Your results land after the ' + show + '.'));
+  if(as.resultsWhen) out.push('Your results land ' + as.resultsWhen + '.');
+  if(as.weeklyShow) out.push(as.weeklyShow);
   return out.join(' ');
 }
 

@@ -379,6 +379,177 @@ function elementReferFlyer(d, kind) {
     ]),
   ]);
 }
+// ============ The daily grade card — "Do you have a better ear than <name>?" ============
+// The card an A&R gets the day a drop's results come out (operator, 2026-10-15). Built to the
+// approved mockup (mim repo docs/mockups/anr-grade-card-round2.html), options A and C; the
+// A&R picks which one is theirs:
+//   'gradePhoto' / 'gradePhotoStory'  A — the photo fills the top and fades into the ground;
+//                                     the name sits where they meet, the grade in the A&R block
+//   'gradeStats' / 'gradeStatsStory'  C — the green cut, a small face, the grade large
+// Data shape (built by server.js renderGradeCard), one per A&R per published day:
+//   { name, category, location, photo (data URI or null), grade, accuracy (0..100),
+//     counts: { bullseye, sharp, close }, dayLabel }
+// THE STANDING CARD (operator, 2026-10-15) is the same card, all-time: `standing: true` and
+// `drops` (how many published drops they rated) replace the date with "Standing". Never a rank.
+// Rules the operator set, all enforced here rather than by the caller:
+//   - only the good three counts print (Bullseye, Sharp, Close). Off and Way off NEVER do.
+//   - no headcount, no QR, no invite link: the one address is makinitmag.com/ANR.
+//   - gold on the money only ("$500 cash"). Drawn target icons, never emoji.
+// THE SEAL: a grade exists only for a published day. The callers check that; this module
+// only draws what it is given.
+const GRADE_SIZES = { gradePhoto: [1080, 1350], gradePhotoStory: [1080, 1920], gradeStats: [1080, 1350], gradeStatsStory: [1080, 1920] };
+const GRADE_COPY = {
+  lead: 'Do you have a better ear than',
+  pitch: 'Join the A&R Team. Put your ear to the test against industry tastemakers, professionals and creatives.',
+  prizeLead: 'Qualify to win', prize: '$500 cash',
+  url: 'makinitmag.com/ANR',
+  tiers: [['bullseye', 'Bullseye'], ['sharp', 'Sharp'], ['close', 'Close']],
+};
+// One target; the dot moves out with the miss (centre = Bullseye). Same drawings as the mockup.
+const _gradeIcons = {};
+function gradeIconUri(kind, color) {
+  const key = kind + color;
+  if (!_gradeIcons[key]) {
+    const dot = { bullseye: [12, 12, 2.4], sharp: [14.4, 10.2, 2.2], close: [16.4, 8, 2.2] }[kind] || [12, 12, 2.4];
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+      + '<circle cx="12" cy="12" r="10" fill="none" stroke="' + color + '" stroke-width="1.6"/>'
+      + '<circle cx="12" cy="12" r="5.5" fill="none" stroke="' + color + '" stroke-width="1.6"/>'
+      + '<circle cx="' + dot[0] + '" cy="' + dot[1] + '" r="' + dot[2] + '" fill="' + color + '"/></svg>';
+    _gradeIcons[key] = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
+  return _gradeIcons[key];
+}
+// The name as at most two lines, the last ending in a green "?" (the name finishes the
+// question). Sized down for a long name so it never runs under the grade.
+function gradeName(name, maxSize, maxWidth) {
+  const words = esc(name).trim().split(/\s+/).filter(Boolean);
+  const lines = words.length > 1 ? [clip(words[0], 14), clip(words.slice(1).join(' '), 14)] : [clip(words[0] || 'A&R', 14)];
+  const longest = Math.max(...lines.map((l, i) => l.length + (i === lines.length - 1 ? 1 : 0)));
+  const size = Math.max(56, Math.min(maxSize, Math.floor(maxWidth / (longest * 0.6))));
+  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize: size, lineHeight: 0.9, letterSpacing: -Math.round(size * 0.045), color: REFER.fg, ...NOWRAP };
+  return col({}, lines.map((l, i) => i < lines.length - 1
+    ? text(st, l)
+    : row({ alignItems: 'flex-end' }, [text(st, l), text({ ...st, color: REFER.green }, '?')])));
+}
+function gradeMeta(d, size) {
+  return text({ fontFamily: MONO, fontWeight: 400, fontSize: size, letterSpacing: Math.round(size * 0.12), textTransform: 'uppercase', color: REFER.green, ...NOWRAP },
+    clip([d.category, d.location].filter(Boolean).join(' / '), 34));
+}
+function gradeTiers(d, z) {
+  const c = d.counts || {};
+  return row({ alignItems: 'stretch' }, GRADE_COPY.tiers.map(([k, label], i) => {
+    const hit = k === 'bullseye', color = hit ? REFER.green : REFER.dim;
+    const icon = { type: 'img', props: { src: gradeIconUri(k, color), width: z.icon, height: z.icon, style: { width: z.icon, height: z.icon } } };
+    const n = text({ fontFamily: MONO, fontWeight: 700, fontSize: z.count, lineHeight: 1, color: hit ? REFER.green : REFER.fg }, String(Number(c[k]) || 0));
+    return col({ flexGrow: 1, flexBasis: 0, alignItems: 'center', gap: 8, borderLeft: i ? `2px solid ${REFER.line}` : 'none' }, [
+      z.stacked ? col({ alignItems: 'center', gap: 8 }, [icon, n]) : row({ gap: 12 }, [icon, n]),
+      text({ fontFamily: MONO, fontWeight: 400, fontSize: z.label, letterSpacing: Math.round(z.label * 0.1), textTransform: 'uppercase', color, ...NOWRAP }, label),
+    ]);
+  }));
+}
+function gradeOffer(z) {
+  const prizeSt = { fontFamily: MONO, fontWeight: 700, fontSize: z.prize, lineHeight: 1.2, ...NOWRAP };
+  return col({ gap: Math.round(z.gap * 0.6) }, [
+    text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.pitch, lineHeight: 1.22, letterSpacing: -Math.round(z.pitch * 0.02), color: REFER.fg, maxWidth: 920 }, GRADE_COPY.pitch),
+    row({}, [
+      text({ ...prizeSt, color: REFER.fg, marginRight: Math.round(z.prize * 0.6) }, GRADE_COPY.prizeLead),
+      text({ ...prizeSt, color: REFER.gold }, GRADE_COPY.prize),
+      text({ ...prizeSt, color: REFER.fg }, '.'),
+    ]),
+  ]);
+}
+function gradeFoot(z) {
+  return row({ justifyContent: 'space-between', alignItems: 'flex-end' }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: z.url, color: REFER.green, ...NOWRAP }, GRADE_COPY.url),
+    referEndorse(20),
+  ]);
+}
+const accLabel = a => (a == null ? '—' : Math.round(Number(a)) + '%');
+// What the grade is OF: the day ("Oct 14") or, on the Standing card, all time ("Standing · 14 drops").
+function gradeWhen(d) {
+  if (d.standing) { const n = Number(d.drops) || 0; return 'Standing' + (n ? ` · ${n} ${n === 1 ? 'drop' : 'drops'}` : ''); }
+  return d.dayLabel || 'Grade';
+}
+
+// A: the photo is the ground of the top of the card.
+function elementGradePhoto(d, story) {
+  const W0 = 1080, H0 = story ? 1920 : 1350;
+  const z = story
+    ? { photoH: 1300, fadeTop: 800, lead: 58, name: 150, meta: 32, chip: 250, icon: 60, count: 66, label: 22, pitch: 40, prize: 42, url: 34, gap: 40, ngap: 20 }
+    : { photoH: 900, fadeTop: 520, lead: 46, name: 112, meta: 26, chip: 190, icon: 44, count: 50, label: 18, pitch: 30, prize: 32, url: 38, gap: 22, ngap: 14 };
+  const chip = col({ alignItems: 'center', gap: 16, flexShrink: 0 }, [
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: z.label, letterSpacing: Math.round(z.label * 0.16), textTransform: 'uppercase',
+      color: REFER.green, ...NOWRAP }, gradeWhen(d)),
+    h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: z.chip, height: z.chip, background: REFER.green,
+        borderRadius: Math.round(z.chip * 0.06), transform: `skewX(${SKEW}deg)` },
+      text({ transform: `skewX(${-SKEW}deg)`, fontFamily: DISPLAY, fontWeight: 900, fontSize: Math.round(z.chip * 0.52),
+        letterSpacing: -Math.round(z.chip * 0.03), color: REFER.bg, lineHeight: 1, ...NOWRAP }, d.grade || '—')),
+    row({ gap: 10 }, [
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: z.label, color: REFER.fg, ...NOWRAP }, accLabel(d.accuracy)),
+      text({ fontFamily: MONO, fontWeight: 400, fontSize: z.label, letterSpacing: Math.round(z.label * 0.12), textTransform: 'uppercase', color: REFER.dim, ...NOWRAP }, 'Accuracy'),
+    ]),
+  ]);
+  const layers = [];
+  if (d.photo) layers.push({ type: 'img', props: { src: d.photo, width: W0, height: z.photoH,
+    style: { position: 'absolute', left: 0, top: 0, width: W0, height: z.photoH, objectFit: 'cover' } } });
+  layers.push(h({ position: 'absolute', left: 0, top: 0, width: W0, height: 260,
+    background: 'linear-gradient(180deg, rgba(14,12,26,1) 0%, rgba(14,12,26,0.55) 45%, rgba(14,12,26,0) 100%)' }, ''));
+  layers.push(h({ position: 'absolute', left: 0, top: z.fadeTop, width: W0, height: z.photoH - z.fadeTop + 2,
+    background: 'linear-gradient(180deg, rgba(14,12,26,0) 0%, rgba(14,12,26,0.7) 55%, rgba(14,12,26,1) 100%)' }, ''));
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
+    ...layers,
+    h({ position: 'absolute', left: 80, top: 72, display: 'flex' }, referLockup(REFER.green, REFER.greenInk)),
+    col({ position: 'absolute', left: 80, right: 80, bottom: 72, gap: z.gap }, [
+      text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.lead, lineHeight: 1.04, letterSpacing: -Math.round(z.lead * 0.035), color: REFER.fg, ...NOWRAP }, GRADE_COPY.lead),
+      row({ justifyContent: 'space-between', alignItems: 'flex-end', gap: 30 }, [
+        col({ gap: z.ngap, flexShrink: 1 }, [gradeName(d.name, z.name, 920 - z.chip - 60), gradeMeta(d, z.meta)]),
+        chip,
+      ]),
+      gradeTiers(d, { icon: z.icon, count: z.count, label: z.label, stacked: false }),
+      gradeOffer(z),
+      gradeFoot(z),
+    ]),
+  ]);
+}
+
+// C: stats-led, the face small. The card for an A&R with no big photo, and the one they can pick.
+function elementGradeStats(d, story) {
+  const W0 = 1080, H0 = story ? 1920 : 1350;
+  const z = story
+    ? { wedge: 290, bodyTop: 324, face: 320, lead: 66, name: 150, meta: 30, grade: 380, acc: 96, icon: 60, count: 58, label: 19, pitch: 42, prize: 42, url: 34, gap: 30, head: 48 }
+    : { wedge: 206, bodyTop: 236, face: 200, lead: 56, name: 104, meta: 26, grade: 200, acc: 68, icon: 44, count: 44, label: 18, pitch: 32, prize: 32, url: 38, gap: 20, head: 24 };
+  const panel = col({ border: `2px solid ${REFER.line}`, background: REFER.panel, padding: '30px 40px', gap: 24 }, [
+    row({ justifyContent: 'space-between', alignItems: 'flex-end' }, [
+      col({ gap: 14 }, [
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: 24, letterSpacing: 4, textTransform: 'uppercase', color: REFER.dim, ...NOWRAP },
+          d.standing ? gradeWhen(d) : 'Grade' + (d.dayLabel ? ' · ' + d.dayLabel : '')),
+        text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: z.grade, lineHeight: 0.8, letterSpacing: -Math.round(z.grade * 0.06), color: REFER.green, ...NOWRAP }, d.grade || '—'),
+      ]),
+      col({ alignItems: 'flex-end', gap: 6 }, [
+        text({ fontFamily: MONO, fontWeight: 700, fontSize: z.acc, lineHeight: 1, color: REFER.fg, ...NOWRAP }, accLabel(d.accuracy)),
+        text({ fontFamily: MONO, fontWeight: 400, fontSize: 24, letterSpacing: 3, textTransform: 'uppercase', color: REFER.dim, ...NOWRAP }, 'Accuracy'),
+      ]),
+    ]),
+    h({ display: 'flex', borderTop: `2px solid ${REFER.line}`, paddingTop: 26, flexDirection: 'column' },
+      gradeTiers(d, { icon: z.icon, count: z.count, label: z.label, stacked: true })),
+  ]);
+  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
+    // The cut rises to the right and stops above the lead: no type ever straddles it.
+    h({ position: 'absolute', left: 0, top: 0, width: W0, height: z.wedge, background: REFER.green,
+      transform: 'skewY(-13deg)', transformOrigin: 'left top' }, ''),
+    h({ position: 'absolute', left: 80, top: 72, display: 'flex' }, referLockup(REFER.bg, REFER.green)),
+    col({ position: 'absolute', left: 80, right: 80, top: z.bodyTop, bottom: 72, justifyContent: 'space-between' }, [
+      col({ gap: z.head }, [
+        text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.lead, lineHeight: 1.04, letterSpacing: -Math.round(z.lead * 0.035), color: REFER.fg, ...NOWRAP }, GRADE_COPY.lead),
+        row({ gap: 44 }, [referFace(d, z.face), col({ gap: 18, flexShrink: 1 }, [gradeName(d.name, z.name, 920 - z.face - 44), gradeMeta(d, z.meta)])]),
+      ]),
+      panel,
+      gradeOffer(z),
+      gradeFoot(z),
+    ]),
+  ]);
+}
+
 // ============ The A&R Meeting results carousels — posted after the reveal stream ============
 // Two Instagram carousels off ONE element type, 'resultsSlide', 1080×1350 a slide:
 //   set 'song'  slide 1 the top record · list slides: the other records RANKED, NO SCORES
@@ -530,8 +701,9 @@ function elementResultsSlide(d) {
 //           artist reposts only theirs — and NEVER shows the size of the field: the blocks run
 //           from the slide's own rank to #1, so #16 of 16 does not read as last (operator).
 //   team    Thanks to our A&R Team · Become an A&R · makinitmag.com/ANR
-//   cta     Think your music belongs on the Countdown? · $1,000 Music Tournament · makinitmag.com/review
-// Gold = first place and money only (the #1 slide, the $1,000). Satori cannot measure a wrap,
+//   cta     Think your music belongs on the Countdown? · featured in the Makin' It HOT 100 · makinitmag.com/review
+//           (no prize since 2026-10-19 — the operator retired the tournaments and the cash)
+// Gold = first place only (the #1 slide). Satori cannot measure a wrap,
 // so text sizes step down off character counts, the same estimate the winner post uses.
 //
 // Data shape (server.js countdownCarouselData):
@@ -547,8 +719,9 @@ const COUNTDOWN_COPY = {
   thanks: ['Thanks to our', 'A&R Team'],
   join: 'Become an A&R',                                          // operator, 2026-10-02
   ask: 'Think your music belongs on the Countdown?',
-  lead: ['Submit FREE for your chance to get ranked', 'and qualify for the'],
-  prize: ['$1,000', 'Music Tournament'],
+  // Operator, 2026-10-19: "Submit for a report and a chance to be featured in the Makin' It HOT 100."
+  lead: ['Submit for a report and a chance', 'to be featured in the'],
+  prize: ['HOT 100', 'Makin’ It Magazine'],
 };
 const CD_INFO_BOTTOM = 1086;
 // Satori draws a CSS radial gradient with a visible box edge, so the #1 glow is an SVG.
@@ -564,13 +737,16 @@ function countdownGlowUri() {
 }          // the record block ends above the submit strip (1350 − 80 − 150 − 34)
 // One skewed block per rank, highest first; the lit one green (gold at #1). One row always:
 // the blocks narrow as the count grows, capped so a short run doesn't turn into bricks.
-function countdownTicks(from, lit, { max, gap, h: hMax }) {
+// `litTo` lights a RANGE (lit down to litTo) for a group slide; green, never gold — first place
+// has its own slide.
+function countdownTicks(from, lit, { max, gap, h: hMax, litTo = null }) {
   const w = Math.min(max, (912 - gap * (from - 1)) / from);
   const hgt = Math.min(hMax, Math.round(w * 0.95));
   const fs = Math.round(Math.max(17, Math.min(hMax * 0.46, w * 0.42)));
   const kids = [];
   for (let r = from; r >= 1; r--) {
-    const on = r === lit, col1 = r === 1 ? RESULTS_GOLD : RECAP.green;
+    const on = litTo != null ? (r <= lit && r >= litTo) : r === lit;
+    const col1 = r === 1 && litTo == null ? RESULTS_GOLD : RECAP.green;
     kids.push(h({ display: 'flex', alignItems: 'center', justifyContent: 'center', width: w, height: hgt, marginRight: r > 1 ? gap : 0,
       border: '2px solid ' + (on ? col1 : RECAP.line), background: on ? col1 : 'transparent', borderRadius: 5,
       transform: `skewX(${SKEW}deg)`, flexShrink: 0 }, [
@@ -608,6 +784,44 @@ function countdownFit(d, minTop) {
   return { title, artist: clip(artist, Math.floor(W / (artistFs * 0.52))), handle: clip(handle, Math.floor(W / (handleFs * 0.6 || 1))),
     fs, lines, artistFs, handleFs, top: Math.round(Math.max(minTop, CD_INFO_BOTTOM - h0)) };
 }
+// The submit strip under a record or a group: a rule, the question, the link, one button.
+function countdownStrip() {
+  return [
+    h({ position: 'absolute', left: 80, top: 1120, width: 920, height: 2, background: RECAP.line }, ''),
+    text(RES_DISPLAY(36, RECAP.fg, { position: 'absolute', left: 80, top: 1152, textTransform: 'uppercase', letterSpacing: -1 }), COUNTDOWN_COPY.question),
+    text({ position: 'absolute', left: 80, top: 1206, fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, ...NOWRAP }, SUBMIT_URL),
+    h({ position: 'absolute', right: 90, bottom: 80, height: 72, display: 'flex', alignItems: 'center', background: RECAP.green,
+      borderRadius: 6, paddingLeft: 32, paddingRight: 32, transform: `skewX(${SKEW}deg)` }, [
+      text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), COUNTDOWN_COPY.submit),
+    ]),
+  ];
+}
+// The GROUP slide (operator approved 2026-10-17, mockup public/brand/countdown/group.html):
+// Instagram's API caps a carousel at 10 slides, so when a day does not fit one-record-a-slide,
+// #3, #2 and #1 keep their own slides and the rest ride 2–4 to a slide, counting DOWN (lowest
+// rank at the top). The ticks run from the group's lowest rank to #1 with the group lit — the
+// single slides' device, so the size of the field is never stated. Four to a slide at most
+// (the designer's call: six is a text wall at grid size); five or six fall back to the dense
+// layout. Rank only. Gold never appears here.
+const CD_GROUP_MAX = 4;
+function countdownGroupRows(rows) {
+  const dense = rows.length >= 5;
+  const W = 920 - (dense ? 150 : 200) - 28;
+  return rows.map(r => {
+    let title = '“' + clip(r.title || '—', 70) + '”';
+    let fs = dense ? 40 : 52;
+    const floor = dense ? 30 : 40;
+    while (fs > floor && title.length * fs * 0.58 > W) fs -= 2;
+    // Past the floor the four-up wraps to two lines at 36 (the mockup's rule); six-up has no room.
+    let wrap = false;
+    if (title.length * fs * 0.58 > W) {
+      if (!dense) { fs = 36; wrap = true; title = clip(title, Math.floor(2 * W / (fs * 0.58))); }
+      else title = clip(title, Math.floor(W / (fs * 0.58)));
+    }
+    const artist = clip(String(r.artist || '').trim(), 40), handle = clip(r.handle || '', 30);
+    return { rank: r.rank, title, artist, handle, fs, wrap };
+  });
+}
 function elementCountdownSlide(d) {
   const kind = d.kind || 'rank';
   const kids = [];
@@ -639,11 +853,47 @@ function elementCountdownSlide(d) {
     kids.push(col({ position: 'absolute', left: 80, top: 540 }, COUNTDOWN_COPY.lead.map(l =>
       text({ fontFamily: SANS, fontWeight: 400, fontSize: 36, lineHeight: 1.25, color: RECAP.dim, ...NOWRAP }, l))));
     kids.push(col({ position: 'absolute', left: 80, top: 656 }, [
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: 112, lineHeight: 1, letterSpacing: -6, color: RESULTS_GOLD, ...NOWRAP }, COUNTDOWN_COPY.prize[0]),
-      text(RES_DISPLAY(76, RESULTS_GOLD, { lineHeight: 0.92, textTransform: 'uppercase', letterSpacing: -3 }), COUNTDOWN_COPY.prize[1]),
+      text({ fontFamily: MONO, fontWeight: 700, fontSize: 112, lineHeight: 1, letterSpacing: -6, color: RECAP.green, ...NOWRAP }, COUNTDOWN_COPY.prize[0]),
+      text(RES_DISPLAY(56, RECAP.fg, { lineHeight: 0.92, textTransform: 'uppercase', letterSpacing: -2, marginTop: 10 }), COUNTDOWN_COPY.prize[1]),
     ]));
     kids.push(field(360));
     kids.push(text({ position: 'absolute', left: 80, bottom: 80, fontFamily: MONO, fontWeight: 700, fontSize: 44, color: RECAP.bg, ...NOWRAP }, SUBMIT_URL));
+  } else if (kind === 'group') {
+    const rows0 = (d.rows || []).slice().sort((a, b) => b.rank - a.rank);
+    const lo = d.lo || (rows0[0] || {}).rank || 1, hi = d.hi || (rows0[rows0.length - 1] || {}).rank || lo;
+    const dense = rows0.length >= 5;
+    kids.push(...countdownMast(d));
+    kids.push(row({ position: 'absolute', left: 84, top: 226 }, countdownTicks(lo, lo, { max: 78, gap: 9, h: 46, litTo: hi })));
+    const hash = (mt) => text({ fontFamily: MONO, fontWeight: 700, fontSize: 72, lineHeight: 1, color: RECAP.green, marginTop: mt, marginRight: 2, ...NOWRAP }, '#');
+    const big = (n) => text({ fontFamily: MONO, fontWeight: 700, fontSize: 132, lineHeight: 1, letterSpacing: -5, color: RECAP.fg, ...NOWRAP }, String(n));
+    kids.push(row({ position: 'absolute', left: 80, top: 306, alignItems: 'flex-start' }, [
+      hash(52), big(lo),
+      h({ width: 44, height: 14, background: RECAP.dim, borderRadius: 3, transform: `skewX(${SKEW}deg)`, marginLeft: 22, marginRight: 26, marginTop: 59 }, ''),
+      hash(52), big(hi),
+    ]));
+    const fitted = countdownGroupRows(rows0);
+    const areaTop = 460, areaH = 1350 - areaTop - 264, rh = Math.floor(areaH / fitted.length);
+    const nw = dense ? 150 : 200, tw = 920 - nw - 28;
+    kids.push(col({ position: 'absolute', left: 80, top: areaTop, width: 920, height: areaH }, fitted.flatMap((r, i) => [
+      ...(i ? [h({ width: 920, height: 2, background: RECAP.line, flexShrink: 0 }, '')] : []),
+      row({ width: 920, height: rh - (i ? 2 : 0), alignItems: 'center', flexShrink: 0 }, [
+        row({ width: nw, alignItems: 'flex-start', flexShrink: 0 }, [
+          text({ fontFamily: MONO, fontWeight: 700, fontSize: dense ? 28 : 36, lineHeight: 1, color: RECAP.green, marginTop: dense ? 6 : 10, marginRight: -2, ...NOWRAP }, '#'),
+          text({ fontFamily: MONO, fontWeight: 700, fontSize: dense ? 64 : 96, lineHeight: 1, letterSpacing: -3, color: RECAP.fg, ...NOWRAP }, String(r.rank)),
+        ]),
+        col({ marginLeft: 28, width: tw }, [
+          text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: r.fs, lineHeight: r.wrap ? 0.95 : 1, letterSpacing: -2, color: RECAP.fg, width: tw, ...(r.wrap ? {} : NOWRAP) }, r.title),
+          ...(dense
+            ? [row({ marginTop: 8, alignItems: 'flex-end' }, [
+                text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 26, lineHeight: 1.1, letterSpacing: -1, color: RECAP.fg, ...NOWRAP }, r.artist),
+                ...(r.handle ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: 24, lineHeight: 1.1, color: RECAP.dim, marginLeft: 14, ...NOWRAP }, r.handle)] : []),
+              ])]
+            : [text({ fontFamily: DISPLAY, fontWeight: 700, fontSize: 32, lineHeight: 1.1, letterSpacing: -1, color: RECAP.fg, marginTop: 10, ...NOWRAP }, r.artist),
+               ...(r.handle ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, lineHeight: 1.1, color: RECAP.dim, marginTop: 4, ...NOWRAP }, r.handle)] : [])]),
+        ]),
+      ]),
+    ])));
+    kids.push(...countdownStrip());
   } else {
     const R = Math.max(1, d.rank || 1), top1 = R === 1;
     const accent = top1 ? RESULTS_GOLD : RECAP.green;
@@ -668,14 +918,8 @@ function elementCountdownSlide(d) {
       text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: f.artistFs, lineHeight: 1.1, letterSpacing: -1, color: RECAP.fg, marginTop: 26, ...NOWRAP }, f.artist),
       ...(f.handle ? [text({ fontFamily: MONO, fontWeight: 700, fontSize: f.handleFs, lineHeight: 1.3, color: RECAP.dim, marginTop: 8, ...NOWRAP }, f.handle)] : []),
     ]));
-    // The submit strip: a rule, the question, the link, one button — under the record, never over it.
-    kids.push(h({ position: 'absolute', left: 80, top: 1120, width: 920, height: 2, background: RECAP.line }, ''));
-    kids.push(text(RES_DISPLAY(36, RECAP.fg, { position: 'absolute', left: 80, top: 1152, textTransform: 'uppercase', letterSpacing: -1 }), COUNTDOWN_COPY.question));
-    kids.push(text({ position: 'absolute', left: 80, top: 1206, fontFamily: MONO, fontWeight: 700, fontSize: 30, color: RECAP.dim, ...NOWRAP }, SUBMIT_URL));
-    kids.push(h({ position: 'absolute', right: 90, bottom: 80, height: 72, display: 'flex', alignItems: 'center', background: RECAP.green,
-      borderRadius: 6, paddingLeft: 32, paddingRight: 32, transform: `skewX(${SKEW}deg)` }, [
-      text(RES_DISPLAY(34, RECAP.bg, { textTransform: 'uppercase', letterSpacing: -1, transform: `skewX(${-SKEW}deg)` }), COUNTDOWN_COPY.submit),
-    ]));
+    // The submit strip — under the record, never over it.
+    kids.push(...countdownStrip());
   }
   return h({ position: 'relative', display: 'flex', width: COUNTDOWN_SIZE[0], height: COUNTDOWN_SIZE[1], background: RECAP.bg, overflow: 'hidden' }, kids);
 }
@@ -1140,15 +1384,20 @@ function warsEye(d, g) {
 }
 // The foot of the portrait pieces: the call to action bottom-left on the green field, the
 // prize bottom-right (hidden on the champion graphic, whose headline carries the amount).
+// A second ask (`d.cta2`, the final package) takes the prize's spot, right-aligned — that
+// graphic's headline carries the amount instead, so the prize still prints exactly once.
 function warsFoot(d, g) {
   const cta = d.cta || {};
-  const kids = [
-    col({ position: 'absolute', left: g.pad, bottom: g.ctaBottom }, [
-      text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: g.ctaFs, lineHeight: 1, letterSpacing: -Math.round(g.ctaFs * 0.03), color: WARS.bg, ...NOWRAP }, clip(cta.label || '', 24)),
-      text({ fontFamily: MONO, fontWeight: 700, fontSize: g.urlFs, lineHeight: 1, letterSpacing: -0.3, color: WARS.bg, marginTop: g.urlMt, ...NOWRAP }, clip(cta.url || '', 28)),
-    ]),
-  ];
-  if (d.stage !== 'champion' && d.prizeAmount) {
+  const two = !!(d.cta2 && d.cta2.label);
+  const ctaFs = two && g.pkgCtaFs ? g.pkgCtaFs : g.ctaFs;
+  const urlFs = two && g.pkgUrlFs ? g.pkgUrlFs : g.urlFs;
+  const stack = (c, right) => col({ position: 'absolute', [right ? 'right' : 'left']: g.pad, bottom: g.ctaBottom, alignItems: right ? 'flex-end' : 'flex-start' }, [
+    text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: ctaFs, lineHeight: 1, letterSpacing: -Math.round(ctaFs * 0.03), color: WARS.bg, ...NOWRAP }, clip(c.label || '', 24)),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: urlFs, lineHeight: 1, letterSpacing: -0.3, color: WARS.bg, marginTop: g.urlMt, ...NOWRAP }, clip(c.url || '', 28)),
+  ]);
+  const kids = [stack(cta, false)];
+  if (two) kids.push(stack(d.cta2, true));
+  else if (d.stage !== 'champion' && d.prizeAmount) {
     kids.push(col({ position: 'absolute', right: g.pad, bottom: g.prizeBottom, alignItems: 'flex-end' }, [
       text({ fontFamily: MONO, fontWeight: 700, fontSize: g.prizeFs, lineHeight: 1, letterSpacing: -Math.round(g.prizeFs * 0.04), color: WARS.bg, ...NOWRAP }, d.prizeAmount),
       text({ fontFamily: MONO, fontWeight: 700, fontSize: g.prizeLabelFs, lineHeight: 1.2, letterSpacing: -0.3, color: WARS.bg, marginTop: 4, ...NOWRAP }, d.prizeLabel || WARS_PRIZE_LABEL),
@@ -1164,7 +1413,7 @@ function elementTournamentPortrait(d, story) {
     ? { W: Wd, pad: 72, logoTop: 262, logoH: 34, numTop: 258, numFs: 32, lockTop: 330, S: 140, eyeTop: 520, headTop: 572, headFs: 66,
         top: 700, ph: 380, nm: 58, ig: 28, igi: 32, tagH: 44, tagFs: 23, when: 46, premiseW: 512, txW: 936 - 380 - 44,
         seatsTop: 1136, seat: { w: 112, ph: 104, nameFs: 19, nameMt: 10, seatFs: 16, ring: 4, dash: 2 },
-        field: [620, 249], ctaBottom: 262, ctaFs: 52, urlFs: 40, urlMt: 14, prizeBottom: 268, prizeFs: 72, prizeLabelFs: 30 }
+        field: [620, 249], ctaBottom: 262, ctaFs: 52, urlFs: 40, urlMt: 14, prizeBottom: 268, prizeFs: 72, prizeLabelFs: 30, pkgCtaFs: 44, pkgUrlFs: 34 }
     : { W: Wd, pad: 72, logoTop: 64, logoH: 32, numTop: 60, numFs: 32, lockTop: 128, S: 120, eyeTop: 288, headTop: 338, headFs: 64,
         top: 440, ph: 340, nm: 60, ig: 30, igi: 34, tagH: 44, tagFs: 24, when: 44, premiseW: 552, txW: 936 - 340 - 44,
         seatsTop: 820, seat: { w: 112, ph: 100, nameFs: 19, nameMt: 10, seatFs: 16, ring: 4, dash: 2 },
@@ -1450,11 +1699,14 @@ function trackContent(d) {
       trackRecordLine(d),
       col({ marginTop: 26 }, [trackHeadline(band.headline || [], 96)]),
       trackBody(d.sub || '', { mt: 30 }),
+      // The verdict (the meaning of the average's whole number) sits on its own line: the
+      // longest meaning runs ~55 characters and cannot share the score's row.
       row({ marginTop: 'auto', alignItems: 'flex-end' }, [
         text({ fontFamily: DISPLAY, fontWeight: 900, fontSize: 132, lineHeight: 0.9, letterSpacing: -6, color: RECAP.fg, ...NOWRAP }, d.mean),
         text({ fontFamily: MONO, fontWeight: 700, fontSize: 26, letterSpacing: 3, textTransform: 'uppercase', color: RECAP.dim, marginLeft: 24, marginBottom: 10, ...NOWRAP },
-          `/ ${CHART_SCALE_MAX} · ${band.label || ''}`),
+          `/ ${CHART_SCALE_MAX}`),
       ]),
+      trackBody(band.verdict || band.label || '', { size: 36, color: RECAP.fg, weight: 800, mt: 18 }),
     ];
   }
   if (k === 'split') {
@@ -1512,7 +1764,7 @@ function trackContent(d) {
         big(d.mean, 'Delivered', false),
         text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, color: TRACK.purple, marginBottom: 74, marginLeft: 'auto', ...NOWRAP }, su.label || ''),
       ]),
-      trackBody(`The A&Rs guessed ${d.predictMean} from the setup, then heard it and landed on ${d.mean}.`, { mt: 40 }),
+      trackBody(`The A&Rs expected it to score ${d.predictMean}. It scored ${d.mean}.`, { mt: 40 }),
       trackPull(su.pull || '', 'purple'),
     ];
   }
@@ -1527,7 +1779,7 @@ function trackContent(d) {
     return [
       trackHeadline(['Three things', 'to do next.'], 80),
       col({ marginTop: 40 }, steps),
-      trackPull('Every line on this page comes from the numbers on the other pages — the decision, the biggest gap between groups of A&Rs, and the setup. Nothing is written by hand.', 'plain'),
+      trackPull('Every line on this page comes from the numbers on the other pages — the score, the biggest gap between groups of A&Rs, and what the A&Rs expected. The amount is what to spend letting people know the record is out.', 'plain'),
     ];
   }
   if (k === 'comments') {
@@ -1611,6 +1863,10 @@ function element(type, data = {}) {
   if (type === 'referStory') return elementReferPerson(data, true);
   if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
   if (type === 'resultsSlide') return elementResultsSlide(data);
+  if (type === 'gradePhoto') return elementGradePhoto(data, false);
+  if (type === 'gradePhotoStory') return elementGradePhoto(data, true);
+  if (type === 'gradeStats') return elementGradeStats(data, false);
+  if (type === 'gradeStatsStory') return elementGradeStats(data, true);
   if (type === 'countdownSlide') return elementCountdownSlide(data);
   if (type === 'winnerPost') return elementWinnerPost(data);
   if (type === 'tournamentFeed') return elementTournamentPortrait(data, false);
@@ -1633,6 +1889,7 @@ function sizeOf(type) {
   if (type === 'winnerPost') return WINNER_SIZE;
   if (type === 'trackPage') return TRACK_SIZE;
   if (TOURNAMENT_SIZES[type]) return TOURNAMENT_SIZES[type];
+  if (GRADE_SIZES[type]) return GRADE_SIZES[type];
   return REFER_SIZES[type] || [W, H];
 }
 // `outWidth` rasterises the same layout at a smaller width (a thumbnail): the element is
@@ -1647,4 +1904,4 @@ async function renderPng(type, data, outWidth) {
   return png;
 }
 
-module.exports = { renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
+module.exports = { CD_GROUP_MAX, renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, GRADE_SIZES, GRADE_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };

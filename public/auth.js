@@ -110,23 +110,21 @@
     show('account');
   }
 
-  // Returning-player prefill: name is filled; the phone is shown MASKED (we never receive
-  // the real number here). Having a number on file means they're already opted in to SMS,
-  // so the masked hint doubles as the opt-in indicator. phonePrefilled => "stored number
-  // on file, field left as the mask" so verify can tell the server to keep it.
-  let phonePrefilled = false;
-  function applyPrefill(pf) {
-    phonePrefilled = false;
-    const nameEl = $('#name'), phoneEl = $('#phone');
-    if (!pf) { if (phoneEl) { phoneEl.value = ''; phoneEl.placeholder = '(555) 123-4567'; } return; }
-    if (nameEl && pf.name) nameEl.value = pf.name;
-    if (phoneEl) {
-      if (pf.hasPhone) {
-        phoneEl.value = '';
-        phoneEl.placeholder = pf.phoneHint + ' (on file — tap to change)';
-        phonePrefilled = true;
-      } else { phoneEl.value = ''; phoneEl.placeholder = '(555) 123-4567'; }
-    }
+  // What's on file for this email (booleans from /api/join/request — nothing personal
+  // comes back before the code is checked). The code screen shows ONLY what's missing:
+  // a returning A&R with a name and number sees the code box and a button. Name and
+  // number changes live in Edit profile. The notify checkbox is the SIGNUP choice, so it
+  // shows to new accounts only; a returning A&R's choice stands.
+  let known = { exists: false, hasName: false, hasPhone: false };
+  function applyKnown(k) {
+    known = { exists: !!(k && k.exists), hasName: !!(k && k.hasName), hasPhone: !!(k && k.hasPhone) };
+    const tog = (sel, hide) => { const el = $(sel); if (el) el.classList.toggle('hide', hide); };
+    tog('#nameRow', known.hasName);
+    tog('#phoneRow', known.hasPhone);
+    tog('#notifyRow', known.exists);
+    if ($('#name')) $('#name').value = '';
+    if ($('#phone')) $('#phone').value = '';
+    if ($('#codeTitle')) $('#codeTitle').textContent = known.exists ? 'Welcome back' : 'Enter your access code';
   }
 
   // Bind the three join handlers. Called once by a page whose auth markup is static, and
@@ -169,7 +167,7 @@
         $('#emailEcho').textContent = email; localStorage.setItem('rt_email', email);
         if (d.devCode) { $('#devCodeBox').classList.remove('hide'); $('#devCodeBox').textContent = 'Dev mode — your code is ' + d.devCode; }
         else $('#devCodeBox').classList.add('hide');
-        applyPrefill(d.prefill);
+        applyKnown(d.known);
         show('code');
       } catch (e) { $('#emailErr').textContent = e.message; }
       $('#btnRequest').disabled = false;
@@ -179,18 +177,19 @@
 
     $('#btnVerify').onclick = async () => {
       $('#codeErr').textContent = '';
-      const code = $('#code').value.trim(), name = $('#name').value.trim();
+      const code = $('#code').value.trim();
+      const name = known.hasName ? '' : $('#name').value.trim();
       if (!code) return $('#codeErr').textContent = 'Enter your access code';
-      if (!name) return $('#codeErr').textContent = 'Enter your name';
-      const phone = $('#phone') ? $('#phone').value.trim() : '';
-      // If a returning user has a number on file and left the field untouched (still the
-      // mask), tell the server to keep it (and keep them opted in). A newly typed number is
-      // sent and replaces it. No stored number + empty field => no phone => no SMS consent.
-      const keepPhone = phonePrefilled && phone.length === 0;
+      if (!known.hasName && !name) return $('#codeErr').textContent = 'Enter your name';
+      // A hidden field sends nothing: a blank name keeps the one on file, and keepPhone
+      // keeps the stored number (and the opt-in that goes with it) exactly as leaving the
+      // old masked field untouched did. No stored number + empty field => no SMS consent.
+      const phone = (!known.hasPhone && $('#phone')) ? $('#phone').value.trim() : '';
+      const keepPhone = known.hasPhone;
       const ref = localStorage.getItem('rt_ref_' + SID) || localStorage.getItem('rt_ref') || '';
       $('#btnVerify').disabled = true;
       try {
-        const d = await api('/api/join/verify', { sessionId: SID, email: localStorage.getItem('rt_email'), code, name, phone, keepPhone, ref, notifyRooms: $('#notifyRooms').checked });
+        const d = await api('/api/join/verify', { sessionId: SID, email: localStorage.getItem('rt_email'), code, name, phone, keepPhone, ref, notifyRooms: known.exists ? undefined : $('#notifyRooms').checked });
         track('session_register', { method: 'otp' });
         setToken(d.token);
         localStorage.removeItem('rt_ref_' + SID); localStorage.removeItem('rt_ref');
@@ -240,17 +239,17 @@
   <!-- JOIN: code -->
   <section id="screen-code" class="center stack hide">
     <div class="panel stack">
-      <div><div class="eyebrow">Step 2</div><h2 style="margin-top:6px">Enter your access code</h2>
+      <div><div class="eyebrow">Step 2</div><h2 style="margin-top:6px" id="codeTitle">Enter your access code</h2>
         <p class="dim" style="margin:8px 0 0;font-size:14px">Code sent to <span id="emailEcho" style="color:var(--ink)"></span>. If it isn't in your inbox, check <strong style="color:var(--ink)">Spam</strong> or <strong style="color:var(--ink)">Promotions</strong>.</p></div>
       <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="••••••">
       <div id="devCodeBox" class="note hide"></div>
-      <div><label>Display name (shown in the A&amp;R rankings)</label><input id="name" placeholder="e.g. Maya"></div>
-      <div>
+      <div id="nameRow"><label>Display name (shown in the A&amp;R rankings)</label><input id="name" placeholder="e.g. Maya"></div>
+      <div id="phoneRow">
         <label>Mobile number <span class="dim" style="font-weight:400">(optional)</span></label>
         <input id="phone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
         <p class="dim" style="font-size:12px;line-height:1.5;margin:7px 2px 0">By entering your number you agree to receive texts when a session goes live and about future A&amp;R events. Message &amp; data rates may apply; reply STOP to opt out. Optional—not required to participate.</p>
       </div>
-      <label class="pref-row" for="notifyRooms">
+      <label class="pref-row" for="notifyRooms" id="notifyRow">
         <input type="checkbox" id="notifyRooms" checked>
         <span><b>Notify me when a session goes live</b>
           <small>Email, plus a text if you added a number. Change this any time in your A&amp;R record.</small></span>
@@ -274,7 +273,7 @@
     INCOMING_REF: INCOMING_REF,
     configure: configure,
     tryAccountRegister: tryAccountRegister,
-    applyPrefill: applyPrefill,
+    applyKnown: applyKnown,
     bindJoinHandlers: bindJoinHandlers,
     renderAuthScreens: renderAuthScreens,
   };

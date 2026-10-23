@@ -89,13 +89,42 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 046; suite green)
+## Current state (migrations through 047, plus 049; 048 is open in PR #54; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
 > claimed 028 had shipped while the migration was still untracked locally and `main` was
 > level with `origin/main` — a whole feature, and a migration prod had never run, sitting
 > unpushed. "SHIPPED" here must mean pushed to origin, not merely built and green.
+- **The daily grade card + the daily email rules** (047, 2026-10-15; built on branch
+  `claude/grade-card`, NOT yet merged or deployed when written). Mockup: mim repo
+  `docs/mockups/anr-grade-card-round2.html`, options A and C.
+  - **Card** (`share-cards.js` `gradePhoto[Story]` / `gradeStats[Story]`): "Do you have a better
+    ear than <name>?", the grade, accuracy, and ONLY Bullseye / Sharp / Close (Off and Way off
+    are never printed — operator). "$500 cash" in gold, makinitmag.com/ANR, no QR, no invite
+    link, no headcount. A = the A&R's big photo is the top of the card; C = stats-led, small face.
+    The A&R picks (`users.grade_card_style`); A needs `users.photo_large_url`, else C.
+  - **Big photo:** both crop modals (join.html, play.html) now also send `imageLarge`, the SAME
+    crop at up to 1200px (skipped under 800px). The A&R's own crop is the focus point; nothing
+    detects faces. Stored on Blob only; every upload replaces or clears it.
+  - **Doors:** `/api/card/grade/<day>/<uid>.png?k=` (public, HMAC with NOTIFY_LINK_SECRET, for
+    the email `<img>`), `/api/me/grade-card` (own card, download), `/api/me/grade-card/latest`,
+    `POST /api/me/grade-card-style` (login only). All 404 before the day PUBLISHES (the seal).
+    Account page: "Your grade card" at the top of My results (no separate mockup was made).
+    Admin: Users → Edit profile shows the A&R's latest card (preview, look, download):
+    `/api/admin/users/grade-card?uid=` (admin only; the style is per download, never saved).
+  - **Standing card** (operator, 2026-10-15): the same card ALL-TIME (`standingFacts`: every
+    published daily drop rated; grade from the average accuracy of every rated record; the good
+    three summed; "Standing · N drops" where the date goes). NO RANK, by decision. `scope=standing`
+    on `/api/me/grade-card` and the admin door; the account page and admin panel switch
+    Latest day / Standing.
+  - **Daily email rules (operator):** `digest_daily` is ON by default but goes ONLY to who rated
+    the published drop (results + card; subject "Your A&R grade for <day>: <grade>") or who rated
+    none of it but rated the public drop before (`dailyMissedEmail*`, his line: "you missed
+    yesterday's drop, but you have time to rate the new ones now"). Missed two in a row = no
+    daily mail. `daily_open` is RETIRED except a new account's first 7 days until they play
+    (`firstWeek`; an explicit ON no longer widens it). The weekly's default now goes to everyone
+    outside the daily reach (`dailyReachSql`: first week or seen in the last 4 days).
 - **Reliability spine:** outage fix + self-healing ensureInit + boot-safe deploy-step
   migrations; soft-delete clears live; unique email index. Neon TLS now fully verified
   (`rejectUnauthorized: true`; `PGSSL=no-verify` is the escape hatch). pg BIGINT/NUMERIC
@@ -607,7 +636,19 @@ live on anr.makinitmag.com.
   decision. Spec: **docs/specs/track-report-spec.md** (built from the Room Report Redesign
   mockup). The old three pages opened with a big green number and buried the instruction on
   the last card; the report now opens with a sentence the artist can act on — "Release it.
-  Don't put money behind it yet." — and the score sits under it as evidence. **Every headline
+  Don't put money behind it yet." — and the score sits under it as evidence. **What to spend
+  (operator, 2026-10-15) replaced that line:** every report gives an amount off the room
+  average (`SPEND` in track-report.js, fixed edges, independent of the band edges): under 3
+  don't invest · 3–4 up to $300 over the first 3 months · 4–5 at least $300 · 5–6 worth putting
+  some money behind, not over $1,000 in 3 months without a response · 6–7 invest at least
+  $1,500 · 7–8 work out what you can afford and how long to push it as a single · 8+ the same,
+  don't do it on your own (investor or consultant).
+  It is the decision headline and always step 02 on the What now page. A dollar
+  amount in the email is advice about the artist's own release; the no-upsell test still
+  bans anything that sells ours. **The verdict** (2026-10-15, decided 10-14): the score on page 1
+  and in the email reads with the MEANING of the average's whole number (`RATING_MEANINGS` /
+  `verdictFor` in track-report.js — 6.4 and 6.9 are both "Potential Single", never rounded up),
+  replacing "out of 9 · <band>". The band name stays internal (charts, keys). **Every headline
   is derived** in `track-report.js` (pure, `track-report.test.js`) from numbers `songReportData`
   already had: the BAND (edges 3 / 6, the chart key's cuts; `TRACK_BAND_EDGES=a,b` overrides),
   the histogram's SHAPE (consensus / divided / spread / thin — "Agreement, with three
@@ -932,6 +973,60 @@ live on anr.makinitmag.com.
   (≥23h apart, after 4AM ET; continues on later ticks while `remaining`; failures retry hourly).
   Brevo allows one SMS number per contact, so a phone already claimed (A&Rs first) is left off
   the next contact. `BREVO_API_KEY` env; `BREVO_API_BASE` is the test mock. Doc: docs/brevo-sync.md.
+- **The evening clock — daily drop opens 6:00 PM ET, results publish with the countdown post**
+  (048, 2026-10-17; branch `claude/ar-program-release-timing-d614ef`, PR #54 open when written).
+  Six weeks of prod votes: A&Rs rate when the OPEN EMAIL lands (46% of a day's raters start within
+  3h of the open; the peak moved with the open from noon to 3PM), the only self-driven window is
+  7–11PM ET, nothing happens 11PM–10AM, audience ~70% Eastern / 20% Central, Wed drops draw the
+  most raters and Fri the fewest. The operator's chain (Day 1 = open day): **5PM** Drupal lock +
+  push · **6PM open** (email burst lands on the evening window; 7PM collides with the show) ·
+  **6PM next day close + tally**, both carousels render AT THE CLOSE (`streamDays 0`) and are held
+  privately · **6AM Day 3 = PUBLISH** (`resultsDays 1, resultsMin 6:00`): the Daily Countdown
+  POSTS from @makinit4indies via SocialBee (the operator's scheduled Claude job in Chrome) with
+  @TheAnRTeam + the top 3 artists as collabs — the post IS the reveal; seal lifts, callback fires ·
+  **9AM** Top A&Rs carousel · **3PM** the EMAILS (`artistDelayMin` 540 now holds BOTH the A&R
+  mail and the Track Reports) · **4PM** Brevo (`BREVO_SYNC_HOUR`). 36h open→publish, two drops in
+  flight. Bonus steps **6 / 16 / 21 h** (midnight / 10AM / 3PM).
+  **Artist heads-up at the close RETIRED** (operator): the artist hears from the program once,
+  with the report; the cron queues no `artist_headsups` (manual send kept). **Three A&R mails:**
+  results · missed yesterday · **missed the last two** (`dailyMissedTwiceEmail*`, "get back in the
+  game"), then nothing until they rate again; every daily mail carries the Wednesday show line.
+  **Weekly mail → THURSDAY noon** (`WEEKLY_SEND_DOW 4`): the results of Wednesday's show (Top 8 +
+  the two seats + replay) to EVERY subscribed A&R — `nudge` (non-engaged only, 4-send sunset) is
+  OFF. Instagram API caps a carousel at **10 slides**: top 3 individual, the rest grouped ≤4 a
+  slide only when needed (mockup `public/brand/countdown/group.html`, Satori build pending).
+  048 deletes the stored 09-27 rows. **After deploy: SAVE the schedule once on the panel**, move
+  the Drupal lock-in to 5PM, schedule the posting job. Doc: **docs/daily-schedule-2026-10-16.md**.
+  **LIVE 2026-10-17** (PR #54 merged, prod verified; mim Live lock 17:00). **Grouped slides BUILT
+  the same day** (operator approved the mockup): `countdownSlidePlan(n)` in server.js — one a slide
+  while cover + n + 2 ≤ 10, else #3/#2/#1 alone and #n…#4 grouped from the bottom, ≤ `CD_GROUP_MAX`
+  (4) a slide, bigger groups first (16 → 4/3/3/3; 8 → 3/2); `countdownSlide` kind `group` (`lo`,
+  `hi`, `rows`, `handles`) in share-cards.js, ticks lit as a range, never gold, a long title wraps
+  to two lines on the four-up; the Asana notes and the console tag readout list every handle on a
+  grouped slide.
+  The schedule bullets below describe older clocks.
+- **Daily live stream RETIRED from every communication** (no migration, 2026-10-15, operator's
+  call): the only live stream is **The A&R Room on Wednesday at 7:00 PM ET**, where the week's
+  Top 8 are announced and the week's finalist for the $1,000 Music Tournament is picked.
+  `WEEKLY_SHOW_LINE` / `WEEKLY_SHOW_CTA` are the ONE definition; the artist heads-up (email +
+  SMS) now says "rated · Track Report by email on <day> · Top 8 of the week on The A&R Room
+  live, Wed 7PM ET" and stops sending at `results_at` (was `stream_at`); the daily digest and
+  the Track Report email carry the Wednesday show line and link; `/api/home` async carries
+  `weeklyShow` instead of `streamWhen/streamName`; the `daily_stream_url` setting is now the
+  Wednesday show's link (panel label changed). **Kept:** `stream_at` as the time the Daily
+  Countdown graphics render (console label "Daily Countdown graphics render at"), the Instagram
+  countdown carousel and its Asana task, `DAILY_STREAM_NAME` as that carousel's name. The 041
+  bullet below describes the hours as built; its "Livestream Countdown" wording is history.
+  **YouTube subscribe touch point (same day):** every recurring mail (daily open, digest,
+  weekly update, go-live, artist heads-up email + SMS, Track Report for daily records) and the
+  /daily post-close screen carry `SUBSCRIBE_LINE` ("Subscribe to our YouTube channel and hit
+  the bell so you're notified when we go live and can see if you made it.") and a "Subscribe
+  on YouTube" link to `LIVE_SUBSCRIBE_URL` = **https://www.makinitmag.com/live**, which 301s
+  to the channel's live page with `?sub_confirmation=1` (verified; `makinitmag.com.live` is
+  NOT a domain). One block, `subscribeBlockHtml('ar'|'artist')` / `subscribeBlockText()`.
+  `dailyStreamUrl()` falls back to that URL when the panel setting is empty. The heads-up SMS
+  says "subscribe + hit the bell: makinitmag.com/live" and stays inside one GSM-7 segment.
+
 - **Email engagement gate** (043, 2026-10-06). The audit (Mandrill activity export joined to
   users/prefs/votes, per-address table kept local in `docs/reports/`, gitignored): the daily
   "records are open" notice went to every address (~766/day), 4% clicked, 607 of 776 recipients
@@ -982,7 +1077,36 @@ live on anr.makinitmag.com.
   `tournamentFeed/Story/Thumb/Bracket` (purple lockup block — head-to-head), rendered live and
   admin-only at `/api/card/tournament?t=&kind=&filled=&stage=`; Publish hosts to Blob at
   `tournaments/<slug>/<key>-<kind>.png` and makes one Asana task per row (caption per the SEO
-  rule, no topic hashtags, ≤4 mentions a comment). Public page `/wars` (latest Wars) and
+  rule, no topic hashtags, ≤4 mentions a comment).
+  **The final package** (no migration, 2026-10-14, operator's ask): once all 8 seats are filled,
+  each competitor gets their OWN feed + story to post — stage `package` + `featured=N` on the same
+  flyer element (them big, all 8 seats, purple ring on theirs, headline "<Name> plays for $500."
+  so the amount still prints once, and TWO asks on the field: "RSVP to watch live ·
+  <host>/wars" left, "Join the A&R Team · makinitmag.com/ANR" right, where the prize block sits on
+  the other states — `d.cta2` in `warsFoot`). Rows `pkg1..8` (`asana:false` — NO Asana task, the
+  competitor's post is not the operator's queue; publish hosts the files only). Delivery is
+  **`POST /api/admin/tournament/package-send {tournamentId, key, force?}`**: the competitor
+  briefing in the operator's words verbatim (`PACKAGE_COPY` — on camera, download the Service
+  Pack + pick 18, 3 rounds = 90s / a full song / 3 full songs, 5 songs no repeats, $500 + a
+  magazine feature, ties by current-series points, RSVP link, the competitor's PERSONAL join link
+  `?ref=<uid>` and review referral link, makinitmag.com/push for Service Pack artists, the daily
+  drop, a Bonus Points block, "Reply with your makinitmag.com username so we can add a Win to
+  your account", the caption) with **both PNGs ATTACHED** (`sendEmail` now takes
+  `opts.attachments`, mapped for Resend and Mandrill; renders on the fly when unpublished, so
+  Blob is not a gate). One row per request (the console's "Publish all 8" / "Email every
+  competitor" loop); idempotent on `graphics[key].sentAt` unless `force`; `sentTo` is the MASKED
+  address. **A heads-up TEXT follows the email** (2026-10-15: "<Wars> #N: we just sent an email
+  to <address> with all the details for the tournament. Check Spam and the Promotions tab if you
+  don't see it. Good luck!", GSM-7, one segment for a short address else MMS by sms.js, to `users.phone`
+  with no marketing-consent gate — their own seat; no phone = no text, state `sms` on the row).
+  **"Send test to me"** (`package-test`, 2026-10-15) mails the ADMIN their own copy of one
+  competitor's package (`[TEST]` subject, same text) and records nothing — the dress rehearsal the
+  operator asked for.
+  A competitor with no account (`contact: none`), closed, or bounced is refused with a
+  reason — the per-competitor zip (`graphics.zip?key=pkgN`: feed, story, caption) is the hand-DM
+  path; the bare zip leaves the package rows out. The round format lives ONLY in the email copy.
+  `email_opt_out` is not honoured here (their own participation). Mockup `?stage=package&me=N`
+  in `public/brand/wars/flyer-{feed,story}.html`. Public page `/wars` (latest Wars) and
   `/tournament/<slug>` (`public/tournament.html`, 15s refetch while live, no Ably); reminder
   sent by the daily cron `remind_min` before `event_at` (claimed rows, tagged
   `tournament_reminder`) or by hand. Console: the Tournaments mode (setup · field with
@@ -1020,6 +1144,25 @@ live on anr.makinitmag.com.
   - **Brevo:** closing an account deletes the Brevo contact (`brevoForget`, best-effort) and
     clears its `brevo_sync` ledger rows; the sync skips deactivated/deleted accounts (but still
     NOT blocked ones — the operator's Brevo rule). A reactivated A&R re-syncs on the next run.
+- **Referral link clicks** (049, built 2026-09-23 as 041, renumbered at merge 2026-10-17): the submit link an A&R shares is now
+  `<publicBase>/r/<uid>`, which records the open in `referral_clicks` and 302s (no-store) to
+  `https://www.makinitmag.com/opportunities/anr-meeting?ref=<uid>` — the FINAL form URL, with
+  `www.` (the bare domain 301s), not `/review` (which only reaches the form through two old
+  redirects). One row per (ET day, uid, visitor); visitor = sha256(ip|ua|day)[:32], so the raw
+  IP/UA are never stored. Previewers/crawlers are kept as `kind='bot'` rows so the filter can be
+  checked; A&Rs only ever see human rows. GET only (HEAD redirects, uncounted); an invalid uid
+  still 302s, without the ref; unknown/blocked uids redirect uncounted; the insert is
+  best-effort — a tracking failure never stops the artist. **Diagnosis only: clicks award
+  nothing** (credit still comes only from a submission Drupal attributes). Links posted before
+  this (`makinitmag.com/review?ref=`) go straight to Drupal and are never counted — accepted
+  (Kelby, 2026-09-23); no Drupal-side counter. `/api/me/referrals` carries `clicks.{week,total}`
+  (last 7 ET days / all time). **On a preview deploy** the link is built off `publicBase()`
+  (`PUBLIC_BASE_URL`, else the production host): with it unset, preview-issued links point at
+  prod and count there — only for a uid that exists in prod; with it set to the preview host,
+  they count in the preview DB. Both are fine for a diagnosis number. Spec:
+  docs/specs/referral-click-tracking-prompt.md. The account page (`/account`, which `/refer` serves) prints one line under the scout link
+  ("N people opened your link this week · M all time", or "No one has opened this link yet."),
+  built to the approved mockup `public/_mock-refer-clicks.html`.
 
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
@@ -1028,7 +1171,7 @@ live on anr.makinitmag.com.
    reminder subscribers (operator undecided).
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
-3. **Digest senders** — both shipped: `digest_daily` (033, opt-in) and `digest_weekly` (043,
+3. **Digest senders** — both shipped: `digest_daily` (033; default ON and narrowed to recent players 2026-10-15) and `digest_weekly` (043,
    default ON for the non-engaged, sunsets after 4). Web push is a third channel on the same
    table, still gated behind the PWA shell.
 4. **PWA install + iOS web push** — DEFERRED behind a branding / site facelift pass (which
@@ -1052,6 +1195,17 @@ live on anr.makinitmag.com.
 - Copy-inventory spreadsheet: reconcile the Room/A&Rs terminology sweep against the operator's
   revised docs/copy-inventory.xlsx when returned.
 - Before a celebrity-scale event: upgrade Revive's shared hosting (fine at current traffic).
+
+## How a daily set is named (operator, confirmed 2026-10-23 — do not drift)
+**A daily set is named and dated by its CALCULATED publish date: the drop day + 2.** A drop that
+opens on the 23rd is the 25th's set ("Daily Drop - Oct 25, 2026"; 10.25.26 on the carousels). One
+helper, `dailyPublishDay(drop_day)` (with `dailyDayLabel` / `dailyDropName` / `dailySetDate`), feeds
+every place a reader sees the set's date: carousels, captions, Asana task names, the results and
+open emails, the grade card, My results, the landing page and the daily console. It is CALCULATED
+from `drop_day`, never read off `results_at` — a schedule change re-stamps `results_at`, which is how
+the Oct 17 and Oct 18 drops both printed 10.20.26. `drop_day` stays the storage and query key (week
+windows, the weekly report, sales-lead "Date played" are unchanged). This rule flipped three times
+in October (close date → release date → drop day → publish date); check here before changing it.
 
 ## Copy voice (operator, 2026-08-30)
 **Plain and direct. No hip, cultural, or slangy phrasing** in any user-facing text — it reads
