@@ -1847,10 +1847,10 @@ function recapDateLabel(ts) {
   const g = (t) => (p.find(x => x.type === t) || {}).value || '';
   return `${g('month')}.${g('day')}.${g('year')}`;
 }
-// A daily set is dated by its DROP DAY (operator, 2026-10-23): the day the records opened for
-// rating, the same date the results email, the grade card, My results and the console print.
-// (2026-10-17 to 10-23 it read results_at, the post day, which made the carousels disagree with
-// every other card and gave two drops the same date during the clock change.)
+// A daily set is dated by its RELEASE DAY = drop day + 2 (operator, 2026-10-23): the 10-17 drop
+// opens 10-17, closes 10-18 and its countdown posts 10-19, so the set is "10.19". Fixed off
+// drop_day rather than results_at, because an extended drop (10-17's results went 10-20) must
+// not shift its name. dailyPublishDay() is the one source for every surface (see etDayLabel).
 async function dailySetDate(session) {
   const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
   return recapDateLabel(etEpoch(dailyPublishDay(day), 12));
