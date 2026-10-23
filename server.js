@@ -1847,12 +1847,13 @@ function recapDateLabel(ts) {
   const g = (t) => (p.find(x => x.type === t) || {}).value || '';
   return `${g('month')}.${g('day')}.${g('year')}`;
 }
-// A daily set is NAMED FOR ITS RELEASE DATE (operator, 2026-10-14; was the close date, 10-03):
-// the day its countdown posts. Under the evening clock (2026-10-17) the countdown post IS the
-// publish, so the release date is results_at's ET day — the slides, the captions, the Asana task
-// names and "schedule to post on <date>" all print the day the post goes up.
+// A daily set is dated by its DROP DAY (operator, 2026-10-23): the day the records opened for
+// rating, the same date the results email, the grade card, My results and the console print.
+// (2026-10-17 to 10-23 it read results_at, the post day, which made the carousels disagree with
+// every other card and gave two drops the same date during the clock change.)
 async function dailySetDate(session) {
-  return recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  return recapDateLabel(session.drop_day ? etEpoch(session.drop_day, 12)
+    : (Number(session.window_opens_at) || now()));
 }
 // "Daily at 3PM" off the stream's own epoch, so the graphic and the caption follow the setting.
 function recapTimeLabel(ts) {
