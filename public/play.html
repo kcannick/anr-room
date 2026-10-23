@@ -11,7 +11,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://anr.makinitmag.com/play">
 <meta property="og:title" content="The A&R Team">
-<meta property="og:description" content="Rate the day’s records and predict the average. $500 to the month’s top A&R.">
+<meta property="og:description" content="Rate the day’s records and predict the average. The A&amp;R Team powers the Makin’ It HOT 100.">
 <meta property="og:image" content="https://anr.makinitmag.com/brand/og/og-team.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -166,18 +166,6 @@
   .cd-soon{font-family:"Space Mono",monospace;font-weight:700;font-size:24px;color:var(--ink)}
   .hide{display:none!important}
   .note{background:#0a0814;border-left:3px solid var(--signal);border-radius:0 10px 10px 0;padding:11px 13px;font-size:14px;color:var(--ink-dim);margin-top:12px;white-space:pre-wrap}
-  .give{margin-top:12px;font-size:13px;color:var(--good);display:flex;gap:7px;align-items:center}
-  /* $500 monthly-giveaway hook (lobby) — the incentive a host promotes. */
-  .give-hook{background:linear-gradient(180deg,rgba(109,95,224,.14),rgba(109,95,224,.05));border:1px solid rgba(109,95,224,.42)}
-  .gh-prize{font-size:16px;font-weight:700;color:var(--ink)}
-  .gh-prize b{color:var(--accent)}
-  .gh-series{font-size:12px;color:var(--ink-faint);margin-top:2px;text-transform:uppercase;letter-spacing:.1em}
-  .gh-board{margin-top:12px;display:flex;flex-direction:column;gap:6px}
-  .gh-row{display:flex;align-items:center;gap:10px;font-size:14px}
-  .gh-rank{font-family:"Space Mono",monospace;font-size:12px;color:var(--accent);width:20px;flex:none;text-align:center}
-  .gh-name{flex:1;text-align:left;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .gh-pts{font-family:"Space Mono",monospace;font-size:13px;color:var(--signal)}
-  .gh-foot{font-size:11px;color:var(--ink-faint);margin-top:10px}
   /* how-to-play onboarding steps */
   .ht-steps{display:flex;flex-direction:column;gap:14px}
   .ht-step{display:flex;gap:12px;align-items:flex-start;text-align:left}
@@ -383,13 +371,6 @@
       <button id="inviteBtn" class="btn">＋ Invite an A&amp;R</button>
       <p class="dim" style="font-size:13px;line-height:1.5;margin:10px 0 0">Invite people whose musical judgment you respect. When they join and complete eligible sessions, your referral can earn bonus points.</p>
     </div>
-    <!-- $500 GIVEAWAY HOOK — shown only when this session competes for the monthly series. -->
-    <div class="panel give-hook hide" id="giveHook" style="margin-top:14px;text-align:center">
-      <div class="gh-prize">🏆 Monthly A&amp;R Award · <b id="ghPrize">$500</b></div>
-      <div class="gh-series" id="ghSeries"></div>
-      <div class="gh-board" id="ghBoard"></div>
-      <div class="gh-foot">Top A&amp;Rs in the monthly rankings qualify for A&amp;R Wars, where the champion earns the award. Evaluate records. Predict the consensus. Build your ranking.</div>
-    </div>
     <!-- LIVENESS FEED (3.5d) — recent joins, count-only -->
     <div class="panel" id="livenessPanel" style="margin-top:14px;display:none">
       <div class="lv-h">A&amp;Rs in the room</div>
@@ -409,7 +390,6 @@
       <h2 id="lsTitle" style="font-size:22px;margin-top:8px">—</h2>
       <div class="dim" id="lsArtist" style="font-size:14px;margin-top:3px"></div>
       <div class="note hide" id="lsNote" style="margin-top:14px"></div>
-      <div class="give hide" id="lsGive"></div>
       <div style="background:var(--inset,#0a0814);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:18px">
         <div style="font-size:15px;font-weight:700">🎧 Listen all the way through</div>
         <div class="dim" style="font-size:13px;line-height:1.5;margin-top:4px">Evaluation opens when the record ends — everyone gets the same clock.</div>
@@ -428,7 +408,6 @@
         <div class="timer" id="vTimer"><div class="t mono">--</div><div class="faint" style="font-size:10px;letter-spacing:.15em">TIME LEFT</div></div>
       </div>
       <div class="note hide" id="vNote"></div>
-      <div class="give hide" id="vGive"></div>
 
       <!-- RATING FLOW (0-9 game) -->
       <div id="ratingFlow">
@@ -539,7 +518,6 @@
         <span class="rankpill">Current rank <strong id="rRank" style="color:var(--signal)">—</strong><span class="faint" id="rOf"></span></span>
         <span class="rankpill">Session total <strong id="rTotal" style="color:var(--good)">—</strong></span>
       </div>
-      <div class="give hide" id="rGive"></div>
       <p class="faint" style="text-align:center;font-size:13px;margin:18px 0 0">🔒 The room's score remains sealed until the final reveal.</p>
     </div>
     <canvas id="confetti" style="position:fixed;inset:0;pointer-events:none;z-index:50;display:none"></canvas>
@@ -630,7 +608,7 @@
 </div>
 
 <!-- HOW-TO-PLAY MODAL: first-run onboarding for new A&Rs, once per device. Copy adapts to
-     rating vs Versus (binary) rounds, and to whether this session plays for the $500. -->
+     rating vs Versus (binary) rounds. -->
 <div id="howToModal" class="modal-scrim" style="z-index:85">
   <div class="panel" style="max-width:390px;width:100%">
     <div class="eyebrow" style="text-align:center">New here? How evaluations work</div>
@@ -1144,7 +1122,6 @@ function renderResults(st){
     $('#reaction').style.display='none';
   }
   $('#rTotal').textContent=st.myTotalPoints ?? 0;
-  if(st.round.giveaway){$('#rGive').classList.remove('hide');$('#rGive').textContent='🎁 '+st.round.giveaway;}else $('#rGive').classList.add('hide');
 }
 
 function renderRecap(st){
@@ -1306,29 +1283,13 @@ $('#streamToggle').onclick=()=>{
   $('#streamChevron').textContent=streamCollapsed?'▸':'▾';
 };
 
-// $500 monthly-giveaway hook — populate whenever the session competes for a series.
-// Lives inside the lobby panel, so it only shows while the wait screen is up.
-let lastGiveaway=null;
-function renderGiveHook(st){
-  const g=st.giveaway, el=$('#giveHook'); if(!el)return;
-  lastGiveaway=g||null;
-  if(!g){ el.classList.add('hide'); return; }
-  $('#ghPrize').textContent=g.prize||'$500';
-  $('#ghSeries').textContent=g.title||'';
-  const top=(g.board||[]).slice(0,3);
-  $('#ghBoard').innerHTML = top.length
-    ? top.map(p=>`<div class="gh-row"><span class="gh-rank">${p.rank}</span><span class="gh-name">${esc(p.name)}</span><span class="gh-pts">${Number(p.points)||0} pts</span></div>`).join('')
-    : '<div class="gh-foot" style="margin:0">Set the first mark in the monthly rankings.</div>';
-  el.classList.remove('hide');
-}
-
-// First-run "how to play" — once per device. Copy adapts to the poll type and to whether
-// this session competes for the $500. Shown the first time an A&R lands in the room.
+// First-run "how to play" — once per device. Copy adapts to the poll type. Shown the first
+// time an A&R lands in the room. No prize is advertised (operator, 2026-10-23).
 let howToShown=false;
 function maybeShowHowTo(st){
   if(howToShown || localStorage.getItem('rt_howto_seen')==='1' || !st) return;
   howToShown=true;
-  const isBin=(st.poll_type==='binary'), g=st.giveaway;
+  const isBin=(st.poll_type==='binary');
   $('#htTitle').textContent = isBin ? 'Compare the records. Predict the split.' : 'Prove your ear. Build your ranking.';
   if(isBin){
     $('#htS1t').textContent='Select the stronger record';
@@ -1341,13 +1302,8 @@ function maybeShowHowTo(st){
     $('#htS2t').textContent='Predict the Average';
     $('#htS2d').textContent='Predict what every other A&R will average it at. Points reward precision—not whether your personal score matches the crowd.';
   }
-  if(g){
-    $('#htS3t').textContent='Compete for the '+(g.prize||'$500')+' A&R Award';
-    $('#htS3d').textContent='Top A&Rs in this month’s rankings qualify for A&R Wars — the champion earns the '+(g.prize||'$500')+' award. Every completed round contributes to your record.';
-  }else{
-    $('#htS3t').textContent='Build your monthly ranking';
-    $('#htS3d').textContent='Accurate predictions and completed sessions move you up the monthly rankings.';
-  }
+  $('#htS3t').textContent='Build your monthly ranking';
+  $('#htS3d').textContent='Accurate predictions and completed sessions move you up the monthly rankings.';
   $('#howToModal').style.display='flex';
 }
 function dismissHowTo(){ localStorage.setItem('rt_howto_seen','1'); $('#howToModal').style.display='none'; }
@@ -1359,7 +1315,6 @@ function render(st){
   $('#sessName').textContent=st.session.name;
   $('#footCount').textContent=st.participants;$('#waitCount').textContent=st.participants;
   renderJoins(st);
-  renderGiveHook(st);
   maybeShowHowTo(st);
   $('#footPts').textContent=(st.me.total_points||0)+' pts';
   $('#rTotal').textContent=st.me.total_points||0;
@@ -1423,7 +1378,6 @@ function render(st){
     $('#lsTitle').textContent=st.round.song_title||'—';
     $('#lsArtist').textContent=st.round.song_artist||'';
     if(st.round.song_note){$('#lsNote').classList.remove('hide');$('#lsNote').textContent=st.round.song_note;}else $('#lsNote').classList.add('hide');
-    if(st.round.giveaway){$('#lsGive').classList.remove('hide');$('#lsGive').textContent='🎁 Win: '+st.round.giveaway;}else $('#lsGive').classList.add('hide');
     // Chime once as the record goes up, so a phone in a pocket still gets the cue.
     if(lastPhase!=='listening'){ SFX.chime(); buzzed=false; }
     show('listening');
@@ -1466,7 +1420,6 @@ function render(st){
       $('#splitEndB').textContent='all '+(st.round.option_b_title||'B');
     }
     if(st.round.song_note){$('#vNote').classList.remove('hide');$('#vNote').textContent=st.round.song_note;}else $('#vNote').classList.add('hide');
-    if(st.round.giveaway){$('#vGive').classList.remove('hide');$('#vGive').textContent='Round award: '+st.round.giveaway;}else $('#vGive').classList.add('hide');
     tick();show('vote');
   }
   else if(st.phase==='locked'){

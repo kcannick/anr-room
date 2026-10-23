@@ -11,7 +11,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://anr.makinitmag.com/join">
 <meta property="og:title" content="Join the A&R Team">
-<meta property="og:description" content="Rate the day’s records and predict the average. $500 to the month’s top A&R.">
+<meta property="og:description" content="Rate the day’s records and predict the average. The A&amp;R Team powers the Makin’ It HOT 100.">
 <meta property="og:image" content="https://anr.makinitmag.com/brand/og/og-team.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -206,20 +206,14 @@
             <input type="checkbox" id="nDailyOpen">
             <span><b>Daily records open</b><small>Every day, when the new records open for rating. On by default while you're active (rated or signed in within 30 days); turn it on here to keep it coming either way</small></span>
           </label>
-          <!-- ONE CHOICE, not two switches. Daily and weekly are the same mail at two
-               cadences, so as independent checkboxes "both on" was a reachable state that
-               meant eight emails a week nobody deliberately asked for. A radio makes the
-               only real question — how often — the only question asked. -->
+          <!-- ONE CHOICE: None or Daily. The Weekly option (the Thursday mail) was retired
+               2026-10-23 with the Wednesday show; anyone who had it now reads as None. -->
           <div class="pref-row" style="display:block">
             <b>Updates</b>
             <small style="display:block;margin-bottom:8px">How often we email you about the records and the board</small>
             <label class="pref-row" for="nDigestNone" style="border:0;padding:6px 0">
               <input type="radio" name="ndigest" id="nDigestNone">
               <span><b>None</b><small>No update emails</small></span>
-            </label>
-            <label class="pref-row" for="nDigestWeekly" style="border:0;padding:6px 0">
-              <input type="radio" name="ndigest" id="nDigestWeekly">
-              <span><b>Weekly</b><small>Wednesdays — last week's top records and A&amp;Rs, and today's records</small></span>
             </label>
             <label class="pref-row" for="nDigestDaily" style="border:0;padding:6px 0">
               <input type="radio" name="ndigest" id="nDigestDaily">
@@ -486,10 +480,8 @@ function renderNotify(d){
   $('#nRoomSms').checked=get('room_live','sms');
   $('#nRoomEmail').checked=get('room_live','email');
   $('#nDailyOpen').checked=get('daily_open','email');
-  // Daily wins if a legacy row somehow has both — the next save normalises it to one.
-  const digest=get('digest_daily','email')?'daily':(get('digest_weekly','email')?'weekly':'none');
+  const digest=get('digest_daily','email')?'daily':'none';
   $('#nDigestDaily').checked=digest==='daily';
-  $('#nDigestWeekly').checked=digest==='weekly';
   $('#nDigestNone').checked=digest==='none';
   $('#nSmsMaster').checked=!!d.smsConsent;
   $('#nEmailOff').checked=!!d.emailOptOut;
@@ -517,7 +509,6 @@ $('#btnSaveNotify').onclick=async()=>{
         room_live:{email:$('#nRoomEmail').checked,sms:$('#nRoomSms').checked},
         daily_open:{email:$('#nDailyOpen').checked},
         digest_daily:{email:$('#nDigestDaily').checked},
-        digest_weekly:{email:$('#nDigestWeekly').checked},
       },
     };
     // Only send the phone when it actually changed — otherwise every save would restamp

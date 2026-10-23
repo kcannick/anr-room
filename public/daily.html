@@ -976,14 +976,13 @@ function afterNode(el, as, lead){
   el.appendChild(a);
 }
 
-// What happens after the close, in order: the next records, the results, the Wednesday
-// show. Every time is a server-rendered label (never the browser's clock). The daily
-// stream is retired (2026-10-15).
+// What happens after the close, in order: the next records, then the results. Every time is
+// a server-rendered label (never the browser's clock). The daily stream (2026-10-15) and
+// the Wednesday show (2026-10-23) are retired.
 function afterLines(as, lead){
   const out = lead ? [lead] : [];
   if(as.nextOpensWhen) out.push('The next records open ' + as.nextOpensWhen + '.');
   if(as.resultsWhen) out.push('Your results land ' + as.resultsWhen + '.');
-  if(as.weeklyShow) out.push(as.weeklyShow);
   return out.join(' ');
 }
 

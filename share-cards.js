@@ -15,7 +15,6 @@ const fs = require('fs');
 const path = require('path');
 
 const W = 1080, H = 1440;
-const PRIZE = '$500';
 
 // Two URLs, two audiences — never collapse them. /review is where ARTISTS submit (it
 // mirrors the built-in submit fallback in server.js); /ANR is where VIEWERS join the team.
@@ -96,10 +95,8 @@ function frame(opts) {
     text({ ...eyeStyle, color: C.inkDim }, 'The A&R'),
     text({ ...eyeStyle, color: C.signal, marginLeft: 12 }, 'Room'),
   ]);
-  // Top-right pill: the award hook. (The artist's Track Report is not on this frame — it is
-  // its own element, 'trackPage', built to the brand.)
-  const pill = text({ fontFamily: MONO, fontWeight: 700, fontSize: 17, letterSpacing: 1, color: C.bg,
-        background: C.gold, padding: '11px 20px', borderRadius: 999, flexShrink: 0 }, `${PRIZE} A&R AWARD`);
+  // No top-right award pill since 2026-10-23: no prize is advertised. (The artist's Track
+  // Report is not on this frame — it is its own element, 'trackPage', built to the brand.)
   // A null title leaves the header as eyebrow + pill only — the chart COVER carries its
   // own oversized title in the body, centred, and would collide with a header one.
   const headLeft = [eyebrow];
@@ -110,7 +107,6 @@ function frame(opts) {
   ]));
   const header = row({ justifyContent: 'space-between', alignItems: 'flex-start' }, [
     col({}, headLeft),
-    pill,
   ]);
   const footer = row({ justifyContent: 'space-between', alignItems: 'center',
     borderTop: `1px solid ${C.line}`, paddingTop: 30 }, [
@@ -210,8 +206,9 @@ function bodyPromo() {
       text({ fontFamily: SANS, fontWeight: 800, fontSize: 52, color: C.ink, textAlign: 'center', lineHeight: 1.15 }, 'Evaluate the music.'),
       text({ fontFamily: SANS, fontWeight: 800, fontSize: 52, color: C.ink, textAlign: 'center', lineHeight: 1.15 }, 'Predict the room.'),
     ]),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 150, color: C.gold, marginTop: 26, lineHeight: 1 }, PRIZE),
-    text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, `Top A&Rs compete for ${PRIZE} monthly`),
+    // The A&R premise, not a prize (operator, 2026-10-21 / 10-23).
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 150, color: C.signal, marginTop: 26, lineHeight: 1 }, 'HOT 100'),
+    text({ fontFamily: MONO, fontWeight: 700, fontSize: 22, letterSpacing: 4, textTransform: 'uppercase', color: C.inkFaint, marginTop: 8 }, 'The A&R Team powers the HOT 100'),
     row({ marginTop: 44, gap: 14, width: '100%' }, [step('1', 'Evaluate'), step('2', 'Predict'), step('3', 'Rank')]),
     text({ fontFamily: SANS, fontWeight: 800, fontSize: 30, color: '#08240a', background: C.signal, padding: '22px 44px', borderRadius: 16, marginTop: 46 }, 'Claim your profile at makinitmag.com/ANR'),
   ]);
@@ -252,17 +249,17 @@ function tick(w, hgt, mr) {
 //   'referSubmit' 1080×1350 — "Submit your music." on the purple cut, the submit QR
 // Built to the approved canvas (design/refer, 2026-09-18) and the brand: Archivo display,
 // Space Mono labels, the 13° cut as a colour field that stays BELOW the copy on the two
-// flyers (never behind type), gold on the $1,000 and nothing else. The copy is the
-// operator's, verbatim ("Official A&R", "$1,000 Giveaway", "$1,000 Promo Budget").
+// flyers (never behind type). No gold: there is no prize (operator, 2026-10-23 — no giveaways
+// are advertised any more). The A&R premise is the HOT 100 (operator, 2026-10-21); the artist
+// line is the site's ("Free with a Trusted Account. Support from $5 to move up the line.").
 const REFER_SIZES = { referCard: [1080, 1350], referStory: [1080, 1920], referJoin: [1080, 1350], referSubmit: [1080, 1350] };
 const REFER = { ...RECAP, purple: '#6d5fe0', gold: '#f5c518', avBg: '#221b3a' };
 const REFER_COPY = {
   title: 'Official A&R · The A&R Team',
-  statement: 'I rate new records every day and help choose which artists get covered and who wins the ',
-  money: '$1,000 Promo Budget',
-  giveaway: '$1,000 GIVEAWAY',
-  join: { title: ['Join the', 'A&R Team.'], sub: 'Become an official A&R. Rate new records every day and help choose which artists get covered and who wins the $1,000 Promo Budget.' },
-  submit: { title: ['Submit', 'your music.'], sub: 'Get your record rated by the A&R Team, get a full report on what they heard, and enter the $1,000 Giveaway for a $1,000 Promo Budget.' },
+  statement: 'I rate new records every day and help decide which artists make the ',
+  highlight: 'HOT 100',
+  join: { eyebrow: 'OFFICIAL A&R', title: ['Join the', 'A&R Team.'], sub: 'Rate new records every day and help decide which artists make the Makin’ It HOT 100.' },
+  submit: { eyebrow: 'RATING · REVIEW · TRACK REPORT', title: ['Submit', 'your music.'], sub: 'Get your record rated and reviewed by the A&R Team. Free with a Trusted Account. Support from $5 to move up the line.' },
   dm: 'or DM me for the link', dms: 'or DM me for the links', scan: 'Scan the code',
   qrJoin: 'Join the A&R Team', qrSubmit: 'Submit your music',
 };
@@ -332,11 +329,11 @@ function elementReferPerson(d, story) {
           text({ fontFamily: MONO, fontWeight: 400, fontSize: 30, letterSpacing: 6, textTransform: 'uppercase', color: REFER.green, marginTop: 10, ...NOWRAP }, REFER_COPY.title),
           text({ fontFamily: MONO, fontWeight: 400, fontSize: 26, color: REFER.dim, ...NOWRAP }, [d.category, d.location].filter(Boolean).join(' · ')),
         ]),
-        // Satori has no inline runs, so the statement is laid as wrapped words: the money
-        // words take gold, everything else ink, and the wrap gap stands in for the space.
+        // Satori has no inline runs, so the statement is laid as wrapped words: the highlight
+        // words take green, everything else ink, and the wrap gap stands in for the space.
         row({ flexWrap: 'wrap', maxWidth: 920, columnGap: Math.round(stmt * 0.26), rowGap: 0, alignItems: 'baseline' }, [
           ...REFER_COPY.statement.trim().split(' ').map(w => text(stStyle, w)),
-          ...REFER_COPY.money.split(' ').map((w, i, a) => text({ ...stStyle, color: REFER.gold }, w + (i === a.length - 1 ? '.' : ''))),
+          ...REFER_COPY.highlight.split(' ').map((w, i, a) => text({ ...stStyle, color: REFER.green }, w + (i === a.length - 1 ? '.' : ''))),
         ]),
       ]),
       col({ gap: 28 }, [
@@ -362,8 +359,8 @@ function elementReferFlyer(d, kind) {
       row({ justifyContent: 'space-between' }, [referLockup(fill, join ? REFER.greenInk : REFER.fg), referEndorse(22)]),
       col({ gap: 28 }, [
         row({ gap: 18 }, [
-          h({ width: 6, height: 34, background: REFER.gold, transform: `skewX(${SKEW}deg)`, flexShrink: 0 }, ''),
-          text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, letterSpacing: 2, color: REFER.gold, ...NOWRAP }, REFER_COPY.giveaway),
+          h({ width: 6, height: 34, background: fill, transform: `skewX(${SKEW}deg)`, flexShrink: 0 }, ''),
+          text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, letterSpacing: 2, color: join ? REFER.green : REFER.fg, ...NOWRAP }, c.eyebrow),
         ]),
         col({}, c.title.map(l => text(tSt, l))),
         text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 38, lineHeight: 1.3, letterSpacing: -1, color: REFER.dim, maxWidth: 880 }, c.sub),
@@ -394,14 +391,13 @@ function elementReferFlyer(d, kind) {
 // Rules the operator set, all enforced here rather than by the caller:
 //   - only the good three counts print (Bullseye, Sharp, Close). Off and Way off NEVER do.
 //   - no headcount, no QR, no invite link: the one address is makinitmag.com/ANR.
-//   - gold on the money only ("$500 cash"). Drawn target icons, never emoji.
+//   - no prize line since 2026-10-23 (no giveaways advertised). Drawn target icons, never emoji.
 // THE SEAL: a grade exists only for a published day. The callers check that; this module
 // only draws what it is given.
 const GRADE_SIZES = { gradePhoto: [1080, 1350], gradePhotoStory: [1080, 1920], gradeStats: [1080, 1350], gradeStatsStory: [1080, 1920] };
 const GRADE_COPY = {
   lead: 'Do you have a better ear than',
   pitch: 'Join the A&R Team. Put your ear to the test against industry tastemakers, professionals and creatives.',
-  prizeLead: 'Qualify to win', prize: '$500 cash',
   url: 'makinitmag.com/ANR',
   tiers: [['bullseye', 'Bullseye'], ['sharp', 'Sharp'], ['close', 'Close']],
 };
@@ -448,14 +444,8 @@ function gradeTiers(d, z) {
   }));
 }
 function gradeOffer(z) {
-  const prizeSt = { fontFamily: MONO, fontWeight: 700, fontSize: z.prize, lineHeight: 1.2, ...NOWRAP };
   return col({ gap: Math.round(z.gap * 0.6) }, [
     text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: z.pitch, lineHeight: 1.22, letterSpacing: -Math.round(z.pitch * 0.02), color: REFER.fg, maxWidth: 920 }, GRADE_COPY.pitch),
-    row({}, [
-      text({ ...prizeSt, color: REFER.fg, marginRight: Math.round(z.prize * 0.6) }, GRADE_COPY.prizeLead),
-      text({ ...prizeSt, color: REFER.gold }, GRADE_COPY.prize),
-      text({ ...prizeSt, color: REFER.fg }, '.'),
-    ]),
   ]);
 }
 function gradeFoot(z) {
@@ -1904,4 +1894,4 @@ async function renderPng(type, data, outWidth) {
   return png;
 }
 
-module.exports = { CD_GROUP_MAX, renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, GRADE_SIZES, GRADE_COPY, W, H, PRIZE, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
+module.exports = { CD_GROUP_MAX, renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, GRADE_SIZES, GRADE_COPY, W, H, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
