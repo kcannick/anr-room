@@ -5560,10 +5560,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
     atTask && /^Makin' It Daily Countdown — \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
       && /Caption \(paste as-is\)/.test(atTask.data.notes) && /Comment #REVIEW to Submit Music/.test(atTask.data.notes)
       && /Post the 6 attached slides in order/.test(atTask.data.notes), JSON.stringify(atTask && atTask.data));
-  // A daily set is dated by its DROP DAY (operator, 2026-10-23), like every other card the day makes.
+  // A daily set is dated by its RELEASE DAY, drop day + 2 (operator, 2026-10-23).
   const atWin = await anDb.get('SELECT drop_day FROM sessions WHERE id = ?', [LDROP]);
-  const atDropLbl = require('./server')._recapDateLabel(require('./server')._etEpoch(atWin.drop_day, 12));
-  ok('daily asana: the task and the slides are dated by the drop day',
+  const atDropLbl = require('./server')._recapDateLabel(require('./server')._etEpoch(atWin.drop_day, 12) + 2 * 86400000);
+  ok('daily asana: the task and the slides are dated by the release day (drop day + 2)',
     atTask && atTask.data.name.endsWith('— ' + atDropLbl), JSON.stringify([atTask && atTask.data.name, atDropLbl]));
   const atAr = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'ar' }, 'POST', BOOTH);
   const atArTask = asanaCalls.filter(c => c.method === 'POST' && c.path === '/tasks').pop();
