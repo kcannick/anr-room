@@ -1480,6 +1480,16 @@ const DROP_TICK_BUDGET_MS = 22000;   // of the 30s function ceiling
 // report goes out 45 hours after the tally, which is the checkpoint already, so the default is
 // 0. (`artistDelayMin` in dailySchedule().)
 
+// The drop log (050). One row for a moment nothing else records — the push, the open, the
+// close, the tally, an Instagram post being scheduled. Called only from inside the claim that makes the step
+// happen once, so it is a handful of rows a day. Never fatal: a log line must not undo a step.
+async function logDropEvent(sessionId, event, { detail = null, url = null, by = null, at = null, targetAt = null } = {}) {
+  try {
+    await db.run('INSERT INTO drop_events (id, session_id, event, at, target_at, detail, url, by_uid) VALUES (?,?,?,?,?,?,?,?)',
+      [id(12), sessionId, event, at != null ? Number(at) : now(), targetAt != null ? Number(targetAt) : null, detail, url, by]);
+  } catch (e) { console.error('[daily] log write failed:', e.message); }
+}
+
 // The open step on its own: claim, then flip every record in one statement. Shared by the
 // lifecycle tick and by /api/admin/daily/move, which opens a drop the moment it lands on a
 // day whose noon has passed — without running the whole lifecycle over every other day.
@@ -1489,7 +1499,8 @@ async function openAsyncDrop(s) {
     "UPDATE sessions SET async_state = 'open', status = 'live' WHERE id = ? AND COALESCE(async_state,'scheduled') = 'scheduled'",
     [s.id]);
   if (!claim.changes) return false;
-  await db.run("UPDATE rounds SET status = 'voting' WHERE session_id = ? AND status = 'pending'", [s.id]);
+  const opened = await db.run("UPDATE rounds SET status = 'voting' WHERE session_id = ? AND status = 'pending'", [s.id]);
+  await logDropEvent(s.id, 'opened', { detail: `${opened.changes || 0} records open for voting` });
   await realtime.publish(s.id, 'round');
   // "Voting is open" — queued here, inside the claim, so it is queued exactly once and only
   // for a day that actually opened. Drained by the lifecycle's drain pass. Never fatal: a
@@ -1531,6 +1542,12 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
         "UPDATE sessions SET async_state = 'closing' WHERE id = ? AND async_state = 'open'", [s.id]);
       if (!claim.changes) continue;
       await db.run("UPDATE rounds SET status = 'closed' WHERE session_id = ? AND status = 'voting'", [s.id]);
+      try {
+        const raters = (await db.get(
+          'SELECT COUNT(DISTINCT v.participant_id) AS c FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?',
+          [s.id])).c;
+        await logDropEvent(s.id, 'closed', { detail: `${Number(raters) || 0} A&Rs rated` });
+      } catch (e) { console.error('[daily] close log failed:', e.message); }
       // Anyone stranded at n-1 by a deleted record is paid here, each at their OWN last-vote
       // tier (no atTs), rather than being silently skipped because they never cast an nth vote.
       try { await sweepCompletionBonuses(s); } catch (e) { console.error('[daily] bonus sweep failed:', e.message); }
@@ -1559,7 +1576,11 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       const stillOpen = (await db.get(
         "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed')", [s.id])).c;
       if (!Number(stillOpen)) {
-        await db.run("UPDATE sessions SET async_state = 'ratified' WHERE id = ? AND async_state = 'closing'", [s.id]);
+        const sealed = await db.run("UPDATE sessions SET async_state = 'ratified' WHERE id = ? AND async_state = 'closing'", [s.id]);
+        if (sealed.changes) {
+          const n = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [s.id])).c;
+          await logDropEvent(s.id, 'tallied', { detail: `${Number(n) || 0} records scored` });
+        }
         // ONE series-board recompute and ONE push for the whole day — not one per record,
         // which is exactly the cost the per-round /ratify route exists to avoid.
         let lbData = null;
@@ -2045,6 +2066,7 @@ async function dailyAsanaAdvance(session, set, st, { project, deadline, save = a
   }
   st.next = i;
   st.done = i >= rd.slides.length;
+  if (st.done && !st.doneAt) st.doneAt = now();     // the drop log's "Asana task made" time
   delete st.error;
   await save();
   return st;
@@ -2383,6 +2405,173 @@ async function publishDailyDrop(session, { deadline = null } = {}) {
     [now(), sessionId]);
   await realtime.publish(sessionId, 'round');
   return true;
+}
+
+// ===== The drop log (050) =====
+// One day's timeline for the console: what happened, when, and what is still due. Read off the
+// columns that already record a step (published_at, rendered_at, the notify/artist queues, the
+// callback) plus drop_events for the moments nothing else records. Admin-triggered, one day at
+// a time; every query is keyed on the session (CLAUDE.md #1 rule).
+//
+// Each line: { key, label, at, atLabel, state, detail, url, scheduled, due, dueLabel }
+//   state = done | due | late | failed | unrecorded
+//   scheduled = a day from before the log existed: `at` is the PLANNED time, not a recorded one.
+const DROP_LOG_LATE_MS = 30 * 60000;
+// The Top A&Rs post goes up three hours after the countdown (operator's chain, 2026-10-17:
+// 6 AM countdown, 9 AM Top A&Rs). A post must be SCHEDULED by the time it is meant to go out,
+// so that is when its line turns late.
+const DROP_LOG_ARS_POST_AFTER_MIN = 180;
+const DROP_LOG_IG = { ig_countdown: `IG post scheduled: ${DAILY_STREAM_NAME}`, ig_ars: 'IG post scheduled: Top A&Rs' };
+
+function dropLogWhen(ts) {
+  if (!ts) return null;
+  return `${etDayLabel(etDay(Number(ts)))} · ${String(etClockLabel(ts)).replace(/ ET$/, '')}`;
+}
+
+async function dropLog(session, { ts = now() } = {}) {
+  const sid = session.id;
+  const state = session.async_state || 'scheduled';
+  const sched = await dailySchedule();
+  const evRows = await db.all('SELECT event, at, target_at, detail, url, by_uid FROM drop_events WHERE session_id = ? ORDER BY at ASC', [sid]);
+  const ev = (name) => evRows.filter(e => e.event === name);
+  const last = (name) => { const r = ev(name); return r.length ? r[r.length - 1] : null; };
+  const lines = [];
+  const add = (key, label, o = {}) => {
+    const line = { key, label, at: o.at ? Number(o.at) : null, detail: o.detail || null, url: o.url || null,
+      scheduled: !!o.scheduled, due: o.due ? Number(o.due) : null, state: o.state || null };
+    if (!line.state) {
+      if (line.at) line.state = 'done';
+      else if (o.unrecorded) line.state = 'unrecorded';
+      else if (line.due && ts > line.due + DROP_LOG_LATE_MS) line.state = 'late';
+      else line.state = 'due';
+    }
+    line.atLabel = dropLogWhen(line.at);
+    line.dueLabel = dropLogWhen(line.due);
+    lines.push(line);
+  };
+  const past = (st) => ['open', 'closing', 'ratified', 'published'].indexOf(state) >= ['open', 'closing', 'ratified', 'published'].indexOf(st);
+
+  // Received — every push is its own line; a day pushed before the log existed falls back to
+  // when its records were inserted (a re-push replaced them, so that is the LAST push).
+  const pushes = ev('received');
+  if (pushes.length) pushes.forEach(e => add('received', 'Received', { at: e.at, detail: e.detail }));
+  else {
+    const r = await db.get('SELECT MIN(created_at) AS at, COUNT(*) AS n FROM rounds WHERE session_id = ? AND COALESCE(is_reference, 0) = 0', [sid]);
+    if (r && r.at) add('received', 'Received', { at: r.at, detail: `${Number(r.n) || 0} records` });
+  }
+
+  // Opened
+  const o = last('opened');
+  if (o) add('opened', 'Opened', { at: o.at, detail: o.detail });
+  else if (state !== 'scheduled') add('opened', 'Opened', { at: session.window_opens_at, scheduled: true });
+  else add('opened', 'Opened', { due: session.window_opens_at });
+
+  // A&R emails: one line per broadcast — "voting is open", then the results mail.
+  const mail = async (kind, label, due) => {
+    const b = await db.get('SELECT id, status, created_at FROM notify_broadcasts WHERE kind = ? AND ref_id = ?', [kind, sid]);
+    if (!b) { if (due) add(kind, label, { due }); return; }
+    const c = await db.get(
+      `SELECT SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+              SUM(CASE WHEN status NOT IN ('sent','failed') THEN 1 ELSE 0 END) AS pending,
+              MAX(sent_at) AS last
+         FROM notify_recipients WHERE broadcast_id = ?`, [b.id]);
+    const sent = Number(c && c.sent) || 0, failed = Number(c && c.failed) || 0, pending = Number(c && c.pending) || 0;
+    if (!sent && !failed && !pending) { add(kind, label, { at: b.created_at, detail: 'No one to send to' }); return; }
+    const parts = [`${sent} sent`];
+    if (failed) parts.push(`${failed} failed`);
+    if (pending) parts.push(`${pending} still to send`);
+    parts.push(`started ${String(etClockLabel(b.created_at)).replace(/ ET$/, '')}`);
+    const finished = !pending && (sent || failed);
+    add(kind, label, { at: finished ? (c.last || b.created_at) : null, due: due || b.created_at, detail: parts.join(' · '),
+      state: finished ? (sent ? 'done' : 'failed') : null });
+  };
+  if (state !== 'scheduled') await mail('daily_open', 'Email sent: voting is open', null);
+
+  // Closed
+  const cl = last('closed');
+  if (cl) add('closed', 'Closed', { at: cl.at, detail: cl.detail });
+  else if (past('closing')) add('closed', 'Closed', { at: session.window_closes_at, scheduled: true });
+  else add('closed', 'Closed', { due: session.window_closes_at });
+
+  // Tallied — the event, else the last record's tally claim (a real time, just never rolled up).
+  const t = last('tallied');
+  if (t) add('tallied', 'Tallied', { at: t.at, detail: t.detail });
+  else if (past('ratified')) {
+    const r = await db.get("SELECT MAX(tally_claimed_at) AS at, COUNT(*) AS n FROM rounds WHERE session_id = ? AND status = 'ratified'", [sid]);
+    if (r && r.at) add('tallied', 'Tallied', { at: r.at, detail: `${Number(r.n) || 0} records scored` });
+    else add('tallied', 'Tallied', { unrecorded: true });
+  } else add('tallied', 'Tallied', { due: session.window_closes_at });
+
+  // Graphics + Asana
+  const job = await db.get('SELECT rendered_at, asana_tasks FROM recap_jobs WHERE session_id = ?', [sid]);
+  add('rendered', 'Graphics rendered', job && job.rendered_at
+    ? { at: job.rendered_at, detail: `${DAILY_STREAM_NAME} · Top A&Rs` }
+    : { due: dropStreamAt(session, sched) });
+  let tasks = null;
+  try { tasks = job && job.asana_tasks ? JSON.parse(job.asana_tasks) : null; } catch (e) { tasks = null; }
+  // No Asana project set up = no Asana lines, unless a task was made before it was taken away.
+  const asanaOn = !!(await dailyAsanaProject()) || DAILY_ASANA_SETS.some(set => tasks && tasks[set] && tasks[set].gid);
+  for (const set of (asanaOn ? DAILY_ASANA_SETS : [])) {
+    const label = `Asana task made: ${set === 'song' ? DAILY_STREAM_NAME : 'Top A&Rs'}`;
+    const st = tasks && tasks[set];
+    if (!tasks) { if (job && job.rendered_at) add('asana_' + set, label, { unrecorded: true, detail: 'Not queued' }); continue; }
+    if (st && st.done) add('asana_' + set, label, st.doneAt
+      ? { at: st.doneAt, url: st.url, detail: st.skipped || `${st.total || 0} slides attached` }
+      : { unrecorded: true, url: st.url, state: 'done', detail: st.skipped || 'Made (time not recorded)' });
+    else if (st && st.error) add('asana_' + set, label, { state: 'failed', url: st.url, detail: st.error });
+    else add('asana_' + set, label, { due: job.rendered_at, url: st && st.url,
+      detail: st && st.gid ? `${st.next || 0} of ${st.total || '?'} slides attached` : null });
+  }
+
+  // Revealed
+  add('revealed', 'Revealed', session.published_at
+    ? { at: session.published_at, detail: 'Results live on /daily' }
+    : { due: session.results_at });
+
+  // Instagram — scheduled in SocialBee by the daily browser automation, which reports it here
+  // (or the operator, by hand). The line's time is when it was scheduled; the detail says when
+  // the post goes out.
+  const igDue = { ig_countdown: Number(session.results_at), ig_ars: Number(session.results_at) + DROP_LOG_ARS_POST_AFTER_MIN * 60000 };
+  for (const k of Object.keys(DROP_LOG_IG)) {
+    const m = last(k);
+    if (m) {
+      const parts = [];
+      if (m.target_at) parts.push(`Posts ${dropLogWhen(m.target_at)}`);
+      if (m.detail) parts.push(m.detail);
+      add(k, DROP_LOG_IG[k], { at: m.at, url: m.url, detail: parts.join(' · ') || null });
+    } else add(k, DROP_LOG_IG[k], { due: igDue[k], detail: `Post due ${dropLogWhen(igDue[k])}` });
+  }
+
+  // Results email + Track Reports, artistDelayMin after the reveal.
+  const mailDue = Number(session.published_at || session.results_at) + sched.artistDelayMin * 60000;
+  await mail('digest_daily', 'Email sent: results', mailDue);
+  const an = await db.get(
+    `SELECT SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+            SUM(CASE WHEN status NOT IN ('sent','failed') THEN 1 ELSE 0 END) AS pending,
+            MAX(sent_at) AS last
+       FROM artist_notices WHERE session_id = ? AND channel = 'email'`, [sid]);
+  const aSent = Number(an && an.sent) || 0, aFailed = Number(an && an.failed) || 0, aPending = Number(an && an.pending) || 0;
+  if (aSent || aFailed || aPending) {
+    const parts = [`${aSent} sent`]; if (aFailed) parts.push(`${aFailed} failed`); if (aPending) parts.push(`${aPending} still to send`);
+    const finished = !aPending;
+    add('track_reports', 'Track Reports sent', { at: finished ? an.last : null, due: mailDue, detail: parts.join(' · '),
+      state: finished ? (aSent ? 'done' : 'failed') : null });
+  } else add('track_reports', 'Track Reports sent', { due: mailDue });
+
+  // Makinitmag results callback
+  if (session.results_status || (process.env.RESULTS_CALLBACK_URL && session.published_at)) {
+    const rs = session.results_status;
+    add('callback', 'Makinitmag updated', rs === 'sent'
+      ? { at: session.results_pushed_at, detail: 'Results sent to the submission system' }
+      : rs ? { state: 'failed', at: session.results_pushed_at, detail: `Callback ${rs} after ${session.results_attempts || 0} tries` }
+           : { due: session.published_at, detail: session.results_attempts ? `${session.results_attempts} tries so far` : null });
+  }
+
+  // Oldest first; anything without a time sorts by when it is due, in the order added.
+  const key = (l) => l.at || l.due || Infinity;
+  return lines.map((l, i) => ({ l, i })).sort((a, b) => (key(a.l) - key(b.l)) || (a.i - b.i)).map(x => x.l);
 }
 
 // The A&R Team's daily surface. Returns the participant's whole queue — every record of the
@@ -4822,6 +5011,7 @@ async function stageDailyDrop(res, body) {
     });
     // Echo titles only — never the emails or phones back out (they came in over this wire,
     // that doesn't make them safe to reflect).
+    await logDropEvent(existing.id, 'received', { detail: `${recs.length} records pushed again (replaced the day)` });
     return send(res, 200, { ok: true, replaced: true, sessionId: existing.id, day,
       rounds: recs.length, seriesId: seriesId || existing.series_id || null, warnings,
       records: dropRecordLinks(day, recs) });
@@ -4839,6 +5029,7 @@ async function stageDailyDrop(res, body) {
     }
     throw e;
   }
+  await logDropEvent(out.sessionId, 'received', { detail: `${recs.length} records pushed` });
   return send(res, 200, { ok: true, replaced: false, ...out, seriesId, warnings,
     records: dropRecordLinks(day, recs) });
 }
@@ -11387,6 +11578,43 @@ async function handleApi(req, res, url) {
   //
   // Read-only, and it carries no contact details — just each published day, what its push
   // did, and whether the two env vars exist (never the token itself).
+  // ----- The drop log (050) -----
+  if (p === '/api/admin/daily/log' && method === 'GET') {
+    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
+    const session = await db.get("SELECT * FROM sessions WHERE id = ? AND mode = 'async'", [url.searchParams.get('s') || '']);
+    if (!session) return bad(res, 'No such drop', 404);
+    return send(res, 200, { sessionId: session.id, day: session.drop_day, dayLabel: dailyDayLabel(session.drop_day),
+      lines: await dropLog(session) });
+  }
+  // Record (or clear) an Instagram post being scheduled in SocialBee. Called by the daily browser
+  // automation from the logged-in console once it has scheduled a post (so it needs no secret of
+  // its own), or by the operator by hand. `postAt` is when the post goes out, as ET wall clock
+  // 'YYYY-MM-DDTHH:MM' — never converted in the browser. `source` = 'automation' | 'manual'.
+  // Replaces any earlier mark for the same post (a re-schedule is one line, not two).
+  if (p === '/api/admin/daily/log/ig' && method === 'POST') {
+    const admin = await platformAdmin(req);
+    if (!admin) return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const session = await db.get("SELECT id FROM sessions WHERE id = ? AND mode = 'async'", [String(body.s || '')]);
+    if (!session) return bad(res, 'No such drop', 404);
+    const ev = String(body.post || '');
+    if (!DROP_LOG_IG[ev]) return bad(res, 'post must be ig_countdown or ig_ars');
+    await db.run('DELETE FROM drop_events WHERE session_id = ? AND event = ?', [session.id, ev]);
+    if (body.clear) return send(res, 200, { ok: true, cleared: true });
+    let postAt = null;
+    if (body.postAt) {
+      const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(String(body.postAt));
+      if (!m) return bad(res, 'postAt must be YYYY-MM-DDTHH:MM (ET)');
+      postAt = etEpoch(m[1], Number(m[2]), Number(m[3]));
+      if (postAt == null) return bad(res, 'Bad date');
+    }
+    const link = body.url ? cleanUrl(body.url) : null;
+    const by = body.source === 'automation' ? 'By the daily automation' : `By ${admin.name || 'admin'}`;
+    const at = now();
+    await logDropEvent(session.id, ev, { at, targetAt: postAt, url: link, by: admin.uid, detail: by });
+    return send(res, 200, { ok: true, at, atLabel: dropLogWhen(at), postAt, postAtLabel: dropLogWhen(postAt) });
+  }
+
   if (p === '/api/admin/daily/results' && method === 'GET') {
     if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 60, 1), 200);

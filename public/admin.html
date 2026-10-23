@@ -158,6 +158,20 @@
   .dltable td.num,.dltable th.num{text-align:right;font-family:"Space Mono",monospace}
   /* The day's top supporter: gold tint + a gold edge. Declared BEFORE .alarm so a broken
      link still paints red — the gold edge survives either way. */
+  /* The drop log (050) — one line per step of the day, oldest first. */
+  .dlog td.when{font-family:"Space Mono",monospace;font-size:12px;white-space:nowrap;width:150px}
+  .dlog .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:1px}
+  .dlog tr.done .dot{background:var(--signal)}
+  .dlog tr.due{color:var(--ink-faint)}
+  .dlog tr.due .dot,.dlog tr.unrecorded .dot{border:1px dashed var(--ink-faint)}
+  .dlog tr.late .dot,.dlog tr.failed .dot{background:var(--hot)}
+  .dlog tr.late .ev,.dlog tr.failed .ev{color:var(--hot)}
+  .dlog tr.sched .dot{border:1px solid var(--ink-faint)}
+  .dlog .ev{font-weight:700}
+  .dlog .det{color:var(--ink-dim);font-size:12.5px}
+  .dlog .tag{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin-left:6px;color:var(--ink-faint)}
+  .dlog tr.late .tag,.dlog tr.failed .tag{border-color:var(--hot);color:var(--hot)}
+  @media (max-width:600px){.dlog td.when{width:auto;white-space:normal}}
   .dltable tr.top{background:rgba(245,197,24,.07);box-shadow:inset 3px 0 0 var(--gold)}
   .dltable tr.alarm{background:rgba(255,93,108,.06)}
   .dlsup{font-family:"Space Mono",monospace;font-size:12px;white-space:nowrap}
@@ -387,6 +401,30 @@
         </div>
         <p class="muted" id="dlSendNote" style="font-size:11.5px;line-height:1.5;margin:9px 0 0"></p>
         <div class="err" id="dlErr"></div>
+      </div>
+
+      <!-- The drop log (050): what happened to this day and when, oldest first. Its own
+           fetch, so a slow log never holds up the day the operator came for. -->
+      <div class="card" id="dlLog">
+        <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <h3 id="dlLogHead" style="margin:0;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Log</h3>
+          <button class="btn ghost sm" id="btnDlLogCopy">Copy log</button>
+        </div>
+        <div id="dlLogBody"><div class="empty">Loading…</div></div>
+        <div id="dlLogForm" class="hide" style="display:grid;gap:10px;margin-top:12px;max-width:420px">
+          <b id="dlLogFormHead" style="font-size:13px"></b>
+          <label class="muted" style="font-size:12px">Goes out at (ET)<br>
+            <input type="datetime-local" id="dlLogPostAt" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);padding:8px;border-radius:8px;font:inherit"></label>
+          <label class="muted" style="font-size:12px">SocialBee post link (optional)<br>
+            <input id="dlLogUrl" placeholder="https://app.socialbee.com/…" style="width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);padding:8px;border-radius:8px;font:inherit"></label>
+          <div class="row" style="gap:8px"><button class="btn sm" id="btnDlLogSave">Save</button><button class="btn ghost sm" id="btnDlLogCancel">Cancel</button></div>
+        </div>
+        <p class="muted" style="font-size:11.5px;line-height:1.5;margin:10px 0 0">
+          Times are ET. Red = late (30 minutes past due) or failed. <b>Scheduled</b> marks a day from before the log
+          existed: that time is the plan, not a recorded one. The Instagram lines are filled in by the daily SocialBee
+          automation once it schedules each post; use <b>Mark scheduled</b> for a post scheduled by hand.
+        </p>
+        <div class="err" id="dlLogErr"></div>
       </div>
 
       <div class="card" id="dlCards">
@@ -2402,7 +2440,74 @@ async function openDaily(){
   // Every published day, not just the one on screen — and deliberately not awaited into the
   // status render, so a slow or failing readout never holds up the day the operator came for.
   loadResultsState();
+  loadDropLog();
 }
+
+// ===== The drop log (050) =====
+let DLLOG = null, dlLogPost = null;
+async function loadDropLog(){
+  const sid = DL && DL.drop && DL.drop.id;
+  if(!sid){ $('#dlLogBody').innerHTML = ''; return; }
+  // A refresh must not wipe a half-filled Mark scheduled form.
+  if(dlLogPost) return;
+  $('#dlLogErr').textContent = '';
+  try{
+    DLLOG = await api('/api/admin/daily/log?s=' + encodeURIComponent(sid), null, 'GET');
+    renderDropLog();
+  }catch(e){ $('#dlLogBody').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+const DLLOG_TAG = { late: 'Late', failed: 'Failed', unrecorded: 'not recorded' };
+function renderDropLog(){
+  const d = DLLOG || {}, lines = d.lines || [];
+  $('#dlLogHead').textContent = 'Log · ' + (d.dayLabel || d.day || '');
+  if(!lines.length){ $('#dlLogBody').innerHTML = '<div class="empty">Nothing has happened to this day yet.</div>'; return; }
+  const rows = lines.map(l => {
+    const cls = l.scheduled ? 'sched' : l.state;
+    const when = l.atLabel ? esc(l.atLabel) : (l.dueLabel ? 'due ' + esc(l.dueLabel) : '—');
+    const tag = l.scheduled ? '<span class="tag">scheduled</span>' : (DLLOG_TAG[l.state] ? '<span class="tag">' + DLLOG_TAG[l.state] + '</span>' : '');
+    let det = esc(l.detail || '');
+    if(l.url) det += (det ? ' · ' : '') + '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">open</a>';
+    if(/^ig_/.test(l.key)) det += (det ? ' ' : '') + '<button class="btn ghost sm" onclick="dlLogMark(\'' + l.key + '\')">'
+      + (l.state === 'done' ? 'Change' : 'Mark scheduled') + '</button>';
+    return '<tr class="' + cls + '"><td class="when">' + when + '</td>'
+      + '<td><span class="dot"></span><span class="ev">' + esc(l.label) + '</span>' + tag + '</td>'
+      + '<td class="det">' + det + '</td></tr>';
+  }).join('');
+  $('#dlLogBody').innerHTML = '<table class="dltable dlog" style="margin-top:12px"><tr><th>When (ET)</th><th>Event</th><th>Detail</th></tr>' + rows + '</table>';
+}
+// Prefill with when the post is due, as ET wall clock — the server turns it back into an epoch.
+function dlLogEtLocal(ts){
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric',
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date(ts)).map(x => [x.type, x.value]));
+  return p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute;
+}
+window.dlLogMark = (key) => {
+  const l = ((DLLOG && DLLOG.lines) || []).find(x => x.key === key); if(!l) return;
+  dlLogPost = key;
+  $('#dlLogFormHead').textContent = l.label;
+  $('#dlLogPostAt').value = l.due ? dlLogEtLocal(l.due) : '';
+  $('#dlLogUrl').value = l.url || '';
+  $('#dlLogForm').classList.remove('hide');
+};
+$('#btnDlLogCancel').onclick = () => { dlLogPost = null; $('#dlLogForm').classList.add('hide'); };
+$('#btnDlLogSave').onclick = async () => {
+  $('#dlLogErr').textContent = '';
+  try{
+    await api('/api/admin/daily/log/ig', { s: DL.drop.id, post: dlLogPost, postAt: $('#dlLogPostAt').value || undefined,
+      url: $('#dlLogUrl').value.trim() || undefined, source: 'manual' });
+    dlLogPost = null; $('#dlLogForm').classList.add('hide');
+    await loadDropLog();
+  }catch(e){ $('#dlLogErr').textContent = e.message; }
+};
+$('#btnDlLogCopy').onclick = async () => {
+  const d = DLLOG || {};
+  const text = ['Log · ' + (d.dayLabel || d.day || '')].concat((d.lines || []).map(l =>
+    (l.atLabel || (l.dueLabel ? 'due ' + l.dueLabel : '—')) + ' — ' + l.label
+    + (l.scheduled ? ' (scheduled)' : l.state !== 'done' ? ' (' + (DLLOG_TAG[l.state] || l.state) + ')' : '')
+    + (l.detail ? ' — ' + l.detail : ''))).join('\n');
+  try{ await navigator.clipboard.writeText(text); alert('Log copied.'); }catch(e){ prompt('Copy the log:', text); }
+};
 
 // The picker is rendered from the payload's own list, so a day that has just been deleted
 // stops being offered on the next refresh rather than lingering as a dead option.

@@ -1,0 +1,130 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily drop log (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0E0C1A;--panel:#171328;--line:#2e2750;--inset:#0a0814;--ink:#EAE9F2;--ink-dim:#9793B4;--ink-faint:#8c84ad;
+  --signal:#4bb749;--accent:#6d5fe0;--hot:#ff5a5f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "DM Sans",system-ui,sans-serif;padding:24px 16px}
+.wrap{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.note{border:1px dashed var(--line);border-radius:12px;padding:12px 14px;color:var(--ink-dim);font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+h3{margin:0;font:700 12px "Space Mono",monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint)}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.muted{color:var(--ink-dim)}
+.btn{background:transparent;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12px;padding:6px 10px;border-radius:8px;cursor:pointer}
+.btn:hover{border-color:var(--signal)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:12px}
+th{text-align:left;font:400 9px "Space Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:0 6px 8px}
+td{padding:9px 6px;border-top:1px solid var(--line);vertical-align:top}
+td.when{font-family:"Space Mono",monospace;font-size:12px;white-space:nowrap;width:150px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:1px}
+.done .dot{background:var(--signal)}
+.sched .dot{background:transparent;border:1px solid var(--ink-faint)}
+.due{color:var(--ink-faint)} .due .dot{background:transparent;border:1px dashed var(--ink-faint)}
+.late .dot{background:var(--hot)} .late .ev{color:var(--hot)}
+.tag{font:400 10px "Space Mono",monospace;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin-left:6px;color:var(--ink-faint)}
+.late .tag{border-color:var(--hot);color:var(--hot)}
+.ev{font-weight:700}
+.det{color:var(--ink-dim);font-size:12.5px}
+a{color:var(--signal)}
+@media (max-width:600px){td.when{width:auto;white-space:normal}}
+</style></head><body><div class="wrap">
+
+<div class="note"><b>Mockup:</b> a new <b>Log</b> card on the A&amp;R Daily console, under "Sending", for whichever day the day picker shows.
+Example: the drop that opened Mon Oct 20, as of Wed Oct 22 at 4:00 PM ET. Times are ET.</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <h3>Log · Mon, Oct 20 drop</h3>
+    <button class="btn">Copy log</button>
+  </div>
+  <table>
+    <tr><th>When (ET)</th><th>Event</th><th>Detail</th></tr>
+
+    <tr class="done"><td class="when">Mon Oct 20 · 5:02 PM</td>
+      <td><span class="dot"></span><span class="ev">Received</span></td>
+      <td class="det">12 records pushed from makinitmag.com</td></tr>
+
+    <tr class="done"><td class="when">Mon Oct 20 · 6:00 PM</td>
+      <td><span class="dot"></span><span class="ev">Opened</span></td>
+      <td class="det">Voting open, 12 records</td></tr>
+
+    <tr class="done"><td class="when">Mon Oct 20 · 6:11 PM</td>
+      <td><span class="dot"></span><span class="ev">Email sent: voting is open</span></td>
+      <td class="det">151 sent · 0 failed · started 6:00 PM</td></tr>
+
+    <tr class="done"><td class="when">Tue Oct 21 · 6:00 PM</td>
+      <td><span class="dot"></span><span class="ev">Closed</span></td>
+      <td class="det">43 A&amp;Rs rated</td></tr>
+
+    <tr class="done"><td class="when">Tue Oct 21 · 6:05 PM</td>
+      <td><span class="dot"></span><span class="ev">Tallied</span></td>
+      <td class="det">12 records scored</td></tr>
+
+    <tr class="done"><td class="when">Tue Oct 21 · 6:05 PM</td>
+      <td><span class="dot"></span><span class="ev">Graphics rendered</span></td>
+      <td class="det">Daily Countdown (10 slides) · Top A&amp;Rs (4 slides)</td></tr>
+
+    <tr class="done"><td class="when">Tue Oct 21 · 6:15 PM</td>
+      <td><span class="dot"></span><span class="ev">Asana tasks made</span></td>
+      <td class="det">Daily Countdown · Top A&amp;Rs · <a href="#">open</a></td></tr>
+
+    <tr class="done"><td class="when">Tue Oct 21 · 7:12 PM</td>
+      <td><span class="dot"></span><span class="ev">IG post scheduled: Daily Countdown</span></td>
+      <td class="det">Posts Wed Oct 22 · 6:00 AM · By the daily automation</td></tr>
+
+    <tr class="done"><td class="when">Wed Oct 22 · 6:00 AM</td>
+      <td><span class="dot"></span><span class="ev">Revealed</span></td>
+      <td class="det">Results live on /daily</td></tr>
+
+
+    <tr class="done"><td class="when">Wed Oct 22 · 6:04 AM</td>
+      <td><span class="dot"></span><span class="ev">Makinitmag updated</span></td>
+      <td class="det">Results sent to the submission system</td></tr>
+
+    <tr class="late"><td class="when">due Wed Oct 22 · 9:00 AM</td>
+      <td><span class="dot"></span><span class="ev">IG post scheduled: Top A&amp;Rs</span><span class="tag">Late</span></td>
+      <td class="det">Not scheduled yet · <button class="btn">Mark scheduled</button></td></tr>
+
+    <tr class="done"><td class="when">Wed Oct 22 · 3:09 PM</td>
+      <td><span class="dot"></span><span class="ev">Email sent: results</span></td>
+      <td class="det">88 sent · 2 failed · includes "missed yesterday" mail</td></tr>
+
+    <tr class="done"><td class="when">Wed Oct 22 · 3:41 PM</td>
+      <td><span class="dot"></span><span class="ev">Track Reports sent</span></td>
+      <td class="det">11 sent · 1 record has no artist email</td></tr>
+  </table>
+  <p class="muted" style="font-size:11.5px;margin:10px 0 0">
+    <span class="dot" style="background:var(--signal)"></span>done ·
+    <span class="dot" style="border:1px dashed var(--ink-faint)"></span>still due ·
+    <span class="dot" style="background:var(--hot)"></span>late (30 min past due) or failed ·
+    <span class="dot" style="border:1px solid var(--ink-faint)"></span><b>scheduled</b> = a day from before the log existed; that time is the plan, not a recorded one.
+  </p>
+</div>
+
+<div class="card">
+  <h3>The same card on an older day</h3>
+  <table>
+    <tr><th>When (ET)</th><th>Event</th><th>Detail</th></tr>
+    <tr class="done"><td class="when">Sat Oct 11 · 5:01 PM</td><td><span class="dot"></span><span class="ev">Received</span></td><td class="det">14 records pushed</td></tr>
+    <tr class="sched"><td class="when">Sat Oct 11 · 6:00 PM</td><td><span class="dot"></span><span class="ev">Opened</span><span class="tag">scheduled</span></td><td class="det"></td></tr>
+    <tr class="sched"><td class="when">Sun Oct 12 · 6:00 PM</td><td><span class="dot"></span><span class="ev">Closed</span><span class="tag">scheduled</span></td><td class="det"></td></tr>
+    <tr class="done"><td class="when">Sun Oct 12 · 6:05 PM</td><td><span class="dot"></span><span class="ev">Graphics rendered</span></td><td class="det">…</td></tr>
+    <tr class="done"><td class="when">Mon Oct 13 · 6:00 AM</td><td><span class="dot"></span><span class="ev">Revealed</span></td><td class="det">…</td></tr>
+    <tr class="sched"><td class="when">—</td><td><span class="dot"></span><span class="ev">IG post scheduled: Daily Countdown</span><span class="tag">not recorded</span></td><td class="det"><button class="btn">Mark scheduled</button></td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>"Mark scheduled" dialog — for a post scheduled by hand (the automation fills the same fields itself)</h3>
+  <div style="display:grid;gap:10px;margin-top:12px;max-width:420px">
+    <label class="muted" style="font-size:12px">Goes out at (ET)<br>
+      <input type="datetime-local" value="2026-10-22T09:00" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);padding:8px;border-radius:8px;font:inherit"></label>
+    <label class="muted" style="font-size:12px">Post link (optional)<br>
+      <input placeholder="SocialBee post link" style="width:100%;background:var(--inset);border:1px solid var(--line);color:var(--ink);padding:8px;border-radius:8px;font:inherit"></label>
+    <div class="row"><button class="btn" style="border-color:var(--signal)">Save</button><button class="btn">Cancel</button></div>
+  </div>
+</div>
+
+</div></body></html>
