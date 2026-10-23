@@ -1868,12 +1868,13 @@ function recapDateLabel(ts) {
   const g = (t) => (p.find(x => x.type === t) || {}).value || '';
   return `${g('month')}.${g('day')}.${g('year')}`;
 }
-// A daily set is NAMED FOR ITS RELEASE DATE (operator, 2026-10-14; was the close date, 10-03):
-// the day its countdown posts. Under the evening clock (2026-10-17) the countdown post IS the
-// publish, so the release date is results_at's ET day — the slides, the captions, the Asana task
-// names and "schedule to post on <date>" all print the day the post goes up.
+// A daily set is dated by its RELEASE DAY = drop day + 2 (operator, 2026-10-23): the 10-17 drop
+// opens 10-17, closes 10-18 and its countdown posts 10-19, so the set is "10.19". Fixed off
+// drop_day rather than results_at, because an extended drop (10-17's results went 10-20) must
+// not shift its name. dailyPublishDay() is the one source for every surface (see etDayLabel).
 async function dailySetDate(session) {
-  return recapDateLabel(Number(session.results_at) || dropWindowFor(session.drop_day, await dailySchedule()).resultsAt || now());
+  const day = session.drop_day || etDay(Number(session.window_opens_at) || now());
+  return recapDateLabel(etEpoch(dailyPublishDay(day), 12));
 }
 // "Daily at 3PM" off the stream's own epoch, so the graphic and the caption follow the setting.
 function recapTimeLabel(ts) {
@@ -1904,9 +1905,11 @@ const TOP_AR_TAGS = '#ARMeeting #MakinIt #NewMusic #UnsignedArtists';
 const RESULTS_MAX_ARS = 8;    // the Top 8 A&Rs — the top A&R + seven more
 const RESULTS_COPY = {
   ar: { label: 'Top A&R', listLabel: 'Top A&Rs',
-    // Operator's wording, verbatim (2026-10-03).
-    cta: { eyebrow: 'Join the A&R Team', head: ['Qualify to win', '$500 Cash!'],
-      body: 'Rate records and Predict the hits', url: shareCards.JOIN_URL } },
+    // No prize since 2026-10-19 (operator retired the $500). The A&R premise, near-verbatim
+    // (operator, 2026-10-21): "The A&R Team powers the HOT 100 rankings and helps determine
+    // artists we potentially work with."
+    cta: { eyebrow: 'The A&R Team', head: ['Powers the', 'HOT 100'],
+      body: 'Rate records and help determine the artists we potentially work with.', url: shareCards.JOIN_URL } },
 };
 // Split a list across as few pages of `per` as possible, evenly, so no page is left with one.
 function parseJsonArray(v) { try { const a = JSON.parse(v || 'null'); return Array.isArray(a) ? a : null; } catch (e) { return null; } }
@@ -2177,7 +2180,8 @@ function countdownCarouselCaption(d) {
     '',
     'The Makin’ It A&R Team rated the latest records from independent artists. Here is how they ranked, counted down to the Top Track of the Day. Swipe to see where each record placed.',
     '',
-    'Think you should be here? Submit FREE for your chance to get ranked and qualify for the $1,000 Music Tournament.',
+    // Operator, 2026-10-19 (the tournaments and their prizes are retired).
+    'Think you should be here? Submit for a report and a chance to be featured in the Makin’ It HOT 100.',
     '',
     // Comment keywords instead of links (operator's wording, 2026-10-02): a caption link is not
     // clickable on Instagram. These two count toward the five-hashtag limit.
@@ -2224,7 +2228,8 @@ function resultsCaption(d) {
     const top8 = [{ title: hero.title, handle: hero.handle }, ...lists.map(r => ({ title: r.line1, handle: r.handle }))];
     lines.push(`Top 8 A&Rs · ${d.date}`, '', ...top8.map((p, i) => `${i + 1}. ${p.handle || p.title}`));
     // No points and no URL (operator, 2026-10-03): the one ask, in the operator's words.
-    lines.push('', 'Comment or DM "ANR" to Join the A&R Team and the chance to get paid $500 Cash!', '', TOP_AR_TAGS);
+    // No prize since 2026-10-19; the A&R premise in the operator's words (2026-10-21).
+    lines.push('', 'Comment or DM "ANR" to join the A&R Team. The A&R Team powers the HOT 100 rankings and helps determine artists we potentially work with.', '', TOP_AR_TAGS);
     return lines.join('\n');
   }
   lines.push('', IG_TAGS);
@@ -2268,7 +2273,7 @@ async function winnerWeekData(weekStart, post, { photo = true } = {}) {
     const r = rep.songs[0];
     if (!r) return null;
     return { ...base, title: r.artist || r.title, by: '', handle: paren(r.ig),
-      record: '“' + r.title + '”', line: { rated: r.votes, score: Number(r.score).toFixed(1), drop: dayLabel(r.day) } };
+      record: '“' + r.title + '”', line: { rated: r.votes, score: Number(r.score).toFixed(1), drop: dayLabel(dailyPublishDay(r.day)) } };
   }
   const a = rep.ars[0];
   if (!a) return null;
@@ -3052,7 +3057,7 @@ async function gradeCardFacts(sessionId, uid) {
     `SELECT v.tier, COUNT(*) AS c FROM votes v JOIN rounds r ON r.id = v.round_id
       WHERE v.participant_id = ? AND r.status = 'ratified' GROUP BY v.tier`, [pa.id]);
   for (const t of tiers) if (Object.prototype.hasOwnProperty.call(counts, t.tier)) counts[t.tier] = Number(t.c) || 0;
-  return { sessionId: s.id, day: s.drop_day, dayLabel: gradeDayLabel(s.drop_day), grade: recap.grade, accuracy: recap.accuracy, counts };
+  return { sessionId: s.id, day: s.drop_day, dayLabel: gradeDayLabel(dailyPublishDay(s.drop_day)), grade: recap.grade, accuracy: recap.accuracy, counts };
 }
 // THE STANDING CARD (operator, 2026-10-15): the same card, ALL-TIME — every published daily drop
 // the A&R rated. Grade from the average accuracy of every rated record (the same per-round
@@ -4121,7 +4126,7 @@ async function enqueueDailyDigest(session) {
   const ids = [session.id, prev && prev.id, prev2 && prev2.id].filter(Boolean);
   const extra = { sql: `\n       AND (${ids.map(() => played).join(' OR ')})`, params: ids };
   return enqueueDayBroadcast(session, 'digest_daily',
-    `A&R Daily — ${etDayLabel(day) || 'the'} results`, `A&R Daily results for ${day}`, extra);
+    `A&R Daily — ${dailyDayLabel(day) || 'the'} results`, `A&R Daily results for ${day}`, extra);
 }
 // The public daily drop before this one, or null. "Public" = what /daily lists: an unlisted
 // test drop is never someone's "yesterday".
@@ -4191,7 +4196,7 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
   const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
   const job = await db.get('SELECT * FROM recap_jobs WHERE session_id = ?', [sessionId]);
   const day = session && session.drop_day;
-  const dayLabel = etDayLabel(day);
+  const dayLabel = dailyDayLabel(day);
   const playUrl = await openDropUrl(base || publicBase());
   // "Today's records close at 3:00 PM ET — in 3 hours": the drop that is open as this sends.
   const openDrop = await db.get(
@@ -4454,7 +4459,7 @@ async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = n
     "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [sessionId])).c) || 0;
   const tiers = completionTiers(session, await dailySchedule());
   const top = tiers.length > 1 ? tiers[0] : null;
-  const shared = { dayLabel: etDayLabel(session.drop_day), count,
+  const shared = { dayLabel: dailyDayLabel(session.drop_day), count,
     closesLabel: etWhenLabel(Number(session.window_closes_at), session.drop_day),
     bonusLabel: top && top.label ? 'by ' + top.label : null,
     playUrl: root + '/daily?s=' + encodeURIComponent(sessionId) };
@@ -4563,6 +4568,22 @@ const etDay = (ts = Date.now()) => chartDay(ts);
 // Human labels, rendered SERVER-side and shipped as strings. The player surface never
 // converts an epoch to ET wall clock itself: a browser in Lagos would print a different
 // deadline than the one the server actually pays out on, and this is a cash-prize board.
+// THE NAME OF A DAILY SET (operator, confirmed 2026-10-23): its CALCULATED publish date, the drop
+// day + 2. A drop that opens on the 23rd is the 25th's set. It is worked out from drop_day, never
+// read off results_at: a schedule change re-stamps results_at, and reading it is how the Oct 17
+// and Oct 18 drops both came out as 10.20.26. Every place a daily set is named or dated for a
+// reader goes through these two; drop_day itself stays the key everything is stored and queried by.
+const DAILY_PUBLISH_OFFSET_DAYS = 2;
+function dailyPublishDay(dropDay) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(dropDay || '') ? etNextDay(dropDay, DAILY_PUBLISH_OFFSET_DAYS) : null;
+}
+function dailyDayLabel(dropDay) { return etDayLabel(dailyPublishDay(dropDay)); }
+// The internal session name: type + date, "Daily Drop - Oct 25, 2026" (operator, 2026-10-03).
+function dailyDropName(dropDay) {
+  const ts = etEpoch(dailyPublishDay(dropDay), 12);
+  return ts == null ? 'Daily Drop' : 'Daily Drop - ' + new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(ts));
+}
 function etDayLabel(day) {
   const ts = etEpoch(day, 12);
   if (ts == null) return null;
@@ -4783,6 +4804,24 @@ const DROP_MAX_SONGS = 24;
 const ASYNC_MIN_FOR_BONUS = 3;
 
 const isAsync = (s) => !!s && s.mode === 'async';
+
+// THE session state model (operator, 2026-10-15): Upcoming → Live (voting) → Closed (no more
+// voting, results sealed) → Published (results public), plus Archived. DERIVED, never stored:
+// `status` and `async_state` each carry half of it and both stay as they are — `status =
+// 'completed'` is what lets /daily reveal averages, and `async_state` is the cron's claim
+// token — so a third stored field could only drift from them. A live show has no Closed step
+// in practice (each round reveals at its own ratify), so it goes Live → Published.
+function sessionPhase(s) {
+  if (!s) return null;
+  if (s.status === 'archived') return 'archived';
+  if (s.status === 'completed' || s.async_state === 'published') return 'published';
+  if (isAsync(s)) {
+    if (s.async_state === 'closing' || s.async_state === 'ratified') return 'closed';
+    if (s.async_state === 'open') return 'live';
+    return 'upcoming';
+  }
+  return s.status === 'live' ? 'live' : 'upcoming';
+}
 
 // A&R Daily has no per-round host controls. The day's records open together, close together
 // and ratify together, on the clock — so every one of open / reopen / start-voting / unopen /
@@ -5030,7 +5069,7 @@ async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, 
       // owner_uid NULL is deliberate: canAdminSession then admits only a platform admin, and
       // this batch carries every artist's email and phone. Same reasoning that tightened
       // /api/admin/ingest/latest.
-      [sid, name || `A&R Daily — ${day}`, id(12), null, day, wo, wc, rp, sa, wo, seriesId || null, ts]);
+      [sid, name || dailyDropName(day), id(12), null, day, wo, wc, rp, sa, wo, seriesId || null, ts]);
     let i = 0;
     for (const s of songs) {
       i++;
@@ -5203,7 +5242,7 @@ async function arResultsData(uid, weekDay) {
   for (const sess of sessions) {
     const isDaily = sess.mode === 'async';
     const day = isDaily ? sess.drop_day : etDay(Number(sess.scheduled_at || sess.created_at));
-    const base = { id: sess.id, kind: isDaily ? 'daily' : 'live', day, label: etDayLabel(day) };
+    const base = { id: sess.id, kind: isDaily ? 'daily' : 'live', day, label: isDaily ? dailyDayLabel(day) : etDayLabel(day) };
     const pid = partBy.get(sess.id) || null;
     const listed = !sess.visibility || sess.visibility !== 'unlisted';
     const state = isDaily ? (sess.async_state || 'scheduled') : 'published';
@@ -5286,7 +5325,7 @@ async function arResultsData(uid, weekDay) {
          LEFT JOIN votes v ON v.round_id = r.id AND v.participant_id = ?
          LEFT JOIN round_reports rr ON rr.round_id = r.id AND rr.participant_id = ?
         WHERE r.session_id = ? AND r.status IN ('voting','closed','ratified')`, [me ? me.id : '', me ? me.id : '', od.id]);
-    open = { id: od.id, url: '/daily?s=' + encodeURIComponent(od.id), dayLabel: etDayLabel(od.drop_day),
+    open = { id: od.id, url: '/daily?s=' + encodeURIComponent(od.id), dayLabel: dailyDayLabel(od.drop_day),
       total: Number(c.total) || 0, rated: Number(c.handled) || 0,
       closesWhen: whenFromToday(Number(od.window_closes_at)), resultsWhen: whenFromToday(Number(od.results_at) || null) };
   } else {
@@ -7174,13 +7213,17 @@ async function handleApi(req, res, url) {
     // participants — labelled "A&Rs" in the UI), and round_count (ratified, i.e.
     // scored, rounds). All cheap at this scale. Newest first: the room you just
     // ended should be at the top of its group, not the bottom.
+    // mode / async_state / results_at let the console tell a daily drop that is OPEN from one
+    // that has closed and is waiting on its results: both are status='live' (flipping a drop to
+    // 'completed' at the close would reveal the averages on /daily before results go out).
     const cols = `id, name, status, scheduled_at, owner_uid, created_at, series_id, poll_type, geo_mode,
+      mode, async_state, results_at,
       (SELECT COUNT(*) FROM participants pp WHERE pp.session_id = sessions.id AND pp.verified = 1) AS ar_count,
       (SELECT COUNT(*) FROM rounds rr WHERE rr.session_id = sessions.id AND rr.status = 'ratified') AS round_count`;
     const rows = user.role === 'admin'
       ? await db.all(`SELECT ${cols} FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC`, [])
       : await db.all(`SELECT ${cols} FROM sessions WHERE owner_uid = ? AND deleted_at IS NULL ORDER BY created_at DESC`, [user.uid]);
-    return send(res, 200, { role: user.role, sessions: rows });
+    return send(res, 200, { role: user.role, sessions: rows.map(r => ({ ...r, phase: sessionPhase(r) })) });
   }
 
   // ----- request OTP -----
@@ -10192,7 +10235,7 @@ async function handleApi(req, res, url) {
           WHERE p.session_id = ? AND p.verified = 1 AND p.total_points > 0 AND ${activeUserSql('u')}
           ORDER BY p.total_points DESC, p.created_at ASC LIMIT 8`, [lastPub.id]);
       yesterday = {
-        day: lastPub.drop_day, dayLabel: etDayLabel(lastPub.drop_day),
+        day: lastPub.drop_day, dayLabel: dailyDayLabel(lastPub.drop_day),
         board: rows.map((r, i) => ({
           rank: i + 1, name: dispName(r.uname || r.pname),
           category: r.primary_category || null, location: r.location || null,
@@ -11178,7 +11221,9 @@ async function handleApi(req, res, url) {
 
     const win = dropWindowFor(toDay, await dailySchedule());
     // The operator's own name stays; only the untouched default follows the day.
-    const name = session.name === `A&R Daily — ${session.drop_day}` ? `A&R Daily — ${toDay}` : session.name;
+    // An auto-named drop follows its new day (either naming); a hand-named one keeps its name.
+    const name = (session.name === `A&R Daily — ${session.drop_day}` || session.name === dailyDropName(session.drop_day))
+      ? dailyDropName(toDay) : session.name;
     try {
       await db.tx(async (tx) => {
         // status back to 'upcoming': a cold drop is upcoming by definition, and the open
@@ -11241,7 +11286,7 @@ async function handleApi(req, res, url) {
            FROM rounds WHERE session_id = ? ORDER BY idx ASC`, [nextRow.id]);
       const qTop = topSupportCents(qr);
       building = {
-        id: nextRow.id, day: nextRow.drop_day, dayLabel: etDayLabel(nextRow.drop_day),
+        id: nextRow.id, day: nextRow.drop_day, dayLabel: dailyDayLabel(nextRow.drop_day),
         opensLabel: etClockLabel(nextRow.window_opens_at),
         series_id: nextRow.series_id || null,
         max: DROP_MAX_SONGS,
@@ -11261,7 +11306,7 @@ async function handleApi(req, res, url) {
       `SELECT drop_day, async_state, window_opens_at FROM sessions
         WHERE mode = 'async' AND deleted_at IS NULL
         ORDER BY window_opens_at DESC LIMIT 14`, []);
-    const days = recent.map(r => ({ day: r.drop_day, label: etDayLabel(r.drop_day),
+    const days = recent.map(r => ({ day: r.drop_day, label: dailyDayLabel(r.drop_day),
       state: r.async_state || 'scheduled' }));
 
     // No drop is an INCIDENT, not an empty state — if Drupal has not pushed, the site is
@@ -11322,7 +11367,7 @@ async function handleApi(req, res, url) {
     return send(res, 200, {
       days, day,
       drop: {
-        id: session.id, day, dayLabel: etDayLabel(day), name: session.name,
+        id: session.id, day, dayLabel: dailyDayLabel(day), name: session.name,
         status: session.status, async_state: session.async_state || 'scheduled',
         opens_at: Number(session.window_opens_at) || null,
         closes_at: Number(session.window_closes_at) || null,
@@ -11465,7 +11510,7 @@ async function handleApi(req, res, url) {
     }
     return send(res, 200, {
       record: {
-        id: r.id, idx: r.idx, status: r.status, day: r.drop_day, dayLabel: etDayLabel(r.drop_day),
+        id: r.id, idx: r.idx, status: r.status, day: r.drop_day, dayLabel: dailyDayLabel(r.drop_day),
         song_title: r.song_title, song_artist: r.song_artist,
         support_cents: supportCentsOf(r),
         room_average: r.room_average != null ? Number(r.room_average) : null,
@@ -12393,6 +12438,7 @@ module.exports._weekWindow = weekWindow;
 module.exports._weekStartFor = weekStartFor;
 module.exports._dailyDigestEmailText = dailyDigestEmailText;
 module.exports._DAILY_STREAM_NAME = DAILY_STREAM_NAME;
+module.exports._sessionPhase = sessionPhase;
 module.exports._WEEKLY_SHOW_NAME = WEEKLY_SHOW_NAME;
 module.exports._bustDailySchedule = () => { _dailySched.at = 0; };
 module.exports._dropAfterClose = dropAfterClose;
@@ -12425,6 +12471,10 @@ module.exports._asyncQueueOrder = asyncQueueOrder;
 module.exports._completionBonusPoints = completionBonusPoints;
 module.exports._dropWindowFor = dropWindowFor;
 module.exports._DAILY_SCHEDULE_DEFAULTS = DAILY_SCHEDULE_DEFAULTS;
+module.exports._dailyPublishDay = dailyPublishDay;
+module.exports._dailyDayLabel = dailyDayLabel;
+module.exports._dailyDropName = dailyDropName;
+module.exports._dailySetDate = dailySetDate;
 module.exports._parseDailySchedule = parseDailySchedule;
 // Exported for tests: the scouting curve is the dial that decides whether "eye for talent"
 // is a real second lane or a garnish, so its shape is asserted rather than eyeballed.

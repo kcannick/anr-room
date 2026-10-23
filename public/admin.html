@@ -2562,7 +2562,9 @@ function renderDaily(){
   // being scored) → Closed (scored, not yet announced) → Published (terminal, results are
   // out). The DB values behind them are untouched — async_state is a claim token the cron
   // and the tests key off, and renaming it would be a migration, not a label change.
-  const STATE_LABEL = { scheduled: 'Scheduled', open: 'Open', closing: 'Processing',
+  // Same four words as the session list (operator, 2026-10-15): Upcoming → Live → Closed →
+  // Published. "Processing" (the seconds while a tally runs) reads as Closed: voting is over.
+  const STATE_LABEL = { scheduled: 'Upcoming', open: 'Live', closing: 'Closed',
     ratified: 'Closed', published: 'Published' };
   $('#dlState').textContent = STATE_LABEL[dr.async_state] || dr.async_state;
   $('#dlState').className = 'pill ' + (dr.async_state === 'open' ? 'live'
@@ -4233,8 +4235,11 @@ $('#btnLogout').onclick=async()=>{
 };
 
 // Session picker
-const STATUS_LABEL={upcoming:'Upcoming',live:'Live',completed:'Completed',archived:'Archived'};
-const STATUS_ORDER=['live','upcoming','completed','archived'];
+// The four session states (operator, 2026-10-15) + Archived. The server derives `phase` from
+// status + async_state (sessionPhase in server.js) so every screen reads the same answer.
+const STATUS_LABEL={upcoming:'Upcoming',live:'Live',closed:'Closed',published:'Published',archived:'Archived'};
+const STATUS_ORDER=['live','closed','upcoming','published','archived'];
+function listStatus(s){ return s.phase || s.status; }
 let SERIES=[]; // admin-only cache of series for the inline tag dropdowns
 const isAdmin=()=>ME&&ME.role==='admin';
 // Feature permission: admin = always; host = per-grant. Drives host-facing tool visibility.
@@ -4293,10 +4298,14 @@ function sessionCardHtml(s){
     s.round_count?attr(s.round_count+' round'+(s.round_count==1?'':'s')):'',
     st?attr('◆ '+esc(st),'series'):attr('◇ Unassigned','series none')
   ].filter(Boolean).join('');
-  return `<div class="sc${s.status==='live'?' live':''}">
+  const ls=listStatus(s);
+  const pillTxt=ls==='closed'
+    ? 'Closed'+(s.results_at?' · results '+fmtET(Number(s.results_at),{weekday:'short',hour:'numeric',minute:'2-digit'}):'')
+    : (STATUS_LABEL[ls]||ls);
+  return `<div class="sc${ls==='live'?' live':''}">
     <div class="sc-top">
       <div class="sc-name">${esc(s.name)}</div>
-      <span class="pill ${s.status}">${STATUS_LABEL[s.status]||s.status}</span>
+      <span class="pill ${ls==='closed'||ls==='published'?'completed':ls}">${esc(pillTxt)}</span>
     </div>
     <div class="sc-attrs">${attrs}</div>
     <div class="sc-actions">
@@ -4350,7 +4359,7 @@ function renderPickerList(){
   if(!pickerSessions.length){box.innerHTML='<div class="empty">No sessions yet. Create your first one.</div>';return;}
   const sort=SESS_SORTS[$('#sessSort').value]||SESS_SORTS.recent;
   const groups={};STATUS_ORDER.forEach(s=>groups[s]=[]);
-  pickerSessions.forEach(s=>{(groups[s.status]||(groups[s.status]=[])).push(s);});
+  pickerSessions.forEach(s=>{const g=listStatus(s);(groups[g]||(groups[g]=[])).push(s);});
   let html='';
   for(const st of STATUS_ORDER){
     if(!groups[st]||!groups[st].length)continue;
@@ -6702,12 +6711,12 @@ function render(st){
   // for anything staged before this console was opened.
   syncIngestBinding(st);
   maybeAutoIngest(st).catch(()=>{});
-  $('#who').textContent=st.session.name+' · '+st.session.status+sessionTypeSuffix(st);
+  $('#who').textContent=st.session.name+' · '+({upcoming:'Upcoming',live:'Live',completed:'Published',archived:'Archived'}[st.session.status]||st.session.status)+sessionTypeSuffix(st);
   // lifecycle controls reflect current status
   const stx=st.session.status;
   const pillCls={upcoming:'upcoming',live:'live',completed:'completed',archived:'archived'}[stx]||'';
   const pill=$('#sessStatusPill');
-  pill.textContent={upcoming:'Upcoming',live:'● Live',completed:'Completed',archived:'Archived'}[stx]||stx;
+  pill.textContent={upcoming:'Upcoming',live:'● Live',completed:'Published',archived:'Archived'}[stx]||stx;
   pill.className='pill '+pillCls;
   $('#btnGoLive').classList.toggle('hide',stx!=='upcoming');
   $('#btnUnlive').classList.toggle('hide',stx!=='live');   // undo an accidental go-live

@@ -2071,6 +2071,24 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the close tick closes and tallies the whole day', tClose.d.closed === 1 && tClose.d.ratified === 3, JSON.stringify(tClose.d));
   ok('every record is ratified', (await lRounds()).every(r => r.status === 'ratified'));
   ok('the day reaches async_state=ratified', (await lSess()).async_state === 'ratified');
+  // The console's session list groups by status, and a drop stays status='live' until its
+  // results publish — so the list must carry what tells a closed drop from the open one.
+  const closedListRow = ((await call('/api/auth/sessions', null, 'GET', ADMINH)).d.sessions || []).find(x => x.id === LDROP);
+  ok('the session list tells a closed drop from an open one (mode, async_state, results_at)',
+    closedListRow && closedListRow.status === 'live' && closedListRow.mode === 'async'
+      && closedListRow.async_state === 'ratified' && Number(closedListRow.results_at) > 0, JSON.stringify(closedListRow));
+  ok('a closed drop is phase=closed (Upcoming → Live → Closed → Published)', closedListRow && closedListRow.phase === 'closed', closedListRow && closedListRow.phase);
+  const ph = srv._sessionPhase;
+  ok('sessionPhase maps every state to the four (plus archived)',
+    ph({ mode: 'async', status: 'upcoming', async_state: 'scheduled' }) === 'upcoming'
+      && ph({ mode: 'async', status: 'live', async_state: 'open' }) === 'live'
+      && ph({ mode: 'async', status: 'live', async_state: 'closing' }) === 'closed'
+      && ph({ mode: 'async', status: 'live', async_state: 'ratified' }) === 'closed'
+      && ph({ mode: 'async', status: 'completed', async_state: 'published' }) === 'published'
+      && ph({ mode: null, status: 'upcoming' }) === 'upcoming'
+      && ph({ mode: null, status: 'live' }) === 'live'
+      && ph({ mode: null, status: 'completed' }) === 'published'
+      && ph({ mode: null, status: 'archived' }) === 'archived');
   const scored = await dDb.all('SELECT points, room_average FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [LDROP]);
   ok('the tally scored every vote', scored.length === 5 && scored.every(v => v.points != null), JSON.stringify(scored));
 
@@ -2285,6 +2303,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
     rsSong.slides.every(sl => !('room_average' in sl) && !('votes' in sl) && !('score' in sl) && !('value' in sl))
       && !cdRows.some(r => rjob2.results_song_caption.split('\n').slice(1).join('\n').includes(Number(r.room_average).toFixed(1))) && !/@test\.com|\+1\d{9}/.test(JSON.stringify(rsSong)),
     JSON.stringify(rsSong.slides) + rjob2.results_song_caption);
+  // The tournaments and their prizes were retired 2026-10-19 (operator): no $ amount, no
+  // tournament, no cash anywhere in the countdown's caption or on its closing slide.
+  const cdCap = srv._resultsCaption(rsSong);
+  ok('the countdown caption promises no prize — a report and a chance at the HOT 100 instead',
+    !/\$\d|Tournament|Cash|Giveaway/i.test(cdCap) && /Submit for a report and a chance to be featured in the Makin’ It HOT 100\./.test(cdCap), cdCap);
+  const cdCopy = require('./share-cards').COUNTDOWN_COPY;
+  ok('the countdown closing slide carries no prize either', !/\$|Tournament/.test(JSON.stringify(cdCopy)) && cdCopy.prize[0] === 'HOT 100', JSON.stringify(cdCopy));
   ok('the caption names NOBODY (Instagram stops notifying past 10 mentions) and asks by comment keyword, not link',
     !/@/.test(rjob2.results_song_caption) && !cdRows.some(r => rjob2.results_song_caption.includes(r.song_title))
       && /^Comment #REVIEW to Submit Music$/m.test(rjob2.results_song_caption) && /^Comment #ANR to join the A&R Team$/m.test(rjob2.results_song_caption)
@@ -2319,10 +2344,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the Top A&R caption is the top 8 in placement order, by Instagram name where there is one, no points',
     /^Top 8 A&Rs · /.test(arCap) && /\n1\. /.test(arCap) && !/pts|points/i.test(arCap.replace(/\$500/, '')) && !/·\s*\d+\s*$/m.test(arCap), arCap);
   ok('the Top A&R caption has no URL and asks to comment or DM ANR',
-    !/https?:|\.com/i.test(arCap) && /^Comment or DM "ANR" to Join the A&R Team and the chance to get paid \$500 Cash!$/m.test(arCap), arCap);
+    !/https?:|\.com/i.test(arCap) && /^Comment or DM "ANR" to join the A&R Team\. The A&R Team powers the HOT 100 rankings/m.test(arCap) && !/\$500|Cash/.test(arCap), arCap);
   const arNotes = srv._dailyAsanaNotes(rsAr, arCap);
   ok('the Top A&Rs task says who to collab with', /Collab: invite @makinitmusicreview( and @\S+ \(#1\) as collaborators| as a collaborator)/.test(arNotes), arNotes);
-  ok('the A&R carousel closes on Join the A&R Team with the $500', rsAr.slides[2].cta.eyebrow === 'Join the A&R Team' && rsAr.slides[2].cta.head.join(' ').includes('$500'));
+  // The $500 was retired 2026-10-19: the closing slide carries the A&R premise instead.
+  ok('the A&R carousel closes on the A&R Team powering the HOT 100, with no prize',
+    rsAr.slides[2].cta.eyebrow === 'The A&R Team' && rsAr.slides[2].cta.head.join(' ') === 'Powers the HOT 100'
+      && !/\$|Cash|Win/.test(JSON.stringify(rsAr.slides[2].cta)), JSON.stringify(rsAr.slides[2].cta));
   ok('a fourteen-record day is five slides with the list split evenly (5/4/4)',
     JSON.stringify(srv._resultsPages(Array.from({ length: 13 }, (_, i) => i), 6).map(p => p.length)) === '[5,4,4]');
   ok('a four-record day is three slides', srv._resultsPages([1, 2, 3], 6).length === 1);
@@ -2806,7 +2834,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && Number(mvSess.stream_at) === srv._etEpoch(mvNext, 18)
       && Number(mvSess.results_at) === srv._etEpoch(srv._etNextDay(mvNext), 6)
       && Number(mvSess.scheduled_at) === Number(mvSess.window_opens_at)
-      && mvSess.name === 'A&R Daily — ' + mvTo,
+      && mvSess.name === srv._dailyDropName(mvTo),
     JSON.stringify({ day: mvSess.drop_day, name: mvSess.name, o: mvSess.window_opens_at, c: mvSess.window_closes_at, r: mvSess.results_at }));
   const mvRounds = await dDb.all('SELECT opens_at, closes_at FROM rounds WHERE session_id = ?', [handSess.id]);
   ok('and every record carries the new window',
@@ -5581,12 +5609,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
     atTask && /^Makin' It Daily Countdown — \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
       && /Caption \(paste as-is\)/.test(atTask.data.notes) && /Comment #REVIEW to Submit Music/.test(atTask.data.notes)
       && /Post the 6 attached slides in order/.test(atTask.data.notes), JSON.stringify(atTask && atTask.data));
-  // A daily set is named for its RELEASE date (operator, 2026-10-14): the day the countdown posts,
-  // which under the evening clock is the publish (results_at), never the close or the open.
-  const atWin = await anDb.get('SELECT window_closes_at, results_at FROM sessions WHERE id = ?', [LDROP]);
-  const atPostLbl = require('./server')._recapDateLabel(Number(atWin.results_at));
-  ok('daily asana: the task and the slides are dated by the day the post goes up (results_at)',
-    atTask && atTask.data.name.endsWith('— ' + atPostLbl), JSON.stringify([atTask && atTask.data.name, atPostLbl]));
+  // A daily set is named by its CALCULATED publish date, drop day + 2 (operator, confirmed 2026-10-23).
+  const atWin = await anDb.get('SELECT drop_day FROM sessions WHERE id = ?', [LDROP]);
+  const atPubLbl = require('./server')._recapDateLabel(require('./server')._etEpoch(require('./server')._dailyPublishDay(atWin.drop_day), 12));
+  ok('daily asana: the task and the slides are dated by the publish date (drop day + 2)',
+    atTask && atTask.data.name.endsWith('— ' + atPubLbl), JSON.stringify([atTask && atTask.data.name, atPubLbl]));
+  {
+    const S = require('./server');
+    ok('a daily set is named for drop day + 2: the 23rd is the 25th, across a month end too',
+      S._dailyPublishDay('2026-10-23') === '2026-10-25' && S._dailyPublishDay('2026-10-30') === '2026-11-01'
+        && S._dailyDropName('2026-10-23') === 'Daily Drop - Oct 25, 2026' && S._dailyPublishDay('') === null,
+      JSON.stringify([S._dailyPublishDay('2026-10-23'), S._dailyPublishDay('2026-10-30'), S._dailyDropName('2026-10-23')]));
+    const d1 = await S._dailySetDate({ drop_day: '2026-10-17' }), d2 = await S._dailySetDate({ drop_day: '2026-10-18' });
+    ok('two consecutive drops never share a date (the 10.20.26 double post), whatever results_at says',
+      d1 === '10.19.26' && d2 === '10.20.26'
+        && d1 === await S._dailySetDate({ drop_day: '2026-10-17', results_at: S._etEpoch('2026-10-20', 6) }),
+      JSON.stringify([d1, d2]));
+  }
   const atAr = await call('/api/admin/daily/asana-task', { s: LDROP, set: 'ar' }, 'POST', BOOTH);
   const atArTask = asanaCalls.filter(c => c.method === 'POST' && c.path === '/tasks').pop();
   ok('daily asana: the Top A&Rs task is its own task, placement only',

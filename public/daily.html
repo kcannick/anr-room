@@ -151,6 +151,10 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
   padding:12px 8px;text-align:center}
 .composer{background:linear-gradient(180deg,var(--panel),#1C1733);border:1px solid var(--accent);
   border-radius:14px;padding:15px}
+.composer.done{border-color:var(--signal-deep);background:var(--panel)}
+.composer.mini{padding:10px 14px}
+.cmt-quote{background:var(--inset);border:1px solid var(--line);border-radius:11px;padding:12px 13px;
+  font-size:14.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .sealed-note{display:flex;align-items:center;gap:8px;justify-content:center}
 .stats{display:flex;gap:10px}
 .stat{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:13px;
@@ -409,16 +413,44 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
      scroll position all survive a screen transition. Re-rendering it as markup would
      eat half-typed work at exactly the moment someone is mid-sentence, which is the
      fastest way to teach people not to bother writing one. -->
+<!-- Three looks, painted by cmtPaint(): WRITING (textarea + Submit), SUBMITTED (their note
+     as text, Edit / Dismiss), and DISMISSED (one line, View or edit). Submitted must look
+     different from writing — a box still holding the text with a live button read as
+     "not sent yet". -->
 <div id="cmtBox" class="composer hide">
-  <div style="font-weight:800;font-size:14.5px;letter-spacing:-.01em">Send the artist a note</div>
-  <p class="dim" style="margin:6px 0 11px;font-size:12.5px;line-height:1.5" id="cmtPrompt">
-    What did you hear? They get it with your name on it.</p>
-  <textarea id="cmtText" rows="4" placeholder="Optional. Your name goes to the artist with it."></textarea>
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px">
-    <span class="mono" id="cmtCount" style="font-size:11px;color:var(--ink-dim)"></span>
-    <button class="btn sm" id="cmtSave">Send to artist</button>
+  <div id="cmtEdit">
+    <div style="font-weight:800;font-size:14.5px;letter-spacing:-.01em" id="cmtTitle">Leave the artist a note</div>
+    <p class="dim" style="margin:6px 0 11px;font-size:12.5px;line-height:1.5" id="cmtPrompt">
+      What did you hear? They get it with your name on it.</p>
+    <textarea id="cmtText" rows="4" placeholder="Optional. Your name goes to the artist with it."></textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px">
+      <span class="mono" id="cmtCount" style="font-size:11px;color:var(--ink-dim)"></span>
+      <span style="display:flex;gap:8px;align-items:center">
+        <button class="linkbtn hide" id="cmtCancel">Cancel</button>
+        <button class="btn sm" id="cmtSave">Submit</button>
+      </span>
+    </div>
+    <div class="err" id="cmtErr" style="font-size:12.5px;margin-top:6px"></div>
   </div>
-  <div class="err" id="cmtErr" style="font-size:12.5px;margin-top:6px"></div>
+  <div id="cmtDone" class="hide">
+    <div style="display:flex;align-items:center;gap:7px;font-weight:800;font-size:14.5px;letter-spacing:-.01em;color:var(--signal)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--signal)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M20 6 9 17l-5-5"/></svg>
+      Note submitted
+    </div>
+    <p class="dim" style="margin:6px 0 10px;font-size:12.5px;line-height:1.5">The artist gets it with their results, with your name on it.</p>
+    <div class="cmt-quote" id="cmtQuote"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+      <button class="btn ghost sm" id="cmtDismiss">Dismiss</button>
+      <button class="btn outline sm" id="cmtEditBtn">Edit</button>
+    </div>
+  </div>
+  <div id="cmtMini" class="hide" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <span style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--signal)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--signal)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M20 6 9 17l-5-5"/></svg>
+      Note submitted
+    </span>
+    <button class="linkbtn" id="cmtShow">View or edit</button>
+  </div>
 </div>
 
 <script src="/auth.js?v=2"></script>
@@ -482,6 +514,11 @@ function cmtMoveTo(slotId){
   if(box.parentNode !== slot) slot.appendChild(box);
 }
 
+// cmtEditing: they are rewriting a note already submitted. cmtHidden: records whose
+// submitted note they dismissed down to one line (this page view only).
+let cmtEditing = false, cmtBusy = false;
+const cmtHidden = new Set();
+
 function cmtBind(round){
   const box = $('#cmtBox'), ta = $('#cmtText');
   box.classList.remove('hide');
@@ -489,33 +526,67 @@ function cmtBind(round){
   const draft = cmtDraftGet(round.id);
   // An unsent draft beats the saved copy — it is the newer thing they wrote.
   ta.value = draft || round.myComment || '';
+  cmtEditing = !!(draft && round.myComment && draft !== round.myComment);
+  cmtBusy = false;
   // The prompt ECHOES the artist's ask when there is one. "They asked about the mix. What
   // did you hear?" is an answer to a question; the generic version is just a comment box.
   $('#cmtPrompt').textContent = round.artist_note
     ? 'They told you how this record was made. What did you hear?'
     : 'What did you hear? They get it with your name on it.';
   $('#cmtErr').textContent = '';
-  cmtPaintCount();
+  cmtPaint();
 }
-function cmtPaintCount(){
-  const ta = $('#cmtText');
-  const dirty = qRoundId != null && cmtDraftGet(qRoundId) && cmtDraftGet(qRoundId) !== (currentRound()||{}).myComment;
-  $('#cmtCount').textContent = (dirty && ta.value ? 'Draft saved · ' : '') + ta.value.length + ' / ' + COMMENT_MAX;
+function cmtPaint(){
+  const box = $('#cmtBox'), ta = $('#cmtText'), r = currentRound() || {};
+  const saved = r.myComment || '';
+  const showDone = !!saved && !cmtEditing && !cmtBusy;
+  const mini = showDone && cmtHidden.has(r.id);
+  $('#cmtEdit').classList.toggle('hide', showDone);
+  $('#cmtDone').classList.toggle('hide', !showDone || mini);
+  $('#cmtMini').classList.toggle('hide', !mini);
+  box.classList.toggle('done', showDone);
+  box.classList.toggle('mini', mini);
+  if(showDone){ $('#cmtQuote').textContent = saved; return; }
+
+  const v = ta.value.trim(), dirty = v !== saved.trim();
+  $('#cmtTitle').textContent = saved ? 'Edit your note' : 'Leave the artist a note';
+  $('#cmtCancel').classList.toggle('hide', !saved);
+  $('#cmtSave').textContent = cmtBusy ? 'Submitting…' : (saved ? 'Resubmit' : 'Submit');
+  // Nothing to submit: an empty first note, or an edit that changes nothing.
+  $('#cmtSave').disabled = cmtBusy || !dirty || (!saved && !v);
+  $('#cmtCount').textContent = (dirty && v ? 'Draft saved · ' : '') + ta.value.length + ' / ' + COMMENT_MAX;
 }
-$('#cmtText').oninput = () => { if(qRoundId != null) cmtDraftSet(qRoundId, $('#cmtText').value); cmtPaintCount(); };
-$('#cmtSave').onclick = async () => {
+$('#cmtText').oninput = () => {
+  if(qRoundId != null) cmtDraftSet(qRoundId, $('#cmtText').value);
+  $('#cmtErr').textContent = '';
+  cmtPaint();
+};
+$('#cmtEditBtn').onclick = () => {
   const r = currentRound(); if(!r) return;
+  cmtEditing = true; $('#cmtText').value = r.myComment || ''; cmtPaint(); $('#cmtText').focus();
+};
+$('#cmtCancel').onclick = () => {
+  const r = currentRound(); if(!r) return;
+  cmtEditing = false; cmtDraftSet(r.id, ''); $('#cmtText').value = r.myComment || ''; $('#cmtErr').textContent = '';
+  cmtPaint();
+};
+$('#cmtDismiss').onclick = () => { const r = currentRound(); if(r){ cmtHidden.add(r.id); cmtPaint(); } };
+$('#cmtShow').onclick = () => { const r = currentRound(); if(r){ cmtHidden.delete(r.id); cmtPaint(); } };
+$('#cmtSave').onclick = async () => {
+  const r = currentRound(); if(!r || cmtBusy) return;
   const body = $('#cmtText').value.trim();
-  $('#cmtErr').textContent = ''; $('#cmtSave').disabled = true;
+  $('#cmtErr').textContent = ''; cmtBusy = true; cmtPaint();
   try{
     const d = await api('/api/comment', { roundId: r.id, body });
     r.myComment = d.body || '';
     cmtDraftSet(r.id, '');                 // saved: the mirror has nothing left to protect
-    $('#cmtSave').textContent = 'Sent';
-    setTimeout(() => { $('#cmtSave').textContent = 'Send to artist'; }, 1600);
-    cmtPaintCount();
-  }catch(e){ $('#cmtErr').textContent = e.message; }
-  $('#cmtSave').disabled = false;
+    cmtEditing = false;
+  }catch(e){
+    // The textarea and the local draft stay exactly as they are — a failed submit must
+    // never be the thing that costs someone their words.
+    $('#cmtErr').textContent = (e.message || 'Could not submit') + ' Your note is still here.';
+  }
+  cmtBusy = false; cmtPaint();
 };
 
 /* --------------------------------------------------------------------------- */
