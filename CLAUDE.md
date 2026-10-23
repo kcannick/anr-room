@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 047, plus 049; 048 is open in PR #54; suite green)
+## Current state (migrations through 049; 050 is open in its PR; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -1163,6 +1163,21 @@ live on anr.makinitmag.com.
   docs/specs/referral-click-tracking-prompt.md. The account page (`/account`, which `/refer` serves) prints one line under the scout link
   ("N people opened your link this week · M all time", or "No one has opened this link yet."),
   built to the approved mockup `public/_mock-refer-clicks.html`.
+- **The daily drop log** (050, 2026-10-23, operator's ask; branch `claude/daily-drops-activity-log-f33944`,
+  NOT merged when written). A **Log** card on the A&R Daily console, for the day the picker shows:
+  Received · Opened · voting-is-open email · Closed · Tallied · Graphics rendered · Asana tasks ·
+  Revealed · **IG post scheduled** (Countdown, Top A&Rs) · results email · Track Reports ·
+  Makinitmag updated, each with an ET time and a detail (counts, failures), oldest first; red =
+  30 minutes past due or failed. **Most lines are read off columns that already exist** (published_at,
+  rendered_at, the notify/artist queues, the callback); `drop_events` holds ONLY what nothing else
+  recorded: each push, the open, the close, the tally (written inside the claim that makes each step
+  happen once — a handful of rows a day), and the IG schedule marks. Asana's finish time is
+  `asana_tasks[set].doneAt`. Days from before 050 show the PLANNED open/close, tagged "scheduled".
+  **The IG lines are written by the daily SocialBee browser automation** (scheduled task
+  `socialbee-daily-carousels`, disabled until this deploys) via `POST /api/admin/daily/log/ig
+  {s, post: ig_countdown|ig_ars, postAt: 'YYYY-MM-DDTHH:MM' ET, source, url}` from the logged-in
+  console (no new secret); the card's "Mark scheduled" is the hand fallback. A re-schedule replaces
+  the mark. `GET /api/admin/daily/log?s=`; both platform-admin only. Mockup: `public/_mock-daily-log.html`.
 
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay

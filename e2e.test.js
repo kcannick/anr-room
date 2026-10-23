@@ -2197,6 +2197,37 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the day flips to completed/published with a published_at',
     pubbed.status === 'completed' && pubbed.async_state === 'published' && pubbed.published_at > 0,
     pubbed.status + '/' + pubbed.async_state);
+
+  // The drop log (050): every step the lifecycle just ran is a line with a recorded time.
+  const lg = await call('/api/admin/daily/log?s=' + LDROP, null, 'GET', BOOTH);
+  const lgBy = (k) => (lg.d.lines || []).filter(l => l.key === k);
+  ok('the drop log is admin-only', (await call('/api/admin/daily/log?s=' + LDROP, null, 'GET')).status === 403);
+  ok('the log has the push as Received with its record count',
+    lgBy('received').length === 1 && lgBy('received')[0].state === 'done' && /3 records pushed/.test(lgBy('received')[0].detail), JSON.stringify(lgBy('received')));
+  for (const k of ['opened', 'closed', 'tallied', 'rendered', 'revealed']) {
+    const l = lgBy(k)[0];
+    ok(`the log records "${k}" as done with a real (not scheduled) time`, l && l.state === 'done' && l.at > 0 && !l.scheduled && /·/.test(l.atLabel), JSON.stringify(l));
+  }
+  ok('the open line says how many records opened', /3 records open/.test(lgBy('opened')[0].detail), lgBy('opened')[0].detail);
+  ok('Revealed is the publish time', lgBy('revealed')[0].at === Number(pubbed.published_at));
+  ok('the voting-is-open email has a line', lgBy('daily_open').length === 1, JSON.stringify(lgBy('daily_open')));
+  ok('both Instagram posts are still waiting to be scheduled',
+    ['ig_countdown', 'ig_ars'].every(k => lgBy(k)[0] && ['due', 'late'].includes(lgBy(k)[0].state)), JSON.stringify(lg.d.lines.map(l => l.key + ':' + l.state)));
+  ok('the log is in time order', lg.d.lines.every((l, i, a) => !i || (a[i - 1].at || a[i - 1].due || Infinity) <= (l.at || l.due || Infinity)));
+  const igBad = await call('/api/admin/daily/log/ig', { s: LDROP, post: 'ig_story' }, 'POST', BOOTH);
+  ok('an unknown post is refused', igBad.status === 400);
+  const igMark = await call('/api/admin/daily/log/ig', { s: LDROP, post: 'ig_countdown', postAt: '2026-10-22T06:00', source: 'automation' }, 'POST', BOOTH);
+  ok('the automation records the countdown as scheduled, with its ET go-out time',
+    igMark.status === 200 && igMark.d.postAt === srv._etEpoch('2026-10-22', 6, 0) && igMark.d.at > 0, JSON.stringify(igMark.d));
+  ok('a bad post time is refused', (await call('/api/admin/daily/log/ig', { s: LDROP, post: 'ig_ars', postAt: '9am' }, 'POST', BOOTH)).status === 400);
+  await call('/api/admin/daily/log/ig', { s: LDROP, post: 'ig_countdown', postAt: '2026-10-22T06:05', source: 'automation' }, 'POST', BOOTH);
+  const lg2 = (await call('/api/admin/daily/log?s=' + LDROP, null, 'GET', BOOTH)).d.lines.filter(l => l.key === 'ig_countdown');
+  ok('a re-schedule replaces the first line, not a second one', lg2.length === 1 && lg2[0].state === 'done' && /Posts .*6:05 AM/.test(lg2[0].detail) && /daily automation/.test(lg2[0].detail), JSON.stringify(lg2));
+  await call('/api/admin/daily/log/ig', { s: LDROP, post: 'ig_countdown', clear: true }, 'POST', BOOTH);
+  ok('a mark can be cleared', (await call('/api/admin/daily/log?s=' + LDROP, null, 'GET', BOOTH)).d.lines.find(l => l.key === 'ig_countdown').state !== 'done');
+  ok('the open, close and tally each logged exactly once across repeated ticks',
+    (await dDb.all("SELECT event, COUNT(*) AS c FROM drop_events WHERE session_id = ? AND event IN ('opened','closed','tallied') GROUP BY event", [LDROP])).every(r => Number(r.c) === 1));
+
   // The emails wait artistDelayMin past publish (the carousel posts first): nothing drains at
   // the publish tick, everything drains once the hold has passed.
   const holdMs = srv._DAILY_SCHEDULE_DEFAULTS.artistDelayMin * 60000;
