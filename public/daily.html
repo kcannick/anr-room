@@ -310,6 +310,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
         <p class="dim" style="margin:7px 0 11px;font-size:12.5px;line-height:1.5">Your honest take, 0 to 9.</p>
         <div class="pips" id="pipsTop" style="margin-bottom:6px"></div>
         <div class="pips" id="pipsBot"></div>
+        <div id="rateMeaning"></div>
         <button class="btn" id="btnStepNext" style="margin-top:18px" disabled>Next →</button>
         </div>
 
@@ -454,6 +455,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 </div>
 
 <script src="/auth.js?v=2"></script>
+<script src="/rating-meanings.js?v=1"></script>
 <script>
 const {$, SID, track, getToken, clearToken, api, apiRaw, tryAccountRegister} = window.ANRAuth;
 
@@ -616,6 +618,7 @@ function isAudioUrl(href){
 
 // Build the 0-9 dial once. The click handler scopes to THIS dial's container rather than
 // document.querySelectorAll('.pip') — there is one dial on this page and it stays that way.
+const setMeaning = window.ANRMeanings.mount($('#rateMeaning'));
 (function buildPips(){
   for(let n = 0; n <= 9; n++){
     const el = document.createElement('div');
@@ -623,6 +626,7 @@ function isAudioUrl(href){
     el.onclick = () => {
       chosenTaste = n;
       $('#screen-queue').querySelectorAll('.pip').forEach(p => p.classList.toggle('on', +p.dataset.n === n));
+      setMeaning(n);
       $('#btnStepNext').disabled = false;
       maybeEnableLock();
     };
@@ -649,6 +653,7 @@ $('#btnStepBack').onclick = () => showStep(1);
 function resetVoteInputs(){
   chosenTaste = null; predict = 4.5; predictTouched = false;
   $('#screen-queue').querySelectorAll('.pip').forEach(p => p.classList.remove('on'));
+  setMeaning(null);
   $('#pred').value = 4.5; $('#predVal').textContent = '4.5';
   $('#voteErr').textContent = '';
   $('#btnStepNext').disabled = true;
