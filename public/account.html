@@ -20,7 +20,7 @@
    record by record. The results email links straight to it (/account#results). It shows
    points and NO RANK — the weekly announcement is where rank is revealed. /refer serves this same file, so signed #rt= links still land here.
    Built to the approved canvas (design/refer/Main.dc.html) on the daily page's dialect:
-   Archivo display, Space Mono for every number and label, gold on the $1,000 only.
+   Archivo display, Space Mono for every number and label. No prize is advertised (2026-10-23).
    Auth is whichever token this device holds: the account token from /join, or any
    per-session player token from a daily drop (the server resolves both to the same
    user). With neither, the page asks for an email code and mints an account token.
@@ -71,8 +71,7 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 .row .l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .row .r{color:var(--ink-dim);white-space:nowrap;flex:none}
 .row .r b{color:var(--ink);font-weight:700}
-.prize{display:flex;align-items:center;gap:9px;background:rgba(245,197,24,.08);border:1px solid var(--gold);border-radius:11px;padding:10px 12px;font-size:13px;line-height:1.45}
-.prize b{font-family:"Space Mono",monospace;color:var(--gold);font-weight:700}
+.perk{display:flex;align-items:center;gap:9px;background:rgba(75,183,73,.08);border:1px solid var(--signal);border-radius:11px;padding:10px 12px;font-size:13px;line-height:1.45}
 /* ---- account shell ---- */
 .me{display:flex;align-items:center;gap:14px}
 .me .face{width:56px;height:56px;border-radius:50%;background:#221b3a;border:2px solid var(--accent);flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:19px;color:var(--accent);object-fit:cover}
@@ -246,7 +245,7 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
       <label>Your scout link</label>
       <div class="linkrow"><span class="url" id="linkSubmit"></span><button class="copy" data-copy="linkSubmit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
       <p class="opens hide" id="submitOpens"></p>
-      <div class="prize"><span class="tick prize"></span><span>Every artist who submits is entered in the <b>$1,000 Giveaway</b> for a $1,000 Promo Budget.</span></div>
+      <div class="perk"><span class="tick"></span><span>Every artist gets a rating, a review and a full Track Report. Free with a Trusted Account. Support from $5 to move up the line.</span></div>
       <div class="stats">
         <div class="stat"><div class="k">Submitted</div><div class="v" id="artSubmitted">0</div></div>
         <div class="stat"><div class="k">Rated</div><div class="v" id="artRated">0</div></div>

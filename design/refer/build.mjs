@@ -98,7 +98,7 @@ const main = HEAD() + `
     ${sectionHead('Refer an artist')}
     <h2 style="margin: 0; font-weight: 800; font-size: 20px; letter-spacing: -0.03em; line-height: 1.15;">Refer artists to submit their music.</h2>
     <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #9793B4;">Earn bonus points by discovering new talent. You earn points based on the referred artist's score: 5 times the average. A 7.1 earns 36 points.</p>
-    <div style="display: flex; align-items: center; gap: 9px; background: rgba(245,197,24,.08); border: 1px solid #F5C518; border-radius: 11px; padding: 10px 12px; font-size: 13px; line-height: 1.45;"><span style="display: block; width: 3px; height: 12px; transform: skewX(-13deg); background: #F5C518; flex: none;"></span><span>Every artist who submits is entered in the <b style="${MONO} color: #F5C518;">$1,000 Giveaway</b> for a $1,000 Promo Budget.</span></div>
+    <div style="display: flex; align-items: center; gap: 9px; background: rgba(75,183,73,.08); border: 1px solid #4bb749; border-radius: 11px; padding: 10px 12px; font-size: 13px; line-height: 1.45;"><span style="display: block; width: 3px; height: 12px; transform: skewX(-13deg); background: #4bb749; flex: none;"></span><span>Every artist gets a rating, a review and a full Track Report. Free with a Trusted Account. Support from $5 to move up the line.</span></div>
     <div style="display: flex; gap: 10px;">${stat('Submitted', '4')}${stat('Rated', '3')}${stat('Earned', '+97', '#4bb749')}</div>
     <div style="display: flex; flex-direction: column; gap: 6px;">
       <div style="display: flex; justify-content: space-between; align-items: center; ${MONO} font-size: 12px;"><span>Nia Cole · Late Bus</span><span style="color: #9793B4;">7.4 · <b style="color: #EAE9F2;">+37</b></span></div>
@@ -149,7 +149,7 @@ const personCard = (W, H, big) => HEAD() + `
       <div style="${MONO} font-size: 30px; letter-spacing: 0.2em; text-transform: uppercase; color: #4bb749; margin-top: 10px;">Official A&amp;R · The A&amp;R Team</div>
       <div style="${MONO} font-size: 26px; color: #9793B4;">Producer · Atlanta, GA</div>
     </div>
-    <div style="font-weight: 600; font-size: ${big ? 40 : 34}px; line-height: 1.25; letter-spacing: -0.02em; max-width: 880px;">I rate new records every day and help choose which artists get covered and who wins the <span style="color: #F5C518;">$1,000 Promo Budget</span>.</div>
+    <div style="font-weight: 600; font-size: ${big ? 40 : 34}px; line-height: 1.25; letter-spacing: -0.02em; max-width: 880px;">I rate new records every day and help decide which artists make the <span style="color: #4bb749;">HOT 100</span>.</div>
   </div>
 
   <div style="position: relative; display: flex; flex-direction: column; gap: 28px;">
@@ -160,7 +160,7 @@ const personCard = (W, H, big) => HEAD() + `
 </div>
 ` + FOOT;
 
-const cta = (title, sub, fill, dark, money) => HEAD() + `
+const cta = (title, sub, fill, dark, eyebrow, eyebrowInk) => HEAD() + `
 <div style="position: relative; width: 1080px; height: 1350px; background: #0E0C1A; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 72px 80px; box-sizing: border-box;">
   <div style="position: absolute; left: -200px; bottom: -620px; width: 1480px; height: 800px; background: ${fill}; transform: skewY(-13deg); transform-origin: left bottom;"></div>
 
@@ -170,7 +170,7 @@ const cta = (title, sub, fill, dark, money) => HEAD() + `
   </div>
 
   <div style="position: relative; display: flex; flex-direction: column; gap: 28px;">
-    ${money ? `<div style="display: flex; align-items: center; gap: 18px;"><span style="display: block; width: 6px; height: 34px; transform: skewX(-13deg); background: #F5C518;"></span><span style="${MONO} font-size: 40px; font-weight: 700; letter-spacing: 0.06em; color: #F5C518;">${money}</span></div>` : ''}
+    ${eyebrow ? `<div style="display: flex; align-items: center; gap: 18px;"><span style="display: block; width: 6px; height: 34px; transform: skewX(-13deg); background: ${fill};"></span><span style="${MONO} font-size: 40px; font-weight: 700; letter-spacing: 0.06em; color: ${eyebrowInk};">${eyebrow}</span></div>` : ''}
     <div style="font-weight: 900; font-size: 128px; letter-spacing: -0.04em; line-height: 0.92;">${title}</div>
     <div style="font-weight: 600; font-size: 38px; line-height: 1.3; letter-spacing: -0.02em; color: #9793B4; max-width: 880px;">${sub}</div>
   </div>
@@ -185,8 +185,8 @@ const cta = (title, sub, fill, dark, money) => HEAD() + `
 fs.writeFileSync('Main.dc.html', main);
 fs.writeFileSync('Portrait.dc.html', personCard(1080, 1350, false));
 fs.writeFileSync('Story.dc.html', personCard(1080, 1920, true));
-fs.writeFileSync('JoinTeam.dc.html', cta('Join the<br>A&amp;R Team.', 'Become an official A&amp;R. Rate new records every day and help choose which artists get covered and who wins the $1,000 Promo Budget.', '#4bb749', '#0E0C1A', '$1,000 GIVEAWAY'));
-fs.writeFileSync('SubmitMusic.dc.html', cta('Submit<br>your music.', 'Get your record rated by the A&amp;R Team, get a full report on what they heard, and enter the $1,000 Giveaway for a $1,000 Promo Budget.', '#6d5fe0', '#EAE9F2', '$1,000 GIVEAWAY'));
+fs.writeFileSync('JoinTeam.dc.html', cta('Join the<br>A&amp;R Team.', 'Rate new records every day and help decide which artists make the Makin’ It HOT 100.', '#4bb749', '#0E0C1A', 'OFFICIAL A&amp;R', '#4bb749'));
+fs.writeFileSync('SubmitMusic.dc.html', cta('Submit<br>your music.', 'Get your record rated and reviewed by the A&amp;R Team. Free with a Trusted Account. Support from $5 to move up the line.', '#6d5fe0', '#EAE9F2', 'RATING · REVIEW · TRACK REPORT', '#EAE9F2'));
 
 fs.writeFileSync('canvas.json', JSON.stringify({
   artboards: [

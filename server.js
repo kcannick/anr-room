@@ -425,13 +425,8 @@ const NOTIFY_TOPICS = {
   // the two groups above (enqueueDailyDigest narrows it), so it is ON by default; an explicit
   // OFF still wins, as does email_opt_out.
   digest_daily:  { label: 'Your daily results', channels: { email: 1 } },
-  // The weekly update (2026-10-06) is the cadence for everyone the daily emails do not reach:
-  // ON by default, `nudge` = the default goes only to those OUTSIDE the daily reach (see
-  // dailyReachSql) and stops after WEEKLY_SUNSET_SENDS unanswered sends. An explicit ON gets
-  // it every week regardless. Sender: enqueueWeeklyUpdate / drainWeeklyUpdate.
-  // Thursday (operator, 2026-10-17): the results of Wednesday's show, to EVERY subscribed A&R —
-  // the `nudge` narrowing (non-engaged only, sunset after 4) is off. Bounces are still skipped.
-  digest_weekly: { label: 'Weekly results (Thursday)', channels: { email: 1 } },
+  // digest_weekly (the Thursday mail) was RETIRED 2026-10-23 with the Wednesday show. Its old
+  // prefs rows are ignored: a topic not listed here is never offered or sent.
 };
 // "Engaged" = signed in or rated within ENGAGED_DAYS (users.last_seen is stamped at both), or
 // an account younger than NEW_ACCOUNT_DAYS (a new A&R gets the daily mail for two weeks to
@@ -875,14 +870,13 @@ function hasPerm(user, key) { return !!(user && (user.role === 'admin' || (user.
 // Admins and legacy per-session-token callers (no identity user) pass through unchanged.
 function blockedByPerm(user, key) { return !!(user && user.role === 'host' && !effectivePerms(user)[key]); }
 
-// The monthly audience prize. Fixed today; could become per-series later.
-const GIVEAWAY_PRIZE = '$500';
 // Whether a host is included in the giveaway program (opt-out: NULL/1 = in, 0 = out).
 function hostGiveawayEligible(user) { return !!(user && user.giveaway_eligible !== 0); }
 // Giveaway context for a session's play page: the series it competes in + a PII-safe top
 // board, but ONLY when the session is tagged into a series AND its owner is eligible
 // (admin always; host per flag; legacy admin-token sessions with no owner count as Makin'
-// It's own). Returns null when the $500 hook should not show. Points are already public
+// It's own). Returns null when the session is not in a series. No prize is attached since
+// 2026-10-23 (no giveaways advertised; the play page no longer shows a hook). Points are already public
 // (homepage board) — this never exposes the sealed round average/split.
 async function giveawayContext(session) {
   if (!session || !session.series_id) return null;
@@ -897,7 +891,7 @@ async function giveawayContext(session) {
   if (!ownerEligible) return null;
   const ser = await db.get('SELECT id, title, status FROM series WHERE id = ?', [session.series_id]);
   if (!ser) return null;
-  return { series_id: ser.id, title: ser.title, status: ser.status, prize: GIVEAWAY_PRIZE, board: await homeSeriesBoard(ser.id) };
+  return { series_id: ser.id, title: ser.title, status: ser.status, board: await homeSeriesBoard(ser.id) };
 }
 
 // Can this request administer this session? True if:
@@ -1638,18 +1632,7 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
         out.openSent = (out.openSent || 0) + d.sent;
       } catch (e) { console.error('[daily] open notice drain failed:', e.message); }
     }
-    // The weekly update: queued once on Wednesday afternoon, then drained like the others.
-    // Only broadcasts still 'sending' are looked at, so a finished week costs one indexed read.
-    try {
-      const dueWeek = left() > 4000 ? await weeklyUpdateDue(at) : null;
-      if (dueWeek) { const q = await enqueueWeeklyUpdate(dueWeek); out.weeklyQueued = q.queued; }
-      const weeklies = await db.all("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND status <> 'done' ORDER BY created_at DESC LIMIT 2");
-      for (const b of weeklies) {
-        if (left() < 4000) { out.budgetHit = true; break; }
-        const d = await drainWeeklyUpdate({ broadcastId: b.id, limit: 60, deadline: t0 + budgetMs });
-        out.weeklySent = (out.weeklySent || 0) + d.sent;
-      }
-    } catch (e) { console.error('[daily] weekly update failed:', e.message); }
+    // The Thursday weekly update was RETIRED 2026-10-23 (operator): no weekly show, no prizes.
     // The artist heads-up at the close (041) is RETIRED (operator, 2026-10-17): the artist
     // hears from the program once, with the Track Report, after the countdown has posted.
     // enqueueArtistHeadsups / drainArtistHeadsups stay for the console's manual send only.
@@ -1829,20 +1812,15 @@ async function pushDayResults(session) {
 // "HOT 100" belongs to the MONTHLY countdown post only (operator, 2026-10-02); the daily is the
 // Makin' It Daily Countdown — the carousel (countdownCarouselData) and, while it still runs, the stream.
 const DAILY_STREAM_NAME = "Makin' It Daily Countdown";
-const WEEKLY_SHOW_NAME = 'The A&R Room - Weekly Live Music Review'; // Wednesday 7PM ET
-// The daily live stream is RETIRED (operator, 2026-10-15): the only live stream is The A&R
-// Room on Wednesday, where the week's Top 8 are announced and the week's finalist for the
-// $1,000 Music Tournament is picked. Every communication that pointed at a daily stream now
-// says this instead. ONE definition so no mail can drift. The `daily_stream_url` setting
-// now holds this show's link.
-const WEEKLY_SHOW_LINE = "The A&R Room live stream is Wednesday at 7:00 PM ET. The week's Top 8 are announced there and the week's finalist for the $1,000 Music Tournament is picked.";
-const WEEKLY_SHOW_CTA = 'Watch The A&R Room live, Wednesday 7:00 PM ET';
+// The daily live stream was RETIRED 2026-10-15 and the Wednesday show (The A&R Room - Weekly
+// Live Music Review) on 2026-10-23, with every prize (operator: no giveaways are advertised).
+// Things still go live on YouTube, so every mail keeps the subscribe block below.
 // Every touch point sends people to subscribe on YouTube (operator, 2026-10-15): the redirect
 // lands on the channel's live page with ?sub_confirmation=1, so one link both subscribes and
 // finds the stream. "Hit the bell" is the operator's wording. ONE block, used by every mail.
 const LIVE_SUBSCRIBE_URL = 'https://www.makinitmag.com/live';
 const LIVE_SUBSCRIBE_SHORT = 'makinitmag.com/live';
-const SUBSCRIBE_LINE = "Subscribe to our YouTube channel and hit the bell so you're notified when we go live and can see if you made it.";
+const SUBSCRIBE_LINE = "Subscribe to our YouTube channel and hit the bell so you're notified when we go live.";
 const SUBSCRIBE_CTA = 'Subscribe on YouTube';
 // mode: 'ar' (the dark A&R Daily mails) | 'artist' (the mim-themed artist mails)
 function subscribeBlockHtml(mode = 'ar') {
@@ -1852,11 +1830,11 @@ function subscribeBlockHtml(mode = 'ar') {
   const a = mode === 'artist'
     ? 'display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;'
     : 'display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:15px;padding:13px;border-radius:13px;text-align:center';
-  return `<p style="${p}">${escapeHtml(WEEKLY_SHOW_LINE)} ${escapeHtml(SUBSCRIBE_LINE)}</p>
+  return `<p style="${p}">${escapeHtml(SUBSCRIBE_LINE)}</p>
       <a href="${LIVE_SUBSCRIBE_URL}" style="${a}">${SUBSCRIBE_CTA}</a>`;
 }
 function subscribeBlockText() {
-  return `${WEEKLY_SHOW_LINE} ${SUBSCRIBE_LINE}
+  return `${SUBSCRIBE_LINE}
 ${SUBSCRIBE_CTA}: ${LIVE_SUBSCRIBE_URL}`;
 }
 
@@ -2236,68 +2214,11 @@ function resultsCaption(d) {
   return lines.join('\n');
 }
 
-// ---- The winner posts (039): Top Track / Top A&R of the WEEK -------------------------------
-// One portrait graphic per weekly winner, posted as an Instagram COLLAB post with them. The
-// card is about THE PERSON PLACING (operator, 2026-09-21 → 10-03): Congratulations / NAME in
-// caps + @handle with the Instagram glyph / "Selected for the next $1,000 Music Tournament" or "Selected for the A&R
-// Wars Tournament · $500 Cash Prize!". No title line, no numbers, no song title (the record
-// is in the caption), the profile photo top right. THE WINNERS ARE THE WEEKLY REPORT'S #1s
-// (weeklyReportData, Monday–Sunday — the ranking the weekly live show reads on air), so the
-// posted winner is always the announced winner. A week that has not settled still renders for
-// preview; `week.settled` says so and the console warns.
-// The DAILY pair (Top Track / Top A&R of the Day) was retired 2026-10-03: the Daily Countdown
-// carousel centres the day's winner now. recap_jobs.winner_* columns (039) stay, unused.
-const WINNER_COPY = {
-  track: { label: 'Top Track', selected: ['Selected for the next', '$1,000 Music Tournament'],
-    cta: { label: 'Submit your music free', url: shareCards.SUBMIT_URL }, comment: 'Comment #REVIEW to Submit Music', tags: '#ARMeeting #MakinIt #NewMusic #UnsignedArtists' },
-  ar:    { label: 'Top A&R', selected: ['Selected for the', 'A&R Wars Tournament', '$500 Cash Prize!'],
-    cta: { label: 'Join the A&R Team', url: shareCards.JOIN_URL }, comment: 'Comment #ANR to join the A&R Team', tags: TOP_AR_TAGS },
-};
-const dayLabel = day => recapDateLabel(etEpoch(day, 12));
-// The week helpers are the weekly report's (Monday-based); the older names stay as aliases so
-// the routes, the console's default week and the tests read the same Monday the show does.
+// The weekly winner posts (039) were RETIRED 2026-10-23 (operator: no weekly show, no prizes).
+// weekStartOf stays as the tests' name for the weekly report's Monday.
 const weekStartOf = day => weekStartFor(day);
-const lastCompletedWeekStart = () => lastCompleteWeekStart();
-const paren = ig => (ig ? '@' + ig : '');   // the card draws the Instagram glyph beside it; no parentheses (operator, 2026-10-03)
-// The week's pair: the weekly report's #1 record (its ARTIST is the name) and #1 A&R.
-// Public surface: display name, handle, photo; the record's artist, title (caption) and handle.
-async function winnerWeekData(weekStart, post, { photo = true } = {}) {
-  const copy = WINNER_COPY[post];
-  if (!copy) return null;
-  const rep = await weeklyReportData(weekStart, { limit: 1 });
-  if (!rep || !rep.drops.length) return null;
-  const week = { start: rep.week.start, end: rep.week.end, drops: rep.drops.length, settled: rep.settled, pending: rep.pending };
-  const base = { kind: post, period: 'week', label: copy.label, sub: 'of the Week', selected: copy.selected, cta: copy.cta,
-    date: dayLabel(rep.week.start) + ' – ' + dayLabel(rep.week.end), week };
-  if (post === 'track') {
-    const r = rep.songs[0];
-    if (!r) return null;
-    return { ...base, title: r.artist || r.title, by: '', handle: paren(r.ig),
-      record: '“' + r.title + '”', line: { rated: r.votes, score: Number(r.score).toFixed(1), drop: dayLabel(dailyPublishDay(r.day)) } };
-  }
-  const a = rep.ars[0];
-  if (!a) return null;
-  const u = photo ? await db.get('SELECT photo_url FROM users WHERE uid = ?', [a.id]) : null;
-  return { ...base, title: a.name, by: '', handle: paren(a.ig), photo: u ? await photoDataUri(u.photo_url) : null,
-    line: { points: a.points } };
-}
-// The collab post's caption: the card's words, the record and the numbers the card leaves off,
-// the house comment keyword instead of a link, and at most five hashtags in all.
-function winnerCaption(d) {
-  const copy = WINNER_COPY[d.kind];
-  const lines = [`${d.label} ${d.sub} · ${d.date}`,
-    `Congratulations ${d.title}${d.handle ? ' ' + d.handle : ''}`, d.selected.join(' ')];
-  if (d.kind === 'track') {
-    lines.push(d.record, `Rated by ${d.line.rated} A&Rs · Score ${d.line.score} · Dropped ${d.line.drop}`);
-  } else {
-    lines.push(`${d.line.points} points this week`);
-  }
-  lines.push('', copy.comment, '', copy.tags);
-  return lines.join('\n');
-}
-
 // Publish the day: make sure the day's Instagram posts are rendered (the Daily Countdown, the
-// Top A&R carousel, the winner posts), queue the A&R digest, and flip the session to completed/published.
+// Top A&R carousel), queue the A&R digest, and flip the session to completed/published.
 //
 // The status flip to 'completed' is what makes playerState's recap branch fire — which is
 // why it happens at 3PM and not at the noon close. Flipping three hours early would reveal
@@ -2672,12 +2593,12 @@ async function asyncPlayerState(participant, session, count) {
       closesLabel: etClockLabel(closes), resultsLabel: etClockLabel(results),
       closesWhen: etWhenLabel(closes, day), resultsWhen: etWhenLabel(results, day),
       // When the next set of records opens, relative to TODAY ("tomorrow" must mean tomorrow
-      // for the reader), absent once it has passed. The daily stream is retired (2026-10-15);
-      // the page points at the Wednesday show instead.
+      // for the reader), absent once it has passed. No stream or show to point at (retired
+      // 2026-10-15 / 10-23); the page carries the YouTube subscribe line.
       ...(await (async () => {
         const sc = await dailySchedule();
         const fut = (t) => (t && t > ts ? etWhenLabel(t, etDay(ts)) : null);
-        return { weeklyShow: WEEKLY_SHOW_LINE, subscribeLine: SUBSCRIBE_LINE, subscribeUrl: LIVE_SUBSCRIBE_URL, subscribeCta: SUBSCRIBE_CTA,
+        return { subscribeLine: SUBSCRIBE_LINE, subscribeUrl: LIVE_SUBSCRIBE_URL, subscribeCta: SUBSCRIBE_CTA,
           nextOpensWhen: day ? fut(dropWindowFor(etNextDay(day), sc).opensAt) : null };
       })()) },
     phase,
@@ -3853,7 +3774,6 @@ async function uploadPng(pathname, buf) {
 }
 
 // Recap email — a light, email-safe HTML wrapper around the four graphics (hosted URLs).
-const GIVEAWAY_PRIZE_LABEL = shareCards.PRIZE;
 function recapEmailText(d, sessionName, manage) {
   return `Your A&R Room session record — ${sessionName}\n\nYou finished #${d.rank} of ${d.total}. `
     + `Share your A&R Record, the Top 8 Records, and the Top 8 A&Rs as one Instagram carousel. Add `
@@ -3866,7 +3786,7 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
     ['Your A&R Record', cards.score],
     ['Top 8 Songs', cards.songs],
     ['Top 8 A&Rs', cards.ars],
-    [`${GIVEAWAY_PRIZE_LABEL} Monthly A&R Award`, cards.promo],
+    ['Join the A&R Team', cards.promo],
   ].filter(([, u]) => !!u);
   const block = imgs.map(([alt, u]) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="${escapeHtml(alt)}" width="320" style="width:320px;max-width:100%;border-radius:14px;display:block;margin:0 auto 14px;border:1px solid #2e2750"></a>`
@@ -3905,7 +3825,7 @@ function recapEmailHtml({ name, sessionName, rank, total, cards, manage }) {
 // hours before today's records close, so "rate today's records" is true at send time and the
 // reminder has real urgency. The recap email IS the acquisition email.
 
-// The day's own results link, the Wednesday show link, and the reminder that TODAY's
+// The day's own results link and the reminder that TODAY's
 // records close soon (the results mail lands 3 hours before the next close by construction).
 function digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours }) {
   const remind = closesLabel
@@ -4032,7 +3952,7 @@ function dailyMissedEmailHtml(arg) {
       <h1 style="font-size:22px;line-height:1.3;margin:8px 0 12px">${escapeHtml(c.lead)}</h1>
       ${c.remind ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.remind)}</p>` : ''}
       <a href="${arg.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:16px">Rate today's records</a>
-      ${weeklyShowBlockHtml(arg.streamUrl)}
+      ${subscribeBlockHtml('ar')}
       <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
       ${arg.manage ? notifyFooterHtml(arg.manage) : ''}
     </div>
@@ -4042,7 +3962,7 @@ function dailyMissedEmailText(arg) {
   const c = dailyMissedEmailContent(arg);
   const lines = ['A&R Daily', '', c.lead];
   if (c.remind) lines.push('', c.remind);
-  lines.push('', `Rate today's records: ${arg.playUrl}`, '', weeklyShowBlockText(arg.streamUrl));
+  lines.push('', `Rate today's records: ${arg.playUrl}`, '', subscribeBlockText());
   if (arg.manage) lines.push('', notifyFooterText(arg.manage));
   return lines.join('\n');
 }
@@ -4067,7 +3987,7 @@ function dailyMissedTwiceEmailHtml(arg) {
       <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.why)}</p>
       ${c.remind ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.remind)}</p>` : ''}
       <a href="${arg.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:16px">Rate today's records</a>
-      ${weeklyShowBlockHtml(arg.streamUrl)}
+      ${subscribeBlockHtml('ar')}
       <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
       ${arg.manage ? notifyFooterHtml(arg.manage) : ''}
     </div>
@@ -4077,19 +3997,11 @@ function dailyMissedTwiceEmailText(arg) {
   const c = dailyMissedTwiceEmailContent(arg);
   const lines = ['A&R Daily', '', c.lead, '', c.why];
   if (c.remind) lines.push('', c.remind);
-  lines.push('', `Rate today's records: ${arg.playUrl}`, '', weeklyShowBlockText(arg.streamUrl));
+  lines.push('', `Rate today's records: ${arg.playUrl}`, '', subscribeBlockText());
   if (arg.manage) lines.push('', notifyFooterText(arg.manage));
   return lines.join('\n');
 }
 const DAILY_MISSED_TWICE_SUBJECT = "You've missed the last two drops";
-// Every daily mail carries the Wednesday show (operator, 2026-10-17): "see who makes the
-// countdown for the week". One small block, under the CTA.
-function weeklyShowBlockHtml(url) {
-  return `<p style="font-size:13.5px;line-height:1.5;color:#a9a2c9;margin:16px 0 0">${escapeHtml(WEEKLY_SHOW_LINE)}${url ? ` <a href="${url}" style="color:#4bb749">${escapeHtml(WEEKLY_SHOW_CTA)}</a>` : ''}</p>`;
-}
-function weeklyShowBlockText(url) {
-  return WEEKLY_SHOW_LINE + (url ? ` ${WEEKLY_SHOW_CTA}: ${url}` : '');
-}
 
 // Queue the digest. ONE broadcast row per day, made idempotent by uniq_broadcast_kind_ref
 // (kind='digest_daily', ref_id=<session id>) — a re-run of the publisher finds the existing
@@ -4302,152 +4214,9 @@ function dailyOpenEmailText(arg, manage) {
   return lines.join('\n');
 }
 
-// ===== THE WEEKLY UPDATE (2026-10-06) =====
-// The cadence for everyone the daily notice no longer reaches (digest_weekly, default ON,
-// non-engaged by default, sunset after WEEKLY_SUNSET_SENDS unanswered — see NOTIFY_TOPICS).
-// ONE broadcast per week: kind 'digest_weekly', ref_id = the Monday of the week it reports,
-// guarded by uniq_broadcast_kind_ref. Queued by the lifecycle on WEEKLY_SEND_DOW at or after
-// WEEKLY_SEND_HOUR ET (Wednesday 1PM: the Sunday drop publishes at noon Wednesday, so the
-// week is complete), drained by the same tick. Content is names and ranks only — never a
-// score (scores are the Track Report's) — plus today's records, which is the point of the mail.
-// Thursday noon (operator, 2026-10-17): the mail announces the RESULTS of Wednesday's show —
-// the week's Top 8, the seats — to every subscribed A&R. It used to go Wednesday 1 PM, before
-// the show, to the non-engaged only.
-const WEEKLY_SEND_DOW = 4;    // Thursday, JS getDay() terms
-const WEEKLY_SEND_HOUR = 12;  // 12:00 PM ET
-async function weeklyUpdateDue(at = now()) {
-  const day = etDay(at);
-  if (etWeekday(day) !== WEEKLY_SEND_DOW || etHour(at) < WEEKLY_SEND_HOUR) return null;
-  const week = lastCompleteWeekStart(day);
-  if (!week) return null;
-  const existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
-  return existing ? null : week;
-}
-async function enqueueWeeklyUpdate(week) {
-  const a = notifyAudience('digest_weekly', 'email');
-  if (!a || !week) return { broadcastId: null, queued: 0 };
-  const win = weekWindow(week);
-  const subject = `The A&R Room — this week's Top 8 (${win ? win.startLabel : week})`;
-  let existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
-  let bcId = existing ? existing.id : id(9);
-  if (!existing) {
-    try {
-      await db.run(
-        `INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-        [bcId, subject, `Weekly update for the week of ${week}`, 'email', null, 'sending', now(), 'digest_weekly', week]);
-    } catch (e) { /* the unique index won — adopt the row */ }
-    existing = await db.get("SELECT id FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = ?", [week]);
-    if (!existing) return { broadcastId: null, queued: 0 };
-    bcId = existing.id;
-  }
-  await db.run(
-    `INSERT INTO notify_recipients (broadcast_id, uid, channel, dest)
-       SELECT ?, u.uid, 'email', u.email
-       ${a.sql}
-     ON CONFLICT (broadcast_id, uid, channel) DO NOTHING`,
-    [bcId, ...a.params]);
-  const q = (await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bcId])).c;
-  return { broadcastId: bcId, queued: Number(q) || 0 };
-}
-// Shared per-broadcast content: last week's top records and A&Rs (names and ranks, no
-// scores), the open day's count and close, and where to rate.
-async function weeklyUpdateContent(week, base) {
-  const rep = await weeklyReportData(week, { limit: 8 }).catch(() => null);
-  const win = weekWindow(week);
-  const open = await db.get(
-    "SELECT id, window_closes_at, drop_day FROM sessions WHERE mode = 'async' AND status = 'live' AND async_state = 'open' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') ORDER BY window_opens_at DESC LIMIT 1");
-  const openCount = open ? Number((await db.get(
-    "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [open.id])).c) || 0 : 0;
-  return {
-    weekLabel: win ? win.label : week,
-    records: ((rep && rep.songs) || []).map(r => ({ title: r.title, artist: r.artist || null })),
-    ars: ((rep && rep.ars) || []).map(a => ({ name: a.name, location: a.location || null })),
-    totals: rep && rep.totals ? { records: rep.totals.records, ars: rep.totals.ars, ratings: rep.totals.ratings } : null,
-    // The show's link (the panel's live-stream setting) doubles as the replay link.
-    showUrl: await dailyStreamUrl(),
-    openCount,
-    closesLabel: open && Number(open.window_closes_at) > now() ? etWhenLabel(Number(open.window_closes_at), open.drop_day) : null,
-    // The daily open, as a label off the schedule setting — never a hardcoded hour.
-    opensLabel: etClockLabel(dropWindowFor(etDay(), await dailySchedule()).opensAt),
-    playUrl: await openDropUrl(base),
-  };
-}
-// The Thursday mail announces what Wednesday's show announced: the seats are the #1s.
-const WEEKLY_RESULTS_LEAD = "Here are the results from Wednesday's show.";
-function weeklySeatLines(c) {
-  const out = [];
-  const r1 = c.records && c.records[0], a1 = c.ars && c.ars[0];
-  if (r1) out.push(`Top Track of the week: ${r1.title}${r1.artist ? ' — ' + r1.artist : ''}. Selected for the $1,000 Music Tournament.`);
-  if (a1) out.push(`Top A&R of the week: ${dispName(a1.name) || 'A&R'}${a1.location ? ' · ' + a1.location : ''}. Takes a seat in A&R Wars.`);
-  return out;
-}
-function weeklyUpdateEmailHtml(c, manage) {
-  const li = (rows, f) => rows.map((r, i) => `<li style="margin:0 0 6px">${i + 1}. ${f(r)}</li>`).join('');
-  const sec = (title, inner) => inner ? `<p style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;margin:22px 0 8px">${title}</p>${inner}` : '';
-  const recs = c.records.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.records, r => `<b>${escapeHtml(r.title)}</b>${r.artist ? ' — ' + escapeHtml(r.artist) : ''}`)}</ol>` : '';
-  const ars = c.ars.length ? `<ol style="list-style:none;padding:0;margin:0;font-size:15px;line-height:1.5;color:#f3f0fb">${li(c.ars, a => `<b>${escapeHtml(dispName(a.name) || 'A&R')}</b>${a.location ? ' · ' + escapeHtml(a.location) : ''}`)}</ol>` : '';
-  const totals = c.totals && c.totals.records ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0">${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.</p>` : '';
-  const today = c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + escapeHtml(c.closesLabel) + '.' : ''}` : `New records open for rating every day at ${escapeHtml(c.opensLabel || '6:00 PM ET')}.`;
-  const seats = weeklySeatLines(c);
-  return `<div style="background:#0d0b16;padding:26px 16px;font-family:'DM Sans',system-ui,sans-serif;color:#f3f0fb">
-    <div style="max-width:420px;margin:0 auto">
-      <div style="font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a9a2c9">The A&amp;R Room · This week's results</div>
-      <h1 style="font-size:22px;margin:8px 0 10px">The week of ${escapeHtml(c.weekLabel)}</h1>
-      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 8px">${WEEKLY_RESULTS_LEAD}${c.showUrl ? ` <a href="${c.showUrl}" style="color:#4bb749">Watch the replay</a>.` : ''}</p>
-      ${totals}
-      ${seats.length ? `<p style="font-size:15px;line-height:1.5;color:#f3f0fb;margin:12px 0 0">${seats.map(escapeHtml).join('<br>')}</p>` : ''}
-      ${sec('Top 8 records', recs)}
-      ${sec('Top 8 A&amp;Rs', ars)}
-      <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:22px 0 0">${today}</p>
-      <a href="${c.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:14px;text-align:center">Rate today's records</a>
-      ${subscribeBlockHtml('ar')}
-      <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
-      ${manage ? notifyFooterHtml(manage) : ''}
-    </div>
-  </div>`;
-}
-function weeklyUpdateEmailText(c, manage) {
-  const lines = [`The A&R Room — this week's results`, `The week of ${c.weekLabel}`, '', WEEKLY_RESULTS_LEAD + (c.showUrl ? ` Watch the replay: ${c.showUrl}` : ''), ''];
-  if (c.totals && c.totals.records) lines.push(`${c.totals.records} records were rated by ${c.totals.ars} A&Rs last week.`, '');
-  const seatLines = weeklySeatLines(c);
-  if (seatLines.length) lines.push(...seatLines, '');
-  if (c.records.length) { lines.push('Top 8 records:'); c.records.forEach((r, i) => lines.push(`${i + 1}. ${r.title}${r.artist ? ' — ' + r.artist : ''}`)); lines.push(''); }
-  if (c.ars.length) { lines.push('Top 8 A&Rs:'); c.ars.forEach((a, i) => lines.push(`${i + 1}. ${dispName(a.name) || 'A&R'}${a.location ? ' · ' + a.location : ''}`)); lines.push(''); }
-  lines.push(c.openCount ? `${c.openCount} ${c.openCount === 1 ? 'record is' : 'records are'} open for rating today.${c.closesLabel ? ' Rating closes ' + c.closesLabel + '.' : ''}` : `New records open for rating every day at ${c.opensLabel || '6:00 PM ET'}.`);
-  lines.push(`Rate today's records: ${c.playUrl}`, '', subscribeBlockText());
-  if (manage) lines.push('', notifyFooterText(manage));
-  return lines.join('\n');
-}
-async function drainWeeklyUpdate({ broadcastId, limit = 40, deadline = null, base = null } = {}) {
-  const bc = await db.get("SELECT * FROM notify_broadcasts WHERE id = ? AND kind = 'digest_weekly'", [broadcastId]);
-  if (!bc) return { sent: 0, failed: 0, remaining: 0 };
-  const root = base || publicBase();
-  const content = await weeklyUpdateContent(bc.ref_id, root);
-  const rows = await db.all(
-    "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [bc.id, limit]);
-  let sent = 0, failed = 0;
-  for (const r of rows) {
-    if (deadline && Date.now() > deadline) break;
-    const claim = await db.run(
-      "UPDATE notify_recipients SET status = 'sending' WHERE broadcast_id = ? AND uid = ? AND channel = ? AND status = 'pending'",
-      [bc.id, r.uid, r.channel]);
-    if (!claim.changes) continue;
-    try {
-      const manage = notifyManageUrl(root, r.uid);
-      const out = await sendEmail(r.dest, bc.subject || 'A&R Daily — weekly update', weeklyUpdateEmailHtml(content, manage), weeklyUpdateEmailText(content, manage),
-        notifySendOpts(root, r.uid, 'digest_weekly'));
-      await noteEmailOutcome(r.dest, out);
-      if (out.ok) { await db.run("UPDATE notify_recipients SET status = 'sent', sent_at = ?, error = NULL WHERE broadcast_id = ? AND uid = ? AND channel = ?", [now(), bc.id, r.uid, r.channel]); sent++; }
-      else { await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(out.error || 'send failed').slice(0, 200), bc.id, r.uid, r.channel]); failed++; }
-    } catch (e) {
-      await db.run("UPDATE notify_recipients SET status = 'failed', error = ? WHERE broadcast_id = ? AND uid = ? AND channel = ?", [(e.message || 'error').slice(0, 200), bc.id, r.uid, r.channel]); failed++;
-    }
-  }
-  const remaining = Number((await db.get("SELECT COUNT(*) AS c FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending'", [bc.id])).c) || 0;
-  if (!remaining) await db.run("UPDATE notify_broadcasts SET status = 'done' WHERE id = ?", [bc.id]);
-  return { sent, failed, remaining };
-}
+// ===== THE WEEKLY UPDATE — RETIRED 2026-10-23 =====
+// The Thursday "results from Wednesday's show" mail is gone with the show (operator). Old
+// 'digest_weekly' broadcasts and prefs rows stay in the tables as history; nothing reads them.
 
 async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = null } = {}) {
   const bc = await db.get("SELECT * FROM notify_broadcasts WHERE kind = 'daily_open' AND ref_id = ?", [sessionId]);
@@ -5653,8 +5422,8 @@ async function sendArtistReportEmail(round, session, dest) {
   const common = {
     title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, verdict: d.band.verdict, decision, votes: d.votes,
     what: d.what, dateLabel: d.dateLabel,
-    // A daily record's week is announced on The A&R Room (Wednesday): the subscribe block
-    // replaces the watch link. A live session keeps its own replay link.
+    // A daily record has no replay: the YouTube subscribe block replaces the watch link.
+    // A live session keeps its own replay link.
     subscribe: isAsync(session),
     watchUrl: isAsync(session) ? null : (session.watch_url || null),
     watchLabel: null,
@@ -5757,12 +5526,12 @@ async function enqueueArtistHeadsups(sessionId) {
   return { queued };
 }
 
-// The heads-up (2026-10-15): the record was rated, the results come by email on the report
-// day, and the week's Top 8 are announced on the Wednesday show. No daily stream to tune into.
+// The heads-up (2026-10-15): the record was rated and the results come by email on the report
+// day. No show to announce (the Wednesday show was retired 2026-10-23); the YouTube line stays.
 // GSM-7, one segment: the report day is the only variable text besides the title.
 function artistHeadsupSmsBody(title, reportAt) {
   const day = reportAt ? etDayLabel(etDay(Number(reportAt))) : null;
-  const frame = (t) => `"${t}" was rated by the A&R Team. Report by email${day ? ' ' + day : ''}. Top 8 Wed 7PM ET - subscribe + hit the bell: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`;
+  const frame = (t) => `"${t}" was rated by the A&R Team. Report by email${day ? ' ' + day : ''}. Subscribe + hit the bell: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`;
   return frame(fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame('').length));
 }
 function artistHeadsupContent({ title, artist, reportAt, streamUrl }) {
@@ -5770,7 +5539,7 @@ function artistHeadsupContent({ title, artist, reportAt, streamUrl }) {
     subject: `“${title}” was rated by the A&R Team`,
     lead: 'Your song was rated.',
     body: `“${title}”${artist ? ' by ' + artist : ''} was rated by the A&R Team.${reportAt ? ` Your full Track Report arrives by email on ${etDayLabel(etDay(Number(reportAt)))}.` : ''}`,
-    tune: WEEKLY_SHOW_LINE,
+    tune: SUBSCRIBE_LINE,
     report: '',
     streamUrl,
   };
@@ -10677,16 +10446,6 @@ async function handleApi(req, res, url) {
         if (!sl) return bad(res, `This carousel has ${rd.total} slides`, 404);
         return sendPng(await shareCards.renderPng(rd.card, sl), 'private, no-store');
       }
-      // A week's winner post, rendered live (admin): ?post=track|ar&week=YYYY-MM-DD (any day in
-      // the week; the Monday is derived). The daily posts were retired 2026-10-03.
-      if (kind === 'winner') {
-        if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
-        const post = url.searchParams.get('post') === 'ar' ? 'ar' : 'track';
-        if (!url.searchParams.get('week')) return bad(res, 'Winner posts are weekly: pass ?week=YYYY-MM-DD');
-        const wd = await winnerWeekData(url.searchParams.get('week'), post);
-        if (!wd) return bad(res, 'No published drops in that week', 404);
-        return sendPng(await shareCards.renderPng('winnerPost', wd), 'private, no-store');
-      }
       // Chart carousel (admin): slide 0 is the cover, 1..N the list pages, N+1 the closing
       // slide. Same query params as /api/admin/charts, plus &per= (rows per page) and &slide=.
       // Rank only for records unless &scores=1 (scores are private to the Track Report); the A&R chart keeps
@@ -11421,9 +11180,7 @@ async function handleApi(req, res, url) {
         asana: !!(await dailyAsanaProject()),
         // The automatic tasks: { song: { url, next, total, done, error }, ar: {...} }, or null when
         // this day was never queued (rendered before the step shipped).
-        asanaTasks: (() => { try { return job && job.asana_tasks ? JSON.parse(job.asana_tasks) : null; } catch (e) { return null; } })(),
-        // The weekly winner posts: the console's week picker defaults to the last complete week.
-        winners: { weekDefault: lastCompletedWeekStart() } },
+        asanaTasks: (() => { try { return job && job.asana_tasks ? JSON.parse(job.asana_tasks) : null; } catch (e) { return null; } })() },
       queues: { digest, artistEmail: chan('email'), artistSms: chan('sms') },
       artistHold: { until: holdUntil, held: !!(holdUntil && now() < holdUntil),
         minutes: artistDelayMin },
@@ -11434,7 +11191,7 @@ async function handleApi(req, res, url) {
     });
   }
 
-  // ===== THE WEEKLY REPORT — what the Wednesday show reads on air =====
+  // ===== THE WEEKLY REPORT — last week's ranking (the Wednesday show was retired 2026-10-23) =====
   // One window (Mon → Sun), two ranked lists, one call. Platform-admin only for the same
   // reason the daily status is: it spans every host's drops and carries the artists'
   // Instagram handles and what they paid.
@@ -11530,22 +11287,6 @@ async function handleApi(req, res, url) {
     const rd = await resultsCarouselData(session, url.searchParams.get('set') === 'ar' ? 'ar' : 'song', { photo: false });
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
     return res.end(rd ? resultsCaption(rd) : '');
-  }
-
-  // The week's winners (039): who they are and their captions, for the console. ?week=YYYY-MM-DD
-  // (any day in the week); defaults to the last completed week. The cards render live off
-  // /api/card/winner?week=&post=. Nothing is stored for a week.
-  if (p === '/api/admin/weekly/winners' && method === 'GET') {
-    if (!(await platformAdmin(req))) return bad(res, 'Admin only', 403);
-    const start = weekStartOf(url.searchParams.get('week') || lastCompletedWeekStart());
-    if (!start) return bad(res, 'Bad week');
-    const out = { week: { start, end: etNextDay(start, 6), label: dayLabel(start) + ' – ' + dayLabel(etNextDay(start, 6)) } };
-    for (const post of ['track', 'ar']) {
-      const wd = await winnerWeekData(start, post, { photo: false });
-      out[post] = wd ? { title: wd.title, by: wd.by, handle: wd.handle, line: wd.line, drops: wd.week.drops,
-        settled: wd.week.settled, pending: wd.week.pending, caption: winnerCaption(wd) } : null;
-    }
-    return send(res, 200, out);
   }
 
   // Run the publish + drain once by hand, for a cron that never fired. Same implementation
@@ -12439,7 +12180,6 @@ module.exports._weekStartFor = weekStartFor;
 module.exports._dailyDigestEmailText = dailyDigestEmailText;
 module.exports._DAILY_STREAM_NAME = DAILY_STREAM_NAME;
 module.exports._sessionPhase = sessionPhase;
-module.exports._WEEKLY_SHOW_NAME = WEEKLY_SHOW_NAME;
 module.exports._bustDailySchedule = () => { _dailySched.at = 0; };
 module.exports._dropAfterClose = dropAfterClose;
 module.exports._dropStreamAt = dropStreamAt;
@@ -12447,7 +12187,6 @@ module.exports._artistHeadsupSmsBody = artistHeadsupSmsBody;
 module.exports._artistHeadsupContent = artistHeadsupContent;
 module.exports._artistHeadsupText = artistHeadsupText;
 module.exports._artistHeadsupHtml = artistHeadsupHtml;
-module.exports._WEEKLY_SHOW_LINE = WEEKLY_SHOW_LINE;
 module.exports._SUBSCRIBE = { url: LIVE_SUBSCRIBE_URL, line: SUBSCRIBE_LINE, cta: SUBSCRIBE_CTA };
 module.exports._artistEmailHtml = artistEmailHtml;
 module.exports._artistEmailText = artistEmailText;
@@ -12456,11 +12195,6 @@ module.exports._enqueueDailyOpen = enqueueDailyOpen;
 module.exports._NOTIFY_TOPICS = NOTIFY_TOPICS;
 module.exports._notifyAudience = notifyAudience;
 module.exports._announcementAudience = announcementAudience;
-module.exports._enqueueWeeklyUpdate = enqueueWeeklyUpdate;
-module.exports._drainWeeklyUpdate = drainWeeklyUpdate;
-module.exports._weeklyUpdateDue = weeklyUpdateDue;
-module.exports._weeklyUpdateEmailHtml = weeklyUpdateEmailHtml;
-module.exports._weeklyUpdateEmailText = weeklyUpdateEmailText;
 module.exports._noteEmailOutcome = noteEmailOutcome;
 module.exports._notifyUnsubscribeUrl = notifyUnsubscribeUrl;
 module.exports._ENGAGED = { ENGAGED_DAYS, NEW_ACCOUNT_DAYS, WEEKLY_SUNSET_SENDS };
@@ -12513,8 +12247,6 @@ module.exports._dailyAsanaNotes = dailyAsanaNotes;
 module.exports._advanceDailyAsanaTasks = advanceDailyAsanaTasks;
 module.exports._dailyAsanaTaskName = dailyAsanaTaskName;
 module.exports._resultsCaption = resultsCaption;
-module.exports._winnerWeekData = winnerWeekData;
-module.exports._winnerCaption = winnerCaption;
 module.exports._weekStartOf = weekStartOf;
 module.exports._resultsPages = resultsPages;
 module.exports._arResultsData = arResultsData;

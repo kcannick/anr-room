@@ -544,11 +544,10 @@
   </div>
 </div>
 
-<!-- ===== THE WEEKLY REPORT — the screen the Wednesday show is read off =====
-     Same window every week: drops from Monday through Sunday. Two ranked lists, because
-     both #1s pay out — the top record's artist is seeded into the Artist Tournament and the
-     top A&R takes a seat in A&R Wars. The tables are the daily ones (same .dltable, same
-     support marks) so the host reads the same shapes on air seven days a week. -->
+<!-- ===== THE WEEKLY REPORT — last week's ranking =====
+     Same window every week: drops from Monday through Sunday. Two ranked lists (records and
+     A&Rs). The Wednesday show and its prizes were retired 2026-10-23. The tables are the daily
+     ones (same .dltable, same support marks). -->
 <div id="weekly" class="grid hide">
   <div class="stack" style="grid-column:1/-1;max-width:980px;margin:30px auto 0;gap:14px">
 
@@ -625,7 +624,7 @@
           <b style="color:var(--gold)">#1 takes a seat in A&amp;R Wars.</b>
           Only points earned on this week's drops — rating points plus the completion bonus those
           drops paid. Referral bonuses are series points with no week attached and are left out.
-          Qualified A&amp;Rs only: complete profile, not blocked, the same rule the $500 board uses.
+          Qualified A&amp;Rs only: complete profile, not blocked, the same rule the monthly rankings use.
         </p>
         <div id="wkArs"></div>
         <div class="row" style="gap:8px;margin-top:12px">
@@ -962,10 +961,7 @@
           </div>
         </div>
         <div><label id="rTitleLabel">Song title *</label><input id="rTitle" placeholder="Song name"></div>
-        <div class="row">
-          <div><label id="rArtistLabel">Artist</label><input id="rArtist" placeholder="optional"></div>
-          <div><label>Giveaway this round</label><input id="rGive" placeholder="optional prize"></div>
-        </div>
+        <div><label id="rArtistLabel">Artist</label><input id="rArtist" placeholder="optional"></div>
         <div id="songBRow" class="hide" style="border-top:1px solid var(--line);padding-top:12px;margin-top:2px">
           <!-- Sidebet (033): when a service pack is linked to this room, picking the two
                songs here stamps their pack_song ids on the round — which is what makes the
@@ -1411,7 +1407,7 @@
           <div><label>Results publish at</label><input id="dsResults" type="time" step="300"><select id="dsResultsDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
         </div>
         <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. At the render time (the close, by default) both Instagram carousels are made and the Asana post tasks are created; nothing is revealed. Results publish when the countdown posts (6:00 AM by default): scores appear on the site and makinitmag is told. The emails (the A&amp;R results mail and the Track Reports) follow after the hold below.</p>
-        <label style="margin-top:10px">The A&amp;R Room live stream link <span class="muted">(Wednesday 7 PM ET; sent to artists and A&amp;Rs; a channel's /live link works)</span></label>
+        <label style="margin-top:10px">YouTube live link <span class="muted">(sent to artists and A&amp;Rs; a channel's /live link works)</span></label>
         <input id="dsStreamUrl" placeholder="https://www.youtube.com/@yourchannel/live">
         <label style="margin-top:10px">Completion bonus <span class="muted">(for rating every record in the day)</span></label>
         <table class="data-table" style="margin-top:6px">
@@ -1476,7 +1472,7 @@
       <h2>Message all A&amp;Rs</h2>
       <p class="muted" style="font-size:12px;margin:0 0 10px">One announcement to the whole platform. Email goes to every active account; SMS only to A&amp;Rs who opted in (Twilio handles STOP replies).</p>
       <label>Email subject</label>
-      <input id="nbSubject" placeholder="e.g. The A&R Room is live Wednesday at 8PM ET" maxlength="150">
+      <input id="nbSubject" placeholder="e.g. The A&R Room is live now" maxlength="150">
       <label style="margin-top:10px">Message</label>
       <textarea id="nbMessage" maxlength="6000" style="min-height:160px" placeholder="Keep SMS-friendly if texting — the same text goes to both channels."></textarea>
       <p class="muted" id="nbLen" style="font-size:11px;margin:4px 0 0;text-align:right"></p>
@@ -1868,11 +1864,10 @@
   <div class="card" style="max-width:470px;width:100%">
     <div style="font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700">You're a host</div>
     <h2 style="margin:6px 0 4px">Welcome — run your own rooms</h2>
-    <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim);margin:0 0 14px">The A&amp;R Room is your free engagement tool. Three steps:</p>
+    <p class="muted" style="font-size:13px;line-height:1.6;color:var(--ink-dim);margin:0 0 14px">The A&amp;R Room is your free engagement tool. Two steps:</p>
     <ol class="host-intro">
       <li><b>Create a room.</b> Use <b>New room</b> to spin up a room for your stream — pick 0–9 rating or Versus (A/B).</li>
       <li><b>Share your links.</b> Give viewers the <b>Entry</b> link to participate and add the <b>Overlay</b> to your broadcast for live results.</li>
-      <li><b>Present the $500 as the monthly A&amp;R Award.</b> Top A&amp;Rs in the monthly rankings qualify for <b>A&amp;R Wars</b>, where the champion earns it.</li>
     </ol>
     <p class="muted" style="font-size:12px;line-height:1.5;color:var(--ink-faint);margin:12px 0 14px">You manage only your own rooms. Viewer contact info stays with Makin' It.</p>
     <button class="btn" id="hostIntroGo" style="width:100%">Got it — let's go</button>
@@ -1946,10 +1941,7 @@
     <h2 id="editTitle">Edit song</h2>
     <div class="stack">
       <div><label id="eTitleLabel">Song title *</label><input id="eTitle"></div>
-      <div class="row">
-        <div><label id="eArtistLabel">Artist</label><input id="eArtist"></div>
-        <div><label>Giveaway</label><input id="eGive"></div>
-      </div>
+      <div><label id="eArtistLabel">Artist</label><input id="eArtist"></div>
       <div id="eSongBRow" class="hide" style="border-top:1px solid var(--line);padding-top:12px">
         <div><label>Song B title *</label><input id="eBTitle"></div>
         <div style="margin-top:10px"><label>Song B artist</label><input id="eBArtist"></div>
@@ -2655,15 +2647,7 @@ function renderDaily(){
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost sm" onclick="dlCopyResultsCaption('ar')">Copy Top A&R caption</button></div>
     ${dlAsanaLine('ar', c, tallied)}
     <p class="muted" id="dlAsanaNote" style="font-size:11.5px;line-height:1.5;margin:8px 0 0"></p>`;
-  // The weekly winner posts (039; the daily pair was retired 2026-10-03 for the Daily Countdown
-  // carousel). Rendered live for the week chosen, off /api/card/winner?week= (admin-only).
-  const wn = c.winners || {};
-  cardHtml += `<h4 style="margin:18px 0 8px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Winners of the week</h4>
-    <p class="muted" style="font-size:11.5px;line-height:1.5;margin:0 0 8px">Monday to Sunday. The same two #1s the weekly show announces: the weekly report's Top Track (the artist, selected for the $1,000 Music Tournament) and Top A&R (selected for A&R Wars). Post each as a collab with the winner once the week has settled.</p>
-    <div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><label class="muted" style="font-size:12px">Week of <input type="date" id="dlWeekStart" value="${esc(wn.weekDefault || '')}" onchange="dlWeekRedraw()" style="margin-left:6px"></label></div>
-    <div id="dlWeekBody"><div class="empty">Loading…</div></div>`;
   $('#dlCardBody').innerHTML = cardHtml;
-  dlWeekRedraw();
   renderBuild();
 }
 // One results slide, rendered live with the admin credential (an <img> cannot send it), shown
@@ -2682,51 +2666,6 @@ function dlResultsUrl(set, slide){
         img.src = dlResultsCache[key]; img.closest('a').href = dlResultsCache[key]; }); })
     .catch(() => { delete dlResultsCache[key]; });
   return dlResultsCache[key];
-}
-// One winner post, rendered live with the admin credential (an <img> cannot send it).
-// key: day posts by drop id, week posts by the Monday.
-const dlWinnerCache = {};
-function dlWinnerUrl(post, week){
-  const sid = DL && DL.drop && DL.drop.id; if(!sid && !week) return '';
-  const key = 'winner:' + post + ':' + (week ? 'w' + week : sid);
-  if(dlWinnerCache[key]) return dlWinnerCache[key];
-  dlWinnerCache[key] = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-  const label = (post === 'ar' ? 'Top A&R' : 'Top Track') + ' of the ' + (week ? 'Week' : 'Day');
-  const q = week ? 'week=' + encodeURIComponent(week) : 's=' + encodeURIComponent(sid);
-  fetch('/api/card/winner?' + q + '&post=' + post, { headers: chAuthHeaders() })
-    .then(r => r.ok ? r.blob() : Promise.reject(new Error('render failed')))
-    .then(b => { dlWinnerCache[key] = URL.createObjectURL(b);
-      document.querySelectorAll('#dlCardBody img[alt="' + label + '"]').forEach(img => {
-        img.src = dlWinnerCache[key]; img.closest('a').href = dlWinnerCache[key]; }); })
-    .catch(() => { delete dlWinnerCache[key]; });
-  return dlWinnerCache[key];
-}
-// The week's winners: who they are (from /api/admin/weekly/winners) and the two cards, live.
-let dlWeekData = null;
-async function dlWeekRedraw(){
-  const box = $('#dlWeekBody'); if(!box) return;
-  const week = ($('#dlWeekStart') && $('#dlWeekStart').value) || '';
-  let d = null;
-  try{ d = await (await fetch('/api/admin/weekly/winners' + (week ? '?week=' + encodeURIComponent(week) : ''), { headers: chAuthHeaders() })).json(); }
-  catch(e){}
-  dlWeekData = d;
-  if(!d || !d.week){ box.innerHTML = '<div class="empty">Could not load the week.</div>'; return; }
-  const fig = (url, name, label) => `<figure style="flex:1;margin:0;min-width:0"><a href="${esc(url)}" target="_blank" rel="noopener" download="${esc(name)}"><img src="${esc(url)}" alt="${esc(label)}" style="width:100%;border-radius:12px;border:1px solid var(--line);display:block"></a><figcaption class="muted" style="font-size:11px;margin-top:4px">${esc(label)}</figcaption></figure>`;
-  const part = (post, label) => d[post]
-    ? fig(dlWinnerUrl(post, d.week.start), 'winner-' + post + '-week-' + d.week.start + '.png', label)
-    : '<div class="empty" style="flex:1">No published drops that week.</div>';
-  const unsettled = (d.track && d.track.settled === false) || (d.ar && d.ar.settled === false);
-  const pend = (d.track && d.track.pending) || (d.ar && d.ar.pending) || [];
-  box.innerHTML = `<p class="muted" style="font-size:11.5px;margin:0 0 8px">${esc(d.week.label)}${d.track ? ' · ' + d.track.drops + ' drop' + (d.track.drops === 1 ? '' : 's') : ''}</p>` +
-    (unsettled ? `<p style="font-size:11.5px;line-height:1.5;margin:0 0 8px;color:var(--warn,#e0b64b)">This week has not settled: ${esc(pend.join(', '))} not published yet. The winners can still change.</p>` : '') + `
-    <div class="row" style="gap:10px;align-items:flex-start">${part('track', 'Top Track of the Week')}${part('ar', 'Top A&R of the Week')}</div>
-    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="dlCopyWeekCaption('track')" ${d.track ? '' : 'disabled'}>Copy Top Track caption</button><button class="btn ghost sm" onclick="dlCopyWeekCaption('ar')" ${d.ar ? '' : 'disabled'}>Copy Top A&R caption</button></div>`;
-}
-async function dlCopyWeekCaption(post){
-  const text = dlWeekData && dlWeekData[post] && dlWeekData[post].caption;
-  if(!text){ alert('Nothing to copy yet.'); return; }
-  try{ await navigator.clipboard.writeText(text); alert('Caption copied.'); }
-  catch(e){ alert('Could not copy the caption.'); }
 }
 // The Asana task for one post. The cron makes it on its own once the day's slides render
 // (asanaTasks on the status); this line says where that stands. The manual button is only a
@@ -2876,7 +2815,7 @@ function renderDlRecords(){
     ? `<table class="dltable"><tr><th class="num">${bySc ? 'Rank' : '#'}</th><th style="width:32%">Record</th><th>Support</th><th>Play link</th><th class="num">Score</th><th class="num">Votes</th><th class="num">Flags</th><th class="num"></th></tr>${rows}</table>`
     : '<div class="empty">No records on this day.</div>';
 }
-/* ===== THE WEEKLY REPORT — the Wednesday show's read sheet =====
+/* ===== THE WEEKLY REPORT — last week's ranking (the Wednesday show was retired 2026-10-23) =====
    One window (Mon → Sun) and two ranked lists, off /api/admin/weekly/status. The tables are
    deliberately the daily ones — same .dltable, same support marks — because the host reads
    the same shapes on air every day and a different layout on show night is a new thing to
@@ -2952,7 +2891,7 @@ function renderWeekly(){
     + stat('Support', t.support_cents ? dlMoney(t.support_cents) : '—',
         t.support_cents ? 'var(--gold)' : null);
   $('#wkNote').textContent = 'Monday through Sunday, by the day each record dropped. '
-    + "Sunday's drop publishes at noon on Wednesday, before The A&R Room - Weekly Live Music Review at 7:00 PM ET.";
+    + "Sunday's drop publishes at noon on Wednesday.";
 
   if(w.pending && w.pending.length){
     $('#wkPending').classList.remove('hide');
@@ -5015,14 +4954,13 @@ async function loadUsers(){
         `<button class="btn good sm" onclick="setRole('${u.id}','${u.role==='host'?'player':'host'}')">${u.role==='host'?'Remove host':'Make host'}</button>`+
         `<button class="btn ${u.blocked?'ghost':'warn'} sm" onclick="toggleBlock('${u.id}',${u.blocked?0:1})">${u.blocked?'Unblock':'Block'}</button>`+
         `<button class="btn danger sm" onclick="askDeleteUser('${u.id}','${esc(u.name||u.email).replace(/'/g,"\\'")}')">Delete</button>`);
-      // Per-host feature toggles (only for hosts). None granted by default. The giveaway
-      // chip (distinct accent) controls whether this host's sessions count toward $500.
+      // Per-host feature toggles (only for hosts). None granted by default. (The $500 giveaway
+      // chip was removed 2026-10-23: no prize is advertised.)
       const permRow=u.role==='host'&&u.perms
         ? '<div class="permrow">'+[['broadcast','Broadcast'],['sms','SMS'],['ads','Ads'],['export','Export']].map(([k,lbl])=>{
             const on=!!u.perms[k];
             return `<button class="permchip${on?' on':''}" onclick="togglePerm('${u.id}','${k}',${on?0:1})">${lbl}</button>`;
           }).join('')
-          +`<button class="permchip give${u.giveaway?' on':''}" title="Count this host's series-tagged rooms toward the monthly $500" onclick="toggleGiveaway('${u.id}',${u.giveaway?0:1})">💵 $500</button>`
           +'</div>'
         : '';
       return `<div class="urow${u.blocked?' blocked':''}">${av}<div class="umeta"><div class="uname"><a href="/u/${esc(u.id)}" target="_blank" rel="noopener" title="Open public profile" style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--ink-faint)">${esc(u.name||'(no name)')}</a>${badges}</div><div class="usub">${esc(sub)}</div>${permRow}</div><span class="lpts" style="color:var(--ink-dim);margin-right:2px">${(Number(u.points)||0).toLocaleString()}</span><div class="uactions">${actions}</div></div>`;
@@ -5032,7 +4970,6 @@ async function loadUsers(){
 window.toggleBlock=async(uid,blocked)=>{try{await api('/api/admin/users/block',{uid,blocked:!!blocked});await loadUsers();}catch(e){alert(e.message);}};
 window.setRole=async(uid,role)=>{try{await api('/api/admin/users/role',{uid,role});await loadUsers();}catch(e){alert(e.message);}};
 window.togglePerm=async(uid,key,on)=>{try{await api('/api/admin/users/perms',{uid,perms:{[key]:!!on}});await loadUsers();}catch(e){alert(e.message);}};
-window.toggleGiveaway=async(uid,on)=>{try{await api('/api/admin/users/giveaway',{uid,on:!!on});await loadUsers();}catch(e){alert(e.message);}};
 ['uSearch','uLocation'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('input',()=>{clearTimeout(usersFilterTimer);usersFilterTimer=setTimeout(loadUsers,320);}));
 ['uStatus','uSkill','uSkillMode','uSort'].forEach(idr=>$('#'+idr)&&$('#'+idr).addEventListener('change',loadUsers));
 // delete-user modal (type-name confirm)
@@ -5909,7 +5846,7 @@ $('#btnAddRound').onclick=async()=>{
   const isBin=roundType==='binary';
   const song_title=$('#rTitle').value.trim();
   if(!song_title)return $('#addErr').textContent=(isBin?'Song A title is required':'Song title is required');
-  const payload={sessionId:SID,poll_type:roundType,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),giveaway:$('#rGive').value.trim(),
+  const payload={sessionId:SID,poll_type:roundType,song_title,song_artist:$('#rArtist').value.trim(),song_note:$('#rNote').value.trim(),
     artist_email:$('#rAEmail').value.trim(),artist_phone:$('#rAPhone').value.trim()};
   // An auto-filled form is already a queued round (the push stages it server-side so the
   // Stream Deck can open it). Send its id so Add updates that record instead of putting a
@@ -5926,7 +5863,7 @@ $('#btnAddRound').onclick=async()=>{
   }
   try{
     await api('/api/admin/round',payload);
-    $('#rTitle').value='';$('#rArtist').value='';$('#rNote').value='';$('#rGive').value='';
+    $('#rTitle').value='';$('#rArtist').value='';$('#rNote').value='';
     $('#rAEmail').value='';$('#rAPhone').value='';
     if($('#rBTitle')){$('#rBTitle').value='';$('#rBArtist').value='';}
     if($('#rPackA')){$('#rPackA').value='';$('#rPackB').value='';}
@@ -6582,7 +6519,6 @@ function roundControls(st){
       <div><div class="muted" style="font-size:12px">Round ${r.idx}</div>
       <div style="font-size:18px;font-weight:600">${r.option_b_title?esc(r.song_title)+' <span style="color:var(--cool)">vs</span> '+esc(r.option_b_title):esc(r.song_title)}</div>
       <div class="muted" style="font-size:13px">${r.option_b_title?(esc(r.song_artist||'')+(r.option_b_artist?' / '+esc(r.option_b_artist):'')):esc(r.song_artist||'')}</div></div>${statusPill}</div>
-      ${r.giveaway?`<div style="color:var(--good);font-size:13px;margin-top:8px">🎁 ${esc(r.giveaway)}</div>`:''}
       ${timer}<div class="stack" style="margin-top:12px">${actions}</div>`;
 }
 
@@ -6603,7 +6539,7 @@ function queueBox(st){
     q.map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;${i===0?'border-color:var(--signal)':''}">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${typeChip(r.poll_type)} ${r.option_b_title?esc(r.song_title)+' vs '+esc(r.option_b_title):esc(r.song_title)}</div>
-          <div class="muted" style="font-size:12px">${esc(r.song_artist||'')}${r.giveaway?' · 🎁 '+esc(r.giveaway):''}</div>
+          <div class="muted" style="font-size:12px">${esc(r.song_artist||'')}</div>
         </div>
         <button class="btn ghost sm" title="Edit" onclick="editRound('${r.id}')">✎</button>
         <button class="btn ghost sm" title="Move up" ${i===0?'disabled':''} onclick="moveRound('${r.id}','up')">▲</button>
@@ -6958,7 +6894,7 @@ window.editRound=(rid)=>{
   $('#eSongBRow').classList.toggle('hide', !isBin);
   $('#eTitle').value=r.song_title||'';$('#eArtist').value=r.song_artist||'';
   if(isBin){$('#eBTitle').value=r.option_b_title||'';$('#eBArtist').value=r.option_b_artist||'';}
-  $('#eGive').value=r.giveaway||'';$('#eNote').value=r.song_note||'';$('#eErr').textContent='';
+  $('#eNote').value=r.song_note||'';$('#eErr').textContent='';
   $('#editModal').style.display='flex';
 };
 $('#eCancel').onclick=()=>{$('#editModal').style.display='none';editingId=null;};
@@ -6967,7 +6903,7 @@ $('#eSave').onclick=async()=>{
   $('#eErr').textContent='';
   const title=$('#eTitle').value.trim();
   if(!title)return $('#eErr').textContent=(editingType==='binary'?'Song A title is required':'Song title is required');
-  const payload={sessionId:SID,roundId:editingId,song_title:title,song_artist:$('#eArtist').value.trim(),song_note:$('#eNote').value.trim(),giveaway:$('#eGive').value.trim()};
+  const payload={sessionId:SID,roundId:editingId,song_title:title,song_artist:$('#eArtist').value.trim(),song_note:$('#eNote').value.trim()};
   if(editingType==='binary'){
     const b=$('#eBTitle').value.trim();
     if(!b)return $('#eErr').textContent='Song B title is required';

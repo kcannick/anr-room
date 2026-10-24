@@ -2140,12 +2140,13 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the heads-up says the record was rated and when the report comes — no daily stream (2026-10-15)',
     /was rated by the A&R Team/.test(huc.subject) && /Track Report arrives by email on/.test(huc.body)
       && !/Countdown|Livestream|livestream|Tune in/.test(huc.subject + huc.body + huc.tune), JSON.stringify(huc));
-  ok('and points at the Wednesday show', huc.tune === srv._WEEKLY_SHOW_LINE && /Wednesday at 7:00 PM ET/.test(huc.tune) && /\$1,000 Music Tournament/.test(huc.tune));
+  ok('and asks them to subscribe on YouTube — no Wednesday show, no prize (2026-10-23)', /Subscribe to our YouTube channel/.test(huc.tune)
+    && !/Wednesday|Top 8|\$/.test(huc.tune), huc.tune);
   ok('and it carries no score, rank or count — the results are the reveal',
     !/\d\.\d|out of 9|#\d|A&Rs heard/.test(huc.body + huc.subject + huc.tune), huc.body);
   const huSms = srv._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', streamAtL);
   ok('the heads-up text is plain GSM-7 inside one segment', huSms.length <= 160 && /^[\x20-\x7e]*$/.test(huSms)
-    && /Report by email/.test(huSms) && /Top 8 Wed 7PM ET/.test(huSms) && /makinitmag\.com\/live/.test(huSms) && /Reply STOP/.test(huSms) && !/Countdown/.test(huSms), huSms.length + ' ' + huSms);
+    && /Report by email/.test(huSms) && !/Wed|Top 8/.test(huSms) && /makinitmag\.com\/live/.test(huSms) && /Reply STOP/.test(huSms) && !/Countdown/.test(huSms), huSms.length + ' ' + huSms);
   const huTxt = srv._artistHeadsupText(huc), huHtml = srv._artistHeadsupHtml(huc);
   ok('the heads-up asks the artist to subscribe on YouTube and hit the bell (2026-10-15)',
     /hit the bell/.test(huTxt) && /Subscribe on YouTube: https:\/\/www\.makinitmag\.com\/live/.test(huTxt) && /href="https:\/\/www\.makinitmag\.com\/live"/.test(huHtml), huTxt);
@@ -2378,51 +2379,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && Array.isArray(rsStatus.cards.results.songComments) && rsStatus.cards.results.songTags.length === 6
       && rsStatus.cards.results.songTags.every(t => t === ''), JSON.stringify(rsStatus.cards && rsStatus.cards.results));
 
-  console.log('\n— The winner posts (039): Top Track / Top A&R of the WEEK, the weekly report\'s #1s, on demand —');
-  // The daily pair was retired 2026-10-03: the publish stores nothing for it any more.
+  console.log('\n— The winner posts (039) are RETIRED (2026-10-23: no weekly show, no prizes) —');
   const wjob = await dDb.get('SELECT * FROM recap_jobs WHERE session_id = ?', [LDROP]);
-  ok('the publish no longer renders daily winner posts', wjob.winner_track_url == null && wjob.winner_track_caption == null && wjob.winner_ar_caption == null);
+  ok('the publish renders no winner posts', wjob.winner_track_url == null && wjob.winner_track_caption == null && wjob.winner_ar_caption == null);
   ok('a week starts on Monday', srv._weekStartOf('2026-09-16') === '2026-09-14' && srv._weekStartOf('2026-09-14') === '2026-09-14' && srv._weekStartOf('2026-09-20') === '2026-09-14',
     [srv._weekStartOf('2026-09-16'), srv._weekStartOf('2026-09-14'), srv._weekStartOf('2026-09-20')].join(','));
-  const wkStart = srv._weekStartOf(pubbed.drop_day);
-  // The week's winners are the WEEKLY REPORT's #1s — the week spans every drop in it (other
-  // tests' days included), and its A&R list is qualified profiles only, so qualify this
-  // drop's players and compare against the report.
-  await dDb.run('UPDATE users SET profile_complete = 1 WHERE uid IN (SELECT user_id FROM participants WHERE session_id = ?)', [LDROP]);
-  const wrep = await srv._weeklyReportData(pubbed.drop_day, { limit: 1 });
-  const wwTrack = await srv._winnerWeekData(pubbed.drop_day, 'track');
-  ok('Top Track of the Week is about the ARTIST placing: the artist is the name, no song title on the card, the selection in the operator\'s words',
-    wwTrack && wrep.songs[0] && wwTrack.title === (wrep.songs[0].artist || wrep.songs[0].title) && wwTrack.by === '' && wwTrack.record === '“' + wrep.songs[0].title + '”'
-      && wwTrack.selected.join(' ') === 'Selected for the next $1,000 Music Tournament'
-      && wwTrack.date.includes(' – ') && wwTrack.week.start === wkStart, JSON.stringify(wwTrack));
-  ok('a handle prints as @name, no parentheses (the card draws the Instagram glyph beside it)', /^(@[A-Za-z0-9_.]+)?$/.test(wwTrack.handle), wwTrack.handle);
-  const wwAr = await srv._winnerWeekData(pubbed.drop_day, 'ar');
-  ok('Top A&R of the Week is the weekly report\'s #1 A&R (what the show announces), selected for A&R Wars with the $500 Cash Prize line',
-    wwAr && wrep.ars[0] && wwAr.title === wrep.ars[0].name && wwAr.line.points === wrep.ars[0].points
-      && wwAr.selected.join(' ') === 'Selected for the A&R Wars Tournament $500 Cash Prize!' && !('grade' in wwAr.line), JSON.stringify([wwAr, wrep.ars[0]]));
-  ok('the week data says whether the week has settled, for the console', typeof wwTrack.week.settled === 'boolean' && Array.isArray(wwTrack.week.pending));
-  ok('the winner data never carries an email or phone', !/@test\.com|\+1\d{9}/.test(JSON.stringify([wwTrack, wwAr])));
-  const wcap = srv._winnerCaption(wwTrack), wcapAr = srv._winnerCaption(wwAr);
-  ok('the captions follow the house Instagram rules: the record, the comment keyword instead of a link, at most five hashtags',
-    wcap.includes(wwTrack.record) && /Comment #REVIEW to Submit Music/.test(wcap) && !/makinitmag\.com/.test(wcap) && tagCount(wcap) <= 5
-      && /Comment #ANR to join the A&R Team/.test(wcapAr) && tagCount(wcapAr) <= 5, wcap + '\n---\n' + wcapAr);
-  ok('a week with no published drops has no winners', (await srv._winnerWeekData('2020-01-06', 'track')) === null);
-  const wp2 = await fetch(base + '/api/card/winner?week=' + pubbed.drop_day + '&post=ar', { headers: BOOTH });
-  const wp2Buf = Buffer.from(await wp2.arrayBuffer());
-  ok('a week post renders as a 1080x1350 PNG', wp2.status === 200 && wp2.headers.get('content-type') === 'image/png' && pngDims(wp2Buf) === '1080x1350', wp2.status + ' ' + pngDims(wp2Buf));
-  const wp3 = await fetch(base + '/api/card/winner?week=2020-01-06&post=track', { headers: BOOTH });
-  ok('an empty week is 404, not a blank card', wp3.status === 404, 'got ' + wp3.status);
-  const wp1 = await fetch(base + '/api/card/winner?s=' + LDROP + '&post=track', { headers: BOOTH });
-  ok('the daily render is gone: a day request is refused, not rendered', wp1.status === 400, 'got ' + wp1.status);
-  const wpAnon = await fetch(base + '/api/card/winner?week=' + pubbed.drop_day + '&post=ar');
-  ok('the winner render is platform-admin only', wpAnon.status === 403 || wpAnon.status === 401, 'got ' + wpAnon.status);
-  const wpWeek = (await call('/api/admin/weekly/winners?week=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
-  ok('the weekly endpoint names both winners with captions, the week label and whether it settled',
-    wpWeek && wpWeek.week && wpWeek.week.start === wkStart && wpWeek.track && wpWeek.ar && /^Top A&R of the Week/.test(wpWeek.ar.caption)
-      && typeof wpWeek.track.settled === 'boolean' && !/@test\.com|\+1\d{9}/.test(JSON.stringify(wpWeek)), JSON.stringify(wpWeek));
+  ok('no winner-post helpers are left', srv._winnerWeekData === undefined && srv._winnerCaption === undefined);
+  const wpGone = await fetch(base + '/api/card/winner?week=' + pubbed.drop_day + '&post=ar', { headers: BOOTH });
+  ok('the winner render is gone', wpGone.status !== 200 || wpGone.headers.get('content-type') !== 'image/png', 'got ' + wpGone.status);
+  const wpWeekGone = await call('/api/admin/weekly/winners?week=' + pubbed.drop_day, null, 'GET', BOOTH);
+  ok('the weekly winners endpoint is gone', wpWeekGone.status === 404, 'got ' + wpWeekGone.status);
   const wpStatus = (await call('/api/admin/daily/status?day=' + pubbed.drop_day, null, 'GET', BOOTH)).d;
-  ok('the daily status carries the default week for the console and nothing daily', wpStatus.cards && wpStatus.cards.winners
-      && /^\d{4}-\d{2}-\d{2}$/.test(wpStatus.cards.winners.weekDefault) && !('trackReady' in wpStatus.cards.winners), JSON.stringify(wpStatus.cards && wpStatus.cards.winners));
+  ok('the daily status no longer offers a winners week', wpStatus.cards && !('winners' in wpStatus.cards), JSON.stringify(wpStatus.cards && Object.keys(wpStatus.cards)));
 
   // 7a — the A&R digest. This is notifyAudience()'s FIRST production caller, and the
   // assertion that its {sql, params} fragment really does compose into an INSERT...SELECT.
@@ -3187,7 +3155,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const serC = await call('/api/admin/series/create', { title: 'E2E Giveaway Series', status: 'active' }, 'POST', ADMINH);
   await call('/api/admin/series/tag', { sessionId: HS, seriesId: serC.d.seriesId }, 'POST', ADMINH);
   const tagged = (await call('/api/me/state', null, 'GET', GTOK)).d;
-  ok('tagged + eligible host surfaces the $500 hook', !!tagged.giveaway && tagged.giveaway.title === 'E2E Giveaway Series' && tagged.giveaway.prize === '$500', JSON.stringify(tagged.giveaway));
+  ok('tagged + eligible host surfaces the series context, with no prize (2026-10-23)', !!tagged.giveaway && tagged.giveaway.title === 'E2E Giveaway Series' && !('prize' in tagged.giveaway), JSON.stringify(tagged.giveaway));
   // A host cannot flip its own giveaway flag.
   const givForbidden = await call('/api/admin/users/giveaway', { uid: hostUser.id, on: false }, 'POST', HOSTH);
   ok('a host cannot set the giveaway flag', givForbidden.status === 403, 'got ' + givForbidden.status);
@@ -3634,9 +3602,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const dgFull = { ...dgArg, name: 'Kelby Cannick', recap: dgRecap, streamUrl: 'https://yt.example/live',
     resultsUrl: 'https://x/account#results', closesLabel: '3:00 PM ET', closesInHours: 3 };
   const dgFullHtml = srv._dailyDigestEmailHtml(dgFull), dgFullText = srv._dailyDigestEmailText(dgFull);
-  ok('the results mail links The A&R Room show, not a daily stream (2026-10-15)',
+  ok('the results mail asks for a YouTube subscribe — no daily stream, no Wednesday show, no prize (2026-10-23)',
     /makinitmag\.com\/live/.test(dgFullHtml) && /hit the bell/.test(dgFullText) && /Subscribe on YouTube/.test(dgFullText)
-      && /\$1,000 Music Tournament/.test(dgFullText) && !/Watch the Makin' It Daily Countdown/.test(dgFullHtml + dgFullText));
+      && !/Wednesday|\$1,000|Tournament|see if you made it/.test(dgFullHtml + dgFullText) && !/Watch the Makin' It Daily Countdown/.test(dgFullHtml + dgFullText));
   ok('and to the A&R\'s own results on the site', /See your results/.test(dgFullHtml) && /account#results/.test(dgFullHtml) && /account#results/.test(dgFullText));
   ok('the text version is a headline too', /Points 543/.test(dgFullText) && !/A Record/.test(dgFullText) && !/Rank/.test(dgFullText), dgFullText);
   ok('and says today\'s records close in 3 hours',
@@ -3673,14 +3641,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && /Today's records close at 3:00 PM ET — in 3 hours\./.test(msText) && /Rate today's records: https:\/\/x\/daily\?s=abc/.test(msText), msText);
   ok('and carries no grade, no results and no picture', !/grade|results|<img/i.test(msHtml.replace(/A&amp;R Daily/g, '')), msHtml.slice(0, 300));
   ok('its subject says what happened', srv._DAILY_MISSED_SUBJECT === "You missed yesterday's drop");
-  ok('the missed mail carries the Wednesday show line and link',
-    /Wednesday at 7:00 PM ET/.test(msText) && /Watch The A&R Room live, Wednesday 7:00 PM ET: https:\/\/yt\/live/.test(srv._dailyMissedEmailText({ ...msArg, streamUrl: 'https://yt/live' })));
+  ok('the missed mail carries the YouTube subscribe line, not the retired Wednesday show',
+    /Subscribe on YouTube: https:\/\/www\.makinitmag\.com\/live/.test(msText) && !/Wednesday/.test(srv._dailyMissedEmailText({ ...msArg, streamUrl: 'https://yt/live' })), msText);
   const m2Arg = { ...msArg, streamUrl: 'https://yt/live' };
   const m2Text = srv._dailyMissedTwiceEmailText(m2Arg), m2Html = srv._dailyMissedTwiceEmailHtml(m2Arg);
-  ok("the missed-twice mail: two drops missed, get back in the game, today's records, the show",
+  ok("the missed-twice mail: two drops missed, get back in the game, today's records, the YouTube line",
     /Hey Kelby Cannick, you've missed the last two drops\. Today's records are open now — rate them and get back in the game\./.test(m2Text)
       && /A new week starts every Monday/.test(m2Text) && /Today's records close at 3:00 PM ET — in 3 hours\./.test(m2Text)
-      && /Rate today's records: https:\/\/x\/daily\?s=abc/.test(m2Text) && /Wednesday 7:00 PM ET: https:\/\/yt\/live/.test(m2Text), m2Text);
+      && /Rate today's records: https:\/\/x\/daily\?s=abc/.test(m2Text) && /Subscribe on YouTube/.test(m2Text) && !/Wednesday/.test(m2Text), m2Text);
   ok('and carries no grade, no results and no picture', !/grade|<img/i.test(m2Html.replace(/A&amp;R Daily/g, '')), m2Html.slice(0, 300));
   ok('its subject says what happened', srv._DAILY_MISSED_TWICE_SUBJECT === "You've missed the last two drops");
 
@@ -3690,8 +3658,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
     JSON.stringify(gcCards.GRADE_SIZES) === JSON.stringify({ gradePhoto: [1080, 1350], gradePhotoStory: [1080, 1920], gradeStats: [1080, 1350], gradeStatsStory: [1080, 1920] }));
   ok('only the good three counts are ever printed', JSON.stringify(gcCards.GRADE_COPY.tiers.map(x => x[1])) === '["Bullseye","Sharp","Close"]'
     && !/off/i.test(JSON.stringify(gcCards.GRADE_COPY)));
-  ok('the card copy: the question, $500 cash, makinitmag.com/ANR, no headcount',
-    gcCards.GRADE_COPY.lead === 'Do you have a better ear than' && gcCards.GRADE_COPY.prize === '$500 cash'
+  ok('the card copy: the question, NO prize (2026-10-23), makinitmag.com/ANR, no headcount',
+    gcCards.GRADE_COPY.lead === 'Do you have a better ear than' && !('prize' in gcCards.GRADE_COPY) && !/\$/.test(JSON.stringify(gcCards.GRADE_COPY))
       && gcCards.GRADE_COPY.url === 'makinitmag.com/ANR' && !/\d+\+|members/i.test(JSON.stringify(gcCards.GRADE_COPY)));
   const gcData = { name: 'Kelby Cannick', category: 'DJ', location: 'Atlanta, GA', photo: null, grade: 'A-', accuracy: 91.4,
     counts: { bullseye: 3, sharp: 4, close: 5 }, dayLabel: 'Oct 14' };
@@ -4685,9 +4653,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // Flipped 2026-10-15: the daily results mail now goes only to those who rated the day or the
   // one before (enqueueDailyDigest), so it is ON by default.
   ok('daily results defaults ON', fp.d.topics.digest_daily.channels.email === true, JSON.stringify(fp.d.topics.digest_daily));
-  // Flipped 2026-10-06: the weekly update is the cadence for everyone the daily notice no
-  // longer reaches, so it is ON by default (non-engaged by default; see the gate tests).
-  ok('weekly update defaults ON', fp.d.topics.digest_weekly.channels.email === true, JSON.stringify(fp.d.topics.digest_weekly));
+  // The weekly update (Thursday) was RETIRED 2026-10-23 with the Wednesday show.
+  ok('the weekly update is no longer offered', !('digest_weekly' in fp.d.topics), JSON.stringify(Object.keys(fp.d.topics)));
   ok('SMS not offered for a digest', fp.d.topics.digest_daily.channels.sms === undefined, JSON.stringify(fp.d.topics.digest_daily.channels));
   // THE no-backfill assertion: those defaults came from the catalog, not from rows.
   const freshRows = Number((await npDb.get('SELECT COUNT(*) AS c FROM notify_prefs WHERE uid = ?', [freshUid])).c);
@@ -4695,8 +4662,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
 
   console.log('\n— saving prefs writes rows and marks an explicit SMS decision —');
   const savedPrefs = await call('/api/me/notify-prefs',
-    { topics: { digest_weekly: { email: true }, room_live: { sms: false } } }, 'POST', FRESH);
-  ok('save returns the resolved set', savedPrefs.status === 200 && savedPrefs.d.topics.digest_weekly.channels.email === true, JSON.stringify(savedPrefs.d.topics));
+    { topics: { digest_daily: { email: false }, digest_weekly: { email: true }, room_live: { sms: false } } }, 'POST', FRESH);
+  ok('save returns the resolved set', savedPrefs.status === 200 && savedPrefs.d.topics.digest_daily.channels.email === false, JSON.stringify(savedPrefs.d.topics));
+  ok('a retired topic in an old client\'s save is ignored, not an error', !('digest_weekly' in savedPrefs.d.topics), JSON.stringify(Object.keys(savedPrefs.d.topics)));
   ok('room_live sms now off', savedPrefs.d.topics.room_live.channels.sms === false, JSON.stringify(savedPrefs.d.topics.room_live));
   ok('untouched topic still resolves to its default', savedPrefs.d.topics.room_live.channels.email === true, JSON.stringify(savedPrefs.d.topics.room_live));
   const freshUser = await npDb.get('SELECT sms_pref_set_at FROM users WHERE uid = ?', [freshUid]);
@@ -4811,7 +4779,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const afterUnsub = (await call('/api/me/notify-prefs', null, 'GET', FRESH)).d;
   ok('everything is off afterwards', afterUnsub.emailOptOut === true
     && afterUnsub.topics.room_live.channels.email === false
-    && afterUnsub.topics.digest_weekly.channels.email === false, JSON.stringify(afterUnsub.topics));
+    && afterUnsub.topics.digest_daily.channels.email === false, JSON.stringify(afterUnsub.topics));
   const audAfter = (await call('/api/admin/notify/audience', null, 'GET', BOOTH)).d;
   ok('the mass-announcement audience shrinks by exactly one', audAfter.email === audBefore.email - 1,
     JSON.stringify([audBefore.email, audAfter.email]));
@@ -5916,51 +5884,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('gate: the constants are the ones the copy quotes (30 / 14 / 4)',
     srv._ENGAGED.ENGAGED_DAYS === 30 && srv._ENGAGED.NEW_ACCOUNT_DAYS === 14 && srv._ENGAGED.WEEKLY_SUNSET_SENDS === 4, JSON.stringify(srv._ENGAGED));
 
-  console.log('\n— the weekly results mail (Thursday, 2026-10-17): every subscribed A&R, no narrowing —');
-  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_active','digest_weekly','email',1," + egNow + ")");
-  let weeklyAud = await audOf('digest_weekly');
-  ok('weekly: a stale account on the default is on it', weeklyAud.has('eg_stale'));
-  ok('weekly: a new account is on it too (it is the show results, not a nudge)', weeklyAud.has('eg_new'));
-  ok('weekly: an active account is on it', weeklyAud.has('eg_active'));
-  ok('weekly: a bounced address is out', !weeklyAud.has('eg_bounced'));
-  await egUser('eg_lapsed', 'eg-lapsed@test.com', 90, 10);
-  weeklyAud = await audOf('digest_weekly');
-  ok('weekly: an A&R seen 10 days ago is on it', weeklyAud.has('eg_lapsed'));
-  // No sunset any more: four unanswered weeklies do not end it (operator: all subscribed A&Rs).
-  for (let i = 0; i < 4; i++) {
-    await egDb.run("INSERT INTO notify_broadcasts (id, subject, message, channels, created_by, status, created_at, kind, ref_id) VALUES (?,?,?,?,?,?,?,?,?)",
-      ['eg_w' + i, 'w', 'w', 'email', null, 'done', egNow, 'digest_weekly', '2026-0' + (5 + i) + '-01']);
-    await egDb.run("INSERT INTO notify_recipients (broadcast_id, uid, channel, dest, status, sent_at) VALUES (?,?,?,?,?,?)",
-      ['eg_w' + i, 'eg_stale', 'email', 'eg-stale@test.com', 'sent', egNow - (10 - i) * DAY]);
-  }
-  ok('weekly: four unanswered weeklies do not end it', (await audOf('digest_weekly')).has('eg_stale'));
-  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_stale','digest_weekly','email',0," + egNow + ")");
-  ok('weekly: an explicit OFF is the only way out', !(await audOf('digest_weekly')).has('eg_stale'));
-  await egDb.run("DELETE FROM notify_prefs WHERE uid = 'eg_stale'");
-
-  console.log('\n— the weekly sender: one broadcast per week, drained, names only —');
-  const wq = await srv._enqueueWeeklyUpdate('2026-09-21');
-  ok('weekly: enqueues a broadcast with recipients', wq.broadcastId && wq.queued > 0, JSON.stringify(wq));
-  const wq2 = await srv._enqueueWeeklyUpdate('2026-09-21');
-  ok('weekly: a second enqueue for the same week adopts the same broadcast', wq2.broadcastId === wq.broadcastId, JSON.stringify([wq, wq2]));
-  const wbc = await egDb.all("SELECT * FROM notify_broadcasts WHERE kind = 'digest_weekly' AND ref_id = '2026-09-21'");
-  ok('weekly: exactly one broadcast row for the week, the show-results subject', wbc.length === 1 && /The A&R Room — this week's Top 8 \(Mon, Sep 21\)/.test(wbc[0].subject), JSON.stringify(wbc.map(b => b.subject)));
-  const wd = await srv._drainWeeklyUpdate({ broadcastId: wq.broadcastId, limit: 500, base: 'https://x' });
-  ok('weekly: the drain sends them all and marks the broadcast done', wd.remaining === 0 && wd.failed === 0 && wd.sent === wq.queued
-    && (await egDb.get("SELECT status FROM notify_broadcasts WHERE id = ?", [wq.broadcastId])).status === 'done', JSON.stringify(wd));
-  const wc = { weekLabel: 'Mon, Sep 21 – Sun, Sep 27', records: [{ title: 'Song A', artist: 'Artist A' }], ars: [{ name: 'Kelby Cannick', location: 'Atlanta, GA' }],
-    totals: { records: 40, ars: 25, ratings: 300 }, openCount: 8, closesLabel: 'at 3:00 PM ET tomorrow', playUrl: 'https://x/daily?s=abc', showUrl: 'https://yt/live' };
-  const wh = srv._weeklyUpdateEmailHtml(wc, 'https://x/profile#nt=t'), wt = srv._weeklyUpdateEmailText(wc, 'https://x/profile#nt=t');
-  ok('weekly mail: the show results, the seats, ranks, names, the open day and the CTA — no score anywhere',
-    /1\. <b>Song A<\/b> — Artist A/.test(wh) && /Kelby Cannick/.test(wh) && /8 records are open/.test(wh) && /Rate today's records/.test(wh)
-      && /results from Wednesday's show/.test(wh) && /href="https:\/\/yt\/live"/.test(wh)
-      && /Top Track of the week: Song A — Artist A\. Selected for the \$1,000 Music Tournament\./.test(wt)
-      && /Top A&R of the week: Kelby Cannick · Atlanta, GA\. Takes a seat in A&R Wars\./.test(wt)
-      && !/\d\.\d/.test(wt) && /Rating closes at 3:00 PM ET tomorrow/.test(wt) && /Top 8 records:\n1\. Song A — Artist A/.test(wt) && /Manage your notifications/.test(wt), wt);
-  ok('weekly: not due on a non-Thursday', (await srv._weeklyUpdateDue(Date.parse('2026-10-07T18:00:00Z'))) === null);
-  const dueW = await srv._weeklyUpdateDue(Date.parse('2026-10-08T18:00:00Z')); // Thu 2PM ET
-  ok('weekly: due on Thursday after noon ET, for the last complete week', dueW === '2026-09-28', String(dueW));
-  ok('weekly: not due on Thursday morning', (await srv._weeklyUpdateDue(Date.parse('2026-10-08T14:00:00Z'))) === null);
+  console.log('\n— the weekly results mail (Thursday) is RETIRED (2026-10-23) —');
+  ok('weekly: the topic is gone, so no audience can be built for it', srv._notifyAudience('digest_weekly', 'email') === null);
+  ok('weekly: the sender is gone', srv._enqueueWeeklyUpdate === undefined && srv._drainWeeklyUpdate === undefined && srv._weeklyUpdateDue === undefined);
 
   console.log('\n— bounces: a dead address is noted once and mailed never again —');
   ok('bounce: a hard bounce stamps email_bounced_at', (await srv._noteEmailOutcome('EG-Active@test.com', { ok: false, error: 'x', reject: 'hard-bounce' })) === true
@@ -5968,7 +5894,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('bounce: a soft bounce (full inbox) does not', (await srv._noteEmailOutcome('eg-new@test.com', { ok: false, error: 'x', reject: 'soft-bounce' })) === false
     && (await egDb.get("SELECT email_bounced_at FROM users WHERE uid = 'eg_new'")).email_bounced_at == null);
   ok('bounce: a successful send never does', (await srv._noteEmailOutcome('eg-new@test.com', { ok: true })) === false);
-  ok('bounce: the bounced A&R is out even of the weekly they chose', !(await audOf('digest_weekly')).has('eg_active'));
+  await egDb.run("INSERT INTO notify_prefs (uid, topic, channel, enabled, updated_at) VALUES ('eg_active','room_live','email',1," + egNow + ")");
+  ok('bounce: the bounced A&R is out even of a topic they chose', !(await audOf('room_live')).has('eg_active'));
   await egDb.run("UPDATE users SET email_bounced_at = NULL WHERE uid = 'eg_active'");
 
   console.log('\n— announcements default to the active list; everyone is a choice —');

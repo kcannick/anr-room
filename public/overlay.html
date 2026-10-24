@@ -114,7 +114,7 @@
      zones (120px): header (brand + dual QR CTAs) → round card → transient board. */
   body.vertical{width:1080px;height:1920px}
   /* header card — one compact row, minimal vertical footprint:
-     [join QR]  The A&R Room / ◄ EARN THE $500 A&R AWARD / ─ / SUBMIT MUSIC ►  [submit QR]
+     [join QR]  The A&R Room / ◄ JOIN THE A&R TEAM / ─ / SUBMIT MUSIC ►  [submit QR]
      Arrows point each call-to-action at its code.
      (No LIVE pill — every platform already badges its own live state.) */
   #vHero{position:absolute;top:230px;left:120px;right:120px;padding:16px 26px}
@@ -127,7 +127,7 @@
   #vHero .room{font-weight:800;font-size:28px;letter-spacing:-.01em}
   #vHero .room span{color:var(--signal)}
   #vHero .lbl{font-weight:800;font-size:40px;line-height:1;letter-spacing:-.01em;white-space:nowrap}
-  /* the award call-to-action is much longer than "WIN $500" was — drop a size and let it
+  /* the join call-to-action is longer than "WIN $500" was — drop a size and let it
      wrap rather than overflow the 488px mid column between the two QR boxes. */
   #vHero .lbl.win{color:var(--gold);font-size:30px;white-space:normal;line-height:1.06}
   #vHero .lbl.sub{color:#a99cff}
@@ -187,7 +187,7 @@
       <div class="qbox win"><img id="qrWin" alt="Join QR"></div>
       <div class="mid">
         <div class="room">The A&amp;R <span>Room</span></div>
-        <div class="lbl win"><span class="arr">◄</span> EARN THE $500 A&amp;R AWARD</div>
+        <div class="lbl win"><span class="arr">◄</span> JOIN THE A&amp;R TEAM</div>
         <div class="sep"></div>
         <div class="lbl sub">SUBMIT MUSIC <span class="arr">►</span></div>
       </div>
@@ -303,7 +303,7 @@ const SHOW_SONG=boolP('current_song',true);
 const SHOW_TIMER=boolP('timer',true);
 const LB_N=(()=>{ const v=getP('leader_board'); if(v==null) return 3; const n=parseInt(v,10); return isNaN(n)?3:Math.max(0,Math.min(8,n)); })();
 //  leader_scope=room|round|series — whose points the board shows (default room):
-//  'round' = the latest ratified round only, 'series' = the $500 competition board.
+//  'round' = the latest ratified round only, 'series' = the monthly rankings board.
 const LB_SCOPE=(()=>{ const v=(getP('leader_scope')||getP('lb')||'').toLowerCase(); return ['round','room','series'].includes(v)?v:'room'; })();
 // ?broadcast=N — seconds an overlay broadcast stays up before auto-hiding. Default 15;
 // clamped to 1..120 so a message never persists for the whole stream.
@@ -316,7 +316,7 @@ document.documentElement.style.setProperty('--panel','rgba(16,12,26,'+PANEL_A+')
 
 // ?orientation= (or ?o=) — 'horizontal' (default, 1920×1080) or 'vertical' (1080×1920 for
 // TikTok / IG Reels & Live). Vertical stacks everything in the TOP band (the platforms
-// own the lower half): header card (brand + WIN $500 and SUBMIT MUSIC QRs) → round
+// own the lower half): header card (brand + JOIN THE A&R TEAM and SUBMIT MUSIC QRs) → round
 // card → transient leaderboard.
 // ?el=header|song|board — single-element mode: renders just that piece on a snug
 // transparent canvas so each can be its own OBS source ('song' includes the winner
@@ -500,7 +500,6 @@ function render(st){
       $('#rightNum').textContent=current.votes||0;
       $('#rightSub').textContent='';
     }
-    if(current.giveaway){$('#rightSub').textContent='🎁 '+current.giveaway;}
     $('#lower').classList.remove('hide');
   }else{ $('#lower').classList.add('hide'); ovClosesAt=null; paintTimer(); }
 
