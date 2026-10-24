@@ -417,6 +417,7 @@
         <div class="step-help">Your honest take, 0 to 9.</div>
         <div class="rate-row" id="rateTop"></div>
         <div class="rate-row two" id="rateBot"></div>
+        <div id="rateMeaning"></div>
         <button class="btn" id="btnNext" style="margin-top:22px" disabled>Next →</button>
       </div>
 
@@ -720,6 +721,7 @@
 </div>
 
 <script src="/auth.js?v=2"></script>
+<script src="/rating-meanings.js?v=1"></script>
 <script>
 // The join/auth plumbing — per-session tokens, the api()/apiRaw() wrappers, the three
 // join calls, the one-tap account register — now lives in /auth.js so A&R Daily can
@@ -899,10 +901,11 @@ window.ANRAuth.configure({show, onJoined:()=>startPolling()});
 window.ANRAuth.bindJoinHandlers();
 
 // build rating pips 0-9 (NPS-style: no center default; 0-4 lower half, 5-9 upper half)
+const setMeaning=window.ANRMeanings.mount($('#rateMeaning'));
 (function(){
   for(let n=0;n<=9;n++){
     const el=document.createElement('div');el.className='pip';el.textContent=n;el.dataset.n=n;
-    el.onclick=()=>{chosenTaste=n;document.querySelectorAll('.pip').forEach(p=>p.classList.toggle('on',+p.dataset.n===n));maybeEnableNext();};
+    el.onclick=()=>{chosenTaste=n;document.querySelectorAll('.pip').forEach(p=>p.classList.toggle('on',+p.dataset.n===n));setMeaning(n);maybeEnableNext();};
     (n<=4?$('#rateTop'):$('#rateBot')).appendChild(el);
   }
 })();
@@ -1394,7 +1397,7 @@ function render(st){
     if(lastPhase!=='voting'){ // reset inputs on a fresh round
       buzzed=false;lastTickSec=null;
       // rating inputs
-      chosenTaste=null;document.querySelectorAll('.pip').forEach(p=>p.classList.remove('on'));
+      chosenTaste=null;document.querySelectorAll('.pip').forEach(p=>p.classList.remove('on'));setMeaning(null);
       $('#pred').value=4.5;predict=null;predictTouched=false;$('#pred').classList.remove('touched');
       $('#predVal').textContent='–.–';$('#btnLock').disabled=true;$('#btnNext').disabled=true;
       showStep(1);
