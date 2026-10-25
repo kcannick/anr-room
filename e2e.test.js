@@ -2256,6 +2256,69 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tMail = await tick(Number(pubbed.published_at) + holdMs + 1000);
   ok('the tick after the hold drains the results mail', tMail.d.digestSent >= 1, JSON.stringify(tMail.d));
 
+  console.log('\n— "We\'re live" to the artists (051) —');
+  {
+    const LS = 'livecall1', t0 = Date.now();
+    await dDb.run("INSERT INTO sessions (id, name, admin_token, status, mode, async_state, drop_day, created_at) VALUES (?,?,?,'live','async','open',?,?)",
+      [LS, 'Live call drop', 'adm_' + LS, '2031-01-05', t0]);
+    const rec = (n, title, artist, email, phone, extra = {}) => dDb.run(
+      'INSERT INTO rounds (id, session_id, idx, song_title, song_artist, artist_email, artist_phone, is_reference, poll_type, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [LS + '_r' + n, LS, n, title, artist, email, phone, extra.ref ? 1 : 0, extra.binary ? 'binary' : 'rating', n === 1 ? 'ratified' : 'voting', t0 + n]);
+    await rec(1, 'Night Shift', 'Jay Monroe', 'jay@live.test', '(404) 555-4471');
+    await rec(2, 'Paper Planes Home', 'Lisa K', 'lisa@live.test', '');
+    await rec(3, 'Run It Back', 'Dre Vance', 'Dre@Live.test', '+14045550192');
+    await rec(4, 'Run It Back (Remix)', 'Dre Vance', 'dre@live.test ', '404-555-0192');
+    await rec(5, 'Golden Hour', 'Mara', '', '');
+    await rec(6, 'Ordinary People', 'John Legend', 'label@live.test', '4045559999', { ref: true });
+    await rec(7, 'A vs B', '', 'versus@live.test', '4045558888', { binary: true });
+
+    ok('live call: admin-only', (await call('/api/admin/live-call?s=' + LS, null, 'GET')).status === 403);
+    const g = await call('/api/admin/live-call?s=' + LS, null, 'GET', BOOTH);
+    ok('live call: counts every artist in the drop, one per address, reference + Versus out',
+      g.status === 200 && g.d.artists === 5 && g.d.emails === 3 && g.d.texts === 2 && g.d.noContact === 1 && g.d.records.length === 6, JSON.stringify(g.d));
+    ok('live call: the same artist twice is "same as" the first, case and spacing forgiven',
+      g.d.records[3].email === 'same:3' && g.d.records[3].sms === 'same:3', JSON.stringify(g.d.records[3]));
+    ok('live call: a reference track is left out', g.d.records[5].email === 'reference');
+    ok('live call: addresses are masked on read', !JSON.stringify(g.d).includes('jay@live.test') && !JSON.stringify(g.d).includes('404')
+      && g.d.records[0].email === 'j•••@live.test', JSON.stringify(g.d.records[0]));
+
+    const sms = srv._liveCallSmsBody('Night Shift');
+    ok('live call: the text is plain GSM-7 in one segment, with the link and STOP',
+      sms.length <= 160 && /^[\x20-\x7E]+$/.test(sms) && sms.includes('makinitmag.com/live') && /Reply STOP/.test(sms) && sms.includes('"Night Shift"'), sms);
+    const longSms = srv._liveCallSmsBody('A Very Long Record Title That Goes On And On And On And On And On And On And On And On (Remix) 🎧');
+    ok('live call: a long title is shortened to keep one segment', longSms.length <= 160 && /\.\.\."/.test(longSms) && /^[\x20-\x7E]+$/.test(longSms), longSms);
+
+    // Quiet hours do NOT apply: send at 3AM ET and the texts still go.
+    const realNow = Date.now;
+    const threeAm = srv._etEpoch('2026-10-25', 3, 0);
+    Date.now = () => threeAm;
+    let s1;
+    try { s1 = await call('/api/admin/live-call', { s: LS, send: true }, 'POST', BOOTH); } finally { Date.now = realNow; }
+    ok('live call: a press sends every email and text, even at 3AM ET',
+      s1.status === 200 && s1.d.started && s1.d.started.callNo === 1 && s1.d.sent === 5 && s1.d.failed === 0, JSON.stringify(s1.d));
+    const sentRows = await dDb.all("SELECT channel, dest, status FROM artist_live_calls WHERE session_id = ? ORDER BY channel, dest", [LS]);
+    ok('live call: one row per address, all sent', sentRows.length === 5 && sentRows.every(r => r.status === 'sent')
+      && sentRows.filter(r => r.channel === 'sms').map(r => r.dest).join(',') === '+14045550192,+14045554471', JSON.stringify(sentRows));
+    ok('live call: the card reports the press', s1.d.calls.length === 1 && s1.d.calls[0].emailsSent === 3 && s1.d.calls[0].textsSent === 2 && !s1.d.calls[0].pending, JSON.stringify(s1.d.calls));
+    const twice = await call('/api/admin/live-call', { s: LS, send: true }, 'POST', BOOTH);
+    ok('live call: a second press without "again" is refused (no double send)', twice.status === 409, JSON.stringify(twice.d));
+    const drainOnly = await call('/api/admin/live-call', { s: LS }, 'POST', BOOTH);
+    ok('live call: a drain-only call sends nothing new', drainOnly.status === 200 && drainOnly.d.sent === 0 && !drainOnly.d.started);
+    const again = await call('/api/admin/live-call', { s: LS, send: true, again: true }, 'POST', BOOTH);
+    ok('live call: Send again is a second press with its own rows', again.status === 200 && again.d.started.callNo === 2 && again.d.sent === 5
+      && Number((await dDb.get('SELECT COUNT(*) AS n FROM artist_live_calls WHERE session_id = ?', [LS])).n) === 10, JSON.stringify(again.d.started));
+    const lgL = (await call('/api/admin/daily/log?s=' + LS, null, 'GET', BOOTH)).d.lines.filter(l => l.key === 'live_call');
+    ok('live call: each press is a line on the drop log', lgL.length === 2 && lgL.every(l => l.state === 'done' && /3 emails · 2 texts/.test(l.detail)), JSON.stringify(lgL));
+
+    await dDb.run("INSERT INTO sessions (id, name, admin_token, status, mode, async_state, drop_day, created_at) VALUES ('livecall2','Empty','adm_lc2','live','async','open','2031-01-06',?)", [t0]);
+    await dDb.run("INSERT INTO rounds (id, session_id, idx, song_title, status, created_at) VALUES ('livecall2_r1','livecall2',1,'No Contact','voting',?)", [t0]);
+    ok('live call: a drop with no contacts is refused, not "sent to 0"',
+      (await call('/api/admin/live-call', { s: 'livecall2', send: true }, 'POST', BOOTH)).status === 400);
+    // Out of the daily lifecycle's way: these two drops have no window and would be ticked below.
+    for (const t of ['artist_live_calls', 'rounds']) await dDb.run(`DELETE FROM ${t} WHERE session_id IN ('livecall1','livecall2')`);
+    await dDb.run("DELETE FROM sessions WHERE id IN ('livecall1','livecall2')");
+  }
+
   console.log('\n— Retired 2026-10-02: the Top 8 cards, the Meeting Recap cover/thumbnail, the clip captions —');
   const pngDims = (buf) => buf.readUInt32BE(16) + 'x' + buf.readUInt32BE(20);
   const rjobOld = await dDb.get('SELECT ars_url, songs_url, caption, recap_cover_url, recap_thumb_url, recap_caption FROM recap_jobs WHERE session_id = ?', [LDROP]);

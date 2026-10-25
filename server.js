@@ -2490,6 +2490,15 @@ async function dropLog(session, { ts = now() } = {}) {
            : { due: session.published_at, detail: session.results_attempts ? `${session.results_attempts} tries so far` : null });
   }
 
+  // "We're live" presses (051) — read off their own queue, one line per press.
+  for (const c of (await liveCallState(session)).calls) {
+    const parts = [`${c.emailsSent} emails`, `${c.textsSent} texts`];
+    if (c.failed.length) parts.push(`${c.failed.length} failed`);
+    if (c.pending) parts.push(`${c.pending} still to send`);
+    add('live_call', 'Artists told we\'re live', { at: c.pending ? null : (c.lastAt || c.startedAt), due: c.startedAt,
+      detail: parts.join(' · '), state: c.pending ? null : (c.emailsSent || c.textsSent ? 'done' : 'failed') });
+  }
+
   // Oldest first; anything without a time sorts by when it is due, in the order added.
   const key = (l) => l.at || l.due || Infinity;
   return lines.map((l, i) => ({ l, i })).sort((a, b) => (key(a.l) - key(b.l)) || (a.i - b.i)).map(x => x.l);
@@ -5608,6 +5617,149 @@ async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = 
     }
   }
   return { sent, failed };
+}
+
+// ===== "We're live" to the artists (051) =====
+// Operator, 2026-10-25: the daily drop is played on a live stream, and one button tells every
+// artist in the drop "we're live reviewing music now" by email and text, linking
+// makinitmag.com/live. Every record counts, rated or not (the drop is usually still open), but
+// reference tracks and Versus rounds never do. One message per ADDRESS per press: an artist with
+// two records hears once, about their first record in the drop.
+//
+// THE SEAL: nothing here carries a score, a rank or a vote count. It only says we're live.
+// QUIET HOURS DO NOT APPLY (operator, 2026-10-25): the host presses it when the stream starts,
+// so the texts go then, whatever the hour. The other artist texts keep the ET window.
+function liveCallSmsBody(title) {
+  const frame = (t) => `Makin' It: We're live now reviewing music, including "${t}". Watch: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`;
+  return frame(fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame('').length));
+}
+function liveCallContent({ title, artist }) {
+  return {
+    subject: "We're live reviewing music now",
+    lead: "We're live now.",
+    body: `We're reviewing music live right now, including “${title}”${artist ? ' by ' + artist : ''}.`,
+    tune: 'Watch, and bring your fans to the comments.',
+  };
+}
+function liveCallHtml(c) {
+  return `<div style="background:#17191D;padding:26px 12px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#F6F7FB;">
+    <div style="max-width:600px;margin:0 auto;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0D0E12" style="background:#0D0E12;border-radius:12px 12px 0 0;">
+        <tr><td align="center" style="padding:20px 16px 18px;">
+          <img src="https://makinitmag.com/sites/all/themes/mim2/images/mim-logo-email.png" alt="Makin' It Magazine" width="190" style="display:block;border:0;width:190px;max-width:70%;height:auto;margin:0 auto;">
+          <p style="margin:14px 0 0;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#4BB749;font-weight:bold;">The A&amp;R Meeting</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#17191D" style="background:#17191D;border:1px solid #2C2F34;border-top:0;border-radius:0 0 12px 12px;">
+        <tr><td style="padding:22px 18px 24px;text-align:center;">
+          <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F6F7FB;">${escapeHtml(c.lead)}</h1>
+          <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0 0 12px;">${escapeHtml(c.body)}</p>
+          <p style="font-size:14px;line-height:1.6;color:#F6F7FB;font-weight:bold;margin:0 0 6px;">${escapeHtml(c.tune)}</p>
+          <p style="margin:10px 0 8px;"><a href="${LIVE_SUBSCRIBE_URL}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">Watch live</a></p>
+          <p style="font-size:12.5px;color:#B0B7C3;margin:0 0 14px;">${LIVE_SUBSCRIBE_SHORT}</p>
+          <p style="font-size:12.5px;line-height:1.55;color:#8A94A6;margin:0;">${escapeHtml(SUBSCRIBE_LINE)}</p>
+        </td></tr>
+      </table>
+    </div>
+  </div>`;
+}
+const liveCallText = (c) => [c.lead, '', c.body, '', c.tune, `Watch live: ${LIVE_SUBSCRIBE_URL}`, '', SUBSCRIBE_LINE].join('\n');
+
+// Who a press reaches. Pure over the rounds so the test can pin the dedupe; the route masks.
+function liveCallPlan(rounds) {
+  const seenEmail = new Map(), seenPhone = new Map();
+  const records = [], emails = [], phones = [];
+  rounds.forEach((r, i) => {
+    const rec = { n: i + 1, roundId: r.id, title: r.song_title || '', artist: r.song_artist || '', email: 'none', sms: 'none' };
+    records.push(rec);
+    if (Number(r.is_reference) === 1) { rec.email = rec.sms = 'reference'; return; }
+    const em = String(r.artist_email || '').trim();
+    const emKey = em.toLowerCase();
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) {
+      if (seenEmail.has(emKey)) rec.email = 'same:' + seenEmail.get(emKey);
+      else { seenEmail.set(emKey, rec.n); rec.email = em; emails.push({ dest: em, round: r }); }
+    }
+    const ph = smsNormalize(r.artist_phone);
+    if (ph) {
+      if (seenPhone.has(ph)) rec.sms = 'same:' + seenPhone.get(ph);
+      else { seenPhone.set(ph, rec.n); rec.sms = ph; phones.push({ dest: ph, round: r }); }
+    }
+  });
+  return { records, emails, phones };
+}
+async function liveCallRounds(sessionId) {
+  return db.all(
+    `SELECT id, idx, song_title, song_artist, artist_email, artist_phone, is_reference FROM rounds
+      WHERE session_id = ? AND COALESCE(poll_type,'rating') <> 'binary'
+      ORDER BY CASE WHEN idx IS NULL THEN 1 ELSE 0 END, idx ASC, created_at ASC`, [sessionId]);
+}
+
+// One press = one call_no. The rows are written first and then sent with a claim (pending ->
+// sending), the same discipline as every other artist queue, so two tabs or a double click
+// can't text anyone twice; a later request drains what a deadline left behind.
+async function enqueueLiveCall(sessionId, byUid) {
+  const plan = liveCallPlan(await liveCallRounds(sessionId));
+  const last = await db.get('SELECT MAX(call_no) AS n FROM artist_live_calls WHERE session_id = ?', [sessionId]);
+  const callNo = (Number(last && last.n) || 0) + 1;
+  const at = now();
+  for (const [channel, list] of [['email', plan.emails], ['sms', plan.phones]]) {
+    for (const x of list) {
+      await db.run(
+        `INSERT INTO artist_live_calls (id, session_id, call_no, round_id, channel, dest, status, by_uid, created_at)
+         VALUES (?,?,?,?,?,?, 'pending', ?, ?) ON CONFLICT (session_id, call_no, channel, dest) DO NOTHING`,
+        [id(12), sessionId, callNo, x.round.id, channel, x.dest, byUid || null, at]);
+    }
+  }
+  return { callNo, emails: plan.emails.length, texts: plan.phones.length };
+}
+async function drainLiveCall({ sessionId, deadline = null } = {}) {
+  const rows = await db.all(
+    `SELECT c.*, r.song_title, r.song_artist FROM artist_live_calls c LEFT JOIN rounds r ON r.id = c.round_id
+      WHERE c.session_id = ? AND c.status = 'pending' ORDER BY c.call_no ASC, c.channel ASC, c.created_at ASC LIMIT 60`, [sessionId]);
+  let sent = 0, failed = 0;
+  for (const row of rows) {
+    if (deadline && Date.now() > deadline) break;
+    const claim = await db.run("UPDATE artist_live_calls SET status = 'sending' WHERE id = ? AND status = 'pending'", [row.id]);
+    if (!claim.changes) continue;
+    try {
+      const title = row.song_title || 'your record';
+      const r = row.channel === 'sms'
+        ? await sendSms(row.dest, liveCallSmsBody(title))
+        : await (async () => {
+            const c = liveCallContent({ title, artist: row.song_artist });
+            return sendEmail(row.dest, c.subject, liveCallHtml(c), liveCallText(c), { tag: 'artist_live' });
+          })();
+      if (r.ok) { await db.run("UPDATE artist_live_calls SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
+      else { await db.run("UPDATE artist_live_calls SET status = 'failed', sent_at = ?, error = ? WHERE id = ?", [now(), (r.error || 'send failed').slice(0, 300), row.id]); failed++; }
+    } catch (e) {
+      await db.run("UPDATE artist_live_calls SET status = 'failed', sent_at = ?, error = ? WHERE id = ?", [now(), (e.message || 'error').slice(0, 300), row.id]); failed++;
+    }
+  }
+  return { sent, failed };
+}
+// What the console card shows: who a press would reach (masked) and every press so far.
+async function liveCallState(session) {
+  const plan = liveCallPlan(await liveCallRounds(session.id));
+  const mask = (v, ch) => v === 'none' || v === 'reference' || /^same:/.test(v) ? v : (ch === 'sms' ? maskPhone(v) : maskEmail(v));
+  const rows = await db.all('SELECT call_no, channel, dest, status, error, created_at, sent_at FROM artist_live_calls WHERE session_id = ? ORDER BY call_no ASC', [session.id]);
+  const calls = [];
+  for (const r of rows) {
+    let c = calls.find(x => x.callNo === Number(r.call_no));
+    if (!c) { c = { callNo: Number(r.call_no), startedAt: Number(r.created_at), emailsSent: 0, textsSent: 0, failed: [], pending: 0, lastAt: null }; calls.push(c); }
+    if (r.status === 'sent') r.channel === 'sms' ? c.textsSent++ : c.emailsSent++;
+    else if (r.status === 'failed') c.failed.push({ channel: r.channel, to: r.channel === 'sms' ? maskPhone(r.dest) : maskEmail(r.dest), error: r.error || 'send failed' });
+    else c.pending++;
+    if (r.sent_at && Number(r.sent_at) > (c.lastAt || 0)) c.lastAt = Number(r.sent_at);
+  }
+  calls.forEach(c => { c.startedLabel = dropLogWhen(c.startedAt); c.lastLabel = c.lastAt ? dropLogWhen(c.lastAt) : null; });
+  return {
+    sessionId: session.id, link: LIVE_SUBSCRIBE_SHORT,
+    artists: plan.records.filter(r => r.email !== 'reference').length,
+    emails: plan.emails.length, texts: plan.phones.length,
+    noContact: plan.records.filter(r => r.email === 'none' && r.sms === 'none').length,
+    records: plan.records.map(r => ({ n: r.n, title: r.title, artist: r.artist, email: mask(r.email, 'email'), sms: mask(r.sms, 'sms') })),
+    calls,
+  };
 }
 
 // The email half of the artist queue, with a CLAIM — the sibling of drainArtistSms.
@@ -11327,6 +11479,29 @@ async function handleApi(req, res, url) {
     return send(res, 200, { sessionId: session.id, day: session.drop_day, dayLabel: dailyDayLabel(session.drop_day),
       lines: await dropLog(session) });
   }
+  // ----- "We're live" to the artists (051) -----
+  // GET = who a press would reach (masked) + every press so far. POST {s, send:true} starts a
+  // press; a drop that already had one needs {again:true} too (the console asks twice). POST {s}
+  // alone sends what a deadline left pending — the console repeats it until pending is 0.
+  // Platform-admin: the queue holds artists' real addresses.
+  if (p === '/api/admin/live-call' && (method === 'GET' || method === 'POST')) {
+    const admin = await platformAdmin(req);
+    if (!admin) return bad(res, 'Admin only', 403);
+    const body = method === 'POST' ? await readBody(req) : {};
+    const sid = String((method === 'GET' ? url.searchParams.get('s') : body.s) || '');
+    const session = await db.get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]);
+    if (!session) return bad(res, 'No such session', 404);
+    if (method === 'GET') return send(res, 200, await liveCallState(session));
+    let started = null;
+    if (body.send) {
+      const prior = await db.get('SELECT COUNT(*) AS n FROM artist_live_calls WHERE session_id = ?', [session.id]);
+      if (Number(prior && prior.n) && !body.again) return bad(res, 'The artists in this drop were already told. Press Send again to tell them again.', 409);
+      started = await enqueueLiveCall(session.id, admin.uid);
+      if (!started.emails && !started.texts) return bad(res, 'No artist in this drop has an email or phone on file', 400);
+    }
+    const drained = await drainLiveCall({ sessionId: session.id, deadline: Date.now() + 18000 });
+    return send(res, 200, { ok: true, started, ...drained, ...(await liveCallState(session)) });
+  }
   // Record (or clear) an Instagram post being scheduled in SocialBee. Called by the daily browser
   // automation from the logged-in console once it has scheduled a post (so it needs no secret of
   // its own), or by the operator by hand. `postAt` is when the post goes out, as ET wall clock
@@ -12184,6 +12359,8 @@ module.exports._bustDailySchedule = () => { _dailySched.at = 0; };
 module.exports._dropAfterClose = dropAfterClose;
 module.exports._dropStreamAt = dropStreamAt;
 module.exports._artistHeadsupSmsBody = artistHeadsupSmsBody;
+module.exports._liveCallSmsBody = liveCallSmsBody;
+module.exports._liveCallPlan = liveCallPlan;
 module.exports._artistHeadsupContent = artistHeadsupContent;
 module.exports._artistHeadsupText = artistHeadsupText;
 module.exports._artistHeadsupHtml = artistHeadsupHtml;

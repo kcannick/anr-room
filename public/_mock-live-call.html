@@ -1,0 +1,126 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>We're live call (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0E0C1A;--panel:#171328;--line:#2e2750;--inset:#0a0814;--ink:#EAE9F2;--ink-dim:#9793B4;--ink-faint:#8c84ad;
+  --signal:#4bb749;--accent:#6d5fe0;--hot:#ff5a5f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "DM Sans",system-ui,sans-serif;padding:24px 16px}
+.wrap{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.note{border:1px dashed var(--line);border-radius:12px;padding:12px 14px;color:var(--ink-dim);font-size:13px}
+.state{font:700 10px "Space Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:10px 0 -6px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+h3{margin:0;font:700 12px "Space Mono",monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint)}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.muted{color:var(--ink-dim)} .small{font-size:12.5px}
+.btn{background:transparent;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12px;padding:6px 10px;border-radius:8px;cursor:pointer}
+.btn:hover{border-color:var(--signal)}
+.go{background:var(--signal);border:0;color:#0d0b16;font:700 15px "DM Sans",sans-serif;padding:12px 18px;border-radius:10px;cursor:pointer}
+.go.off{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:500;font-size:13px}
+.stats{display:flex;gap:22px;margin:14px 0 4px;flex-wrap:wrap}
+.stat b{display:block;font:700 22px "Space Mono",monospace}
+.stat span{font:400 9px "Space Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
+th{text-align:left;font:400 9px "Space Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:0 6px 8px}
+td{padding:8px 6px;border-top:1px solid var(--line);vertical-align:top}
+.ok{color:var(--signal)} .no{color:var(--ink-faint)} .bad{color:var(--hot)}
+.tag{font:400 10px "Space Mono",monospace;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin-left:6px;color:var(--ink-faint)}
+details summary{cursor:pointer;color:var(--ink-dim);font-size:12.5px;margin-top:10px}
+.dialog{background:var(--inset);border:1px solid var(--signal);border-radius:14px;padding:18px;max-width:460px}
+.dialog h4{margin:0 0 8px;font-size:17px}
+.prev{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:700px){.prev{grid-template-columns:1fr}}
+.sms{background:#1f1f24;border-radius:18px;padding:12px 14px;font:14px/1.45 -apple-system,system-ui,sans-serif;color:#fff;max-width:300px}
+.mail{background:#17191D;border-radius:12px;overflow:hidden;font-family:'Open Sans',Helvetica,Arial,sans-serif;text-align:center}
+.mail .hd{background:#0D0E12;padding:16px;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#4BB749;font-weight:bold}
+.mail .bd{padding:18px 16px 20px;color:#B0B7C3;font-size:13.5px;line-height:1.6}
+.mail h1{font-size:21px;color:#F6F7FB;margin:0 0 10px}
+.mail .cta{display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:11px 22px;font-weight:bold;font-size:13px;text-decoration:none;margin:8px 0 12px}
+a{color:var(--signal)}
+</style></head><body><div class="wrap">
+
+<div class="note"><b>Mockup:</b> a new <b>Go live</b> card on the A&amp;R Daily console, at the top, for whichever drop the day picker shows.
+Example: the drop that opened Sat Oct 25, on stream at 7:00 PM ET. Three states, then what the artist gets.</div>
+
+<!-- STATE 1 -->
+<div class="state">1 · Ready</div>
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <h3>Go live · Sat, Oct 25 drop</h3>
+    <span class="muted small">Link: makinitmag.com/live</span>
+  </div>
+  <p class="muted small" style="margin:10px 0 0">Tells every artist in this drop that you're live reviewing music now, by email and text. Each address gets one message, even with two records in the drop. Reference tracks are left out.</p>
+  <div class="stats">
+    <div class="stat"><b>12</b><span>Artists</span></div>
+    <div class="stat"><b>11</b><span>Emails</span></div>
+    <div class="stat"><b>9</b><span>Texts</span></div>
+    <div class="stat"><b class="no">1</b><span>No contact</span></div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button class="go">We're live: tell the artists</button>
+    <span class="muted small">Texts send right away, at any hour. The 10 AM–10:30 PM ET hold does not apply to this button.</span>
+  </div>
+  <details open><summary>Who gets it (12)</summary>
+  <table>
+    <tr><th>#</th><th>Record</th><th>Email</th><th>Text</th></tr>
+    <tr><td>1</td><td><b>Night Shift</b> · Jay Monroe</td><td class="ok">j•••@gmail.com</td><td class="ok">•••-4471</td></tr>
+    <tr><td>2</td><td><b>Paper Planes Home</b> · Lisa K</td><td class="ok">l•••@yahoo.com</td><td class="no">no phone</td></tr>
+    <tr><td>3</td><td><b>Run It Back</b> · Dre Vance</td><td class="ok">d•••@gmail.com</td><td class="ok">•••-0192</td></tr>
+    <tr><td>4</td><td><b>Run It Back (Remix)</b> · Dre Vance</td><td class="no">same as #3</td><td class="no">same as #3</td></tr>
+    <tr><td>5</td><td><b>Golden Hour</b> · Mara</td><td class="no">no email</td><td class="no">no phone</td></tr>
+    <tr><td>6</td><td><b>Ordinary People</b> · John Legend<span class="tag">reference</span></td><td class="no">left out</td><td class="no">left out</td></tr>
+    <tr><td colspan="4" class="muted small">… 6 more</td></tr>
+  </table>
+  </details>
+</div>
+
+<!-- STATE 2 -->
+<div class="state">2 · Confirm (after pressing the button)</div>
+<div class="dialog">
+  <h4>Tell the artists you're live?</h4>
+  <p class="muted small" style="margin:0 0 14px">11 emails and 9 texts go out now to the artists in the Sat, Oct 25 drop, linking makinitmag.com/live. There is no unsend.</p>
+  <div class="row"><button class="go">Send 11 emails + 9 texts</button><button class="btn">Cancel</button></div>
+</div>
+
+<!-- STATE 3 -->
+<div class="state">3 · Sent</div>
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <h3>Go live · Sat, Oct 25 drop</h3>
+    <span class="muted small">Link: makinitmag.com/live</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><b class="ok">11</b><span>Emails sent</span></div>
+    <div class="stat"><b class="ok">8</b><span>Texts sent</span></div>
+    <div class="stat"><b class="bad">1</b><span>Failed</span></div>
+  </div>
+  <p class="small" style="margin:6px 0 12px">Sent <b>Sat Oct 25 · 7:02 PM ET</b>. Failed: •••-3380 (Twilio: number not reachable).</p>
+  <div class="row"><button class="go off">Send again</button><span class="muted small">Asks twice. Use for a second stream on the same drop.</span></div>
+</div>
+
+<div class="note">The send also adds a line to the drop's <b>Log</b> card: <i>"Sat Oct 25 · 7:02 PM — Artists told we're live · 11 emails · 8 texts · 1 failed"</i>.</div>
+
+<!-- PREVIEWS -->
+<div class="state">What the artist gets</div>
+<div class="prev">
+  <div>
+    <p class="muted small" style="margin:0 0 8px">Text (plain, one segment, 160 characters max; a long title is shortened)</p>
+    <div class="sms">Makin' It: We're live now reviewing music, including "Night Shift". Watch: makinitmag.com/live Reply STOP to opt out.</div>
+  </div>
+  <div>
+    <p class="muted small" style="margin:0 0 8px">Email · subject: <b style="color:var(--ink)">We're live reviewing music now</b></p>
+    <div class="mail">
+      <div class="hd">The A&amp;R Meeting</div>
+      <div class="bd">
+        <h1>We're live now.</h1>
+        <p style="margin:0 0 6px">We're reviewing music live right now, including “Night Shift” by Jay Monroe.</p>
+        <p style="margin:0 0 4px;color:#F6F7FB;font-weight:bold">Watch, and bring your fans to the comments.</p>
+        <a class="cta" href="#">Watch live</a>
+        <p style="margin:0;font-size:12.5px">makinitmag.com/live</p>
+        <p style="margin:14px 0 0;font-size:12.5px;color:#8A94A6">Subscribe to our YouTube channel and hit the bell so you're notified when we go live.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div></body></html>
