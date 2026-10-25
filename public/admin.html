@@ -185,6 +185,7 @@
   .dllink{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap;max-width:200px;display:block}
   .dllink.bad{color:var(--hot)}
+  #dlLive .ok{color:var(--signal)} #dlLive .bad{color:var(--hot)}
   a.dllink{color:var(--accent);text-decoration:none}
   a.dllink:hover{text-decoration:underline}
   a.dlig{color:var(--accent);text-decoration:none;font-family:"Space Mono",monospace;font-size:11px}
@@ -364,6 +365,16 @@
         <h3 id="dlDayHead" style="margin:0 0 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace"></h3>
         <div class="row" style="gap:8px" id="dlStats"></div>
         <p class="muted" id="dlSched" style="font-size:12px;line-height:1.55;margin:10px 0 0"></p>
+      </div>
+
+      <!-- "We're live" to the artists (051): mockup public/_mock-live-call.html -->
+      <div class="card" id="dlLive">
+        <div class="row" style="justify-content:space-between;gap:8px">
+          <h3 id="dlLiveHead" style="margin:0;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);font-family:'Space Mono',monospace">Go live</h3>
+          <span class="muted" style="font-size:12px">Link: <span id="dlLiveLink">makinitmag.com/live</span></span>
+        </div>
+        <div id="dlLiveBody"><div class="empty">Loading…</div></div>
+        <div class="err" id="dlLiveErr"></div>
       </div>
 
       <div id="dlHold" class="card hide" style="border-color:var(--gold);background:rgba(245,197,24,.06)">
@@ -2432,8 +2443,90 @@ async function openDaily(){
   // Every published day, not just the one on screen — and deliberately not awaited into the
   // status render, so a slow or failing readout never holds up the day the operator came for.
   loadResultsState();
+  loadLiveCall();
   loadDropLog();
 }
+
+// ===== "We're live" to the artists (051) =====
+// One press emails + texts every artist in the drop. The confirm lives in the card, and a
+// refresh while it is up leaves the card alone so the 10s re-render cannot eat it.
+let DLLIVE = null, dlLiveConfirm = false, dlLiveBusy = false;
+async function loadLiveCall(){
+  const sid = DL && DL.drop && DL.drop.id;
+  if(!sid){ $('#dlLiveBody').innerHTML = ''; return; }
+  if(dlLiveConfirm || dlLiveBusy) return;
+  try{
+    DLLIVE = await api('/api/admin/live-call?s=' + encodeURIComponent(sid), null, 'GET');
+    renderLiveCall();
+  }catch(e){ $('#dlLiveBody').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+function dlLiveStat(n, label, cls){
+  return '<div><b style="display:block;font:700 22px \'Space Mono\',monospace"' + (cls ? ' class="' + cls + '"' : '') + '>' + n + '</b>'
+    + '<span style="font:400 9px \'Space Mono\',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)">' + label + '</span></div>';
+}
+function dlLiveWho(v){
+  if(v === 'none') return '<span class="muted">none</span>';
+  if(v === 'reference') return '<span class="muted">left out</span>';
+  if(/^same:/.test(v)) return '<span class="muted">same as #' + esc(v.slice(5)) + '</span>';
+  return '<span style="color:var(--signal)">' + esc(v) + '</span>';
+}
+function renderLiveCall(){
+  const d = DLLIVE; if(!d) return;
+  $('#dlLiveHead').textContent = 'Go live · ' + ((DL && DL.drop && (DL.drop.dayLabel || DL.drop.day)) || '');
+  $('#dlLiveLink').textContent = d.link || 'makinitmag.com/live';
+  const last = d.calls.length ? d.calls[d.calls.length - 1] : null;
+  const stat = s => '<div class="row" style="gap:22px;margin:14px 0 4px">' + s + '</div>';
+  let h = '';
+  if(!last){
+    h += '<p class="muted" style="font-size:12.5px;margin:10px 0 0">Tells every artist in this drop that you\'re live reviewing music now, by email and text. Each address gets one message, even with two records in the drop. Reference tracks are left out.</p>';
+    h += stat(dlLiveStat(d.artists, 'Artists') + dlLiveStat(d.emails, 'Emails') + dlLiveStat(d.texts, 'Texts')
+      + dlLiveStat(d.noContact, 'No contact', 'muted'));
+  } else {
+    h += stat(dlLiveStat(last.emailsSent, 'Emails sent', 'ok') + dlLiveStat(last.textsSent, 'Texts sent', 'ok')
+      + (last.failed.length ? dlLiveStat(last.failed.length, 'Failed', 'bad') : '')
+      + (last.pending ? dlLiveStat(last.pending, 'Still to send') : ''));
+    h += '<p style="font-size:12.5px;margin:6px 0 0">Sent <b>' + esc(last.lastLabel || last.startedLabel) + ' ET</b>'
+      + (d.calls.length > 1 ? ' (press ' + last.callNo + ')' : '') + '.'
+      + (last.failed.length ? ' Failed: ' + last.failed.map(f => esc(f.to) + ' (' + esc(f.error) + ')').join(', ') + '.' : '') + '</p>';
+  }
+  h += '<div class="row" style="gap:10px;margin-top:12px">';
+  if(dlLiveConfirm){
+    h += '<div style="border:1px solid var(--signal);border-radius:12px;padding:14px;max-width:460px">'
+      + '<b style="display:block;font-size:16px;margin-bottom:6px">' + (last ? 'Tell the artists again?' : 'Tell the artists you\'re live?') + '</b>'
+      + '<p class="muted" style="font-size:12.5px;margin:0 0 12px">' + d.emails + ' emails and ' + d.texts + ' texts go out now to the artists in this drop, linking ' + esc(d.link) + '. There is no unsend.</p>'
+      + '<div class="row" style="gap:8px"><button class="btn good" onclick="dlLiveSend()">Send ' + d.emails + ' emails + ' + d.texts + ' texts</button>'
+      + '<button class="btn ghost" onclick="dlLiveCancel()">Cancel</button></div></div>';
+  } else if(last){
+    h += '<button class="btn ghost" onclick="dlLiveAsk()"' + (dlLiveBusy ? ' disabled' : '') + '>Send again</button>'
+      + '<span class="muted" style="font-size:12px">Asks twice. Use for a second stream on the same drop.</span>';
+  } else {
+    h += '<button class="btn good" onclick="dlLiveAsk()"' + ((d.emails || d.texts) && !dlLiveBusy ? '' : ' disabled') + '>We\'re live: tell the artists</button>'
+      + '<span class="muted" style="font-size:12px">Texts send right away, at any hour. The 10 AM–10:30 PM ET hold does not apply to this button.</span>';
+  }
+  h += '</div>';
+  const rows = d.records.map(r => '<tr><td>' + r.n + '</td><td><b>' + esc(r.title || '—') + '</b>' + (r.artist ? ' · ' + esc(r.artist) : '')
+    + (r.email === 'reference' ? ' <span class="pill">reference</span>' : '') + '</td><td>' + dlLiveWho(r.email) + '</td><td>' + dlLiveWho(r.sms) + '</td></tr>').join('');
+  h += '<details' + (last ? '' : ' open') + ' style="margin-top:12px"><summary class="muted" style="cursor:pointer;font-size:12.5px">Who gets it (' + d.records.length + ')</summary>'
+    + '<table class="dltable" style="margin-top:10px"><tr><th>#</th><th>Record</th><th>Email</th><th>Text</th></tr>' + rows + '</table></details>';
+  $('#dlLiveBody').innerHTML = h;
+}
+window.dlLiveAsk = () => { $('#dlLiveErr').textContent = ''; dlLiveConfirm = true; renderLiveCall(); };
+window.dlLiveCancel = () => { dlLiveConfirm = false; renderLiveCall(); };
+window.dlLiveSend = async () => {
+  const sid = DL && DL.drop && DL.drop.id; if(!sid || dlLiveBusy) return;
+  const again = !!(DLLIVE && DLLIVE.calls.length);
+  dlLiveConfirm = false; dlLiveBusy = true; $('#dlLiveErr').textContent = '';
+  $('#dlLiveBody').innerHTML = '<div class="empty">Sending…</div>';
+  try{
+    let d = await api('/api/admin/live-call', { s: sid, send: true, again });
+    // A press that ran past the request's time budget leaves rows pending; keep sending them.
+    for(let i = 0; i < 20 && d.calls.length && d.calls[d.calls.length - 1].pending; i++) d = await api('/api/admin/live-call', { s: sid });
+    DLLIVE = d;
+  }catch(e){ $('#dlLiveErr').textContent = e.message; }
+  dlLiveBusy = false;
+  await loadLiveCall();
+  loadDropLog();
+};
 
 // ===== The drop log (050) =====
 let DLLOG = null, dlLogPost = null;

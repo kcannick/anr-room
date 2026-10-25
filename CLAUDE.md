@@ -1179,6 +1179,19 @@ live on anr.makinitmag.com.
   console (no new secret); the card's "Mark scheduled" is the hand fallback. A re-schedule replaces
   the mark. `GET /api/admin/daily/log?s=`; both platform-admin only. Mockup: `public/_mock-daily-log.html`.
 
+- **"We're live" to the artists** (051, 2026-10-25, operator: the daily drop is now played on a
+  live stream). A **Go live** card at the top of the A&R Daily console (mockup
+  `public/_mock-live-call.html`): one press emails + texts EVERY artist in the drop — rated or not,
+  reference tracks and Versus out — "We're live now reviewing music", linking makinitmag.com/live
+  (`LIVE_SUBSCRIBE_URL`). **One message per ADDRESS per press** (`liveCallPlan`: email case-blind,
+  phone via sms.js `normalize`; an artist with two records hears once, about the first).
+  **Quiet hours do NOT apply** (operator) — the texts go when pressed; every other artist text
+  keeps the ET window. Own queue `artist_live_calls` (not `artist_headsups`, whose
+  UNIQUE(round_id, channel) is one-per-record-ever), keyed by `call_no` so **Send again** is a
+  second press (the server refuses a second press without `again:true`; the card asks twice).
+  Rows are claimed pending→sending; `POST /api/admin/live-call {s}` drains leftovers, `GET` is the
+  masked recipient list + every press. Each press is a line on the drop Log. Platform-admin only.
+  No score, rank or count in the message (the seal).
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
    bracket for the stream; the Promo Budget crediting for the artist tournament; the Series
