@@ -9817,6 +9817,11 @@ async function handleApi(req, res, url) {
     if (!session) return bad(res, 'Admin auth failed', 401);
     const valid = ['upcoming', 'live', 'completed', 'archived'];
     if (!valid.includes(status)) return bad(res, 'Invalid status');
+    // A daily drop's status belongs to the lifecycle (open → live, publish → completed).
+    // "Back to upcoming" on an OPEN drop left it async_state='open' but status='upcoming',
+    // and every /daily lookup (status='live') fell back to the day before — mid-review
+    // (2026-10-25). These are live-show buttons; a drop never takes them.
+    if (session.mode === 'async') return send(res, 409, { error: 'A daily drop opens, closes and publishes on its own schedule. Its status cannot be changed here.' });
     const wasLive = session.status === 'live';
     // Going live stamps the actual start time when the host never scheduled one, so
     // every started room carries a real scheduled_at (migration 025 backfilled history;
