@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1080">
+<title>A&amp;R Wars Overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   The tournament stream overlay — an OBS browser source, 1080x1920 (vertical ONLY: the
+   stream goes to Instagram Live / TikTok). Transparent; only the cards paint.
+   Approved mockup: public/_mock-tournament-overlay.html.
+
+     /overlay/wars?view=bracket|matchup|champion|countdown[&t=<slug>][&kind=ar|artist][&bg=1]
+
+   countdown = just the time left to the tournament's start (event_at), for the Starting soon
+   scene: the brand font lives here, not on the OBS machine.
+
+   One source per view in OBS, so each scene shows the one it wants. Reads the PUBLIC
+   tournament feed (/api/tournament), which carries the seal: a poll's split is null until
+   it is ratified, so this page can only ever print the vote COUNT while a poll is open.
+   Polls every 2s (one OBS machine — the cost does not scale with viewers).
+
+   Both apps paint their own UI over the stream: profile / LIVE / viewers across the top
+   (~230px) and the comments over the bottom (~500px). Every card lives at y 250–1400.
+   Colour: purple = the bracket / head-to-head; green = live (the open poll, the count);
+   gold = first place only (the champion). No prize is printed (retired 2026-10-23).
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; --gold:#F5C518; }
+*{box-sizing:border-box}
+html,body{margin:0;background:transparent;color:var(--ink);font-family:'Archivo',system-ui,sans-serif;overflow:hidden}
+body.bg{background:repeating-conic-gradient(#3a3a3a 0 25%,#2a2a2a 0 50%) 0 0/40px 40px}
+#c{position:relative;width:1080px;height:1920px;overflow:hidden}
+.hide{display:none!important}
+.mono{font-family:'Space Mono',monospace;font-weight:700}
+.card{position:absolute;left:40px;width:1000px;top:250px;background:rgba(14,12,26,.95);border:2px solid var(--line);border-radius:22px}
+
+.lock{display:flex;align-items:center}
+.lock img{display:block;flex:none;width:auto}
+.lock .w{font-weight:900;letter-spacing:-.04em;text-transform:uppercase;line-height:1;white-space:nowrap}
+.ph{border-radius:50%;overflow:hidden;background:var(--line);flex:none;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-weight:700;color:var(--dim)}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.tag{display:inline-flex;align-items:center;gap:10px;font-family:'Space Mono',monospace;font-weight:700;letter-spacing:.08em;text-transform:uppercase;line-height:1;white-space:nowrap}
+.tag .dot{width:12px;height:12px;border-radius:50%;background:var(--green);flex:none}
+.tag.listening{color:var(--dim)} .tag.listening .dot{background:var(--dim)}
+.tag.voting{color:var(--green)}
+.tag.closed{color:var(--ink)} .tag.closed .dot{background:var(--ink)}
+.tag.result{color:#b9b1ff} .tag.result .dot{background:var(--purple)}
+.tag.next{color:var(--dim)} .tag.next .dot{background:transparent;border:2px solid var(--dim)}
+.tag.champ{color:var(--gold)} .tag.champ .dot{background:var(--gold)}
+
+/* ---------- bracket ---------- */
+.hd{display:flex;align-items:center;justify-content:space-between;padding:26px 28px 0}
+.hd .lock img{height:50px} .hd .lock .w{font-size:46px;margin-left:12px}
+.hd .lock .n{font-family:'Space Mono',monospace;font-weight:700;font-size:24px;color:var(--dim);margin-left:14px}
+.hd .rt{text-align:right} .hd .rt .tag{font-size:20px}
+.hd .rt .sub{font-family:'Space Mono',monospace;font-weight:700;font-size:18px;color:var(--dim);margin-top:8px}
+.sec{padding:0 28px}
+.rl{display:inline-flex;height:32px;align-items:center;padding:0 18px;margin:24px 0 12px 6px;border:2px solid var(--line);border-radius:4px;transform:skewX(-13deg)}
+.rl span{transform:skewX(13deg);font-family:'Space Mono',monospace;font-weight:700;font-size:16px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+.rl.on{background:var(--purple);border-color:var(--purple)} .rl.on span{color:var(--ink)}
+.rl.gold{background:var(--gold);border-color:var(--gold)} .rl.gold span{color:var(--ground)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.mc{border:2px solid var(--line);border-radius:12px;background:var(--panel);padding:8px 12px;position:relative}
+.mc.now{border-color:var(--green);box-shadow:0 0 0 4px rgba(75,183,73,.18)}
+.mc .row{display:flex;align-items:center;gap:12px;height:54px}
+.mc .row+.row{border-top:1px solid #241e40}
+.mc .row .ph{width:40px;height:40px;font-size:14px}
+.mc .row .nm{font-weight:800;font-size:23px;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.mc .row .sd{font-family:'Space Mono',monospace;font-weight:700;font-size:15px;color:var(--dim)}
+.mc .row .wn{font-family:'Space Mono',monospace;font-weight:700;font-size:20px;color:#b9b1ff;min-width:16px;text-align:right}
+.mc .row.out{opacity:.38}
+.mc .row.empty .nm{font-family:'Space Mono',monospace;font-weight:700;font-size:16px;color:#9a90f0;letter-spacing:.06em;text-transform:uppercase}
+.mc .row.empty .ph{background:transparent;border:2px dashed var(--purple)}
+.mc .fl{position:absolute;right:10px;top:-15px;height:28px;padding:0 10px;border-radius:6px;background:var(--green);color:var(--ground);display:flex;align-items:center;font-family:'Space Mono',monospace;font-weight:700;font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+.mc .fl.listening,.mc .fl.closed{background:var(--dim)}
+.fin{display:grid;grid-template-columns:1.45fr 1fr;gap:14px;align-items:stretch}
+.cbox{border:2px dashed var(--purple);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-weight:700;font-size:17px;color:#9a90f0;letter-spacing:.06em;text-transform:uppercase;text-align:center;padding:10px}
+.cbox.won{background:var(--gold);border:2px solid var(--gold);color:var(--ground)}
+.cbox.won .ph{width:72px;height:72px;margin-bottom:10px}
+.cbox.won .nm{font-family:'Archivo',sans-serif;font-weight:900;font-size:26px;letter-spacing:-.03em;text-transform:none;margin-top:6px}
+.ft{margin:24px 28px 0;padding:18px 0 24px;border-top:2px solid var(--line);display:flex;justify-content:space-between;align-items:flex-end}
+.ft .k{font-weight:900;font-size:26px;letter-spacing:-.03em;text-transform:uppercase}
+.ft .u{font-family:'Space Mono',monospace;font-weight:700;font-size:22px;color:var(--green);margin-top:6px}
+.ft .r{font-family:'Space Mono',monospace;font-weight:700;font-size:17px;color:var(--dim);text-align:right}
+
+/* ---------- matchup ---------- */
+.mu .tab{display:flex;align-items:center;gap:14px;height:56px;padding:0 24px;background:var(--purple);border-radius:20px 20px 0 0}
+.mu .tab .lock img{height:34px} .mu .tab .lock .w{font-size:28px;margin-left:10px}
+.mu .tab .rd{font-family:'Space Mono',monospace;font-weight:700;font-size:19px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mu .sides{display:flex;align-items:flex-start;padding:30px 24px 0}
+.mu .sd2{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;text-align:center}
+.mu .sd2 .ph{width:200px;height:200px;border:6px solid var(--ink);font-size:56px}
+.mu .sd2.b .ph{border-color:var(--purple)}
+.mu .sd2 .nm{margin-top:18px;font-weight:900;font-size:44px;line-height:1;letter-spacing:-.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.mu .sd2 .sg{margin-top:10px;font-family:'Space Mono',monospace;font-weight:700;font-size:19px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;min-height:22px}
+.mu .sd2 .pct{margin-top:14px;font-family:'Space Mono',monospace;font-weight:700;font-size:72px;letter-spacing:-.05em;line-height:1}
+.mu .sd2.b .pct{color:#9a90f0}
+.mu .sd2.lost{opacity:.4}
+.mu .sd2 .wl{margin-top:12px;padding:6px 12px;border-radius:5px;background:var(--purple);font-family:'Space Mono',monospace;font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase}
+.mu .vsx{flex:none;width:110px;display:flex;justify-content:center;padding-top:70px}
+.vs{width:90px;height:66px;transform:skewX(-13deg);background:var(--purple);border-radius:5px;display:flex;align-items:center;justify-content:center}
+.vs span{transform:skewX(13deg);font-weight:900;font-size:30px;letter-spacing:-.03em}
+.mu .st{display:flex;align-items:center;justify-content:space-between;margin:28px 24px 0;padding:20px 0 26px;border-top:2px solid var(--line)}
+.mu .st .tag{font-size:22px}
+.mu .st .cnt{font-family:'Space Mono',monospace;font-weight:700;font-size:20px;color:var(--dim);margin-top:8px}
+.ticks{display:flex;gap:7px}
+.tk{width:26px;height:16px;transform:skewX(-13deg);border:2px solid rgba(234,233,242,.55);border-radius:2px}
+.tk.done{background:var(--ink);border-color:var(--ink)}
+.tk.now{background:var(--green);border-color:var(--green)}
+.tk.final{width:40px}
+.polls{display:flex;gap:6px;margin-top:12px}
+.pl{width:14px;height:14px;border-radius:50%;border:2px solid var(--dim)}
+.pl.a{background:var(--ink);border-color:var(--ink)} .pl.b{background:var(--purple);border-color:var(--purple)} .pl.now{border-color:var(--green);background:var(--green)}
+
+/* ---------- champion ---------- */
+.ch .band{height:76px;background:var(--gold);color:var(--ground);display:flex;align-items:center;padding:0 30px;font-weight:900;font-size:34px;letter-spacing:.02em;text-transform:uppercase;border-radius:20px 20px 0 0}
+.ch .bd{display:flex;flex-direction:column;align-items:center;padding:40px 30px 34px}
+.ch .ph{width:280px;height:280px;border:8px solid var(--gold);font-size:80px}
+.ch .nm{margin-top:26px;font-weight:900;font-size:72px;line-height:1;letter-spacing:-.04em;text-align:center}
+.ch .h{margin-top:14px;font-family:'Space Mono',monospace;font-weight:700;font-size:28px;color:var(--dim)}
+#cd{position:absolute;left:0;top:0;font-family:'Space Mono',monospace;font-weight:700;font-size:110px;line-height:1;letter-spacing:-.04em;color:var(--green);white-space:nowrap}
+.ch .ft2{border-top:2px solid var(--line);margin:0 30px;padding:20px 0 26px;font-family:'Space Mono',monospace;font-weight:700;font-size:22px;color:var(--dim);display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<div id="c"><div id="card" class="card hide"></div><div id="cd" class="hide"></div></div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var VIEW = ({ bracket: 'bracket', matchup: 'matchup', lower: 'matchup', champion: 'champion', countdown: 'countdown' })[q.get('view')] || 'bracket';
+  var SLUG = q.get('t') || q.get('slug') || '';
+  var KIND = q.get('kind') === 'artist' ? 'artist' : 'ar';
+  if (q.get('bg') === '1') document.body.classList.add('bg');
+  var ROUND = ['Round 1', 'Final 4', 'Final'];
+  var R1 = [[1, 8], [4, 5], [3, 6], [2, 7]];
+  var HOST = location.host;
+  var card = document.getElementById('card');
+
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function initials(n) { return esc(String(n || '?').trim().split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase()); }
+  function photo(c) { return c && c.photoUrl ? '<img src="' + esc(c.photoUrl) + '" alt="">' : initials(c && c.name); }
+  function lock(T, onPurple) { return '<div class="lock"><img src="/brand/mark/anr-mark-' + (onPurple ? 'ink' : 'purple') + '.svg" alt="A&amp;R"><span class="w">' + esc(T.lockupWord || 'Wars') + '</span>' + (onPurple ? '' : '<span class="n">#' + esc(T.number || 1) + '</span>') + '</div>'; }
+
+  // ---- derive the night from the public shape ----
+  function model(T) {
+    var byId = {}; T.competitors.forEach(function (c) { byId[c.id] = c; });
+    var bySeed = {}; T.competitors.forEach(function (c) { bySeed[c.seed] = c; });
+    var ms = (T.matches || []).slice().sort(function (a, b) { return a.round_no - b.round_no || a.slot - b.slot; });
+    if (!ms.length) {   // promo: no bracket rows public yet — draw round 1 off the seeds
+      ms = R1.map(function (p, i) { return { round_no: 1, slot: i + 1, a_id: bySeed[p[0]] && bySeed[p[0]].id, b_id: bySeed[p[1]] && bySeed[p[1]].id, winner_id: null, polls: [] }; })
+        .concat([{ round_no: 2, slot: 1, polls: [] }, { round_no: 2, slot: 2, polls: [] }, { round_no: 3, slot: 1, polls: [] }]);
+    }
+    // The current match: the one with an open poll; else the last one played; else the next to play.
+    var cur = -1, i;
+    for (i = 0; i < ms.length; i++) if (ms[i].live) cur = i;
+    if (cur < 0) for (i = 0; i < ms.length; i++) if ((ms[i].polls || []).length) cur = i;
+    var phase = 'next';
+    if (cur >= 0) {
+      var last = ms[cur].polls[ms[cur].polls.length - 1];
+      // a played match keeps its result up until the next one is queued
+      phase = last.status === 'ratified' ? 'result' : (last.status === 'listening' || last.status === 'voting' || last.status === 'closed') ? last.status : 'next';
+    }
+    if (cur < 0) for (i = 0; i < ms.length; i++) if (!ms[i].winner_id && ms[i].a_id && ms[i].b_id) { cur = i; break; }
+    return { T: T, byId: byId, ms: ms, cur: cur, phase: phase, finalPolls: Number(T.finalPolls) || 3 };
+  }
+  function pollWins(m) {
+    var a = 0, b = 0;
+    (m.polls || []).forEach(function (p) { if (p.split_a != null && p.votes > 0) { if (p.split_a > 50) a++; else if (p.split_a < 50) b++; } });
+    return { a: a, b: b };
+  }
+  function phaseTag(M) {
+    var T = M.T;
+    if (T.status === 'complete' && T.champion) return '<span class="tag champ"><span class="dot"></span>Champion</span>';
+    var L = { listening: 'Listening', voting: 'Voting open', closed: 'Voting closed', result: 'Result', next: 'Up next' };
+    return '<span class="tag ' + M.phase + '"><span class="dot"></span>' + L[M.phase] + '</span>';
+  }
+
+  // ---- bracket ----
+  function mcard(M, i) {
+    var m = M.ms[i], T = M.T, now = !(T.status === 'complete') && i === M.cur && M.phase !== 'result' && M.phase !== 'next';
+    var empty = function (j) {
+      if (m.round_no === 1) return 'TBD';
+      if (m.round_no === 2) { var src = M.ms[2 * (m.slot - 1) + j]; var a = src && M.byId[src.a_id], b = src && M.byId[src.b_id]; return a && b ? 'Winner ' + a.seed + 'v' + b.seed : 'TBD'; }
+      return 'TBD';
+    };
+    var wins = m.round_no === 3 ? pollWins(m) : null;
+    var rows = [m.a_id, m.b_id].map(function (cid, j) {
+      var c = cid && M.byId[cid];
+      if (!c) return '<div class="row empty"><div class="ph"></div><div class="nm">' + empty(j) + '</div></div>';
+      var out = m.winner_id && m.winner_id !== cid;
+      var wn = wins && (m.polls || []).length ? '<div class="wn">' + (j ? wins.b : wins.a) + '</div>' : '';
+      return '<div class="row' + (out ? ' out' : '') + '"><div class="ph">' + photo(c) + '</div><div class="nm">' + esc(c.name) + '</div><div class="sd">#' + esc(c.seed) + '</div>' + wn + '</div>';
+    }).join('');
+    var fl = '';
+    if (now) {
+      var last = m.polls[m.polls.length - 1];
+      var n = m.round_no === 3 ? 'Poll ' + m.polls.length + ' of ' + M.finalPolls + ' · ' : '';
+      fl = '<div class="fl ' + M.phase + '">' + n + (M.phase === 'listening' ? 'Listening' : M.phase === 'closed' ? 'Counting · ' + last.votes : 'Voting · ' + last.votes) + '</div>';
+    }
+    return '<div class="mc' + (now ? ' now' : '') + '">' + fl + rows + '</div>';
+  }
+  function renderBracket(M) {
+    var T = M.T, champ = T.status === 'complete' ? T.champion : null;
+    var curM = M.cur >= 0 ? M.ms[M.cur] : null, live = champ ? 3 : curM ? curM.round_no - 1 : 0;
+    var lbl = function (t, i) { return '<div class="rl ' + (i === 3 && champ ? 'gold' : i === live && !champ ? 'on' : '') + '"><span>' + t + '</span></div>'; };
+    var sub = champ ? 'Final · decided' : curM ? ROUND[curM.round_no - 1] + ' · match ' + (M.cur + 1) + ' of 7' : '';
+    var cbox = champ
+      ? '<div class="cbox won"><div class="ph">' + photo(champ) + '</div>Champion<div class="nm">' + esc(champ.name) + '</div></div>'
+      : '<div class="cbox">Champion</div>';
+    card.className = 'card';
+    card.innerHTML =
+      '<div class="hd">' + lock(T) + '<div class="rt">' + phaseTag(M) + '<div class="sub">' + esc(sub) + '</div></div></div>' +
+      '<div class="sec">' + lbl('Round 1', 0) + '<div class="g2">' + [0, 1, 2, 3].map(function (i) { return mcard(M, i); }).join('') + '</div></div>' +
+      '<div class="sec">' + lbl('Final 4', 1) + '<div class="g2">' + [4, 5].map(function (i) { return mcard(M, i); }).join('') + '</div></div>' +
+      '<div class="sec">' + lbl('Final', 2) + '<div class="fin">' + mcard(M, 6) + cbox + '</div></div>' +
+      '<div class="ft"><div><div class="k">Vote in the A&amp;R Room</div><div class="u">' + esc(HOST) + '</div></div>' +
+      '<div class="r">' + T.competitors.length + ' A&amp;Rs · 7 matchups</div></div>';
+  }
+
+  // ---- matchup ----
+  function renderMatchup(M) {
+    var T = M.T;
+    if (M.cur < 0) { card.className = 'card hide'; return; }
+    var m = M.ms[M.cur], A = M.byId[m.a_id], B = M.byId[m.b_id];
+    if (!A || !B) { card.className = 'card hide'; return; }
+    var last = (m.polls || [])[m.polls.length - 1] || null;
+    var res = M.phase === 'result' && last && last.split_a != null;
+    var isFinal = m.round_no === 3;
+    var pollNo = isFinal ? (m.polls.length || 1) : 0;
+    var winSide = res ? (m.winner_id ? (m.winner_id === m.a_id ? 'a' : 'b') : (last.split_a > 50 ? 'a' : last.split_a < 50 ? 'b' : null)) : null;
+    var side = function (c, song, cls, pct) {
+      var lost = res && winSide && winSide !== cls;
+      var adv = res && m.winner_id === c.id ? '<div class="wl">Advances</div>' : '';
+      if (res && isFinal && m.winner_id === c.id) adv = '<div class="wl">Champion</div>';
+      return '<div class="sd2 ' + cls + (lost ? ' lost' : '') + '"><div class="ph">' + photo(c) + '</div><div class="nm">' + esc(c.name) + '</div>' +
+        '<div class="sg">' + esc(song || (c.handle ? '@' + String(c.handle).replace(/^@/, '') : '')) + '</div>' +
+        (res ? '<div class="pct">' + pct + '%</div>' : '') + adv + '</div>';
+    };
+    var ticks = M.ms.map(function (x, k) { return '<div class="tk' + (k === 6 ? ' final' : '') + (x.winner_id ? ' done' : k === M.cur && M.phase !== 'result' ? ' now' : '') + '"></div>'; }).join('');
+    var polls = '';
+    if (isFinal) {
+      var dots = '';
+      for (var k = 0; k < M.finalPolls; k++) {
+        var p = m.polls[k];
+        var c = !p ? '' : (p.split_a != null && p.votes > 0) ? (p.split_a > 50 ? 'a' : p.split_a < 50 ? 'b' : '') : 'now';
+        dots += '<div class="pl ' + c + '"></div>';
+      }
+      polls = '<div class="polls">' + dots + '</div>';
+    }
+    var cnt = M.phase === 'listening' ? 'Voting opens when the songs end'
+      : M.phase === 'next' ? 'Next matchup'
+      : (last ? last.votes : 0) + ' A&amp;Rs voted' + (res && last.split_a === 50 ? ' · tie, the host decides' : '');
+    var splitA = res ? Math.round(last.split_a) : 0;
+    card.className = 'card mu';
+    card.innerHTML =
+      '<div class="tab">' + lock(T, true) + '<span class="rd">' + ROUND[m.round_no - 1] + ' · Match ' + (M.cur + 1) + ' of 7' + (isFinal ? ' · Poll ' + pollNo + ' of ' + M.finalPolls : '') + '</span></div>' +
+      '<div class="sides">' + side(A, last && last.songA, 'a', splitA) + '<div class="vsx"><div class="vs"><span>VS</span></div></div>' + side(B, last && last.songB, 'b', 100 - splitA) + '</div>' +
+      '<div class="st"><div>' + phaseTag(M) + '<div class="cnt">' + cnt + '</div>' + polls + '</div><div class="ticks">' + ticks + '</div></div>';
+  }
+
+  // ---- champion ----
+  function renderChampion(M) {
+    var T = M.T, c = T.status === 'complete' ? T.champion : null;
+    if (!c) { card.className = 'card hide'; return; }
+    var fm = M.ms[6], w = fm ? pollWins(fm) : null;
+    var score = w && (w.a || w.b) ? 'Won the final ' + Math.max(w.a, w.b) + '–' + Math.min(w.a, w.b) : '';
+    card.className = 'card ch';
+    card.innerHTML = '<div class="band">Champion</div><div class="bd"><div class="ph">' + photo(c) + '</div><div class="nm">' + esc(c.name) + '</div>' +
+      (c.handle ? '<div class="h">@' + esc(String(c.handle).replace(/^@/, '')) + '</div>' : '') + '</div>' +
+      '<div class="ft2"><span>' + esc(T.name) + ' #' + esc(T.number || 1) + '</span><span>' + esc(score) + '</span></div>';
+  }
+
+  // ---- countdown (ticks every second off the last eventAt the feed gave) ----
+  var eventAt = null, cd = document.getElementById('cd');
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+  function renderCountdown() {
+    if (!eventAt) { cd.className = 'hide'; return; }
+    var s = Math.round((eventAt - Date.now()) / 1000);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    cd.textContent = s <= 0 ? 'Starting now' : (h ? h + ':' + two(m) : m) + ':' + two(sec);
+    cd.className = '';
+  }
+  if (VIEW === 'countdown') setInterval(renderCountdown, 1000);
+
+  var lastJson = '';
+  function render(T) {
+    if (VIEW === 'countdown') { eventAt = T.eventAt || null; renderCountdown(); return; }
+    var M = model(T);
+    if (VIEW === 'matchup') renderMatchup(M);
+    else if (VIEW === 'champion') renderChampion(M);
+    else renderBracket(M);
+  }
+  function tick() {
+    var u = '/api/tournament?' + (SLUG ? 'slug=' + encodeURIComponent(SLUG) : 'kind=' + KIND);
+    fetch(u, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d || !d.tournament) { card.className = 'card hide'; cd.className = 'hide'; eventAt = null; lastJson = ''; return; }
+      var j = JSON.stringify(d.tournament);
+      if (j === lastJson) return;          // nothing moved: keep the DOM (and the images) as they are
+      lastJson = j;
+      render(d.tournament);
+    }).catch(function () { /* keep the last frame on a network blip */ });
+  }
+  tick();
+  setInterval(tick, 2000);
+})();
+</script>
+</body>
+</html>
