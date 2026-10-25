@@ -2273,6 +2273,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
     await rec(7, 'A vs B', '', 'versus@live.test', '4045558888', { binary: true });
 
     ok('live call: admin-only', (await call('/api/admin/live-call?s=' + LS, null, 'GET')).status === 403);
+    // 2026-10-25: "Back to upcoming" on an open drop stranded it (status upcoming, async open).
+    const unlive = await call('/api/admin/session/status', { sessionId: LS, status: 'upcoming' }, 'POST', BOOTH);
+    const lsRow = await dDb.get('SELECT status, async_state FROM sessions WHERE id = ?', [LS]);
+    ok('a daily drop refuses the live-show status buttons and stays live',
+      unlive.status === 409 && lsRow.status === 'live' && lsRow.async_state === 'open', JSON.stringify({ s: unlive.status, lsRow }));
     const g = await call('/api/admin/live-call?s=' + LS, null, 'GET', BOOTH);
     ok('live call: counts every artist in the drop, one per address, reference + Versus out',
       g.status === 200 && g.d.artists === 5 && g.d.emails === 3 && g.d.texts === 2 && g.d.noContact === 1 && g.d.records.length === 6, JSON.stringify(g.d));
