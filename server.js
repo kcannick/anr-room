@@ -12232,6 +12232,8 @@ const server = http.createServer(async (req, res) => {
     // copy) lands on the same page and section.
     if (url.pathname === '/account' || url.pathname === '/refer') return serveStatic(res, 'account.html');
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
+    // The tournament stream overlay (vertical 1080x1920 OBS source; reads the sealed public feed).
+    if (url.pathname === '/overlay/wars') return serveStatic(res, 'wars-overlay.html');
     // Stable submit link for QR codes: /submit?s=<session> 302s to wherever that
     // session's submission link points RIGHT NOW (Nero, review site, anything).
     // The QR encodes this route, so the host can change the destination mid-show

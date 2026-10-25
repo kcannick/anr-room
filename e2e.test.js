@@ -6002,6 +6002,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tnDb = require('./db');
   ok('tournament: nothing scheduled is a 404', (await call('/api/tournament?kind=ar', null, 'GET')).status === 404);
   ok('tournament: /wars serves the landing page', /tournament/i.test(await (await fetch(base + '/wars')).text()));
+  // The stream overlay reads ONLY the sealed public feed — never an admin route, which would
+  // carry the split of an open poll.
+  const tnOverlay = await fetch(base + '/overlay/wars');
+  const tnOverlayHtml = await tnOverlay.text();
+  ok('tournament: /overlay/wars serves the vertical stream overlay', tnOverlay.status === 200 && /width:1080px;height:1920px/.test(tnOverlayHtml));
+  ok('tournament: the overlay reads only the public feed', tnOverlayHtml.includes("'/api/tournament?'") && !tnOverlayHtml.includes('/api/admin'));
   ok('tournament: a non-admin cannot create one', (await call('/api/admin/tournament', { kind: 'ar', number: 1 }, 'POST', CHHOST)).status === 403);
   const tnBadKind = await call('/api/admin/tournament', { number: 1 }, 'POST', BOOTH);
   ok('tournament: kind is required', tnBadKind.status === 400, JSON.stringify(tnBadKind.d));
