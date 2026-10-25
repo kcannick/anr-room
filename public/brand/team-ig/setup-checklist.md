@@ -72,10 +72,17 @@ a throwaway post (archive it after) before the launch grid goes up.
 
 ## 6. Launch day
 
+Posts are scheduled through **SocialBee** (operator, 2026-10-25). Later, our own integration
+with Meta's API will take over; the same order and rules apply. Pinning, highlights and story
+link stickers are done by hand in the Instagram app either way.
+
 1. Keyword DMs tested (step 3).
-2. Post in this order (Instagram fills the grid newest first):
+2. Schedule in SocialBee in this order, a few minutes apart (Instagram fills the grid newest first):
    1. Schedule · 2. Artists · 3. What the numbers mean (3 slides) · 4. Join · 5. How it works (4 slides) · 6. Intro
-3. Pin **Intro**, **How it works** and **Join** (post menu → Pin to your profile).
+   After scheduling, open each post and check it. If a post carries collaborators or tags: at
+   most 5 collaborators, on slide 1 only; each handle once in the whole post; every handle checked
+   that day as existing and public. The launch posts need none.
+3. When they are live, pin **Intro**, **How it works** and **Join** (post menu → Pin to your profile).
 4. Share each post to a story, then create the six highlights with their covers
    (How it works · Join · Submit music · HOT 100 · Results · Winners; files `hl-*.png`).
 5. Cross-post each to Threads with the topic Independent Artists.
