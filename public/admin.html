@@ -792,6 +792,18 @@
         <div class="bracket" id="tnBracket"></div>
       </div>
 
+      <!-- text every competitor: static, so the 10s live refresh never touches a half-typed message -->
+      <div class="card" id="tnTextCard">
+        <h3 class="sec">Text competitors</h3>
+        <p class="hint" style="margin:0 0 8px" id="tnTextWho">Loading who has a phone on file…</p>
+        <textarea id="tnTextMsg" rows="3" maxlength="600" placeholder="One message to every competitor"></textarea>
+        <div class="row" style="gap:10px;align-items:center;margin-top:8px">
+          <button class="btn sm" id="btnTnText" style="flex:0 0 auto">Send text</button>
+          <span class="hint" id="tnTextCount" style="margin:0"></span>
+        </div>
+        <div id="tnTextOut" class="out hide"></div>
+      </div>
+
       <!-- 5. graphics — one row per seat, then the final promo, then the champion -->
       <div class="card" id="tnGfxCard">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
@@ -3220,7 +3232,7 @@ function renderTournament(){
   const isNew = !t;
   const show = (id, on) => $('#' + id).classList.toggle('hide', !on);
   show('tnFieldCard', !isNew); show('tnBracketCard', !isNew); show('tnGfxCard', !isNew);
-  show('tnLandCard', !isNew); show('tnWrapCard', !isNew && t.status === 'complete');
+  show('tnLandCard', !isNew); show('tnWrapCard', !isNew && t.status === 'complete'); show('tnTextCard', !isNew);
   show('btnTnConsole', !isNew && !!t.sessionId);
 
   // 1. where it is
@@ -3248,6 +3260,7 @@ function renderTournament(){
   renderTnGfx();
   renderTnLanding();
   renderTnWrap();
+  tnTextLoad();
 
   // the live poll: re-read every 10s while the event runs and this screen is on
   tnStopPoll();
@@ -3910,6 +3923,42 @@ function renderTnLanding(){
   $('#btnTnRemind').disabled = !(s.count > 0);
   $('#btnTnCsv').disabled = !(s.count > 0);
 }
+// ---- text competitors ----
+let tnTextFor = '', tnTextRcpt = [];
+async function tnTextLoad(force){
+  if(!TN) return;
+  const key = TN.id + ':' + (TN.competitors || []).map(c => c.id).join(',');
+  if(tnTextFor === key && !force) return;   // re-read when the field changes, not on every live refresh
+  tnTextFor = key;
+  try{
+    tnTextRcpt = (await api('/api/admin/tournament/text?id=' + encodeURIComponent(TN.id), null, 'GET')).recipients || [];
+  }catch(e){ tnTextRcpt = []; $('#tnTextWho').textContent = e.message; return; }
+  const ok = tnTextRcpt.filter(r => !r.reason), off = tnTextRcpt.filter(r => r.reason);
+  $('#tnTextWho').innerHTML = !tnTextRcpt.length ? 'No competitors yet.'
+    : `Goes to <b>${ok.length} of ${tnTextRcpt.length}</b> competitors, right away, from the number on their account.`
+      + (off.length ? ' Not reached: ' + off.map(r => `${esc(r.name)} (${esc(r.reason)})`).join(', ') + '.' : '');
+  $('#btnTnText').disabled = !ok.length;
+}
+$('#tnTextMsg').oninput = () => {
+  const n = $('#tnTextMsg').value.length;
+  $('#tnTextCount').textContent = n ? n + ' characters' + (n > 160 ? ' · sends as MMS' : '') : '';
+};
+$('#btnTnText').onclick = async (e) => {
+  if(!TN) return;
+  const message = $('#tnTextMsg').value.trim();
+  if(!message){ tnErr('Write the message first.'); return; }
+  const n = tnTextRcpt.filter(r => !r.reason).length;
+  if(!confirm(`Text this to ${n} competitor${n === 1 ? '' : 's'} now?\n\n${message}`)) return;
+  const b = e.target, out = $('#tnTextOut'); b.disabled = true; tnErr('');
+  out.classList.remove('hide'); out.textContent = 'Sending…';
+  try{
+    const d = await api('/api/admin/tournament/text', { tournamentId: TN.id, message });
+    out.innerHTML = `Sent to ${d.sent} of ${d.results.length}.<br>` + d.results.map(r =>
+      `${esc(r.name)}: ${r.status === 'sent' ? 'sent to ' + esc(r.to) : esc(r.status) + (r.error ? ' (' + esc(r.error) + ')' : '')}`).join('<br>');
+    if(d.sent){ $('#tnTextMsg').value = ''; $('#tnTextCount').textContent = ''; }
+  }catch(err){ out.textContent = err.message; }
+  finally{ b.disabled = false; }
+};
 $('#btnTnRemind').onclick = async (e) => {
   if(!TN) return;
   const s = TN.subscribers || {};
