@@ -1192,6 +1192,18 @@ live on anr.makinitmag.com.
   Rows are claimed pending→sending; `POST /api/admin/live-call {s}` drains leftovers, `GET` is the
   masked recipient list + every press. Each press is a line on the drop Log. Platform-admin only.
   No score, rank or count in the message (the seal).
+- **Tournament stream overlay** (no migration, 2026-10-25; branch `claude/wars-stream-overlay`,
+  NOT merged when written). `/overlay/wars` (`public/wars-overlay.html`): an OBS browser source,
+  **vertical 1080×1920 only** (the stream goes to Instagram Live / TikTok via Restream; the
+  operator: "Vertical ONLY"). `view=bracket|matchup|champion|countdown`, one OBS source per view;
+  `t=<slug>` or the latest `kind`. Reads ONLY the public `/api/tournament` feed every 2s, so the
+  seal is the server's: an open poll shows its vote COUNT, the split appears after ratify (e2e
+  asserts the page never calls an admin route). Cards stay inside y 250–1400 (the apps draw over
+  the top ~230px and the bottom ~500px). No prize printed. Built to the approved mockup
+  `public/_mock-tournament-overlay.html`. The OBS scene collection (8 scenes; audio is the
+  operator's RØDECaster, so no audio sources; Social Stream Ninja for comments, alerts, viewer
+  total) lives in the Streaming shared drive, `A&R Wars/OBS scene collection/`, not in the repo.
+
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
    bracket for the stream; the Promo Budget crediting for the artist tournament; the Series

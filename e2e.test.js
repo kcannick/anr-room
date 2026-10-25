@@ -6017,6 +6017,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tnDb = require('./db');
   ok('tournament: nothing scheduled is a 404', (await call('/api/tournament?kind=ar', null, 'GET')).status === 404);
   ok('tournament: /wars serves the landing page', /tournament/i.test(await (await fetch(base + '/wars')).text()));
+  // The stream overlay reads ONLY the sealed public feed — never an admin route, which would
+  // carry the split of an open poll.
+  const tnOverlay = await fetch(base + '/overlay/wars');
+  const tnOverlayHtml = await tnOverlay.text();
+  ok('tournament: /overlay/wars serves the vertical stream overlay', tnOverlay.status === 200 && /width:1080px;height:1920px/.test(tnOverlayHtml));
+  ok('tournament: the overlay reads only the public feed', tnOverlayHtml.includes("'/api/tournament?'") && !tnOverlayHtml.includes('/api/admin'));
   ok('tournament: a non-admin cannot create one', (await call('/api/admin/tournament', { kind: 'ar', number: 1 }, 'POST', CHHOST)).status === 403);
   const tnBadKind = await call('/api/admin/tournament', { number: 1 }, 'POST', BOOTH);
   ok('tournament: kind is required', tnBadKind.status === 400, JSON.stringify(tnBadKind.d));
@@ -6118,6 +6124,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && (await call(`/api/admin/tournament?id=${TN}`, null, 'GET', BOOTH)).d.graphics.find(g => g.key === 'pkg1').sms === 'sent'
       && srv._tournaments._packageSmsBody('A&R Wars', 1, 'a@test.com') === "A&R Wars #1: we just sent an email to a@test.com with all the details for the tournament. Check Spam and the Promotions tab if you don't see it. Good luck!"
       && require('./sms').isGsm7(srv._tournaments._packageSmsBody('A&R Wars', 1, 'a@test.com')) && srv._tournaments._packageSmsBody('A&R Wars', 1, 'a@test.com').length <= 160, JSON.stringify(tnForce.d));
+  // the "Text competitors" box: one message to every seat with a phone on its account
+  const tnTxtWho = await call(`/api/admin/tournament/text?id=${TN}`, null, 'GET', BOOTH);
+  const tnTxtOk = (tnTxtWho.d.recipients || []).filter(r => !r.reason);
+  ok('text: the box lists who gets it, masked, and why the rest do not', tnTxtWho.status === 200 && tnTxtWho.d.recipients.length === 8 && tnTxtOk.length === 1
+      && /•/.test(tnTxtOk[0].to) && tnTxtWho.d.recipients.some(r => r.reason === 'no account') && !/4045550123/.test(JSON.stringify(tnTxtWho.d)), JSON.stringify(tnTxtWho.d));
+  ok('text: an empty message is refused', (await call('/api/admin/tournament/text', { tournamentId: TN, message: '  ' }, 'POST', BOOTH)).status === 400);
+  const tnTxt = await call('/api/admin/tournament/text', { tournamentId: TN, message: 'Doors open at 6:45. Be on camera by 6:55.' }, 'POST', BOOTH);
+  ok('text: sends to every competitor with a phone and reports the rest', tnTxt.status === 200 && tnTxt.d.sent === 1 && tnTxt.d.results.length === 8
+      && tnTxt.d.results.filter(r => r.status === 'sent').length === 1 && !/4045550123/.test(JSON.stringify(tnTxt.d)), JSON.stringify(tnTxt.d));
+  ok('text: admin only', (await call('/api/admin/tournament/text', { tournamentId: TN, message: 'x' }, 'POST')).status === 403);
   await tnDb.run("UPDATE users SET phone = NULL WHERE email = 'a@test.com'");
   {
     const T3 = await srv._tournaments._loadById(TN);

@@ -1042,6 +1042,33 @@ ${para(e(P.graphics))}
       return send(res, 200, { ok: true, sent: true, to: maskEmail(u.email), sentAt, attachments: files.length, sms, smsTo });
     }
 
+    // Text every competitor (the console's "Text competitors" box). Their own seat, so it goes to
+    // the number on their account with no marketing-consent gate and no quiet hours — the same
+    // footing as the package heads-up. GET lists who would get it (masked); POST sends.
+    if (p === '/api/admin/tournament/text' && (method === 'GET' || method === 'POST')) {
+      const T = await needT(); if (!T) return true;
+      const uids = T.competitors.map(c => c.user_id).filter(Boolean);
+      const users = new Map();
+      if (uids.length) for (const u of await db.all(`SELECT uid, phone, blocked, deactivated_at, deleted_at FROM users WHERE uid IN (${uids.map(() => '?').join(',')})`, uids)) users.set(u.uid, u);
+      const rows = T.competitors.slice().sort((a, b) => (a.seed || 99) - (b.seed || 99)).map(c => {
+        const u = c.user_id ? users.get(c.user_id) : null;
+        const reason = !u ? 'no account' : userInactive(u) ? 'account closed' : !u.phone ? 'no phone' : null;
+        return { competitorId: c.id, seed: c.seed, name: c.name, phone: reason ? null : u.phone, to: reason ? null : maskPhone(u.phone), reason };
+      });
+      if (method === 'GET') return send(res, 200, { recipients: rows.map(({ phone, ...r }) => r) });
+      const message = String(body.message || '').trim();
+      if (!message) return bad(res, 'Write the message first');
+      if (message.length > 600) return bad(res, 'Keep it under 600 characters');
+      const results = [];
+      for (const r of rows) {
+        if (r.reason) { results.push({ name: r.name, seed: r.seed, status: r.reason }); continue; }
+        const sr = await sendSms(r.phone, message);
+        if (!sr.ok) console.error('[tournament] competitor text failed:', r.to, sr.error);
+        results.push({ name: r.name, seed: r.seed, status: sr.ok ? 'sent' : 'failed', to: r.to, error: sr.ok ? undefined : (sr.error || 'send failed') });
+      }
+      return send(res, 200, { ok: true, sent: results.filter(r => r.status === 'sent').length, results });
+    }
+
     if (p === '/api/admin/tournament/subscribers' && method === 'GET') {
       const T = await needT(); if (!T) return true;
       const rows = await db.all('SELECT email, name, created_at, reminded_at, unsubscribed_at FROM tournament_subscribers WHERE tournament_id = ? ORDER BY created_at ASC', [T.id]);
