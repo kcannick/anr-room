@@ -746,9 +746,11 @@ function countdownTicks(from, lit, { max, gap, h: hMax, litTo = null }) {
   }
   return kids;
 }
+// Beside a rank, a bare "#147" reads as a second rank; the drop's number says what it is (052).
+function dropDateLabel(date) { return /^#\d/.test(date || '') ? 'Drop ' + date : (date || ''); }
 function countdownMast(d, { date = true, series = true } = {}) {
   const kids = [h({ position: 'absolute', left: 80, top: 80, display: 'flex' }, [{ type: 'img', props: { src: logoDataUri(), style: { height: 34 } } }])];
-  if (date) kids.push(text({ position: 'absolute', right: 80, top: 78, fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.2, color: RECAP.dim, ...NOWRAP }, d.date || ''));
+  if (date) kids.push(text({ position: 'absolute', right: 80, top: 78, fontFamily: MONO, fontWeight: 700, fontSize: 32, lineHeight: 1.2, color: RECAP.dim, ...NOWRAP }, dropDateLabel(d.date)));
   if (series) kids.push(text(RES_DISPLAY(58, RECAP.fg, { position: 'absolute', left: 80, top: 142, textTransform: 'uppercase' }), COUNTDOWN_COPY.series));
   return kids;
 }

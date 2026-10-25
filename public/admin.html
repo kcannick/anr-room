@@ -2711,7 +2711,7 @@ function renderDaily(){
   const fig = (url, name, label) => `<figure style="flex:1;margin:0;min-width:0"><a href="${esc(url)}" target="_blank" rel="noopener" download="${esc(name)}"><img src="${esc(url)}" alt="${esc(label)}" style="width:100%;border-radius:12px;border:1px solid var(--line);display:block"></a><figcaption class="muted" style="font-size:11px;margin-top:4px">${esc(label)}</figcaption></figure>`;
   // Retired 2026-10-02: the Top 8 cards, the A&R Meeting Recap cover/thumbnail and the
   // countdown clip captions. The Daily Countdown carousel below replaces all of them.
-  const dateTag = (dr.dayLabel || dr.day || '').replace(/[^A-Za-z0-9]+/g,'-');
+  const dateTag = (dr.dayLabel || dr.day || '').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
   const tallied = dr.async_state === 'ratified' || dr.async_state === 'published';
   // The Makin' It Daily Countdown (set 'song', 2026-10-02 — it replaced the Top Track carousel
   // and the daily stream): cover, one slide per record from the bottom up, rank only, then the

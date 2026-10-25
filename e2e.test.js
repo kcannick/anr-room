@@ -2016,6 +2016,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tEarly = await tick(lOpens - 86400000);
   ok('a tick before the open does nothing', tEarly.d.opened === 0, JSON.stringify(tEarly.d));
   ok('the day is still scheduled', (await lSess()).async_state === 'scheduled');
+  ok('a drop that has not opened has no number yet, and keeps the dated name', (await lSess()).drop_no == null
+    && (await lSess()).name === require('./server')._dailyDropName((await lSess()).drop_day), JSON.stringify([(await lSess()).drop_no, (await lSess()).name]));
+  const noBefore = Number((await dDb.get('SELECT MAX(drop_no) AS m FROM sessions', [])).m) || 0;
 
   const opensAt = Number((await lSess()).window_opens_at);
   const tOpen = await tick(opensAt + 1000);
@@ -2025,6 +2028,18 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('EVERY record opens at once — there is no single active round', (await lRounds()).every(r => r.status === 'voting'));
   const tOpenAgain = await tick(opensAt + 2000);
   ok('a second open tick is a no-op (the claim is the lock)', tOpenAgain.d.opened === 0, JSON.stringify(tOpenAgain.d));
+  // Numbering (052, operator 2026-10-25): the number is given at the open, the next after the
+  // highest ever, and the default name takes it: "Daily Drop #N · <publish date>".
+  {
+    const S = require('./server');
+    const dn = await lSess();
+    ok('the open gives the drop the next number', dn.drop_no === noBefore + 1, JSON.stringify([dn.drop_no, noBefore]));
+    ok('and the name carries it ahead of the publish date', dn.name === S._dailyDropName(dn.drop_day, dn.drop_no)
+      && dn.name.startsWith('Daily Drop #' + dn.drop_no + ' · '), dn.name);
+    ok('every day label leads with the number', S._dailyDayLabel(dn.drop_day, dn.drop_no) === '#' + dn.drop_no + ' · ' + S._dailyDayLabel(dn.drop_day));
+    const stDay = await call('/api/admin/daily/status?day=' + dn.drop_day, null, 'GET', BOOTH);
+    ok('the console shows the number on the day', stDay.d.drop && String(stDay.d.drop.dayLabel).startsWith('#' + dn.drop_no + ' · '), JSON.stringify(stDay.d.drop && stDay.d.drop.dayLabel));
+  }
   // "Voting is open" (2026-09-27): queued inside the open claim, to the daily_open audience,
   // which is ON by default — so an A&R who never chose is on it.
   const openBc = await dDb.all("SELECT * FROM notify_broadcasts WHERE kind = 'daily_open' AND ref_id = ?", [LDROP]);
@@ -2221,7 +2236,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const lg = await call('/api/admin/daily/log?s=' + LDROP, null, 'GET', BOOTH);
   const lgBy = (k) => (lg.d.lines || []).filter(l => l.key === k);
   ok('the log is titled by the publish date (drop day + 2), like the rest of the console',
-    lg.d.dayLabel === srv._dailyDayLabel(pubbed.drop_day), lg.d.dayLabel);
+    lg.d.dayLabel === srv._dailyDayLabel(pubbed.drop_day, pubbed.drop_no), lg.d.dayLabel);
   ok('the drop log is admin-only', (await call('/api/admin/daily/log?s=' + LDROP, null, 'GET')).status === 403);
   ok('the log has the push as Received with its record count',
     lgBy('received').length === 1 && lgBy('received')[0].state === 'done' && /3 records pushed/.test(lgBy('received')[0].detail), JSON.stringify(lgBy('received')));
@@ -5644,14 +5659,14 @@ async function startVoting(sessionId, headers, minutes = 5) {
     atSong.status === 200 && atSong.d.done === true && atSong.d.attached === 6 && atFiles.length === 6
       && /countdown-.*-01\.png$/.test(atFiles[0]) && /countdown-.*-06\.png$/.test(atFiles[5]), JSON.stringify([atSong.d, atFiles]));
   ok('daily asana: the task is named for the post and carries the caption in its notes',
-    atTask && /^Makin' It Daily Countdown — \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
+    atTask && /^Makin' It Daily Countdown — #\d+ · \d\d\.\d\d\.\d\d$/.test(atTask.data.name) && atTask.data.projects[0] === '555'
       && /Caption \(paste as-is\)/.test(atTask.data.notes) && /Comment #REVIEW to Submit Music/.test(atTask.data.notes)
       && /Post the 6 attached slides in order/.test(atTask.data.notes), JSON.stringify(atTask && atTask.data));
   // A daily set is named by its CALCULATED publish date, drop day + 2 (operator, confirmed 2026-10-23).
-  const atWin = await anDb.get('SELECT drop_day FROM sessions WHERE id = ?', [LDROP]);
+  const atWin = await anDb.get('SELECT drop_day, drop_no FROM sessions WHERE id = ?', [LDROP]);
   const atPubLbl = require('./server')._recapDateLabel(require('./server')._etEpoch(require('./server')._dailyPublishDay(atWin.drop_day), 12));
   ok('daily asana: the task and the slides are dated by the publish date (drop day + 2)',
-    atTask && atTask.data.name.endsWith('— ' + atPubLbl), JSON.stringify([atTask && atTask.data.name, atPubLbl]));
+    atTask && atTask.data.name.endsWith('— #' + atWin.drop_no + ' · ' + atPubLbl), JSON.stringify([atTask && atTask.data.name, atPubLbl]));
   {
     const S = require('./server');
     ok('a daily set is named for drop day + 2: the 23rd is the 25th, across a month end too',

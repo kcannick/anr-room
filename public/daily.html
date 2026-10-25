@@ -906,7 +906,7 @@ function render(){
   }else tb.classList.add('hide');
 
   if(st.phase === 'waiting'){
-    $('#waitDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
+    $('#waitDay').textContent = dropTitle(as.dayLabel);
     $('#waitHead').textContent = "Today's records open at " + (as.opensLabel || '6:00 PM ET') + '.';
     $('#waitSub').textContent = as.opensLabel
       ? ('Today’s records open at ' + as.opensLabel + '. Rate every one before the window closes and you earn a completion bonus on top of what you score.')
@@ -927,7 +927,7 @@ function render(){
   }
 
   if(st.phase === 'sealed'){
-    $('#sealedDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
+    $('#sealedDay').textContent = dropTitle(as.dayLabel);
     afterNode($('#sealedSub'), as, 'Rating is closed.');
     show('sealed'); return;
   }
@@ -946,7 +946,7 @@ function render(){
 
 function renderDone(st){
   const pr = st.progress || {}, as = st.async || {};
-  $('#doneDay').textContent = as.dayLabel ? ('A&R Daily · ' + as.dayLabel) : 'A&R Daily';
+  $('#doneDay').textContent = dropTitle(as.dayLabel);
   $('#doneHead').textContent = 'All ' + pr.total + ' record' + (pr.total === 1 ? '' : 's') + ' evaluated';
   // Gold, and gold ONLY here: this number is money the A&R has actually been paid.
   const b = $('#doneBonus');
@@ -1163,6 +1163,11 @@ window.ANRAuth.bindJoinHandlers();
   else if(localStorage.getItem('rt_auth_token')) await tryAccountRegister(info);
   else show('email');
 })();
+// The drop's heading: "Daily Drop #47 · Tue, Oct 27" once it has its number (052), else the date.
+function dropTitle(dayLabel){
+  if(!dayLabel) return 'A&R Daily';
+  return /^#\d/.test(dayLabel) ? 'Daily Drop ' + dayLabel : 'A&R Daily · ' + dayLabel;
+}
 </script>
 </body>
 </html>
