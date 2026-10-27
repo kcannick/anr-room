@@ -2019,6 +2019,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('a drop that has not opened has no number yet, and keeps the dated name', (await lSess()).drop_no == null
     && (await lSess()).name === require('./server')._dailyDropName((await lSess()).drop_day), JSON.stringify([(await lSess()).drop_no, (await lSess()).name]));
   const noBefore = Number((await dDb.get('SELECT MAX(drop_no) AS m FROM sessions', [])).m) || 0;
+  // Prod drops arrive with the review site's name, "A&R Daily — Oct 27"; the open must still number it.
+  await dDb.run('UPDATE sessions SET name = ? WHERE id = ?', ['A&R Daily — Oct 27', LDROP]);
 
   const opensAt = Number((await lSess()).window_opens_at);
   const tOpen = await tick(opensAt + 1000);
@@ -2034,7 +2036,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const S = require('./server');
     const dn = await lSess();
     ok('the open gives the drop the next number', dn.drop_no === noBefore + 1, JSON.stringify([dn.drop_no, noBefore]));
-    ok('and the name carries it ahead of the publish date', dn.name === S._dailyDropName(dn.drop_day, dn.drop_no)
+    ok('and the name (the review site\'s, here) carries it ahead of the publish date', dn.name === S._dailyDropName(dn.drop_day, dn.drop_no)
       && dn.name.startsWith('Daily Drop #' + dn.drop_no + ' · '), dn.name);
     ok('every day label leads with the number', S._dailyDayLabel(dn.drop_day, dn.drop_no) === '#' + dn.drop_no + ' · ' + S._dailyDayLabel(dn.drop_day));
     const stDay = await call('/api/admin/daily/status?day=' + dn.drop_day, null, 'GET', BOOTH);

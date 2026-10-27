@@ -1250,7 +1250,10 @@ in October (close date → release date → drop day → publish date); check he
 the publish date is appended. `sessions.drop_no` is given when the drop OPENS (`assignDropNo` inside
 `openAsyncDrop`'s claim: the next after the highest ever, unique index), never changed or reused; a
 drop deleted after opening keeps its number and the count skips it; private (unlisted) drops get
-none. Counted from the first daily drop ever. `dailyDayLabel(day, dropNo)` / `dailyDropName(day,
+none. A default name — ours ("Daily Drop - …") or the review site's ("A&R Daily — Oct 27") —
+is rewritten to the numbered name at the open (`isDefaultDropName`); a typed name is left alone.
+Deploy note: 052 ran on prod from the PR's PREVIEW build (2026-10-25), before the Oct 26 drop
+opened, so #51 and all 51 names were set by hand on 2026-10-27. Counted from the first daily drop ever. `dailyDayLabel(day, dropNo)` / `dailyDropName(day,
 dropNo)` / `withDropNo()` put it on every label; the carousel slides print "Drop #47 · 10.27.26"
 beside a rank (`dropDateLabel`), the cover "#47 · 10.27.26". Scheduling lines ("post at 6:00 AM on
 <date>") stay date-only (`rd.day`). The Track Report keeps the day RATED, unnumbered.

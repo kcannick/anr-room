@@ -1492,6 +1492,13 @@ async function logDropEvent(sessionId, event, { detail = null, url = null, by = 
 // day is numbered once. Two days opening in the same instant would read the same MAX; the unique
 // index refuses the second and it simply takes the next. A default name takes the number with it.
 // Never fatal: a numbering failure must not un-open the day.
+// A name nobody typed: ours ("Daily Drop - Oct 27, 2026") or the one the review site pushes
+// ("A&R Daily — Oct 27", or the older "A&R Daily — 2026-10-27"). Prod drops all arrive with the
+// review site's, so matching only ours left every drop's name without its number (2026-10-27).
+function isDefaultDropName(name, dropDay) {
+  const n = String(name || '');
+  return !n || n === dailyDropName(dropDay) || /^Daily Drop - /.test(n) || /^A&R Daily — /.test(n);
+}
 async function assignDropNo(s) {
   if (s.visibility === 'unlisted') return null;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -1506,7 +1513,7 @@ async function assignDropNo(s) {
   }
   const row = await db.get('SELECT drop_no, name, drop_day FROM sessions WHERE id = ?', [s.id]);
   const n = dropNoOf(row);
-  if (n && (row.name === dailyDropName(row.drop_day) || row.name === `A&R Daily — ${row.drop_day}`)) {
+  if (n && isDefaultDropName(row.name, row.drop_day)) {
     await db.run('UPDATE sessions SET name = ? WHERE id = ?', [dailyDropName(row.drop_day, n), s.id]);
   }
   s.drop_no = n;
@@ -11173,8 +11180,7 @@ async function handleApi(req, res, url) {
     const win = dropWindowFor(toDay, await dailySchedule());
     // The operator's own name stays; only the untouched default follows the day.
     // An auto-named drop follows its new day (either naming); a hand-named one keeps its name.
-    const name = (session.name === `A&R Daily — ${session.drop_day}` || session.name === dailyDropName(session.drop_day))
-      ? dailyDropName(toDay) : session.name;
+    const name = isDefaultDropName(session.name, session.drop_day) ? dailyDropName(toDay) : session.name;
     try {
       await db.tx(async (tx) => {
         // status back to 'upcoming': a cold drop is upcoming by definition, and the open
