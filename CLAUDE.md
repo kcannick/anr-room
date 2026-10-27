@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 049; 050 is open in its PR; suite green)
+## Current state (migrations through 051 on main; 052 drop numbering in its PR; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -1246,6 +1246,14 @@ from `drop_day`, never read off `results_at` — a schedule change re-stamps `re
 the Oct 17 and Oct 18 drops both printed 10.20.26. `drop_day` stays the storage and query key (week
 windows, the weekly report, sales-lead "Date played" are unchanged). This rule flipped three times
 in October (close date → release date → drop day → publish date); check here before changing it.
+**Plus a NUMBER (052, operator 2026-10-25):** "Daily Drop #47 · Oct 27, 2026" — the number leads,
+the publish date is appended. `sessions.drop_no` is given when the drop OPENS (`assignDropNo` inside
+`openAsyncDrop`'s claim: the next after the highest ever, unique index), never changed or reused; a
+drop deleted after opening keeps its number and the count skips it; private (unlisted) drops get
+none. Counted from the first daily drop ever. `dailyDayLabel(day, dropNo)` / `dailyDropName(day,
+dropNo)` / `withDropNo()` put it on every label; the carousel slides print "Drop #47 · 10.27.26"
+beside a rank (`dropDateLabel`), the cover "#47 · 10.27.26". Scheduling lines ("post at 6:00 AM on
+<date>") stay date-only (`rd.day`). The Track Report keeps the day RATED, unnumbered.
 
 ## Copy voice (operator, 2026-08-30)
 **Plain and direct. No hip, cultural, or slangy phrasing** in any user-facing text — it reads

@@ -679,8 +679,8 @@
 <div id="profileModal" class="modal-scrim" style="z-index:90">
   <div class="panel" style="max-width:440px;width:100%;border-color:var(--accent)">
     <div class="eyebrow" style="color:var(--signal)">Round closed · results pending</div>
-    <div style="font-size:17px;font-weight:700;margin:2px 0 3px">Complete your A&amp;R profile to qualify</div>
-    <p class="dim" style="font-size:12.5px;line-height:1.5;margin:0 0 14px">You can submit evaluations now, but your rank and award eligibility remain inactive until your profile is complete.</p>
+    <div style="font-size:17px;font-weight:700;margin:2px 0 3px">Complete your A&amp;R profile to be ranked</div>
+    <p class="dim" style="font-size:12.5px;line-height:1.5;margin:0 0 14px">You can submit evaluations now, but your rank stays inactive until your profile is complete.</p>
     <div class="pf-steplabel"><span class="pf-num">①</span> Select your professional roles</div>
     <div class="chips" id="pfCats"></div>
     <div class="pf-steplabel" style="margin-top:14px"><span class="pf-num">②</span> Choose your primary A&amp;R focus</div>
@@ -700,7 +700,7 @@
     </div>
     <input type="file" id="pfPhotoInput" accept="image/*" style="display:none">
     <div class="err" id="pfErr"></div>
-    <button class="btn" id="pfSave" style="width:100%;margin-top:8px">Complete profile &amp; qualify</button>
+    <button class="btn" id="pfSave" style="width:100%;margin-top:8px">Complete profile &amp; get ranked</button>
     <button class="btn ghost" id="pfLater" style="width:100%;margin-top:9px">Later</button>
   </div>
 </div>
@@ -1648,7 +1648,7 @@ $('#pfSave').onclick=async()=>{
   const cats=pfSelected();
   if(!cats.length) return $('#pfErr').textContent='Pick at least one category.';
   const location=$('#pfLocation').value.trim();
-  if(!location) return $('#pfErr').textContent='Add your location to qualify.';
+  if(!location) return $('#pfErr').textContent='Add your location to be ranked.';
   const body={categories:cats, primaryCategory:pfPrimary||cats[0], location, instagram:$('#pfIg').value.trim(), tiktok:$('#pfTt').value.trim()};
   $('#pfSave').disabled=true;
   try{

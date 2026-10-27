@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Daily Drop Numbering</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d0b16;--panel:#16131f;--line:#2a2638;--ink:#f3f1f8;--dim:#9a94ad;--green:#4bb749;--purple:#6d5fe0;--gold:#e8b931;--warn:#e0a05f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Archivo,system-ui,sans-serif;padding:32px 16px 80px}
+.wrap{max-width:1040px;margin:0 auto}
+h1{font-weight:900;font-size:34px;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-weight:800;font-size:20px;margin:44px 0 6px}
+.mono{font-family:'Space Mono',monospace}
+.dim{color:var(--dim)}
+.note{border-left:3px solid var(--purple);background:var(--panel);padding:12px 16px;margin:16px 0;font-size:14px}
+.rule{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:16px}
+.rule div{background:var(--panel);border:1px solid var(--line);padding:14px}
+.rule b{display:block;font-size:12px;font-family:'Space Mono',monospace;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.name{font-weight:900;font-size:22px}
+.n{color:var(--green)}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-weight:400}
+td.old{color:var(--dim)}
+.cards{display:flex;gap:20px;flex-wrap:wrap;margin-top:16px}
+.slide{width:270px;aspect-ratio:1080/1350;background:#0d0b16;border:1px solid var(--line);position:relative;overflow:hidden;padding:22px}
+.slide .eb{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+.slide .t{font-weight:900;font-size:38px;line-height:.95;margin-top:44px}
+.slide .t span{color:var(--green)}
+.slide .dt{font-family:'Space Mono',monospace;font-size:13px;margin-top:14px}
+.slide .cut{position:absolute;left:-10%;right:-10%;bottom:46px;height:44px;background:var(--green);transform:rotate(-13deg)}
+.slide .foot{position:absolute;left:22px;right:22px;bottom:14px;font-family:'Space Mono',monospace;font-size:9px;color:var(--dim);display:flex;justify-content:space-between}
+.slide .rk{font-weight:900;font-size:96px;line-height:1;margin-top:30px}
+.slide .tt{font-weight:800;font-size:18px;margin-top:10px}
+.slide .ar{font-size:13px;color:var(--dim)}
+.cap{font-size:12px;color:var(--dim);margin-top:6px;max-width:270px}
+.mail{background:#fff;color:#1b1825;max-width:520px;padding:0;border-radius:4px;overflow:hidden;margin-top:12px}
+.mail .hd{padding:12px 16px;border-bottom:1px solid #e5e2ec;font-size:13px}
+.mail .bd{padding:18px 16px}
+.mail h3{margin:0 0 6px;font-weight:900;font-size:22px}
+.console{background:var(--panel);border:1px solid var(--line);padding:14px;margin-top:12px}
+.pill{display:inline-block;font-family:'Space Mono',monospace;font-size:11px;padding:2px 8px;border:1px solid var(--line);margin-left:8px;color:var(--dim)}
+.pill.live{border-color:var(--green);color:var(--green)}
+select{background:var(--bg);color:var(--ink);border:1px solid var(--line);padding:8px;font:inherit;width:100%;max-width:420px}
+.q{border:1px solid var(--warn);padding:12px 16px;margin-top:12px;font-size:14px}
+.q b{color:var(--warn)}
+@media (max-width:600px){h1{font-size:26px}.slide{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="mono dim" style="font-size:12px;margin:0 0 8px">MOCKUP · NOT BUILT · 2026-10-25</p>
+  <h1>Daily drops get a number</h1>
+  <p class="dim">Your proposal: each daily drop is named by its number, with the publish date at the end. The count starts at the first daily drop ever. <b>The numbers on this page are examples.</b> The real ones come from production when this is built.</p>
+
+  <div class="rule">
+    <div><b>Name</b><span class="name">Daily Drop <span class="n">#47</span> · Oct 27, 2026</span></div>
+    <div><b>Number</b>Given when the drop opens. It never changes, is never reused and is never renumbered.</div>
+    <div><b>Date</b>The publish date, worked out as drop day + 2 (same as today). A schedule change can't make two drops share a name, because the number is different.</div>
+    <div><b>Count starts</b>#1 = the first daily drop ever (Sep 2026). BETA daily drops are counted too.</div>
+  </div>
+
+  <h2>1. Instagram: the Daily Countdown carousel</h2>
+  <p class="dim">The number goes on the cover and in the footer of every slide, so an artist who reposts only their own slide still shows which drop it was.</p>
+  <div class="cards">
+    <div>
+      <div class="slide">
+        <div class="eb">Makin' It · A&amp;R Team</div>
+        <div class="t">Daily<br><span>Count</span>down</div>
+        <div class="dt">Drop #47 · 10.27.26</div>
+        <div class="cut"></div>
+        <div class="foot"><span>makinitmag.com/ANR</span><span>1 / 10</span></div>
+      </div>
+      <div class="cap">Cover. Now it shows the date only (10.27.26).</div>
+    </div>
+    <div>
+      <div class="slide">
+        <div class="eb">Daily Countdown</div>
+        <div class="rk">#3</div>
+        <div class="tt">Song Title Here</div>
+        <div class="ar">Artist Name · @handle</div>
+        <div class="cut"></div>
+        <div class="foot"><span>Drop #47 · 10.27.26</span><span>8 / 10</span></div>
+      </div>
+      <div class="cap">Rank slide. The number and date go in the footer. Still rank only, no score.</div>
+    </div>
+  </div>
+
+  <h2>2. Every place the name appears</h2>
+  <table>
+    <tr><th>Where</th><th>Now</th><th>After</th></tr>
+    <tr><td>Session name (console, Asana)</td><td class="old">Daily Drop - Oct 27, 2026</td><td>Daily Drop #47 · Oct 27, 2026</td></tr>
+    <tr><td>Countdown caption, first line</td><td class="old">Makin' It Daily Countdown 10.27.26 …</td><td>Makin' It Daily Countdown #47 (Oct 27) …</td></tr>
+    <tr><td>Top A&amp;Rs carousel + caption</td><td class="old">Top A&amp;Rs · 10.27.26</td><td>Top A&amp;Rs · Drop #47 · 10.27.26</td></tr>
+    <tr><td>Asana task names</td><td class="old">Makin' It Daily Countdown — Oct 27</td><td>Makin' It Daily Countdown #47 — Oct 27</td></tr>
+    <tr><td>A&amp;R results email subject</td><td class="old">Your A&amp;R grade for Oct 27: B+</td><td>Your A&amp;R grade for Drop #47 (Oct 27): B+</td></tr>
+    <tr><td>Track Report email (artist)</td><td class="old">rated in the Oct 27 set</td><td>rated in Daily Drop #47 (Oct 27)</td></tr>
+    <tr><td>Grade card</td><td class="old">Oct 27</td><td>Drop #47 · Oct 27</td></tr>
+    <tr><td>My results (account)</td><td class="old">Tue, Oct 27</td><td>#47 · Tue, Oct 27</td></tr>
+    <tr><td>/daily page header</td><td class="old">Tue, Oct 27 · closes tomorrow at 6:00 PM</td><td>Daily Drop #47 · closes tomorrow at 6:00 PM</td></tr>
+    <tr><td>Landing page "today's records"</td><td class="old">Oct 27</td><td>Drop #47</td></tr>
+    <tr><td>Drop Log, sales leads, week windows</td><td class="old">drop day</td><td>No change. Stored and queried by drop day as now; the number is shown alongside it.</td></tr>
+  </table>
+
+  <h2>3. Results email header</h2>
+  <div class="mail">
+    <div class="hd"><b>Your A&amp;R grade for Drop #47 (Oct 27): B+</b><br><span style="color:#777">Makin' It A&amp;R Team</span></div>
+    <div class="bd">
+      <h3>Daily Drop #47 results</h3>
+      <div style="font-size:13px;color:#555">Published Tue, Oct 27</div>
+      <p style="font-size:14px">… points, grade, bullseyes, completion bonus, See your results (unchanged) …</p>
+    </div>
+  </div>
+
+  <h2>4. Console day picker</h2>
+  <div class="console">
+    <select aria-label="Day picker">
+      <option>Daily Drop #48 · Oct 28 — opens Mon 6:00 PM (number given at open)</option>
+      <option selected>Daily Drop #47 · Oct 27 — Live</option>
+      <option>Daily Drop #46 · Oct 26 — Closed</option>
+      <option>Daily Drop #45 · Oct 25 — Published</option>
+    </select>
+    <div style="margin-top:12px"><span class="name" style="font-size:18px">Daily Drop <span class="n">#47</span> · Oct 27, 2026</span><span class="pill live">Live</span></div>
+    <div class="dim mono" style="font-size:12px;margin-top:4px">drop day Sun Oct 25 · opens 6:00 PM · closes Mon 6:00 PM · publishes Tue 6:00 AM</div>
+  </div>
+
+  <h2>Two choices before I build it</h2>
+  <div class="q"><b>A. When does a drop get its number?</b> I recommend <b>at open</b>. A drop that is pushed, then moved or deleted before it opens leaves no gap. The cost is that the number isn't known until 6 PM, even though Drupal pushes the track list an hour earlier. The other option, a number at push, shows it sooner, but deleting a pushed drop leaves a gap (for example #46 → #48).</div>
+  <div class="q"><b>B. A drop that opened and was then deleted:</b> I recommend it <b>keeps its number</b> and the count skips it. Numbers are never reused, because one may already be in a post or an email.</div>
+</div>
+</body>
+</html>
