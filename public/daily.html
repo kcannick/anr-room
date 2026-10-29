@@ -235,6 +235,10 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 
   <!-- THE QUEUE WALK -->
   <section id="screen-queue" class="stack hide">
+    <a class="adminwin hide" id="liveReviewLink" style="text-decoration:none;color:inherit">
+      <span class="dot"></span>
+      <span class="t"><b>Daily Drop <span id="lrLabel"></span> is in your admin rating window</b> until <span id="lrUntil"></span>. Rate it live →</span>
+    </a>
     <div class="adminwin hide" id="adminWin">
       <span class="dot"></span>
       <span class="t"><b>Admin rating window.</b> Closed to everyone else at <span id="adminWinClosed"></span>. Your ratings count like any A&amp;R's.</span>
@@ -1025,6 +1029,9 @@ function render(){
   $('#adminWin').classList.toggle('hide', !win);
   if(win){ $('#adminWinClosed').textContent = win.closesLabel; $('#adminWinUntil').textContent = win.untilLabel; }   // labels already carry ET
   $('#btnDayOnStream').classList.toggle('hide', !win);
+  const lr = as.liveReview || null;
+  $('#liveReviewLink').classList.toggle('hide', !lr);
+  if(lr){ $('#lrLabel').textContent = lr.label; $('#lrUntil').textContent = lr.untilLabel; $('#liveReviewLink').href = '/daily?s=' + encodeURIComponent(lr.id); }
 
   // Standing stays on screen, because this is still a competition. Points only during the
   // walk: a RANK would mean a board scan on every poll, and buildRecap already computes

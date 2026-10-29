@@ -1363,6 +1363,20 @@ async function dailyDaySoFar(session, participant) {
     resultsLabel: session.results_at ? etClockLabel(Number(session.results_at)) : null };
 }
 
+// The drop currently inside the admin rating window, if any: closed to the public, not yet
+// claimed for tally, and the window still running. Keyed on the clock, not on a user — the
+// role check is the caller's. Used by /daily/closed and by the "rate it live" banner.
+async function dropInAdminWindow(ts = null) {
+  const at = ts != null ? Number(ts) : now();
+  const sched = await dailySchedule();
+  if (!(sched.adminGraceMin > 0)) return null;
+  const s = await db.get(
+    `SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL AND async_state = 'open'
+       AND window_closes_at <= ? ORDER BY window_closes_at DESC LIMIT 1`, [at]);
+  if (!s || at >= dropGraceEndAt(s, sched)) return null;
+  return { session: s, until: dropGraceEndAt(s, sched) };
+}
+
 async function asyncProgress(participant, session) {
   const h = await asyncHandled(participant, session);
   return { progress: { voted: h.voted, reported: h.reported, handled: h.handled, total: h.total,
@@ -2724,6 +2738,16 @@ async function asyncPlayerState(participant, session, count) {
       // Present ONLY for a platform admin inside the admin rating window: the daily page
       // shows the banner and the Show results step off this and nothing else.
       ...(adminWindow ? { adminWindow } : {}),
+      // An admin looking at the OPEN drop while another drop sits in its window gets a link
+      // to it (the home page only ever resolves the open one). Admins only, by role.
+      ...(await (async () => {
+        if (adminWindow || !participant.user_id) return {};
+        const u = await db.get('SELECT role, blocked FROM users WHERE uid = ?', [participant.user_id]);
+        if (!u || u.role !== 'admin' || u.blocked) return {};
+        const w = await dropInAdminWindow(ts);
+        if (!w || w.session.id === session.id) return {};
+        return { liveReview: { id: w.session.id, label: dailyDayLabel(w.session.drop_day, dropNoOf(w.session)), untilLabel: etClockLabel(w.until) } };
+      })()),
       // When the next set of records opens, relative to TODAY ("tomorrow" must mean tomorrow
       // for the reader), absent once it has passed. No stream or show to point at (retired
       // 2026-10-15 / 10-23); the page carries the YouTube subscribe line.
@@ -12471,6 +12495,14 @@ const server = http.createServer(async (req, res) => {
     // A&R Daily — the async queue walk. Its own page, deliberately: play.html narrates a
     // live show, and this one exists to be the opposite of that.
     if (url.pathname === '/daily') return serveStatic(res, 'daily.html');
+    // The drop in the admin rating window, by a stable address (the home page only ever links
+    // the OPEN drop). Anyone can hit it; only an admin can rate what it lands on. With no drop
+    // in a window it goes home. no-store: never cache a 302 to yesterday's drop.
+    if (url.pathname === '/daily/closed') {
+      const w = await dropInAdminWindow();
+      res.writeHead(302, { Location: w ? `/daily?s=${encodeURIComponent(w.session.id)}` : '/', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
