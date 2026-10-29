@@ -2036,6 +2036,25 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const rpView = await call('/api/admin/daily/overlay', { s: GDROP, view: 'bracket' }, 'POST', GH);
     ok('an unknown view is refused', rpView.status === 400);
 
+    // The stable link + the banner: the home page only links the OPEN drop, so an admin on it
+    // is pointed at the drop in the window, and /daily/closed goes straight there.
+    const g2Ok = await call('/api/ingest/daily', { day: srvG._etNextDay(today), seriesId: serId, songs: [song(74), song(75), song(76)] }, 'POST', DTOK);
+    const G2 = g2Ok.d.sessionId;
+    await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ? WHERE id = ?", [gNow - 500, gNow + 86400000, G2]);
+    await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [G2]);
+    const g2Join = async (email, name) => {
+      const rq = await call('/api/join/request', { sessionId: G2, email });
+      const vr = await call('/api/join/verify', { sessionId: G2, email, code: rq.d.devCode, name });
+      return { 'X-Player-Token': vr.d.token };
+    };
+    const G2H = await g2Join('admin@test.com', 'Admin'), G2A = await g2Join('grace1@test.com', 'Gail');
+    const g2St = (await call('/api/me/state', null, 'GET', G2H)).d;
+    ok('an admin on the open drop is pointed at the drop in the window', g2St.phase === 'queue' && g2St.async.liveReview && g2St.async.liveReview.id === GDROP && /M/.test(g2St.async.liveReview.untilLabel), JSON.stringify(g2St.async.liveReview));
+    ok('…and not someone else', !(await call('/api/me/state', null, 'GET', G2A)).d.async.liveReview);
+    const lk = await fetch(base + '/daily/closed', { redirect: 'manual' });
+    ok('/daily/closed goes to the drop in the window', lk.status === 302 && lk.headers.get('location') === '/daily?s=' + GDROP && /no-store/.test(lk.headers.get('cache-control') || ''), lk.status + ' ' + lk.headers.get('location'));
+    await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), G2]);
+
     // The window ends: the admin is sealed out, the tally runs, the admin's vote is ordinary.
     const gEnd = gNow - 1000 + 120 * 60000;
     const gTickEnd = await call('/api/admin/daily/tick', { at: gEnd + 1000 }, 'POST', BOOTH);
@@ -2050,6 +2069,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok('…and cannot vote', gAfter.status === 400);
     const rvAfter = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[1] }, 'POST', GH);
     ok('…and a reveal on an unrated record is still refused', rvAfter.status === 400);
+    const lkNone = await fetch(base + '/daily/closed', { redirect: 'manual' });
+    ok('/daily/closed goes home once nothing is in a window', lkNone.status === 302 && lkNone.headers.get('location') === '/', lkNone.headers.get('location'));
 
     // Put the schedule back so the sections below run on the defaults.
     await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
