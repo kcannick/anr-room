@@ -1192,6 +1192,40 @@ live on anr.makinitmag.com.
   Rows are claimed pending→sending; `POST /api/admin/live-call {s}` drains leftovers, `GET` is the
   masked recipient list + every press. Each press is a line on the drop Log. Platform-admin only.
   No score, rank or count in the message (the seal).
+- **The admin rating window + the live reveal overlay** (no migration, 2026-10-29, operator's
+  idea: "live is more important than the post... it's the sales floor"). The operator rates the
+  just-CLOSED drop live on stream without skewing anyone. **The public close stays 6PM**; a
+  schedule setting `daily_admin_grace_min` (`DAILY_SCHEDULE_DEFAULTS.adminGraceMin`, default 0 =
+  off, panel field "Admin rating window after the close", max 12h, must end before the publish)
+  keeps the drop rateable for a PLATFORM ADMIN only: `/api/vote` refuses everyone else from the
+  close as before, and admits an admin only while `async_state = 'open'` and before close + grace
+  (`adminGraceFor`, one rule for the vote route and `asyncPlayerState`, which keeps the admin's
+  `queue`/`done` phase and ships `async.adminWindow` to nobody else). **The admin's votes are
+  ORDINARY votes** — in the room average, scored by the tally, on the grade card, in the results
+  mail, comments to the artist — so nothing downstream changed. The lifecycle's close step waits
+  for `dropGraceEndAt()`; render, Asana tasks and publish follow the tally as before, which is why
+  the window must sit well clear of the 6AM publish (11PM is the intended setting; check the
+  SocialBee task's run time before moving it later). **The reveal:** after each lock-in the daily
+  page (admin only, inside the window) shows **Show results** → `POST /api/admin/daily/reveal
+  {s, roundId}` computes the round's FINAL result off the live votes (nobody else can vote, his
+  was the last: `liveVoteResult` = `roomAverage` + `accuracyPoints`, exactly what `ratifyRound`
+  will pay; a per-ROUND letter grade via `roundAccuracy`/`gradeForAccuracy`; the day so far) and
+  stores it as the overlay state (`settings` k = `daily_overlay:<uid>`, JSON). `POST
+  /api/admin/daily/overlay {s, view: idle|total|report, roundId?, page?}` drives the rest: the
+  **Track Report pager** puts one page of the artist's real report on the overlay (`trackReportPages`
+  on `songReportData`, which reads votes live, so an unratified round renders). Admin routes take
+  EITHER token (`adminFromAnyToken`: account token or the daily page's player token; the role is
+  read off `users`). **The overlay** `/overlay/daily?k=<control key>` (`public/daily-overlay.html`,
+  vertical 1080×1920 like the Wars overlay, cards inside y 250–1400, WebAudio sound, no gold) polls
+  `/api/control/daily-overlay` every 2s through the host's existing Stream Deck control key — no
+  admin token in an OBS field — and fetches report pages from `/api/control/daily-report-page`,
+  which serves ONLY the round+page the state currently names (a leaked key sees what the stream
+  shows, nothing else). The overlay URL is listed under Stream Deck / external control. **Seal
+  decision (operator): the stream reveals averages the evening before the 6AM countdown post; the
+  post is promotion for the people featured. Do not re-raise.** Supersedes the 10-25 "rate the open
+  drop openly" call. No rank anywhere on the overlay (the 10-02 rule). Mockups:
+  `public/_mock-daily-reveal-overlay.html`, `public/_mock-daily-grace.html` (+ sample report PNGs
+  in `public/_mock-assets/track-report/`).
 - **Tournament stream overlay** (no migration, 2026-10-25; branch `claude/wars-stream-overlay`,
   NOT merged when written). `/overlay/wars` (`public/wars-overlay.html`): an OBS browser source,
   **vertical 1080×1920 only** (the stream goes to Instagram Live / TikTok via Restream; the

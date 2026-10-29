@@ -1926,6 +1926,137 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the closed window refuses a late vote', dLateVote.status === 400 && /time is up/i.test(JSON.stringify(dLateVote.d)), JSON.stringify(dLateVote.d));
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), PDROP]);
 
+  console.log('\n— A&R Daily: the admin rating window + the live reveal (2026-10-29) —');
+  // The public close stays where it is; for `adminGraceMin` minutes after it a platform admin
+  // can still rate the drop (live, on stream), press Show results for the round's FINAL
+  // result, and walk the Track Report on the overlay. Nobody else can vote past the close,
+  // the tally waits for the window, and the overlay reads through the host's control key.
+  {
+    const gOk = await call('/api/ingest/daily', { day: today, seriesId: serId, songs: [song(71), song(72), song(73)] }, 'POST', DTOK);
+    const GDROP = gOk.d.sessionId;
+    const gNow = Date.now();
+    await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ?, results_at = ? WHERE id = ?",
+      [gNow - 7200000, gNow - 1000, gNow + 36 * 3600000, GDROP]);
+    await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [GDROP]);
+    const gJoin = async (email, name) => {
+      const rq = await call('/api/join/request', { sessionId: GDROP, email });
+      const vr = await call('/api/join/verify', { sessionId: GDROP, email, code: rq.d.devCode, name });
+      return { 'X-Player-Token': vr.d.token };
+    };
+    // Two ordinary A&Rs rated before the close; the admin (admin@test.com) joins the drop too.
+    const GA = await gJoin('grace1@test.com', 'Gail'), GB = await gJoin('grace2@test.com', 'Gus');
+    const GH = await gJoin('admin@test.com', 'Admin');
+    const gQ = (await call('/api/me/state', null, 'GET', GA)).d.queue.map(q => q.id);
+    await dDb.run('UPDATE sessions SET window_closes_at = ? WHERE id = ?', [gNow + 3600000, GDROP]);
+    for (const [k, h] of [GA, GB].entries()) for (const [i, rid] of gQ.entries()) await call('/api/vote', { roundId: rid, taste: Math.min(9, 6 + k + i), predict: 6.0 }, 'POST', h);
+    await dDb.run('UPDATE sessions SET window_closes_at = ? WHERE id = ?', [gNow - 1000, GDROP]);
+
+    // With no window set (the default), the admin is sealed out like everyone else.
+    const g0 = (await call('/api/me/state', null, 'GET', GH)).d;
+    ok('grace off: the admin is sealed after the close like everyone else', g0.phase === 'sealed' && !g0.async.adminWindow, g0.phase);
+    const g0v = await call('/api/vote', { roundId: gQ[0], taste: 5, predict: 5.0 }, 'POST', GH);
+    ok('grace off: the admin cannot vote after the close', g0v.status === 400 && /time is up/i.test(JSON.stringify(g0v.d)));
+    const g0r = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[0] }, 'POST', GH);
+    ok('the reveal needs the admin\'s own vote on the round', g0r.status === 400 && /lock in/i.test(JSON.stringify(g0r.d)), JSON.stringify(g0r.d));
+
+    // Turn the window on: 120 minutes after the close.
+    const gSet = await call('/api/admin/settings', { dailySchedule: { adminGraceMin: 120 } }, 'POST', BOOTH);
+    ok('the admin rating window is a schedule setting', gSet.status === 200, JSON.stringify(gSet.d));
+    const gView = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
+    ok('the panel reads it back with the tally time', gView.adminGraceMin === 120 && /M/.test(gView.tallyLabel || ''), JSON.stringify([gView.adminGraceMin, gView.tallyLabel]));
+    const gTooLong = await call('/api/admin/settings', { dailySchedule: { adminGraceMin: 20 * 60 } }, 'POST', BOOTH);
+    ok('a window that runs into the publish is refused', gTooLong.status === 400, JSON.stringify(gTooLong.d));
+    ok('refusing left the saved window in place', (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule.adminGraceMin === 120);
+
+    const g1 = (await call('/api/me/state', null, 'GET', GH)).d;
+    ok('grace on: the admin keeps the queue after the public close', g1.phase === 'queue', g1.phase);
+    ok('grace on: the state carries the window (closed-at + until labels)', !!g1.async.adminWindow && /M/.test(g1.async.adminWindow.untilLabel) && /M/.test(g1.async.adminWindow.closesLabel), JSON.stringify(g1.async.adminWindow));
+    ok('grace on: the admin still sees no room average', !/room_average|"avg"/.test(JSON.stringify(g1)));
+    const gOther = (await call('/api/me/state', null, 'GET', GA)).d;
+    ok('grace on: everyone else is sealed, with no window in their state', gOther.phase === 'sealed' && !gOther.async.adminWindow, gOther.phase);
+    const gLate = await call('/api/vote', { roundId: gQ[0], taste: 4, predict: 4.0 }, 'POST', GA);
+    ok('grace on: a non-admin still cannot vote after the close', gLate.status === 400 && /time is up/i.test(JSON.stringify(gLate.d)));
+    // The lifecycle must NOT tally while the window is open.
+    const gTick = await call('/api/admin/daily/tick', { at: gNow + 60000 }, 'POST', BOOTH);
+    ok('the tally waits for the window', gTick.d.closed === 0 && (await dDb.get('SELECT async_state FROM sessions WHERE id = ?', [GDROP])).async_state === 'open', JSON.stringify(gTick.d));
+
+    // The admin rates: record 1 holds a 6 and a 7 → his 8 lands the average at 7.0; he predicts 6.9.
+    const gVote = await call('/api/vote', { roundId: gQ[0], taste: 8, predict: 6.9 }, 'POST', GH);
+    ok('grace on: the admin can vote after the public close', gVote.status === 200 && gVote.d.locked === true, JSON.stringify(gVote.d));
+    const gVote2 = await call('/api/vote', { roundId: gQ[0], taste: 8, predict: 6.9 }, 'POST', GH);
+    ok('…once, like anyone', gVote2.status === 400);
+    const srvG = require('./server');
+    const lv = srvG._liveVoteResult([{ taste: 6 }, { taste: 7 }, { taste: 8 }], { predict: 6.9 });
+    ok('liveVoteResult: average 7.0, off 0.1, a sharp round, graded', lv.avg === 7 && lv.err === 0.1 && lv.tier === 'sharp' && lv.points > 80 && lv.grade === 'A+', JSON.stringify(lv));
+    const lvB = srvG._liveVoteResult([{ taste: 6 }, { taste: 7 }, { taste: 8 }], { predict: 7.0 });
+    ok('liveVoteResult: an exact hit is a 125-point bullseye', lvB.points === 125 && lvB.tier === 'bullseye', JSON.stringify(lvB));
+
+    // The reveal: admin only, after the close, own vote; the round's final numbers.
+    const rvAnon = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[0] }, 'POST', GA);
+    ok('a non-admin cannot ask for a reveal', rvAnon.status === 401, JSON.stringify(rvAnon.d));
+    const rv = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[0] }, 'POST', GH);
+    ok('the reveal returns the final average, the gap, points and a round grade',
+      rv.status === 200 && rv.d.state.view === 'reveal' && rv.d.state.reveal.avg === 7 && rv.d.state.reveal.off === 0.1
+        && rv.d.state.reveal.n === 3 && rv.d.state.reveal.grade === 'A+' && rv.d.state.reveal.rated === 8 && rv.d.state.reveal.meaning === 'Single',
+      JSON.stringify(rv.d));
+    ok('the reveal carries the day so far (1 of 3, points, grade)', rv.d.state.total.rated === 1 && rv.d.state.total.total === 3 && rv.d.state.total.points === rv.d.state.reveal.points && !!rv.d.state.total.grade, JSON.stringify(rv.d.state.total));
+    ok('the reveal names the drop', /^#\d+ · |^\d\d\.\d\d\.\d\d$/.test(rv.d.state.drop.label || ''), JSON.stringify(rv.d.state.drop));
+    const rvUnrated = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[1] }, 'POST', GH);
+    ok('no reveal for a record the admin has not rated', rvUnrated.status === 400, JSON.stringify(rvUnrated.d));
+    const rvGet = (await call('/api/admin/daily/overlay', null, 'GET', GH)).d;
+    ok('the daily page can read the overlay state back (player token)', rvGet.state && rvGet.state.view === 'reveal' && rvGet.state.reveal.roundId === gQ[0]);
+    const rvBooth = (await call('/api/admin/daily/overlay', null, 'GET', BOOTH)).d;
+    ok('…and so can the console (account token): same person, same state', rvBooth.state && rvBooth.state.at === rvGet.state.at);
+
+    // The overlay reads through the host's control key.
+    const gKey = (await call('/api/me/control-key', {}, 'POST', BOOTH)).d.key;
+    const ov = await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey));
+    const ovD = await ov.json();
+    ok('the overlay state is readable with the control key', ov.status === 200 && ovD.state.view === 'reveal' && ovD.state.reveal.avg === 7, JSON.stringify(ovD).slice(0, 200));
+    ok('…and not with a bad key', (await fetch(base + '/api/control/daily-overlay?k=k_nothing_like_it')).status === 401);
+    ok('…and never without one', (await fetch(base + '/api/control/daily-overlay')).status === 401);
+    ok('the overlay page is served', (await fetch(base + '/overlay/daily')).status === 200);
+    const pgOff = await fetch(base + '/api/control/daily-report-page?k=' + encodeURIComponent(gKey) + '&r=' + gQ[0] + '&page=1');
+    ok('a report page is not served while the overlay is not showing a report', pgOff.status === 404);
+
+    // The Track Report pager: a page on the overlay, the real render through the key.
+    const rp = await call('/api/admin/daily/overlay', { s: GDROP, view: 'report', roundId: gQ[0], page: 2 }, 'POST', GH);
+    ok('the pager puts a report page on the overlay', rp.status === 200 && rp.d.state.view === 'report' && rp.d.state.report.page === 2 && rp.d.state.report.total >= 3 && rp.d.state.report.labels.length === rp.d.state.report.total, JSON.stringify(rp.d));
+    ok('…and keeps the reveal so Close can fall back to it', rp.d.state.reveal && rp.d.state.reveal.avg === 7);
+    const pgOn = await fetch(base + '/api/control/daily-report-page?k=' + encodeURIComponent(gKey) + '&r=' + gQ[0] + '&page=2');
+    ok('the named page renders as a PNG through the control key', pgOn.status === 200 && (pgOn.headers.get('content-type') || '').startsWith('image/png'));
+    const pgOther = await fetch(base + '/api/control/daily-report-page?k=' + encodeURIComponent(gKey) + '&r=' + gQ[0] + '&page=1');
+    ok('only the page the overlay names is served', pgOther.status === 404);
+    const rpBad = await call('/api/admin/daily/overlay', { s: GDROP, view: 'report', roundId: gQ[1], page: 1 }, 'POST', GH);
+    ok('no report page for a record the admin has not rated', rpBad.status === 400, JSON.stringify(rpBad.d));
+    const rpIdle = await call('/api/admin/daily/overlay', { s: GDROP, view: 'idle' }, 'POST', GH);
+    ok('Close clears the overlay', rpIdle.status === 200 && rpIdle.d.state.view === 'idle');
+    const rpTot = await call('/api/admin/daily/overlay', { s: GDROP, view: 'total' }, 'POST', GH);
+    ok('the day so far goes on the overlay', rpTot.status === 200 && rpTot.d.state.view === 'total' && rpTot.d.state.total.rows.length === 1);
+    const rpView = await call('/api/admin/daily/overlay', { s: GDROP, view: 'bracket' }, 'POST', GH);
+    ok('an unknown view is refused', rpView.status === 400);
+
+    // The window ends: the admin is sealed out, the tally runs, the admin's vote is ordinary.
+    const gEnd = gNow - 1000 + 120 * 60000;
+    const gTickEnd = await call('/api/admin/daily/tick', { at: gEnd + 1000 }, 'POST', BOOTH);
+    ok('the tally runs once the window ends', gTickEnd.d.closed === 1 && gTickEnd.d.ratified === 3, JSON.stringify(gTickEnd.d));
+    const gRound = await dDb.get('SELECT room_average FROM rounds WHERE id = ?', [gQ[0]]);
+    ok('the admin\'s vote is an ordinary vote: it is in the room average', gRound.room_average === 7, JSON.stringify(gRound));
+    const gMine = await dDb.get('SELECT v.points, v.tier FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? AND p.email = ?', [gQ[0], 'admin@test.com']);
+    ok('…and scored by the tally exactly as the reveal said', gMine && gMine.points === rv.d.state.reveal.points && gMine.tier === 'sharp', JSON.stringify([gMine, rv.d.state.reveal.points]));
+    const g2 = (await call('/api/me/state', null, 'GET', GH)).d;
+    ok('after the tally the admin is sealed like everyone else', g2.phase === 'sealed' && !g2.async.adminWindow, g2.phase);
+    const gAfter = await call('/api/vote', { roundId: gQ[1], taste: 5, predict: 5.0 }, 'POST', GH);
+    ok('…and cannot vote', gAfter.status === 400);
+    const rvAfter = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[1] }, 'POST', GH);
+    ok('…and a reveal on an unrated record is still refused', rvAfter.status === 400);
+
+    // Put the schedule back so the sections below run on the defaults.
+    await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
+    await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), GDROP]);
+    await dDb.run('DELETE FROM settings WHERE k LIKE ?', ['daily_overlay:%']);
+  }
+
   console.log('\n— A&R Daily: reporting a record that cannot be evaluated —');
   // A dead link across a 21-hour window with nobody watching is only visible if the A&Rs
   // say so, so filing a report has to be free. It marks the record HANDLED for that A&R:

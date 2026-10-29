@@ -231,3 +231,23 @@ you the record will not play. Fix the link or pull the record.
 | Nobody got the daily email | `digest_daily` is opt-in and nobody has opted in | Section 8 — that is the current, intended state |
 | The series shows red on the console | The day is untagged; its points reach no board | Should be impossible (creation refuses) — tell me if you see it |
 | An artist got their report twice | Should be impossible (every queue claims its rows) | Tell me — that is a bug, not a setting |
+
+
+## The admin rating window (2026-10-29)
+
+Platform panel → System settings → **Admin rating window after the close** (minutes, 0 = off).
+With it set, the public close is unchanged, but a platform admin can keep rating the drop on the
+ordinary `/daily` page for that long, live on stream. Nobody else can vote once the close passes,
+so rating on air anchors no one, and the admin's ratings count like any A&R's. The tally (and the
+carousel render, the Asana tasks and the 6:00 AM publish behind it) waits for the window to end,
+so keep it well clear of the publish time: 300 minutes after a 6:00 PM close tallies at 11:00 PM.
+
+On the daily page, after each lock-in, **Show results** puts the round's final result on the
+stream overlay and **Track Report on stream** walks the artist's report page by page. The overlay
+is an OBS browser source, vertical 1080×1920:
+
+```
+https://anr.makinitmag.com/overlay/daily?k=<your Stream Deck control key>
+```
+
+The URL is listed under Stream Deck / external control in the console. Rolling the key changes it.

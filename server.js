@@ -25,7 +25,7 @@ const db = require('./db');
 const { sendOtp, sendFeedback, sendEmail, isDeadAddress, escapeHtml } = require('./email');
 const { sendSms, PROVIDER: SMS_PROVIDER, smsSegments, isGsm7, SMS_SINGLE_SEGMENT, normalize: smsNormalize } = require('./sms');
 const realtime = require('./realtime');
-const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy } = require('./scoring');
+const { roomAverage, rankVotes, roomSplitA, rankBinaryVotes, roundAccuracy, gradeForAccuracy, accuracyPoints, tierForError } = require('./scoring');
 const shareCards = require('./share-cards');
 const trackReport = require('./track-report');
 const { consensusRanking, scoreEntry, rankEntries, validatePicks } = require('./sidebet');
@@ -1282,6 +1282,87 @@ async function asyncHandled(participant, session) {
   };
 }
 
+// The admin rating window for THIS participant on THIS drop: { until } when the public close
+// has passed, the day has not been claimed for tally, the schedule allows a window, it has not
+// ended, and the participant's account is a platform admin. Null for everyone and everything
+// else. One rule for the vote route and the player state.
+async function adminGraceFor(participant, session, ts = null) {
+  if (!participant || !participant.user_id || !isAsync(session)) return null;
+  const at = ts != null ? Number(ts) : now();
+  const closes = Number(session.window_closes_at) || 0;
+  if (!closes || at < closes) return null;
+  if ((session.async_state || 'scheduled') !== 'open') return null;
+  const sched = await dailySchedule();
+  const until = dropGraceEndAt(session, sched);
+  if (!(sched.adminGraceMin > 0) || at >= until) return null;
+  const u = await db.get('SELECT role, blocked FROM users WHERE uid = ?', [participant.user_id]);
+  if (!u || u.role !== 'admin' || u.blocked) return null;
+  return { until, untilLabel: etClockLabel(until), closesLabel: etClockLabel(closes) };
+}
+
+// ---- the live reveal: pure computation off the votes as they stand ----
+const TRACK_PAGE_LABELS = { decision: 'The decision', split: 'The split', against: 'Against the room', whofor: 'Who it is for',
+  setup: 'Setup vs record', next: 'What now', comments: 'Comments', share: 'Share' };
+
+// Resolve a platform admin from EITHER token: the account token (console) or a per-session
+// player token (the daily page). The role is read off users, never trusted from the token.
+async function adminFromAnyToken(req) {
+  const u = await platformAdmin(req);
+  if (u) return u;
+  const part = await participantFromReq(req);
+  if (!part || !part.user_id) return null;
+  const pu = await db.get('SELECT * FROM users WHERE uid = ?', [part.user_id]);
+  return pu && pu.role === 'admin' && !pu.blocked ? pu : null;
+}
+async function dailyOverlayState(uid) {
+  const row = await db.get('SELECT v FROM settings WHERE k = ?', ['daily_overlay:' + uid]);
+  if (!row || !row.v) return null;
+  try { return JSON.parse(row.v); } catch { return null; }
+}
+async function setDailyOverlayState(uid, state) {
+  await db.run('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v',
+    ['daily_overlay:' + uid, JSON.stringify(state)]);
+}
+// One vote against the round's live average. The same math ratifyRound will apply at the
+// tally (roomAverage + accuracyPoints), so what the overlay shows is what the board will pay.
+function liveVoteResult(votes, mine) {
+  const avg = roomAverage(votes);
+  const err = Math.abs(Math.round(Number(mine.predict) * 10) - Math.round(avg * 10)) / 10;
+  const points = accuracyPoints(Number(mine.predict), avg);
+  const acc = roundAccuracy(err, 9);
+  return { avg, err, points, tier: tierForError(err), acc, grade: gradeForAccuracy(acc) };
+}
+async function dailyRoundReveal(session, round, participant, mine) {
+  const votes = await db.all('SELECT taste FROM votes WHERE round_id = ? AND taste IS NOT NULL', [round.id]);
+  const r = liveVoteResult(votes, mine);
+  const h = await asyncHandled(participant, session);
+  return {
+    roundId: round.id, idx: round.idx, title: round.song_title || 'Untitled', artist: round.song_artist || '',
+    handle: igClean(round.artist_instagram) ? '@' + igClean(round.artist_instagram) : null,
+    n: votes.length, avg: r.avg, meaning: trackReport.verdictFor(r.avg),
+    rated: Number(mine.taste), predicted: Number(mine.predict), off: r.err,
+    points: r.points, tier: r.tier, grade: r.grade,
+    handled: h.handled, total: h.total,
+  };
+}
+// The admin's day so far: every record he has rated, each against its live average.
+async function dailyDaySoFar(session, participant) {
+  const rows = await db.all(
+    `SELECT r.id, r.idx, r.song_title, v.taste, v.predict FROM votes v JOIN rounds r ON r.id = v.round_id
+      WHERE r.session_id = ? AND v.participant_id = ? AND v.taste IS NOT NULL ORDER BY v.locked_at ASC`, [session.id, participant.id]);
+  const out = []; let points = 0, errSum = 0, bullseyes = 0;
+  for (const row of rows) {
+    const votes = await db.all('SELECT taste FROM votes WHERE round_id = ? AND taste IS NOT NULL', [row.id]);
+    const r = liveVoteResult(votes, row);
+    points += r.points; errSum += r.err; if (r.tier === 'bullseye') bullseyes++;
+    out.push({ roundId: row.id, idx: row.idx, title: row.song_title || 'Untitled', avg: r.avg, points: r.points, grade: r.grade });
+  }
+  const h = await asyncHandled(participant, session);
+  const acc = rows.length ? roundAccuracy(errSum / rows.length, 9) : null;
+  return { points, grade: gradeForAccuracy(acc), bullseyes, rated: rows.length, handled: h.handled, total: h.total, rows: out,
+    resultsLabel: session.results_at ? etClockLabel(Number(session.results_at)) : null };
+}
+
 async function asyncProgress(participant, session) {
   const h = await asyncHandled(participant, session);
   return { progress: { voted: h.voted, reported: h.reported, handled: h.handled, total: h.total,
@@ -1563,7 +1644,9 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
     }
 
     // ---- close: open -> closing (stop the voting, then tally over as many ticks as needed) ----
-    if (state === 'open' && at >= Number(s.window_closes_at)) {
+    // The PUBLIC close is window_closes_at (the vote route refuses everyone else from then);
+    // the tally waits out the admin rating window, if one is set.
+    if (state === 'open' && at >= dropGraceEndAt(s, sched)) {
       const claim = await db.run(
         "UPDATE sessions SET async_state = 'closing' WHERE id = ? AND async_state = 'open'", [s.id]);
       if (!claim.changes) continue;
@@ -2587,9 +2670,12 @@ async function asyncPlayerState(participant, session, count) {
   const reportsTotal = rows.reduce((n, r) => n + (repBy.has(r.id) ? 1 : 0), 0);
 
   let phase;
+  // The admin rating window (2026-10-29): a platform admin keeps the ordinary queue past the
+  // public close until the window ends. Null for everyone else, so nothing below changes.
+  const adminWindow = ts >= closes ? await adminGraceFor(participant, session, ts) : null;
   if (session.status === 'completed' || (session.async_state === 'published' && ts >= results)) phase = 'recap';
   else if (ts < opens || session.async_state === 'scheduled') phase = 'waiting';
-  else if (ts >= closes) phase = 'sealed';       // rated, tallying or tallied — results at 3PM
+  else if (ts >= closes && !adminWindow) phase = 'sealed';       // rated, tallying or tallied — results at 3PM
   else phase = handled >= total && total > 0 ? 'done' : 'queue';
 
   // Before the day opens the queue ships EMPTY — titles and pre-release links are a reveal,
@@ -2635,6 +2721,9 @@ async function asyncPlayerState(participant, session, count) {
       dayLabel: etDayLabel(day), opensLabel: etClockLabel(opens),
       closesLabel: etClockLabel(closes), resultsLabel: etClockLabel(results),
       closesWhen: etWhenLabel(closes, day), resultsWhen: etWhenLabel(results, day),
+      // Present ONLY for a platform admin inside the admin rating window: the daily page
+      // shows the banner and the Show results step off this and nothing else.
+      ...(adminWindow ? { adminWindow } : {}),
       // When the next set of records opens, relative to TODAY ("tomorrow" must mean tomorrow
       // for the reader), absent once it has passed. No stream or show to point at (retired
       // 2026-10-15 / 10-23); the page carries the YouTube subscribe line.
@@ -4477,9 +4566,17 @@ const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
   // Reports both wait this long (540 = 3:00 PM after a 6:00 AM publish). The Instagram posts
   // go first, on purpose: the carousel is the reveal; the mail is the follow-up.
   artistDelayMin: 540,
+  // THE ADMIN RATING WINDOW (2026-10-29, operator): minutes after the public close during
+  // which a platform admin can still rate the drop, on the ordinary daily page, live on
+  // stream. Nobody else can vote once the close passes, so rating on air anchors no one; the
+  // admin's votes are ordinary votes (score, grade card, results mail, comments all real).
+  // The tally — and the carousel render, the Asana tasks and the publish behind it — waits
+  // for the window to end. 0 = off, and the day runs exactly as before.
+  adminGraceMin: 0,
 });
 const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_stream_min', 'daily_stream_days',
-  'daily_results_min', 'daily_results_days', 'daily_bonus_tiers', 'daily_artist_delay_min'];
+  'daily_results_min', 'daily_results_days', 'daily_bonus_tiers', 'daily_artist_delay_min', 'daily_admin_grace_min'];
+const DAILY_ADMIN_GRACE_MAX_MIN = 12 * 60;
 
 // Validate + normalize a schedule. Throws a readable message; returns { cfg, windowHours }.
 // null/undefined input means "back to the defaults".
@@ -4530,7 +4627,21 @@ function parseDailySchedule(inp) {
   const delay = Number(inp.artistDelayMin ?? D.artistDelayMin);
   if (!Number.isInteger(delay) || delay < 0 || delay > 24 * 60) throw new Error('The artist report hold must be whole minutes, 0–1440');
   cfg.artistDelayMin = delay;
+  const grace = Number(inp.adminGraceMin ?? D.adminGraceMin);
+  if (!Number.isInteger(grace) || grace < 0 || grace > DAILY_ADMIN_GRACE_MAX_MIN) throw new Error(`The admin rating window must be whole minutes, 0–${DAILY_ADMIN_GRACE_MAX_MIN}`);
+  // The window must end before the results publish: the tally waits for it, and a publish
+  // with nothing tallied would reveal a day that has no scores.
+  const closeAbs = cfg.closeMin > cfg.openMin ? cfg.closeMin : cfg.closeMin + 1440;
+  const resultsAbs = (cfg.closeMin > cfg.openMin ? 0 : 1440) + cfg.resultsDays * 1440 + cfg.resultsMin;
+  if (grace > 0 && closeAbs + grace >= resultsAbs) throw new Error('The admin rating window must end before the results publish');
+  cfg.adminGraceMin = grace;
   return { cfg, windowHours };
+}
+
+// When the tally may run for a day: the public close plus the admin rating window.
+function dropGraceEndAt(session, sched = DAILY_SCHEDULE_DEFAULTS) {
+  const closes = Number(session && session.window_closes_at) || 0;
+  return closes + (Number(sched.adminGraceMin) || 0) * 60000;
 }
 
 let _dailySched = { at: 0, cfg: null };
@@ -4546,7 +4657,8 @@ async function dailySchedule() {
     const parsed = parseDailySchedule({ openMin: m.daily_open_min ?? D.openMin, closeMin: m.daily_close_min ?? D.closeMin,
       streamMin: m.daily_stream_min ?? D.streamMin, streamDays: m.daily_stream_days ?? D.streamDays,
       resultsMin: m.daily_results_min ?? D.resultsMin, resultsDays: m.daily_results_days ?? D.resultsDays,
-      tiers, finalPoints, artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin });
+      tiers, finalPoints, artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin,
+      adminGraceMin: m.daily_admin_grace_min ?? D.adminGraceMin });
     if (parsed.cfg) cfg = parsed.cfg;
   } catch (e) { console.error('[daily] schedule setting unreadable, using defaults:', e.message); }
   _dailySched = { at: Date.now(), cfg };
@@ -4611,6 +4723,7 @@ function dailyScheduleView(sched) {
   return { ...sched, windowHours, defaults: DAILY_SCHEDULE_DEFAULTS,
     opensLabel: lab(w.opensAt), closesLabel: lab(w.closesAt), streamLabel: lab(w.streamAt), resultsLabel: lab(w.resultsAt),
     lockLabel: etClockLabel(w.opensAt - 3600000),
+    tallyLabel: lab(w.closesAt + (sched.adminGraceMin || 0) * 60000),
     streamHours: hrs(w.streamAt), resultsHours: hrs(w.resultsAt),
     tierLabels: tiers.map(t => `${t.points} before ${t.label.replace(' tomorrow', ' next day')}`) };
 }
@@ -8685,7 +8798,7 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE users SET last_seen = ? WHERE uid = ?', [now(), participant.user_id]);
     }
     const body = await readBody(req);
-    const session = await db.get('SELECT id, poll_type, geo_mode, mode, status, deleted_at, series_id, drop_day, window_opens_at, window_closes_at FROM sessions WHERE id = ?', [participant.session_id]);
+    const session = await db.get('SELECT id, poll_type, geo_mode, mode, status, deleted_at, series_id, drop_day, window_opens_at, window_closes_at, async_state FROM sessions WHERE id = ?', [participant.session_id]);
     // `roundId` is honored ONLY on a drop. A live client never sends it and the live branch
     // below is unchanged, so the existing live e2e section is this change's regression test.
     let round;
@@ -8701,7 +8814,13 @@ async function handleApi(req, res, url) {
       // The SESSION window is the single source of truth — deliberately not round.closes_at,
       // so an accidental per-record edit can never hold one record open longer than the rest.
       if (now() < Number(session.window_opens_at)) return bad(res, 'Evaluation is not open');
-      if (now() >= Number(session.window_closes_at)) return bad(res, 'Time is up');
+      // After the public close ONLY a platform admin may still vote, and only inside the
+      // admin rating window (dailySchedule().adminGraceMin) while the day is still 'open' —
+      // once the tally has claimed it, nobody. Everyone else: time is up, as before.
+      if (now() >= Number(session.window_closes_at)) {
+        const win = await adminGraceFor(participant, session);
+        if (!win) return bad(res, 'Time is up');
+      }
       if ((round.poll_type || 'rating') !== 'rating') return bad(res, 'A&R Daily is rating rounds only');
     } else {
       round = await activeRound(participant.session_id);
@@ -8938,6 +9057,29 @@ async function handleApi(req, res, url) {
     // compare against every row would mean scanning the table on each press.
     const host = await db.get('SELECT uid, blocked, deactivated_at, deleted_at FROM users WHERE control_key = ?', [given]);
     if (userInactive(host)) return send(res, 401, { error: 'Bad key' });
+    // The daily reveal overlay (/overlay/daily) reads its state here, keyed by the host, with
+    // no room to resolve: the state names the drop. Read-only, GET, no-store. The report page
+    // is served ONLY for the round and page the state currently names — a leaked key can see
+    // what the stream is showing, and nothing else.
+    const act0 = p.slice('/api/control/'.length);
+    if (act0 === 'daily-overlay') {
+      res.setHeader('Cache-Control', 'private, no-store');
+      return send(res, 200, { state: await dailyOverlayState(host.uid) });
+    }
+    if (act0 === 'daily-report-page') {
+      const st = await dailyOverlayState(host.uid);
+      const rid = url.searchParams.get('r'), page = parseInt(url.searchParams.get('page') || '0', 10);
+      if (!st || !st.report || st.report.roundId !== rid || page !== st.report.page) return send(res, 404, { error: 'Not on the overlay' });
+      const round = await db.get('SELECT * FROM rounds WHERE id = ?', [rid]);
+      const session = round ? await db.get('SELECT * FROM sessions WHERE id = ?', [round.session_id]) : null;
+      const d = round && session ? await songReportData(round, session) : null;
+      if (!d) return send(res, 404, { error: 'Nothing to report' });
+      const pages = trackReportPages(d);
+      if (page > pages.length) return send(res, 404, { error: 'No such page' });
+      const buf = await shareCards.renderPng('trackPage', pages[page - 1]);
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store' });
+      return res.end(buf);
+    }
     // Explicit room wins; otherwise the host's live room, then their soonest upcoming one.
     const wanted = url.searchParams.get('s') || url.searchParams.get('sessionId');
     const session = wanted
@@ -9467,6 +9609,7 @@ async function handleApi(req, res, url) {
         await setOrClear('daily_results_days', String(c.resultsDays));
         await setOrClear('daily_bonus_tiers', JSON.stringify({ tiers: c.tiers, finalPoints: c.finalPoints }));
         await setOrClear('daily_artist_delay_min', String(c.artistDelayMin));
+        await setOrClear('daily_admin_grace_min', String(c.adminGraceMin));
       }
       _dailySched.at = 0;
       const sched = await dailySchedule();
@@ -11040,6 +11183,73 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, ...(await runAsyncDropLifecycle()) });
   }
 
+
+  // ===== THE LIVE REVEAL (2026-10-29) — the admin rating window's stream overlay =====
+  // During the admin rating window the operator rates the just-closed drop live. After each
+  // lock-in he presses Show results: the round's average is FINAL at that moment (nobody else
+  // can vote past the public close, and his was the last vote), so the server computes the
+  // real result — average, his gap, points, a round grade, the day so far — stores it as the
+  // overlay state for his account and the OBS browser source (/overlay/daily?k=<control key>)
+  // paints it. The Track Report pager works the same way: the state names a round and a page,
+  // the overlay fetches that page through the control key.
+  //
+  // Admin-only, after the public close only, own vote only. The overlay reads through the
+  // host's control key (round control's existing secret) — never an admin token in an OBS
+  // field. The state lives in `settings` (k = daily_overlay:<uid>): one row per admin, read on
+  // a 2s poll from ONE OBS machine, so the cost never scales with viewers.
+  if ((p === '/api/admin/daily/reveal' || p === '/api/admin/daily/overlay') && (method === 'POST' || method === 'GET')) {
+    // The daily page holds a per-session PLAYER token; the console an account token. Either
+    // resolves to the same person, and the role check is on users.role, never on the token.
+    const admin = await adminFromAnyToken(req);
+    if (!admin) return bad(res, 'Admin auth failed', 401);
+    if (method === 'GET') return send(res, 200, { state: await dailyOverlayState(admin.uid) });
+    const body = await readBody(req);
+    const sid = (body.s || body.sessionId || '').toString();
+    const session = sid ? await db.get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]) : null;
+    if (!session || !isAsync(session)) return bad(res, 'Not a daily drop', 404);
+    if (now() < Number(session.window_closes_at || 0)) return bad(res, 'The drop is still open to everyone — the reveal waits for the public close');
+    const dropLabel = withDropNo(await dailySetDate(session), dropNoOf(session));
+    if (p === '/api/admin/daily/reveal') {
+      const round = body.roundId ? await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
+      if (!round) return bad(res, 'Round not found', 404);
+      const participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [session.id, admin.uid]);
+      const mine = participant ? await db.get('SELECT * FROM votes WHERE round_id = ? AND participant_id = ? AND taste IS NOT NULL', [round.id, participant.id]) : null;
+      if (!mine) return bad(res, 'Lock in your own rating first');
+      const reveal = await dailyRoundReveal(session, round, participant, mine);
+      const total = await dailyDaySoFar(session, participant);
+      const state = { view: 'reveal', at: now(), drop: { id: session.id, label: dropLabel }, reveal, total };
+      await setDailyOverlayState(admin.uid, state);
+      return send(res, 200, { ok: true, state });
+    }
+    const view = (body.view || '').toString();
+    if (!['idle', 'total', 'report'].includes(view)) return bad(res, 'view must be idle, total or report');
+    const prev = await dailyOverlayState(admin.uid);
+    if (view === 'idle') { const st = { view: 'idle', at: now(), drop: { id: session.id, label: dropLabel } }; await setDailyOverlayState(admin.uid, st); return send(res, 200, { ok: true, state: st }); }
+    const participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [session.id, admin.uid]);
+    if (!participant) return bad(res, 'You have not joined this drop');
+    if (view === 'total') {
+      const st = { view: 'total', at: now(), drop: { id: session.id, label: dropLabel }, total: await dailyDaySoFar(session, participant) };
+      await setDailyOverlayState(admin.uid, st); return send(res, 200, { ok: true, state: st });
+    }
+    // report: a round + a page. Only a record the admin has rated (the reveal's rule), and
+    // only with votes to report (songReportData is null on an unrated record).
+    const round = body.roundId ? await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
+    if (!round) return bad(res, 'Round not found', 404);
+    const mine = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ? AND taste IS NOT NULL', [round.id, participant.id]);
+    if (!mine) return bad(res, 'Lock in your own rating first');
+    const d = await songReportData(round, session);
+    if (!d) return bad(res, 'Nothing to report yet');
+    const pages = trackReportPages(d);
+    const page = Math.max(1, Math.min(pages.length, parseInt(body.page, 10) || 1));
+    const st = { view: 'report', at: now(), drop: { id: session.id, label: dropLabel },
+      report: { roundId: round.id, page, total: pages.length, kinds: pages.map(x => x.kind),
+        labels: pages.map(x => TRACK_PAGE_LABELS[x.kind] || x.kind), title: d.title, artist: d.artist },
+      // keep the last reveal and total so the overlay can fall back to them after Close
+      ...(prev && prev.reveal ? { reveal: prev.reveal } : {}), ...(prev && prev.total ? { total: prev.total } : {}) };
+    await setDailyOverlayState(admin.uid, st);
+    return send(res, 200, { ok: true, state: st });
+  }
+
   // Same lifecycle, host-triggered: a manual "run it now" when a cron is late, and the way
   // the suite drives it (e2e.test.js asserts /api/cron/* is 503 with no CRON_SECRET set, so
   // the tests can't go through that door). One implementation, two callers — the advanceRoom
@@ -12275,6 +12485,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/overlay') return serveStatic(res, 'overlay.html');
     // The tournament stream overlay (vertical 1080x1920 OBS source; reads the sealed public feed).
     if (url.pathname === '/overlay/wars') return serveStatic(res, 'wars-overlay.html');
+    // The daily reveal overlay (vertical 1080x1920 OBS source; reads its state through the host's control key).
+    if (url.pathname === '/overlay/daily') return serveStatic(res, 'daily-overlay.html');
     // Stable submit link for QR codes: /submit?s=<session> 302s to wherever that
     // session's submission link points RIGHT NOW (Nero, review site, anything).
     // The QR encodes this route, so the host can change the destination mid-show
@@ -12430,6 +12642,8 @@ module.exports._asyncQueueOrder = asyncQueueOrder;
 module.exports._completionBonusPoints = completionBonusPoints;
 module.exports._dropWindowFor = dropWindowFor;
 module.exports._DAILY_SCHEDULE_DEFAULTS = DAILY_SCHEDULE_DEFAULTS;
+module.exports._liveVoteResult = liveVoteResult;
+module.exports._dropGraceEndAt = dropGraceEndAt;
 module.exports._dailyPublishDay = dailyPublishDay;
 module.exports._dailyDayLabel = dailyDayLabel;
 module.exports._dailyDropName = dailyDropName;
