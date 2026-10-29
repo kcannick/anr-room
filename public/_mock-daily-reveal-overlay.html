@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A&amp;R Daily — live reveal overlay (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   MOCKUP ONLY — the daily reveal overlay for OBS, 1080x1920 (vertical ONLY, like /overlay/wars).
+   Transparent outside the card. The real thing would be /overlay/daily?k=<control_key>.
+
+   WHEN IT FIRES: the operator rates the just-CLOSED drop live during the admin-only grace
+   window (public close 6PM → tally ~11PM). After each lock-in he presses "Show results" on
+   the daily page; the server pushes the round's result on the drop's Ably channel and this
+   page animates it. The average is FINAL at that moment: his vote was the last one in.
+
+   Views:
+     reveal   one record's result — the average lands, then the gap, points and round grade
+     total    the day so far (between records, or after the last one)
+     idle     nothing (transparent)
+
+   Colour: green = scoring (the average, points); purple = the prediction game (what he
+   predicted, the marker); gold NEVER (no money, no first place here); red only for a
+   negative round. Cards live at y 250–1400 (the apps draw over the top ~230px and the
+   bottom ~500px). Sound comes from this page (WebAudio, no files) so OBS carries it.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; --gold:#F5C518; --red:#FF5D6C; }
+*{box-sizing:border-box}
+html,body{margin:0;background:#07060d;color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+
+/* mockup chrome (not part of the overlay) */
+.ctl{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;padding:14px 16px;font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);border-bottom:1px solid var(--line)}
+.ctl b{color:var(--ink);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:11px;margin-right:6px}
+.ctl .grp{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.ctl button{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 10px;font:inherit;cursor:pointer}
+.ctl button.on{background:var(--green);border-color:var(--green);color:var(--ground)}
+.note{padding:10px 16px 0;font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);max-width:1100px;line-height:1.5}
+.stage{padding:16px;display:flex;gap:16px;align-items:flex-start}
+.fit{position:relative;overflow:hidden;border:1px solid var(--line);flex:none}
+#frame{position:absolute;left:0;top:0;width:1080px;height:1920px;transform-origin:0 0;overflow:hidden}
+#frame.bg-stream{background:linear-gradient(160deg,#2a3b4a 0%,#1c2430 45%,#3a2a2a 100%)}
+#frame.bg-stream::before{content:'Screen capture of the daily page + camera';position:absolute;left:50%;top:50%;width:900px;text-align:center;transform:translate(-50%,-50%);font-family:'Space Mono',monospace;font-size:30px;color:rgba(255,255,255,.18);letter-spacing:.14em;text-transform:uppercase;line-height:1.5}
+#frame.bg-check{background:repeating-conic-gradient(#3a3a3a 0 25%,#2a2a2a 0 50%) 0 0/40px 40px}
+.zone{position:absolute;left:0;right:0;border:0 dashed rgba(255,93,108,.55);pointer-events:none;display:none}
+#frame.zones .zone{display:block}
+.zone.top{top:0;height:230px;border-bottom-width:3px}
+.zone.bot{bottom:0;height:520px;border-top-width:3px}
+.zone span{position:absolute;right:16px;font-family:'Space Mono',monospace;font-size:20px;color:rgba(255,93,108,.8);letter-spacing:.1em;text-transform:uppercase}
+.zone.top span{bottom:10px} .zone.bot span{top:10px}
+
+/* ---------- shared ---------- */
+.mono{font-family:'Space Mono',monospace;font-weight:700}
+.card{position:absolute;left:40px;width:1000px;top:250px;background:rgba(14,12,26,.96);border:2px solid var(--line);border-radius:26px;overflow:hidden}
+.hd{display:flex;align-items:center;justify-content:space-between;padding:24px 36px 0}
+.lock{display:flex;align-items:center}
+.lock img{display:block;height:54px;width:auto}
+.hd .drop{font-family:'Space Mono',monospace;font-weight:700;font-size:24px;color:var(--dim);text-align:right;line-height:1.35}
+.hd .drop b{color:var(--ink)}
+.rule13{height:4px;margin:14px 36px 0;background:var(--line);transform:skewX(-13deg)}
+.rec{padding:14px 36px 0}
+.rec .eyebrow{font-family:'Space Mono',monospace;font-weight:700;font-size:20px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.rec .t{font-weight:900;font-size:52px;line-height:1;letter-spacing:-.04em;margin-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rec .a{font-family:'Space Mono',monospace;font-weight:700;font-size:26px;color:var(--dim);margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rec .a b{color:var(--ink);font-weight:700}
+
+/* the average */
+.avg{padding:14px 36px 0;text-align:center}
+.avg .k{font-family:'Space Mono',monospace;font-weight:700;font-size:24px;letter-spacing:.2em;text-transform:uppercase;color:var(--green)}
+.avg .n{font-family:'Space Mono',monospace;font-weight:700;font-size:150px;line-height:.95;letter-spacing:-.06em;color:var(--green);margin-top:6px;font-variant-numeric:tabular-nums}
+.avg .m{font-weight:900;font-size:32px;letter-spacing:-.03em;margin-top:0;min-height:40px}
+.avg .c{font-family:'Space Mono',monospace;font-weight:700;font-size:22px;color:var(--dim);margin-top:4px}
+
+/* the scale: 0–9 strip, purple marker = predicted, green marker = the average */
+.scale{margin:18px 36px 0;position:relative;height:124px}
+.scale .bar{position:absolute;left:0;right:0;top:52px;height:14px;border-radius:7px;background:var(--line)}
+.scale .num{position:absolute;top:78px;transform:translateX(-50%);font-family:'Space Mono',monospace;font-weight:700;font-size:20px;color:var(--dim)}
+.scale .mk{position:absolute;top:30px;width:6px;height:58px;border-radius:3px;transform:translateX(-50%)}
+.scale .mk.p{background:var(--purple)} .scale .mk.g{background:var(--green)}
+.scale .lb{position:absolute;top:0;transform:translateX(-50%);font-family:'Space Mono',monospace;font-weight:700;font-size:19px;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.scale .lb.p{color:var(--purple)} .scale .lb.g{color:var(--green);top:104px}
+.scale .span{position:absolute;top:52px;height:14px;background:rgba(109,95,224,.45)}
+
+/* three tiles: rated / predicted / off by */
+.tiles{display:flex;gap:16px;margin:14px 36px 0}
+.tile{flex:1;background:var(--panel);border:2px solid var(--line);border-radius:18px;padding:14px 22px}
+.tile .k{font-family:'Space Mono',monospace;font-weight:700;font-size:18px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.tile .v{font-family:'Space Mono',monospace;font-weight:700;font-size:48px;line-height:1;margin-top:6px;letter-spacing:-.04em}
+.tile.p .v{color:var(--purple)}
+.tile.g .v{color:var(--green)}
+
+/* points + round grade */
+.res{display:flex;align-items:stretch;gap:16px;margin:16px 36px 0}
+.res .pts{flex:1;background:var(--green);color:var(--ground);border-radius:18px;padding:16px 28px;display:flex;flex-direction:column;justify-content:center}
+.res .pts .k{font-family:'Space Mono',monospace;font-weight:700;font-size:20px;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
+.res .pts .v{font-family:'Space Mono',monospace;font-weight:700;font-size:88px;line-height:1;letter-spacing:-.05em;margin-top:4px}
+.res .pts .t{font-weight:900;font-size:28px;letter-spacing:-.02em;margin-top:8px;text-transform:uppercase}
+.res .pts.neg{background:var(--red)}
+.res .grd{flex:none;width:280px;background:var(--panel);border:2px solid var(--line);border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.res .grd .k{font-family:'Space Mono',monospace;font-weight:700;font-size:20px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.res .grd .v{font-weight:900;font-size:108px;line-height:1;letter-spacing:-.06em;margin-top:2px}
+
+/* footer: the day so far */
+.ft{margin:16px 0 0;padding:14px 36px 20px;border-top:2px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:20px}
+.ft .k{font-family:'Space Mono',monospace;font-weight:700;font-size:20px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.ft .v{font-family:'Space Mono',monospace;font-weight:700;font-size:28px;margin-top:6px;white-space:nowrap}
+.ft .v b{color:var(--green);font-weight:700}
+.ticks{display:flex;gap:6px;flex-wrap:wrap;max-width:300px;justify-content:flex-end}
+.tk{width:24px;height:16px;transform:skewX(-13deg);border:2px solid rgba(234,233,242,.4);border-radius:2px}
+.tk.done{background:var(--ink);border-color:var(--ink)}
+.tk.now{background:var(--green);border-color:var(--green)}
+
+/* ---------- view: total ---------- */
+#total .big{padding:20px 36px 0;text-align:center}
+#total .big .k{font-family:'Space Mono',monospace;font-weight:700;font-size:24px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+#total .big .n{font-family:'Space Mono',monospace;font-weight:700;font-size:170px;line-height:1;letter-spacing:-.06em;color:var(--green);margin-top:8px}
+#total .big .s{font-family:'Space Mono',monospace;font-weight:700;font-size:26px;color:var(--dim);margin-top:8px}
+#total .rows{margin:22px 36px 0;border-top:2px solid var(--line)}
+#total .row{display:flex;align-items:center;gap:20px;padding:11px 0;border-bottom:2px solid var(--line)}
+#total .row .i{font-family:'Space Mono',monospace;font-weight:700;font-size:22px;color:var(--dim);width:48px}
+#total .row .t{flex:1;font-weight:800;font-size:27px;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#total .row .n{font-family:'Space Mono',monospace;font-weight:700;font-size:25px;color:var(--dim);width:120px;text-align:right}
+#total .row .n.g{color:var(--green)}
+#total .row .gl{font-weight:900;font-size:27px;width:70px;text-align:right}
+#total .row.todo .t{color:var(--dim);font-weight:600}
+
+/* ---------- view: report ---------- */
+/* The artist's Track Report, page by page: the real 1080x1350 PNGs the app renders, scaled to
+   the safe band (920 wide = 1150 tall, y 250–1400). No frame around it: the page is the card. */
+#report{position:absolute;left:80px;top:250px;width:920px;height:1150px;border-radius:22px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.55)}
+#report img{position:absolute;left:0;top:0;width:920px;height:1150px;display:block;opacity:0;transition:opacity .35s ease}
+#report img.on{opacity:1}
+#report .pg{position:absolute;left:0;right:0;bottom:0;height:8px;display:flex;gap:4px;padding:0 24px 10px}
+#report .pg span{flex:1;height:6px;border-radius:3px;background:rgba(234,233,242,.25);transform:skewX(-13deg)}
+#report .pg span.on{background:var(--green)}
+#report.in{animation:cardIn .5s cubic-bezier(.2,.8,.2,1) forwards}
+
+/* ---------- animation ---------- */
+.card{opacity:0;transform:translateY(40px)}
+.card.in{animation:cardIn .5s cubic-bezier(.2,.8,.2,1) forwards}
+.card.out{animation:cardOut .45s ease forwards}
+@keyframes cardIn{to{opacity:1;transform:none}}
+@keyframes cardOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-30px)}}
+.step{opacity:0;transform:translateY(16px);transition:opacity .35s ease,transform .35s cubic-bezier(.2,.8,.2,1)}
+.step.on{opacity:1;transform:none}
+.pop{transform:scale(.6);opacity:0;transition:transform .4s cubic-bezier(.2,1.4,.4,1),opacity .2s}
+.pop.on{transform:none;opacity:1}
+.scale .mk.g,.scale .lb.g{transition:left .9s cubic-bezier(.2,.8,.2,1)}
+
+.hide{display:none!important}
+body.bare .ctl,body.bare .note,body.bare .aside{display:none}
+html:has(body.bare),body.bare{background:transparent}
+body.bare .stage{padding:0}
+body.bare .fit{border:0}
+
+.aside{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);line-height:1.6;max-width:420px}
+.aside h3{font-family:'Archivo',sans-serif;font-weight:900;font-size:15px;letter-spacing:-.02em;color:var(--ink);margin:0 0 8px}
+.aside ol{padding-left:18px;margin:0 0 14px}
+.aside li{margin:4px 0}
+.aside b{color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="ctl">
+  <div class="grp"><b>View</b>
+    <button data-view="reveal" class="on">reveal</button>
+    <button data-view="total">total</button>
+    <button data-view="report">report</button>
+    <button data-view="idle">idle</button></div>
+  <div class="grp"><b>Case</b>
+    <button data-case="close" class="on">close (0.4 off)</button>
+    <button data-case="bull">bullseye</button>
+    <button data-case="way">way off (−)</button></div>
+  <div class="grp"><b>Behind</b>
+    <button data-bg="stream" class="on">stream</button>
+    <button data-bg="check">transparent</button>
+    <button data-zones="1">safe zones</button></div>
+  <div class="grp" id="pager"><b>Report page</b><button id="pgPrev">◀</button><span id="pgN" style="color:var(--ink)">1 / 6</span><button id="pgNext">▶</button></div>
+  <div class="grp"><button id="replay">▶ Replay with sound</button><button id="mute">sound: on</button></div>
+</div>
+<p class="note">Vertical 1080×1920 OBS browser source, transparent outside the card. It fires when the operator presses <b>Show results</b> after locking in a record during the admin-only window (public close 6PM → tally ~11PM). The average is final at that moment because his vote was the last one in. Green = scoring, purple = the prediction game. No gold: no money and no first place on this card.</p>
+
+<div class="stage">
+<div class="fit" id="fit">
+<div id="frame" class="bg-stream">
+  <div class="zone top"><span>Apps draw here (profile · LIVE · viewers)</span></div>
+  <div class="zone bot"><span>Comments draw here</span></div>
+
+  <!-- ===== REVEAL ===== -->
+  <div class="card" id="reveal">
+    <div class="hd">
+      <div class="lock"><img src="/brand/lockups/anr-meeting-h.svg" alt="A&amp;R Meeting"></div>
+      <div class="drop"><b>Drop #52</b> · 10.31.26<br>Record <b id="rIdx">7</b> of <span id="rN">12</span></div>
+    </div>
+    <div class="rule13"></div>
+
+    <div class="rec">
+      <div class="eyebrow">The result</div>
+      <div class="t" id="rTitle">Late Nights in Decatur</div>
+      <div class="a"><b id="rArtist">Marcus Vell</b> · <span id="rHandle">@marcusvell</span></div>
+    </div>
+
+    <div class="avg">
+      <div class="k">The average</div>
+      <div class="n" id="avgN">0.0</div>
+      <div class="m step" id="avgM">Potential Single</div>
+      <div class="c step" id="avgC">from 212 A&amp;Rs</div>
+    </div>
+
+    <div class="scale step" id="scale">
+      <div class="bar"></div>
+      <div class="span" id="spanEl"></div>
+      <div class="lb p" id="lbP" style="left:66.7%">You predicted</div>
+      <div class="mk p" id="mkP" style="left:66.7%"></div>
+      <div class="lb g" id="lbG" style="left:0%">Average</div>
+      <div class="mk g" id="mkG" style="left:0%"></div>
+      <div class="num" style="left:0%">0</div><div class="num" style="left:11.1%">1</div><div class="num" style="left:22.2%">2</div>
+      <div class="num" style="left:33.3%">3</div><div class="num" style="left:44.4%">4</div><div class="num" style="left:55.5%">5</div>
+      <div class="num" style="left:66.7%">6</div><div class="num" style="left:77.8%">7</div><div class="num" style="left:88.9%">8</div><div class="num" style="left:100%">9</div>
+    </div>
+
+    <div class="tiles step" id="tiles">
+      <div class="tile"><div class="k">You rated</div><div class="v" id="tRated">7</div></div>
+      <div class="tile p"><div class="k">You predicted</div><div class="v" id="tPred">6.0</div></div>
+      <div class="tile g"><div class="k">Off by</div><div class="v" id="tOff">0.4</div></div>
+    </div>
+
+    <div class="res">
+      <div class="pts pop" id="pts"><div class="k">Points</div><div class="v" id="ptsV">+82</div><div class="t" id="ptsT">Close</div></div>
+      <div class="grd pop" id="grd"><div class="k">Round grade</div><div class="v" id="grdV">A</div></div>
+    </div>
+
+    <div class="ft step" id="ft">
+      <div><div class="k">Today so far</div><div class="v"><b id="ftPts">612</b> pts · grade <b id="ftGrade">B+</b> · <span id="ftDone">7</span> of <span id="ftN">12</span></div></div>
+      <div class="ticks" id="ticks"></div>
+    </div>
+  </div>
+
+  <!-- ===== TOTAL ===== -->
+  <div class="card hide" id="total">
+    <div class="hd">
+      <div class="lock"><img src="/brand/lockups/anr-meeting-h.svg" alt="A&amp;R Meeting"></div>
+      <div class="drop"><b>Drop #52</b> · 10.31.26<br>The day so far</div>
+    </div>
+    <div class="rule13"></div>
+    <div class="big">
+      <div class="k">Points today</div>
+      <div class="n">612</div>
+      <div class="s">7 of 12 rated · grade B+ · 1 bullseye</div>
+    </div>
+    <div class="rows">
+      <div class="row"><span class="i">01</span><span class="t">Paper Planes</span><span class="n">avg 5.2</span><span class="n g">+104</span><span class="gl">A</span></div>
+      <div class="row"><span class="i">02</span><span class="t">Run It Back</span><span class="n">avg 3.8</span><span class="n g">+125</span><span class="gl">A+</span></div>
+      <div class="row"><span class="i">03</span><span class="t">Cold Water</span><span class="n">avg 6.9</span><span class="n g">+61</span><span class="gl">B</span></div>
+      <div class="row"><span class="i">04</span><span class="t">Southside Baptist</span><span class="n">avg 4.4</span><span class="n g">+90</span><span class="gl">A</span></div>
+      <div class="row"><span class="i">05</span><span class="t">Nobody's Home</span><span class="n">avg 7.3</span><span class="n g">+41</span><span class="gl">B-</span></div>
+      <div class="row"><span class="i">06</span><span class="t">1AM</span><span class="n">avg 2.6</span><span class="n g">+109</span><span class="gl">A</span></div>
+      <div class="row"><span class="i">07</span><span class="t">Late Nights in Decatur</span><span class="n">avg 6.4</span><span class="n g">+82</span><span class="gl">A</span></div>
+      <div class="row todo"><span class="i">08</span><span class="t">Up next</span><span class="n"></span><span class="n"></span><span class="gl"></span></div>
+    </div>
+    <div class="ft"><div><div class="k">Results</div><div class="v">publish 6:00 AM on the HOT 100 Daily Countdown</div></div></div>
+  </div>
+
+  <!-- ===== REPORT ===== -->
+  <div class="card hide" id="report">
+    <img src="/_mock-assets/track-report/p1.png" class="on" alt=""><img src="/_mock-assets/track-report/p2.png" alt=""><img src="/_mock-assets/track-report/p3.png" alt="">
+    <img src="/_mock-assets/track-report/p4.png" alt=""><img src="/_mock-assets/track-report/p5.png" alt=""><img src="/_mock-assets/track-report/p6.png" alt="">
+    <div class="pg"><span class="on"></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>
+</div>
+</div>
+
+<div class="aside">
+  <h3>What happens, in order</h3>
+  <ol>
+    <li>Card slides in. Record title, artist, handle. The average reads <b>0.0</b>.</li>
+    <li>The average <b>counts up</b> to the real number (about 1.4s, ticking). It lands with a chord; the meaning of its whole number prints under it ("Potential Single").</li>
+    <li>The scale strip shows the <b>purple</b> marker where he predicted; the <b>green</b> marker slides to the average and the gap is shaded.</li>
+    <li>The three tiles: rated · predicted · off by.</li>
+    <li><b>Points</b> and the <b>round grade</b> pop in together. A bullseye says BULLSEYE +125; a negative round turns the points block red.</li>
+    <li>The footer: today's running total, grade, N of N, and one tick per record.</li>
+    <li>Holds about 8s, fades out, back to transparent. Replays only on the next press.</li>
+  </ol>
+  <h3>The report view</h3>
+  <ol>
+    <li>From the daily page, after the reveal, <b>Show report</b> puts page 1 of the record's Track Report on the overlay: the real pages the artist gets by email, rendered on demand from the final numbers.</li>
+    <li><b>◀ ▶</b> on the daily page (or two Stream Deck keys) turn the pages; the strip at the foot shows where you are. The host talks through it: the decision, the split, against the room, what to spend.</li>
+    <li>Page count varies by record (4–9): a page with no data drops out, comments take what they need.</li>
+    <li><b>Close</b> returns to transparent. This is the sales floor: every artist who submits gets this report. The share page already carries the submit line, so the overlay adds no call to action of its own.</li>
+  </ol>
+  <h3>Rules it keeps</h3>
+  <ol>
+    <li>Fires only after the public close, only on the admin's press, only for his own vote. The server refuses everyone else, so the seal stays a server rule.</li>
+    <li>The number shown is the round's real, final average: nobody else can vote in the grace window.</li>
+    <li>No rank on this card. "You'd sit #N today" is a separate decision.</li>
+    <li>Audio is WebAudio from this page, so OBS carries it; the daily page stays silent.</li>
+  </ol>
+</div>
+</div>
+
+<script>
+if(location.search.includes('bare=1')) document.body.classList.add('bare');
+const STILL=location.search.includes('still=1');
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const MEAN=['Scrap it','Needs work','Needs work','Potential release','Potential release','Potential release','Potential Single','Potential Single','Potential Single','Hit'];
+const CASES={
+  close:{avg:6.4,rated:7,pred:6.0,pts:82,tier:'Close',grade:'A',n:212,dayPts:612,dayGrade:'B+'},
+  bull: {avg:6.4,rated:7,pred:6.4,pts:125,tier:'Bullseye',grade:'A+',n:212,dayPts:655,dayGrade:'A-'},
+  way:  {avg:6.4,rated:2,pred:0.8,pts:-4,tier:'Way off',grade:'F',n:212,dayPts:526,dayGrade:'B'}
+};
+const Q=new URLSearchParams(location.search);
+let cur=CASES[Q.get('case')]?Q.get('case'):'close', view=Q.get('view')||'reveal', muted=false, timer=null;
+let pg=Math.max(1,Math.min(6,Number(Q.get('page'))||1));
+function showPg(n){ pg=Math.max(1,Math.min(6,n)); $$('#report img').forEach((im,i)=>im.classList.toggle('on',i===pg-1)); $$('#report .pg span').forEach((e,i)=>e.classList.toggle('on',i===pg-1)); $('#pgN').textContent=pg+' / 6'; }
+
+function fit(){const w=document.body.classList.contains('bare')?1080:Math.min(540, window.innerWidth-16-460); const s=w/1080; $('#fit').style.width=w+'px'; $('#fit').style.height=(1920*s)+'px'; $('#frame').style.transform=`scale(${s})`;}
+window.addEventListener('resize',fit); fit();
+
+/* sound: WebAudio only (no files), same approach as the host buzzer */
+let ac; function ctx(){ if(!ac) ac=new (window.AudioContext||window.webkitAudioContext)(); return ac; }
+function tick(f=1200,d=.03,g=.08){ if(muted) return; const a=ctx(),o=a.createOscillator(),v=a.createGain(); o.type='square'; o.frequency.value=f; v.gain.value=g; o.connect(v); v.connect(a.destination); o.start(); v.gain.exponentialRampToValueAtTime(.0001,a.currentTime+d); o.stop(a.currentTime+d); }
+function chord(ok=true){ if(muted) return; const a=ctx(); const notes= ok?[523.25,659.25,783.99]:[392,370]; notes.forEach((f,i)=>{const o=a.createOscillator(),v=a.createGain(); o.type='triangle'; o.frequency.value=f; v.gain.value=.001; o.connect(v); v.connect(a.destination); const t=a.currentTime+i*.06; o.start(t); v.gain.linearRampToValueAtTime(.18,t+.03); v.gain.exponentialRampToValueAtTime(.0001,t+1.1); o.stop(t+1.2);}); }
+
+function pct(x){return (x/9*100)+'%';}
+function play(){
+  clearTimeout(timer);
+  const c=CASES[cur]; const card=$('#reveal');
+  card.classList.remove('out','in'); void card.offsetWidth;
+  $$('.step,.pop').forEach(e=>e.classList.remove('on'));
+  $('#avgN').textContent='0.0'; $('#avgM').textContent=MEAN[Math.floor(c.avg)]; $('#avgC').innerHTML=`from ${c.n} A&amp;Rs`;
+  $('#tRated').textContent=c.rated; $('#tPred').textContent=c.pred.toFixed(1); $('#tOff').textContent=Math.abs(c.avg-c.pred).toFixed(1);
+  $('#ptsV').textContent=(c.pts>=0?'+':'')+c.pts; $('#ptsT').textContent=c.tier; $('#pts').classList.toggle('neg',c.pts<0); $('#grdV').textContent=c.grade;
+  $('#ftPts').textContent=c.dayPts; $('#ftGrade').textContent=c.dayGrade;
+  $('#lbP').style.left=$('#mkP').style.left=pct(c.pred); $('#lbG').style.left=$('#mkG').style.left=pct(0); $('#spanEl').style.left=pct(Math.min(c.pred,c.avg)); $('#spanEl').style.width='0%';
+  $('#ticks').innerHTML=Array.from({length:12},(_,i)=>`<span class="tk ${i<6?'done':i===6?'now':''}"></span>`).join('');
+  card.classList.add('in');
+  if(STILL){ document.documentElement.style.setProperty('--noanim','1'); card.style.animation='none'; card.style.opacity=1; card.style.transform='none'; $$('.step,.pop').forEach(e=>{e.style.transition='none';e.classList.add('on');}); $('#avgN').textContent=c.avg.toFixed(1); $('#mkG').style.transition=$('#lbG').style.transition='none'; $('#lbG').style.left=$('#mkG').style.left=pct(c.avg); $('#spanEl').style.width=(Math.abs(c.avg-c.pred)/9*100)+'%'; return; }
+  // count up
+  const t0=performance.now(), dur=1400, from=0, to=c.avg; let last=-1;
+  function f(now){ const p=Math.min(1,(now-t0-500)/dur); if(p<0){requestAnimationFrame(f);return;} const e=1-Math.pow(1-p,3); const v=from+(to-from)*e; const s=v.toFixed(1); if(s!==last){ $('#avgN').textContent=s; last=s; tick(900+v*60); } if(p<1) requestAnimationFrame(f); else land(); }
+  requestAnimationFrame(f);
+  function land(){
+    chord(c.pts>=0); $('#avgM').classList.add('on'); $('#avgC').classList.add('on');
+    setTimeout(()=>{ $('#scale').classList.add('on'); requestAnimationFrame(()=>{ $('#lbG').style.left=$('#mkG').style.left=pct(c.avg); $('#spanEl').style.width=pct(Math.abs(c.avg-c.pred)).replace('%','')+'%'; }); },300);
+    setTimeout(()=>$('#tiles').classList.add('on'),1200);
+    setTimeout(()=>{ $('#pts').classList.add('on'); $('#grd').classList.add('on'); tick(c.pts>=0?1600:300,.12,.12); },1700);
+    setTimeout(()=>$('#ft').classList.add('on'),2200);
+    if(!location.search.includes('hold=1')) timer=setTimeout(()=>card.classList.add('out'),10000);
+  }
+}
+
+$$('[data-view]').forEach(b=>b.onclick=()=>{ $$('[data-view]').forEach(x=>x.classList.remove('on')); b.classList.add('on'); view=b.dataset.view;
+  $('#reveal').classList.toggle('hide',view!=='reveal'); $('#total').classList.toggle('hide',view!=='total'); $('#report').classList.toggle('hide',view!=='report');
+  if(view==='report'){ const r=$('#report'); r.classList.remove('out','in'); void r.offsetWidth; r.classList.add('in'); showPg(pg); }
+  if(view==='total'){ const t=$('#total'); t.classList.remove('out','in'); void t.offsetWidth; t.classList.add('in'); }
+  if(view==='reveal') play(); });
+$$('[data-case]').forEach(b=>b.onclick=()=>{ $$('[data-case]').forEach(x=>x.classList.remove('on')); b.classList.add('on'); cur=b.dataset.case; if(view==='reveal') play(); });
+$$('[data-bg]').forEach(b=>b.onclick=()=>{ $$('[data-bg]').forEach(x=>x.classList.remove('on')); b.classList.add('on'); $('#frame').className=(($('#frame').classList.contains('zones'))?'zones ':'')+'bg-'+b.dataset.bg; });
+$('[data-zones]').onclick=e=>{ $('#frame').classList.toggle('zones'); e.target.classList.toggle('on'); };
+$('#pgPrev').onclick=()=>{ showPg(pg-1); tick(700,.04,.06); }; $('#pgNext').onclick=()=>{ showPg(pg+1); tick(900,.04,.06); };
+document.addEventListener('keydown',e=>{ if(view!=='report') return; if(e.key==='ArrowRight') $('#pgNext').click(); if(e.key==='ArrowLeft') $('#pgPrev').click(); });
+$('#replay').onclick=()=>{ if(view!=='reveal'){ $('[data-view="reveal"]').click(); } else play(); };
+$('#mute').onclick=e=>{ muted=!muted; e.target.textContent='sound: '+(muted?'off':'on'); };
+// first paint: silent (browsers block audio before a click)
+muted=true; if(view==='report'){ $$('[data-view]').forEach(x=>x.classList.toggle('on',x.dataset.view==='report')); $('#reveal').classList.add('hide'); $('#report').classList.remove('hide'); $('#report').style.animation='none'; $('#report').style.opacity=1; $('#report').style.transform='none'; showPg(pg); } else if(view==='total'){ $$('[data-view]').forEach(x=>x.classList.toggle('on',x.dataset.view==='total')); $('#reveal').classList.add('hide'); $('#total').classList.remove('hide'); $('#total').classList.add('in'); } else play(); setTimeout(()=>{muted=false;},2500);
+</script>
+</body>
+</html>

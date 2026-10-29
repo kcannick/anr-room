@@ -171,6 +171,33 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 .ad-slot iframe{width:320px;height:100px;border:0;display:block;border-radius:12px}
 .endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
 .endorse img{height:13px;width:auto;opacity:.75}
+
+/* THE ADMIN RATING WINDOW (2026-10-29). Everything in this block is drawn ONLY when the
+   server's state carries async.adminWindow — a platform admin, after the public close,
+   inside the window. Purple: this is the host's control, not a live-to-everyone state. */
+.adminwin{display:flex;align-items:center;gap:10px;border:1px solid var(--accent);background:rgba(109,95,224,.10);border-radius:var(--r-md);padding:10px 13px}
+.adminwin .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.adminwin .t{font-size:12.5px;line-height:1.45}
+.adminwin .mono{font-size:11px;color:var(--ink-dim);margin-left:auto;white-space:nowrap}
+.btn.contest{background:var(--accent);color:#fff}
+.result{border:1px solid var(--signal);border-radius:var(--r-lg);padding:16px;background:rgba(75,183,73,.05)}
+.result .avg{font-family:"Space Mono",monospace;font-size:64px;font-weight:700;line-height:1;color:var(--signal);text-align:center}
+.result .mean{text-align:center;font-weight:800;font-size:16px;margin-top:4px}
+.result .scale{position:relative;height:36px;margin:16px 4px 0}
+.result .scale .bar{position:absolute;left:0;right:0;top:14px;height:6px;border-radius:3px;background:var(--line)}
+.result .scale .mk{position:absolute;top:6px;width:3px;height:22px;border-radius:2px;transform:translateX(-50%)}
+.result .scale .mk.p{background:var(--accent)} .result .scale .mk.g{background:var(--signal)}
+.result .scale .span{position:absolute;top:14px;height:6px;background:rgba(109,95,224,.5)}
+.result .scale .num{position:absolute;top:28px;transform:translateX(-50%);font-family:"Space Mono",monospace;font-size:9px;color:var(--ink-faint)}
+.result .big{display:flex;gap:10px;margin-top:14px}
+.result .big>div{flex:1;border-radius:12px;padding:12px;text-align:center}
+.result .big .pts{background:var(--signal);color:var(--bg)}
+.result .big .pts.neg{background:var(--hot)}
+.result .big .grd{background:var(--inset);border:1px solid var(--line)}
+.result .big .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;opacity:.8}
+.result .big .v{font-family:"Space Mono",monospace;font-size:34px;font-weight:700;margin-top:4px;line-height:1}
+.result .big .grd .v{font-family:Archivo,sans-serif;font-weight:900}
+.reportbox{border:1px solid var(--accent);border-radius:var(--r-md);padding:12px 13px;margin-top:14px;background:rgba(109,95,224,.08)}
 </style>
 </head>
 <body>
@@ -208,6 +235,11 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 
   <!-- THE QUEUE WALK -->
   <section id="screen-queue" class="stack hide">
+    <div class="adminwin hide" id="adminWin">
+      <span class="dot"></span>
+      <span class="t"><b>Admin rating window.</b> Closed to everyone else at <span id="adminWinClosed"></span>. Your ratings count like any A&amp;R's.</span>
+      <span class="mono">tallies <span id="adminWinUntil"></span></span>
+    </div>
     <div class="tierbar hide" id="tierBar">
       <span class="dot"></span>
       <span>Finish today for <b id="tierPts"></b></span>
@@ -343,6 +375,35 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 
         <div style="display:flex;gap:9px;margin-top:14px" id="qLinks"></div>
 
+        <!-- ADMIN RATING WINDOW ONLY (async.adminWindow). Show results asks the server for the
+             round's FINAL result — nobody else can vote past the public close, so the average
+             is settled the moment the admin locks in — and puts it on the stream overlay
+             (/overlay/daily). The same numbers then stay here, small, with the Track Report
+             pager that walks the artist's real report pages on the overlay. -->
+        <div class="hide" id="revealBox" style="margin-top:14px">
+          <button class="btn contest" id="btnReveal">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            Show results
+          </button>
+          <div class="dim mono" style="font-size:10.5px;text-align:center;margin-top:6px">Admin only. Fires the stream overlay. The average is final: yours was the last vote.</div>
+          <div class="err" id="revealErr" style="font-size:12.5px"></div>
+        </div>
+        <div class="hide" id="revealOut" style="margin-top:14px">
+          <div class="result" id="revealResult"></div>
+          <div class="stats" style="margin-top:14px" id="revealDay"></div>
+          <div class="reportbox">
+            <div class="eyebrow" style="color:var(--accent)">Track Report on stream</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+              <button class="btn outline" id="btnRepPrev" style="width:auto;padding:10px 14px;font-size:15px" aria-label="Previous page">◀</button>
+              <div style="flex:1;text-align:center"><div style="font-weight:800;font-size:14px" id="repPage">Show the report</div><div class="dim mono" style="font-size:10.5px;margin-top:2px" id="repKind"></div></div>
+              <button class="btn outline" id="btnRepNext" style="width:auto;padding:10px 14px;font-size:15px" aria-label="Next page">▶</button>
+              <button class="btn contest" id="btnRepClose" style="width:auto;padding:10px 14px;font-size:13px">Close</button>
+            </div>
+            <div class="dim" style="font-size:11.5px;margin-top:8px;line-height:1.45">The artist's real report, rendered from the final numbers, page by page on the overlay. Close clears the overlay.</div>
+            <div class="err" id="repErr2" style="font-size:12.5px"></div>
+          </div>
+        </div>
+
         <button class="btn outline" id="btnNext" style="margin-top:11px">
           <span id="btnNextLabel">Next record</span>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg>
@@ -367,6 +428,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <div class="rule" style="margin:20px 0 16px"></div>
       <div id="doneTiers" style="text-align:left"></div>
       <div class="note" id="doneNext" style="text-align:left;margin-top:18px"></div>
+      <button class="btn contest hide" id="btnDayOnStream" style="margin-top:16px">Show the day on stream</button>
       <button class="btn ghost" id="btnReview" style="margin-top:16px">Review my evaluations</button>
       <a class="btn ghost" href="/account#results" style="margin-top:10px;text-decoration:none">My past results</a>
       <a class="btn ghost" href="/refer" style="margin-top:10px;text-decoration:none">Earn bonus points</a>
@@ -467,6 +529,7 @@ let chosenTaste = null, predict = 4.5, predictTouched = false;
 let played = Object.create(null);   // per-record "I opened the link" — session-scoped only
 let COMMENT_MAX = 500;         // replaced from the server payload; never a second source of truth
 let reviewing = false;         // they asked to walk a finished day again; see startReview()
+let revealed = Object.create(null);  // admin window: roundId -> the overlay state after Show results
 
 function show(id){
   ['account','email','code','waiting','queue','done','sealed','recap']
@@ -814,8 +877,78 @@ function qPaint(){
     $('#sealNote').textContent = ST && ST.async && ST.async.closesLabel
       ? ('NO RESULTS UNTIL ' + ST.async.closesLabel.toUpperCase())
       : 'NO RESULTS UNTIL THE WINDOW CLOSES';
+    // The admin rating window: Show results until pressed, then the result + the pager.
+    const win = ST && ST.async && ST.async.adminWindow;
+    const rv = win ? revealed[r.id] : null;
+    $('#revealBox').classList.toggle('hide', !win || !!rv);
+    $('#revealOut').classList.toggle('hide', !rv);
+    $('#sealNote').parentElement.classList.toggle('hide', !!win);
+    if(rv) paintReveal(rv);
   }
 }
+
+/* ---- the admin rating window: the live reveal + the Track Report pager ---- */
+function paintReveal(st){
+  const rv = st.reveal, t = st.total || {};
+  if(!rv) return;
+  const pct = x => (x / 9 * 100) + '%';
+  const lo = Math.min(rv.predicted, rv.avg), w = Math.abs(rv.avg - rv.predicted);
+  $('#revealResult').innerHTML =
+    '<div class="eyebrow" style="text-align:center;color:var(--signal)">The average · ' + rv.n + ' A&amp;R' + (rv.n === 1 ? '' : 's') + '</div>'
+    + '<div class="avg" style="margin-top:8px">' + Number(rv.avg).toFixed(1) + '</div>'
+    + '<div class="mean">' + esc(rv.meaning || '') + '</div>'
+    + '<div class="scale"><div class="bar"></div><div class="span" style="left:' + pct(lo) + ';width:' + pct(w) + '"></div>'
+    + '<div class="mk p" style="left:' + pct(rv.predicted) + '"></div><div class="mk g" style="left:' + pct(rv.avg) + '"></div>'
+    + '<div class="num" style="left:0">0</div><div class="num" style="left:33.3%">3</div><div class="num" style="left:66.7%">6</div><div class="num" style="left:100%">9</div></div>'
+    + '<div class="myvote" style="margin-top:14px">'
+    + '<div><div class="eyebrow mono" style="font-size:9.5px">You rated</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px">' + rv.rated + '</div></div>'
+    + '<div><div class="eyebrow mono" style="font-size:9.5px">Predicted</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--accent)">' + Number(rv.predicted).toFixed(1) + '</div></div>'
+    + '<div><div class="eyebrow mono" style="font-size:9.5px">Off by</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--signal)">' + Number(rv.off).toFixed(1) + '</div></div></div>'
+    + '<div class="big"><div class="pts' + (rv.points < 0 ? ' neg' : '') + '"><div class="k">Points</div><div class="v">' + (rv.points >= 0 ? '+' : '') + rv.points + '</div></div>'
+    + '<div class="grd"><div class="k">Round grade</div><div class="v">' + esc(rv.grade || '—') + '</div></div></div>';
+  $('#revealDay').innerHTML =
+    '<div class="stat"><div class="k">Today</div><div class="v" style="color:var(--signal)">' + (t.points || 0) + '</div></div>'
+    + '<div class="stat"><div class="k">Grade</div><div class="v">' + esc(t.grade || '—') + '</div></div>'
+    + '<div class="stat"><div class="k">Rated</div><div class="v">' + (t.rated || 0) + '/' + (t.total || 0) + '</div></div>';
+  const rp = st.view === 'report' && st.report && st.report.roundId === rv.roundId ? st.report : null;
+  $('#repPage').textContent = rp ? ('Page ' + rp.page + ' of ' + rp.total) : 'Show the report';
+  $('#repKind').textContent = rp ? (rp.labels[rp.page - 1] || '') : 'Page 1 goes on the overlay';
+}
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+async function overlayPost(path, body, errEl){
+  if(errEl) $(errEl).textContent = '';
+  const out = await apiRaw(path, Object.assign({ s: SID }, body));
+  if(out.status >= 200 && out.status < 300) return out.data.state;
+  if(errEl) $(errEl).textContent = (out.data && out.data.error) || 'Something went wrong';
+  return null;
+}
+$('#btnReveal').onclick = async () => {
+  const r = currentRound(); if(!r) return;
+  $('#btnReveal').disabled = true;
+  const st = await overlayPost('/api/admin/daily/reveal', { roundId: r.id }, '#revealErr');
+  $('#btnReveal').disabled = false;
+  if(st){ revealed[r.id] = st; track('daily_reveal'); qPaint(); }
+};
+async function reportPage(delta){
+  const r = currentRound(); const cur = r && revealed[r.id]; if(!cur) return;
+  const rp = cur.view === 'report' && cur.report && cur.report.roundId === r.id ? cur.report : null;
+  let page = rp ? rp.page + delta : 1;
+  if(rp && (page < 1 || page > rp.total)) return;
+  const st = await overlayPost('/api/admin/daily/overlay', { view: 'report', roundId: r.id, page }, '#repErr2');
+  if(st){ revealed[r.id] = Object.assign({}, cur, st); qPaint(); }
+}
+$('#btnRepPrev').onclick = () => reportPage(-1);
+$('#btnRepNext').onclick = () => reportPage(1);
+$('#btnRepClose').onclick = async () => {
+  const r = currentRound(); const cur = r && revealed[r.id]; if(!cur) return;
+  const st = await overlayPost('/api/admin/daily/overlay', { view: 'idle' }, '#repErr2');
+  if(st){ revealed[r.id] = Object.assign({}, cur, { view: 'idle', report: null }); qPaint(); }
+};
+$('#btnDayOnStream').onclick = async () => {
+  $('#btnDayOnStream').disabled = true;
+  await overlayPost('/api/admin/daily/overlay', { view: 'total' });
+  $('#btnDayOnStream').disabled = false;
+};
 
 // Advance to the next record that is neither rated nor reported, WRAPPING rather than
 // finishing early. A completion screen with three unrated records is a lie that costs
@@ -886,6 +1019,12 @@ $('#btnSealedReview').onclick = startReview;
 function render(){
   const st = ST; if(!st) return;
   const pr = st.progress || {}, as = st.async || {};
+  // The admin rating window banner: only when the server says so (platform admin, after
+  // the public close, inside the window). Everyone else never sees this element.
+  const win = as.adminWindow || null;
+  $('#adminWin').classList.toggle('hide', !win);
+  if(win){ $('#adminWinClosed').textContent = win.closesLabel; $('#adminWinUntil').textContent = win.untilLabel; }   // labels already carry ET
+  $('#btnDayOnStream').classList.toggle('hide', !win);
 
   // Standing stays on screen, because this is still a competition. Points only during the
   // walk: a RANK would mean a board scan on every poll, and buildRecap already computes

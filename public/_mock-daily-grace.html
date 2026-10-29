@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A&amp;R Daily — admin rating window (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* ============================================================
+   MOCKUP ONLY — the daily page during the ADMIN RATING WINDOW, and the panel setting.
+
+   The public close stays 6PM. A setting keeps the drop rateable for a platform admin only,
+   for N minutes after the close; the tally (and everything after it: carousels, Asana, the
+   6AM publish) waits for the window to end. The admin's votes are ORDINARY votes — score,
+   grade card, results email and comments all real. Nobody else can vote during the window,
+   so rating on stream anchors no one. Screens, left to right:
+     1  what EVERYONE ELSE sees after 6PM — unchanged (the sealed screen)
+     2  what the ADMIN sees — the same rate → predict → lock flow with one banner on top
+     3  after lock-in — the new "Show results" step (admin only), which fires the overlay
+     4  the in-app result — the no-OBS fallback, and what stays on screen after the press
+     5  the Platform panel setting
+   ============================================================ */
+body{background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,-apple-system,"Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased;margin:0}
+.hide{display:none !important}
+.mono{font-family:"Space Mono",ui-monospace,"SF Mono",Menlo,monospace}
+.dim{color:var(--ink-dim)} .faint{color:var(--ink-faint)}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em}
+a{color:var(--signal);text-decoration:none}
+.tick{display:block;width:3px;height:12px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.section-head{display:flex;align-items:center;gap:9px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.note{background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;font-size:13px;color:var(--ink-dim)}
+label{display:block;font-size:12.5px;font-weight:600;margin:0 0 6px}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;cursor:pointer;border:0;border-radius:13px;padding:16px;font-family:inherit;font-weight:800;font-size:15.5px;letter-spacing:-.01em;background:var(--signal);color:var(--bg)}
+.btn[disabled]{opacity:.35;cursor:default}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.btn.outline{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:700}
+.btn.contest{background:var(--accent);color:#fff}
+.pips{display:flex;gap:6px}
+.pip{flex:1;min-width:0;height:46px;border:1px solid var(--line);background:var(--inset);border-radius:11px;display:flex;align-items:center;justify-content:center;font-family:"Space Mono",monospace;font-size:16px;color:var(--ink-dim)}
+.pip.on{background:var(--signal);border-color:var(--signal);color:var(--bg);font-weight:700;transform:translateY(-3px)}
+.stepnum{width:21px;height:21px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none}
+.steprow{display:flex;align-items:center;gap:9px}
+.myvote{display:flex;gap:10px}
+.myvote>div{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 8px;text-align:center}
+.composer{background:linear-gradient(180deg,var(--panel),#1C1733);border:1px solid var(--accent);border-radius:14px;padding:15px}
+.sealed-note{display:flex;align-items:center;gap:8px;justify-content:center}
+.stats{display:flex;gap:10px}
+.stat{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px 10px;text-align:center}
+.stat .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim)}
+.stat .v{font-family:"Space Mono",monospace;font-size:25px;font-weight:700;margin-top:5px}
+textarea{width:100%;min-height:70px;background:var(--inset);border:1px solid var(--line);border-radius:10px;color:var(--ink);font:inherit;font-size:14px;padding:10px;resize:none}
+
+/* ---- the one NEW element on the daily page: the admin window banner ---- */
+.adminwin{display:flex;align-items:center;gap:10px;border:1px solid var(--accent);background:rgba(109,95,224,.10);border-radius:var(--r-md);padding:10px 13px}
+.adminwin .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.adminwin .t{font-size:12.5px;line-height:1.45}
+.adminwin .t b{font-weight:800}
+.adminwin .mono{font-size:11px;color:var(--ink-dim);margin-left:auto;white-space:nowrap}
+
+/* ---- the in-app result (fallback) ---- */
+.result{border:1px solid var(--signal);border-radius:var(--r-lg);padding:16px;background:rgba(75,183,73,.05)}
+.result .avg{font-family:"Space Mono",monospace;font-size:64px;font-weight:700;line-height:1;color:var(--signal);text-align:center}
+.result .mean{text-align:center;font-weight:800;font-size:16px;margin-top:4px}
+.result .scale{position:relative;height:36px;margin:16px 4px 0}
+.result .scale .bar{position:absolute;left:0;right:0;top:14px;height:6px;border-radius:3px;background:var(--line)}
+.result .scale .mk{position:absolute;top:6px;width:3px;height:22px;border-radius:2px;transform:translateX(-50%)}
+.result .scale .mk.p{background:var(--accent)} .result .scale .mk.g{background:var(--signal)}
+.result .scale .span{position:absolute;top:14px;height:6px;background:rgba(109,95,224,.5)}
+.result .scale .num{position:absolute;top:28px;transform:translateX(-50%);font-family:"Space Mono",monospace;font-size:9px;color:var(--ink-faint)}
+.result .big{display:flex;gap:10px;margin-top:14px}
+.result .big>div{flex:1;border-radius:12px;padding:12px;text-align:center}
+.result .big .pts{background:var(--signal);color:var(--bg)}
+.result .big .grd{background:var(--inset);border:1px solid var(--line)}
+.result .big .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;opacity:.8}
+.result .big .v{font-family:"Space Mono",monospace;font-size:34px;font-weight:700;margin-top:4px;line-height:1}
+.result .big .grd .v{font-family:Archivo,sans-serif;font-weight:900}
+
+/* ---- mockup chrome ---- */
+.intro{max-width:1200px;margin:0 auto;padding:24px 20px 0;font-size:13.5px;line-height:1.55;color:var(--ink-dim)}
+.intro h1{color:var(--ink);font-size:22px;margin-bottom:8px}
+.intro b{color:var(--ink)}
+.row{display:flex;gap:22px;padding:22px 20px 40px;overflow-x:auto;align-items:flex-start}
+.phone{flex:none;width:390px;background:var(--bg);border:1px solid var(--line);border-radius:28px;padding:18px 16px 24px;display:flex;flex-direction:column;gap:14px;min-height:620px}
+.cap{flex:none;width:390px}
+.cap .n{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--signal);margin-bottom:6px}
+.cap p{margin:0;font-size:13px;line-height:1.5;color:var(--ink-dim)}
+.cap p b{color:var(--ink)}
+.hdr{display:flex;align-items:center;justify-content:space-between}
+.hdr .lock{display:flex;align-items:center;gap:8px}
+.hdr .lock img{height:22px;display:block}
+.hdr .who{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim)}
+/* panel (admin.html look) */
+.cons{flex:none;width:560px;background:#0a0814;border:1px solid var(--line);border-radius:14px;padding:18px;font-size:13px}
+.cons label{font-size:12.5px}
+.cons .muted{color:var(--ink-dim);font-weight:500}
+.cons input,.cons select{background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%}
+.cons .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cons .new{border:1px solid var(--accent);border-radius:10px;padding:12px;margin-top:12px;background:rgba(109,95,224,.08)}
+.cons .new .tag{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+.cons .k{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim)}
+</style>
+</head>
+<body>
+
+<div class="intro">
+  <h1>A&amp;R Daily — the admin rating window</h1>
+  The public close stays <b>6:00 PM</b>. For <b>N minutes after it</b> the drop stays open to a platform admin only. The admin's votes are ordinary votes. Nobody else can vote in the window, so rating on stream anchors no one. The tally and everything after it wait for the window to end. One new banner on the daily page, one new step after lock-in, one new setting on the Platform panel. Everything else on the page is as it is today.
+</div>
+
+<div class="row">
+
+  <!-- 1 everyone else -->
+  <div>
+    <div class="cap"><div class="n">1 · Everyone else, after 6PM</div><p>Unchanged. The sealed screen. The copy already says when results come out; it does not mention the admin window.</p></div>
+    <div class="phone" style="margin-top:14px">
+      <div class="hdr"><div class="lock"><img src="/brand/lockups/anr-meeting-h.svg" alt=""></div><span class="who">Kiara M.</span></div>
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center">
+        <div class="panel stack" style="text-align:center">
+          <div class="eyebrow">Daily Drop #52 · Oct 31, 2026</div>
+          <h2 style="font-size:24px;margin:4px 0 0">The window is closed.</h2>
+          <p class="dim" style="font-size:14px;line-height:1.55;margin:0">You rated 12 of 12. Results publish at 6:00 AM ET with the HOT 100 Daily Countdown.</p>
+          <button class="btn ghost">Review my evaluations</button>
+          <a class="btn ghost">My past results</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 admin, rating -->
+  <div>
+    <div class="cap"><div class="n">2 · The admin, same hour</div><p>The ordinary rate → predict → lock flow, with <b>one banner</b>: the window is yours, when it ends, and that the public is closed. Purple, because this is the host's control, not a live-to-everyone state.</p></div>
+    <div class="phone" style="margin-top:14px">
+      <div class="hdr"><div class="lock"><img src="/brand/lockups/anr-meeting-h.svg" alt=""></div><span class="who">Kelby C. · admin</span></div>
+      <div class="adminwin"><span class="dot"></span><span class="t"><b>Admin rating window.</b> Closed to everyone else at 6:00 PM. Your ratings count like any A&amp;R's.</span><span class="mono">tallies 11:00 PM</span></div>
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Record 7 of 12</span></div>
+      <div class="panel">
+        <div class="eyebrow" style="color:var(--signal)">Now playing</div>
+        <h2 style="font-size:22px;margin-top:6px">Late Nights in Decatur</h2>
+        <div class="dim mono" style="font-size:12.5px;margin-top:4px">Marcus Vell · @marcusvell</div>
+        <a class="btn outline" style="margin-top:14px">Open the record ↗</a>
+        <div class="steprow" style="margin-top:20px"><span class="stepnum">1</span><span style="font-weight:800;font-size:15px">Rate it</span></div>
+        <p class="dim" style="margin:7px 0 11px;font-size:12.5px;line-height:1.5">Your honest take, 0 to 9.</p>
+        <div class="pips" style="margin-bottom:6px"><span class="pip">0</span><span class="pip">1</span><span class="pip">2</span><span class="pip">3</span><span class="pip">4</span></div>
+        <div class="pips"><span class="pip">5</span><span class="pip">6</span><span class="pip on">7</span><span class="pip">8</span><span class="pip">9</span></div>
+        <div class="dim" style="font-size:12.5px;margin-top:10px">7 · Potential Single</div>
+        <button class="btn" style="margin-top:18px">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 after lock-in -->
+  <div>
+    <div class="cap"><div class="n">3 · After lock-in — the new step</div><p>Everything here exists today except the purple button: the <b>Follow</b> (Instagram) and <b>Artist profile</b> buttons are the page's own, shown after lock-in so you can explore the artist on air with the vote already in. <b>Show results</b> is drawn only for a platform admin inside the window. One press: the server records the reveal and pushes it to the overlay. The note box stays where it is, so a comment can go in before or after.</p></div>
+    <div class="phone" style="margin-top:14px">
+      <div class="hdr"><div class="lock"><img src="/brand/lockups/anr-meeting-h.svg" alt=""></div><span class="who">Kelby C. · admin</span></div>
+      <div class="adminwin"><span class="dot"></span><span class="t"><b>Admin rating window.</b> Closed to everyone else at 6:00 PM.</span><span class="mono">tallies 11:00 PM</span></div>
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Record 7 of 12</span></div>
+      <div class="panel">
+        <h2 style="font-size:22px">Late Nights in Decatur</h2>
+        <div class="dim mono" style="font-size:12.5px;margin-top:4px">Marcus Vell · @marcusvell</div>
+        <div class="myvote" style="margin-top:18px">
+          <div><div class="eyebrow mono" style="font-size:9.5px;letter-spacing:.15em">You rated</div><div class="mono" style="font-size:24px;font-weight:700;margin-top:4px">7</div></div>
+          <div><div class="eyebrow mono" style="font-size:9.5px;letter-spacing:.15em">You predicted</div><div class="mono" style="font-size:24px;font-weight:700;margin-top:4px;color:var(--signal)">6.0</div></div>
+        </div>
+<div style="display:flex;gap:9px;margin-top:14px">
+          <a class="btn outline" style="flex:1;padding:12px 8px;font-size:13px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>Follow</a>
+          <a class="btn outline" style="flex:1;padding:12px 8px;font-size:13px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>Artist profile</a>
+        </div>
+        <div class="composer" style="margin-top:16px">
+          <div class="eyebrow" style="color:var(--accent)">Your note to the artist</div>
+          <textarea style="margin-top:8px" placeholder="What you heard, and why."></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span class="dim mono" style="font-size:11px">0 / 500</span><button class="btn outline" style="width:auto;padding:9px 14px;font-size:13px">Send</button></div>
+        </div>
+        <button class="btn contest" style="margin-top:14px">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          Show results
+        </button>
+        <div class="dim mono" style="font-size:10.5px;text-align:center;margin-top:6px">Admin only. Fires the stream overlay. The average is final: yours was the last vote.</div>
+        <button class="btn outline" style="margin-top:11px">Next record →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 in-app result -->
+  <div>
+    <div class="cap"><div class="n">4 · After the press — in-app result</div><p>The same numbers the overlay shows, small, in the page: the fallback when there is no OBS, and what stays on screen after the overlay fades. Green = scoring, purple = the prediction. Replaces the Show results button; Follow, Artist profile and Next record stay. Under it, <b>Track Report on stream</b>: Show report puts page 1 on the overlay, ◀ ▶ turn the pages, Close clears it.</p></div>
+    <div class="phone" style="margin-top:14px">
+      <div class="hdr"><div class="lock"><img src="/brand/lockups/anr-meeting-h.svg" alt=""></div><span class="who">Kelby C. · admin</span></div>
+      <div class="adminwin"><span class="dot"></span><span class="t"><b>Admin rating window.</b> Closed to everyone else at 6:00 PM.</span><span class="mono">tallies 11:00 PM</span></div>
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Record 7 of 12</span></div>
+      <div class="panel">
+        <h2 style="font-size:22px">Late Nights in Decatur</h2>
+        <div class="dim mono" style="font-size:12.5px;margin-top:4px">Marcus Vell · @marcusvell</div>
+        <div class="result" style="margin-top:16px">
+          <div class="eyebrow" style="text-align:center;color:var(--signal)">The average · 212 A&amp;Rs</div>
+          <div class="avg" style="margin-top:8px">6.4</div>
+          <div class="mean">Potential Single</div>
+          <div class="scale">
+            <div class="bar"></div><div class="span" style="left:66.7%;width:4.4%"></div>
+            <div class="mk p" style="left:66.7%"></div><div class="mk g" style="left:71.1%"></div>
+            <div class="num" style="left:0">0</div><div class="num" style="left:33.3%">3</div><div class="num" style="left:66.7%">6</div><div class="num" style="left:100%">9</div>
+          </div>
+          <div class="myvote" style="margin-top:14px">
+            <div><div class="eyebrow mono" style="font-size:9.5px">You rated</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px">7</div></div>
+            <div><div class="eyebrow mono" style="font-size:9.5px">Predicted</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--accent)">6.0</div></div>
+            <div><div class="eyebrow mono" style="font-size:9.5px">Off by</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--signal)">0.4</div></div>
+          </div>
+          <div class="big">
+            <div class="pts"><div class="k">Points</div><div class="v">+82</div></div>
+            <div class="grd"><div class="k">Round grade</div><div class="v">A</div></div>
+          </div>
+        </div>
+        <div class="stats" style="margin-top:14px">
+          <div class="stat"><div class="k">Today</div><div class="v" style="color:var(--signal)">612</div></div>
+          <div class="stat"><div class="k">Grade</div><div class="v">B+</div></div>
+          <div class="stat"><div class="k">Rated</div><div class="v">7/12</div></div>
+        </div>
+        <div style="border:1px solid var(--accent);border-radius:var(--r-md);padding:12px 13px;margin-top:14px;background:rgba(109,95,224,.08)">
+          <div class="eyebrow" style="color:var(--accent)">Track Report on stream</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+            <button class="btn outline" style="width:auto;padding:10px 14px;font-size:15px">◀</button>
+            <div style="flex:1;text-align:center"><div style="font-weight:800;font-size:14px">Page 2 of 6</div><div class="dim mono" style="font-size:10.5px;margin-top:2px">The split</div></div>
+            <button class="btn outline" style="width:auto;padding:10px 14px;font-size:15px">▶</button>
+            <button class="btn contest" style="width:auto;padding:10px 14px;font-size:13px">Close</button>
+          </div>
+          <div class="dim" style="font-size:11.5px;margin-top:8px;line-height:1.45">The artist's real report, rendered from the final numbers, page by page on the overlay. Stream Deck: two keys do the same.</div>
+        </div>
+<div style="display:flex;gap:9px;margin-top:14px">
+          <a class="btn outline" style="flex:1;padding:12px 8px;font-size:13px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>Follow</a>
+          <a class="btn outline" style="flex:1;padding:12px 8px;font-size:13px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>Artist profile</a>
+        </div>
+        <button class="btn outline" style="margin-top:11px">Next record →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5 panel setting -->
+  <div>
+    <div class="cap" style="width:560px"><div class="n">5 · Platform panel → System settings</div><p>One new field under the schedule. The explanation says plainly what moves: the tally and everything after it. 0 turns it off and the day runs exactly as today.</p></div>
+    <div class="cons" style="margin-top:14px">
+      <label>A&amp;R Daily schedule <span class="muted">(Eastern Time. Applies to every drop that has not opened yet.)</span></label>
+      <div class="grid" style="margin-top:8px">
+        <div><label>Records open at</label><input value="18:00"></div>
+        <div><label>Rating closes at</label><input value="18:00"></div>
+      </div>
+      <div class="new">
+        <div class="tag">New</div>
+        <div class="grid">
+          <div><label>Admin rating window after the close <span class="muted">(minutes)</span></label><input value="300"></div>
+          <div><label>So the tally runs at</label><input value="11:00 PM ET" disabled></div>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0;line-height:1.5">After the public close, platform admins can keep rating the drop for this long, on the ordinary daily page, and press Show results after each record to fire the stream overlay. Their ratings count like any A&amp;R's. Nobody else can rate in this window. The tally, the carousel render, the Asana tasks and the 6:00 AM publish all wait for the window to end — keep it well clear of the publish time. 0 = off.</p>
+      </div>
+      <div class="grid" style="margin-top:12px">
+        <div><label>Daily Countdown graphics render at</label><input value="23:00"><select style="margin-top:6px"><option>close day</option></select></div>
+        <div><label>Results publish at</label><input value="06:00"><select style="margin-top:6px"><option>1 day after the close</option></select></div>
+      </div>
+      <p class="muted" style="font-size:11px;margin:8px 0 0">The render time now reads <b>after the admin window</b> by default (the close plus the window). Nothing is revealed at the render.</p>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <label>Stream overlay <span class="muted">(OBS browser source, vertical 1080×1920)</span></label>
+        <input value="https://anr.makinitmag.com/overlay/daily?k=••••••••••••" disabled>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">Uses your Stream Deck control key. Rolling the key changes this URL.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

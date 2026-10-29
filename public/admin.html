@@ -1426,6 +1426,11 @@
           <div><label>Rating closes at</label><input id="dsClose" type="time" step="300"></div>
         </div>
         <div class="row" style="margin-top:8px">
+          <div><label>Admin rating window after the close <span class="muted">(minutes; 0 = off)</span></label><input id="dsGrace" type="number" min="0" max="720" step="5"></div>
+          <div><label>So the tally runs at</label><input id="dsTally" disabled></div>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">After the public close, platform admins can keep rating the drop for this long, on the ordinary daily page, and press <b>Show results</b> after each record to fire the stream overlay (<code>/overlay/daily?k=&lt;control key&gt;</code>, under Stream Deck / external control). Their ratings count like any A&amp;R's. Nobody else can rate in this window. The tally, the carousel render, the Asana tasks and the publish all wait for the window to end — keep it well clear of the publish time.</p>
+        <div class="row" style="margin-top:8px">
           <div><label>Daily Countdown graphics render at</label><input id="dsStream" type="time" step="300"><select id="dsStreamDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
           <div><label>Results publish at</label><input id="dsResults" type="time" step="300"><select id="dsResultsDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
         </div>
@@ -4853,6 +4858,7 @@ function dsFill(sc){
   $('#dsStream').value=dsTime(sc.streamMin);$('#dsStreamDays').value=String(sc.streamDays);$('#dsResultsDays').value=String(sc.resultsDays);
   for(let i=1;i<=3;i++){const t=(sc.tiers||[])[i-1];$('#dsT'+i+'H').value=t?t.hours:'';$('#dsT'+i+'P').value=t?t.points:'';}
   $('#dsFinal').value=sc.finalPoints;$('#dsDelay').value=sc.artistDelayMin;
+  $('#dsGrace').value=sc.adminGraceMin||0;$('#dsTally').value=sc.adminGraceMin?(sc.tallyLabel||''):'at the close';
   $('#dsSummary').textContent='Track list locks '+sc.lockLabel+' · opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · daily countdown '+sc.streamLabel+' ('+sc.streamHours+' h) · results '+sc.resultsLabel+' ('+sc.resultsHours+' h) · bonus '+(sc.tierLabels||[]).join(', ');
 }
 function dsRead(){
@@ -4863,7 +4869,8 @@ function dsRead(){
   return {openMin:dsMin($('#dsOpen').value),closeMin:dsMin($('#dsClose').value),resultsMin:dsMin($('#dsResults').value),
     streamMin:dsMin($('#dsStream').value),streamDays:parseInt($('#dsStreamDays').value,10),resultsDays:parseInt($('#dsResultsDays').value,10),
     tiers,finalPoints:Number.isFinite(f)?f:undefined,
-    artistDelayMin:(v=>Number.isFinite(v)?v:undefined)(parseInt($('#dsDelay').value,10))};
+    artistDelayMin:(v=>Number.isFinite(v)?v:undefined)(parseInt($('#dsDelay').value,10)),
+    adminGraceMin:(v=>Number.isFinite(v)?v:0)(parseInt($('#dsGrace').value,10))};
 }
 $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=true;
@@ -6505,7 +6512,11 @@ $('#btnExpJsonAnon').onclick=()=>downloadExport('json',true);
 // Fetched once when the console opens (not on the 2s poll — it never changes on its own).
 // Masked by default so a screen-share doesn't hand out room control.
 let DECK_KEY=null, deckShown=false;
-function deckUrl(path,extra){ return location.origin+'/api/control/'+path+'?k='+(DECK_KEY||'')+(extra||''); }
+function deckUrl(path,extra){
+  // The daily reveal overlay is a PAGE, not an API action: /overlay/daily?k=<key>.
+  if(path==='daily-overlay-page') return location.origin+'/overlay/daily?k='+(DECK_KEY||'');
+  return location.origin+'/api/control/'+path+'?k='+(DECK_KEY||'')+(extra||'');
+}
 function deckMask(k){ return k ? k.slice(0,6)+'…'+k.slice(-4) : ''; }
 function renderDeck(){
   const has=!!DECK_KEY;
@@ -6519,6 +6530,7 @@ function renderDeck(){
     ['+30 seconds','extend','&seconds=30'],
     ['+1 minute','extend','&minutes=1'],
     ['Status','state',''],
+    ['Daily reveal overlay (OBS browser source, 1080×1920)','daily-overlay-page',''],
   ];
   $('#deckUrls').innerHTML=rows.map(([lbl,path,extra])=>{
     const full=deckUrl(path,extra);
