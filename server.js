@@ -1430,6 +1430,16 @@ async function dropInAdminWindow(ts = null) {
   return { session: s, until: dropGraceEndAt(s, sched) };
 }
 
+// The most recently closed public drop (tallying, tallied or published): what demo mode plays
+// when no drop is in an admin rating window. "Pick a session and play it against the data."
+async function latestClosedDrop(ts = null) {
+  const at = ts != null ? Number(ts) : now();
+  return db.get(
+    `SELECT * FROM sessions WHERE mode = 'async' AND deleted_at IS NULL AND COALESCE(visibility, 'public') <> 'unlisted'
+       AND async_state IN ('closing', 'ratified', 'published') AND window_closes_at <= ?
+     ORDER BY window_closes_at DESC LIMIT 1`, [at]);
+}
+
 async function asyncProgress(participant, session) {
   const h = await asyncHandled(participant, session);
   return { progress: { voted: h.voted, reported: h.reported, handled: h.handled, total: h.total,
@@ -2805,8 +2815,11 @@ async function asyncPlayerState(participant, session, count) {
         const u = await db.get('SELECT role, blocked FROM users WHERE uid = ?', [participant.user_id]);
         if (!u || u.role !== 'admin' || u.blocked) return {};
         const w = await dropInAdminWindow(ts);
-        if (!w || w.session.id === session.id) return {};
-        return { liveReview: { id: w.session.id, label: dailyDayLabel(w.session.drop_day, dropNoOf(w.session)), untilLabel: etClockLabel(w.until) } };
+        if (w && w.session.id !== session.id) return { liveReview: { id: w.session.id, label: dailyDayLabel(w.session.drop_day, dropNoOf(w.session)), untilLabel: etClockLabel(w.until) } };
+        // No window: the latest closed drop, to play in demo mode.
+        const c = await latestClosedDrop(ts);
+        if (!c || c.id === session.id) return {};
+        return { liveReview: { id: c.id, label: dailyDayLabel(c.drop_day, dropNoOf(c)), demo: true } };
       })()),
       // When the next set of records opens, relative to TODAY ("tomorrow" must mean tomorrow
       // for the reader), absent once it has passed. No stream or show to point at (retired
@@ -12574,7 +12587,8 @@ const server = http.createServer(async (req, res) => {
     // in a window it goes home. no-store: never cache a 302 to yesterday's drop.
     if (url.pathname === '/daily/closed') {
       const w = await dropInAdminWindow();
-      res.writeHead(302, { Location: w ? `/daily?s=${encodeURIComponent(w.session.id)}` : '/', 'Cache-Control': 'no-store' });
+      const target = w ? w.session : await latestClosedDrop();   // no window: the latest closed drop, for demo mode
+      res.writeHead(302, { Location: target ? `/daily?s=${encodeURIComponent(target.id)}` : '/', 'Cache-Control': 'no-store' });
       return res.end();
     }
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
