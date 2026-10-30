@@ -1223,7 +1223,15 @@ live on anr.makinitmag.com.
   shows, nothing else). The overlay URL is listed under Stream Deck / external control. **Seal
   decision (operator): the stream reveals averages the evening before the 6AM countdown post; the
   post is promotion for the people featured. Do not re-raise.** Supersedes the 10-25 "rate the open
-  drop openly" call. No rank anywhere on the overlay (the 10-02 rule). Mockups:
+  drop openly" call. No rank anywhere on the overlay (the 10-02 rule). **Demo mode** (same
+  night, operator live: "I don't care about contributing points, I'm demoing the product"): a
+  platform admin on a drop past its close and NOT in a window (tallying or tallied) walks it like
+  a player — rate, predict, Show results, the report pager — with the ratings kept in a settings
+  row (`daily_demo:<uid>:<sid>`, `demoModeFor` / `demoVotesFor`), NEVER in `votes`, so no board,
+  tally, report, email or bonus ever sees them; the reveal compares them with the round's final
+  average; `/api/me/state` ships `async.demoMode` and flags each demo rating `demo: true`. A
+  stable link, `/daily/closed`, 302s to the drop in the window (the home page only links the open
+  drop) and the open drop shows an admin-only banner to it (`async.liveReview`). Mockups:
   `public/_mock-daily-reveal-overlay.html`, `public/_mock-daily-grace.html` (+ sample report PNGs
   in `public/_mock-assets/track-report/`).
 - **Tournament stream overlay** (no migration, 2026-10-25; branch `claude/wars-stream-overlay`,

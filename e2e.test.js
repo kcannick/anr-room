@@ -2064,11 +2064,33 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const gMine = await dDb.get('SELECT v.points, v.tier FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? AND p.email = ?', [gQ[0], 'admin@test.com']);
     ok('…and scored by the tally exactly as the reveal said', gMine && gMine.points === rv.d.state.reveal.points && gMine.tier === 'sharp', JSON.stringify([gMine, rv.d.state.reveal.points]));
     const g2 = (await call('/api/me/state', null, 'GET', GH)).d;
-    ok('after the tally the admin is sealed like everyone else', g2.phase === 'sealed' && !g2.async.adminWindow, g2.phase);
-    const gAfter = await call('/api/vote', { roundId: gQ[1], taste: 5, predict: 5.0 }, 'POST', GH);
-    ok('…and cannot vote', gAfter.status === 400);
-    const rvAfter = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[1] }, 'POST', GH);
-    ok('…and a reveal on an unrated record is still refused', rvAfter.status === 400);
+    ok('after the tally the window is gone; the admin is in demo mode, not sealed', g2.phase === 'queue' && !g2.async.adminWindow && !!g2.async.demoMode, g2.phase);
+    const rvAfter = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[2] }, 'POST', GH);
+    ok('…and a reveal on a record with no rating of any kind is still refused', rvAfter.status === 400);
+    // DEMO MODE: the drop is tallied; the admin walks it anyway, storing nothing.
+    const dm = (await call('/api/me/state', null, 'GET', GH)).d;
+    ok('demo: a tallied drop keeps the queue for the admin, flagged', dm.phase === 'queue' && dm.async.demoMode && /M/.test(dm.async.demoMode.closesLabel) && !dm.async.adminWindow, JSON.stringify([dm.phase, dm.async.demoMode]));
+    ok('demo: the real vote still shows as locked', dm.queue.find(q => q.id === gQ[0]).voted === true && !dm.queue.find(q => q.id === gQ[0]).demo);
+    ok('demo: nothing for anyone else', (await call('/api/me/state', null, 'GET', GA)).d.phase === 'sealed');
+    const avgBefore = (await dDb.get('SELECT room_average FROM rounds WHERE id = ?', [gQ[1]])).room_average;
+    const dv = await call('/api/vote', { roundId: gQ[1], taste: 3, predict: 7.5 }, 'POST', GH);
+    ok('demo: the admin can rate a tallied record', dv.status === 200 && dv.d.locked === true && dv.d.demo === true, JSON.stringify(dv.d));
+    ok('demo: nothing was written to votes', !(await dDb.get('SELECT 1 AS x FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? AND p.email = ?', [gQ[1], 'admin@test.com'])));
+    ok('demo: the room average is untouched', (await dDb.get('SELECT room_average FROM rounds WHERE id = ?', [gQ[1]])).room_average === avgBefore);
+    const dvBad = await call('/api/vote', { roundId: gQ[1], taste: 12, predict: 7.5 }, 'POST', GH);
+    ok('demo: a bad rating is still refused', dvBad.status === 400);
+    const dvOther = await call('/api/vote', { roundId: gQ[1], taste: 3, predict: 7.5 }, 'POST', GA);
+    ok('demo: a non-admin is still refused', dvOther.status === 400 && /time is up|not open/i.test(JSON.stringify(dvOther.d)), JSON.stringify(dvOther.d));
+    const dm2 = (await call('/api/me/state', null, 'GET', GH)).d;
+    ok('demo: the demo rating shows as locked and flagged, with the numbers', (q => q.voted && q.demo && q.myVote.taste === 3)(dm2.queue.find(q => q.id === gQ[1])));
+    const dRv = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[1] }, 'POST', GH);
+    ok('demo: the reveal compares the demo rating with the FINAL average', dRv.status === 200 && dRv.d.state.reveal.avg === avgBefore && dRv.d.state.reveal.rated === 3 && dRv.d.state.reveal.predicted === 7.5 && dRv.d.state.reveal.n === 2, JSON.stringify(dRv.d.state.reveal));
+    ok('demo: the day so far counts both the real and the demo rating', dRv.d.state.total.rated === 2 && dRv.d.state.total.handled === 2 && dRv.d.state.total.rows.length === 2, JSON.stringify(dRv.d.state.total));
+    const dRp = await call('/api/admin/daily/overlay', { s: GDROP, view: 'report', roundId: gQ[1], page: 1 }, 'POST', GH);
+    ok('demo: the report pager works on a demo-rated record', dRp.status === 200 && dRp.d.state.report.page === 1);
+    ok('demo: no completion bonus from demo ratings', !(await dDb.get("SELECT 1 AS x FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [GDROP + ':' + (await dDb.get("SELECT uid FROM users WHERE email = 'admin@test.com'")).uid])));
+    await dDb.run('DELETE FROM settings WHERE k LIKE ?', ['daily_demo:%']);
+
     const lkNone = await fetch(base + '/daily/closed', { redirect: 'manual' });
     ok('/daily/closed goes home once nothing is in a window', lkNone.status === 302 && lkNone.headers.get('location') === '/', lkNone.headers.get('location'));
 
