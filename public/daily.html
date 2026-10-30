@@ -237,7 +237,7 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
   <section id="screen-queue" class="stack hide">
     <a class="adminwin hide" id="liveReviewLink" style="text-decoration:none;color:inherit">
       <span class="dot"></span>
-      <span class="t"><b>Daily Drop <span id="lrLabel"></span> is in your admin rating window</b> until <span id="lrUntil"></span>. Rate it live →</span>
+      <span class="t" id="lrText"></span>
     </a>
     <div class="adminwin hide" id="demoWin">
       <span class="dot"></span>
@@ -1037,7 +1037,12 @@ function render(){
   $('#btnDayOnStream').classList.toggle('hide', !(win || demo));
   const lr = as.liveReview || null;
   $('#liveReviewLink').classList.toggle('hide', !lr);
-  if(lr){ $('#lrLabel').textContent = lr.label; $('#lrUntil').textContent = lr.untilLabel; $('#liveReviewLink').href = '/daily?s=' + encodeURIComponent(lr.id); }
+  if(lr){
+    $('#lrText').innerHTML = lr.demo
+      ? '<b>Demo mode: play Daily Drop ' + esc(lr.label) + ' against the data →</b>'
+      : '<b>Daily Drop ' + esc(lr.label) + ' is in your admin rating window</b> until ' + esc(lr.untilLabel) + '. Rate it live →';
+    $('#liveReviewLink').href = '/daily?s=' + encodeURIComponent(lr.id);
+  }
 
   // Standing stays on screen, because this is still a competition. Points only during the
   // walk: a RANK would mean a board scan on every poll, and buildRecap already computes

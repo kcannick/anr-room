@@ -2102,7 +2102,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
     await dDb.run('DELETE FROM settings WHERE k LIKE ?', ['daily_demo:%']);
 
     const lkNone = await fetch(base + '/daily/closed', { redirect: 'manual' });
-    ok('/daily/closed goes home once nothing is in a window', lkNone.status === 302 && lkNone.headers.get('location') === '/', lkNone.headers.get('location'));
+    ok('/daily/closed with no window goes to the latest closed drop (demo mode)', lkNone.status === 302 && lkNone.headers.get('location') === '/daily?s=' + GDROP, lkNone.headers.get('location'));
+    // An admin on an OPEN drop is pointed at the latest closed one, flagged demo.
+    const g3Ok = await call('/api/ingest/daily', { day: srvG._etNextDay(today, 2), seriesId: serId, songs: [song(77), song(78), song(79)] }, 'POST', DTOK);
+    await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ? WHERE id = ?", [Date.now() - 500, Date.now() + 86400000, g3Ok.d.sessionId]);
+    await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [g3Ok.d.sessionId]);
+    const g3rq = await call('/api/join/request', { sessionId: g3Ok.d.sessionId, email: 'admin@test.com' });
+    const g3vr = await call('/api/join/verify', { sessionId: g3Ok.d.sessionId, email: 'admin@test.com', code: g3rq.d.devCode, name: 'Admin' });
+    const g3St = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': g3vr.d.token })).d;
+    ok('an admin on the open drop is pointed at the latest closed drop, flagged demo', g3St.async.liveReview && g3St.async.liveReview.id === GDROP && g3St.async.liveReview.demo === true, JSON.stringify(g3St.async.liveReview));
+    await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), g3Ok.d.sessionId]);
 
     // Put the schedule back so the sections below run on the defaults.
     await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
