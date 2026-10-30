@@ -2089,6 +2089,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const dRp = await call('/api/admin/daily/overlay', { s: GDROP, view: 'report', roundId: gQ[1], page: 1 }, 'POST', GH);
     ok('demo: the report pager works on a demo-rated record', dRp.status === 200 && dRp.d.state.report.page === 1);
     ok('demo: no completion bonus from demo ratings', !(await dDb.get("SELECT 1 AS x FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [GDROP + ':' + (await dDb.get("SELECT uid FROM users WHERE email = 'admin@test.com'")).uid])));
+    // Published: the admin keeps walking while records are left; everyone else gets the recap.
+    await dDb.run("UPDATE sessions SET async_state = 'published', status = 'completed', published_at = ? WHERE id = ?", [Date.now(), GDROP]);
+    const pubAdmin = (await call('/api/me/state', null, 'GET', GH)).d;
+    ok('demo: a published drop with records left still walks for the admin', pubAdmin.phase === 'queue' && !!pubAdmin.async.demoMode, pubAdmin.phase);
+    ok('demo: a published drop is the recap for everyone else', (await call('/api/me/state', null, 'GET', GA)).d.phase === 'recap');
+    const pubVote = await call('/api/vote', { roundId: gQ[2], taste: 6, predict: 6.0 }, 'POST', GH);
+    ok('demo: the last record can be demo-rated after publish', pubVote.status === 200 && pubVote.d.demo === true, JSON.stringify(pubVote.d));
+    const pubDone = (await call('/api/me/state', null, 'GET', GH)).d;
+    ok('demo: once every record is handled, the admin gets the recap like anyone', pubDone.phase === 'recap', pubDone.phase);
+    await dDb.run("UPDATE sessions SET async_state = 'ratified', status = 'live', published_at = NULL WHERE id = ?", [GDROP]);
     await dDb.run('DELETE FROM settings WHERE k LIKE ?', ['daily_demo:%']);
 
     const lkNone = await fetch(base + '/daily/closed', { redirect: 'manual' });
