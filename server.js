@@ -1395,7 +1395,10 @@ async function demoModeFor(participant, session, ts = null) {
   const at = ts != null ? Number(ts) : now();
   const closes = Number(session.window_closes_at) || 0;
   if (!closes || at < closes) return null;
-  if (!['closing', 'ratified'].includes(session.async_state || '')) return null;
+  // A PUBLISHED day stays walkable too (2026-10-30: the operator's demo ran past the 6AM
+  // publish): the results are public by then, so nothing is revealed early. The player state
+  // only prefers the walk over the recap while records are still unhandled.
+  if (!['closing', 'ratified', 'published'].includes(session.async_state || '')) return null;
   const u = await db.get('SELECT role, blocked FROM users WHERE uid = ?', [participant.user_id]);
   if (!u || u.role !== 'admin' || u.blocked) return null;
   return { closesLabel: etClockLabel(closes) };
@@ -2741,7 +2744,8 @@ async function asyncPlayerState(participant, session, count) {
   const demoVotes = demoMode ? await demoVotesFor(participant.user_id, session.id) : {};
   // In demo mode a demo rating counts as handled for the walk (and for nothing else).
   const handledDemo = demoMode ? rows.reduce((n, r) => n + (!byRound.has(r.id) && !repBy.has(r.id) && demoVotes[r.id] ? 1 : 0), 0) : 0;
-  if (session.status === 'completed' || (session.async_state === 'published' && ts >= results)) phase = 'recap';
+  const demoLeft = demoMode && total > 0 && handled + handledDemo < total;
+  if ((session.status === 'completed' || (session.async_state === 'published' && ts >= results)) && !demoLeft) phase = 'recap';
   else if (ts < opens || session.async_state === 'scheduled') phase = 'waiting';
   else if (ts >= closes && !adminWindow && !demoMode) phase = 'sealed';       // rated, tallying or tallied — results at 3PM
   else phase = handled + handledDemo >= total && total > 0 ? 'done' : 'queue';
