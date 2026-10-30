@@ -1332,10 +1332,22 @@ function liveVoteResult(votes, mine) {
   const acc = roundAccuracy(err, 9);
   return { avg, err, points, tier: tierForError(err), acc, grade: gradeForAccuracy(acc) };
 }
-async function dailyRoundReveal(session, round, participant, mine) {
-  const votes = await db.all('SELECT taste FROM votes WHERE round_id = ? AND taste IS NOT NULL', [round.id]);
-  const r = liveVoteResult(votes, mine);
+// `demoVotes` (demo mode) are the admin's unstored ratings: they are never in `votes`, so the
+// average is the room's alone; they only count toward the walk's N of N.
+async function demoHandled(participant, session, demoVotes) {
   const h = await asyncHandled(participant, session);
+  const ids = Object.keys(demoVotes || {});
+  if (!ids.length) return h;
+  const mine = await db.all('SELECT round_id FROM votes WHERE participant_id = ?', [participant.id]);
+  const have = new Set(mine.map(v => v.round_id));
+  const extra = ids.filter(id => !have.has(id)).length;
+  return { ...h, handled: h.handled + extra, voted: h.voted + extra };
+}
+async function dailyRoundReveal(session, round, participant, mine, demoVotes = {}) {
+  const votes = await db.all('SELECT taste FROM votes WHERE round_id = ? AND taste IS NOT NULL', [round.id]);
+  if (!votes.length) throw new Error('No evaluations on this record');
+  const r = liveVoteResult(votes, mine);
+  const h = await demoHandled(participant, session, demoVotes);
   return {
     roundId: round.id, idx: round.idx, title: round.song_title || 'Untitled', artist: round.song_artist || '',
     handle: igClean(round.artist_instagram) ? '@' + igClean(round.artist_instagram) : null,
@@ -1346,21 +1358,59 @@ async function dailyRoundReveal(session, round, participant, mine) {
   };
 }
 // The admin's day so far: every record he has rated, each against its live average.
-async function dailyDaySoFar(session, participant) {
+async function dailyDaySoFar(session, participant, demoVotes = {}) {
   const rows = await db.all(
-    `SELECT r.id, r.idx, r.song_title, v.taste, v.predict FROM votes v JOIN rounds r ON r.id = v.round_id
+    `SELECT r.id, r.idx, r.song_title, v.taste, v.predict, v.locked_at FROM votes v JOIN rounds r ON r.id = v.round_id
       WHERE r.session_id = ? AND v.participant_id = ? AND v.taste IS NOT NULL ORDER BY v.locked_at ASC`, [session.id, participant.id]);
+  const have = new Set(rows.map(r => r.id));
+  for (const [rid, dv] of Object.entries(demoVotes || {})) {
+    if (have.has(rid)) continue;
+    const r = await db.get('SELECT id, idx, song_title FROM rounds WHERE id = ? AND session_id = ?', [rid, session.id]);
+    if (r) rows.push({ ...r, taste: dv.taste, predict: dv.predict, locked_at: dv.at || 0 });
+  }
+  rows.sort((a, b) => Number(a.locked_at) - Number(b.locked_at));
   const out = []; let points = 0, errSum = 0, bullseyes = 0;
   for (const row of rows) {
     const votes = await db.all('SELECT taste FROM votes WHERE round_id = ? AND taste IS NOT NULL', [row.id]);
+    if (!votes.length) continue;
     const r = liveVoteResult(votes, row);
     points += r.points; errSum += r.err; if (r.tier === 'bullseye') bullseyes++;
     out.push({ roundId: row.id, idx: row.idx, title: row.song_title || 'Untitled', avg: r.avg, points: r.points, grade: r.grade });
   }
-  const h = await asyncHandled(participant, session);
-  const acc = rows.length ? roundAccuracy(errSum / rows.length, 9) : null;
-  return { points, grade: gradeForAccuracy(acc), bullseyes, rated: rows.length, handled: h.handled, total: h.total, rows: out,
+  const h = await demoHandled(participant, session, demoVotes);
+  const acc = out.length ? roundAccuracy(errSum / out.length, 9) : null;
+  return { points, grade: gradeForAccuracy(acc), bullseyes, rated: out.length, handled: h.handled, total: h.total, rows: out,
     resultsLabel: session.results_at ? etClockLabel(Number(session.results_at)) : null };
+}
+
+// DEMO MODE (2026-10-29, operator live on stream: "I don't care about contributing points,
+// I'm demoing the product"). A platform admin on a drop that is past its public close and NOT
+// in the admin rating window (tallied, or tallying) can walk it like a player: rate, predict,
+// Show results, the report pager. NOTHING IS STORED IN votes — the ratings live in a settings
+// row (k = daily_demo:<uid>:<sid>) that no board, tally, report or email ever reads — and the
+// reveal compares them against the round's FINAL average. Admins only, by role; the sealed
+// state for everyone else is untouched.
+async function demoModeFor(participant, session, ts = null) {
+  if (!participant || !participant.user_id || !isAsync(session)) return null;
+  const at = ts != null ? Number(ts) : now();
+  const closes = Number(session.window_closes_at) || 0;
+  if (!closes || at < closes) return null;
+  if (!['closing', 'ratified'].includes(session.async_state || '')) return null;
+  const u = await db.get('SELECT role, blocked FROM users WHERE uid = ?', [participant.user_id]);
+  if (!u || u.role !== 'admin' || u.blocked) return null;
+  return { closesLabel: etClockLabel(closes) };
+}
+async function demoVotesFor(uid, sessionId) {
+  const row = await db.get('SELECT v FROM settings WHERE k = ?', [`daily_demo:${uid}:${sessionId}`]);
+  if (!row || !row.v) return {};
+  try { return JSON.parse(row.v) || {}; } catch { return {}; }
+}
+async function setDemoVote(uid, sessionId, roundId, vote) {
+  const all = await demoVotesFor(uid, sessionId);
+  all[roundId] = vote;
+  await db.run('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v',
+    [`daily_demo:${uid}:${sessionId}`, JSON.stringify(all)]);
+  return all;
 }
 
 // The drop currently inside the admin rating window, if any: closed to the public, not yet
@@ -2687,10 +2737,14 @@ async function asyncPlayerState(participant, session, count) {
   // The admin rating window (2026-10-29): a platform admin keeps the ordinary queue past the
   // public close until the window ends. Null for everyone else, so nothing below changes.
   const adminWindow = ts >= closes ? await adminGraceFor(participant, session, ts) : null;
+  const demoMode = ts >= closes && !adminWindow ? await demoModeFor(participant, session, ts) : null;
+  const demoVotes = demoMode ? await demoVotesFor(participant.user_id, session.id) : {};
+  // In demo mode a demo rating counts as handled for the walk (and for nothing else).
+  const handledDemo = demoMode ? rows.reduce((n, r) => n + (!byRound.has(r.id) && !repBy.has(r.id) && demoVotes[r.id] ? 1 : 0), 0) : 0;
   if (session.status === 'completed' || (session.async_state === 'published' && ts >= results)) phase = 'recap';
   else if (ts < opens || session.async_state === 'scheduled') phase = 'waiting';
-  else if (ts >= closes && !adminWindow) phase = 'sealed';       // rated, tallying or tallied — results at 3PM
-  else phase = handled >= total && total > 0 ? 'done' : 'queue';
+  else if (ts >= closes && !adminWindow && !demoMode) phase = 'sealed';       // rated, tallying or tallied — results at 3PM
+  else phase = handled + handledDemo >= total && total > 0 ? 'done' : 'queue';
 
   // Before the day opens the queue ships EMPTY — titles and pre-release links are a reveal,
   // and there is no reason for them to exist client-side three hours early.
@@ -2705,6 +2759,7 @@ async function asyncPlayerState(participant, session, count) {
       artist_profile_url: r.artist_profile_url || null,
       voted: !!v };
     if (v) item.myVote = { taste: v.taste, predict: v.predict };
+    else if (demoVotes[r.id]) { item.voted = true; item.demo = true; item.myVote = { taste: demoVotes[r.id].taste, predict: demoVotes[r.id].predict }; }
     if (cmtBy.has(r.id)) item.myComment = cmtBy.get(r.id);
     // Their own report, so a revisit shows the record as dealt with rather than unrated.
     // Note this is the CALLER's report only — a per-record report COUNT would be exactly
@@ -2738,6 +2793,7 @@ async function asyncPlayerState(participant, session, count) {
       // Present ONLY for a platform admin inside the admin rating window: the daily page
       // shows the banner and the Show results step off this and nothing else.
       ...(adminWindow ? { adminWindow } : {}),
+      ...(demoMode ? { demoMode } : {}),
       // An admin looking at the OPEN drop while another drop sits in its window gets a link
       // to it (the home page only ever resolves the open one). Admins only, by role.
       ...(await (async () => {
@@ -8834,6 +8890,18 @@ async function handleApi(req, res, url) {
       round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, participant.session_id]);
       if (!round) return bad(res, 'Round not found', 404);
       if (session.deleted_at || session.status === 'archived') return bad(res, 'This room is closed');
+      // Demo mode: an admin on a tallied drop. The rating is validated like a real one and
+      // kept OUT of votes (see demoModeFor). Returns before every real-vote branch below.
+      if (round.status !== 'voting' && now() >= Number(session.window_closes_at || 0)) {
+        const demo = await demoModeFor(participant, session);
+        if (demo && (round.poll_type || 'rating') === 'rating' && !(await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]))) {
+          const t = Number(body.taste), pr = Number(body.predict);
+          if (!Number.isInteger(t) || t < 0 || t > 9) return bad(res, 'Rating must be 0–9');
+          if (!(pr >= 0 && pr <= 9)) return bad(res, 'Prediction must be 0.0–9.0');
+          await setDemoVote(participant.user_id, session.id, round.id, { taste: t, predict: pr, at: now() });
+          return send(res, 200, { locked: true, demo: true });
+        }
+      }
       if (round.status !== 'voting') return bad(res, 'Evaluation is not open');
       // The SESSION window is the single source of truth — deliberately not round.closes_at,
       // so an accidental per-record edit can never hold one record open longer than the rest.
@@ -11237,10 +11305,11 @@ async function handleApi(req, res, url) {
       const round = body.roundId ? await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
       if (!round) return bad(res, 'Round not found', 404);
       const participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [session.id, admin.uid]);
-      const mine = participant ? await db.get('SELECT * FROM votes WHERE round_id = ? AND participant_id = ? AND taste IS NOT NULL', [round.id, participant.id]) : null;
+      const demoVotes = participant ? await demoVotesFor(admin.uid, session.id) : {};
+      const mine = participant ? (await db.get('SELECT * FROM votes WHERE round_id = ? AND participant_id = ? AND taste IS NOT NULL', [round.id, participant.id])) || demoVotes[round.id] || null : null;
       if (!mine) return bad(res, 'Lock in your own rating first');
-      const reveal = await dailyRoundReveal(session, round, participant, mine);
-      const total = await dailyDaySoFar(session, participant);
+      const reveal = await dailyRoundReveal(session, round, participant, mine, demoVotes);
+      const total = await dailyDaySoFar(session, participant, demoVotes);
       const state = { view: 'reveal', at: now(), drop: { id: session.id, label: dropLabel }, reveal, total };
       await setDailyOverlayState(admin.uid, state);
       return send(res, 200, { ok: true, state });
@@ -11252,14 +11321,15 @@ async function handleApi(req, res, url) {
     const participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [session.id, admin.uid]);
     if (!participant) return bad(res, 'You have not joined this drop');
     if (view === 'total') {
-      const st = { view: 'total', at: now(), drop: { id: session.id, label: dropLabel }, total: await dailyDaySoFar(session, participant) };
+      const st = { view: 'total', at: now(), drop: { id: session.id, label: dropLabel }, total: await dailyDaySoFar(session, participant, await demoVotesFor(admin.uid, session.id)) };
       await setDailyOverlayState(admin.uid, st); return send(res, 200, { ok: true, state: st });
     }
     // report: a round + a page. Only a record the admin has rated (the reveal's rule), and
     // only with votes to report (songReportData is null on an unrated record).
     const round = body.roundId ? await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
     if (!round) return bad(res, 'Round not found', 404);
-    const mine = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ? AND taste IS NOT NULL', [round.id, participant.id]);
+    const mine = (await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ? AND taste IS NOT NULL', [round.id, participant.id]))
+      || (await demoVotesFor(admin.uid, session.id))[round.id] || null;
     if (!mine) return bad(res, 'Lock in your own rating first');
     const d = await songReportData(round, session);
     if (!d) return bad(res, 'Nothing to report yet');

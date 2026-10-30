@@ -239,6 +239,10 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <span class="dot"></span>
       <span class="t"><b>Daily Drop <span id="lrLabel"></span> is in your admin rating window</b> until <span id="lrUntil"></span>. Rate it live →</span>
     </a>
+    <div class="adminwin hide" id="demoWin">
+      <span class="dot"></span>
+      <span class="t"><b>Demo mode.</b> This drop closed at <span id="demoClosed"></span> and is tallied. Your ratings here are not stored and earn nothing; Show results compares them with the final average.</span>
+    </div>
     <div class="adminwin hide" id="adminWin">
       <span class="dot"></span>
       <span class="t"><b>Admin rating window.</b> Closed to everyone else at <span id="adminWinClosed"></span>. Your ratings count like any A&amp;R's.</span>
@@ -882,7 +886,7 @@ function qPaint(){
       ? ('NO RESULTS UNTIL ' + ST.async.closesLabel.toUpperCase())
       : 'NO RESULTS UNTIL THE WINDOW CLOSES';
     // The admin rating window: Show results until pressed, then the result + the pager.
-    const win = ST && ST.async && ST.async.adminWindow;
+    const win = (ST && ST.async && (ST.async.adminWindow || ST.async.demoMode)) || null;
     const rv = win ? revealed[r.id] : null;
     $('#revealBox').classList.toggle('hide', !win || !!rv);
     $('#revealOut').classList.toggle('hide', !rv);
@@ -980,7 +984,7 @@ $('#btnLock').onclick = async () => {
     track('vote_locked', { poll_type: 'rating', mode: 'async' });
     // Patch locally rather than waiting on a refetch — the composer is about to appear
     // and it must not flicker through an unlocked state on the way.
-    r.voted = true; r.myVote = { taste: chosenTaste, predict };
+    r.voted = true; r.myVote = { taste: chosenTaste, predict }; if(out.data.demo) r.demo = true;
     if(out.data.progress) ST.progress = Object.assign({}, ST.progress, out.data.progress);
     if(out.data.bonus) ST.progress.earned = out.data.bonus;
     qPaint();
@@ -1025,10 +1029,12 @@ function render(){
   const pr = st.progress || {}, as = st.async || {};
   // The admin rating window banner: only when the server says so (platform admin, after
   // the public close, inside the window). Everyone else never sees this element.
-  const win = as.adminWindow || null;
+  const win = as.adminWindow || null, demo = as.demoMode || null;
   $('#adminWin').classList.toggle('hide', !win);
   if(win){ $('#adminWinClosed').textContent = win.closesLabel; $('#adminWinUntil').textContent = win.untilLabel; }   // labels already carry ET
-  $('#btnDayOnStream').classList.toggle('hide', !win);
+  $('#demoWin').classList.toggle('hide', !demo);
+  if(demo) $('#demoClosed').textContent = demo.closesLabel;
+  $('#btnDayOnStream').classList.toggle('hide', !(win || demo));
   const lr = as.liveReview || null;
   $('#liveReviewLink').classList.toggle('hide', !lr);
   if(lr){ $('#lrLabel').textContent = lr.label; $('#lrUntil').textContent = lr.untilLabel; $('#liveReviewLink').href = '/daily?s=' + encodeURIComponent(lr.id); }
