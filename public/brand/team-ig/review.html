@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@TheAnRTeam starter kit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{--ground:#0E0C1A;--panel:#171328;--line:#2E2750;--ink:#EAE9F2;--dim:#9793B4;--green:#4BB749;--purple:#6D5FE0;--gold:#F5C518;--red:#FF5D6C}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+h1{margin:0;font-weight:900;font-size:clamp(30px,4vw,46px);line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.lede{max-width:70ch;color:var(--dim);margin:14px 0 34px}
+.lede b{color:var(--ink)}
+h2{font-weight:900;font-size:24px;letter-spacing:-.04em;text-transform:uppercase;margin:48px 0 6px;line-height:1}
+h2 small{display:block;font-weight:500;text-transform:none;letter-spacing:0;font-size:14px;color:var(--dim);margin-top:6px}
+.rule{height:2px;background:var(--green);margin:10px 0 18px}
+.l{font-family:'Space Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:.04em;margin-top:8px}
+.card{background:var(--panel);border:1px solid var(--line);padding:14px}
+.card img{display:block;width:100%;height:auto;border:1px solid var(--line)}
+.row{display:grid;gap:14px}
+.r3{grid-template-columns:repeat(3,1fr)} .r4{grid-template-columns:repeat(4,1fr)} .r6{grid-template-columns:repeat(6,1fr)}
+
+/* ---- phone mock of the profile ---- */
+.prof{display:grid;grid-template-columns:430px 1fr;gap:28px;align-items:start}
+.phone{background:#000;border:1px solid var(--line);border-radius:28px;padding:22px 0 0;overflow:hidden}
+.ph-top{display:flex;align-items:center;gap:22px;padding:0 16px}
+.ph-av{width:86px;height:86px;border-radius:50%;overflow:hidden;flex:none;outline:1px solid #333}
+.ph-av img{width:100%;height:100%;display:block}
+.ph-stats{display:flex;gap:22px;font-size:13px;color:#ddd;text-align:center}
+.ph-stats b{display:block;font-size:16px;color:#fff}
+.ph-name{padding:12px 16px 0;font-weight:700;font-size:14px;color:#fff}
+.ph-bio{padding:2px 16px 0;font-size:13.5px;color:#eee;line-height:1.35}
+.ph-link{padding:2px 16px 0;font-size:13.5px;color:#a8c7ff}
+.ph-hl{display:flex;gap:12px;padding:16px 16px 14px;overflow:hidden}
+.ph-hl div{width:64px;flex:none;text-align:center;font-size:11px;color:#eee}
+.ph-hl i{display:block;width:64px;height:64px;border-radius:50%;border:1px solid #444;padding:3px;margin-bottom:5px}
+.ph-hl i span{display:block;width:100%;height:100%;border-radius:50%;background-size:100% auto;background-position:center}
+.ph-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;border-top:1px solid #222}
+.ph-grid div{aspect-ratio:3/4;overflow:hidden;position:relative}
+.ph-grid img{position:absolute;left:50%;top:0;height:100%;transform:translateX(-50%)}      /* 4:5 post shown at Instagram's 3:4 grid crop: full height, sides cut */
+.ph-grid .c::after{content:'';position:absolute;right:6px;top:6px;width:14px;height:14px;border:2px solid #fff;border-radius:3px;box-shadow:-3px 3px 0 -1px #000,-3px 3px 0 0 #fff}
+.ph-grid .empty{background:#111}
+.notes{display:grid;gap:12px}
+.note{background:var(--panel);border:1px solid var(--line);padding:14px 16px}
+.note b{display:block;font-weight:800;margin-bottom:2px}
+.note span{color:var(--dim);font-size:14px}
+
+/* full posts with the 3:4 crop marked */
+.crop{position:relative}
+.crop::before,.crop::after{content:'';position:absolute;top:1px;bottom:1px;width:3.15%;background:rgba(255,93,108,.45);pointer-events:none}   /* 34/1080 */
+.crop::before{left:1px}.crop::after{right:1px}
+
+/* small-size tests */
+.sizes{display:flex;align-items:flex-end;gap:26px;flex-wrap:wrap}
+.sizes div{text-align:center}
+.card .sizes img{border:0;display:inline-block}
+.sizes .circ{border-radius:50%;overflow:hidden;display:block}
+.sizes .pix{image-rendering:pixelated}
+.hlc{width:110px;height:110px;border-radius:50%;background-size:100% auto;background-position:center;margin:0 auto}
+
+.open{display:grid;gap:0;border:1px solid var(--line);background:var(--panel)}
+.open > div{display:grid;grid-template-columns:44px 1fr;border-bottom:1px solid var(--line)}
+.open > div:last-child{border-bottom:0}
+.open .n{font-family:'Space Mono',monospace;font-weight:700;color:var(--green);padding:14px 0 14px 16px}
+.open .t{padding:14px 16px 14px 0;max-width:80ch}
+.open .t b{display:block;font-weight:800}
+.open .t span{color:var(--dim);font-size:14px}
+.src{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);margin-top:44px;padding-top:16px;border-top:1px solid var(--line)}
+@media (max-width:900px){.prof{grid-template-columns:1fr}.r4,.r6{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<p class="eyebrow">Makin' It · @TheAnRTeam · evergreen Instagram starter kit · graphics APPROVED 2026-10-25 · captions awaiting approval</p>
+<h1>@TheAnRTeam starter kit</h1>
+<p class="lede">Profile picture, six highlight covers, a six-post launch grid (two of them carousels) and three story templates for the new <b>The A&amp;R Team</b> account. One template (<code>team-ig.html?p=</code>) drives every piece. The masthead, the countdown ticks, the 13° field and the strip come from the Countdown and the ads, so this grid reads as one thing with the Countdown and the winner posts that will also post here. Captions, bio and Threads topics: <code>captions.md</code>.</p>
+
+<h2>The profile as a visitor sees it<small>Phone width. The grid shows each 1080×1350 post at Instagram's 3:4 crop (34px off each side). Grid order is the posting order reversed: post Schedule first, Intro last.</small></h2>
+<div class="rule"></div>
+<div class="prof">
+  <div class="phone">
+    <div class="ph-top">
+      <div class="ph-av"><img src="avatar.png" alt=""></div>
+      <div class="ph-stats"><div><b>6</b>posts</div><div><b>—</b>followers</div><div><b>—</b>following</div></div>
+    </div>
+    <div class="ph-name">The A&amp;R Team · Music Reviewers</div>
+    <div class="ph-bio">The A&amp;R Team rates new music from independent artists every day. Artists: submit your music for a free review. Listeners: join the team below.</div>
+    <div class="ph-link">makinitmag.com/ANR</div>
+    <div class="ph-hl">
+      <div><i><span style="background-image:url(hl-how.png)"></span></i>How it works</div>
+      <div><i><span style="background-image:url(hl-join.png)"></span></i>Join</div>
+      <div><i><span style="background-image:url(hl-submit.png)"></span></i>Submit music</div>
+      <div><i><span style="background-image:url(hl-hot100.png)"></span></i>HOT 100</div>
+      <div><i><span style="background-image:url(hl-results.png)"></span></i>Results</div>
+    </div>
+    <div class="ph-grid">
+      <div><img src="intro.png" alt=""></div>
+      <div class="c"><img src="how-1.png" alt=""></div>
+      <div><img src="join.png" alt=""></div>
+      <div class="c"><img src="numbers-1.png" alt=""></div>
+      <div><img src="artists.png" alt=""></div>
+      <div><img src="schedule.png" alt=""></div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Top row: who we are, how it works, how to join.</b><span>Pin these three. A visitor who reads one row knows what the account is and what to do next.</span></div>
+    <div class="note"><b>Second row: what the numbers mean, what artists get, when it runs.</b><span>All green: nothing here is head-to-head, and no prize amounts appear anywhere (tournaments retired 2026-10-19).</span></div>
+    <div class="note"><b>No puzzle grid.</b><span>Each tile stands alone. Daily Countdowns and winner posts will push these down a row at a time, and a picture split across tiles breaks the first day that happens.</span></div>
+    <div class="note"><b>Highlight row.</b><span>The phone shows five; Winners scrolls in sixth. Labels are Instagram's own text under each circle, not part of the image.</span></div>
+  </div>
+</div>
+
+<h2>1 · Profile picture<small>1080×1080. The A&amp;R block alone, from mark/anr-mark.svg. Drawn 760px wide so its far corners sit 489px from centre, inside the 540px circle.</small></h2>
+<div class="rule"></div>
+<div class="row r3">
+  <div class="card"><img src="avatar.png" alt=""><div class="l">avatar.png · 1080×1080 · upload this</div></div>
+  <div class="card"><img src="guides/avatar-guides.png" alt=""><div class="l">circle crop marked (review only)</div></div>
+  <div class="card"><div class="sizes" style="height:100%;align-items:center;justify-content:center">
+    <div><img style="width:150px;height:auto" class="circ" src="avatar.png" width="150" height="150" alt=""><div class="l">150 · profile</div></div>
+    <div><img style="width:56px;height:auto" class="circ" src="avatar.png" width="56" height="56" alt=""><div class="l">56 · story ring</div></div>
+    <div><img style="width:32px;height:auto" class="circ" src="avatar.png" width="32" height="32" alt=""><div class="l">32 · feed</div></div>
+    <div><img style="width:96px;height:auto" class="circ pix" src="guides/avatar-32.png" width="96" height="96" alt=""><div class="l">32 at 3×</div></div>
+  </div></div>
+</div>
+
+<h2>2 · Highlight covers<small>1080×1920. The block at S=520 with one stroke icon upright inside it, in the colour of what the highlight holds: green for the Team and scoring, gold for Winners (first place). Far corners 412px from centre, so any circle Instagram offers from ~830px up keeps the whole block.</small></h2>
+<div class="rule" style="background:linear-gradient(90deg,var(--green) 83%,var(--gold) 83%)"></div>
+<div class="row r6">
+  <div class="card"><img src="hl-how.png" alt=""><div class="l">hl-how.png · How it works · icon: vote (master)</div></div>
+  <div class="card"><img src="hl-join.png" alt=""><div class="l">hl-join.png · Join · icon: join</div></div>
+  <div class="card"><img src="hl-submit.png" alt=""><div class="l">hl-submit.png · Submit music · icon: submit</div></div>
+  <div class="card"><img src="hl-hot100.png" alt=""><div class="l">hl-hot100.png · HOT 100 · icon: chart</div></div>
+  <div class="card"><img src="hl-results.png" alt=""><div class="l">hl-results.png · Results · icon: bullseye</div></div>
+  <div class="card"><img src="hl-winners.png" alt=""><div class="l">hl-winners.png · Winners · icon: trophy</div></div>
+</div>
+<div class="card" style="margin-top:14px"><div class="sizes" style="justify-content:space-around">
+  <div><div class="hlc" style="background-image:url(hl-how.png)"></div><div class="l">How it works</div></div>
+  <div><div class="hlc" style="background-image:url(hl-join.png)"></div><div class="l">Join</div></div>
+  <div><div class="hlc" style="background-image:url(hl-submit.png)"></div><div class="l">Submit music</div></div>
+  <div><div class="hlc" style="background-image:url(hl-hot100.png)"></div><div class="l">HOT 100</div></div>
+  <div><div class="hlc" style="background-image:url(hl-results.png)"></div><div class="l">Results</div></div>
+  <div><div class="hlc" style="background-image:url(hl-winners.png)"></div><div class="l">Winners</div></div>
+</div><div class="l" style="text-align:center">circle preview at 110px; the phone above shows them at Instagram's 64px</div></div>
+
+<h2>3 · Launch grid<small>1080×1350. Red bands = what the 3:4 profile-grid crop removes (34px a side). Nothing sits in them: the safe margin is 80px.</small></h2>
+<div class="rule"></div>
+<div class="row r3">
+  <div class="card"><div class="crop"><img src="intro.png" alt=""></div><div class="l">a · intro.png · grid 1 · post 6th</div></div>
+  <div class="card"><div class="crop"><img src="how-1.png" alt=""></div><div class="l">b · how-1.png (carousel cover) · grid 2 · post 5th</div></div>
+  <div class="card"><div class="crop"><img src="join.png" alt=""></div><div class="l">f · join.png · grid 3 · post 4th</div></div>
+  <div class="card"><div class="crop"><img src="numbers-1.png" alt=""></div><div class="l">c · numbers-1.png (carousel cover) · grid 4 · post 3rd</div></div>
+  <div class="card"><div class="crop"><img src="artists.png" alt=""></div><div class="l">d · artists.png · grid 5 · post 2nd</div></div>
+  <div class="card"><div class="crop"><img src="schedule.png" alt=""></div><div class="l">e · schedule.png · grid 6 · post 1st</div></div>
+</div>
+
+<h2>3b · How it works carousel<small>Four slides (promo-asset-list 1.3). The ticks are the Countdown's, counting steps. Slide 1's "7" is one A&amp;R's example rating; slide 2 is a question mark. No average or split is shown anywhere.</small></h2>
+<div class="rule"></div>
+<div class="row r4">
+  <div class="card"><img src="how-1.png" alt=""><div class="l">how-1.png · rate 0–9</div></div>
+  <div class="card"><img src="how-2.png" alt=""><div class="l">how-2.png · Predict the Average</div></div>
+  <div class="card"><img src="how-3.png" alt=""><div class="l">how-3.png · score points · Bullseye</div></div>
+  <div class="card"><img src="how-4.png" alt=""><div class="l">how-4.png · the top A&amp;R · join</div></div>
+</div>
+
+<h2>3c · What the numbers mean carousel<small>Three slides. The operator's meaning for each rating, verbatim (the Track Report's list). Every number is green: 9 is the top of a scale, not first place, so it is not gold.</small></h2>
+<div class="rule"></div>
+<div class="row r3">
+  <div class="card"><img src="numbers-1.png" alt=""><div class="l">numbers-1.png · cover</div></div>
+  <div class="card"><img src="numbers-2.png" alt=""><div class="l">numbers-2.png · 0 to 4</div></div>
+  <div class="card"><img src="numbers-3.png" alt=""><div class="l">numbers-3.png · 5 to 9 · join</div></div>
+</div>
+
+<h2>4 · Story templates<small>1080×1920. Red = Instagram's profile bar (top 250) and reply bar (bottom 340): nothing important there. The dashed box is where the link sticker goes, kept clear of type and of the cut.</small></h2>
+<div class="rule"></div>
+<div class="row r4">
+  <div class="card"><img src="story-open.png" alt=""><div class="l">story-open.png · post this</div></div>
+  <div class="card"><img src="guides/story-open-guides.png" alt=""><div class="l">with safe zones + sticker box</div></div>
+  <div class="card"><img src="story-join.png" alt=""><div class="l">story-join.png · post this</div></div>
+  <div class="card"><img src="guides/story-join-guides.png" alt=""><div class="l">with safe zones + sticker box</div></div>
+  <div class="card"><img src="story-results.png" alt=""><div class="l">story-results.png · daily at 6:00 AM ET (&amp;day= prints the date)</div></div>
+  <div class="card"><img src="guides/story-results-guides.png" alt=""><div class="l">with safe zones + sticker box</div></div>
+</div>
+
+<h2>Thumbnail test<small>The grid tiles at 120px wide (a phone grid cell is ~130) and at 60px blown back up nearest-neighbour. The cut, the colour of the field and the headline are what survive.</small></h2>
+<div class="rule"></div>
+<div class="card"><div class="sizes" style="justify-content:space-between">
+  <div><img style="width:120px;height:auto" src="intro.png" width="120" alt=""><br><img style="width:120px;height:auto" class="pix" src="guides/intro-60.png" width="120" alt=""><div class="l">intro</div></div>
+  <div><img style="width:120px;height:auto" src="how-1.png" width="120" alt=""><br><img style="width:120px;height:auto" class="pix" src="guides/how-1-60.png" width="120" alt=""><div class="l">how</div></div>
+  <div><img style="width:120px;height:auto" src="join.png" width="120" alt=""><br><img style="width:120px;height:auto" class="pix" src="guides/join-60.png" width="120" alt=""><div class="l">join</div></div>
+  <div><img style="width:120px;height:auto" src="numbers-1.png" width="120" alt=""><br><img style="width:120px;height:auto" class="pix" src="guides/numbers-1-60.png" width="120" alt=""><div class="l">numbers</div></div>
+  <div><img style="width:120px;height:auto" src="artists.png" width="120" alt=""><br><img style="width:120px;height:auto" class="pix" src="guides/artists-60.png" width="120" alt=""><div class="l">artists</div></div>
+  <div><img style="width:120px;height:auto" src="schedule.png" width="120" alt=""><br><img style="width:120px;height:auto" class="pix" src="guides/schedule-60.png" width="120" alt=""><div class="l">schedule</div></div>
+</div></div>
+
+<h2>Judgement calls to approve<small>Everything here is changeable; copy edits are applied verbatim.</small></h2>
+<div class="rule"></div>
+<div class="open">
+  <div><div class="n">1</div><div class="t"><b>Prizes removed (2026-10-19).</b><span>No A&amp;R Wars, no $500, no $1,000. The Wars post is now the What the numbers mean carousel, the Wars highlight is now HOT 100, and How it works 4 says what the top A&amp;R gets: "curates the Makin' It Approved playlist" and "guest editor for Makin' It Magazine". No period (weekly or monthly) is printed because none is set.</span></div></div>
+  <div><div class="n">2</div><div class="t"><b>Artists post wording.</b><span>"Submit for a report and a chance to be featured in the Makin' It HOT 100" is the operator's line, verbatim.</span></div></div>
+  <div><div class="n">3</div><div class="t"><b>Gold on the trophy (How it works 4) and the Winners highlight.</b><span>Gold is first place, and both mean the top A&amp;R. Say if gold should stay off the profile.</span></div></div>
+  <div><div class="n">4</div><div class="t"><b>Icons.</b><span>join, submit, trophy and bullseye are now masters in icons/ (build.py); the bracket was declined.</span></div></div>
+  <div><div class="n">5</div><div class="t"><b>Times.</b><span>6:00 PM ET open, 24 hours to rate (the evening clock, 2026-10-17).</span></div></div>
+  <div><div class="n">6</div><div class="t"><b>Makin' It logo on every post.</b><span>Kept as the endorser, the same as every other set, even though the handle is @TheAnRTeam. The profile picture carries the block only.</span></div></div>
+</div>
+
+<p class="src">Template: public/brand/team-ig/team-ig.html?p=avatar|hl-how|hl-join|hl-submit|hl-hot100|hl-results|hl-winners|intro|how-1..4|numbers-1..3|artists|schedule|join|story-open|story-join|story-results (&amp;guides=1 for review overlays) · render: public/brand/team-ig/render.sh · captions: public/brand/team-ig/captions.md</p>
+</div></body></html>
