@@ -1429,6 +1429,11 @@
           <div><label>Admin rating window after the close <span class="muted">(minutes; 0 = off)</span></label><input id="dsGrace" type="number" min="0" max="720" step="5"></div>
           <div><label>So the tally runs at</label><input id="dsTally" disabled></div>
         </div>
+        <div class="row" style="margin-top:8px">
+          <div><label>Replay the Day window <span class="muted">(days; 0 = off)</span></label><input id="dsReplay" type="number" min="0" max="365" step="1"></div>
+          <div></div>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">A&amp;Rs can replay the records they did not rate on any published drop from the last this many days: rate, predict, and see the real average at once. Nothing is stored as a vote and no points are awarded. 0 turns it off for A&amp;Rs. Platform admins can replay any closed drop.</p>
         <p class="muted" style="font-size:11px;margin:8px 0 0">After the public close, platform admins can keep rating the drop for this long, on the ordinary daily page, and press <b>Show results</b> after each record to fire the stream overlay (<code>/overlay/daily?k=&lt;control key&gt;</code>, under Stream Deck / external control). Their ratings count like any A&amp;R's. Nobody else can rate in this window. The tally, the carousel render, the Asana tasks and the publish all wait for the window to end — keep it well clear of the publish time.</p>
         <div class="row" style="margin-top:8px">
           <div><label>Daily Countdown graphics render at</label><input id="dsStream" type="time" step="300"><select id="dsStreamDays" style="background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 9px;border-radius:9px;width:100%;margin-top:6px"><option value="0">close day</option><option value="1">1 day after the close</option><option value="2">2 days after the close</option><option value="3">3 days after the close</option></select></div>
@@ -4850,6 +4855,7 @@ function dsFill(sc){
   $('#dsStream').value=dsTime(sc.streamMin);$('#dsStreamDays').value=String(sc.streamDays);$('#dsResultsDays').value=String(sc.resultsDays);
   $('#dsDelay').value=sc.artistDelayMin;
   $('#dsGrace').value=sc.adminGraceMin||0;$('#dsTally').value=sc.adminGraceMin?(sc.tallyLabel||''):'at the close';
+  $('#dsReplay').value=sc.replayDays==null?7:sc.replayDays;
   if(sc.bonusRule)$('#dsBonusRule').textContent=sc.bonusRule+' Not a setting.';
   $('#dsSummary').textContent='Track list locks '+sc.lockLabel+' · opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · daily countdown '+sc.streamLabel+' ('+sc.streamHours+' h) · results '+sc.resultsLabel+' ('+sc.resultsHours+' h) · bonus = average round';
 }
@@ -4857,7 +4863,8 @@ function dsRead(){
   return {openMin:dsMin($('#dsOpen').value),closeMin:dsMin($('#dsClose').value),resultsMin:dsMin($('#dsResults').value),
     streamMin:dsMin($('#dsStream').value),streamDays:parseInt($('#dsStreamDays').value,10),resultsDays:parseInt($('#dsResultsDays').value,10),
     artistDelayMin:(v=>Number.isFinite(v)?v:undefined)(parseInt($('#dsDelay').value,10)),
-    adminGraceMin:(v=>Number.isFinite(v)?v:0)(parseInt($('#dsGrace').value,10))};
+    adminGraceMin:(v=>Number.isFinite(v)?v:0)(parseInt($('#dsGrace').value,10)),
+    replayDays:(v=>Number.isFinite(v)?v:7)(parseInt($('#dsReplay').value,10))};
 }
 $('#plSaveSettings')&&($('#plSaveSettings').onclick=async()=>{
   $('#plSaveSettings').disabled=true;

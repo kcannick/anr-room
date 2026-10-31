@@ -144,6 +144,12 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 .day[open] .chev{transform:rotate(90deg)}
 .day .wait{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);text-align:right;flex:none;line-height:1.45}
 .day .wait b{display:block;color:var(--ink);font-weight:700}
+/* Replay the Day (053): the button on a missed day, and under a played day with skipped records. */
+.day .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 14px 14px}
+.day .foot small{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);line-height:1.45}
+.day .foot small b{color:var(--ink);display:block}
+.btn.outline{background:transparent;border:1px solid var(--signal);color:var(--signal)}
+.btn.sm{padding:9px 13px;font-size:12.5px;width:auto;border-radius:10px;flex:none}
 .day.sealed{border-style:dashed}
 .day.missed{background:transparent}
 .day.missed .when b{color:var(--ink-dim)}
@@ -536,10 +542,21 @@ function rsOpen(d){
 }
 function rsDay(d){
   const when = (sub) => { const w = mk('div', 'when'); const b = mk('b', null, d.label || ''); if(d.kind === 'live') b.appendChild(mk('span', 'tag', 'Live session')); w.appendChild(b); w.appendChild(mk('small', null, sub)); return w; };
+  // Replay the Day (053): the server says when a day may be replayed (published, inside the
+  // replay window, records left); this only draws the button it is given.
+  const replayFoot = (rp, label) => {
+    const f = mk('div', 'foot'), sm = mk('small');
+    sm.append(rp.left + (rp.left === 1 ? ' record' : ' records') + ' you did not rate'); sm.appendChild(bold('Practice only. No points are awarded.'));
+    const a = mk('a', 'btn outline sm', label); a.href = rp.url;
+    a.onclick = () => track('replay_start', { from: 'results', left: rp.left });
+    f.appendChild(sm); f.appendChild(a); return f;
+  };
   if(d.state === 'missed'){
     const c = mk('div', 'day missed'), h = mk('div', 'head');
     h.appendChild(when(d.total + (d.total === 1 ? ' record' : ' records'))); h.appendChild(mk('div', 'wait', 'Did not play'));
-    c.appendChild(h); return c;
+    c.appendChild(h);
+    if(d.replay) c.appendChild(replayFoot(d.replay, 'Replay the Day'));
+    return c;
   }
   if(d.state === 'sealed'){
     const c = mk('div', 'day sealed'), h = mk('div', 'head');
@@ -588,6 +605,7 @@ function rsDay(d){
     }
   }
   body.appendChild(rt); c.appendChild(body);
+  if(d.replay) c.appendChild(replayFoot(d.replay, 'Replay the ' + d.replay.left + ' you skipped'));
   c.addEventListener('toggle', () => { if(c.open) track('results_day_open', { kind: d.kind }); });
   return c;
 }
