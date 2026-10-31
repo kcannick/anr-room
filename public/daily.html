@@ -884,7 +884,11 @@ function qPaint(){
     links.classList.toggle('hide', !links.childElementCount);
 
     const left = qRounds.filter(x => !x.voted && !x.myReport).length;
-    $('#btnNextLabel').textContent = left ? 'Next record' : 'See my day';
+    // The last record ends in a button the A&R presses, never an automatic jump (the lock-in
+    // sets `reviewing` so a refresh cannot replace this screen). In demo mode the day's
+    // results are what comes next; on a live drop they are sealed, so it is "my day".
+    $('#btnNextLabel').textContent = left ? 'Next record'
+      : (ST && ST.async && ST.async.demoMode ? 'See results' : 'See my day');
     $('#sealNote').textContent = ST && ST.async && ST.async.closesLabel
       ? ('NO RESULTS UNTIL ' + ST.async.closesLabel.toUpperCase())
       : 'NO RESULTS UNTIL THE WINDOW CLOSES';
@@ -961,10 +965,21 @@ $('#btnDayOnStream').onclick = async () => {
   $('#btnDayOnStream').disabled = false;
 };
 
+// Leaving a record while its Track Report is on the stream overlay: clear the overlay.
+// 2026-10-30 on air, the report stayed up after Next record and the host had to find the
+// record again to close it. Fire-and-forget — the next reveal replaces the state anyway.
+function overlayLeaveRound(){
+  const r = currentRound(); const cur = r && revealed[r.id];
+  if(!cur || cur.view !== 'report') return;
+  revealed[r.id] = Object.assign({}, cur, { view: 'idle', report: null });
+  overlayPost('/api/admin/daily/overlay', { view: 'idle' });
+}
+
 // Advance to the next record that is neither rated nor reported, WRAPPING rather than
 // finishing early. A completion screen with three unrated records is a lie that costs
 // someone a bonus, so "done" is only ever reached when nothing is left.
 function qAdvance(){
+  overlayLeaveRound();
   const n = qRounds.length;
   for(let k = 1; k <= n; k++){
     const j = (qIndex + k) % n;
@@ -974,8 +989,8 @@ function qAdvance(){
   render();            // nothing left — let the state decide, which flips to 'done'
 }
 $('#btnNext').onclick = qAdvance;
-$('#btnNextTop').onclick = () => qShow((qIndex + 1) % qRounds.length);
-$('#btnPrev').onclick = () => qShow((qIndex - 1 + qRounds.length) % qRounds.length);
+$('#btnNextTop').onclick = () => { overlayLeaveRound(); qShow((qIndex + 1) % qRounds.length); };
+$('#btnPrev').onclick = () => { overlayLeaveRound(); qShow((qIndex - 1 + qRounds.length) % qRounds.length); };
 
 // LOCK IN. No confirm dialog (there would be sixteen of them) and NO AUTO-ADVANCE: it
 // would scroll straight past the composer and quietly kill the note feature.
@@ -988,6 +1003,12 @@ $('#btnLock').onclick = async () => {
     // Patch locally rather than waiting on a refetch — the composer is about to appear
     // and it must not flicker through an unlocked state on the way.
     r.voted = true; r.myVote = { taste: chosenTaste, predict }; if(out.data.demo) r.demo = true;
+    // Hold this screen. On the LAST record the refresh below flips the phase to done (or,
+    // in demo mode on a published drop, straight to recap) and render() used to replace
+    // the locked screen before the result or the note box was read — the 2026-10-30
+    // on-air bug. Review mode outranks the summary screens; "See my day" / "See results"
+    // (qAdvance with nothing left) is the way out.
+    reviewing = true;
     if(out.data.progress) ST.progress = Object.assign({}, ST.progress, out.data.progress);
     if(out.data.bonus) ST.progress.earned = out.data.bonus;
     qPaint();
@@ -1073,17 +1094,21 @@ function render(){
     show('waiting'); return;
   }
 
-  qRounds = Array.isArray(st.queue) ? st.queue : [];
-  cmtPruneDrafts();
-
-  if(st.phase === 'recap'){ renderRecap(st); show('recap'); return; }
-
+  const fresh = Array.isArray(st.queue) ? st.queue : [];
   // Review mode outranks the summary screens, so a poll landing mid-read does not snatch
-  // the page back. Only 'See my day' (or a phase change to recap) leaves it.
-  if(reviewing && (st.phase === 'done' || st.phase === 'sealed') && qRounds.length){
+  // the page back — including a lock-in on the last record (which sets `reviewing`) and a
+  // recap, which ships NO queue: keep the records already on screen. Only 'See my day' /
+  // 'See results' (qAdvance with nothing left) leaves it.
+  if(reviewing && (st.phase === 'done' || st.phase === 'sealed' || st.phase === 'recap') && (fresh.length || qRounds.length)){
+    if(fresh.length) qRounds = fresh;
+    cmtPruneDrafts();
     qShow(qRounds.some(r => r.id === qRoundId) ? qRounds.findIndex(r => r.id === qRoundId) : 0);
     show('queue'); return;
   }
+  qRounds = fresh;
+  cmtPruneDrafts();
+
+  if(st.phase === 'recap'){ renderRecap(st); show('recap'); return; }
 
   if(st.phase === 'sealed'){
     $('#sealedDay').textContent = dropTitle(as.dayLabel);
