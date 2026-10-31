@@ -414,13 +414,22 @@ live on anr.makinitmag.com.
     counts**: across a 21-hour window with everything open at once, "record 7 has 180
     evaluations" is a popularity signal, which is the direction-adjacent inference the rule
     forbids. Only the session-level participant count ships.
-  - **Completion bonus** = a `point_events` row (100/75/50/25 by tier), never a multiplier on
-    `votes.points` (which would make "max 125" untrue everywhere and multiply NEGATIVE rounds
-    into a penalty). `source_uid` is the composite `${session}:${uid}` — a bare uid pays once
-    ever, a bare session id pays once per day across all users — and `milestone` is a literal 1,
-    never the tier, or two racers with different tiers defeat the index and pay twice. **Tier
-    comes from when they FINISHED** (max of last vote and last report), not `now()`, so a 9AM
-    sweep cannot pay 25 to someone who finished at 2PM.
+  - **Completion bonus** = a `point_events` row, never a multiplier on `votes.points` (which
+    would make "max 125" untrue everywhere and multiply NEGATIVE rounds into a penalty).
+    `source_uid` is the composite `${session}:${uid}` — a bare uid pays once ever, a bare session
+    id pays once per day across all users — and `milestone` is a literal 1, or two racers defeat
+    the index and pay twice. **AS OF 2026-10-31 the amount is ONE MORE RECORD AT THE A&R'S OWN
+    AVERAGE** (`completionBonusFor`: their vote points on the drop ÷ rounds rated, rounded,
+    floored at 0), **paid at the tally** inside the lifecycle's closing step (votes.points do not
+    exist before the close), not at the finish instant. The flat 100/75/50/25 tiers by finish
+    time are gone — 92% of finishers rate the whole drop in one sitting and nothing downstream
+    benefits from an early finish. The 034–048 tier rows stand as paid history; a drop that
+    already paid a flat row before its close finishes under the flat rule (`completionBonusMode`,
+    `LEGACY_FLAT_BONUS`) so one day is never paid two ways. Copy (operator's words): bar "Rated
+    Full Drop for Daily Bonus Points"; results "You averaged 74 points per round & completed all
+    rounds. So you get a bonus of 74 Points."; a non-finisher sees what finishing would have added
+    (`completionLineText`, also in the digest and My results). The bonus is no longer a panel
+    setting (`daily_bonus_tiers` ignored on read, deleted on save).
   - **Report a record** (`round_reports`, `UNIQUE (round_id, participant_id)` so the count is
     PEOPLE not clicks). A reported record counts as HANDLED for the bonus — otherwise reporting
     a dead link honestly strands the reporter one short, which teaches everyone to stay quiet.
@@ -986,7 +995,7 @@ live on anr.makinitmag.com.
   @TheAnRTeam + the top 3 artists as collabs — the post IS the reveal; seal lifts, callback fires ·
   **9AM** Top A&Rs carousel · **3PM** the EMAILS (`artistDelayMin` 540 now holds BOTH the A&R
   mail and the Track Reports) · **4PM** Brevo (`BREVO_SYNC_HOUR`). 36h open→publish, two drops in
-  flight. Bonus steps **6 / 16 / 21 h** (midnight / 10AM / 3PM).
+  flight. Bonus steps **6 / 16 / 21 h** (midnight / 10AM / 3PM) — RETIRED 2026-10-31, see the 034 bullet.
   **Artist heads-up at the close RETIRED** (operator): the artist hears from the program once,
   with the report; the cron queues no `artist_headsups` (manual send kept). **Three A&R mails:**
   results · missed yesterday · **missed the last two** (`dailyMissedTwiceEmail*`, "get back in the

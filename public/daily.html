@@ -248,9 +248,12 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <span class="t"><b>Admin rating window.</b> Closed to everyone else at <span id="adminWinClosed"></span>. Your ratings count like any A&amp;R's.</span>
       <span class="mono">tallies <span id="adminWinUntil"></span></span>
     </div>
+    <!-- The completion bonus is one more record at the A&R's own average, paid with the
+         results (operator, 2026-10-31). No tier, no clock: the bar only says what finishing
+         earns and how far along they are. -->
     <div class="tierbar hide" id="tierBar">
       <span class="dot"></span>
-      <span>Finish today for <b id="tierPts"></b></span>
+      <span><b>Rated Full Drop for Daily Bonus Points</b></span>
       <span class="until" id="tierUntil"></span>
     </div>
 
@@ -1056,10 +1059,9 @@ function render(){
 
   // the tier bar. Every string here came from the server.
   const tb = $('#tierBar');
-  if(pr.eligible && pr.nextTierPoints && !pr.earned){
+  if(pr.eligible && !pr.finished){
     tb.classList.remove('hide');
-    $('#tierPts').textContent = '+' + pr.nextTierPoints;
-    $('#tierUntil').textContent = pr.nextTierLabel ? ('until ' + pr.nextTierLabel) : '';
+    $('#tierUntil').textContent = pr.handled + ' of ' + pr.total + ' rated';
   }else tb.classList.add('hide');
 
   if(st.phase === 'waiting'){
@@ -1105,25 +1107,17 @@ function renderDone(st){
   const pr = st.progress || {}, as = st.async || {};
   $('#doneDay').textContent = dropTitle(as.dayLabel);
   $('#doneHead').textContent = 'All ' + pr.total + ' record' + (pr.total === 1 ? '' : 's') + ' evaluated';
-  // Gold, and gold ONLY here: this number is money the A&R has actually been paid.
+  // Gold, and gold ONLY here: this number is money the A&R has actually been paid. The bonus
+  // is paid at the tally (one more record at their own average), so during the window this
+  // screen says what is coming rather than printing a number the server has not computed.
   const b = $('#doneBonus');
-  if(pr.earned){ b.classList.remove('hide'); b.textContent = '+' + pr.earned;
+  if(pr.earned != null){ b.classList.remove('hide'); b.textContent = '+' + pr.earned;
     $('#doneBonusSub').textContent = 'Completion bonus'; }
   else{ b.classList.add('hide');
-    $('#doneBonusSub').textContent = pr.eligible ? '' : 'Too few records today for a completion bonus.'; }
-
-  const tiers = $('#doneTiers'); tiers.textContent = '';
-  (as.tiers || []).forEach((t, i, arr) => {
-    const row = document.createElement('div');
-    const earnedThis = pr.earned === t.points;
-    row.style.cssText = 'display:flex;justify-content:space-between;padding:9px 0;font-size:13.5px'
-      + (i < arr.length - 1 ? ';border-bottom:1px solid var(--line)' : '')
-      + (earnedThis ? '' : ';color:var(--ink-dim)');
-    const l = document.createElement('span'); l.textContent = t.label ? ('Before ' + t.label) : 'Before the window closes';
-    const v = document.createElement('span'); v.className = 'mono'; v.textContent = '+' + t.points;
-    if(earnedThis) v.style.color = 'var(--gold)';
-    row.appendChild(l); row.appendChild(v); tiers.appendChild(row);
-  });
+    $('#doneBonusSub').textContent = pr.eligible
+      ? 'Rated Full Drop for Daily Bonus Points. Your bonus is your average points per round, added when your results come out.'
+      : 'Too few records today for a completion bonus.'; }
+  $('#doneTiers').textContent = '';
 
   afterNode($('#doneNext'), as, '');
 }
@@ -1202,7 +1196,10 @@ function renderRecap(st){
     row.appendChild(pts);
     rows.appendChild(row);
   });
-  if(rc.completionBonus){
+  // The completion line (operator's wording, 2026-10-31). Finished: the bonus they were paid,
+  // gold. Not finished: what finishing would have added — their own average — so the miss is
+  // concrete for today's drop, which the button below this table opens.
+  if(rc.completionBonus != null){
     const foot = document.createElement('div');
     foot.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:13px 2px 0;border-top:1px solid var(--line);margin-top:2px';
     const l = document.createElement('span'); l.style.cssText = 'font-weight:800;font-size:14px';
@@ -1211,6 +1208,15 @@ function renderRecap(st){
     v.style.cssText = 'font-size:15px;font-weight:700;color:var(--gold)';
     v.textContent = '+' + rc.completionBonus;
     foot.appendChild(l); foot.appendChild(v); rows.appendChild(foot);
+  }
+  const n = (rc.rounds || []).length, total = rc.totalRounds != null ? rc.totalRounds : n;
+  let line = '';
+  if(rc.bonusAvg != null && rc.finished) line = 'You averaged ' + rc.bonusAvg + ' points per round & completed all rounds. So you get a bonus of ' + (rc.completionBonus != null ? rc.completionBonus : rc.bonusAvg) + ' Points.';
+  else if(rc.bonusAvg > 0) line = 'You rated ' + n + ' of ' + total + ' rounds and averaged ' + rc.bonusAvg + ' points per round. Finishing the drop would have added ' + rc.bonusAvg + ' bonus points.';
+  if(line){
+    const p = document.createElement('p'); p.className = 'dim';
+    p.style.cssText = 'font-size:14px;line-height:1.5;margin:14px 2px 0' + (rc.completionBonus != null ? '' : ';border-top:1px solid var(--line);padding-top:13px');
+    p.textContent = line; rows.appendChild(p);
   }
 }
 

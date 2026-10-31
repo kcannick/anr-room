@@ -10,9 +10,6 @@ the reasoning, and the deploy checklist. It supersedes the 69-hour clock of 2026
 |---|---|---|---|
 | 1 | 5:00 PM | Review site locks the day's track list and pushes it | makinitmag (Drupal) |
 | 1 | 6:00 PM | **Drop opens.** "Voting is open" email | new A&Rs, first 7 days / email |
-| 2 | 12:00 AM | Completion bonus steps 100 → 75 | shown on /daily |
-| 2 | 10:00 AM | Bonus 75 → 50 | shown on /daily |
-| 2 | 3:00 PM | Bonus 50 → 25 | shown on /daily |
 | 2 | 6:00 PM | **Voting closes and tallies.** The next drop opens at the same moment. No heads-up to artists. | system |
 | 2 | after the tally | Both Instagram carousels render; the Asana post tasks are made. The operator's job schedules both posts in SocialBee for 6:00 AM and 9:00 AM. Nothing is revealed. | system / Asana / SocialBee |
 | 3 | 6:00 AM | **Daily Countdown posts** from @makinit4indies (the operator's scheduled job, through SocialBee). @TheAnRTeam and the top 3 artists are collaborators; every artist is tagged on their slide. **This is the publish:** scores appear on /daily and My results, the results callback goes to makinitmag. | public / Instagram |
@@ -57,7 +54,14 @@ Treat it as a two-week test. Compare raters per drop and the share who start wit
 
 ## The completion bonus
 
-Steps are 6 / 16 / 21 hours: 100 by midnight, 75 by 10 AM, 50 by 3 PM, 25 before the 6 PM close.
+**Changed 2026-10-31:** the tiers are gone. The bonus is one more record at the A&R's own average
+(vote points on the drop ÷ rounds rated, rounded, floored at 0), paid at the tally, for finishing
+every record before the close. Reason: 92% of finishers rate the whole drop in one sitting, early
+finishers are the regulars anyway, and nothing downstream benefits from an early finish; a flat 100
+was nearly two typical rounds paid for speed. Full analysis in the session notes of 2026-10-29.
+
+History (the clock as it ran 10-17 to 10-31): steps were 6 / 16 / 21 hours: 100 by midnight, 75 by
+10 AM, 50 by 3 PM, 25 before the 6 PM close.
 Measured over the two October weeks before the change: the bonus was 8–25% of a top-10 total and
 the 100-point tier was 68% of what was paid. With a 6 PM open most same-night finishers will take
 100, so watch that share; past about 85% the tiers no longer separate the top finishers.
