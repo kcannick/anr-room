@@ -107,7 +107,7 @@ Song A vs Song B. Pick a side, predict the split (0–100% for A), lock in. Majo
 
 | Bonus | Amount | Trigger | Status |
 |---|---|---|---|
-| **Completion bonus** (daily) | 100 / 75 / 50 / 25 | Handling every record in the day, tiered by finish time. As built: 100 before 3 PM · 75 before 6 PM · 50 before 9 PM · 25 after. DECIDED 2026-09-13 to re-space across the new 24-hour window (100 before 6 PM · 75 before midnight · 50 before 9 AM · 25 before the noon close), not yet built. Paid once per person per day; days under 3 records pay nothing. A flagged (reported) record counts as handled. | LIVE (old tiers) |
+| **Completion bonus** (daily) | One more record at your own average | Handling every record in the day before the close. The bonus equals the A&R's average points per rated round on that drop (rounded, never below 0), paid with the results. No tiers by finish time (retired 2026-10-31: finishing early helps nobody and 92% of finishers rate the drop in one sitting). Paid once per person per day; days under 3 records pay nothing. A flagged (reported) record counts as handled but is not a rated round. A non-finisher is told what finishing would have added. | Built 2026-10-31 |
 | **Scouting points** | 250 per point of room average above 5.0 | An A&R referred the artist who submitted (attribution captured by Drupal; points credited at tally). A 7.0 record earns 500. At or below 5.0 earns zero, never negative. | LIVE |
 | **Referral milestones** | +10 at the invitee's 10th scored round; +75 at their 50th | First-touch, brand-new accounts only. Lands on the series of the session where the milestone crossed. | LIVE |
 | **Live show bonus** | `sessions.live_bonus`, intended ~300 | Rating every record in a live session. Without it one live show is worth less than a day of daily play on the unified board. | Built; **value never set** |
@@ -181,7 +181,7 @@ A&R-facing copy keeps one number: noon. "Results at 3 PM, revealed live at 2 PM"
 
 ### 5.3 What the A&R does
 
-Listen on the play link → rate 0–9 → predict the average → lock in → optionally leave **one note (≤500 characters)** for the artist → Follow button (Instagram) and Artist profile button (public makinitmag profile) after lock-in → next record. Finish the day for the completion bonus.
+Listen on the play link → rate 0–9 → predict the average → lock in → optionally leave **one note (≤500 characters)** for the artist → Follow button (Instagram) and Artist profile button (public makinitmag profile) after lock-in → next record. Finish the day for the completion bonus (one more record at your own average, paid with the results).
 
 ### 5.4 What the artist gets (all free, all editorial)
 
@@ -518,7 +518,7 @@ Still open:
 - **Support level** — what an artist paid to submit; admin-only; drives the reveal stream.
 - **Reference track** — a known major-artist record added for calibration.
 - **Top supporter** — the day's highest-paying record, singled out on the stream.
-- **Completion bonus** — points for handling every record in a day.
+- **Completion bonus** — one more record at the A&R's own average for handling every record in a day before the close; paid at the tally.
 - **Live bonus** — points for rating every record in a live session (unset).
 - **HOT 100** — the Makin' It chart of records or A&Rs.
 - **Song Report** — the 3-page per-record analytics graphic.

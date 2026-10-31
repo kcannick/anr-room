@@ -1858,7 +1858,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the daily payload leaks no room_average', !/room_average/.test(dJson));
   ok('the daily payload leaks no split', !/split/.test(dJson));
   ok('the daily payload carries NO per-record vote counts', !dState.queue.some(q => 'votes' in q || 'count' in q), dJson.slice(0, 200));
-  ok('tiers are server-resolved epochs, not client maths', Array.isArray(dState.async.tiers) && dState.async.tiers[0].points === 100);
+  ok('the daily payload carries no bonus tiers — one rule, the average round, paid at the tally (2026-10-31)',
+    dState.async.tiers === undefined && dState.progress.bonusRule === 'average' && dState.progress.finished === false, JSON.stringify(dState.progress));
   // The banner (2026-09-30): the same cascade as the live player. The global banner from the
   // cascade block above is still assigned, and a drop has no banner_id of its own.
   ok('the daily payload carries the sponsor banner', dState.banner && dState.banner.image.startsWith('/api/banner/image'), JSON.stringify(dState.banner));
@@ -1891,25 +1892,37 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const vOne = await call('/api/vote', { roundId: qIds[0], taste: 7, predict: 6.5 }, 'POST', DH1);
   ok('a daily vote locks in', vOne.status === 200 && vOne.d.locked === true, JSON.stringify(vOne.d));
   ok('the vote response carries live progress', vOne.d.progress.voted === 1 && vOne.d.progress.total === 4, JSON.stringify(vOne.d.progress));
-  ok('no bonus before the day is finished', vOne.d.bonus == null, JSON.stringify(vOne.d.bonus));
+  ok('one vote in, the day is not finished and nothing is paid', vOne.d.bonus === undefined && vOne.d.progress.finished === false, JSON.stringify(vOne.d));
   const vDup = await call('/api/vote', { roundId: qIds[0], taste: 3, predict: 3 }, 'POST', DH1);
   ok('a record can only be rated once', vDup.status === 400, JSON.stringify(vDup.d));
 
-  // Finish the day -> the completion bonus.
-  for (const rid of qIds.slice(1)) await call('/api/vote', { roundId: rid, taste: 6, predict: 6.0 }, 'POST', DH1);
+  // Finish the day. THE BONUS IS PAID AT THE TALLY (2026-10-31): it is one more record at the
+  // A&R's own average, and votes.points do not exist until the close — so finishing writes no
+  // row, flips `finished`, and the done screen says the bonus comes with the results.
+  const lastVote = await call('/api/vote', { roundId: qIds[qIds.length - 1], taste: 6, predict: 6.0 }, 'POST', DH1);
+  for (const rid of qIds.slice(1, -1)) await call('/api/vote', { roundId: rid, taste: 6, predict: 6.0 }, 'POST', DH1);
+  ok('a vote response never carries a bonus amount any more', lastVote.d.bonus === undefined, JSON.stringify(lastVote.d));
   const bonusRows = await dDb.all("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [PDROP + ':%']);
-  ok('finishing the day pays exactly ONE completion bonus', bonusRows.length === 1, JSON.stringify(bonusRows));
-  ok('the bonus is tagged into the series so it reaches the $500 board', bonusRows[0].series_id === serId);
-  ok('milestone is a literal 1, never the tier (two racers must collide, not both pay)', Number(bonusRows[0].milestone) === 1);
+  ok('finishing the day during the window pays NOTHING yet (the average needs scored rounds)', bonusRows.length === 0, JSON.stringify(bonusRows));
   const doneState = (await call('/api/me/state', null, 'GET', DH1)).d;
   ok('phase flips to done when the day is finished', doneState.phase === 'done', doneState.phase);
-  ok('the earned bonus is reported back', doneState.progress.earned === Number(bonusRows[0].points), JSON.stringify(doneState.progress));
+  ok('the done state says finished, with no earned amount yet',
+    doneState.progress.finished === true && doneState.progress.earned === null, JSON.stringify(doneState.progress));
 
-  // Idempotency: a sweep must not pay twice.
   const dSessRow = await dDb.get('SELECT * FROM sessions WHERE id = ?', [PDROP]);
   const srv = require('./server');
+  // A sweep before the tally (a deleted zero-vote record triggers one) pays nothing under the
+  // average rule — there is no average to pay.
+  ok('a pre-tally sweep pays nothing under the average rule', (await srv._sweepCompletionBonuses(dSessRow)) === 0);
   const paidAgain = await dDb.all("SELECT COUNT(*) AS c FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [PDROP + ':%']);
-  ok('the bonus ledger still holds exactly one row after a re-read', Number(paidAgain[0].c) === 1);
+  ok('the bonus ledger still holds no row for the day', Number(paidAgain[0].c) === 0);
+  // FORWARD-ONLY: a drop that already paid someone the flat tier inline (before the close)
+  // finishes under the flat rule, so one day is never paid two ways.
+  ok('a drop with no pre-close row is paid by the average rule', (await srv._completionBonusMode(dSessRow)) === 'average');
+  await dDb.run('INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at) VALUES (?,?,?,?,?,?,?,?)',
+    ['legacyrow1', 'legacy-uid', 100, null, 'async_complete', PDROP + ':legacy-uid', 1, Number(dSessRow.window_closes_at) - 60000]);
+  ok('a drop holding a flat row written before its close finishes under the flat rule', (await srv._completionBonusMode(dSessRow)) === 'flat');
+  await dDb.run('DELETE FROM point_events WHERE id = ?', ['legacyrow1']);
 
   // A partial day earns nothing.
   await call('/api/vote', { roundId: qIds[0], taste: 5, predict: 5.0 }, 'POST', DH2);
@@ -2182,15 +2195,41 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const rLast = await call('/api/vote', { roundId: rQ[4], taste: 5, predict: 5.0 }, 'POST', RH1);
   ok('the day reads as finished with reports counted',
     rLast.d.progress.handled === 5 && rLast.d.progress.total === 5, JSON.stringify(rLast.d.progress));
-  ok('a day finished partly by reporting still pays the completion bonus', rLast.d.bonus > 0, JSON.stringify(rLast.d.bonus));
-  const rBonusRows = await dDb.all("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [RDROP + ':%']);
-  ok('and it pays exactly once', rBonusRows.length === 1, JSON.stringify(rBonusRows));
+  ok('a day finished partly by reporting reads as finished', rLast.d.progress.finished === true, JSON.stringify(rLast.d.progress));
 
-  // A report can itself be the last act of the day, so /api/report-round evaluates the
-  // bonus too rather than waiting for a vote that is never going to come.
+  // A report can itself be the last act of the day, so /api/report-round reports progress too.
   for (const rid of rQ.slice(0, 4)) await call('/api/vote', { roundId: rid, taste: 4, predict: 4.0 }, 'POST', RH2);
   const rFinish = await call('/api/report-round', { roundId: rQ[4], reason: 'not_playable' }, 'POST', RH2);
-  ok('finishing the day ON a report pays the bonus from the report route', rFinish.d.bonus > 0, JSON.stringify(rFinish.d));
+  ok('finishing the day ON a report reads as finished from the report route', rFinish.d.progress.finished === true, JSON.stringify(rFinish.d));
+  ok('nothing is paid before the tally', (await dDb.all("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [RDROP + ':%'])).length === 0);
+  // THE AVERAGE RULE AT THE TALLY: score the day by hand (a tally sets votes.points), then
+  // sweep. Rae rated 2 and reported 3 — the average is over the RATED rounds only; Kit rated
+  // 4 and reported 1. A third A&R who rated 4 of 5 and reported nothing is not finished.
+  const RH3 = await rJoin('rep3@test.com', 'Lou');
+  for (const rid of rQ.slice(0, 4)) await call('/api/vote', { roundId: rid, taste: 8, predict: 8.0 }, 'POST', RH3);
+  await dDb.run("UPDATE rounds SET status = 'ratified', room_average = 5.0 WHERE session_id = ?", [RDROP]);
+  await dDb.run(`UPDATE votes SET points = CASE taste WHEN 6 THEN 90 WHEN 5 THEN 61 WHEN 4 THEN 30 ELSE -10 END
+    WHERE round_id IN (SELECT id FROM rounds WHERE session_id = ?)`, [RDROP]);
+  await dDb.run('UPDATE sessions SET window_closes_at = ? WHERE id = ?', [Date.now() - 1000, RDROP]);   // a tally runs after the close
+  const rSess = await dDb.get('SELECT * FROM sessions WHERE id = ?', [RDROP]);
+  const rPaid = await srv._sweepCompletionBonuses(rSess);
+  const rRow = async (em) => dDb.get("SELECT pe.* FROM point_events pe JOIN users u ON u.uid = pe.user_id WHERE pe.reason = 'async_complete' AND pe.source_uid LIKE ? AND u.email = ?", [RDROP + ':%', em]);
+  const raeRow = await rRow('rep1@test.com'), kitRow = await rRow('rep2@test.com'), louRow = await rRow('rep3@test.com');
+  ok('the tally sweep pays every finisher once', rPaid === 2, String(rPaid));
+  ok('the bonus is the average over RATED rounds (reports count as handled, not as rounds): (90+61)/2 -> 76', raeRow && Number(raeRow.points) === 76, JSON.stringify(raeRow));
+  ok('four rated at 30 each -> 30', kitRow && Number(kitRow.points) === 30, JSON.stringify(kitRow));
+  ok('an unfinished day (4 of 5, no report) pays nothing', !louRow, JSON.stringify(louRow));
+  ok('milestone is a literal 1 and the row is series-tagged', Number(raeRow.milestone) === 1 && 'series_id' in raeRow);
+  ok('a second sweep pays nobody twice', (await srv._sweepCompletionBonuses(rSess)) === 0
+    && (await dDb.all("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [RDROP + ':%'])).length === 2);
+  const raeLife = await dDb.get('SELECT lifetime_points FROM users WHERE email = ?', ['rep1@test.com']);
+  ok('the bonus reached lifetime points', Number(raeLife.lifetime_points) >= 76, JSON.stringify(raeLife));
+  // The zero floor: a finisher whose rounds net to nothing is paid a +0 row (finished, not "not earned").
+  await dDb.run("UPDATE votes SET points = -10 WHERE round_id IN (SELECT id FROM rounds WHERE session_id = ?) AND participant_id = (SELECT id FROM participants WHERE session_id = ? AND email = ?)", [RDROP, RDROP, 'rep2@test.com']);
+  await dDb.run('DELETE FROM point_events WHERE id = ?', [kitRow.id]);
+  await srv._sweepCompletionBonuses(rSess);
+  const kitZero = await rRow('rep2@test.com');
+  ok('a negative day floors the bonus at 0 and still writes the row', kitZero && Number(kitZero.points) === 0, JSON.stringify(kitZero));
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), RDROP]);
 
   console.log('\n— A&R Daily: the lifecycle runs on the clock —');
@@ -2246,10 +2285,10 @@ async function startVoting(sessionId, headers, minutes = 5) {
     srv._NOTIFY_TOPICS.daily_open && srv._NOTIFY_TOPICS.daily_open.channels.email === 1
       && srv._NOTIFY_TOPICS.daily_open.channels.sms === undefined);
   const openTxt = srv._dailyOpenEmailText({ name: 'Kelby Cannick', dayLabel: 'Mon, Sep 28', count: 12,
-    closesLabel: 'at 3:00 PM ET tomorrow', bonusLabel: 'by 9:00 PM ET', playUrl: 'https://x/daily?s=abc' }, null);
+    closesLabel: 'at 3:00 PM ET tomorrow', playUrl: 'https://x/daily?s=abc' }, null);
   ok('the open email says what is open, when it closes and where to go',
     /Kelby Cannick, today's 12 records are open for rating\./.test(openTxt) && /Rating closes at 3:00 PM ET tomorrow\./.test(openTxt)
-      && /daily\?s=abc/.test(openTxt), openTxt);
+      && /daily\?s=abc/.test(openTxt) && /average round is added as a completion bonus/.test(openTxt), openTxt);
 
   // Someone plays the whole day, so the tally has real votes to score.
   const lRq = await call('/api/join/request', { sessionId: LDROP, email: 'life@test.com' });
@@ -2301,6 +2340,15 @@ async function startVoting(sessionId, headers, minutes = 5) {
       && ph({ mode: null, status: 'archived' }) === 'archived');
   const scored = await dDb.all('SELECT points, room_average FROM votes v JOIN rounds r ON r.id = v.round_id WHERE r.session_id = ?', [LDROP]);
   ok('the tally scored every vote', scored.length === 5 && scored.every(v => v.points != null), JSON.stringify(scored));
+  // The completion bonus is paid HERE, at the tally: Lex rated all 3, so one more record at
+  // Lex's own average; Zed and amber rated one and get nothing.
+  const lexP = await dDb.get('SELECT * FROM participants WHERE session_id = ? AND email = ?', [LDROP, 'life@test.com']);
+  const lexVotes = await dDb.all('SELECT v.points FROM votes v JOIN rounds r ON r.id = v.round_id WHERE v.participant_id = ?', [lexP.id]);
+  const lexAvg = Math.max(0, Math.round(lexVotes.reduce((a, v) => a + Number(v.points), 0) / lexVotes.length));
+  const lexRowT = await dDb.get("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [LDROP + ':' + lexP.user_id]);
+  ok('the close tick pays the completion bonus = the finisher\'s average round',
+    tClose.d.bonusPaid === 1 && lexRowT && Number(lexRowT.points) === lexAvg && lexRowT.series_id === serId, JSON.stringify({ paid: tClose.d.bonusPaid, row: lexRowT, lexAvg }));
+  ok('nobody who skipped a record is paid', (await dDb.all("SELECT * FROM point_events WHERE reason = 'async_complete' AND source_uid LIKE ?", [LDROP + ':%'])).length === 1);
 
   const tCloseAgain = await tick(closesAt + 2000);
   ok('a second close tick does not re-tally (double-bumped points would be permanent)',
@@ -3031,17 +3079,17 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // THE SCHEDULE IS A SETTING, and saving it re-stamps every day that has not opened.
   const schedAnon = await call('/api/admin/settings', { dailySchedule: { openMin: 13 * 60 } }, 'POST', {});
   ok('the schedule is platform-admin only', schedAnon.status === 403 || schedAnon.status === 401, 'got ' + schedAnon.status);
-  const schedBad = await call('/api/admin/settings', { dailySchedule: { tiers: [{ hours: 40, points: 5 }] } }, 'POST', BOOTH);
+  const schedBad = await call('/api/admin/settings', { dailySchedule: { openMin: 5000 } }, 'POST', BOOTH);
   ok('a bad schedule is refused as a whole', schedBad.status === 400, JSON.stringify(schedBad.d));
   const schedOk = await call('/api/admin/settings',
-    { dailySchedule: { openMin: 13 * 60, closeMin: 10 * 60, streamMin: 10 * 60 + 30, streamDays: 0, resultsMin: 11 * 60, resultsDays: 0, tiers: [{ hours: 3, points: 90 }], finalPoints: 10 } }, 'POST', BOOTH);
+    { dailySchedule: { openMin: 13 * 60, closeMin: 10 * 60, streamMin: 10 * 60 + 30, streamDays: 0, resultsMin: 11 * 60, resultsDays: 0, tiers: [{ hours: 3, points: 90 }], finalPoints: 10 } }, 'POST', BOOTH);   // tiers/finalPoints from an older panel: ignored
   const schedOrder = await call('/api/admin/settings',
     { dailySchedule: { streamMin: 12 * 60, streamDays: 1, resultsMin: 11 * 60, resultsDays: 1 } }, 'POST', BOOTH);
   ok('results can never be set to publish before the livestream', schedOrder.status === 400, JSON.stringify(schedOrder.d));
   ok('a platform admin can change the schedule, and the cold day was re-stamped', schedOk.status === 200 && schedOk.d.restamped >= 1, JSON.stringify(schedOk.d));
   const schedView = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
   ok('the panel reads the saved schedule back with labels',
-    schedView.openMin === 13 * 60 && schedView.windowHours === 21 && schedView.tiers.length === 1 && schedView.finalPoints === 10
+    schedView.openMin === 13 * 60 && schedView.windowHours === 21 && schedView.tiers === undefined && /average points per round/.test(schedView.bonusRule)
       && /1:00 PM ET/.test(schedView.opensLabel) && /next day/.test(schedView.closesLabel), JSON.stringify(schedView));
   const handRe = await dDb.get('SELECT * FROM sessions WHERE id = ?', [handSess.id]);
   ok('the cold day now runs on the new schedule',
@@ -3054,8 +3102,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const schedReset = await call('/api/admin/settings', { dailySchedule: null }, 'POST', BOOTH);
   const schedBack = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
   ok('null puts the defaults back and re-stamps again', schedReset.status === 200 && schedBack.openMin === 18 * 60 && schedBack.closeMin === 18 * 60
-    && schedBack.tiers.length === 3 && schedBack.artistDelayMin === 540
-    && schedBack.streamDays === 0 && schedBack.resultsDays === 1 && schedBack.resultsHours === 36 && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 18),
+    && schedBack.tiers === undefined && schedBack.artistDelayMin === 540
+    && schedBack.streamDays === 0 && schedBack.resultsDays === 1 && (schedBack.resultsHours === 36 || schedBack.resultsHours === 37 /* DST fall-back day */) && Number((await dDb.get('SELECT window_closes_at FROM sessions WHERE id = ?', [handSess.id])).window_closes_at) === srv._etEpoch(srv._etNextDay(handDay), 18),
     JSON.stringify(schedBack));
 
   // MOVING a cold day. The case: the review site's noon lock-in pressed at 12:01 pushes a
@@ -4135,7 +4183,23 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('etEpoch rejects a malformed day', server._etEpoch('nope', 12) === null);
   ok('etNextDay rejects a malformed day', server._etNextDay('nope') === null);
 
-  console.log('\n— A&R Daily: completion-bonus tiers —');
+  console.log('\n— A&R Daily: the completion bonus = one more record at your own average —');
+  const cbf = server._completionBonusFor;
+  ok('average of 400 over 4 rounds -> 100', cbf(400, 4) === 100);
+  ok('295 over 4 rounds -> 74 (rounded)', cbf(295, 4) === 74);
+  ok('10 over 4 rounds -> 3 (half rounds up)', cbf(10, 4) === 3);
+  ok('a negative day floors at 0', cbf(-40, 4) === 0 && cbf(-2, 4) === 0);
+  ok('no rated rounds -> 0, never a division by zero', cbf(0, 0) === 0 && cbf(100, 0) === 0 && cbf(null, null) === 0);
+  ok('strings from the driver are coerced', cbf('450', '6') === 75);
+  const clt = server._completionLineText;
+  ok('finished: the operator\'s sentence with the paid amount',
+    clt({ finished: true, bonusAvg: 74, completionBonus: 74, rounds: new Array(7), totalRounds: 7 }) === 'You averaged 74 points per round & completed all rounds. So you get a bonus of 74 Points.');
+  ok('not finished: what finishing would have added',
+    clt({ finished: false, bonusAvg: 64, completionBonus: null, rounds: new Array(5), totalRounds: 7 }) === 'You rated 5 of 7 rounds and averaged 64 points per round. Finishing the drop would have added 64 bonus points.');
+  ok('not finished at an average of 0: no line (there was no bonus to miss)', clt({ finished: false, bonusAvg: 0, rounds: new Array(2), totalRounds: 7 }) === '');
+  ok('no rounds: no line', clt({ finished: false, bonusAvg: null, rounds: [], totalRounds: 7 }) === '' && clt(null) === '');
+
+  console.log('\n— A&R Daily: the LEGACY flat tiers (drops that opened before 2026-10-31) —');
   // HOURS AFTER THE OPEN, anchored to the day's own window_opens_at — not ET minutes-of-day.
   // The window crosses midnight, so someone finishing at 2AM is 120 minutes into the ET clock
   // and a minutes-of-day comparison would pay the top tier for the slowest finish.
@@ -4161,11 +4225,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
     && server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-05', 10)) === 50
     && server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-05', 14, 59)) === 50
     && server._completionBonusPoints({ drop_day: '2026-07-04' }, at('2026-07-05', 15)) === 25);
-  // The steps follow a custom schedule: a 3-hour step at 90, then 10 before the close.
+  // The tiers are no longer a setting: an older panel's tiers are accepted and dropped.
   const cSched = server._parseDailySchedule({ openMin: 13 * 60, closeMin: 10 * 60, resultsMin: 11 * 60, tiers: [{ hours: 3, points: 90 }], finalPoints: 10 }).cfg;
-  const cSess = { drop_day: '2026-07-04', window_opens_at: at('2026-07-04', 13), window_closes_at: at('2026-07-05', 10) };
-  ok('a custom step pays its own points', server._completionBonusPoints(cSess, at('2026-07-04', 15, 59), cSched) === 90
-    && server._completionBonusPoints(cSess, at('2026-07-04', 16), cSched) === 10);
+  ok('a saved schedule carries no bonus tiers', cSched.tiers === undefined && cSched.finalPoints === undefined, JSON.stringify(cSched));
 
   console.log('\n— A&R Daily: the schedule —');
   const D = server._DAILY_SCHEDULE_DEFAULTS;
@@ -4185,10 +4247,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const sameDay = server._dropWindowFor('2026-07-04', { ...D, openMin: 9 * 60, closeMin: 21 * 60, streamMin: 20 * 60, streamDays: 0, resultsMin: 20 * 60, resultsDays: 0 });
   ok('a close later than the open is the same day, and the stream and results never land before the close',
     sameDay.closesAt === at('2026-07-04', 21) && sameDay.streamAt === at('2026-07-04', 21) && sameDay.resultsAt === at('2026-07-04', 21), JSON.stringify(sameDay));
-  const bad1 = (() => { try { server._parseDailySchedule({ tiers: [{ hours: 30, points: 100 }] }); return null; } catch (e) { return e.message; } })();
-  ok('a bonus step past the close is refused', /inside the 24-hour window/.test(bad1 || ''), bad1);
-  const bad2 = (() => { try { server._parseDailySchedule({ tiers: [{ hours: 6, points: 100 }, { hours: 6, points: 75 }] }); return null; } catch (e) { return e.message; } })();
-  ok('steps must increase', /must increase/.test(bad2 || ''), bad2);
+  ok('old bonus tiers in a saved schedule are ignored, never refused', server._parseDailySchedule({ tiers: [{ hours: 30, points: 100 }] }).cfg.tiers === undefined);
   const bad3 = (() => { try { server._parseDailySchedule({ openMin: 12 * 60, closeMin: 12 * 60 + 30 }); return null; } catch (e) { return e.message; } })();
   ok('a window under an hour is refused', /at least one hour/.test(bad3 || ''), bad3);
 

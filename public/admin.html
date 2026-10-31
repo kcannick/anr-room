@@ -1437,16 +1437,8 @@
         <p class="muted" style="font-size:11px;margin:8px 0 0">A closing time at or before the opening time means the next day. At the render time (the close, by default) both Instagram carousels are made and the Asana post tasks are created; nothing is revealed. Results publish when the countdown posts (6:00 AM by default): scores appear on the site and makinitmag is told. The emails (the A&amp;R results mail and the Track Reports) follow after the hold below.</p>
         <label style="margin-top:10px">YouTube live link <span class="muted">(sent to artists and A&amp;Rs; a channel's /live link works)</span></label>
         <input id="dsStreamUrl" placeholder="https://www.youtube.com/@yourchannel/live">
-        <label style="margin-top:10px">Completion bonus <span class="muted">(for rating every record in the day)</span></label>
-        <table class="data-table" style="margin-top:6px">
-          <tbody>
-            <tr><td>Within <input id="dsT1H" type="number" min="1" step="1" style="width:64px;display:inline-block"> hours of the open</td><td><input id="dsT1P" type="number" min="0" max="1000" style="width:80px;display:inline-block"> pts</td></tr>
-            <tr><td>Within <input id="dsT2H" type="number" min="1" step="1" style="width:64px;display:inline-block"> hours</td><td><input id="dsT2P" type="number" min="0" max="1000" style="width:80px;display:inline-block"> pts</td></tr>
-            <tr><td>Within <input id="dsT3H" type="number" min="1" step="1" style="width:64px;display:inline-block"> hours</td><td><input id="dsT3P" type="number" min="0" max="1000" style="width:80px;display:inline-block"> pts</td></tr>
-            <tr><td>Any time before the close</td><td><input id="dsFinal" type="number" min="0" max="1000" style="width:80px;display:inline-block"> pts</td></tr>
-          </tbody>
-        </table>
-        <p class="muted" style="font-size:11px;margin:8px 0 0">Leave a step's hours blank to drop that step. Steps must increase and stay inside the window.</p>
+        <label style="margin-top:10px">Completion bonus</label>
+        <p class="muted" style="font-size:11px;margin:4px 0 0" id="dsBonusRule">Finish every record before the close: the bonus is the A&amp;R's own average points per round on the drop, paid at the tally. Not a setting.</p>
         <label style="margin-top:10px">The emails go out <input id="dsDelay" type="number" min="0" max="1440" style="width:72px;display:inline-block"> minutes after results <span class="muted">(the A&amp;R results mail and the Track Reports; 540 = 3:00 PM after a 6:00 AM publish. Comments can be rejected any time before then.)</span></label>
         <div id="dsSummary" style="font-size:12px;margin-top:8px;font-weight:600"></div>
       </div>
@@ -4856,19 +4848,14 @@ function dsFill(sc){
   if(!sc)return;
   $('#dsOpen').value=dsTime(sc.openMin);$('#dsClose').value=dsTime(sc.closeMin);$('#dsResults').value=dsTime(sc.resultsMin);
   $('#dsStream').value=dsTime(sc.streamMin);$('#dsStreamDays').value=String(sc.streamDays);$('#dsResultsDays').value=String(sc.resultsDays);
-  for(let i=1;i<=3;i++){const t=(sc.tiers||[])[i-1];$('#dsT'+i+'H').value=t?t.hours:'';$('#dsT'+i+'P').value=t?t.points:'';}
-  $('#dsFinal').value=sc.finalPoints;$('#dsDelay').value=sc.artistDelayMin;
+  $('#dsDelay').value=sc.artistDelayMin;
   $('#dsGrace').value=sc.adminGraceMin||0;$('#dsTally').value=sc.adminGraceMin?(sc.tallyLabel||''):'at the close';
-  $('#dsSummary').textContent='Track list locks '+sc.lockLabel+' · opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · daily countdown '+sc.streamLabel+' ('+sc.streamHours+' h) · results '+sc.resultsLabel+' ('+sc.resultsHours+' h) · bonus '+(sc.tierLabels||[]).join(', ');
+  if(sc.bonusRule)$('#dsBonusRule').textContent=sc.bonusRule+' Not a setting.';
+  $('#dsSummary').textContent='Track list locks '+sc.lockLabel+' · opens '+sc.opensLabel+' · closes '+sc.closesLabel+' ('+sc.windowHours+' h) · daily countdown '+sc.streamLabel+' ('+sc.streamHours+' h) · results '+sc.resultsLabel+' ('+sc.resultsHours+' h) · bonus = average round';
 }
 function dsRead(){
-  const tiers=[];
-  for(let i=1;i<=3;i++){const h=parseFloat($('#dsT'+i+'H').value),p=parseInt($('#dsT'+i+'P').value,10);
-    if(Number.isFinite(h)&&h>0)tiers.push({hours:h,points:Number.isFinite(p)?p:0});}
-  const f=parseInt($('#dsFinal').value,10);
   return {openMin:dsMin($('#dsOpen').value),closeMin:dsMin($('#dsClose').value),resultsMin:dsMin($('#dsResults').value),
     streamMin:dsMin($('#dsStream').value),streamDays:parseInt($('#dsStreamDays').value,10),resultsDays:parseInt($('#dsResultsDays').value,10),
-    tiers,finalPoints:Number.isFinite(f)?f:undefined,
     artistDelayMin:(v=>Number.isFinite(v)?v:undefined)(parseInt($('#dsDelay').value,10)),
     adminGraceMin:(v=>Number.isFinite(v)?v:0)(parseInt($('#dsGrace').value,10))};
 }

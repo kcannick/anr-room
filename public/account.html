@@ -575,10 +575,17 @@ function rsDay(d){
     rt.appendChild(row);
   });
   if(d.kind === 'daily'){
-    const f = mk('div', 'foot' + (d.bonus ? '' : ' none'));
+    // Finished: the bonus paid (one more record at their own average; +0 on a day that
+    // averaged nothing). Not finished: what finishing would have added, so the miss is concrete.
+    const f = mk('div', 'foot' + (d.finished ? '' : ' none'));
     f.appendChild(mk('span', null, 'Completion bonus'));
-    f.appendChild(mk('span', null, d.bonus ? '+' + d.bonus : 'Not earned'));
+    f.appendChild(mk('span', null, d.finished ? '+' + (d.bonus || 0) : 'Not earned'));
     rt.appendChild(f);
+    if(!d.finished && d.bonusAvg > 0){
+      const p = mk('p', 'dim', 'You rated ' + d.rated + ' of ' + d.total + ' rounds and averaged ' + d.bonusAvg + ' points per round. Finishing the drop would have added ' + d.bonusAvg + ' bonus points.');
+      p.style.cssText = 'font-size:13px;line-height:1.5;margin:8px 0 0';
+      rt.appendChild(p);
+    }
   }
   body.appendChild(rt); c.appendChild(body);
   c.addEventListener('toggle', () => { if(c.open) track('results_day_open', { kind: d.kind }); });

@@ -1443,6 +1443,7 @@ async function latestClosedDrop(ts = null) {
 async function asyncProgress(participant, session) {
   const h = await asyncHandled(participant, session);
   return { progress: { voted: h.voted, reported: h.reported, handled: h.handled, total: h.total,
+    finished: h.total > 0 && h.handled >= h.total,
     eligible: h.total >= ASYNC_MIN_FOR_BONUS, reportsLeft: reportsLeftFor(h) } };
 }
 
@@ -1458,22 +1459,63 @@ const DROP_REPORT_CAP = 3;
 function reportCapFor(total) { return Math.min(DROP_REPORT_CAP, Math.max(0, Number(total) - 1)); }
 function reportsLeftFor(h) { return Math.max(0, reportCapFor(h.total) - h.reportsTotal); }
 
-// Pay the completion bonus for finishing the day. Idempotent by construction.
+// THE COMPLETION BONUS = ONE MORE RECORD AT YOUR OWN AVERAGE (operator, 2026-10-31).
+// Finish every record in the drop before the close and the bonus is your average points per
+// rated round on that drop, rounded, floored at 0. No tiers and no clock: 92% of finishers rate
+// the whole drop in one sitting and nothing downstream benefits from an early finish, so paying
+// for speed was paying for nothing. The rule is derived rather than chosen — "rate every record
+// and we count one more at your average" — and it can never reorder two finishers (both scale
+// by the same factor); it only sets the gap between finishing and skipping.
 //
-// THE TIER COMES FROM WHEN THEY FINISHED, not from now(). Inline (at their final action) those
-// are the same instant; in a sweep they are not, and a noon sweep must never pay 25 to someone
-// who actually finished at 2PM. One rule, both callers.
+// PAID AT THE TALLY, not at the finish instant: votes.points on a drop do not exist until the
+// close, so the average cannot be known earlier. A finisher sees "paid with your results".
 //
-// point_events has UNIQUE (reason, source_uid, milestone), so the session x user pair has to
-// live in source_uid: a bare uid would pay once EVER, a bare session id would pay once per day
-// across all users. milestone is a literal 1 and deliberately NOT the tier — two racing inserts
-// that computed different tiers would differ in milestone, defeat the index, and pay twice.
-async function maybeAwardCompletionBonus(participant, session, atTs = null) {
+// point_events has UNIQUE (reason, source_uid, milestone), so the session x user pair lives in
+// source_uid: a bare uid would pay once EVER, a bare session id once per day across all users.
+// milestone is a literal 1 — two racing inserts must collide on the index, not both pay.
+function completionBonusFor(sumPoints, rated) {
+  const n = Number(rated) || 0;
+  if (n <= 0) return 0;
+  return Math.max(0, Math.round((Number(sumPoints) || 0) / n));
+}
+
+// FORWARD-ONLY. The flat tiers (100/75/50/25 by finish time, 034–048) were paid INLINE, the
+// moment an A&R finished — so a drop that was open when this shipped may already hold flat rows.
+// Such a drop finishes under the flat rule, so one day is never paid two ways; a drop with no
+// pre-close row is paid by the average rule. Past rows are never touched (CLAUDE.md #1 rule).
+// Decided once per drop, at the tally. Once every pre-switch drop has published this branch is
+// dead code and can go.
+const LEGACY_FLAT_BONUS = Object.freeze({
+  tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 16, points: 75 }, { hours: 21, points: 50 }]),
+  finalPoints: 25,
+});
+async function completionBonusMode(session) {
+  const closes = Number(session.window_closes_at) || 0;
+  if (!closes) return 'average';
+  const legacy = await db.get(
+    "SELECT 1 AS x FROM point_events WHERE reason = 'async_complete' AND substr(source_uid, 1, ?) = ? AND created_at < ? LIMIT 1",
+    [session.id.length + 1, session.id + ':', closes]);
+  return legacy ? 'flat' : 'average';
+}
+
+async function maybeAwardCompletionBonus(participant, session, { mode = 'average', atTs = null } = {}) {
   if (!participant.user_id) return null;   // the bonus ledger is user-level
   const h = await asyncHandled(participant, session);
   if (h.total < ASYNC_MIN_FOR_BONUS) return null;
   if (h.handled < h.total) return null;
-  const pts = completionBonusPoints(session, atTs != null ? atTs : (h.last || now()), await dailySchedule());
+  let pts;
+  if (mode === 'flat') {
+    pts = completionBonusPoints(session, atTs != null ? atTs : (h.last || now()));
+  } else {
+    // The average rule needs every round scored. Before the tally there is nothing to average.
+    const open = await db.get(
+      "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed')", [session.id]);
+    if (Number(open.c)) return null;
+    const mine = await db.get(
+      `SELECT COALESCE(SUM(v.points), 0) AS s, COUNT(*) AS n FROM votes v JOIN rounds r ON r.id = v.round_id
+        WHERE v.participant_id = ? AND r.session_id = ? AND r.status = 'ratified'`, [participant.id, session.id]);
+    pts = completionBonusFor(mine.s, mine.n);
+  }
   const ins = await db.run(
     `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
      VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
@@ -1594,10 +1636,16 @@ async function awardLiveCompletion(session) {
 // Deleting a zero-vote record shrinks the day — which instantly STRANDS anyone already at
 // n-1, because the award only ever runs inside /api/vote. Bounded by room size and only ever
 // host- or cron-triggered, never on the boot or request path.
-async function sweepCompletionBonuses(session) {
+// Also THE award path for the average rule: the tally calls it once every round has ratified.
+// Bounded by the day's participants (tens), inside the cron, never on boot or a request.
+async function sweepCompletionBonuses(session, { deadline = null } = {}) {
+  const mode = await completionBonusMode(session);
   const ps = await db.all('SELECT * FROM participants WHERE session_id = ? AND verified = 1', [session.id]);
   let paid = 0;
-  for (const p of ps) if (await maybeAwardCompletionBonus(p, session)) paid++;   // no atTs: each A&R at their OWN last-vote tier
+  for (const p of ps) {
+    if (deadline && Date.now() > deadline) break;   // idempotent: the next tick finishes the rest
+    if ((await maybeAwardCompletionBonus(p, session, { mode })) != null) paid++;
+  }
   return paid;
 }
 
@@ -1762,6 +1810,10 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       const stillOpen = (await db.get(
         "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed')", [s.id])).c;
       if (!Number(stillOpen)) {
+        // Every record is scored, so each finisher's average exists: pay the completion bonus
+        // HERE, before the seal flip, so a crash or a budget break re-runs it on the next tick.
+        try { out.bonusPaid = (out.bonusPaid || 0) + await sweepCompletionBonuses(s, { deadline: Date.now() + Math.max(0, left() - 3000) }); }
+        catch (e) { console.error('[daily] completion bonus failed:', e.message); }
         const sealed = await db.run("UPDATE sessions SET async_state = 'ratified' WHERE id = ? AND async_state = 'closing'", [s.id]);
         if (sealed.changes) {
           const n = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [s.id])).c;
@@ -2782,15 +2834,9 @@ async function asyncPlayerState(participant, session, count) {
     return item;   // note: no room_average, no counts, no other votes. See the seal note above.
   });
 
-  // Tiers are SERVER-computed and shipped as resolved epochs + a label. The client must never
-  // derive the tier from its own clock: a timezone bug would promise money the server won't
-  // pay, on a cash-prize board.
   const day = session.drop_day;
-  // Every label is a bare wall-clock string so a caller can put its own word in front of
-  // it ("until 3:00 PM ET", "Before 3:00 PM ET"). The last tier used to read "before the
-  // window closes", which rendered as "Before before the window closes".
-  const tiers = completionTiers(session, await dailySchedule());
-  const nextTier = tiers.find(t => t.at != null && ts < t.at) || null;
+  // The completion bonus is paid at the tally (see maybeAwardCompletionBonus), so during the
+  // window `earned` is null even for a finished day; `finished` is what the surface shows then.
   const earned = await db.get(
     "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?",
     [`${session.id}:${participant.user_id || ''}`]);
@@ -2800,7 +2846,7 @@ async function asyncPlayerState(participant, session, count) {
     mode: 'async',
     // Every LABEL here is server-rendered for the same reason the tiers are: the surface
     // must never turn an epoch into ET wall-clock with the browser's own timezone.
-    async: { day, opens_at: opens, closes_at: closes, results_at: results, tiers,
+    async: { day, opens_at: opens, closes_at: closes, results_at: results,
       dayLabel: etDayLabel(day), opensLabel: etClockLabel(opens),
       closesLabel: etClockLabel(closes), resultsLabel: etClockLabel(results),
       closesWhen: etWhenLabel(closes, day), resultsWhen: etWhenLabel(results, day),
@@ -2836,10 +2882,9 @@ async function asyncPlayerState(participant, session, count) {
       eligible: total >= ASYNC_MIN_FOR_BONUS,
       reportsLeft: Math.max(0, reportCapFor(total) - reportsTotal),
       reportCap: reportCapFor(total),
+      finished: total > 0 && handled >= total,
       earned: earned ? Number(earned.points) : null,
-      nextTierAt: nextTier ? nextTier.at : null,
-      nextTierPoints: nextTier ? nextTier.points : null,
-      nextTierLabel: nextTier ? nextTier.label : null },
+      bonusRule: 'average' },
     // The comment cap lives on the server (COMMENT_MAX). Shipping it means the surface never
     // carries a second copy that can drift from what the server actually enforces.
     commentMax: COMMENT_MAX,
@@ -2859,6 +2904,10 @@ async function asyncPlayerState(participant, session, count) {
   if (phase === 'recap') {
     out.recap = await buildRecap(participant, { detail: true });
     out.recap.completionBonus = earned ? Number(earned.points) : null;
+    // For the results line: "You averaged N points per round & completed all rounds" or
+    // "finishing the drop would have added N" — the same number either way.
+    out.recap.finished = total > 0 && handled >= total;
+    out.recap.bonusAvg = recapBonusAvg(out.recap);
     out.rank = out.recap.rank;
   }
   return out;
@@ -4068,6 +4117,26 @@ function digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours }) {
 const DIGEST_IG_URL = 'https://www.instagram.com/makinit4indies/';
 const DIGEST_IG_LABEL = 'See the Top Tracks on Instagram';
 
+// The completion-bonus sentence under an A&R's rounds (results screen, digest, My results).
+// Finished: the operator's wording. Not finished: what finishing would have added — the same
+// number, their own average — so the miss is concrete for the next drop. Nothing when they
+// averaged 0 or less (there is no bonus to have missed) or rated nothing.
+function recapBonusAvg(recap) {
+  const rounds = (recap && recap.rounds) || [];
+  if (!rounds.length) return null;
+  return completionBonusFor(rounds.reduce((a, r) => a + (Number(r.points) || 0), 0), rounds.length);
+}
+function completionLineText(recap) {
+  if (!recap || recap.bonusAvg == null) return '';
+  const n = (recap.rounds || []).length, total = Number(recap.totalRounds) || n;
+  if (recap.finished) {
+    const paid = recap.completionBonus != null ? recap.completionBonus : recap.bonusAvg;
+    return `You averaged ${recap.bonusAvg} points per round & completed all rounds. So you get a bonus of ${paid} Points.`;
+  }
+  if (recap.bonusAvg <= 0) return '';
+  return `You rated ${n} of ${total} rounds and averaged ${recap.bonusAvg} points per round. Finishing the drop would have added ${recap.bonusAvg} bonus points.`;
+}
+
 function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, streamUrl, resultsUrl, closesLabel, closesInHours, cardUrl = null }) {
   const ex = digestExtras({ streamUrl, resultsUrl, closesLabel, closesInHours });
   const common = `<a href="${DIGEST_IG_URL}" style="display:block;border:1px solid #2e2750;color:#f3f0fb;text-decoration:none;font-weight:700;font-size:14px;padding:12px;border-radius:13px;margin:4px 0 0">${DIGEST_IG_LABEL}</a>`;
@@ -4107,10 +4176,11 @@ function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, s
         ${stat('Grade', recap.grade || '—')}
         ${stat('Bullseyes', recap.bullseyes || 0)}
       </tr></table>
-      ${recap.completionBonus ? `<table role="presentation" width="100%" style="margin-top:8px"><tr>
+      ${recap.completionBonus != null ? `<table role="presentation" width="100%" style="margin-top:8px"><tr>
         <td style="padding:11px 0 0;border-top:1px solid #2e2750;font-size:13.5px;font-weight:700;color:#f3f0fb;text-align:left">Completion bonus</td>
         <td align="right" style="padding:11px 0 0;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:#f5c518">+${recap.completionBonus}</td>
       </tr></table>` : ''}
+      ${completionLineText(recap) ? `<p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:14px 0 0;text-align:left">${escapeHtml(completionLineText(recap))}</p>` : ''}
       <p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:16px 0 0;text-align:left">You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.</p>
       ${ex.resultsUrl ? `<a href="${ex.resultsUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin:14px 0 0">See your results</a>` : ''}`;
   }
@@ -4152,7 +4222,8 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
     const n = recap.rounds.length;
     lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Bullseyes ${recap.bullseyes || 0}`);
     if (cardUrl) lines.push(`Your grade card: ${cardUrl}`, `Want to post it? Download it from your results page and we'll collab with you on Instagram.`);
-    if (recap.completionBonus) lines.push(`Completion bonus: +${recap.completionBonus}`);
+    if (recap.completionBonus != null) lines.push(`Completion bonus: +${recap.completionBonus}`);
+    if (completionLineText(recap)) lines.push(completionLineText(recap));
     lines.push('', `You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.`);
     if (ex.resultsUrl) lines.push(`See your results: ${ex.resultsUrl}`);
   }
@@ -4369,6 +4440,9 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
         const earned = await db.get(
           "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [`${sessionId}:${r.uid}`]);
         recap.completionBonus = earned ? Number(earned.points) : null;
+        const h = await asyncHandled(participant, session);
+        recap.finished = h.total > 0 && h.handled >= h.total;
+        recap.bonusAvg = recapBonusAvg(recap);
       }
       const u = await db.get('SELECT name FROM users WHERE uid = ?', [r.uid]);
       const manage = notifyManageUrl(base || publicBase(), r.uid);
@@ -4414,12 +4488,12 @@ async function enqueueDailyOpen(session) {
     "A&R Daily — today's records are open", `A&R Daily open for ${session.drop_day || ''}`);
 }
 
-function dailyOpenEmailContent({ name, count, closesLabel, bonusLabel, playUrl }) {
+function dailyOpenEmailContent({ name, count, closesLabel, playUrl }) {
   const who = name ? dispName(name) + ', t' : 'T';
   const lead = `${who}oday's ${count ? count + ' ' : ''}${count === 1 ? 'record is' : 'records are'} open for rating.`;
   const how = 'Rate each one and predict the room average.';
   const when = closesLabel ? `Rating closes ${closesLabel}.` : '';
-  const bonus = bonusLabel ? `Finish every record ${bonusLabel} for the full completion bonus.` : '';
+  const bonus = 'Rate every record before the close and your average round is added as a completion bonus.';
   return { lead, lines: [how, when, bonus].filter(Boolean), playUrl };
 }
 function dailyOpenEmailHtml(arg, manage) {
@@ -4455,11 +4529,8 @@ async function drainDailyOpen({ sessionId, limit = 40, deadline = null, base = n
   const root = base || publicBase();
   const count = Number((await db.get(
     "SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified')", [sessionId])).c) || 0;
-  const tiers = completionTiers(session, await dailySchedule());
-  const top = tiers.length > 1 ? tiers[0] : null;
   const shared = { dayLabel: dailyDayLabel(session.drop_day, dropNoOf(session)), count,
     closesLabel: etWhenLabel(Number(session.window_closes_at), session.drop_day),
-    bonusLabel: top && top.label ? 'by ' + top.label : null,
     playUrl: root + '/daily?s=' + encodeURIComponent(sessionId) };
   const rows = await db.all(
     "SELECT * FROM notify_recipients WHERE broadcast_id = ? AND status = 'pending' LIMIT ?", [bc.id, limit]);
@@ -4643,22 +4714,18 @@ function etWhenLabel(ts, fromDay) {
 //
 // The stream and results are a DAY OFFSET after the close day plus an ET minute-of-day, never
 // "close + 24h": the window crosses DST (see etEpoch), and a duration would drift an hour.
-// Completion bonus: 100 for finishing every record within 6 hours of the open (by midnight),
-// 75 within 16 (by 10 AM — the old 12-hour step fell at 6 AM, inside the dead zone, so it
-// paid nobody the 12-hour step did not), 50 within 21 (by 3 PM), 25 any time before the
-// close. The tiers are HOURS AFTER THE OPEN.
+// The completion bonus is NOT a schedule setting any more (2026-10-31): it is the A&R's own
+// average per rated round on the drop, paid at the tally — see completionBonusFor. The old
+// `daily_bonus_tiers` row is ignored on read and deleted on the next panel save.
 //
 // Overrides live in `settings` (daily_open_min / daily_close_min / daily_stream_min /
 // daily_results_min as ET minutes-of-day, daily_stream_days / daily_results_days as days after
-// the close day, daily_bonus_tiers as JSON) and are read through dailySchedule(), cached per
-// instance for 30s. A closing time at or before the opening time means the NEXT day. Order is
+// the close day) and are read through dailySchedule(), cached per instance for 30s. A closing time at or before the opening time means the NEXT day. Order is
 // clamped: close <= stream <= results.
 const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
   openMin: 18 * 60, closeMin: 18 * 60,
   streamMin: 18 * 60, streamDays: 0,      // the carousels render at the close, as soon as the tally finishes
   resultsMin: 6 * 60, resultsDays: 1,     // results publish 6:00 AM the day after the close (36h) — when the countdown posts
-  tiers: Object.freeze([{ hours: 6, points: 100 }, { hours: 16, points: 75 }, { hours: 21, points: 50 }]),
-  finalPoints: 25,
   // Minutes after publish before the EMAILS go: the A&R results mail and the artists' Track
   // Reports both wait this long (540 = 3:00 PM after a 6:00 AM publish). The Instagram posts
   // go first, on purpose: the carousel is the reveal; the mail is the follow-up.
@@ -4703,24 +4770,8 @@ function parseDailySchedule(inp) {
   }
   const windowHours = ((cfg.closeMin > cfg.openMin ? cfg.closeMin : cfg.closeMin + 1440) - cfg.openMin) / 60;
   if (windowHours < 1) throw new Error('The window must be at least one hour');
-  const rawTiers = inp.tiers === undefined ? D.tiers : inp.tiers;
-  if (!Array.isArray(rawTiers) || rawTiers.length > 4) throw new Error('tiers must be a list of at most 4 steps');
-  const pts = (v, name) => {
-    const n = Number(v);
-    if (!Number.isInteger(n) || n < 0 || n > 1000) throw new Error(`${name} must be whole points, 0–1000`);
-    return n;
-  };
-  const tiers = []; let last = 0;
-  rawTiers.forEach((t, i) => {
-    const hours = Number(t && t.hours);
-    if (!Number.isFinite(hours) || hours <= last || hours >= windowHours) {
-      throw new Error(`Bonus step ${i + 1}: hours must increase and stay inside the ${windowHours}-hour window`);
-    }
-    tiers.push({ hours, points: pts(t.points, `Bonus step ${i + 1} points`) });
-    last = hours;
-  });
-  cfg.tiers = tiers;
-  cfg.finalPoints = pts(inp.finalPoints ?? D.finalPoints, 'The before-close bonus');
+  // `tiers` / `finalPoints` from an older panel are accepted and ignored: the bonus is no
+  // longer a setting (see completionBonusFor).
   const delay = Number(inp.artistDelayMin ?? D.artistDelayMin);
   if (!Number.isInteger(delay) || delay < 0 || delay > 24 * 60) throw new Error('The artist report hold must be whole minutes, 0–1440');
   cfg.artistDelayMin = delay;
@@ -4745,16 +4796,14 @@ let _dailySched = { at: 0, cfg: null };
 async function dailySchedule() {
   if (_dailySched.cfg && Date.now() - _dailySched.at < 30000) return _dailySched.cfg;
   const D = DAILY_SCHEDULE_DEFAULTS;
-  let cfg = { ...D, tiers: D.tiers.map(t => ({ ...t })) };
+  let cfg = { ...D };
   try {
     const rows = await db.all(`SELECT k, v FROM settings WHERE k IN (${DAILY_SCHEDULE_KEYS.map(() => '?').join(',')})`, DAILY_SCHEDULE_KEYS);
     const m = Object.fromEntries(rows.map(r => [r.k, r.v]));
-    let tiers = D.tiers, finalPoints = D.finalPoints;
-    if (m.daily_bonus_tiers) { const j = JSON.parse(m.daily_bonus_tiers); tiers = j.tiers; finalPoints = j.finalPoints; }
     const parsed = parseDailySchedule({ openMin: m.daily_open_min ?? D.openMin, closeMin: m.daily_close_min ?? D.closeMin,
       streamMin: m.daily_stream_min ?? D.streamMin, streamDays: m.daily_stream_days ?? D.streamDays,
       resultsMin: m.daily_results_min ?? D.resultsMin, resultsDays: m.daily_results_days ?? D.resultsDays,
-      tiers, finalPoints, artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin,
+      artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin,
       adminGraceMin: m.daily_admin_grace_min ?? D.adminGraceMin });
     if (parsed.cfg) cfg = parsed.cfg;
   } catch (e) { console.error('[daily] schedule setting unreadable, using defaults:', e.message); }
@@ -4795,18 +4844,6 @@ function dropStreamAt(session, sched = DAILY_SCHEDULE_DEFAULTS) {
   return session && session.drop_day ? dropWindowFor(session.drop_day, sched).streamAt : null;
 }
 
-// The bonus steps for ONE day as resolved epochs + labels, for the player surface. Steps that
-// would fall past the close are dropped; the before-close step is always last.
-function completionTiers(session, sched = DAILY_SCHEDULE_DEFAULTS) {
-  const opens = Number(session.window_opens_at) || 0, closes = Number(session.window_closes_at) || 0;
-  const day = session.drop_day;
-  const lab = (t) => etClockLabel(t) + (day && etDay(t) !== day ? ' tomorrow' : '');
-  const tiers = sched.tiers.map(t => ({ at: opens + t.hours * 3600000, points: t.points }))
-    .filter(t => !closes || t.at < closes).map(t => ({ ...t, label: lab(t.at) }));
-  tiers.push({ at: closes || null, points: sched.finalPoints, label: closes ? lab(closes) : null });
-  return tiers;
-}
-
 // What the platform panel shows: the schedule plus human labels for a sample day.
 function dailyScheduleView(sched) {
   const day = etDay();
@@ -4816,13 +4853,12 @@ function dailyScheduleView(sched) {
     return n === 0 ? '' : n === 1 ? ' next day' : ` ${n} days later`; };
   const lab = (t) => etClockLabel(t) + after(t);
   const hrs = (t) => Math.round((t - w.opensAt) / 360000) / 10;
-  const tiers = completionTiers({ drop_day: day, window_opens_at: w.opensAt, window_closes_at: w.closesAt }, sched);
   return { ...sched, windowHours, defaults: DAILY_SCHEDULE_DEFAULTS,
     opensLabel: lab(w.opensAt), closesLabel: lab(w.closesAt), streamLabel: lab(w.streamAt), resultsLabel: lab(w.resultsAt),
     lockLabel: etClockLabel(w.opensAt - 3600000),
     tallyLabel: lab(w.closesAt + (sched.adminGraceMin || 0) * 60000),
     streamHours: hrs(w.streamAt), resultsHours: hrs(w.resultsAt),
-    tierLabels: tiers.map(t => `${t.points} before ${t.label.replace(' tomorrow', ' next day')}`) };
+    bonusRule: 'Finish every record before the close: the bonus is the A&R\'s own average points per round on the drop.' };
 }
 // A day is 4 random free records plus UP TO 12 paid, so its size is VARIABLE (4-16) and only
 // reaches 16 when the paid queue is full or backlogged. This is a sanity ceiling on a bad
@@ -4866,15 +4902,17 @@ function refuseOnDrop(res, session) {
   return true;
 }
 
+// LEGACY (flat rule, drops that opened before 2026-10-31 — see completionBonusMode).
 // The completion-bonus tier, anchored to the DROP DAY's absolute epochs. NOT minutes-of-day:
 // the window crosses midnight, so an A&R who finishes at 2:00 AM is 120 minutes into the ET
 // clock and a minutes-of-day comparison would read that as "before 3PM" and pay 100 instead
 // of 25. Callers pass the A&R's LAST VOTE time, not now() — see maybeAwardCompletionBonus.
 // Steps are HOURS AFTER THE OPEN (see DAILY_SCHEDULE_DEFAULTS), anchored to the day's own
 // window_opens_at, so they move with the schedule and never depend on the ET clock.
-function completionBonusPoints(session, ts, sched = DAILY_SCHEDULE_DEFAULTS) {
+function completionBonusPoints(session, ts, sched = LEGACY_FLAT_BONUS) {
   let opens = Number(session && session.window_opens_at) || null;
-  if (!opens && session && session.drop_day) opens = etEpoch(session.drop_day, Math.floor(sched.openMin / 60), sched.openMin % 60);
+  const D = DAILY_SCHEDULE_DEFAULTS;
+  if (!opens && session && session.drop_day) opens = etEpoch(session.drop_day, Math.floor(D.openMin / 60), D.openMin % 60);
   if (!opens) return sched.finalPoints;
   for (const t of sched.tiers) if (ts < opens + t.hours * 3600000) return t.points;
   return sched.finalPoints;   // any time before the close; the close itself is the vote guard's job
@@ -5311,11 +5349,15 @@ async function arResultsData(uid, weekDay) {
     const bonusRow = isDaily ? await db.get(
       "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [`${sess.id}:${uid}`]) : null;
     const bonus = bonusRow ? Number(bonusRow.points) || 0 : 0;
+    // A finished day always holds a row (even at +0), so the row IS the finished flag; the
+    // average is what finishing paid or would have paid — see completionLineText.
+    const votePts = mine.reduce((a, m) => a + (Number(m.points) || 0), 0);
+    const bonusAvg = isDaily ? completionBonusFor(votePts, mine.length) : null;
     const dayAccs = mine.map(m => roundAccuracy(m.err, m.poll_type === 'binary' ? 100 : 9)).filter(a => a != null);
     accs.push(...dayAccs);
     const num = (v) => (v == null ? null : Number(v));
     days.push({ ...base, state: 'published', total: rows.length, rated: mine.length,
-      points: mine.reduce((a, m) => a + (Number(m.points) || 0), 0) + bonus, bonus,
+      points: votePts + bonus, bonus, finished: isDaily ? !!bonusRow : null, bonusAvg,
       grade: dayAccs.length ? gradeForAccuracy(dayAccs.reduce((a, b) => a + b, 0) / dayAccs.length) : null,
       bullseyes: mine.filter(m => m.tier === 'bullseye').length,
       // Every record of a day they played, their own row filled where they rated it. The day is
@@ -8978,12 +9020,10 @@ async function handleApi(req, res, url) {
       [id(9), round.id, participant.id, t, pr, now()]);
     await creditReferral(participant);
     if (isAsync(session)) {
-      // Awarded the moment the day is finished, so the tier reflects when they actually
-      // finished rather than whenever a sweep happens to run. Two indexed COUNTs — bounded
-      // and constant, not row-count-scaling, so this stays off the #1 rule's radar.
-      const bonus = await maybeAwardCompletionBonus(participant, session);
+      // The completion bonus is paid at the tally (the average rule needs scored rounds), so
+      // the response carries progress only; `progress.finished` is what the done screen reads.
       const prog = await asyncProgress(participant, session);
-      return send(res, 200, { locked: true, bonus, ...prog });
+      return send(res, 200, { locked: true, ...prog });
     }
     return send(res, 200, { locked: true });
   }
@@ -9044,9 +9084,8 @@ async function handleApi(req, res, url) {
     const c = (await db.get('SELECT COUNT(*) AS c FROM round_reports WHERE round_id = ?', [round.id])).c;
     const out = { ok: true, reports: Number(c) || 0 };
     if (isAsync(session)) {
-      // A report can be the last thing standing between an A&R and a finished day, so the
-      // bonus is evaluated here too — same helper, same idempotency, same tier rule.
-      out.bonus = await maybeAwardCompletionBonus(participant, session);
+      // A report can be the last thing standing between an A&R and a finished day; the bonus
+      // itself is paid at the tally, so only progress (with `finished`) is returned here.
       Object.assign(out, await asyncProgress(participant, session));
     }
     return send(res, 200, out);
@@ -9716,7 +9755,7 @@ async function handleApi(req, res, url) {
         await setOrClear('daily_stream_days', String(c.streamDays));
         await setOrClear('daily_results_min', String(c.resultsMin));
         await setOrClear('daily_results_days', String(c.resultsDays));
-        await setOrClear('daily_bonus_tiers', JSON.stringify({ tiers: c.tiers, finalPoints: c.finalPoints }));
+        await db.run('DELETE FROM settings WHERE k = ?', ['daily_bonus_tiers']);   // retired 2026-10-31
         await setOrClear('daily_artist_delay_min', String(c.artistDelayMin));
         await setOrClear('daily_admin_grace_min', String(c.adminGraceMin));
       }
@@ -12760,6 +12799,10 @@ module.exports._weeklyReportData = weeklyReportData;
 module.exports._etDay = etDay;
 module.exports._asyncQueueOrder = asyncQueueOrder;
 module.exports._completionBonusPoints = completionBonusPoints;
+module.exports._completionBonusFor = completionBonusFor;
+module.exports._completionBonusMode = completionBonusMode;
+module.exports._sweepCompletionBonuses = sweepCompletionBonuses;
+module.exports._completionLineText = completionLineText;
 module.exports._dropWindowFor = dropWindowFor;
 module.exports._DAILY_SCHEDULE_DEFAULTS = DAILY_SCHEDULE_DEFAULTS;
 module.exports._liveVoteResult = liveVoteResult;
