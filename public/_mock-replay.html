@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>MOCKUP · Replay the Day · The A&R Team</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* ============================================================================
+   MOCKUP (2026-10-31) — "Replay the Day". NOT app code: static data, no API.
+
+   What it is (operator, 2026-10-31): any A&R replays a PUBLISHED drop's unrated records for
+   practice. Rate → predict → lock → instant result against that day's real average. Nothing
+   is stored in votes, no points are ever awarded. A&Rs may replay the last `replay_days`
+   days (platform setting, default 7); admins any drop. No comment box on a replay round.
+
+   NO NEW PAGES. Replay rides the existing daily page (/daily?s=<drop>&replay=1) in a
+   "replay" state, exactly as demo mode does today for admins. What is added:
+     1  My results — a Replay button on a missed day, and on a played day with skipped records
+     2  the daily page's results screen — the Replay the Day panel
+     3  the daily page in replay — the banner (practice only), the same rating steps, no note box
+     4  the replay result after lock-in — average, your two numbers, what it would have paid
+     5  replay finished — the day's as-if total, grade and the positive-framed standing
+     6  the "you missed yesterday's drop" email — a second button
+     7  Platform panel — the replay window setting
+   ============================================================================ */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:24px 20px 60px}
+.mono{font-family:"Space Mono",ui-monospace,monospace}
+.dim{color:var(--ink-dim)}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em}
+a{color:var(--signal);text-decoration:none}
+.head{max-width:1200px;margin:0 auto 22px}
+.head h1{font-size:26px}
+.head p{margin:8px 0 0;color:var(--ink-dim);font-size:14px;line-height:1.55;max-width:760px}
+.row{display:flex;gap:28px;overflow-x:auto;padding-bottom:20px;align-items:flex-start}
+.shot{flex:none;width:390px}
+.cap{margin-bottom:12px;min-height:118px}
+.cap .n{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--signal);margin-bottom:6px}
+.cap p{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
+.cap b{color:var(--ink)}
+.phone{background:var(--bg);border:1px solid var(--line);border-radius:24px;padding:20px 18px 26px;display:flex;flex-direction:column;gap:14px;min-height:560px}
+
+.mark{width:30px;height:30px;background:var(--signal);transform:skewX(-13deg);flex:none;display:flex;align-items:center;justify-content:center}
+.mark span{transform:skewX(13deg);font-weight:900;font-size:10.5px;letter-spacing:-.02em;color:var(--bg)}
+.tick{display:block;width:3px;height:12px;transform:skewX(-13deg);flex:none;background:var(--signal)}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.wordmark{font-weight:800;font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+.standing{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:5px 11px;white-space:nowrap}
+.standing b{color:var(--ink)}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.section-head{display:flex;align-items:center;gap:9px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:14px}
+.panel h2{font-size:20px;line-height:1.15}
+.panel p{margin:0;font-size:13.5px;line-height:1.5;color:var(--ink-dim)}
+.panel p b{color:var(--ink)}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;border:0;border-radius:13px;padding:15px;font-family:inherit;font-weight:800;font-size:15px;background:var(--signal);color:var(--bg)}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink-dim);font-weight:600}
+.btn.outline{background:transparent;border:1px solid var(--signal);color:var(--signal)}
+.btn.sm{padding:9px 13px;font-size:12.5px;width:auto;border-radius:10px}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tab{padding:11px 13px 12px;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--ink);border-bottom-color:var(--signal)}
+
+/* My results day rows (public/account.html) */
+.day{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.day .hd{display:flex;align-items:center;gap:10px;padding:14px}
+.day .when{flex:1;min-width:0}
+.day .when b{display:block;font-size:15px;font-weight:800;letter-spacing:-.02em}
+.day .when small{display:block;font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);margin-top:3px}
+.day .pts{font-family:"Space Mono",monospace;font-size:16px;font-weight:700;color:var(--signal)}
+.day .grade{font-family:"Space Mono",monospace;font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:8px;padding:4px 7px;min-width:30px;text-align:center}
+.day .chev{font-family:"Space Mono",monospace;color:var(--ink-dim);font-size:13px}
+.day.missed{background:transparent}
+.day.missed .when b{color:var(--ink-dim)}
+.day .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 14px 14px}
+.day .foot small{font-family:"Space Mono",monospace;font-size:10.5px;color:var(--ink-dim);line-height:1.45}
+.day .foot small b{color:var(--ink);display:block}
+.legend{font-family:"Space Mono",monospace;font-size:10px;color:var(--ink-dim);line-height:1.6}
+
+/* daily page bits (public/daily.html) */
+.rp{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--panel);border-radius:var(--r-md);padding:10px 13px}
+.rp .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-dim);flex:none}
+.rp .t{font-size:12.5px;line-height:1.45}
+.rp .t b{font-weight:800}
+.rp .x{margin-left:auto;font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);white-space:nowrap}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:12px}
+.rec .idx{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
+.rec h2{font-size:22px;line-height:1.1;margin-top:4px}
+.rec .by{font-size:14px;color:var(--ink-dim);margin-top:4px}
+.player{height:46px;border-radius:12px;background:var(--inset);border:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 12px;font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim)}
+.player i{display:block;width:0;height:0;border-left:9px solid var(--signal);border-top:6px solid transparent;border-bottom:6px solid transparent}
+.player .bar{flex:1;height:4px;border-radius:2px;background:var(--line);position:relative}
+.player .bar b{position:absolute;left:0;top:0;height:100%;width:38%;background:var(--signal);border-radius:2px}
+.mine{display:flex;gap:10px}
+.mine>div{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center}
+.mine .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim)}
+.mine .v{font-family:"Space Mono",monospace;font-size:30px;font-weight:700;margin-top:4px;line-height:1}
+.mine .v.g{color:var(--accent)}
+.result{border:1px solid var(--signal);border-radius:var(--r-lg);padding:16px;background:rgba(75,183,73,.05)}
+.result .lbl{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim);text-align:center}
+.result .avg{font-family:"Space Mono",monospace;font-size:64px;font-weight:700;line-height:1;color:var(--signal);text-align:center;margin-top:6px}
+.result .mean{text-align:center;font-weight:800;font-size:16px;margin-top:4px}
+.result .scale{position:relative;height:36px;margin:16px 4px 0}
+.result .scale .bar{position:absolute;left:0;right:0;top:14px;height:6px;border-radius:3px;background:var(--line)}
+.result .scale .mk{position:absolute;top:6px;width:3px;height:22px;border-radius:2px;transform:translateX(-50%)}
+.result .scale .mk.p{background:var(--accent)} .result .scale .mk.g{background:var(--signal)}
+.result .scale .span{position:absolute;top:14px;height:6px;background:rgba(109,95,224,.5)}
+.result .scale .num{position:absolute;top:28px;transform:translateX(-50%);font-family:"Space Mono",monospace;font-size:9px;color:var(--ink-faint)}
+.result .big{display:flex;gap:10px;margin-top:14px}
+.result .big>div{flex:1;border-radius:12px;padding:12px;text-align:center;background:var(--inset);border:1px solid var(--line)}
+.result .big .k{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-dim)}
+.result .big .v{font-family:"Space Mono",monospace;font-size:30px;font-weight:700;margin-top:4px;line-height:1}
+.result .big .grd .v{font-family:Archivo,sans-serif;font-weight:900}
+.result .gap{text-align:center;font-size:13px;color:var(--ink-dim);margin-top:12px;line-height:1.5}
+.result .gap b{color:var(--ink)}
+.stats{display:flex;gap:8px}
+.stat{flex:1;min-width:0;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px 4px;text-align:center}
+.stat .k{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-dim)}
+.stat .v{font-family:"Space Mono",monospace;font-size:17px;font-weight:700;margin-top:6px}
+.stand{border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center;background:var(--inset)}
+.stand .n{font-family:"Space Mono",monospace;font-size:34px;font-weight:700;line-height:1;color:var(--signal)}
+.stand p{margin:6px 0 0;font-size:13px;color:var(--ink-dim);line-height:1.5}
+.stand p b{color:var(--ink)}
+.rt .r{display:flex;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.rt .h{display:flex;gap:8px;padding:0 0 6px}
+.rt .h span{font-family:"Space Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)}
+.rt .rec2{flex:1;min-width:0;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt .c{font-family:"Space Mono",monospace;font-size:12.5px;color:var(--ink-dim);text-align:center;flex:none;width:30px}
+.rt .c.a{color:var(--ink);font-weight:700;width:34px}
+.rt .c.p{width:44px;text-align:right;color:var(--ink);font-weight:700}
+
+/* email */
+.mail{background:#fff;color:#1a1626;border-radius:14px;padding:22px 20px;font-size:14px;line-height:1.55}
+.mail .pre{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#6b6684}
+.mail h2{font-size:21px;margin:10px 0 8px;color:#1a1626}
+.mail p{margin:0 0 12px;color:#4a4560}
+.mail .b{display:block;text-align:center;border-radius:12px;padding:13px;font-weight:800;margin:14px 0 0}
+.mail .b.go{background:#2F8F2E;color:#fff}
+.mail .b.alt{border:1px solid #2F8F2E;color:#2F8F2E}
+.mail small{display:block;color:#6b6684;font-size:12px;margin-top:14px;line-height:1.5}
+
+/* admin field */
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
+.field .in{display:flex;align-items:center;gap:10px}
+.field input{width:90px;background:var(--inset);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-family:"Space Mono",monospace;font-size:15px;padding:9px 12px}
+.field .u{font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-dim)}
+.field .help{font-size:12px;color:var(--ink-dim);line-height:1.5}
+.notes{max-width:1200px;margin:10px auto 0}
+.notes .panel{gap:10px;font-size:13.5px;line-height:1.55;color:var(--ink-dim)}
+.notes b{color:var(--ink)}
+.notes ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <h1>Replay the Day · mockup</h1>
+  <p>No new pages. Replay runs on the daily page in a "replay" state (the way demo mode does for admins today). What is added is three doors into it, one banner, one result card, one finish screen, one email button and one panel setting. Practice only, nothing stored in votes, no points.</p>
+</div>
+
+<div class="row">
+
+<!-- 1 My results -->
+<div class="shot">
+  <div class="cap"><div class="n">1 · My results — the main door</div><p>A missed day inside the window gets a <b>Replay the Day</b> button; it still carries no numbers. A day you played but skipped records on gets <b>Replay the 3 you skipped</b> under its results. A missed day older than the window stays as it is today: listed, closed, no button.</p></div>
+  <div class="phone">
+    <div class="topbar"><div style="display:flex;align-items:center;gap:10px"><div class="mark"><span>A&amp;R</span></div><span class="wordmark">A&amp;R Team</span></div><div class="standing"><b>#14</b> · <b>6,480</b> pts</div></div>
+    <div class="tabs"><div class="tab">Earn points</div><div class="tab on">My results</div><div class="tab">My profile</div></div>
+    <div class="section-head"><span class="tick"></span><span class="eyebrow">Day by day</span></div>
+
+    <div class="day">
+      <div class="hd"><div class="when"><b>Daily Drop #55 · Nov 1</b><small>Fri · rated 9 of 12</small></div><span class="pts">+612</span><span class="grade">B+</span><span class="chev">›</span></div>
+      <div class="foot"><small>3 records you skipped<b>Replay them for practice</b></small><a class="btn outline sm">Replay the 3 you skipped</a></div>
+    </div>
+
+    <div class="day missed">
+      <div class="hd"><div class="when"><b>Daily Drop #54 · Oct 31</b><small>Thu · 11 records · you missed this one</small></div></div>
+      <div class="foot"><small>Practice only<b>No points awarded</b></small><a class="btn outline sm">Replay the Day</a></div>
+    </div>
+
+    <div class="day">
+      <div class="hd"><div class="when"><b>Daily Drop #53 · Oct 30</b><small>Wed · rated 12 of 12 · bonus +64</small></div><span class="pts">+896</span><span class="grade">A-</span><span class="chev">›</span></div>
+    </div>
+
+    <div class="day missed">
+      <div class="hd"><div class="when"><b>Daily Drop #46 · Oct 23</b><small>Wed · 10 records · you missed this one</small></div><span class="dim mono" style="font-size:10.5px">replay closed</span></div>
+    </div>
+    <div class="legend">Replay is open for the last 7 days.</div>
+  </div>
+</div>
+
+<!-- 2 daily results screen -->
+<div class="shot">
+  <div class="cap"><div class="n">2 · The daily page, a published day</div><p>The results screen an A&amp;R lands on from the results email. Under the day's table: the <b>Replay the Day</b> panel, shown only when there are records they did not rate and the day is inside the window. Operator's copy, then the practice line.</p></div>
+  <div class="phone">
+    <div class="topbar"><div style="display:flex;align-items:center;gap:10px"><div class="mark"><span>A&amp;R</span></div><span class="wordmark">A&amp;R Team</span></div><span class="standing">Daily Drop #55</span></div>
+    <div class="section-head"><span class="tick"></span><span class="eyebrow">Your results · Nov 1</span></div>
+    <div class="stats"><div class="stat"><div class="k">Points</div><div class="v" style="color:var(--signal)">612</div></div><div class="stat"><div class="k">Rated</div><div class="v">9/12</div></div><div class="stat"><div class="k">Bullseyes</div><div class="v">2</div></div><div class="stat"><div class="k">Grade</div><div class="v">B+</div></div></div>
+    <div class="panel rt" style="gap:0">
+      <div class="h"><span style="flex:1">Record</span><span class="c">You</span><span class="c">Guess</span><span class="c a">Avg</span><span class="c p">Pts</span></div>
+      <div class="r"><span class="rec2">Midnight Drive</span><span class="c">7</span><span class="c">6.5</span><span class="c a">6.4</span><span class="c p">100</span></div>
+      <div class="r"><span class="rec2">Say Less</span><span class="c">4</span><span class="c">5.0</span><span class="c a">5.8</span><span class="c p">50</span></div>
+      <div class="r"><span class="rec2 dim">Paper Trail</span><span class="c">—</span><span class="c">—</span><span class="c a">7.1</span><span class="c p dim">—</span></div>
+      <div class="r"><span class="rec2 dim">Hold On</span><span class="c">—</span><span class="c">—</span><span class="c a">4.9</span><span class="c p dim">—</span></div>
+    </div>
+    <div class="panel">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Replay the Day</span></div>
+      <h2>3 records you did not rate.</h2>
+      <p>Replay the Day gives you a chance to sharpen your skills by practicing on previous days' drops. Rate the songs, get instant feedback, and see how you stack up.</p>
+      <p><b>Practice only. No points are awarded.</b></p>
+      <a class="btn outline">Replay the 3 you skipped</a>
+    </div>
+    <a class="btn ghost">My past results</a>
+  </div>
+</div>
+
+<!-- 3 replay rating -->
+<div class="shot">
+  <div class="cap"><div class="n">3 · In replay — the same steps</div><p>The ordinary daily rating screen with one banner on top. Rate it → Predict the Average → Lock it in, unchanged. The averages the page already knows are <b>never shown</b> until the lock-in. <b>No note box</b> on a replay round (operator: no composer). Exit at any time.</p></div>
+  <div class="phone">
+    <div class="rp"><span class="dot"></span><span class="t"><b>Replay.</b> Daily Drop #54 · Oct 31. Practice only, no points are awarded.</span><span class="x">Exit</span></div>
+    <div class="card rec">
+      <div class="idx">Record 1 of 11</div>
+      <h2>Paper Trail</h2>
+      <div class="by">Devon Shaw · Hip-Hop · Houston, TX</div>
+      <div class="player"><i></i><div class="bar"><b></b></div>1:12 / 3:04</div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">Step 1 · Rate it</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">0</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">1</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">2</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">3</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">4</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">5</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">6</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;background:var(--signal);color:var(--bg);border-radius:10px;font-size:15px;font-weight:700">7</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">8</span><span class="mono" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--line);border-radius:10px;font-size:15px">9</span>
+      </div>
+      <div style="text-align:center;font-weight:800;font-size:15px">7 · Potential Single</div>
+      <a class="btn">Next</a>
+    </div>
+    <div class="legend">Step 2 is Predict the Average, then Lock it in — identical to the live drop.</div>
+  </div>
+</div>
+
+<!-- 4 replay result -->
+<div class="shot">
+  <div class="cap"><div class="n">4 · After lock-in — the instant result</div><p>Fires at once; no Show results press (that stays an admin thing for the stream). The day's real average, your rating (green) and prediction (purple) on the scale, <b>what the guess would have paid</b> and a round grade. The word "would" is the rule: these are not points. Then Next record.</p></div>
+  <div class="phone">
+    <div class="rp"><span class="dot"></span><span class="t"><b>Replay.</b> Daily Drop #54 · Oct 31. Practice only.</span><span class="x">Exit</span></div>
+    <div class="card rec" style="gap:4px"><div class="idx">Record 1 of 11</div><h2 style="font-size:19px">Paper Trail</h2><div class="by">Devon Shaw</div></div>
+    <div class="mine"><div><div class="k">Your rating</div><div class="v">7</div></div><div><div class="k">Your guess</div><div class="v g">6.5</div></div></div>
+    <div class="result">
+      <div class="lbl">The average that day · 38 A&amp;Rs</div>
+      <div class="avg">7.1</div>
+      <div class="mean">Potential Single</div>
+      <div class="scale">
+        <div class="bar"></div>
+        <div class="span" style="left:72.2%;width:6.7%"></div>
+        <div class="mk p" style="left:72.2%"></div>
+        <div class="mk g" style="left:78.9%"></div>
+        <span class="num" style="left:0">0</span><span class="num" style="left:50%">4.5</span><span class="num" style="left:100%">9</span>
+      </div>
+      <div class="big">
+        <div><div class="k">Would have earned</div><div class="v">75</div></div>
+        <div class="grd"><div class="k">Round grade</div><div class="v">B+</div></div>
+      </div>
+      <div class="gap">Your guess was <b>0.6 under</b> the average.</div>
+    </div>
+    <a class="btn">Next record</a>
+  </div>
+</div>
+
+<!-- 5 replay done -->
+<div class="shot">
+  <div class="cap"><div class="n">5 · Replay finished</div><p>The day as-if: total, grade, bullseyes, and the <b>positive-framed standing</b> the operator asked for: who you would have been ahead of that day. Nothing for the bottom of the field but the grade. Then the one thing the visit should end in: today's drop.</p></div>
+  <div class="phone">
+    <div class="rp"><span class="dot"></span><span class="t"><b>Replay.</b> Daily Drop #54 · Oct 31 · finished.</span></div>
+    <div class="section-head"><span class="tick"></span><span class="eyebrow">Your replay · practice only</span></div>
+    <div class="stats"><div class="stat"><div class="k">Would have earned</div><div class="v">734</div></div><div class="stat"><div class="k">Rated</div><div class="v">11/11</div></div><div class="stat"><div class="k">Bullseyes</div><div class="v">1</div></div><div class="stat"><div class="k">Grade</div><div class="v">B</div></div></div>
+    <div class="stand">
+      <div class="n">24 of 38</div>
+      <p>You would have been ahead of <b>24 of the 38 A&amp;Rs</b> who rated this drop.</p>
+    </div>
+    <div class="panel rt" style="gap:0">
+      <div class="h"><span style="flex:1">Record</span><span class="c">You</span><span class="c">Guess</span><span class="c a">Avg</span><span class="c p">Pts</span></div>
+      <div class="r"><span class="rec2">Paper Trail</span><span class="c">7</span><span class="c">6.5</span><span class="c a">7.1</span><span class="c p">75</span></div>
+      <div class="r"><span class="rec2">Hold On</span><span class="c">5</span><span class="c">4.9</span><span class="c a">4.9</span><span class="c p" style="color:var(--signal)">125</span></div>
+      <div class="r"><span class="rec2">No Ceiling</span><span class="c">6</span><span class="c">6.0</span><span class="c a">5.2</span><span class="c p">50</span></div>
+    </div>
+    <a class="btn">Rate today's drop</a>
+    <a class="btn ghost">My results</a>
+  </div>
+</div>
+
+<!-- 6 email -->
+<div class="shot">
+  <div class="cap"><div class="n">6 · The "missed yesterday" email</div><p>The existing mail, one button added under the main one. Rate today stays primary; replay is the second ask. The missed-two-in-a-row mail gets the same button.</p></div>
+  <div class="phone" style="background:var(--panel)">
+    <div class="mail">
+      <div class="pre">The A&amp;R Team</div>
+      <h2>You missed yesterday's drop, but you have time to rate the new ones now.</h2>
+      <p>Daily Drop #55 is open until 6:00 PM ET today. 12 records.</p>
+      <a class="b go">Rate today's records</a>
+      <p style="margin-top:18px">Want to see how you would have done yesterday? Replay the Day gives you a chance to sharpen your skills by practicing on previous days' drops. Rate the songs, get instant feedback, and see how you stack up. Practice only, no points are awarded.</p>
+      <a class="b alt">Replay yesterday's drop</a>
+      <small>The A&amp;R Room is live Wednesday at 7:00 PM ET. Subscribe on YouTube and hit the bell so you're notified when we go live.</small>
+    </div>
+  </div>
+</div>
+
+<!-- 7 panel -->
+<div class="shot">
+  <div class="cap"><div class="n">7 · Platform panel · System settings</div><p>One field beside the daily schedule. The window is days back from today, by the drop's publish day. 0 turns Replay off for A&amp;Rs. Admins are never capped.</p></div>
+  <div class="phone" style="min-height:0">
+    <div class="section-head"><span class="tick"></span><span class="eyebrow">Replay the Day</span></div>
+    <div class="panel">
+      <div class="field">
+        <label>Replay window</label>
+        <div class="in"><input value="7"><span class="u">days</span></div>
+        <div class="help">A&amp;Rs can replay the records they did not rate on any published drop from the last this many days. Nothing is stored and no points are awarded. 0 = off. Platform admins can replay any drop.</div>
+      </div>
+      <a class="btn sm" style="align-self:flex-start">Save</a>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="notes">
+  <div class="panel">
+    <b>How you get there, in order of how often it will happen</b>
+    <ol>
+      <li><b>My results</b> (1): the Replay button on any missed day in the window, and on a played day with skipped records. This is the door most A&amp;Rs will use, and the only one that reaches a day they were never emailed about.</li>
+      <li><b>The results email → the daily results screen</b> (2): the panel at the bottom when the day has records they did not rate.</li>
+      <li><b>The missed-yesterday email</b> (6): one extra button.</li>
+      <li><b>Admins:</b> any published drop, by its My results row or the console's daily screen (a Replay link next to the drop picker; not drawn). The stream reveal and the Track Report pager stay admin-only on the same page.</li>
+    </ol>
+    <b>Not here, on purpose:</b> no note box in replay; no rank line for the bottom of the field; no replay on the front page yet (the anonymous try-it is a separate mockup when you want it); no replay of a drop that has not published.
+  </div>
+</div>
+</body>
+</html>

@@ -1232,17 +1232,40 @@ live on anr.makinitmag.com.
   shows, nothing else). The overlay URL is listed under Stream Deck / external control. **Seal
   decision (operator): the stream reveals averages the evening before the 6AM countdown post; the
   post is promotion for the people featured. Do not re-raise.** Supersedes the 10-25 "rate the open
-  drop openly" call. No rank anywhere on the overlay (the 10-02 rule). **Demo mode** (same
-  night, operator live: "I don't care about contributing points, I'm demoing the product"): a
-  platform admin on a drop past its close and NOT in a window (tallying or tallied) walks it like
-  a player — rate, predict, Show results, the report pager — with the ratings kept in a settings
-  row (`daily_demo:<uid>:<sid>`, `demoModeFor` / `demoVotesFor`), NEVER in `votes`, so no board,
-  tally, report, email or bonus ever sees them; the reveal compares them with the round's final
-  average; `/api/me/state` ships `async.demoMode` and flags each demo rating `demo: true`. A
-  stable link, `/daily/closed`, 302s to the drop in the window (the home page only links the open
-  drop) and the open drop shows an admin-only banner to it (`async.liveReview`). Mockups:
+  drop openly" call. No rank anywhere on the overlay (the 10-02 rule). The operator's later verdict
+  (10-30): the window was "over-engineered"; what he wanted was DEMO MODE, which became Replay the
+  Day (next bullet). The window stays, set to 0. A stable link, `/daily/closed`, 302s to the drop
+  in the window, else to the latest closed drop through the replay door (`&replay=1`), and the
+  open drop shows an admin-only banner to it (`async.liveReview`). Mockups:
   `public/_mock-daily-reveal-overlay.html`, `public/_mock-daily-grace.html` (+ sample report PNGs
   in `public/_mock-assets/track-report/`).
+- **Replay the Day** (053, 2026-10-31, operator: "a mode where a person can replay the day... they
+  get immediate results against the actual scores from that day... for everyone, not just admin").
+  Any A&R replays a PUBLISHED drop's unrated records for practice: the ordinary `/daily` walk in a
+  replay state (`/daily?s=<id>&replay=1`), rate → predict → lock, and the real average comes back
+  WITH the lock-in (`/api/vote` → `{replay:true, result:{reveal,total}}`), shown after a short
+  delay with the average counting up (operator: "don't just pop up the number"). **Nothing is a
+  vote:** ratings live in `replay_votes (uid, round_id)`, which no board, tally, report, email,
+  bonus or chart reads; "would have earned" everywhere; `REPLAY_PRACTICE_LINE` ("Practice only.
+  No points are awarded.") on the banner, the offer, the mails. **No note box, no report, no bonus
+  bar** on a replay round (server refuses both: comment → "Notes go to the artist only on the live
+  drop"; `report-round` is closed with the drop for everyone but an admin in the window). **The
+  door is explicit:** a published drop is the recap unless `?replay=1` (else the results email
+  would land everyone in a walk); `/api/me/state` ships `async.replay {left, walking, admin,
+  label, intro, practiceLine}` whenever the A&R MAY replay, and the recap carries
+  `recap.replay {points, replayPoints, replayed, grade, bullseyes, rows, standing}` after a
+  replay. **Standing is positive-framed** (`replayStanding`: "ahead of N of M A&Rs who rated this
+  drop", M = the OTHER raters; the page prints the grade alone when N = 0). **Cap (operator):**
+  A&Rs replay drops whose results are within `replayDays` (schedule setting `daily_replay_days`,
+  default 7, 0 = off, panel field "Replay the Day window"); **platform admins any closed drop**,
+  tallied or tallying (the 10-29 stream demo: Show results + the report pager stay admin-only on
+  the same page; an admin on an UNPUBLISHED drop walks it without the door). `replayModeFor` is
+  the one rule; `replayJoinOpen` lets someone who never joined the drop join it now (the missed-day
+  button). **Doors:** My results (`/api/me/results` day rows carry `replay {left, url}` on a missed
+  day or a played day with records left; button "Replay the Day" / "Replay the N you skipped"),
+  the recap screen's Replay panel, and the two missed-day mails (`replayBlockHtml/Text`, under the
+  main button; absent when the window is 0). Mockup `public/_mock-replay.html` (seven screens, no
+  new pages). An anonymous front-page try-it is NOT built (operator "not committed").
 - **Tournament stream overlay** (no migration, 2026-10-25; branch `claude/wars-stream-overlay`,
   NOT merged when written). `/overlay/wars` (`public/wars-overlay.html`): an OBS browser source,
   **vertical 1080×1920 only** (the stream goes to Instagram Live / TikTok via Restream; the

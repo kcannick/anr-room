@@ -2077,45 +2077,109 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const gMine = await dDb.get('SELECT v.points, v.tier FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? AND p.email = ?', [gQ[0], 'admin@test.com']);
     ok('…and scored by the tally exactly as the reveal said', gMine && gMine.points === rv.d.state.reveal.points && gMine.tier === 'sharp', JSON.stringify([gMine, rv.d.state.reveal.points]));
     const g2 = (await call('/api/me/state', null, 'GET', GH)).d;
-    ok('after the tally the window is gone; the admin is in demo mode, not sealed', g2.phase === 'queue' && !g2.async.adminWindow && !!g2.async.demoMode, g2.phase);
+    ok('after the tally the window is gone; the admin is in replay mode, not sealed', g2.phase === 'queue' && !g2.async.adminWindow && !!g2.async.replay && g2.async.replay.admin && g2.async.replay.walking, g2.phase);
     const rvAfter = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[2] }, 'POST', GH);
     ok('…and a reveal on a record with no rating of any kind is still refused', rvAfter.status === 400);
-    // DEMO MODE: the drop is tallied; the admin walks it anyway, storing nothing.
+    // REPLAY THE DAY (053). First the admin's half: a tallied drop, walked without storing.
     const dm = (await call('/api/me/state', null, 'GET', GH)).d;
-    ok('demo: a tallied drop keeps the queue for the admin, flagged', dm.phase === 'queue' && dm.async.demoMode && /M/.test(dm.async.demoMode.closesLabel) && !dm.async.adminWindow, JSON.stringify([dm.phase, dm.async.demoMode]));
-    ok('demo: the real vote still shows as locked', dm.queue.find(q => q.id === gQ[0]).voted === true && !dm.queue.find(q => q.id === gQ[0]).demo);
-    ok('demo: nothing for anyone else', (await call('/api/me/state', null, 'GET', GA)).d.phase === 'sealed');
+    ok('replay: a tallied drop keeps the queue for the admin, flagged', dm.phase === 'queue' && dm.async.replay && /M/.test(dm.async.replay.closesLabel) && dm.async.replay.label && !dm.async.adminWindow, JSON.stringify([dm.phase, dm.async.replay]));
+    ok('replay: the real vote still shows as locked', dm.queue.find(q => q.id === gQ[0]).voted === true && !dm.queue.find(q => q.id === gQ[0]).replay);
+    ok('replay: a tallied, unpublished drop is sealed for anyone else', (await call('/api/me/state', null, 'GET', GA)).d.phase === 'sealed');
     const avgBefore = (await dDb.get('SELECT room_average FROM rounds WHERE id = ?', [gQ[1]])).room_average;
     const dv = await call('/api/vote', { roundId: gQ[1], taste: 3, predict: 7.5 }, 'POST', GH);
-    ok('demo: the admin can rate a tallied record', dv.status === 200 && dv.d.locked === true && dv.d.demo === true, JSON.stringify(dv.d));
-    ok('demo: nothing was written to votes', !(await dDb.get('SELECT 1 AS x FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? AND p.email = ?', [gQ[1], 'admin@test.com'])));
-    ok('demo: the room average is untouched', (await dDb.get('SELECT room_average FROM rounds WHERE id = ?', [gQ[1]])).room_average === avgBefore);
+    ok('replay: the admin can rate a tallied record and the result comes straight back', dv.status === 200 && dv.d.locked === true && dv.d.replay === true && dv.d.result && dv.d.result.reveal.avg === avgBefore && dv.d.result.reveal.predicted === 7.5, JSON.stringify(dv.d));
+    ok('replay: nothing was written to votes', !(await dDb.get('SELECT 1 AS x FROM votes v JOIN participants p ON p.id = v.participant_id WHERE v.round_id = ? AND p.email = ?', [gQ[1], 'admin@test.com'])));
+    ok('replay: the rating is in replay_votes', !!(await dDb.get('SELECT 1 AS x FROM replay_votes WHERE round_id = ? AND uid = ?', [gQ[1], (await dDb.get("SELECT uid FROM users WHERE email = 'admin@test.com'")).uid])));
+    ok('replay: the room average is untouched', (await dDb.get('SELECT room_average FROM rounds WHERE id = ?', [gQ[1]])).room_average === avgBefore);
     const dvBad = await call('/api/vote', { roundId: gQ[1], taste: 12, predict: 7.5 }, 'POST', GH);
-    ok('demo: a bad rating is still refused', dvBad.status === 400);
+    ok('replay: a bad rating is still refused', dvBad.status === 400);
     const dvOther = await call('/api/vote', { roundId: gQ[1], taste: 3, predict: 7.5 }, 'POST', GA);
-    ok('demo: a non-admin is still refused', dvOther.status === 400 && /time is up|not open/i.test(JSON.stringify(dvOther.d)), JSON.stringify(dvOther.d));
+    ok('replay: a non-admin cannot replay an unpublished drop', dvOther.status === 400 && /time is up|not open/i.test(JSON.stringify(dvOther.d)), JSON.stringify(dvOther.d));
     const dm2 = (await call('/api/me/state', null, 'GET', GH)).d;
-    ok('demo: the demo rating shows as locked and flagged, with the numbers', (q => q.voted && q.demo && q.myVote.taste === 3)(dm2.queue.find(q => q.id === gQ[1])));
+    ok('replay: the replay rating shows as locked and flagged, with the numbers', (q => q.voted && q.replay && q.myVote.taste === 3)(dm2.queue.find(q => q.id === gQ[1])));
+    const dCm = await call('/api/comment', { roundId: gQ[1], body: 'a note' }, 'POST', GH);
+    ok('replay: no note on a replayed record', dCm.status === 400 && /only on the live drop/.test(JSON.stringify(dCm.d)), JSON.stringify(dCm.d));
     const dRv = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[1] }, 'POST', GH);
-    ok('demo: the reveal compares the demo rating with the FINAL average', dRv.status === 200 && dRv.d.state.reveal.avg === avgBefore && dRv.d.state.reveal.rated === 3 && dRv.d.state.reveal.predicted === 7.5 && dRv.d.state.reveal.n === 2, JSON.stringify(dRv.d.state.reveal));
-    ok('demo: the day so far counts both the real and the demo rating', dRv.d.state.total.rated === 2 && dRv.d.state.total.handled === 2 && dRv.d.state.total.rows.length === 2, JSON.stringify(dRv.d.state.total));
+    ok('replay: the stream reveal compares the replay rating with the FINAL average', dRv.status === 200 && dRv.d.state.reveal.avg === avgBefore && dRv.d.state.reveal.rated === 3 && dRv.d.state.reveal.predicted === 7.5 && dRv.d.state.reveal.n === 2, JSON.stringify(dRv.d.state.reveal));
+    ok('replay: the day so far counts both the real and the replay rating', dRv.d.state.total.rated === 2 && dRv.d.state.total.handled === 2 && dRv.d.state.total.rows.length === 2, JSON.stringify(dRv.d.state.total));
     const dRp = await call('/api/admin/daily/overlay', { s: GDROP, view: 'report', roundId: gQ[1], page: 1 }, 'POST', GH);
-    ok('demo: the report pager works on a demo-rated record', dRp.status === 200 && dRp.d.state.report.page === 1);
-    ok('demo: no completion bonus from demo ratings', !(await dDb.get("SELECT 1 AS x FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [GDROP + ':' + (await dDb.get("SELECT uid FROM users WHERE email = 'admin@test.com'")).uid])));
-    // Published: the admin keeps walking while records are left; everyone else gets the recap.
-    await dDb.run("UPDATE sessions SET async_state = 'published', status = 'completed', published_at = ? WHERE id = ?", [Date.now(), GDROP]);
+    ok('replay: the report pager works on a replayed record', dRp.status === 200 && dRp.d.state.report.page === 1);
+    const gAdminUid = (await dDb.get("SELECT uid FROM users WHERE email = 'admin@test.com'")).uid;
+    ok('replay: no completion bonus from replay ratings', !(await dDb.get("SELECT 1 AS x FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [GDROP + ':' + gAdminUid])));
+
+    // Published: now everyone may replay — through the door (?replay=1), inside the window.
+    await dDb.run("UPDATE sessions SET async_state = 'published', status = 'completed', published_at = ?, results_at = ? WHERE id = ?", [Date.now(), Date.now() - 1000, GDROP]);
     const pubAdmin = (await call('/api/me/state', null, 'GET', GH)).d;
-    ok('demo: a published drop with records left still walks for the admin', pubAdmin.phase === 'queue' && !!pubAdmin.async.demoMode, pubAdmin.phase);
-    ok('demo: a published drop is the recap for everyone else', (await call('/api/me/state', null, 'GET', GA)).d.phase === 'recap');
-    const pubVote = await call('/api/vote', { roundId: gQ[2], taste: 6, predict: 6.0 }, 'POST', GH);
-    ok('demo: the last record can be demo-rated after publish', pubVote.status === 200 && pubVote.d.demo === true, JSON.stringify(pubVote.d));
-    const pubDone = (await call('/api/me/state', null, 'GET', GH)).d;
-    ok('demo: once every record is handled, the admin gets the recap like anyone', pubDone.phase === 'recap', pubDone.phase);
+    ok('replay: a published drop is the recap even for the admin until asked', pubAdmin.phase === 'recap' && pubAdmin.async.replay && pubAdmin.async.replay.left === 1 && !pubAdmin.async.replay.walking, JSON.stringify([pubAdmin.phase, pubAdmin.async.replay]));
+    const pubAdminWalk = (await call('/api/me/state?replay=1', null, 'GET', GH)).d;
+    ok('replay: ?replay=1 walks the records left', pubAdminWalk.phase === 'queue' && pubAdminWalk.async.replay.walking, pubAdminWalk.phase);
+    // An A&R who rated everything has nothing to replay: the offer carries left 0.
+    const gaRecap = (await call('/api/me/state', null, 'GET', GA)).d;
+    ok('replay: a published drop names the replay to an ordinary A&R, with nothing left', gaRecap.phase === 'recap' && gaRecap.async.replay && !gaRecap.async.replay.admin && gaRecap.async.replay.left === 0 && /Practice only/.test(gaRecap.async.replay.practiceLine) && /sharpen your skills/.test(gaRecap.async.replay.intro), JSON.stringify([gaRecap.phase, gaRecap.async.replay]));
+    // Someone who MISSED the drop (no participants row) can join it now — the missed-day button.
+    const gcRq = await call('/api/join/request', { sessionId: GDROP, email: 'grace3@test.com' });
+    ok('replay: a missed, published drop can be joined inside the replay window', gcRq.status === 200 && gcRq.d.devCode, JSON.stringify(gcRq.d));
+    const gcVr = await call('/api/join/verify', { sessionId: GDROP, email: 'grace3@test.com', code: gcRq.d.devCode, name: 'Gwen' });
+    ok('replay: …and verified', gcVr.status === 200 && gcVr.d.token, JSON.stringify(gcVr.d));
+    const GC = { 'X-Player-Token': gcVr.d.token };
+    const gcRecap = (await call('/api/me/state', null, 'GET', GC)).d;
+    ok('replay: the recap offers the whole day to someone who missed it', gcRecap.phase === 'recap' && gcRecap.async.replay && gcRecap.async.replay.left === 3 && !gcRecap.async.replay.walking, JSON.stringify([gcRecap.phase, gcRecap.async.replay]));
+    const gaWalk = (await call('/api/me/state?replay=1', null, 'GET', GC)).d;
+    ok('replay: …and walks it through the door, with the sealed flag off', gaWalk.phase === 'queue' && gaWalk.async.replay.walking && !gaWalk.async.sealed && gaWalk.queue.length === 3, JSON.stringify([gaWalk.phase, gaWalk.async.sealed]));
+    ok('replay: the queue carries no averages before the lock-in', gaWalk.queue.every(q => q.room_average === undefined));
+    const gaV = await call('/api/vote', { roundId: gQ[1], taste: 5, predict: 4.0 }, 'POST', GC);
+    ok('replay: an ordinary A&R replays a record and gets the real result', gaV.status === 200 && gaV.d.replay === true && gaV.d.result.reveal.avg === avgBefore && gaV.d.result.reveal.rated === 5 && typeof gaV.d.result.reveal.points === 'number' && gaV.d.result.total.rated === 1, JSON.stringify(gaV.d));
+    ok('replay: nothing in votes for them either', (await dDb.get('SELECT COUNT(*) AS c FROM votes v JOIN participants p ON p.id = v.participant_id WHERE p.email = ?', ['grace3@test.com'])).c === 0);
+    ok('replay: the room average is still untouched', (await dDb.get('SELECT room_average FROM rounds WHERE id = ?', [gQ[1]])).room_average === avgBefore);
+    const gaCm = await call('/api/comment', { roundId: gQ[1], body: 'a note' }, 'POST', GC);
+    ok('replay: no note for them either', gaCm.status === 400 && /only on the live drop/.test(JSON.stringify(gaCm.d)));
+    const gaV2 = await call('/api/vote', { roundId: gQ[2], taste: 6, predict: 6.0 }, 'POST', GC);
+    const gaV0 = await call('/api/vote', { roundId: gQ[0], taste: 7, predict: 7.0 }, 'POST', GC);
+    ok('replay: the other records replay too', gaV2.status === 200 && gaV2.d.replay === true && gaV0.status === 200);
+    const gaDone = (await call('/api/me/state?replay=1', null, 'GET', GC)).d;
+    ok('replay: once every record is handled, the recap carries the replay summary', gaDone.phase === 'recap' && gaDone.recap.replay && gaDone.recap.replay.replayed === 3 && gaDone.recap.replay.rated === 3 && gaDone.recap.replay.rows.filter(r => r.replay).length === 3 && gaDone.async.replay.left === 0, JSON.stringify([gaDone.phase, gaDone.recap.replay]));
+    ok('replay: the standing counts the OTHER A&Rs who rated the drop', gaDone.recap.replay.standing && gaDone.recap.replay.standing.of === 3 && gaDone.recap.replay.standing.ahead >= 0 && gaDone.recap.replay.standing.ahead <= 3, JSON.stringify(gaDone.recap.replay.standing));
+    ok('replay: without the door the recap has no replay summary', !(await call('/api/me/state', null, 'GET', GC)).d.recap.replay);
+    ok('replay: a replay pays nothing on the board', (await dDb.get("SELECT COUNT(*) AS c FROM point_events pe JOIN users u ON u.uid = pe.user_id WHERE u.email = 'grace3@test.com'")).c === 0);
+    // My results: the Replay button on the row, only while records are left.
+    const gcRes = (await call('/api/me/results', null, 'GET', GC)).d;
+    const gcRow = (gcRes.days || []).find(d => d.id === GDROP);
+    ok('replay: My results lists the missed day without a Replay button once nothing is left', gcRow && gcRow.state === 'missed' && !gcRow.replay, JSON.stringify(gcRow));
+    const ghRes = (await call('/api/me/results', null, 'GET', GH)).d;
+    const ghRow = (ghRes.days || []).find(d => d.id === GDROP);
+    ok('replay: a played day with a record left carries the Replay button', ghRow && ghRow.state === 'published' && ghRow.replay && ghRow.replay.left === 1 && ghRow.replay.url === '/daily?s=' + GDROP + '&replay=1', JSON.stringify(ghRow && ghRow.replay));
+    // The window: a drop whose results are older than replayDays is results only.
+    await dDb.run('UPDATE sessions SET results_at = ? WHERE id = ?', [Date.now() - 9 * 86400000, GDROP]);
+    const gbOld = (await call('/api/me/state?replay=1', null, 'GET', GB)).d;
+    ok('replay: outside the window an ordinary A&R gets the recap with no replay', gbOld.phase === 'recap' && !gbOld.async.replay, JSON.stringify([gbOld.phase, gbOld.async.replay]));
+    ok('replay: …and no vote', (await call('/api/vote', { roundId: gQ[2], taste: 6, predict: 6.0 }, 'POST', GB)).status === 400);
+    await dDb.run('DELETE FROM replay_votes WHERE uid = (SELECT uid FROM users WHERE email = ?)', ['grace3@test.com']);
+    ok('replay: …and no button on My results', !((await call('/api/me/results', null, 'GET', GC)).d.days.find(d => d.id === GDROP) || {}).replay);
+    ok('replay: …while the admin keeps it', !!((await call('/api/me/results', null, 'GET', GH)).d.days.find(d => d.id === GDROP) || {}).replay);
+    ok('replay: …and no join for someone new', (await call('/api/join/request', { sessionId: GDROP, email: 'grace4@test.com' })).status === 400);
+    ok('replay: the admin is never capped', (await call('/api/me/state?replay=1', null, 'GET', GH)).d.async.replay.admin === true);
+    // The setting: 0 turns it off for A&Rs.
+    await dDb.run('UPDATE sessions SET results_at = ? WHERE id = ?', [Date.now() - 1000, GDROP]);
+    await dDb.run("INSERT INTO settings (k, v) VALUES ('daily_replay_days', '0') ON CONFLICT (k) DO UPDATE SET v = excluded.v");
+    srvG._bustDailySchedule();
+    ok('replay: replayDays 0 turns it off for A&Rs', !(await call('/api/me/state?replay=1', null, 'GET', GB)).d.async.replay);
+    ok('replay: …not for the admin', !!(await call('/api/me/state?replay=1', null, 'GET', GH)).d.async.replay);
+    await dDb.run("DELETE FROM settings WHERE k = 'daily_replay_days'");
+    srvG._bustDailySchedule();
+    let rpErr = null; try { srvG._parseDailySchedule({ replayDays: 400 }); } catch (e) { rpErr = e.message; }
+    ok('the replay window setting is validated', /replay window/.test(rpErr || ''), rpErr);
+    ok('the schedule defaults to a 7-day replay window', srvG._DAILY_SCHEDULE_DEFAULTS.replayDays === 7);
+    // The missed mails carry the second button when a replay url is given, nothing otherwise.
+    const rpMail = srvG._dailyMissedEmailHtml({ name: 'Gail', playUrl: 'https://x/daily?s=1', replayUrl: 'https://x/daily?s=0&replay=1' });
+    ok('the missed mail offers the replay', /Replay yesterday&#39;s drop|Replay yesterday's drop/.test(rpMail) && rpMail.includes('https://x/daily?s=0&replay=1') && /No points are awarded/.test(rpMail), rpMail.slice(0, 200));
+    ok('…and not without a replay url', !/Replay yesterday/.test(srvG._dailyMissedEmailHtml({ name: 'Gail', playUrl: 'https://x/daily?s=1' })));
+    ok('the missed-twice mail too, in text', /Replay yesterday's drop: https:\/\/x\/daily\?s=0&replay=1/.test(srvG._dailyMissedTwiceEmailText({ name: 'Gail', playUrl: 'https://x/daily?s=1', replayUrl: 'https://x/daily?s=0&replay=1' })));
+
     await dDb.run("UPDATE sessions SET async_state = 'ratified', status = 'live', published_at = NULL WHERE id = ?", [GDROP]);
-    await dDb.run('DELETE FROM settings WHERE k LIKE ?', ['daily_demo:%']);
+    await dDb.run('DELETE FROM replay_votes');
 
     const lkNone = await fetch(base + '/daily/closed', { redirect: 'manual' });
-    ok('/daily/closed with no window goes to the latest closed drop (demo mode)', lkNone.status === 302 && lkNone.headers.get('location') === '/daily?s=' + GDROP, lkNone.headers.get('location'));
+    ok('/daily/closed with no window goes to the latest closed drop, through the replay door', lkNone.status === 302 && lkNone.headers.get('location') === '/daily?s=' + GDROP + '&replay=1', lkNone.headers.get('location'));
     // An admin on an OPEN drop is pointed at the latest closed one, flagged demo.
     const g3Ok = await call('/api/ingest/daily', { day: srvG._etNextDay(today, 2), seriesId: serId, songs: [song(77), song(78), song(79)] }, 'POST', DTOK);
     await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ? WHERE id = ?", [Date.now() - 500, Date.now() + 86400000, g3Ok.d.sessionId]);
@@ -2123,7 +2187,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const g3rq = await call('/api/join/request', { sessionId: g3Ok.d.sessionId, email: 'admin@test.com' });
     const g3vr = await call('/api/join/verify', { sessionId: g3Ok.d.sessionId, email: 'admin@test.com', code: g3rq.d.devCode, name: 'Admin' });
     const g3St = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': g3vr.d.token })).d;
-    ok('an admin on the open drop is pointed at the latest closed drop, flagged demo', g3St.async.liveReview && g3St.async.liveReview.id === GDROP && g3St.async.liveReview.demo === true, JSON.stringify(g3St.async.liveReview));
+    ok('an admin on the open drop is pointed at the latest closed drop, flagged replay', g3St.async.liveReview && g3St.async.liveReview.id === GDROP && g3St.async.liveReview.replay === true, JSON.stringify(g3St.async.liveReview));
     await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), g3Ok.d.sessionId]);
 
     // Put the schedule back so the sections below run on the defaults.

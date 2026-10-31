@@ -1332,8 +1332,8 @@ function liveVoteResult(votes, mine) {
   const acc = roundAccuracy(err, 9);
   return { avg, err, points, tier: tierForError(err), acc, grade: gradeForAccuracy(acc) };
 }
-// `demoVotes` (demo mode) are the admin's unstored ratings: they are never in `votes`, so the
-// average is the room's alone; they only count toward the walk's N of N.
+// `demoVotes` are REPLAY ratings (replay_votes): never in `votes`, so the average is the
+// room's alone; they only count toward the walk's N of N.
 async function demoHandled(participant, session, demoVotes) {
   const h = await asyncHandled(participant, session);
   const ids = Object.keys(demoVotes || {});
@@ -1375,7 +1375,8 @@ async function dailyDaySoFar(session, participant, demoVotes = {}) {
     if (!votes.length) continue;
     const r = liveVoteResult(votes, row);
     points += r.points; errSum += r.err; if (r.tier === 'bullseye') bullseyes++;
-    out.push({ roundId: row.id, idx: row.idx, title: row.song_title || 'Untitled', avg: r.avg, points: r.points, grade: r.grade });
+    out.push({ roundId: row.id, idx: row.idx, title: row.song_title || 'Untitled', avg: r.avg, points: r.points, grade: r.grade,
+      taste: Number(row.taste), predict: Number(row.predict), tier: r.tier });
   }
   const h = await demoHandled(participant, session, demoVotes);
   const acc = out.length ? roundAccuracy(errSum / out.length, 9) : null;
@@ -1383,37 +1384,75 @@ async function dailyDaySoFar(session, participant, demoVotes = {}) {
     resultsLabel: session.results_at ? etClockLabel(Number(session.results_at)) : null };
 }
 
-// DEMO MODE (2026-10-29, operator live on stream: "I don't care about contributing points,
-// I'm demoing the product"). A platform admin on a drop that is past its public close and NOT
-// in the admin rating window (tallied, or tallying) can walk it like a player: rate, predict,
-// Show results, the report pager. NOTHING IS STORED IN votes — the ratings live in a settings
-// row (k = daily_demo:<uid>:<sid>) that no board, tally, report or email ever reads — and the
-// reveal compares them against the round's FINAL average. Admins only, by role; the sealed
-// state for everyone else is untouched.
-async function demoModeFor(participant, session, ts = null) {
+// REPLAY THE DAY (053, operator 2026-10-31; grew out of the admin-only demo mode of 10-29:
+// "a mode where a person can replay the day... immediate results against the actual scores
+// from that day... for everyone, not just admin"). An A&R on a PUBLISHED drop walks the
+// records they did not rate like a player: rate, predict, lock, and the real average comes
+// straight back with what the guess would have paid. NOTHING IS STORED IN votes — the
+// ratings live in `replay_votes`, which no board, tally, report, email, bonus or chart reads.
+// Practice only, no points, ever. The results are public by then, so nothing is revealed early.
+//
+// Who may: any unblocked account on a published drop whose results came out within the last
+// `replayDays` days (schedule setting, default 7; 0 turns it off for A&Rs) — the operator's cap.
+// A PLATFORM ADMIN may replay any drop past its public close, tallied or still tallying (the
+// stream demo of 10-29: he rates the just-closed drop on air against the final numbers).
+async function replayModeFor(participant, session, ts = null) {
   if (!participant || !participant.user_id || !isAsync(session)) return null;
   const at = ts != null ? Number(ts) : now();
   const closes = Number(session.window_closes_at) || 0;
   if (!closes || at < closes) return null;
-  // A PUBLISHED day stays walkable too (2026-10-30: the operator's demo ran past the 6AM
-  // publish): the results are public by then, so nothing is revealed early. The player state
-  // only prefers the walk over the recap while records are still unhandled.
   if (!['closing', 'ratified', 'published'].includes(session.async_state || '')) return null;
   const u = await db.get('SELECT role, blocked FROM users WHERE uid = ?', [participant.user_id]);
-  if (!u || u.role !== 'admin' || u.blocked) return null;
-  return { closesLabel: etClockLabel(closes) };
+  if (!u || u.blocked) return null;
+  const admin = u.role === 'admin';
+  const base = { closesLabel: etClockLabel(closes), label: dailyDayLabel(session.drop_day, dropNoOf(session)), admin };
+  if (admin) return base;
+  // Everyone else: published, results out, inside the window.
+  const results = Number(session.results_at) || 0;
+  if (session.async_state !== 'published' || !results || at < results) return null;
+  const sched = await dailySchedule();
+  const days = Number(sched.replayDays) || 0;
+  if (!(days > 0) || results < at - days * 86400000) return null;
+  return base;
 }
-async function demoVotesFor(uid, sessionId) {
-  const row = await db.get('SELECT v FROM settings WHERE k = ?', [`daily_demo:${uid}:${sessionId}`]);
-  if (!row || !row.v) return {};
-  try { return JSON.parse(row.v) || {}; } catch { return {}; }
+// May someone who never joined this drop join it now, to replay it? A PUBLISHED daily drop
+// inside the replay window (the My results "missed day" button and the missed mail both land
+// people here who have no participants row). A join on a replayable drop makes an ordinary
+// participants row with no votes; nothing counts it on a board.
+async function replayJoinOpen(session) {
+  if (!session || session.deleted_at || !isAsync(session) || session.async_state !== 'published') return false;
+  const results = Number(session.results_at) || 0, at = now();
+  if (!results || at < results) return false;
+  const days = Number((await dailySchedule()).replayDays) || 0;
+  return days > 0 && results >= at - days * 86400000;
 }
-async function setDemoVote(uid, sessionId, roundId, vote) {
-  const all = await demoVotesFor(uid, sessionId);
-  all[roundId] = vote;
-  await db.run('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v',
-    [`daily_demo:${uid}:${sessionId}`, JSON.stringify(all)]);
-  return all;
+// The A&R's replay ratings on one drop: round_id -> { taste, predict, at }.
+async function replayVotesFor(uid, sessionId) {
+  const rows = await db.all(
+    `SELECT rv.round_id, rv.taste, rv.predict, rv.at FROM replay_votes rv JOIN rounds r ON r.id = rv.round_id
+      WHERE rv.uid = ? AND r.session_id = ?`, [uid, sessionId]);
+  const out = {};
+  for (const r of rows) out[r.round_id] = { taste: Number(r.taste), predict: Number(r.predict), at: Number(r.at) };
+  return out;
+}
+async function setReplayVote(uid, roundId, vote) {
+  await db.run(
+    `INSERT INTO replay_votes (uid, round_id, taste, predict, at) VALUES (?,?,?,?,?)
+     ON CONFLICT (uid, round_id) DO UPDATE SET taste = excluded.taste, predict = excluded.predict, at = excluded.at`,
+    [uid, roundId, vote.taste, vote.predict, vote.at]);
+}
+// The standing a replay earns, framed as what it beat (operator: "as long as it's a positive
+// ranking"): the A&R's day — real points plus what the replayed records would have paid —
+// against every OTHER A&R's real vote points on the drop. One GROUP BY over the day's votes,
+// run only for someone who came through the replay door with replays on record.
+async function replayStanding(session, participant, points) {
+  const rows = await db.all(
+    `SELECT p.id, COALESCE(SUM(v.points), 0) AS pts FROM participants p
+       JOIN votes v ON v.participant_id = p.id JOIN rounds r ON r.id = v.round_id
+      WHERE r.session_id = ? AND p.verified = 1 AND p.id <> ? AND v.taste IS NOT NULL GROUP BY p.id`,
+    [session.id, participant.id]);
+  const of = rows.length, ahead = rows.filter(r => Number(r.pts) < points).length;
+  return { ahead, of };
 }
 
 // The drop currently inside the admin rating window, if any: closed to the public, not yet
@@ -2764,7 +2803,10 @@ async function dropLog(session, { ts = now() } = {}) {
 //     Only the session-level participant count ships.
 // myVote and myComment DO ship: they are the A&R's own answers, and showing "you gave this a
 // 7" on revisit is the point of being able to navigate back.
-async function asyncPlayerState(participant, session, count) {
+// Replay the Day copy (operator, 2026-10-31, verbatim). Plain and direct; said everywhere.
+const REPLAY_INTRO = 'Replay the Day gives you a chance to sharpen your skills by practicing on previous days\u2019 drops. Rate the songs, get instant feedback, and see how you stack up.';
+const REPLAY_PRACTICE_LINE = 'Practice only. No points are awarded.';
+async function asyncPlayerState(participant, session, count, opts = {}) {
   const ts = now();
   const opens = Number(session.window_opens_at) || 0;
   const closes = Number(session.window_closes_at) || 0;
@@ -2802,14 +2844,19 @@ async function asyncPlayerState(participant, session, count) {
   // The admin rating window (2026-10-29): a platform admin keeps the ordinary queue past the
   // public close until the window ends. Null for everyone else, so nothing below changes.
   const adminWindow = ts >= closes ? await adminGraceFor(participant, session, ts) : null;
-  const demoMode = ts >= closes && !adminWindow ? await demoModeFor(participant, session, ts) : null;
-  const demoVotes = demoMode ? await demoVotesFor(participant.user_id, session.id) : {};
-  // In demo mode a demo rating counts as handled for the walk (and for nothing else).
-  const handledDemo = demoMode ? rows.reduce((n, r) => n + (!byRound.has(r.id) && !repBy.has(r.id) && demoVotes[r.id] ? 1 : 0), 0) : 0;
-  const demoLeft = demoMode && total > 0 && handled + handledDemo < total;
-  if ((session.status === 'completed' || (session.async_state === 'published' && ts >= results)) && !demoLeft) phase = 'recap';
+  // REPLAY THE DAY (053): `replay` says this A&R MAY replay the drop; `replayWalk` says the
+  // page asked for it (?replay=1) — a published drop is the recap unless they chose to replay,
+  // or the results email would land everyone in a walk. An admin on a drop that has not
+  // published has no recap to land on, so the walk is the default there (the stream demo).
+  const replay = ts >= closes && !adminWindow ? await replayModeFor(participant, session, ts) : null;
+  const replayWalk = !!replay && (!!opts.replay || (replay.admin && session.async_state !== 'published'));
+  const demoVotes = replay ? await replayVotesFor(participant.user_id, session.id) : {};
+  // A replay rating counts as handled for the walk (and for nothing else).
+  const handledDemo = replay ? rows.reduce((n, r) => n + (!byRound.has(r.id) && !repBy.has(r.id) && demoVotes[r.id] ? 1 : 0), 0) : 0;
+  const replayLeft = replayWalk && total > 0 && handled + handledDemo < total;
+  if ((session.status === 'completed' || (session.async_state === 'published' && ts >= results)) && !replayLeft) phase = 'recap';
   else if (ts < opens || session.async_state === 'scheduled') phase = 'waiting';
-  else if (ts >= closes && !adminWindow && !demoMode) phase = 'sealed';       // rated, tallying or tallied — results at 3PM
+  else if (ts >= closes && !adminWindow && !replayWalk) phase = 'sealed';       // rated, tallying or tallied — results at 3PM
   else phase = handled + handledDemo >= total && total > 0 ? 'done' : 'queue';
 
   // Before the day opens the queue ships EMPTY — titles and pre-release links are a reveal,
@@ -2825,7 +2872,7 @@ async function asyncPlayerState(participant, session, count) {
       artist_profile_url: r.artist_profile_url || null,
       voted: !!v };
     if (v) item.myVote = { taste: v.taste, predict: v.predict };
-    else if (demoVotes[r.id]) { item.voted = true; item.demo = true; item.myVote = { taste: demoVotes[r.id].taste, predict: demoVotes[r.id].predict }; }
+    else if (demoVotes[r.id]) { item.voted = true; item.replay = true; item.myVote = { taste: demoVotes[r.id].taste, predict: demoVotes[r.id].predict }; }
     if (cmtBy.has(r.id)) item.myComment = cmtBy.get(r.id);
     // Their own report, so a revisit shows the record as dealt with rather than unrated.
     // Note this is the CALLER's report only — a per-record report COUNT would be exactly
@@ -2853,7 +2900,10 @@ async function asyncPlayerState(participant, session, count) {
       // Present ONLY for a platform admin inside the admin rating window: the daily page
       // shows the banner and the Show results step off this and nothing else.
       ...(adminWindow ? { adminWindow } : {}),
-      ...(demoMode ? { demoMode } : {}),
+      // Replay the Day: present whenever this A&R may replay the drop. `left` is what a replay
+      // would walk (records neither rated, reported nor replayed); `walking` when they are in it.
+      ...(replay ? { replay: { ...replay, left: Math.max(0, total - handled - handledDemo), walking: replayWalk,
+        practiceLine: REPLAY_PRACTICE_LINE, intro: REPLAY_INTRO } } : {}),
       // An admin looking at the OPEN drop while another drop sits in its window gets a link
       // to it (the home page only ever resolves the open one). Admins only, by role.
       ...(await (async () => {
@@ -2865,7 +2915,7 @@ async function asyncPlayerState(participant, session, count) {
         // No window: the latest closed drop, to play in demo mode.
         const c = await latestClosedDrop(ts);
         if (!c || c.id === session.id) return {};
-        return { liveReview: { id: c.id, label: dailyDayLabel(c.drop_day, dropNoOf(c)), demo: true } };
+        return { liveReview: { id: c.id, label: dailyDayLabel(c.drop_day, dropNoOf(c)), replay: true } };
       })()),
       // When the next set of records opens, relative to TODAY ("tomorrow" must mean tomorrow
       // for the reader), absent once it has passed. No stream or show to point at (retired
@@ -2909,18 +2959,29 @@ async function asyncPlayerState(participant, session, count) {
     out.recap.finished = total > 0 && handled >= total;
     out.recap.bonusAvg = recapBonusAvg(out.recap);
     out.rank = out.recap.rank;
+    // Replay the Day: the replay's own summary — what the replayed records would have paid, the
+    // day with them, and the standing that beats (never the bottom of the field; the page prints
+    // the grade alone when `ahead` is 0). Only through the replay door, only with replays made.
+    if (opts.replay && Object.keys(demoVotes).length) {
+      const t = await dailyDaySoFar(session, participant, demoVotes);
+      const replayed = Object.keys(demoVotes).filter(id => !byRound.has(id)).length;
+      const replayPts = t.rows.filter(r => demoVotes[r.roundId] && !byRound.has(r.roundId)).reduce((a, r) => a + r.points, 0);
+      out.recap.replay = { points: t.points, replayPoints: replayPts, replayed, rated: t.rated, bullseyes: t.bullseyes,
+        grade: t.grade, rows: t.rows.map(r => ({ ...r, replay: !!demoVotes[r.roundId] && !byRound.has(r.roundId) })),
+        standing: await replayStanding(session, participant, t.points) };
+    }
   }
   return out;
 }
 
-async function playerState(participant) {
+async function playerState(participant, opts = {}) {
   const sessionId = participant.session_id;
   const session = await db.get('SELECT id, name, status, scheduled_at, banner_id, poll_type, watch_url, lobby_message, broadcast_text, broadcast_at, broadcast_overlay, geo_mode, geo_label, geo_radius, owner_uid, series_id, mode, drop_day, async_state, window_opens_at, window_closes_at, results_at FROM sessions WHERE id = ?', [sessionId]);
   const pollType = session.poll_type === 'binary' ? 'binary' : 'rating'; // session default/hint only
   const count = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND verified = 1', [sessionId])).c;
   // A&R Daily has no single active round — every record of the day is open at once — so it
   // never reaches activeRound(), which is single-round BY DEFINITION.
-  if (isAsync(session)) return asyncPlayerState(participant, session, count);
+  if (isAsync(session)) return asyncPlayerState(participant, session, count, opts);
   const round = await activeRound(sessionId);
   // Poll type is PER-ROUND: the active round decides which widget the player sees.
   // Fall back to the session default when there's no round yet.
@@ -4252,6 +4313,7 @@ function dailyMissedEmailHtml(arg) {
       <h1 style="font-size:22px;line-height:1.3;margin:8px 0 12px">${escapeHtml(c.lead)}</h1>
       ${c.remind ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.remind)}</p>` : ''}
       <a href="${arg.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:16px">Rate today's records</a>
+      ${replayBlockHtml(arg.replayUrl, "yesterday's")}
       ${subscribeBlockHtml('ar')}
       <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
       ${arg.manage ? notifyFooterHtml(arg.manage) : ''}
@@ -4262,11 +4324,22 @@ function dailyMissedEmailText(arg) {
   const c = dailyMissedEmailContent(arg);
   const lines = ['A&R Daily', '', c.lead];
   if (c.remind) lines.push('', c.remind);
-  lines.push('', `Rate today's records: ${arg.playUrl}`, '', subscribeBlockText());
+  lines.push('', `Rate today's records: ${arg.playUrl}`, ...replayBlockText(arg.replayUrl, "yesterday's"), '', subscribeBlockText());
   if (arg.manage) lines.push('', notifyFooterText(arg.manage));
   return lines.join('\n');
 }
 const DAILY_MISSED_SUBJECT = "You missed yesterday's drop";
+// Replay the Day (053) in the missed mails: the second ask, under the main button. Nothing
+// when the replay window is off (no url).
+function replayBlockHtml(url, which) {
+  if (!url) return '';
+  return `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:22px 0 0">Want to see how you would have done ${escapeHtml(which)}? ${escapeHtml(REPLAY_INTRO)} ${escapeHtml(REPLAY_PRACTICE_LINE)}</p>
+      <a href="${url}" style="display:block;border:1px solid #4bb749;color:#4bb749;text-decoration:none;font-weight:700;font-size:15px;padding:13px;border-radius:13px;margin-top:12px">Replay ${escapeHtml(which)} drop</a>`;
+}
+function replayBlockText(url, which) {
+  if (!url) return [];
+  return ['', `Want to see how you would have done ${which}? ${REPLAY_INTRO} ${REPLAY_PRACTICE_LINE}`, `Replay ${which} drop: ${url}`];
+}
 
 // "You've missed the last two drops" — the third group (operator, 2026-10-17: "motivate them to
 // get back in the game"). The last daily mail they get until they rate again.
@@ -4287,6 +4360,7 @@ function dailyMissedTwiceEmailHtml(arg) {
       <p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.why)}</p>
       ${c.remind ? `<p style="font-size:15px;line-height:1.5;color:#a9a2c9;margin:0 0 6px">${escapeHtml(c.remind)}</p>` : ''}
       <a href="${arg.playUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin-top:16px">Rate today's records</a>
+      ${replayBlockHtml(arg.replayUrl, "yesterday's")}
       ${subscribeBlockHtml('ar')}
       <p style="font-size:13px;color:#8c84ad;margin:18px 0 0">Makin' It Magazine · A&amp;R Daily</p>
       ${arg.manage ? notifyFooterHtml(arg.manage) : ''}
@@ -4297,7 +4371,7 @@ function dailyMissedTwiceEmailText(arg) {
   const c = dailyMissedTwiceEmailContent(arg);
   const lines = ['A&R Daily', '', c.lead, '', c.why];
   if (c.remind) lines.push('', c.remind);
-  lines.push('', `Rate today's records: ${arg.playUrl}`, '', subscribeBlockText());
+  lines.push('', `Rate today's records: ${arg.playUrl}`, ...replayBlockText(arg.replayUrl, "yesterday's"), '', subscribeBlockText());
   if (arg.manage) lines.push('', notifyFooterText(arg.manage));
   return lines.join('\n');
 }
@@ -4459,7 +4533,8 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
         subject = recap.grade ? `Your A&R grade for ${dayLabel || 'the day'}: ${recap.grade}` : (bc.subject || 'A&R Daily');
         html = dailyDigestEmailHtml(arg); textBody = dailyDigestEmailText(arg);
       } else {
-        const arg = { name, manage, playUrl, ...extras };
+        const arg = { name, manage, playUrl, ...extras,
+          replayUrl: (Number((await dailySchedule()).replayDays) || 0) > 0 ? `${base || publicBase()}/daily?s=${encodeURIComponent(sessionId)}&replay=1` : null };
         const playedPrev = prevDrop ? !!(await db.get(
           `SELECT 1 FROM participants pa JOIN votes v ON v.participant_id = pa.id
             WHERE pa.session_id = ? AND pa.user_id = ? AND pa.verified = 1 LIMIT 1`, [prevDrop.id, r.uid])) : false;
@@ -4737,9 +4812,14 @@ const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
   // The tally — and the carousel render, the Asana tasks and the publish behind it — waits
   // for the window to end. 0 = off, and the day runs exactly as before.
   adminGraceMin: 0,
+  // REPLAY THE DAY (053): how many days back from today an A&R may replay a published drop's
+  // unrated records for practice (no points). 0 = off for A&Rs; platform admins are never capped.
+  replayDays: 7,
 });
 const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_stream_min', 'daily_stream_days',
-  'daily_results_min', 'daily_results_days', 'daily_bonus_tiers', 'daily_artist_delay_min', 'daily_admin_grace_min'];
+  'daily_results_min', 'daily_results_days', 'daily_bonus_tiers', 'daily_artist_delay_min', 'daily_admin_grace_min',
+  'daily_replay_days'];
+const DAILY_REPLAY_MAX_DAYS = 365;
 const DAILY_ADMIN_GRACE_MAX_MIN = 12 * 60;
 
 // Validate + normalize a schedule. Throws a readable message; returns { cfg, windowHours }.
@@ -4783,6 +4863,9 @@ function parseDailySchedule(inp) {
   const resultsAbs = (cfg.closeMin > cfg.openMin ? 0 : 1440) + cfg.resultsDays * 1440 + cfg.resultsMin;
   if (grace > 0 && closeAbs + grace >= resultsAbs) throw new Error('The admin rating window must end before the results publish');
   cfg.adminGraceMin = grace;
+  const replay = Number(inp.replayDays ?? D.replayDays);
+  if (!Number.isInteger(replay) || replay < 0 || replay > DAILY_REPLAY_MAX_DAYS) throw new Error(`The replay window must be whole days, 0–${DAILY_REPLAY_MAX_DAYS}`);
+  cfg.replayDays = replay;
   return { cfg, windowHours };
 }
 
@@ -4804,7 +4887,8 @@ async function dailySchedule() {
       streamMin: m.daily_stream_min ?? D.streamMin, streamDays: m.daily_stream_days ?? D.streamDays,
       resultsMin: m.daily_results_min ?? D.resultsMin, resultsDays: m.daily_results_days ?? D.resultsDays,
       artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin,
-      adminGraceMin: m.daily_admin_grace_min ?? D.adminGraceMin });
+      adminGraceMin: m.daily_admin_grace_min ?? D.adminGraceMin,
+      replayDays: m.daily_replay_days ?? D.replayDays });
     if (parsed.cfg) cfg = parsed.cfg;
   } catch (e) { console.error('[daily] schedule setting unreadable, using defaults:', e.message); }
   _dailySched = { at: Date.now(), cfg };
@@ -5305,6 +5389,18 @@ async function arResultsData(uid, weekDay) {
     `SELECT id, session_id FROM participants WHERE user_id = ? AND verified = 1 AND session_id IN (${ids.map(() => '?').join(',')})`,
     [uid, ...ids]) : [];
   const partBy = new Map(parts.map(x => [x.session_id, x.id]));
+  // Replay the Day (053): a published daily drop inside the replay window gets a Replay button
+  // on its row when records are left — the same rule as replayModeFor, without a participant.
+  const sched = await dailySchedule();
+  const me = await db.get('SELECT role, blocked FROM users WHERE uid = ?', [uid]);
+  const nowTs = now();
+  const replayOk = (sess) => {
+    if (!me || me.blocked || sess.mode !== 'async' || sess.async_state !== 'published') return false;
+    if (me.role === 'admin') return true;
+    const r = Number(sess.results_at) || 0, days = Number(sched.replayDays) || 0;
+    return days > 0 && r > 0 && r <= nowTs && r >= nowTs - days * 86400000;
+  };
+  const replayUrl = (sess) => '/daily?s=' + encodeURIComponent(sess.id) + '&replay=1';
 
   const days = [], accs = [];
   for (const sess of sessions) {
@@ -5342,7 +5438,11 @@ async function arResultsData(uid, weekDay) {
       // Only public daily drops; a live session or a private room they were not in is not theirs.
       if (isDaily && listed) {
         const t = await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [sess.id]);
-        days.push({ ...base, state: 'missed', total: Number(t.c) || 0 });
+        const total = Number(t.c) || 0;
+        // Less what they have already replayed: the button goes once nothing is left.
+        const left = replayOk(sess) ? total - Number((await db.get(
+          'SELECT COUNT(*) AS c FROM replay_votes rv JOIN rounds r ON r.id = rv.round_id WHERE rv.uid = ? AND r.session_id = ?', [uid, sess.id])).c) : 0;
+        days.push({ ...base, state: 'missed', total, ...(left > 0 ? { replay: { left, url: replayUrl(sess) } } : {}) });
       }
       continue;
     }
@@ -5356,7 +5456,14 @@ async function arResultsData(uid, weekDay) {
     const dayAccs = mine.map(m => roundAccuracy(m.err, m.poll_type === 'binary' ? 100 : 9)).filter(a => a != null);
     accs.push(...dayAccs);
     const num = (v) => (v == null ? null : Number(v));
+    // Records they neither rated nor reported: what a replay of this day would walk.
+    const skipped = isDaily && replayOk(sess) ? Number((await db.get(
+      `SELECT COUNT(*) AS c FROM rounds r WHERE r.session_id = ? AND r.status = 'ratified' AND COALESCE(r.poll_type, 'rating') = 'rating'
+          AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.round_id = r.id AND v.participant_id = ?)
+          AND NOT EXISTS (SELECT 1 FROM round_reports rr WHERE rr.round_id = r.id AND rr.participant_id = ?)
+          AND NOT EXISTS (SELECT 1 FROM replay_votes rv WHERE rv.round_id = r.id AND rv.uid = ?)`, [sess.id, pid, pid, uid])).c) || 0 : 0;
     days.push({ ...base, state: 'published', total: rows.length, rated: mine.length,
+      ...(skipped ? { replay: { left: skipped, url: replayUrl(sess) } } : {}),
       points: votePts + bonus, bonus, finished: isDaily ? !!bonusRow : null, bonusAvg,
       grade: dayAccs.length ? gradeForAccuracy(dayAccs.reduce((a, b) => a + b, 0) / dayAccs.length) : null,
       bullseyes: mine.filter(m => m.tier === 'bullseye').length,
@@ -7446,7 +7553,7 @@ async function handleApi(req, res, url) {
     const { sessionId, email, accessCode } = await readBody(req);
     const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
     if (!session || session.deleted_at) return bad(res, 'Room not found', 404);
-    if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This room is closed');
+    if ((session.status === 'completed' || session.status === 'archived') && !(await replayJoinOpen(session))) return bad(res, 'This room is closed');
     // Invite-only gate: a session with an access code only mints OTPs for people who
     // have it. Returning players re-joining still pass through here, so the code
     // guards every entry into the room. Case/whitespace-insensitive.
@@ -7495,8 +7602,8 @@ async function handleApi(req, res, url) {
     }
     // Re-check the session is still open (belt-and-suspenders: could close between
     // requesting a code and verifying). You can only register for upcoming/live sessions.
-    const vSession = await db.get('SELECT status, deleted_at FROM sessions WHERE id = ?', [sessionId]);
-    if (!vSession || vSession.deleted_at || vSession.status === 'completed' || vSession.status === 'archived') return bad(res, 'This room is closed', 400);
+    const vSession = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+    if (!vSession || vSession.deleted_at || ((vSession.status === 'completed' || vSession.status === 'archived') && !(await replayJoinOpen(vSession)))) return bad(res, 'This room is closed', 400);
     // ---- durable user identity (keyed on email, spans all sessions) ----
     // Recognize a returning player by email; create a permanent uid the first time.
     let user = await db.get('SELECT * FROM users WHERE email = ?', [em]);
@@ -7605,9 +7712,9 @@ async function handleApi(req, res, url) {
     if (!user) return bad(res, 'Not logged in', 401);
     if (user.blocked) return bad(res, 'This account has been suspended.', 403);
     const { sessionId, accessCode, notifyRooms } = await readBody(req);
-    const session = await db.get('SELECT id, status, deleted_at, access_code FROM sessions WHERE id = ?', [sessionId]);
+    const session = await db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
     if (!session || session.deleted_at) return bad(res, 'Room not found', 404);
-    if (session.status === 'completed' || session.status === 'archived') return bad(res, 'This room is closed — you can only register for upcoming or live rooms', 400);
+    if ((session.status === 'completed' || session.status === 'archived') && !(await replayJoinOpen(session))) return bad(res, 'This room is closed — you can only register for upcoming or live rooms', 400);
     const em = (user.email || '').toLowerCase();
     // DERIVATION SITE 3 of 3 — the one-tap path, and the easiest to miss. Once an A&R has
     // made an explicit SMS decision, the snapshot mirrors their LIVE account consent
@@ -7658,7 +7765,8 @@ async function handleApi(req, res, url) {
   if (p === '/api/me/state' && method === 'GET') {
     const participant = await participantFromReq(req);
     if (!participant) return bad(res, 'Not authenticated', 401);
-    return send(res, 200, await playerState(participant));
+    // ?replay=1: the page came through a Replay the Day door (053).
+    return send(res, 200, await playerState(participant, { replay: url.searchParams.get('replay') === '1' }));
   }
 
   // Player's profile (3.5a) — lives on the durable `users` row behind the participant.
@@ -8937,7 +9045,7 @@ async function handleApi(req, res, url) {
       await db.run('UPDATE users SET last_seen = ? WHERE uid = ?', [now(), participant.user_id]);
     }
     const body = await readBody(req);
-    const session = await db.get('SELECT id, poll_type, geo_mode, mode, status, deleted_at, series_id, drop_day, window_opens_at, window_closes_at, async_state FROM sessions WHERE id = ?', [participant.session_id]);
+    const session = await db.get('SELECT id, poll_type, geo_mode, mode, status, deleted_at, series_id, drop_day, drop_no, window_opens_at, window_closes_at, async_state, results_at FROM sessions WHERE id = ?', [participant.session_id]);
     // `roundId` is honored ONLY on a drop. A live client never sends it and the live branch
     // below is unchanged, so the existing live e2e section is this change's regression test.
     let round;
@@ -8949,16 +9057,22 @@ async function handleApi(req, res, url) {
       round = await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, participant.session_id]);
       if (!round) return bad(res, 'Round not found', 404);
       if (session.deleted_at || session.status === 'archived') return bad(res, 'This room is closed');
-      // Demo mode: an admin on a tallied drop. The rating is validated like a real one and
-      // kept OUT of votes (see demoModeFor). Returns before every real-vote branch below.
+      // Replay the Day (053): a closed drop this A&R may replay. The rating is validated like a
+      // real one and kept OUT of votes (see replayModeFor); the real result comes straight back
+      // — the round is final, nobody can move its average. Returns before every real-vote branch.
       if (round.status !== 'voting' && now() >= Number(session.window_closes_at || 0)) {
-        const demo = await demoModeFor(participant, session);
-        if (demo && (round.poll_type || 'rating') === 'rating' && !(await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]))) {
+        const replay = await replayModeFor(participant, session);
+        if (replay && (round.poll_type || 'rating') === 'rating' && !(await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]))) {
           const t = Number(body.taste), pr = Number(body.predict);
           if (!Number.isInteger(t) || t < 0 || t > 9) return bad(res, 'Rating must be 0–9');
           if (!(pr >= 0 && pr <= 9)) return bad(res, 'Prediction must be 0.0–9.0');
-          await setDemoVote(participant.user_id, session.id, round.id, { taste: t, predict: pr, at: now() });
-          return send(res, 200, { locked: true, demo: true });
+          const mine = { taste: t, predict: pr, at: now() };
+          await setReplayVote(participant.user_id, round.id, mine);
+          const replayVotes = await replayVotesFor(participant.user_id, session.id);
+          let result = null;
+          try { result = { reveal: await dailyRoundReveal(session, round, participant, mine, replayVotes), total: await dailyDaySoFar(session, participant, replayVotes) }; }
+          catch (e) { result = null; }   // a record nobody rated has no average to show
+          return send(res, 200, { locked: true, replay: true, result });
         }
       }
       if (round.status !== 'voting') return bad(res, 'Evaluation is not open');
@@ -9059,6 +9173,12 @@ async function handleApi(req, res, url) {
     if (!round) return bad(res, 'Round not found', 404);
     const note = (rawBody == null ? '' : String(rawBody)).trim().slice(0, 280) || null;
     const session = await db.get('SELECT * FROM sessions WHERE id = ?', [participant.session_id]);
+    // A report is part of the live day (it counts as handled for the bonus and reaches the
+    // review site at publish). After the close — a replay (053), or anyone on a closed drop —
+    // there is nothing for it to do; only an admin inside the rating window may still file one.
+    if (isAsync(session) && now() >= Number(session.window_closes_at || 0) && !(await adminGraceFor(participant, session))) {
+      return bad(res, 'Reports closed with the drop');
+    }
 
     // THE CAP. A reported record counts as handled for the completion bonus (see
     // asyncHandled), so without a ceiling "report everything, collect the bonus" is the
@@ -9112,7 +9232,12 @@ async function handleApi(req, res, url) {
     const sess = await db.get('SELECT status, deleted_at FROM sessions WHERE id = ?', [participant.session_id]);
     if (!sess || sess.deleted_at || sess.status === 'archived') return bad(res, 'This room is closed');
     const voted = await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ?', [round.id, participant.id]);
-    if (!voted) return bad(res, 'Lock in your vote first');
+    if (!voted) {
+      // A replayed record (053) is practice: the artist's report already went out, and a note
+      // written after seeing the average is not the note the live drop asks for.
+      if (participant.user_id && await db.get('SELECT 1 AS x FROM replay_votes WHERE uid = ? AND round_id = ?', [participant.user_id, round.id])) return bad(res, 'Notes go to the artist only on the live drop');
+      return bad(res, 'Lock in your vote first');
+    }
 
     const text = String(rawBody == null ? '' : rawBody).trim().slice(0, COMMENT_MAX);
     const ts = now();
@@ -9758,6 +9883,7 @@ async function handleApi(req, res, url) {
         await db.run('DELETE FROM settings WHERE k = ?', ['daily_bonus_tiers']);   // retired 2026-10-31
         await setOrClear('daily_artist_delay_min', String(c.artistDelayMin));
         await setOrClear('daily_admin_grace_min', String(c.adminGraceMin));
+        await setOrClear('daily_replay_days', String(c.replayDays));
       }
       _dailySched.at = 0;
       const sched = await dailySchedule();
@@ -11361,7 +11487,7 @@ async function handleApi(req, res, url) {
       const round = body.roundId ? await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
       if (!round) return bad(res, 'Round not found', 404);
       const participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [session.id, admin.uid]);
-      const demoVotes = participant ? await demoVotesFor(admin.uid, session.id) : {};
+      const demoVotes = participant ? await replayVotesFor(admin.uid, session.id) : {};
       const mine = participant ? (await db.get('SELECT * FROM votes WHERE round_id = ? AND participant_id = ? AND taste IS NOT NULL', [round.id, participant.id])) || demoVotes[round.id] || null : null;
       if (!mine) return bad(res, 'Lock in your own rating first');
       const reveal = await dailyRoundReveal(session, round, participant, mine, demoVotes);
@@ -11377,7 +11503,7 @@ async function handleApi(req, res, url) {
     const participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [session.id, admin.uid]);
     if (!participant) return bad(res, 'You have not joined this drop');
     if (view === 'total') {
-      const st = { view: 'total', at: now(), drop: { id: session.id, label: dropLabel }, total: await dailyDaySoFar(session, participant, await demoVotesFor(admin.uid, session.id)) };
+      const st = { view: 'total', at: now(), drop: { id: session.id, label: dropLabel }, total: await dailyDaySoFar(session, participant, await replayVotesFor(admin.uid, session.id)) };
       await setDailyOverlayState(admin.uid, st); return send(res, 200, { ok: true, state: st });
     }
     // report: a round + a page. Only a record the admin has rated (the reveal's rule), and
@@ -11385,7 +11511,7 @@ async function handleApi(req, res, url) {
     const round = body.roundId ? await db.get('SELECT * FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
     if (!round) return bad(res, 'Round not found', 404);
     const mine = (await db.get('SELECT id FROM votes WHERE round_id = ? AND participant_id = ? AND taste IS NOT NULL', [round.id, participant.id]))
-      || (await demoVotesFor(admin.uid, session.id))[round.id] || null;
+      || (await replayVotesFor(admin.uid, session.id))[round.id] || null;
     if (!mine) return bad(res, 'Lock in your own rating first');
     const d = await songReportData(round, session);
     if (!d) return bad(res, 'Nothing to report yet');
@@ -12626,8 +12752,8 @@ const server = http.createServer(async (req, res) => {
     // in a window it goes home. no-store: never cache a 302 to yesterday's drop.
     if (url.pathname === '/daily/closed') {
       const w = await dropInAdminWindow();
-      const target = w ? w.session : await latestClosedDrop();   // no window: the latest closed drop, for demo mode
-      res.writeHead(302, { Location: target ? `/daily?s=${encodeURIComponent(target.id)}` : '/', 'Cache-Control': 'no-store' });
+      const target = w ? w.session : await latestClosedDrop();   // no window: the latest closed drop, to replay
+      res.writeHead(302, { Location: target ? `/daily?s=${encodeURIComponent(target.id)}${w ? '' : '&replay=1'}` : '/', 'Cache-Control': 'no-store' });
       return res.end();
     }
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile

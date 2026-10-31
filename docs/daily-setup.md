@@ -251,3 +251,20 @@ https://anr.makinitmag.com/overlay/daily?k=<your Stream Deck control key>
 ```
 
 The URL is listed under Stream Deck / external control in the console. Rolling the key changes it.
+
+## Replay the Day (2026-10-31)
+
+Platform panel → System settings → **Replay the Day window** (days, default 7, 0 = off).
+
+Any A&R can replay a published drop's unrated records for practice: the ordinary `/daily` walk
+with a Replay banner, and after each lock-in the day's real average comes straight back with what
+the guess would have paid. Nothing is stored as a vote, no points are ever awarded, no note box
+and no report on a replay round. The three doors are the Replay button on a missed day (or a
+played day with records left) in **My results**, the Replay panel at the bottom of a published
+day's results screen, and the second button in the "you missed yesterday's drop" mails. Each goes
+to `/daily?s=<drop>&replay=1`; without `&replay=1` a published drop is the results screen.
+
+A&Rs can replay drops whose results came out within the window. Platform admins can replay any
+closed drop, tallied or still tallying, and keep **Show results** and **Track Report on stream**
+on the same page for the stream. `/daily/closed` goes to the drop in the admin rating window, else
+to the latest closed drop in replay.

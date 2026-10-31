@@ -179,6 +179,20 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 .adminwin .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
 .adminwin .t{font-size:12.5px;line-height:1.45}
 .adminwin .mono{font-size:11px;color:var(--ink-dim);margin-left:auto;white-space:nowrap}
+/* Replay the Day (053): grey, not purple — practice is neither scoring nor head-to-head. */
+.adminwin.replay{border-color:var(--line);background:var(--panel)}
+.adminwin.replay .dot{background:var(--ink-dim)}
+.adminwin.replay a{color:var(--ink-dim);margin-left:auto;white-space:nowrap;font-family:"Space Mono",monospace;font-size:11px;text-decoration:none}
+/* The reveal arrives in three beats (operator: "give brief delay and animation... don't just
+   pop up the number"): a pause, the average counting up, then the rest fading in. */
+.result.anim .mean,.result.anim .scale,.result.anim .myvote,.result.anim .big{opacity:0;transition:opacity .45s ease}
+.result.anim.in .mean,.result.anim.in .scale,.result.anim.in .myvote,.result.anim.in .big{opacity:1}
+.result.anim .avg{transition:transform .35s ease}
+.result.anim.counting .avg{transform:scale(1.06)}
+.standing{border:1px solid var(--line);border-radius:13px;padding:14px;text-align:center;background:var(--panel)}
+.standing .n{font-family:"Space Mono",monospace;font-size:34px;font-weight:700;line-height:1;color:var(--signal)}
+.standing p{margin:6px 0 0;font-family:Archivo,system-ui,sans-serif;font-size:13px;color:var(--ink-dim);line-height:1.5}
+.standing p b{color:var(--ink)}
 .btn.contest{background:var(--accent);color:#fff}
 .result{border:1px solid var(--signal);border-radius:var(--r-lg);padding:16px;background:rgba(75,183,73,.05)}
 .result .avg{font-family:"Space Mono",monospace;font-size:64px;font-weight:700;line-height:1;color:var(--signal);text-align:center}
@@ -239,9 +253,11 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <span class="dot"></span>
       <span class="t" id="lrText"></span>
     </a>
-    <div class="adminwin hide" id="demoWin">
+    <!-- REPLAY THE DAY (053): the same walk on a closed drop, practice only. -->
+    <div class="adminwin replay hide" id="replayWin">
       <span class="dot"></span>
-      <span class="t"><b>Demo mode.</b> This drop closed at <span id="demoClosed"></span> and is tallied. Your ratings here are not stored and earn nothing; Show results compares them with the final average.</span>
+      <span class="t"><b>Replay.</b> <span id="replayLabel"></span>. <span id="replayLine"></span></span>
+      <a href="/account#results">Exit</a>
     </div>
     <div class="adminwin hide" id="adminWin">
       <span class="dot"></span>
@@ -396,13 +412,13 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
             Show results
           </button>
-          <div class="dim mono" style="font-size:10.5px;text-align:center;margin-top:6px">Admin only. Fires the stream overlay. The average is final: yours was the last vote.</div>
+          <div class="dim mono" style="font-size:10.5px;text-align:center;margin-top:6px">Admin only. Fires the stream overlay. The average is final.</div>
           <div class="err" id="revealErr" style="font-size:12.5px"></div>
         </div>
         <div class="hide" id="revealOut" style="margin-top:14px">
           <div class="result" id="revealResult"></div>
           <div class="stats" style="margin-top:14px" id="revealDay"></div>
-          <div class="reportbox">
+          <div class="reportbox" id="reportBox">
             <div class="eyebrow" style="color:var(--accent)">Track Report on stream</div>
             <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
               <button class="btn outline" id="btnRepPrev" style="width:auto;padding:10px 14px;font-size:15px" aria-label="Previous page">◀</button>
@@ -464,10 +480,25 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <p class="dim" style="margin:9px 0 0;font-size:14px;line-height:1.5" id="recapSub"></p>
     </div>
     <div class="stats" id="recapStats"></div>
+    <!-- REPLAY THE DAY (053): the replay's own summary, when they came through the replay door. -->
+    <div class="hide stack" id="recapReplay">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Your replay · practice only</span></div>
+      <div class="stats" id="recapReplayStats"></div>
+      <div class="standing hide" id="recapStanding"></div>
+      <p class="dim" style="font-size:13px;line-height:1.5;margin:0" id="recapReplayLine"></p>
+    </div>
     <div>
       <div class="section-head" style="margin-bottom:12px"><span class="tick"></span>
         <span class="eyebrow">Record by record</span></div>
       <div id="recapRows"></div>
+    </div>
+    <!-- REPLAY THE DAY (053): offered when the day still has records they did not rate. -->
+    <div class="panel hide" id="replayOffer">
+      <div class="section-head"><span class="tick"></span><span class="eyebrow">Replay the Day</span></div>
+      <h2 style="font-size:20px;line-height:1.15;margin-top:10px" id="replayOfferHead"></h2>
+      <p class="dim" style="font-size:13.5px;line-height:1.5;margin:10px 0 0" id="replayOfferIntro"></p>
+      <p style="font-size:13.5px;font-weight:700;margin:8px 0 0" id="replayOfferLine"></p>
+      <a class="btn outline" id="btnReplayOffer" style="margin-top:14px;text-decoration:none"></a>
     </div>
     <!-- Home, not /daily: today's drop is a DIFFERENT session id, and this page only knows
          yesterday's. The homepage already resolves whichever drop is open. -->
@@ -540,7 +571,11 @@ let chosenTaste = null, predict = 4.5, predictTouched = false;
 let played = Object.create(null);   // per-record "I opened the link" — session-scoped only
 let COMMENT_MAX = 500;         // replaced from the server payload; never a second source of truth
 let reviewing = false;         // they asked to walk a finished day again; see startReview()
-let revealed = Object.create(null);  // admin window: roundId -> the overlay state after Show results
+let revealed = Object.create(null);  // roundId -> the result after Show results (admin) or lock-in (replay)
+const animated = new Set();          // rounds whose result has already played its reveal
+// Replay the Day (053): the page came through a Replay door. The server keeps a published drop
+// on the recap unless asked — this is the asking.
+const REPLAY = new URLSearchParams(location.search).get('replay') === '1';
 
 function show(id){
   ['account','email','code','waiting','queue','done','sealed','recap']
@@ -853,6 +888,10 @@ function qPaint(){
   }
   $('#qFlagged').classList.toggle('hide', !reported);
   $('#qReportRow').classList.toggle('hide', reported || locked || reportsLeft <= 0);
+  // Replay the Day (053): no report (the day is over) and the note box only ever shows on a
+  // locked live record. The server refuses both anyway; this keeps the controls honest.
+  const inReplay = !!(ST && ST.async && ST.async.replay && ST.async.replay.walking);
+  if(inReplay){ $('#qReportRow').classList.add('hide'); $('#qReportBox').classList.add('hide'); if(!locked) $('#cmtBox').classList.add('hide'); }
 
   // the artist's note, above the rating, as what they want listened for
   $('#qNoteBox').classList.toggle('hide', !r.artist_note);
@@ -864,7 +903,11 @@ function qPaint(){
   if(locked){
     $('#myTaste').textContent = r.myVote ? r.myVote.taste : '—';
     $('#myPredict').textContent = r.myVote ? Number(r.myVote.predict).toFixed(1) : '—';
-    cmtMoveTo('cmtSlotLocked');
+    // No note box on a replayed record (operator, 2026-10-31: "no composer"): the artist's
+    // report already went out, and a note written after seeing the average is not the note
+    // the live drop asks for. The node stays where it is, hidden, so a live-drop draft survives.
+    if(r.replay) $('#cmtBox').classList.add('hide');
+    else { cmtMoveTo('cmtSlotLocked'); $('#cmtBox').classList.remove('hide'); }
     // Public promotional links only, and each renders only when its own link exists —
     // a dead Follow button is worse than no button. They sit AFTER the lock, deliberately:
     // a follower count seen before rating is outside signal, and once the vote is immutable
@@ -887,16 +930,20 @@ function qPaint(){
     // The last record ends in a button the A&R presses, never an automatic jump (the lock-in
     // sets `reviewing` so a refresh cannot replace this screen). In demo mode the day's
     // results are what comes next; on a live drop they are sealed, so it is "my day".
-    $('#btnNextLabel').textContent = left ? 'Next record'
-      : (ST && ST.async && ST.async.demoMode ? 'See results' : 'See my day');
+    const replayWalk = !!(ST && ST.async && ST.async.replay && ST.async.replay.walking);
+    $('#btnNextLabel').textContent = left ? 'Next record' : (replayWalk ? 'See results' : 'See my day');
     $('#sealNote').textContent = ST && ST.async && ST.async.closesLabel
       ? ('NO RESULTS UNTIL ' + ST.async.closesLabel.toUpperCase())
       : 'NO RESULTS UNTIL THE WINDOW CLOSES';
-    // The admin rating window: Show results until pressed, then the result + the pager.
-    const win = (ST && ST.async && (ST.async.adminWindow || ST.async.demoMode)) || null;
+    // The result. Admin (the window, or an admin replaying for the stream): Show results until
+    // pressed, then the result + the report pager. A replay for anyone else: the result arrived
+    // with the lock-in and shows on its own; no overlay, no pager.
+    const adminTools = !!(ST && ST.async && (ST.async.adminWindow || (ST.async.replay && ST.async.replay.walking && ST.async.replay.admin)));
+    const win = adminTools || replayWalk;
     const rv = win ? revealed[r.id] : null;
-    $('#revealBox').classList.toggle('hide', !win || !!rv);
+    $('#revealBox').classList.toggle('hide', !adminTools || !!rv);
     $('#revealOut').classList.toggle('hide', !rv);
+    $('#reportBox').classList.toggle('hide', !adminTools);
     $('#sealNote').parentElement.classList.toggle('hide', !!win);
     if(rv) paintReveal(rv);
   }
@@ -906,11 +953,16 @@ function qPaint(){
 function paintReveal(st){
   const rv = st.reveal, t = st.total || {};
   if(!rv) return;
+  const replayWalk = !!(ST && ST.async && ST.async.replay && ST.async.replay.walking);
   const pct = x => (x / 9 * 100) + '%';
   const lo = Math.min(rv.predicted, rv.avg), w = Math.abs(rv.avg - rv.predicted);
-  $('#revealResult').innerHTML =
-    '<div class="eyebrow" style="text-align:center;color:var(--signal)">The average · ' + rv.n + ' A&amp;R' + (rv.n === 1 ? '' : 's') + '</div>'
-    + '<div class="avg" style="margin-top:8px">' + Number(rv.avg).toFixed(1) + '</div>'
+  // First paint of a result plays the reveal; every repaint after that lands on the final frame.
+  const fresh = !animated.has(rv.roundId);
+  const box = $('#revealResult');
+  box.className = 'result' + (fresh ? ' anim' : ' anim in');
+  box.innerHTML =
+    '<div class="eyebrow" style="text-align:center;color:var(--signal)">The average' + (replayWalk ? ' that day' : '') + ' · ' + rv.n + ' A&amp;R' + (rv.n === 1 ? '' : 's') + '</div>'
+    + '<div class="avg" style="margin-top:8px">' + (fresh ? '&nbsp;' : Number(rv.avg).toFixed(1)) + '</div>'
     + '<div class="mean">' + esc(rv.meaning || '') + '</div>'
     + '<div class="scale"><div class="bar"></div><div class="span" style="left:' + pct(lo) + ';width:' + pct(w) + '"></div>'
     + '<div class="mk p" style="left:' + pct(rv.predicted) + '"></div><div class="mk g" style="left:' + pct(rv.avg) + '"></div>'
@@ -919,15 +971,33 @@ function paintReveal(st){
     + '<div><div class="eyebrow mono" style="font-size:9.5px">You rated</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px">' + rv.rated + '</div></div>'
     + '<div><div class="eyebrow mono" style="font-size:9.5px">Predicted</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--accent)">' + Number(rv.predicted).toFixed(1) + '</div></div>'
     + '<div><div class="eyebrow mono" style="font-size:9.5px">Off by</div><div class="mono" style="font-size:20px;font-weight:700;margin-top:4px;color:var(--signal)">' + Number(rv.off).toFixed(1) + '</div></div></div>'
-    + '<div class="big"><div class="pts' + (rv.points < 0 ? ' neg' : '') + '"><div class="k">Points</div><div class="v">' + (rv.points >= 0 ? '+' : '') + rv.points + '</div></div>'
+    + '<div class="big"><div class="pts' + (rv.points < 0 ? ' neg' : '') + '"><div class="k">' + (replayWalk ? 'Would have earned' : 'Points') + '</div><div class="v">' + (rv.points >= 0 ? '+' : '') + rv.points + '</div></div>'
     + '<div class="grd"><div class="k">Round grade</div><div class="v">' + esc(rv.grade || '—') + '</div></div></div>';
+  if(fresh){ animated.add(rv.roundId); revealAnimate(box, Number(rv.avg)); }
   $('#revealDay').innerHTML =
-    '<div class="stat"><div class="k">Today</div><div class="v" style="color:var(--signal)">' + (t.points || 0) + '</div></div>'
+    '<div class="stat"><div class="k">' + (replayWalk ? 'Would have' : 'Today') + '</div><div class="v" style="color:var(--signal)">' + (t.points || 0) + '</div></div>'
     + '<div class="stat"><div class="k">Grade</div><div class="v">' + esc(t.grade || '—') + '</div></div>'
     + '<div class="stat"><div class="k">Rated</div><div class="v">' + (t.rated || 0) + '/' + (t.total || 0) + '</div></div>';
   const rp = st.view === 'report' && st.report && st.report.roundId === rv.roundId ? st.report : null;
   $('#repPage').textContent = rp ? ('Page ' + rp.page + ' of ' + rp.total) : 'Show the report';
   $('#repKind').textContent = rp ? (rp.labels[rp.page - 1] || '') : 'Page 1 goes on the overlay';
+}
+// Three beats: 650ms of nothing but the eyebrow, the average counting up over 900ms, then
+// the meaning, the scale, the two numbers and the points fade in together.
+function revealAnimate(box, avg){
+  const el = box.querySelector('.avg'); if(!el) return;
+  setTimeout(() => {
+    if(!box.isConnected) return;
+    box.classList.add('counting');
+    const t0 = performance.now(), dur = 900;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = (avg * e).toFixed(1);
+      if(k < 1) requestAnimationFrame(step);
+      else { el.textContent = avg.toFixed(1); box.classList.remove('counting'); box.classList.add('in'); }
+    };
+    requestAnimationFrame(step);
+  }, 650);
 }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 async function overlayPost(path, body, errEl){
@@ -1002,7 +1072,9 @@ $('#btnLock').onclick = async () => {
     track('vote_locked', { poll_type: 'rating', mode: 'async' });
     // Patch locally rather than waiting on a refetch — the composer is about to appear
     // and it must not flicker through an unlocked state on the way.
-    r.voted = true; r.myVote = { taste: chosenTaste, predict }; if(out.data.demo) r.demo = true;
+    r.voted = true; r.myVote = { taste: chosenTaste, predict };
+    // A replay lock-in brings the result with it (the round is final): keep it for qPaint.
+    if(out.data.replay){ r.replay = true; if(out.data.result) revealed[r.id] = { view: 'local', reveal: out.data.result.reveal, total: out.data.result.total }; }
     // Hold this screen. On the LAST record the refresh below flips the phase to done (or,
     // in demo mode on a published drop, straight to recap) and render() used to replace
     // the locked screen before the result or the note box was read — the 2026-10-30
@@ -1053,19 +1125,19 @@ function render(){
   const pr = st.progress || {}, as = st.async || {};
   // The admin rating window banner: only when the server says so (platform admin, after
   // the public close, inside the window). Everyone else never sees this element.
-  const win = as.adminWindow || null, demo = as.demoMode || null;
+  const win = as.adminWindow || null, rp = as.replay || null, replayWalk = !!(rp && rp.walking);
   $('#adminWin').classList.toggle('hide', !win);
   if(win){ $('#adminWinClosed').textContent = win.closesLabel; $('#adminWinUntil').textContent = win.untilLabel; }   // labels already carry ET
-  $('#demoWin').classList.toggle('hide', !demo);
-  if(demo) $('#demoClosed').textContent = demo.closesLabel;
-  $('#btnDayOnStream').classList.toggle('hide', !(win || demo));
+  $('#replayWin').classList.toggle('hide', !replayWalk);
+  if(replayWalk){ $('#replayLabel').textContent = 'Daily Drop ' + (rp.label || ''); $('#replayLine').textContent = rp.practiceLine || 'Practice only. No points are awarded.'; }
+  $('#btnDayOnStream').classList.toggle('hide', !(win || (replayWalk && rp.admin)));
   const lr = as.liveReview || null;
   $('#liveReviewLink').classList.toggle('hide', !lr);
   if(lr){
-    $('#lrText').innerHTML = lr.demo
-      ? '<b>Demo mode: play Daily Drop ' + esc(lr.label) + ' against the data →</b>'
+    $('#lrText').innerHTML = lr.replay
+      ? '<b>Replay Daily Drop ' + esc(lr.label) + ' against the data →</b>'
       : '<b>Daily Drop ' + esc(lr.label) + ' is in your admin rating window</b> until ' + esc(lr.untilLabel) + '. Rate it live →';
-    $('#liveReviewLink').href = '/daily?s=' + encodeURIComponent(lr.id);
+    $('#liveReviewLink').href = '/daily?s=' + encodeURIComponent(lr.id) + (lr.replay ? '&replay=1' : '');
   }
 
   // Standing stays on screen, because this is still a competition. Points only during the
@@ -1080,7 +1152,7 @@ function render(){
 
   // the tier bar. Every string here came from the server.
   const tb = $('#tierBar');
-  if(pr.eligible && !pr.finished){
+  if(pr.eligible && !pr.finished && !replayWalk){
     tb.classList.remove('hide');
     $('#tierUntil').textContent = pr.handled + ' of ' + pr.total + ' rated';
   }else tb.classList.add('hide');
@@ -1128,6 +1200,48 @@ function render(){
   show('queue');
 }
 
+// Replay the Day on the recap (053): the summary of a replay just finished (as-if numbers and
+// the standing it beats — the grade alone at the bottom of the field), and the offer to replay
+// when the day still has records they did not rate.
+function renderReplayRecap(st){
+  const as = st.async || {}, rp = as.replay || null, rr = (st.recap || {}).replay || null;
+  const sum = $('#recapReplay');
+  sum.classList.toggle('hide', !rr);
+  if(rr){
+    const stats = $('#recapReplayStats'); stats.textContent = '';
+    const stat = (k, v, color) => {
+      const d = document.createElement('div'); d.className = 'stat';
+      const kk = document.createElement('div'); kk.className = 'k'; kk.textContent = k;
+      const vv = document.createElement('div'); vv.className = 'v'; vv.textContent = v;
+      if(color) vv.style.color = color;
+      d.appendChild(kk); d.appendChild(vv); stats.appendChild(d);
+    };
+    stat('Would have', rr.points, 'var(--signal)');
+    stat('Rated', rr.rated + '/' + (((st.recap || {}).totalRounds) || rr.rated));
+    stat('Bullseyes', rr.bullseyes);
+    stat('Grade', rr.grade || '—');
+    const sd = rr.standing || {}, box = $('#recapStanding');
+    const show = sd.of > 0 && sd.ahead > 0;
+    box.classList.toggle('hide', !show);
+    if(show){
+      box.innerHTML = '<div class="n">' + sd.ahead + ' of ' + sd.of + '</div><p>You would have been ahead of <b>' + sd.ahead + ' of the ' + sd.of + ' A&amp;R' + (sd.of === 1 ? '' : 's') + '</b> who rated this drop.</p>';
+    }
+    $('#recapReplayLine').textContent = 'You replayed ' + rr.replayed + (rr.replayed === 1 ? ' record' : ' records') + ' for ' + rr.replayPoints + ' points that count for nothing: ' + ((rp && rp.practiceLine) || 'Practice only. No points are awarded.');
+  }
+  const offer = $('#replayOffer');
+  const can = !!(rp && rp.left > 0);
+  offer.classList.toggle('hide', !can);
+  if(can){
+    const whole = rp.left >= (((st.recap || {}).totalRounds) || Infinity);
+    $('#replayOfferHead').textContent = whole ? 'You did not rate this drop.' : (rp.left + (rp.left === 1 ? ' record' : ' records') + ' you did not rate.');
+    $('#replayOfferIntro').textContent = rp.intro || '';
+    $('#replayOfferLine').textContent = rp.practiceLine || 'Practice only. No points are awarded.';
+    const b = $('#btnReplayOffer');
+    b.textContent = whole ? 'Replay the Day' : ('Replay the ' + rp.left + ' you skipped');
+    b.href = '/daily?s=' + encodeURIComponent(SID) + '&replay=1';
+    b.onclick = () => track('replay_start', { left: rp.left });
+  }
+}
 function renderDone(st){
   const pr = st.progress || {}, as = st.async || {};
   $('#doneDay').textContent = dropTitle(as.dayLabel);
@@ -1169,6 +1283,7 @@ function afterLines(as, lead){
 
 function renderRecap(st){
   const rc = st.recap || {};
+  renderReplayRecap(st);
   $('#recapSub').textContent = (rc.totalRounds != null ? rc.totalRounds : (st.queue || []).length)
     + ' records. Here is where you landed.';
   const stats = $('#recapStats'); stats.textContent = '';
@@ -1219,6 +1334,30 @@ function renderRecap(st){
       + (r.tier === 'bullseye' ? 'var(--signal)' : (p < 50 ? 'var(--ink-dim)' : 'var(--ink)'));
     pts.textContent = (p >= 0 ? '+' : '') + p;
     row.appendChild(pts);
+    rows.appendChild(row);
+  });
+  // Replayed records (053): after the real rows, dimmed, with what the guess would have paid.
+  const rr = rc.replay || null;
+  (rr && rr.rows ? rr.rows.filter(r => r.replay) : []).forEach(r => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:10px;align-items:center;padding:11px 2px;border-top:1px solid var(--line);opacity:.75';
+    const left = document.createElement('div'); left.style.cssText = 'flex:1;min-width:0';
+    const t = document.createElement('div');
+    t.style.cssText = 'font-size:14px;font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    t.textContent = r.title || '';
+    const a = document.createElement('div'); a.className = 'mono';
+    a.style.cssText = 'font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-top:2px';
+    a.textContent = 'Replay · practice';
+    left.appendChild(t); left.appendChild(a); row.appendChild(left);
+    const cell = (v, css, bold) => {
+      const s = document.createElement('span'); s.className = 'mono';
+      s.style.cssText = css + ';font-size:13.5px' + (bold ? ';font-weight:700' : ';color:var(--ink-dim)');
+      s.textContent = v; row.appendChild(s);
+    };
+    cell(r.taste != null ? r.taste : '—', 'width:30px;text-align:center');
+    cell(r.predict != null ? Number(r.predict).toFixed(1) : '—', 'width:34px;text-align:center');
+    cell(r.avg != null ? Number(r.avg).toFixed(1) : '—', 'width:34px;text-align:center', true);
+    cell('(' + (r.points >= 0 ? '+' : '') + r.points + ')', 'width:42px;text-align:right');
     rows.appendChild(row);
   });
   // The completion line (operator's wording, 2026-10-31). Finished: the bonus they were paid,
@@ -1298,7 +1437,7 @@ const POLL_MS = 5 * 60 * 1000;
 let polling = false, lastFetch = 0;
 async function refresh(){
   try{
-    const d = await api('/api/me/state', null, 'GET');
+    const d = await api('/api/me/state' + (REPLAY ? '?replay=1' : ''), null, 'GET');
     lastFetch = Date.now();
     ST = d;
     if(d.commentMax) COMMENT_MAX = d.commentMax;
