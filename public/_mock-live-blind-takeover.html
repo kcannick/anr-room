@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blind Results Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Open+Sans:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tokens.css?v=4">
+<style>
+/* MOCKUP — blind results for live sessions + Takeover mode (operator direction 2026-10-15).
+   Console/player frames use tokens.css; the stream frame follows the overlay (Space Mono numbers,
+   green = scoring, gold = first place only). */
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.page{max-width:1500px;margin:0 auto;padding:28px 16px 60px}
+h1{font-weight:900;font-size:30px;letter-spacing:-.03em;margin:0 0 6px}
+.lede{color:var(--ink-dim);max-width:840px;line-height:1.55;font-size:14.5px;margin:0 0 10px}
+h2{font-weight:900;font-size:20px;letter-spacing:-.02em;margin:36px 0 4px}
+.sub{color:var(--ink-dim);font-size:13.5px;margin:0 0 14px;line-height:1.5;max-width:840px}
+.eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-dim)}
+.mono{font-family:"Space Mono",monospace}
+.dim{color:var(--ink-dim)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:22px;align-items:start}
+.note{font-size:12.5px;color:var(--ink-dim);line-height:1.5;margin:10px 2px 0}
+.note b{color:var(--ink)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:12px 16px;font-family:inherit;font-weight:800;font-size:14px;background:var(--signal);color:var(--bg);cursor:pointer}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.btn.full{width:100%}
+.lbl{font-size:12px;color:var(--ink-dim);margin:12px 0 5px;display:block}
+.inp{width:100%;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:11px 12px;color:var(--ink);font:inherit;font-size:14px}
+.inp.locked{color:var(--ink-dim);display:flex;justify-content:space-between;align-items:center}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tog{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:12px 0;border-top:1px solid var(--line)}
+.tog:first-of-type{border-top:0}
+.tog b{font-size:14.5px}
+.tog p{margin:3px 0 0;font-size:12.5px;color:var(--ink-dim);line-height:1.45}
+.sw{width:42px;height:24px;border-radius:12px;background:var(--inset);border:1px solid var(--line);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--ink-dim)}
+.sw.on{background:var(--signal);border-color:var(--signal)}
+.sw.on::after{left:20px;background:var(--bg)}
+.pill{display:inline-block;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:999px;padding:4px 10px;border:1px solid var(--line);color:var(--ink-dim)}
+.pill.live{border-color:var(--signal);color:var(--signal)}
+.pill.blind{border-color:var(--accent);color:#a99cff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);text-align:left;font-weight:400;padding:6px 6px;border-bottom:1px solid var(--line)}
+td{padding:9px 6px;border-bottom:1px solid var(--line)}
+td.n{font-family:"Space Mono",monospace;text-align:right}
+.seal{display:flex;gap:10px;align-items:center;background:rgba(109,95,224,.10);border:1px solid var(--accent);border-radius:11px;padding:11px 13px;font-size:13px;line-height:1.45;margin-top:12px}
+
+/* phone frame */
+.phone{max-width:380px;border:1px solid var(--line);border-radius:26px;padding:18px;background:var(--bg)}
+.lock{text-align:center;padding:26px 8px}
+.lock .big{font-weight:900;font-size:26px;letter-spacing:-.02em;margin:10px 0 6px}
+.myvote{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.myvote div{background:var(--inset);border:1px solid var(--line);border-radius:11px;padding:12px}
+.myvote .v{font-family:"Space Mono",monospace;font-size:26px;font-weight:700}
+
+/* 16:9 stream frame */
+.stage{position:relative;width:100%;aspect-ratio:16/9;background:linear-gradient(135deg,#1a1430,#0b0a12);border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.stage .cam{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#3a3358;font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.2em}
+.rv{position:absolute;left:4%;bottom:7%;width:56%;box-sizing:border-box;background:rgba(14,12,26,.94);border:1px solid #2E2750;border-radius:14px;padding:2.2% 2.6%}
+.rv .eb{font-family:"Space Mono",monospace;font-size:clamp(8px,1vw,13px);letter-spacing:.2em;text-transform:uppercase;color:#9793B4}
+.rv .line{display:flex;align-items:center;gap:3%;margin-top:3%}
+.rv .rk{font-family:"Space Mono",monospace;font-weight:700;font-size:clamp(26px,5vw,76px);color:#EAE9F2;line-height:1}
+.rv .t{font-weight:900;font-size:clamp(14px,2.4vw,38px);letter-spacing:-.02em;line-height:1.05}
+.rv .a{color:#9793B4;font-size:clamp(10px,1.2vw,18px);margin-top:4px}
+.rv .scw{margin-left:auto;text-align:right}
+.rv .sc{font-family:"Space Mono",monospace;font-weight:700;font-size:clamp(22px,4vw,64px);color:#4BB749}
+.rv .vd{font-size:clamp(10px,1.2vw,18px);color:#EAE9F2;font-weight:700;text-align:right}
+.rv.first{border-color:#F5C518}
+.rv.first .rk{color:#F5C518}
+.prog{position:absolute;right:4%;bottom:7%;width:30%;box-sizing:border-box;background:rgba(14,12,26,.94);border:1px solid #2E2750;border-radius:14px;padding:2% 2.2%}
+.prog div{display:flex;justify-content:space-between;font-family:"Space Mono",monospace;font-size:clamp(8px,1vw,14px);color:#9793B4;padding:3px 0}
+.prog div.done{color:#EAE9F2}
+.prog div.next{color:#4f4870}
+/* full-list reveal */
+.full{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:62%;background:rgba(14,12,26,.95);border:1px solid #2E2750;border-radius:16px;padding:2.4% 3%}
+.full .eb{font-family:"Space Mono",monospace;font-size:clamp(8px,1vw,13px);letter-spacing:.2em;text-transform:uppercase;color:#9793B4;margin-bottom:2%}
+.full .fr{display:flex;align-items:center;gap:3%;padding:1.1% 0;border-top:1px solid #2E2750}
+.full .fr:first-of-type{border-top:0}
+.full .fk{font-family:"Space Mono",monospace;font-weight:700;width:8%;font-size:clamp(12px,1.8vw,28px);color:#9793B4}
+.full .fk.g{color:#F5C518}
+.full .ft{font-weight:800;font-size:clamp(11px,1.5vw,24px)}
+.full .fv{margin-left:auto;font-size:clamp(9px,1.05vw,16px);color:#EAE9F2;font-weight:700}
+.full .fs{width:12%;text-align:right;font-family:"Space Mono",monospace;font-weight:700;font-size:clamp(12px,1.8vw,28px);color:#4BB749}
+.opt{display:inline-block;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--signal);color:var(--signal);border-radius:999px;padding:3px 9px;margin-right:6px}
+
+/* (unused) */
+.file{max-width:430px;aspect-ratio:4/5;background:#0E0C1A;border:1px solid #2E2750;border-radius:12px;padding:20px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.file .hd{display:flex;justify-content:space-between;align-items:flex-end}
+.file .ttl{font-weight:900;font-size:22px;letter-spacing:-.03em;line-height:1}
+.file .blk i{display:inline-block;background:#4BB749;color:#0E0C1A;font-style:normal;padding:2px 6px;border-radius:3px;transform:skewX(-13deg);font-weight:900;font-size:11px}
+.file h5{margin:6px 0 2px;font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:#9793B4;font-weight:400}
+.file .r{display:flex;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #1d1834}
+.file .r .k{font-family:"Space Mono",monospace;width:20px;color:#9793B4}
+.file .r .k.g{color:#F5C518}
+.file .r .s{margin-left:auto;font-family:"Space Mono",monospace;color:#4BB749}
+
+/* email (artist-email template) */
+:root{--e-bg:#17191D;--e-head:#0D0E12;--e-card:#24272C;--e-line:#2C2F34;--e-ink:#F6F7FB;--e-dim:#B0B7C3;--e-faint:#8A94A6;--e-green:#4BB749}
+.mail{background:var(--e-bg);border-radius:14px;padding:18px 12px;font-family:"Open Sans",Helvetica,Arial,sans-serif;color:var(--e-ink)}
+.mhdr{background:var(--e-head);border-radius:12px 12px 0 0;text-align:center;padding:16px 14px}
+.mhdr .k{font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:var(--e-green);font-weight:700}
+.mhdr .d{margin-top:4px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--e-faint)}
+.mbody{border:1px solid var(--e-line);border-top:0;border-radius:0 0 12px 12px;padding:18px 16px;text-align:center}
+.mbody h3{font-size:20px;line-height:1.25;margin:0 0 10px}
+.mbody p{font-size:13.5px;line-height:1.6;color:var(--e-dim);margin:0 0 12px}
+.subj{font-family:"Space Mono",monospace;font-size:11px;color:var(--e-faint);margin:0 0 8px;text-align:left}
+.subj b{color:var(--e-ink);font-family:"Open Sans",sans-serif;font-size:13px}
+.btn-e{display:inline-block;background:var(--e-green);color:#0D0E12;border-radius:24px;padding:10px 20px;font-size:13px;font-weight:700}
+.btn-e.ghost{background:transparent;color:var(--e-ink);border:1px solid var(--e-line)}
+.trk{display:flex;align-items:center;gap:12px;text-align:left;background:var(--e-card);border:1px solid var(--e-line);border-radius:10px;padding:12px;margin-bottom:8px}
+.trk .sc{font-family:"Space Mono",monospace;font-weight:700;font-size:24px;color:var(--e-green);width:52px}
+.trk .t{font-weight:700;font-size:14px}
+.trk .v{font-size:12px;color:var(--e-faint)}
+.trk a{margin-left:auto;font-size:12px;color:var(--e-ink);text-decoration:underline}
+.stack{position:relative;padding:0 0 22px}
+.stack .mail+.mail{margin-top:-6px}
+.stackcount{font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-dim);text-align:center;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Blind results and Takeover</h1>
+  <p class="lede"><b>Blind results:</b> rounds are scored as usual, but nobody sees an average until
+  the host reveals them all at the end, so earlier results cannot sway later votes. The session
+  goes <b>Live</b> (rating) → <b>Closed</b> (voting over, nothing shown) → <b>Published</b> (the host
+  presses Reveal). <b>Takeover:</b> one artist set once; each record needs only a title.</p>
+
+  <h2>1 · Setting it up (console)</h2>
+  <div class="grid">
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">New session · settings</div>
+      <div class="panel">
+        <div class="tog"><div><b>Takeover</b><p>One artist for the whole session. You enter only track titles.</p></div><div class="sw on"></div></div>
+        <div style="padding:0 0 12px">
+          <div class="row2"><div><span class="lbl">Artist</span><input class="inp" value="Nia Brooks"></div><div><span class="lbl">Instagram</span><input class="inp" value="@niabrooks"></div></div>
+          <div class="row2"><div><span class="lbl">Email (for the Track Reports)</span><input class="inp" value="nia@example.com"></div><div><span class="lbl">Phone</span><input class="inp" value="(404) 555-0134"></div></div>
+          <span class="lbl">Session name</span><div class="inp locked">Takeover - Nia Brooks - Oct 21, 2026 <span class="mono" style="font-size:11px">auto</span></div>
+        </div>
+        <div class="tog"><div><b>Blind results</b><p>Hide every round's average until you reveal them all at the end. On by default for a Takeover.</p></div><div class="sw on"></div></div>
+      </div>
+      <p class="note">The name follows the naming rule (type + date). Every round still stores the
+      artist, copied from here, so reports, charts and leads work unchanged.</p>
+    </div>
+
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">Queue form · Takeover</div>
+      <div class="panel">
+        <span class="lbl" style="margin-top:0">Artist</span>
+        <div class="inp locked">Nia Brooks · @niabrooks <span class="mono" style="font-size:11px">from the session</span></div>
+        <span class="lbl">Track title</span><input class="inp" placeholder="Track title" value="Late Bloomer">
+        <span class="lbl">Play link</span><input class="inp" placeholder="https://" value="https://soundcloud.com/niabrooks/late-bloomer">
+        <button class="btn full" style="margin-top:16px">Add &amp; open round</button>
+      </div>
+      <p class="note">Two fields per record instead of six.</p>
+    </div>
+  </div>
+
+  <h2>2 · During the session</h2>
+  <div class="grid">
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">Host console · the host still sees averages</div>
+      <div class="panel">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><span class="pill live">● Live</span><span class="pill blind">Blind results</span></div>
+        <table>
+          <tr><th>#</th><th>Track</th><th style="text-align:right">A&amp;Rs</th><th style="text-align:right">Avg</th></tr>
+          <tr><td class="mono">1</td><td>Porch Light</td><td class="n">42</td><td class="n">5.8</td></tr>
+          <tr><td class="mono">2</td><td>Late Bloomer</td><td class="n">44</td><td class="n">6.4</td></tr>
+          <tr><td class="mono">3</td><td>Glass House</td><td class="n">39</td><td class="n">4.9</td></tr>
+          <tr><td class="mono">4</td><td>Northbound</td><td class="n">41</td><td class="dim n">voting</td></tr>
+        </table>
+        <div class="seal">These averages are hidden from A&amp;Rs and the overlay until you reveal them.</div>
+        <div style="display:flex;gap:8px;margin-top:14px"><button class="btn ghost">End voting</button><button class="btn" disabled style="opacity:.4">Reveal results</button></div>
+      </div>
+      <p class="note"><b>End voting</b> moves the session to Closed. <b>Reveal results</b> then publishes
+      everything at once and starts the countdown on the overlay.</p>
+    </div>
+
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">A&amp;R phone · after locking in</div>
+      <div class="phone">
+        <div class="lock">
+          <div class="eyebrow">Record 3 of 6</div>
+          <div class="big">Locked in.</div>
+          <div class="dim" style="font-size:14px;line-height:1.5">Results are revealed at the end of the session. Your score card and round-by-round results come then.</div>
+          <div class="myvote"><div><div class="eyebrow" style="font-size:9.5px">You rated</div><div class="v">6</div></div><div><div class="eyebrow" style="font-size:9.5px">You predicted</div><div class="v">5.4</div></div></div>
+        </div>
+      </div>
+      <p class="note">No average, no points, no tier. The overlay shows how many A&amp;Rs have voted,
+      never the result. The $500 board leaves the session out until the reveal, or its
+      movement would give results away.</p>
+    </div>
+  </div>
+
+  <h2>3 · The reveal</h2>
+  <p class="sub">Two ways to reveal, chosen by the host: <b>Countdown</b> shows one record at a time
+  from last to first, then the A&amp;Rs. <b>Full list</b> shows every record at once. Either way,
+  the stream and every phone get the same result at the same moment.</p>
+  <div class="grid">
+    <div style="grid-column:1/-1">
+      <div class="eyebrow" style="margin-bottom:8px"><span class="opt">Option 1 · Countdown</span> Overlay · 1920×1080 · record #2 of 6</div>
+      <div class="stage">
+        <div class="cam">STREAM</div>
+        <div class="rv">
+          <div class="eb">Takeover - Nia Brooks · The reveal</div>
+          <div class="line"><div class="rk">#2</div><div><div class="t">Porch Light</div><div class="a">Nia Brooks</div></div>
+            <div class="scw"><div class="sc">5.8</div><div class="vd">Strong release</div></div></div>
+        </div>
+        <div class="prog">
+          <div class="done"><span>#6 Northbound</span><span>3.9</span></div>
+          <div class="done"><span>#5 Glass House</span><span>4.9</span></div>
+          <div class="done"><span>#4 Static</span><span>5.1</span></div>
+          <div class="done"><span>#3 Low Tide</span><span>5.6</span></div>
+          <div class="done"><span>#2 Porch Light</span><span>5.8</span></div>
+          <div class="next"><span>#1</span><span>?</span></div>
+          <div class="next"><span>Top A&amp;Rs</span><span></span></div>
+        </div>
+      </div>
+      <p class="note">At #1 the card's border and rank turn gold. After the records, the same card
+      runs the Top A&amp;Rs from #8 to #1. Each record shows its score and its verdict.</p>
+    </div>
+
+    <div style="grid-column:1/-1">
+      <div class="eyebrow" style="margin-bottom:8px"><span class="opt">Option 2 · Full list</span> Overlay · 1920×1080 · every record at once</div>
+      <div class="stage">
+        <div class="cam">STREAM</div>
+        <div class="full">
+          <div class="eb">Takeover - Nia Brooks · Every record</div>
+          <div class="fr"><div class="fk g">#1</div><div class="ft">Late Bloomer</div><div class="fv">Potential Single</div><div class="fs">6.4</div></div>
+          <div class="fr"><div class="fk">#2</div><div class="ft">Porch Light</div><div class="fv">Strong release</div><div class="fs">5.8</div></div>
+          <div class="fr"><div class="fk">#3</div><div class="ft">Low Tide</div><div class="fv">Strong release</div><div class="fs">5.6</div></div>
+          <div class="fr"><div class="fk">#4</div><div class="ft">Static</div><div class="fv">Strong release</div><div class="fs">5.1</div></div>
+          <div class="fr"><div class="fk">#5</div><div class="ft">Glass House</div><div class="fv">Solid release</div><div class="fs">4.9</div></div>
+          <div class="fr"><div class="fk">#6</div><div class="ft">Northbound</div><div class="fv">Potential release</div><div class="fs">3.9</div></div>
+        </div>
+      </div>
+      <p class="note">One press shows the whole ranked list. The host can also bring it up after a
+      countdown as the closing screen. Phones get every result at the same moment. A session with
+      more records than fit splits the list over pages.</p>
+    </div>
+
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">A&amp;R phone · during the countdown</div>
+      <div class="phone">
+        <div class="eyebrow">The reveal is on</div>
+        <div style="font-weight:900;font-size:20px;margin:8px 0 12px">Results so far</div>
+        <table>
+          <tr><th>#</th><th>Track</th><th style="text-align:right">Avg</th><th style="text-align:right">You</th></tr>
+          <tr><td class="mono">6</td><td>Northbound</td><td class="n">3.9</td><td class="n">80</td></tr>
+          <tr><td class="mono">5</td><td>Glass House</td><td class="n">4.9</td><td class="n">80</td></tr>
+          <tr><td class="mono">4</td><td>Static</td><td class="n">5.1</td><td class="n">100</td></tr>
+          <tr><td class="mono">3</td><td>Low Tide</td><td class="n">5.6</td><td class="n">90</td></tr>
+          <tr><td class="mono">2</td><td>Porch Light</td><td class="n">5.8</td><td class="n">100</td></tr>
+          <tr><td class="mono dim">1</td><td class="dim">Next on stream</td><td class="n dim">·</td><td class="n dim">·</td></tr>
+        </table>
+      </div>
+      <p class="note"><b>Everyone finds out at once.</b> Each press of Advance reveals the next
+      record on the stream AND on every A&amp;R's phone at the same moment, so watching and not
+      watching are equal. The score card and the full round-by-round come when the countdown
+      reaches the end.</p>
+    </div>
+
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">A&amp;R phone · at the reveal</div>
+      <div class="phone">
+        <div class="eyebrow">Results are in</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin:10px 0 14px">
+          <div><div style="font-weight:900;font-size:22px">Dana Ruiz</div><div class="dim" style="font-size:13px">#1 of 44 · 612 points</div></div>
+          <div class="mono" style="font-size:44px;font-weight:700;color:var(--gold);line-height:1">A</div>
+        </div>
+        <button class="btn full" style="margin-bottom:14px">Save your score card</button>
+        <table>
+          <tr><th>Track</th><th style="text-align:right">You</th><th style="text-align:right">Guess</th><th style="text-align:right">Avg</th><th style="text-align:right">Pts</th></tr>
+          <tr><td>Porch Light</td><td class="n">6</td><td class="n">5.7</td><td class="n">5.8</td><td class="n">100</td></tr>
+          <tr><td>Late Bloomer</td><td class="n">7</td><td class="n">6.4</td><td class="n">6.4</td><td class="n">125</td></tr>
+          <tr><td>Glass House</td><td class="n">5</td><td class="n">5.4</td><td class="n">4.9</td><td class="n">80</td></tr>
+        </table>
+      </div>
+      <p class="note">Everyone gets their score card and round-by-round results at the same moment.
+      Gold appears only because this A&amp;R finished first.</p>
+    </div>
+  </div>
+
+  <h2>4 · Takeover: the artist's email (pick one)</h2>
+  <div class="grid">
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">A · One email per track (today)</div>
+      <div class="stack">
+        <div class="mail">
+          <div class="subj">Subject: <b>Your Track Report: "Late Bloomer"</b></div>
+          <div class="mhdr"><div class="k">The A&amp;R Room</div><div class="d">Takeover · Oct 21, 2026</div></div>
+          <div class="mbody"><h3>Release it. This one is worth investing in.</h3>
+            <p><b style="color:#F6F7FB">"Late Bloomer"</b> was rated by 44 A&amp;Rs: <b style="color:#F6F7FB">6.4, Potential Single</b>.</p>
+            <a class="btn-e">Read the Track Report</a></div>
+        </div>
+      </div>
+      <div class="stackcount">× 6 emails, one per track, each with its own report</div>
+      <p class="note"><b>For:</b> each email is short and each report stands alone. <b>Against:</b>
+      six emails at once from the same sender reads as spam and some will land in Promotions.</p>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom:8px">B · One combined email</div>
+      <div class="mail">
+        <div class="subj">Subject: <b>Your Takeover results: 6 tracks rated by 44 A&amp;Rs</b></div>
+        <div class="mhdr"><div class="k">The A&amp;R Room</div><div class="d">Takeover · Oct 21, 2026</div></div>
+        <div class="mbody">
+          <h3>Nia, here is how the A&amp;R Team heard your six tracks.</h3>
+          <p>Lead with <b style="color:#F6F7FB">"Late Bloomer"</b>. It scored highest, and it scored where singles score.</p>
+          <div class="trk"><div class="sc">6.4</div><div><div class="t">Late Bloomer</div><div class="v">Potential Single</div></div><a>Report</a></div>
+          <div class="trk"><div class="sc">5.8</div><div><div class="t">Porch Light</div><div class="v">Strong release</div></div><a>Report</a></div>
+          <div class="trk"><div class="sc">5.6</div><div><div class="t">Low Tide</div><div class="v">Strong release</div></div><a>Report</a></div>
+          <div class="trk"><div class="sc">5.1</div><div><div class="t">Static</div><div class="v">Strong release</div></div><a>Report</a></div>
+          <div class="trk"><div class="sc">4.9</div><div><div class="t">Glass House</div><div class="v">Solid release</div></div><a>Report</a></div>
+          <div class="trk"><div class="sc">3.9</div><div><div class="t">Northbound</div><div class="v">Potential release</div></div><a>Report</a></div>
+          <p style="margin-top:12px">Every track has its full Track Report. Comments from the A&amp;Rs are inside each one.</p>
+          <a class="btn-e">Download all six reports</a>
+        </div>
+      </div>
+      <p class="note"><b>For:</b> one email, ranked, with a clear "lead with this one". It reads like a
+      verdict on the project, which is what a Takeover is. <b>Against:</b> one more template to keep.
+      <b>My pick: B.</b></p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
