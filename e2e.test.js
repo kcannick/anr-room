@@ -2468,7 +2468,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     !/\d\.\d|out of 9|#\d|A&Rs heard/.test(huc.body + huc.subject + huc.tune), huc.body);
   const huSms = srv._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', streamAtL);
   ok('the heads-up text is plain GSM-7 inside one segment', huSms.length <= 160 && /^[\x20-\x7e]*$/.test(huSms)
-    && /Report by email/.test(huSms) && !/Wed|Top 8/.test(huSms) && /makinitmag\.com\/live/.test(huSms) && /Reply STOP/.test(huSms) && !/Countdown/.test(huSms), huSms.length + ' ' + huSms);
+    && /Report by email/.test(huSms) && !/7:00 PM|Top 8/.test(huSms) && /makinitmag\.com\/live/.test(huSms) && /Reply STOP/.test(huSms) && !/Countdown/.test(huSms), huSms.length + ' ' + huSms);
   const huTxt = srv._artistHeadsupText(huc), huHtml = srv._artistHeadsupHtml(huc);
   ok('the heads-up asks the artist to subscribe on YouTube and hit the bell (2026-10-15)',
     /hit the bell/.test(huTxt) && /Subscribe on YouTube: https:\/\/www\.makinitmag\.com\/live/.test(huTxt) && /href="https:\/\/www\.makinitmag\.com\/live"/.test(huHtml), huTxt);
