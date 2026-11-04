@@ -941,7 +941,8 @@ function qPaint(){
     const adminTools = !!(ST && ST.async && (ST.async.adminWindow || (ST.async.replay && ST.async.replay.walking && ST.async.replay.admin)));
     const win = adminTools || replayWalk;
     const rv = win ? revealed[r.id] : null;
-    $('#revealBox').classList.toggle('hide', !adminTools || !!rv);
+    // Show results stays while the result is only local (the overlay call failed or is pending).
+    $('#revealBox').classList.toggle('hide', !adminTools || !!(rv && rv.view !== 'local'));
     $('#revealOut').classList.toggle('hide', !rv);
     $('#reportBox').classList.toggle('hide', !adminTools);
     $('#sealNote').parentElement.classList.toggle('hide', !!win);
@@ -1074,7 +1075,17 @@ $('#btnLock').onclick = async () => {
     // and it must not flicker through an unlocked state on the way.
     r.voted = true; r.myVote = { taste: chosenTaste, predict };
     // A replay lock-in brings the result with it (the round is final): keep it for qPaint.
-    if(out.data.replay){ r.replay = true; if(out.data.result) revealed[r.id] = { view: 'local', reveal: out.data.result.reveal, total: out.data.result.total }; }
+    if(out.data.replay){
+      r.replay = true;
+      if(out.data.result) revealed[r.id] = { view: 'local', reveal: out.data.result.reveal, total: out.data.result.total };
+      // An admin's replay is the stream (2026-11-03, operator: "when admin is playing results
+      // should go to overlay"): the phone paints the local result at once, and the reveal
+      // route fires the overlay with the same numbers. Its state replaces the local one so
+      // the report pager has a reveal to fall back to; a failure leaves Show results on screen.
+      if(ST && ST.async && ST.async.replay && ST.async.replay.admin){
+        overlayPost('/api/admin/daily/reveal', { roundId: r.id }).then(st => { if(st && currentRound() && currentRound().id === r.id){ revealed[r.id] = st; qPaint(); } else if(st) revealed[r.id] = st; });
+      }
+    }
     // Hold this screen. On the LAST record the refresh below flips the phase to done (or,
     // in demo mode on a published drop, straight to recap) and render() used to replace
     // the locked screen before the result or the note box was read — the 2026-10-30
