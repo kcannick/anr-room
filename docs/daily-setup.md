@@ -252,6 +252,18 @@ https://anr.makinitmag.com/overlay/daily?k=<your Stream Deck control key>
 
 The URL is listed under Stream Deck / external control in the console. Rolling the key changes it.
 
+**The "now rating" strip** is a second browser source for the face-cam scene, so the phone screen
+can stay off the stream:
+
+```
+https://anr.makinitmag.com/overlay/daily?view=record&k=<your Stream Deck control key>
+```
+
+Same size (1080×1920, transparent); it draws a strip inside the top of the camera window with the
+title, artist and Instagram handle of the record you are on. Turn it on with **Record on stream**
+on the daily page (admin only, remembered per device): each record you land on goes up; See
+results, Exit or the switch takes it down. The reveal source is separate and unaffected.
+
 ## Replay the Day (2026-10-31)
 
 Platform panel → System settings → **Replay the Day window** (days, default 7, 0 = off).

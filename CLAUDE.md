@@ -1266,6 +1266,20 @@ live on anr.makinitmag.com.
   the recap screen's Replay panel, and the two missed-day mails (`replayBlockHtml/Text`, under the
   main button; absent when the window is 0). Mockup `public/_mock-replay.html` (seven screens, no
   new pages). An anonymous front-page try-it is NOT built (operator "not committed").
+  **An admin's replay lock-in fires the overlay reveal** (PR #84, 2026-11-03). **The "now rating"
+  strip** (2026-11-04, operator: "show the current song, artist, and IG in the overlay instead of
+  having the phone screen on stream... entirely too busy... just title, artist, Instagram"): a
+  SEPARATE browser source, `/overlay/daily?view=record&k=<control key>` (listed under Stream Deck /
+  external control), for the face-cam scene only — a strip inside the top edge of the 16:9 camera
+  window (x 46, y 366, 908 wide; the bottom of the frame is the platform's chat), title with the
+  artist beside it, the handle on the right, "Now rating · Record N of M". Its own state row
+  (`daily_record:<uid>`, `dailyRecordState`), read via `/api/control/daily-overlay?part=record`, so
+  the reveal source is untouched. Driven by an admin switch on the daily page, **Record on stream**
+  (`anr_rec_stream`, per device): on, every record landed on is posted (`POST /api/admin/daily/
+  overlay {view:'record', roundId, position, total}`); off, See results and Exit post `{off:true}`.
+  Public promotional fields only — nothing about the room. Mockup
+  `public/_mock-daily-nowrating-overlay.html` (over the operator's real scene,
+  `public/_mock-assets/scene-daily-live.webp`).
 - **Tournament stream overlay** (no migration, 2026-10-25; branch `claude/wars-stream-overlay`,
   NOT merged when written). `/overlay/wars` (`public/wars-overlay.html`): an OBS browser source,
   **vertical 1080×1920 only** (the stream goes to Instagram Live / TikTok via Restream; the
