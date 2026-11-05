@@ -2048,6 +2048,20 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok('the day so far goes on the overlay', rpTot.status === 200 && rpTot.d.state.view === 'total' && rpTot.d.state.total.rows.length === 1);
     const rpView = await call('/api/admin/daily/overlay', { s: GDROP, view: 'bracket' }, 'POST', GH);
     ok('an unknown view is refused', rpView.status === 400);
+    // THE "NOW RATING" STRIP (2026-11-04): its own state, its own source, nothing about the room.
+    const rcOn = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[1], position: 2, total: 3 }, 'POST', GH);
+    ok('record: the strip takes a record with its position', rcOn.status === 200 && rcOn.d.state.on === true && rcOn.d.state.roundId === gQ[1] && rcOn.d.state.position === 2 && rcOn.d.state.total === 3 && /Record 7[12]/.test(rcOn.d.state.title), JSON.stringify(rcOn.d));
+    ok('record: title, artist and handle only — no average, no count, no rating', !('avg' in rcOn.d.state) && !('n' in rcOn.d.state) && !('rated' in rcOn.d.state) && typeof rcOn.d.state.artist === 'string');
+    const rcCtl = await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json();
+    ok('record: the strip source reads it through the control key', rcCtl.state && rcCtl.state.on === true && rcCtl.state.roundId === gQ[1], JSON.stringify(rcCtl));
+    const rcMain = await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey))).json();
+    ok('record: the reveal source is untouched by it', rcMain.state && rcMain.state.view === 'total', JSON.stringify(rcMain.state && rcMain.state.view));
+    const rcBad = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: 'nope' }, 'POST', GH);
+    ok('record: an unknown round is refused', rcBad.status === 404);
+    const rcOff = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', off: true }, 'POST', GH);
+    ok('record: off takes it down', rcOff.status === 200 && rcOff.d.state.on === false && (await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json()).state.on === false);
+    const rcPage = await fetch(base + '/overlay/daily?view=record&k=' + encodeURIComponent(gKey));
+    ok('record: the overlay page serves the strip source', rcPage.status === 200 && /id="record"/.test(await rcPage.text()));
 
     // The stable link + the banner: the home page only links the OPEN drop, so an admin on it
     // is pointed at the drop in the window, and /daily/closed goes straight there.

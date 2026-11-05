@@ -118,12 +118,41 @@ body.bg{background:repeating-conic-gradient(#3a3a3a 0 25%,#2a2a2a 0 50%) 0 0/40p
 .pop{transform:scale(.6);opacity:0;transition:transform .4s cubic-bezier(.2,1.4,.4,1),opacity .2s}
 .pop.on{transform:none;opacity:1}
 .scale .mk.g,.scale .lb.g{transition:left .9s cubic-bezier(.2,.8,.2,1)}
+/* ---- the "now rating" strip (?view=record): its own browser source on the face-cam scene.
+   A strip across the top of the 16:9 camera window (x 40–960, y 360–885 in the operator's
+   scene): title with the artist beside it, the handle on the right. Mockup
+   public/_mock-daily-nowrating-overlay.html. Nothing about the room (the seal). ---- */
+body.record #reveal,body.record #total,body.record #report{display:none!important}
+#record{position:absolute;left:46px;width:908px;top:366px;background:rgba(14,12,26,.88);border-radius:18px 18px 14px 14px;overflow:hidden;opacity:0;transform:translateY(-16px);transition:opacity .35s ease,transform .35s cubic-bezier(.2,.8,.2,1)}
+#record.on{opacity:1;transform:none}
+#record .now{padding:14px 24px 16px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:24px;align-items:center}
+#record .eyebrow{grid-column:1;display:flex;align-items:center;gap:10px;font-family:'Space Mono',monospace;font-weight:700;font-size:15px;letter-spacing:.18em;text-transform:uppercase;color:var(--green)}
+#record .eyebrow i{display:block;width:11px;height:11px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(75,183,73,.6);animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(75,183,73,.6)}100%{box-shadow:0 0 0 12px rgba(75,183,73,0)}}
+#record .t{grid-column:1;font-weight:900;font-size:44px;line-height:1.02;letter-spacing:-.04em;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#record .t.long{font-size:36px}
+#record .t .by{font-weight:800;font-size:28px;letter-spacing:-.02em;color:var(--dim);margin-left:14px}
+#record .ig{grid-column:2;grid-row:1/3;display:flex;align-items:center;gap:10px;font-family:'Space Mono',monospace;font-weight:700;font-size:24px;color:var(--ink);white-space:nowrap}
+#record .ig svg{flex:none;width:28px;height:28px}
+#record .ig.none{color:var(--dim);font-size:18px}
 #err{position:absolute;left:40px;top:250px;width:1000px;padding:30px;border-radius:20px;background:rgba(14,12,26,.95);border:2px solid var(--red);font-family:'Space Mono',monospace;font-size:26px;color:var(--red)}
 </style>
 </head>
 <body>
 <div id="c">
   <div id="err" class="hide"></div>
+
+  <!-- the "now rating" strip: shown only with ?view=record -->
+  <div id="record" class="hide">
+    <div class="now">
+      <div class="eyebrow"><i></i><span id="rcEyebrow">Now rating</span></div>
+      <div class="t" id="rcTitle"></div>
+      <div class="ig" id="rcIg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>
+        <span id="rcHandle"></span>
+      </div>
+    </div>
+  </div>
 
   <div class="card" id="reveal">
     <div class="hd">
@@ -195,6 +224,23 @@ body.bg{background:repeating-conic-gradient(#3a3a3a 0 25%,#2a2a2a 0 50%) 0 0/40p
   var Q = new URLSearchParams(location.search);
   var KEY = Q.get('k') || Q.get('key') || '';
   if (Q.get('bg') === '1') document.body.classList.add('bg');
+  // ?view=record: this source is the "now rating" strip and nothing else.
+  var RECORD = Q.get('view') === 'record';
+  if (RECORD) document.body.classList.add('record');
+  var recAt = 0;
+  function renderRecord(st) {
+    var el = $('#record');
+    if (!st || !st.on) { el.classList.remove('on'); recAt = st ? st.at : 0; return; }
+    if (st.at !== recAt) {
+      $('#rcEyebrow').textContent = 'Now rating' + (st.position && st.total ? ' \u00b7 Record ' + st.position + ' of ' + st.total : '');
+      var t = $('#rcTitle'); t.textContent = st.title || ''; t.classList.toggle('long', String(st.title || '').length > 24);
+      var by = document.createElement('span'); by.className = 'by'; by.textContent = st.artist || ''; t.appendChild(by);
+      var ig = $('#rcIg'); ig.classList.toggle('none', !st.handle); ig.querySelector('svg').style.display = st.handle ? '' : 'none';
+      $('#rcHandle').textContent = st.handle || 'No Instagram on file';
+      recAt = st.at;
+    }
+    el.classList.remove('hide'); requestAnimationFrame(function () { el.classList.add('on'); });
+  }
   var TIERS = { bullseye: 'Bullseye', sharp: 'Sharp', close: 'Close', off: 'Off', wayoff: 'Way off' };
   var shownAt = 0, shownView = null, shownPage = null, hideTimer = null;
 
@@ -297,9 +343,9 @@ body.bg{background:repeating-conic-gradient(#3a3a3a 0 25%,#2a2a2a 0 50%) 0 0/40p
 
   function poll() {
     if (!KEY) { $('#err').textContent = 'Add ?k=<your control key> to the URL'; $('#err').classList.remove('hide'); return; }
-    fetch('/api/control/daily-overlay?k=' + encodeURIComponent(KEY), { cache: 'no-store' })
+    fetch('/api/control/daily-overlay?k=' + encodeURIComponent(KEY) + (RECORD ? '&part=record' : ''), { cache: 'no-store' })
       .then(function (r) { if (r.status === 401) { $('#err').textContent = 'Bad control key'; $('#err').classList.remove('hide'); return null; } return r.ok ? r.json() : null; })
-      .then(function (d) { if (d) { $('#err').classList.add('hide'); render(d.state); } })
+      .then(function (d) { if (d) { $('#err').classList.add('hide'); if (RECORD) renderRecord(d.state); else render(d.state); } })
       .catch(function () { /* keep the last frame on a network blip */ });
   }
   poll();

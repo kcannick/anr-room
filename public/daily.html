@@ -257,8 +257,14 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
     <div class="adminwin replay hide" id="replayWin">
       <span class="dot"></span>
       <span class="t"><b>Replay.</b> <span id="replayLabel"></span>. <span id="replayLine"></span></span>
-      <a href="/account#results">Exit</a>
+      <a href="/account#results" id="replayExit">Exit</a>
     </div>
+    <!-- ADMIN ONLY: the "now rating" strip on the stream (/overlay/daily?view=record). On, the
+         record on this screen is posted to the overlay as you land on it; off clears it. -->
+    <label class="adminwin hide" id="recStreamRow" style="cursor:pointer">
+      <input type="checkbox" id="recStream" style="width:18px;height:18px;margin:0;accent-color:var(--signal)">
+      <span class="t"><b>Record on stream.</b> Title, artist and Instagram on the overlay while you rate.</span>
+    </label>
     <div class="adminwin hide" id="adminWin">
       <span class="dot"></span>
       <span class="t"><b>Admin rating window.</b> Closed to everyone else at <span id="adminWinClosed"></span>. Your ratings count like any A&amp;R's.</span>
@@ -811,12 +817,29 @@ $('#qAudio').addEventListener('error', () => {
   qPaint();
 });
 
+// The "now rating" strip (2026-11-04): an admin switch, remembered per device. On, every
+// record landed on goes to the overlay; off (and See results / Exit) clears it.
+const REC_KEY = 'anr_rec_stream';
+function recStreamOn(){ try { return localStorage.getItem(REC_KEY) === '1'; } catch(e){ return false; } }
+function recAdminTools(){ return !!(ST && ST.async && (ST.async.adminWindow || (ST.async.replay && ST.async.replay.walking && ST.async.replay.admin))); }
+function recPost(){
+  if(!recAdminTools()) return;
+  const r = currentRound(); if(!r) return;
+  if(recStreamOn()) overlayPost('/api/admin/daily/overlay', { view: 'record', roundId: r.id, position: qIndex + 1, total: qRounds.length });
+}
+function recOff(){ if(recAdminTools()) return overlayPost('/api/admin/daily/overlay', { view: 'record', off: true }); return Promise.resolve(null); }
+$('#recStream').onchange = () => {
+  try { localStorage.setItem(REC_KEY, $('#recStream').checked ? '1' : '0'); } catch(e){}
+  if($('#recStream').checked) recPost(); else recOff();
+};
+$('#replayExit').onclick = (e) => { if(recStreamOn() && recAdminTools()){ e.preventDefault(); recOff().then(() => { location.href = '/account#results'; }); } };
 function qShow(i){
   if(!qRounds.length) return;
   qIndex = Math.max(0, Math.min(i, qRounds.length - 1));
   const r = currentRound();
   if(r.id !== qRoundId){          // <- the guard. Round id and nothing else.
     qRoundId = r.id;
+    recPost();
     resetVoteInputs();
     $('#qReportBox').classList.add('hide');
     cmtBind(r);
@@ -1057,6 +1080,7 @@ function qAdvance(){
     if(!qRounds[j].voted && !qRounds[j].myReport) return qShow(j);
   }
   reviewing = false;   // "See my day" is also the way OUT of review mode
+  if(recStreamOn()) recOff();   // the strip comes down with the walk
   render();            // nothing left — let the state decide, which flips to 'done'
 }
 $('#btnNext').onclick = qAdvance;
@@ -1142,6 +1166,9 @@ function render(){
   $('#replayWin').classList.toggle('hide', !replayWalk);
   if(replayWalk){ $('#replayLabel').textContent = 'Daily Drop ' + (rp.label || ''); $('#replayLine').textContent = rp.practiceLine || 'Practice only. No points are awarded.'; }
   $('#btnDayOnStream').classList.toggle('hide', !(win || (replayWalk && rp.admin)));
+  const recTools = !!(win || (replayWalk && rp.admin));
+  $('#recStreamRow').classList.toggle('hide', !recTools);
+  if(recTools) $('#recStream').checked = recStreamOn();
   const lr = as.liveReview || null;
   $('#liveReviewLink').classList.toggle('hide', !lr);
   if(lr){

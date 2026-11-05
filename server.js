@@ -1323,6 +1323,20 @@ async function setDailyOverlayState(uid, state) {
   await db.run('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v',
     ['daily_overlay:' + uid, JSON.stringify(state)]);
 }
+// THE "NOW RATING" STRIP (2026-11-04, operator: "show the current song, artist, and IG in the
+// overlay instead of having the phone screen on stream"). Its own state row, separate from the
+// reveal, so it can be its own OBS browser source on the face-cam scene (/overlay/daily?view=
+// record) while the reveal source keeps its own state. Title, artist, handle, position — public
+// promotional fields only; nothing about the room (the seal).
+async function dailyRecordState(uid) {
+  const row = await db.get('SELECT v FROM settings WHERE k = ?', ['daily_record:' + uid]);
+  if (!row || !row.v) return null;
+  try { return JSON.parse(row.v); } catch { return null; }
+}
+async function setDailyRecordState(uid, state) {
+  await db.run('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v',
+    ['daily_record:' + uid, JSON.stringify(state)]);
+}
 // One vote against the round's live average. The same math ratifyRound will apply at the
 // tally (roomAverage + accuracyPoints), so what the overlay shows is what the board will pay.
 function liveVoteResult(votes, mine) {
@@ -9337,6 +9351,8 @@ async function handleApi(req, res, url) {
     const act0 = p.slice('/api/control/'.length);
     if (act0 === 'daily-overlay') {
       res.setHeader('Cache-Control', 'private, no-store');
+      // ?part=record: the "now rating" strip's own state (its own browser source).
+      if (url.searchParams.get('part') === 'record') return send(res, 200, { state: await dailyRecordState(host.uid) });
       return send(res, 200, { state: await dailyOverlayState(host.uid) });
     }
     if (act0 === 'daily-report-page') {
@@ -11476,7 +11492,7 @@ async function handleApi(req, res, url) {
     // resolves to the same person, and the role check is on users.role, never on the token.
     const admin = await adminFromAnyToken(req);
     if (!admin) return bad(res, 'Admin auth failed', 401);
-    if (method === 'GET') return send(res, 200, { state: await dailyOverlayState(admin.uid) });
+    if (method === 'GET') return send(res, 200, { state: await dailyOverlayState(admin.uid), record: await dailyRecordState(admin.uid) });
     const body = await readBody(req);
     const sid = (body.s || body.sessionId || '').toString();
     const session = sid ? await db.get('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL', [sid]) : null;
@@ -11497,7 +11513,21 @@ async function handleApi(req, res, url) {
       return send(res, 200, { ok: true, state });
     }
     const view = (body.view || '').toString();
-    if (!['idle', 'total', 'report'].includes(view)) return bad(res, 'view must be idle, total or report');
+    if (!['idle', 'total', 'report', 'record'].includes(view)) return bad(res, 'view must be idle, total, report or record');
+    // record: the "now rating" strip. {roundId, position, total} puts a record up; {off:true}
+    // takes it down. Separate state from the reveal (see dailyRecordState).
+    if (view === 'record') {
+      if (body.off) { const st = { on: false, at: now(), drop: { id: session.id, label: dropLabel } }; await setDailyRecordState(admin.uid, st); return send(res, 200, { ok: true, state: st }); }
+      const round = body.roundId ? await db.get('SELECT id, song_title, song_artist, artist_instagram FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
+      if (!round) return bad(res, 'Round not found', 404);
+      const pos = parseInt(body.position, 10), tot = parseInt(body.total, 10);
+      const st = { on: true, at: now(), drop: { id: session.id, label: dropLabel }, roundId: round.id,
+        title: round.song_title || 'Untitled', artist: round.song_artist || '',
+        handle: igClean(round.artist_instagram) ? '@' + igClean(round.artist_instagram) : null,
+        position: Number.isInteger(pos) && pos > 0 ? pos : null, total: Number.isInteger(tot) && tot > 0 ? tot : null };
+      await setDailyRecordState(admin.uid, st);
+      return send(res, 200, { ok: true, state: st });
+    }
     const prev = await dailyOverlayState(admin.uid);
     if (view === 'idle') { const st = { view: 'idle', at: now(), drop: { id: session.id, label: dropLabel } }; await setDailyOverlayState(admin.uid, st); return send(res, 200, { ok: true, state: st }); }
     const participant = await db.get('SELECT * FROM participants WHERE session_id = ? AND user_id = ? AND verified = 1', [session.id, admin.uid]);

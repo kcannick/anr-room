@@ -6509,6 +6509,7 @@ let DECK_KEY=null, deckShown=false;
 function deckUrl(path,extra){
   // The daily reveal overlay is a PAGE, not an API action: /overlay/daily?k=<key>.
   if(path==='daily-overlay-page') return location.origin+'/overlay/daily?k='+(DECK_KEY||'');
+  if(path==='daily-record-page') return location.origin+'/overlay/daily?view=record&k='+(DECK_KEY||'');
   return location.origin+'/api/control/'+path+'?k='+(DECK_KEY||'')+(extra||'');
 }
 function deckMask(k){ return k ? k.slice(0,6)+'…'+k.slice(-4) : ''; }
@@ -6525,6 +6526,7 @@ function renderDeck(){
     ['+1 minute','extend','&minutes=1'],
     ['Status','state',''],
     ['Daily reveal overlay (OBS browser source, 1080×1920)','daily-overlay-page',''],
+    ['Daily "now rating" strip (OBS browser source for the face-cam scene, 1080×1920)','daily-record-page',''],
   ];
   $('#deckUrls').innerHTML=rows.map(([lbl,path,extra])=>{
     const full=deckUrl(path,extra);
