@@ -187,6 +187,11 @@ ICONS = {
     'download': '<path d="M12 3 V16"/><path d="M6 10 L12 16 L18 10"/><path d="M4 20 H20"/>',
     'check':    '<path d="M4 12 L10 18 L20 6"/>',
     'arrow':    '<path d="M4 12 H20"/><path d="M13 5 L20 12 L13 19"/>',
+    # added 2026-10-20 for the @TheAnRTeam kit (team-ig/); the proposed bracket was declined
+    'join':     '<circle cx="9" cy="8" r="4"/><path d="M2 21 A7 7 0 0 1 16 21"/><path d="M19 8 V14 M16 11 H22"/>',
+    'submit':   '<path d="M12 16 V3"/><path d="M6 9 L12 3 L18 9"/><path d="M4 20 H20"/>',
+    'trophy':   '<path d="M7 3 H17 V9 A5 5 0 0 1 7 9 Z"/><path d="M7 5 H3 V7 A4 4 0 0 0 7 11"/><path d="M17 5 H21 V7 A4 4 0 0 1 17 11"/><path d="M12 14 V18"/><path d="M7 21 H17 V18 H7 Z"/>',
+    'bullseye': '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
 }
 STROKE = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"'
 
