@@ -1270,9 +1270,10 @@ live on anr.makinitmag.com.
   strip** (2026-11-04, operator: "show the current song, artist, and IG in the overlay instead of
   having the phone screen on stream... entirely too busy... just title, artist, Instagram"): a
   SEPARATE browser source, `/overlay/daily?view=record&k=<control key>` (listed under Stream Deck /
-  external control), for the face-cam scene only — a strip inside the top edge of the 16:9 camera
-  window (x 46, y 366, 908 wide; the bottom of the frame is the platform's chat), title with the
-  artist beside it, the handle on the right, "Now rating · Record N of M". Its own state row
+  external control), for the face-cam scene only — **1920×1080** (that scene's size; it is scaled
+  to ~920 wide inside the vertical show, so the type is drawn about twice the mockup's size) — a
+  strip across the top of the frame (the bottom of the camera window is the platform's chat),
+  title with the artist beside it, the handle on the right, "Now rating · Record N of M". Its own state row
   (`daily_record:<uid>`, `dailyRecordState`), read via `/api/control/daily-overlay?part=record`, so
   the reveal source is untouched. Driven by an admin switch on the daily page, **Record on stream**
   (`anr_rec_stream`, per device): on, every record landed on is posted (`POST /api/admin/daily/

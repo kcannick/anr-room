@@ -259,8 +259,9 @@ can stay off the stream:
 https://anr.makinitmag.com/overlay/daily?view=record&k=<your Stream Deck control key>
 ```
 
-Same size (1080×1920, transparent); it draws a strip inside the top of the camera window with the
-title, artist and Instagram handle of the record you are on. Turn it on with **Record on stream**
+It is **1920×1080** (the face-cam scene's size), transparent; it draws a strip across the top of
+the frame with the title, artist and Instagram handle of the record you are on, sized to read
+once that scene is scaled into the vertical show. Turn it on with **Record on stream**
 on the daily page (admin only, remembered per device): each record you land on goes up; See
 results, Exit or the switch takes it down. The reveal source is separate and unaffected.
 
