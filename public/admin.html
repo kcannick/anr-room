@@ -5281,11 +5281,15 @@ function chScopeOptions(){
   let html='';
   (SERIES||[]).forEach(s=>{html+=`<option value="series:${s.id}">Series — ${esc(s.title)}</option>`;});
   // Calendar months by ET date: last month (the usual monthly chart) and this month so far.
+  // A month's chart is NAMED for the month it is released in (operator, 2026-11-11): the
+  // rooms of October make the November chart, so the option says both.
   const etNow=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
   const mon=k=>{const d=new Date(etNow.getFullYear(),etNow.getMonth()-k,1);
-    return {v:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),l:d.toLocaleDateString('en-US',{month:'long',year:'numeric'})};};
+    const pub=new Date(d.getFullYear(),d.getMonth()+1,1);
+    return {v:d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),l:d.toLocaleDateString('en-US',{month:'long',year:'numeric'}),
+      p:pub.toLocaleDateString('en-US',{month:'long',year:'numeric'})};};
   const lm=mon(1),tm=mon(0);
-  html+=`<option value="month:${lm.v}">Last month — ${lm.l}</option><option value="month:${tm.v}">This month — ${tm.l}</option>`;
+  html+=`<option value="month:${lm.v}">${lm.p} chart — ${lm.l}'s rooms (last month)</option><option value="month:${tm.v}">${tm.p} chart — ${tm.l}'s rooms (so far)</option>`;
   html+='<option value="last:4">Last 4 rooms</option><option value="last:8">Last 8 rooms</option>'
       +'<option value="last:12">Last 12 rooms</option><option value="range">Date range…</option>'
       +'<option value="all">All time</option>';
@@ -5346,7 +5350,7 @@ function chRankClass(n){return n===1?'r1':n===2?'r2':n===3?'r3':'';}
 function renderCharts(d){
   const s=d.summary,sc=d.scope;
   const when=sc.from?`${chFmtDay(sc.from)} – ${chFmtDay(sc.to)}`:'no rooms yet';
-  let sum=`scope · <b>${esc(sc.label)}</b> — ${sc.rooms} room${sc.rooms===1?'':'s'}, ${esc(when)}<br>`;
+  let sum=`scope · <b>${esc(sc.label)}</b>${sc.tallied?` (${esc(sc.tallied)}'s rooms, named for the month it is released)`:''} — ${sc.rooms} room${sc.rooms===1?'':'s'}, ${esc(when)}<br>`;
   if(d.mode==='ars'){
     sum+=`board · <b>${s.charting}</b> ranked A&amp;Rs of ${s.pool} qualified`
       +(d.sort==='accuracy'?` · ranked on <b>accuracy</b>`:'')

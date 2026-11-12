@@ -268,6 +268,10 @@ live on anr.makinitmag.com.
   defaults to 0 so a series chart still matches the public $500 board until a floor is set,
   accuracy to 10; the console remembers each separately.
   `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling and moves with the 0–10 switch.
+  **A month's chart is NAMED FOR ITS PUBLICATION MONTH** (operator, 2026-11-11): the rooms that
+  tallied in October are released in November, so `scope=month&month=2026-10` is labelled
+  "November 2026" on the cover, in the caption and in the download names; `scope.tallied` carries
+  the month counted and the console prints both. The same rule as the daily set's publish date.
 
 - **Staged rounds + one-button show control + host buzzer** (030): a round now opens into a
   new **`listening`** status — the record is on the overlay and in everyone's hands while it

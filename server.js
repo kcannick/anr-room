@@ -3649,8 +3649,12 @@ async function chartScope(q) {
     const pad = n => String(n).padStart(2, '0');
     const from = etEpoch(`${y}-${pad(mo)}-01`, 0);
     const to = etEpoch(mo === 12 ? `${y + 1}-01-01` : `${y}-${pad(mo + 1)}-01`, 0) - 1;
-    const label = new Date(Date.UTC(y, mo - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-    return { kind: 'month', label, month: q.month, from, to,
+    // NAMED BY ITS PUBLICATION MONTH (operator, 2026-11-11): the chart of October's rooms is
+    // released in November, so it is "HOT 100 — November 2026" on the cover, in the caption
+    // and in the file names. `tallied` keeps the month that was counted readable on the console.
+    const monthName = (yy, mm) => new Date(Date.UTC(yy, mm - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const label = mo === 12 ? monthName(y + 1, 1) : monthName(y, mo + 1);
+    return { kind: 'month', label, tallied: monthName(y, mo), month: q.month, from, to,
       sessions: await pick("AND status <> 'upcoming' AND COALESCE(window_closes_at, scheduled_at, created_at) BETWEEN ? AND ?", [from, to]) };
   }
   if (q.scope === 'last') {
@@ -3801,7 +3805,7 @@ async function chartsData(q) {
   const out = {
     mode: q.mode, order: q.order, minVotes: q.minVotes, limit: q.limit, per: q.per,
     dedupe: q.dedupe, scores: q.scores && q.mode !== 'ars', scaleMax: shareCards.CHART_SCALE_MAX, bands: shareCards.CHART_BANDS,
-    scope: { kind: scope.kind, label: scope.label, rooms: sessions.length,
+    scope: { kind: scope.kind, label: scope.label, tallied: scope.tallied || null, rooms: sessions.length,
       from: sessions.length ? Math.min(...sessions.map(s => Number(s.show_at))) : null,
       to: sessions.length ? Math.max(...sessions.map(s => Number(s.show_at))) : null },
     generatedAt: now(),
