@@ -5320,7 +5320,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const chYm = (k) => { const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })); d.setDate(1); d.setMonth(d.getMonth() - k); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
   const cMon = await chGet(`scope=month&month=${chYm(0)}&minVotes=3`);
   ok('charts: this month charts the rooms that ran this month', cMon.status === 200 && cMon.d.rows.some(r => /broad/i.test(r.title)), JSON.stringify(cMon.d).slice(0, 200));
-  ok('charts: the month label is the month name', /^[A-Z][a-z]+ \d{4}$/.test(cMon.d.scope.label) && cMon.d.scope.kind === 'month', JSON.stringify(cMon.d.scope));
+  // The chart is named for the month it is RELEASED in: this month's rooms make NEXT month's chart.
+  const chMonthName = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+  const chNextYm = (ym) => { const [y, m] = ym.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; };
+  ok('charts: the month label is the PUBLICATION month (the month after the rooms)', cMon.d.scope.label === chMonthName(chNextYm(chYm(0))) && cMon.d.scope.kind === 'month', JSON.stringify(cMon.d.scope));
+  ok('charts: ...and the month counted is reported as tallied', cMon.d.scope.tallied === chMonthName(chYm(0)), JSON.stringify(cMon.d.scope));
   const cPrev = await chGet(`scope=month&month=${chYm(1)}&minVotes=3`);
   ok('charts: last month does not include rooms that ran this month', cPrev.status === 200 && !cPrev.d.rows.some(r => /broad/i.test(r.title)), JSON.stringify(cPrev.d.rows.map(r => r.title)));
   const cBadMon = await chGet('scope=month&month=2026-13');
