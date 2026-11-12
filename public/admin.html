@@ -1633,6 +1633,31 @@
     #charts .slides figure{margin:0}
     #charts .slides img{width:100%;border-radius:10px;border:1px solid var(--line);display:block}
     #charts .slides figcaption{font-family:'Space Mono',monospace;font-size:10px;color:var(--ink-faint);text-align:center;margin-top:5px}
+    /* Notify this list (054) — built to public/_mock-chart-notify.html */
+    #charts textarea{width:100%;background:#0a0814;border:1px solid var(--line);color:var(--ink);font:inherit;font-size:13px;padding:8px 10px;border-radius:9px;min-height:92px;resize:vertical}
+    #charts .cn-h3{margin:0;font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint)}
+    #charts .cn-stats{display:flex;gap:22px;margin:14px 0 4px;flex-wrap:wrap}
+    #charts .cn-stat b{display:block;font:700 22px 'Space Mono',monospace}
+    #charts .cn-stat span{font:400 9px 'Space Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+    #charts .cn-stat b.no{color:var(--ink-faint)}
+    #charts table.cn{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
+    #charts table.cn th{text-align:left;font:400 9px 'Space Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:0 6px 8px}
+    #charts table.cn td{padding:8px 6px;border-top:1px solid #241d3d;vertical-align:top}
+    #charts .cn-rk{font-family:'Space Mono',monospace;color:var(--ink-faint);width:40px} #charts .cn-rk.r1{color:var(--gold)}
+    #charts .ok{color:var(--signal)} #charts .no{color:var(--ink-faint)} #charts .bad{color:var(--hot)} #charts .hold{color:var(--gold)}
+    #charts details summary{cursor:pointer;color:var(--ink-dim);font-size:12.5px;margin-top:10px}
+    #charts .cn-eb{display:block;font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:12px 0 5px}
+    #charts .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
+    #charts .chip{font:400 11px 'Space Mono',monospace;border:1px solid var(--line);border-radius:6px;padding:2px 7px;color:var(--ink-dim);cursor:pointer;background:transparent}
+    #charts .chip:hover{border-color:var(--accent);color:var(--ink)}
+    #charts .ro{font:400 11px 'Space Mono',monospace;color:var(--ink-faint);margin-top:5px}
+    #charts .ro b{color:var(--signal)} #charts .ro .warn{color:var(--gold)}
+    #charts .cn-prefs{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:stretch}
+    #charts .cn-prefs .pref-row{flex:1;min-width:230px;margin:0}
+    #charts .cn-lists a{color:var(--signal);text-decoration:none;cursor:pointer}
+    #charts .cn-msg{font-size:12.5px;margin-top:10px;min-height:1em}
+    #charts #cnSend{white-space:nowrap}
+    #charts .ro+.cn-eb{margin-top:16px}
   </style>
   <div class="stack">
     <div class="card">
@@ -1689,6 +1714,72 @@
 
       <div class="list" id="chList"><div class="empty">Loading…</div></div>
       <div id="chSlides"></div>
+    </div>
+
+    <!-- Notify this list (054): email + SMS to everyone on the chart above, as it stands.
+         The audience IS the chart's query — change the scope or the floor and it follows.
+         Hidden on Room #1s (not a list of people). -->
+    <div class="card" id="chNotify" style="display:none">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h3 class="cn-h3">Notify this list · <span id="cnTitle"></span></h3>
+        <span class="muted" style="font-size:12.5px" id="cnKind"></span>
+      </div>
+      <p class="muted" style="font-size:12.5px;margin:10px 0 0" id="cnIntro"></p>
+      <div class="cn-stats">
+        <div class="cn-stat"><b id="cnNPeople">—</b><span>On the list</span></div>
+        <div class="cn-stat"><b id="cnNEmails">—</b><span>Emails</span></div>
+        <div class="cn-stat"><b id="cnNTexts">—</b><span>Texts</span></div>
+        <div class="cn-stat"><b class="no" id="cnNNone">—</b><span>No contact</span></div>
+      </div>
+      <details id="cnWho"><summary id="cnWhoSum">Who gets what</summary>
+        <div id="cnRows"></div>
+        <p class="muted" style="font-size:12.5px" id="cnWhoNote"></p>
+      </details>
+
+      <h3 class="cn-h3" style="margin-top:22px">Message</h3>
+      <div class="cn-prefs">
+        <label class="pref-row"><input type="checkbox" id="cnEmail" checked><span><b>Email</b><small id="cnEmailN"></small></span></label>
+        <label class="pref-row"><input type="checkbox" id="cnTexts" checked><span><b>Text</b><small id="cnTextsN"></small></span></label>
+      </div>
+      <label class="cn-eb" for="cnSubject">Subject</label>
+      <input type="text" id="cnSubject" maxlength="150" placeholder="“[title]” made the [chart name]">
+      <label class="cn-eb" for="cnBody">Email</label>
+      <textarea id="cnBody" maxlength="6000" placeholder="Hi [first name], …"></textarea>
+      <div class="chips"><span class="muted" style="font-size:12.5px">Insert:</span>
+        <button type="button" class="chip" data-tok="[first name]">[first name]</button>
+        <button type="button" class="chip" data-tok="[artist]" id="cnChipArtist">[artist]</button>
+        <button type="button" class="chip" data-tok="[name]" id="cnChipName">[name]</button>
+        <button type="button" class="chip" data-tok="[title]" id="cnChipTitle">[title]</button>
+        <button type="button" class="chip" data-tok="[rank]">[rank]</button>
+        <button type="button" class="chip" data-tok="[chart name]">[chart name]</button>
+        <button type="button" class="chip" data-tok="[post link]">[post link]</button></div>
+      <label class="cn-eb" for="cnSms">Text message</label>
+      <textarea id="cnSms" maxlength="6000" style="min-height:64px" placeholder='Makin It: "[title]" is [rank] on the HOT 100. See the post: [post link]'></textarea>
+      <div class="ro" id="cnSmsRead"></div>
+      <label class="cn-eb" for="cnPost">Post link (optional)</label>
+      <input type="text" id="cnPost" maxlength="500" placeholder="https://www.instagram.com/p/…">
+      <div class="ro">Becomes the <b>See the post</b> button in the email and the [post link] token.</div>
+      <div class="row" style="margin-top:16px;justify-content:space-between;align-items:center">
+        <div class="row" style="align-items:center">
+          <button class="btn good" id="cnSend">Send</button>
+          <button class="btn ghost sm" id="cnTest">Send test to me</button>
+        </div>
+        <span class="muted" style="font-size:12.5px">Test: your own email + phone, rendered for #1, [TEST] in the subject.</span>
+      </div>
+      <div class="cn-msg" id="cnMsg"></div>
+
+      <div id="cnHist" style="display:none;margin-top:22px">
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <h3 class="cn-h3">Sent to this list</h3>
+          <button class="btn ghost sm" id="cnDrain" style="display:none">Send pending texts now</button>
+        </div>
+        <div id="cnSends"></div>
+      </div>
+    </div>
+    <div class="card cn-lists" id="chLists" style="display:none">
+      <h3 class="cn-h3">Lists sent to lately</h3>
+      <p class="muted" style="font-size:12.5px;margin:8px 0 0">A list is the chart it came from. Click one and the Charts screen rebuilds it, as it stands today.</p>
+      <div id="cnRecent"></div>
     </div>
   </div>
 </div>
@@ -5345,6 +5436,7 @@ async function loadCharts(){
     $('#chSummary').textContent=e.message;
     $('#chList').innerHTML='<div class="err">'+esc(e.message)+'</div>';
   }
+  loadChartNotify();
 }
 function chRankClass(n){return n===1?'r1':n===2?'r2':n===3?'r3':'';}
 function renderCharts(d){
@@ -5470,6 +5562,222 @@ async function chBuildCarousel(){
   }catch(e){box.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
   finally{btn.disabled=false;}
 }
+
+// ---- Notify this list (054) ----
+// The audience is the chart above, as it stands: the card reads GET /api/admin/charts/notify
+// with the SAME query string as the table, so what it counts is what the table shows. The
+// composer draft lives on the device (one draft, whatever the list) so changing the scope
+// never eats typed work.
+let cnState=null;
+const CN_DRAFT='anr_chnotify_draft';
+const cnFields=()=>({subject:$('#cnSubject').value,body:$('#cnBody').value,sms:$('#cnSms').value,postUrl:$('#cnPost').value.trim(),
+  email:$('#cnEmail').checked,texts:$('#cnTexts').checked});
+function cnSaveDraft(){try{localStorage.setItem(CN_DRAFT,JSON.stringify(cnFields()));}catch(e){}}
+function cnLoadDraft(){
+  try{
+    const d=JSON.parse(localStorage.getItem(CN_DRAFT)||'null'); if(!d)return;
+    $('#cnSubject').value=d.subject||''; $('#cnBody').value=d.body||''; $('#cnSms').value=d.sms||''; $('#cnPost').value=d.postUrl||'';
+    if(typeof d.email==='boolean')$('#cnEmail').checked=d.email; if(typeof d.texts==='boolean')$('#cnTexts').checked=d.texts;
+  }catch(e){}
+}
+async function loadChartNotify(){
+  const card=$('#chNotify'),lists=$('#chLists');
+  if(!card)return;
+  if(chMode==='weekly1s'||!chData){card.style.display='none';lists.style.display='none';cnState=null;return;}
+  card.style.display='';
+  $('#cnTitle').textContent=chData.title+' — '+chData.scope.label;
+  $('#cnMsg').textContent='';
+  try{
+    cnState=await api('/api/admin/charts/notify?'+chParams().toString(),null,'GET');
+    renderChartNotify(cnState);
+  }catch(e){
+    cnState=null;
+    $('#cnMsg').innerHTML='<span class="bad">'+esc(e.message)+'</span>';
+  }
+}
+function cnMaskCell(v,ch){
+  if(v==='none')return'<span class="no">none</span>';
+  if(/^same:/.test(v))return'<span class="no">same as #'+esc(v.slice(5))+'</span>';
+  if(v==='opted out'||v==='bounced'||v==='no consent')return'<span class="no">'+esc(v)+'</span>';
+  return'<span class="ok">'+esc(v)+'</span>';
+}
+function renderChartNotify(st){
+  const ars=st.mode==='ars';
+  $('#cnKind').textContent=ars?'Top A&Rs chart · the A&Rs are the audience':'Records chart · artists are the audience';
+  $('#cnIntro').textContent=ars
+    ?'Emails and texts every A&R on this chart, as it stands above. Each address gets one message. Opt-outs and bounced addresses are skipped; texts go only to numbers with marketing consent.'
+    :'Emails and texts everyone on this chart, as it stands above. Each address gets one message, even with two charting records (it gets the higher one). Records under the floor are not on the list.';
+  $('#cnNPeople').textContent=st.people; $('#cnNEmails').textContent=st.emails; $('#cnNTexts').textContent=st.texts; $('#cnNNone').textContent=st.noContact;
+  $('#cnWhoSum').textContent='Who gets what ('+st.people+')';
+  let rows='<table class="cn"><tr><th>#</th><th>'+(ars?'A&R':'Record')+'</th><th>Email</th><th>Text</th></tr>';
+  for(const r of st.rows){
+    const who=ars?esc(r.name):esc(r.title)+' <span class="muted">· '+esc(r.artist)+'</span>';
+    rows+='<tr><td class="cn-rk'+(r.rank===1?' r1':'')+'">'+r.rank+'</td><td>'+who+'</td><td>'+cnMaskCell(r.email,'email')+'</td><td>'+cnMaskCell(r.sms,'sms')+'</td></tr>';
+  }
+  rows+='</table>';
+  $('#cnRows').innerHTML=st.rows.length?rows:'<div class="empty">Nobody charts in this scope.</div>';
+  $('#cnWhoNote').textContent=ars?'A&R texts go when you press send, like an announcement.':'Artist texts keep the '+st.smsWindow.from+' – '+st.smsWindow.to+' window; outside it they hold and go on the hour.';
+  // The composer's chips: the artist token means nothing on an A&R chart, and vice versa.
+  $('#cnChipArtist').style.display=ars?'none':''; $('#cnChipTitle').style.display=ars?'none':''; $('#cnChipName').style.display=ars?'':'none';
+  $('#cnEmailN').textContent=st.emails+' address'+(st.emails===1?'':'es');
+  $('#cnTextsN').textContent=st.texts+' number'+(st.texts===1?'':'s')+(st.smsWindow.holds&&!st.smsWindow.open?' · artist texts hold until '+st.smsWindow.from:'');
+  cnSendLabel(); cnSmsReadout();
+  // History: every send to THIS list, then the lists sent to lately.
+  const hist=$('#cnHist');
+  if(st.sends.length){
+    hist.style.display='';
+    let h='<table class="cn"><tr><th>When</th><th>Subject</th><th>Emails</th><th>Texts</th><th>Status</th></tr>';
+    let failed=[];
+    for(const s of st.sends.slice().reverse()){
+      const em=s.emailsSent+' sent',tx=s.textsSent+' sent'+(s.held?' · <span class="hold">'+s.held+' hold until '+st.smsWindow.from+'</span>':'');
+      const fe=s.failed.filter(f=>f.channel==='email').length,ft=s.failed.filter(f=>f.channel==='sms').length;
+      const status=s.pending?'<span class="ok">sending</span>':'done';
+      h+='<tr><td style="white-space:nowrap">'+esc(s.startedLabel||'')+'</td><td>'+esc(s.subject||'(text only)')+'</td>'
+        +'<td><span class="ok">'+em+'</span>'+(fe?' · <span class="bad">'+fe+' failed</span>':'')+'</td>'
+        +'<td><span class="ok">'+tx+'</span>'+(ft?' · <span class="bad">'+ft+' failed</span>':'')+'</td><td>'+status+'</td></tr>';
+      failed=failed.concat(s.failed);
+    }
+    h+='</table>';
+    if(failed.length)h+='<details><summary>'+failed.length+' failed</summary><p class="muted" style="font-size:12.5px">'+failed.map(f=>esc(f.to)+' — '+esc(f.error)).join(' · ')+'</p></details>';
+    $('#cnSends').innerHTML=h;
+    $('#cnDrain').style.display=st.sends.some(s=>s.pending)?'':'none';
+  }else hist.style.display='none';
+  const lists=$('#chLists');
+  if(st.recent&&st.recent.length){
+    lists.style.display='';
+    $('#cnRecent').innerHTML='<table class="cn"><tr><th>List</th><th>Last send</th><th>Sends</th></tr>'
+      +st.recent.map(r=>'<tr><td><a data-key="'+esc(r.listKey)+'">'+esc(r.label)+'</a>'+(r.listKey===st.listKey?' <span class="muted" style="font-size:11px">· on screen</span>':'')+'</td><td style="white-space:nowrap">'+esc(r.lastLabel||'')+'</td><td>'+r.sends+'</td></tr>').join('')+'</table>';
+    $('#cnRecent').querySelectorAll('a[data-key]').forEach(a=>a.onclick=()=>chApplyListKey(a.dataset.key));
+  }else lists.style.display='none';
+}
+function cnSendLabel(){
+  const b=$('#cnSend'); if(!cnState){b.textContent='Send';b.disabled=true;return;}
+  const parts=[];
+  if($('#cnEmail').checked)parts.push(cnState.emails+' email'+(cnState.emails===1?'':'s'));
+  if($('#cnTexts').checked)parts.push(cnState.texts+' text'+(cnState.texts===1?'':'s'));
+  b.textContent=parts.length?'Send to '+parts.join(' + '):'Send';
+  b.disabled=!parts.length;
+}
+// The SMS as #1 would receive it, counted the way sms.js counts (mirrors the announcement
+// readout). Artist texts get "Reply STOP to opt out." appended; A&R texts get the longer
+// manage-link footer per recipient, which is not counted here.
+function cnSmsReadout(){
+  const el=$('#cnSmsRead'); if(!el)return;
+  const t=$('#cnSms').value;
+  if(!$('#cnTexts').checked||!t.trim()){el.textContent='';return;}
+  const GSM=/^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&'()*+,\-./0-9:;<=>?¡A-ZÄÖÑÜ§¿a-zäöñüà\f^{}\\\[~\]|€]*$/;
+  const first=cnState&&cnState.rows[0];
+  const ars=cnState&&cnState.mode==='ars';
+  const vals={firstname:first?(first.name||'').split(/\s+/)[0]:'',name:first?first.name:'',artist:first?(first.artist||first.name):'',title:first?first.title:'',rank:first?'#'+first.rank:'',chartname:cnState?cnState.listLabel:'',postlink:$('#cnPost').value.trim()};
+  let s=t.replace(/\[\s*(first\s*name|name|artist|title|rank|chart\s*name|post\s*link)\s*\]/gi,(m,k)=>vals[k.toLowerCase().replace(/\s+/g,'')]||'');
+  const stop=/\bSTOP\b/.test(s);
+  if(!ars&&!stop)s+=' Reply STOP to opt out.';
+  const n=[...s].length,gsm=GSM.test(s);
+  const tail=ars?' · the opt-out footer is added per A&R':(stop?'':' · "Reply STOP to opt out." is added');
+  if(gsm&&n<=160)el.innerHTML='For #1 · '+n+' characters · plain text · <b>1 segment</b>'+tail;
+  else el.innerHTML='For #1 · '+n+' characters · <span class="warn">sends as MMS</span> ('+(gsm?'more than 160 characters':'an emoji or a character outside plain text')+')'+tail;
+}
+function cnInsertToken(tok){
+  // Into whichever composer field was last focused; the email body by default.
+  const el=cnLastField&&cnLastField.isConnected?cnLastField:$('#cnBody');
+  const s=el.selectionStart==null?el.value.length:el.selectionStart,e=el.selectionEnd==null?s:el.selectionEnd;
+  el.value=el.value.slice(0,s)+tok+el.value.slice(e);
+  el.focus(); el.selectionStart=el.selectionEnd=s+tok.length;
+  el.dispatchEvent(new Event('input'));
+}
+let cnLastField=null;
+async function cnSend(){
+  if(!cnState)return;
+  const f=cnFields();
+  if(!f.email&&!f.texts)return alert('Pick at least one channel.');
+  if(f.email&&(!f.subject.trim()||!f.body.trim()))return alert('The email needs a subject and a message.');
+  if(f.texts&&!f.sms.trim())return alert('Write the text message.');
+  if(f.postUrl&&!/^https?:\/\//i.test(f.postUrl))return alert('The post link must start with http.');
+  const nE=f.email?cnState.emails:0,nT=f.texts?cnState.texts:0;
+  const holds=cnState.smsWindow.holds&&!cnState.smsWindow.open;
+  let msg='Send to the '+cnState.listLabel+' list?\n\n'
+    +(nE?nE+' email'+(nE===1?'':'s')+' go now. ':'')
+    +(nT?nT+' text'+(nT===1?'':'s')+(holds?' go at '+cnState.smsWindow.from+' (artist texts keep the window).':' go now.'):'')
+    +'\nThere is no unsend.';
+  const again=cnState.sends.length>0;
+  if(again)msg+='\n\nThis list was already sent to on '+(cnState.sends[cnState.sends.length-1].startedLabel||'an earlier day')+'. Press OK to send again if you mean a second message.';
+  if(!confirm(msg))return;
+  const b=$('#cnSend'); b.disabled=true; $('#cnMsg').textContent='Sending…';
+  try{
+    const d=await api('/api/admin/charts/notify',{q:chParams().toString(),send:true,subject:f.subject,body:f.body,sms:f.sms,email:f.email,texts:f.texts,postUrl:f.postUrl,again});
+    cnState=d; renderChartNotify(d);
+    const st=d.started||{};
+    $('#cnMsg').innerHTML='<span class="ok">Queued '+(st.emails||0)+' email'+(st.emails===1?'':'s')+' + '+(st.texts||0)+' text'+(st.texts===1?'':'s')+'.</span> Sent '+d.sent+(d.failed?', <span class="bad">'+d.failed+' failed</span>':'')+(d.held?', <span class="hold">'+d.held+' held for the window</span>':'')+'.'
+      +(d.sends.some(s=>s.pending&&!s.held)?' Still sending — press "Send pending texts now" or reload to continue.':'');
+  }catch(e){$('#cnMsg').innerHTML='<span class="bad">'+esc(e.message)+'</span>';}
+  finally{b.disabled=false;cnSendLabel();}
+}
+async function cnDrain(){
+  const b=$('#cnDrain'); b.disabled=true; $('#cnMsg').textContent='Sending…';
+  try{
+    const d=await api('/api/admin/charts/notify',{q:chParams().toString()});
+    cnState=d; renderChartNotify(d);
+    $('#cnMsg').innerHTML='Sent '+d.sent+(d.failed?', <span class="bad">'+d.failed+' failed</span>':'')+(d.held?', <span class="hold">'+d.held+' still held until '+d.smsWindow.from+'</span>':'')+'.';
+  }catch(e){$('#cnMsg').innerHTML='<span class="bad">'+esc(e.message)+'</span>';}
+  finally{b.disabled=false;}
+}
+async function cnTestToMe(){
+  if(!cnState)return;
+  const f=cnFields();
+  if(!f.email&&!f.texts)return alert('Pick at least one channel.');
+  if(f.email&&(!f.subject.trim()||!f.body.trim()))return alert('The email needs a subject and a message.');
+  if(f.texts&&!f.sms.trim())return alert('Write the text message.');
+  const b=$('#cnTest'); b.disabled=true; $('#cnMsg').textContent='Sending the test…';
+  try{
+    const d=await api('/api/admin/charts/notify/test',{q:chParams().toString(),subject:f.subject,body:f.body,sms:f.sms,email:f.email,texts:f.texts,postUrl:f.postUrl});
+    const parts=[];
+    if(d.email)parts.push(d.email.ok?'Email sent to '+esc(d.email.to):'<span class="bad">Email: '+esc(d.email.error||'failed')+'</span>');
+    if(d.sms)parts.push(d.sms.ok?'Text sent to '+esc(d.sms.to)+' as '+(d.sms.channel||'sms').toUpperCase()+' ('+d.sms.chars+' characters, '+d.sms.segments+' segment'+(d.sms.segments===1?'':'s')+')':'<span class="bad">Text: '+esc(d.sms.error||'failed')+'</span>');
+    $('#cnMsg').innerHTML=parts.join(' · ')+' — rendered for #'+d.sample.rank+(d.sample.title?' “'+esc(d.sample.title)+'”':'')+(d.sample.name?' · '+esc(d.sample.name):'')+'.';
+  }catch(e){$('#cnMsg').innerHTML='<span class="bad">'+esc(e.message)+'</span>';}
+  finally{b.disabled=false;}
+}
+// A recent list is its canonical query (mode · scope · size · floor): put those back on the
+// controls and reload, so the list comes back as it stands TODAY.
+function chApplyListKey(key){
+  const q=new URLSearchParams(key);
+  const mode=q.get('mode')||'records';
+  const btn=document.querySelector('.chart-mode[data-mode="'+mode+'"]');
+  chMode=mode;
+  document.querySelectorAll('.chart-mode').forEach(x=>{x.classList.toggle('ghost',x!==btn);x.classList.toggle('on',x===btn);});
+  $('#chDedupeRow').style.display=chMode==='records'?'':'none';
+  $('#chScoresRow').style.display=chMode==='ars'?'none':'';
+  $('#chContacts').style.display=chMode==='ars'?'':'none';
+  $('#chSortWrap').style.display=chMode==='ars'?'':'none';
+  $('#chLimitLabel').textContent=chMode==='weekly1s'?'Rooms':'Chart size';
+  const sc=q.get('scope'),sel=$('#chScope');
+  const want=sc==='series'?'series:'+q.get('seriesId'):sc==='month'?'month:'+q.get('month'):sc==='last'?'last:'+q.get('lastN'):sc==='range'?'range':'all';
+  if(![...sel.options].some(o=>o.value===want)){
+    // A series or a month no longer in the picker still works: add it so the key round-trips.
+    const o=document.createElement('option');o.value=want;o.textContent=sc==='series'?'Series — '+q.get('seriesId'):sc==='month'?q.get('month'):want;sel.appendChild(o);
+  }
+  sel.value=want;
+  $('#chRangeRow').style.display=want==='range'?'':'none';
+  if(want==='range'){
+    const day=ms=>{const d=new Date(Number(ms)||0);const p=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);const g=t=>p.find(x=>x.type===t).value;return g('year')+'-'+g('month')+'-'+g('day');};
+    $('#chFrom').value=day(q.get('from')); $('#chTo').value=day(q.get('to'));
+  }
+  const lim=q.get('limit'); if(lim&&[...$('#chLimit').options].some(o=>o.value===lim))$('#chLimit').value=lim;
+  if(mode==='ars'){ if(q.get('sort'))$('#chSort').value=q.get('sort'); chFloor[$('#chSort').value]=parseInt(q.get('minRounds'),10)||0; }
+  else { chFloor.votes=parseInt(q.get('minVotes'),10)||0; $('#chDedupe').checked=q.get('dedupe')!=='0'; }
+  chFloorUi();
+  loadCharts();
+  $('#chNotify').scrollIntoView({behavior:'smooth',block:'start'});
+}
+['#cnSubject','#cnBody','#cnSms','#cnPost'].forEach(sel=>{const el=$(sel);if(!el)return;
+  el.addEventListener('focus',()=>{cnLastField=el;});
+  el.addEventListener('input',()=>{cnSaveDraft();if(sel==='#cnSms'||sel==='#cnPost')cnSmsReadout();});});
+['#cnEmail','#cnTexts'].forEach(sel=>{const el=$(sel);if(!el)return;el.addEventListener('change',()=>{cnSaveDraft();cnSendLabel();cnSmsReadout();});});
+document.querySelectorAll('#chNotify .chip').forEach(c=>c.onclick=()=>cnInsertToken(c.dataset.tok));
+$('#cnSend')&&($('#cnSend').onclick=cnSend);
+$('#cnTest')&&($('#cnTest').onclick=cnTestToMe);
+$('#cnDrain')&&($('#cnDrain').onclick=cnDrain);
+cnLoadDraft();
 
 document.querySelectorAll('.chart-mode').forEach(b=>b.onclick=()=>{
   chMode=b.dataset.mode;
