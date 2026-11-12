@@ -1737,8 +1737,8 @@
       <div class="stack">
         <div><label>Service pack title</label><input id="sbName" placeholder="e.g. September 2026 A&amp;R Service Pack"></div>
         <div class="sb-grid">
-          <div><label>Number of songs to predict</label><input id="sbPicks" type="number" min="1" max="50" value="18">
-            <div class="hint" id="sbPicksHint">18 = the A&amp;R Wars bracket (4 + 2 + 3 polls × 2 songs).</div></div>
+          <div><label>Number of songs to predict</label><input id="sbPicks" type="number" min="1" max="50" value="16">
+            <div class="hint" id="sbPicksHint">16 songs to predict. Every screen and the scoring read this value.</div></div>
           <div><label>Prize <span class="muted">(printed on the page)</span></label><input id="sbPrize" placeholder="$150"></div>
         </div>
         <div><label>Sponsor line <span class="muted">(optional)</span></label><input id="sbSponsor" placeholder="courtesy of our sponsor"></div>
@@ -5607,7 +5607,7 @@ function sbFillForm(k){
   SB.editing=k?k.id:null;
   $('#sbFormTitle').textContent=k?'Edit iteration':'New iteration';
   $('#sbName').value=k?k.name:'';
-  $('#sbPicks').value=k?k.picksRequired:18;
+  $('#sbPicks').value=k?k.picksRequired:16;
   $('#sbPrize').value=k&&k.prizeText||'';
   $('#sbSponsor').value=k&&k.sponsorText||'';
   $('#sbUrl').value=k&&k.downloadUrl||'';
@@ -5634,8 +5634,7 @@ function sbCheckDates(){
 }
 function sbCheckPicks(){
   const n=+$('#sbPicks').value, h=$('#sbPicksHint');
-  if(n===18){h.className='hint';h.textContent='18 = the A&R Wars bracket (4 + 2 + 3 polls × 2 songs).';}
-  else if(n%2){h.className='hint warn';h.textContent=n+' is odd — every matchup plays two songs, so a bracket total is always even.';}
+  if(n%2){h.className='hint warn';h.textContent=n+' is odd — every matchup plays two songs, so a bracket total is always even.';}
   else {h.className='hint';h.textContent=n+' songs to predict. Every screen and the scoring read this value.';}
 }
 
@@ -5644,7 +5643,7 @@ async function sbSave(){
   const body={
     id:SB.editing||undefined,
     name:$('#sbName').value.trim(),
-    picksRequired:+$('#sbPicks').value||18,
+    picksRequired:+$('#sbPicks').value||16,
     prizeText:$('#sbPrize').value.trim(),
     sponsorText:$('#sbSponsor').value.trim(),
     downloadUrl:$('#sbUrl').value.trim(),
