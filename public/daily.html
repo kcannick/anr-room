@@ -740,6 +740,7 @@ const setMeaning = window.ANRMeanings.mount($('#rateMeaning'));
     el.className = 'pip'; el.textContent = n; el.dataset.n = n;
     el.onclick = () => {
       chosenTaste = n;
+      recLive();
       $('#screen-queue').querySelectorAll('.pip').forEach(p => p.classList.toggle('on', +p.dataset.n === n));
       setMeaning(n);
       $('#btnStepNext').disabled = false;
@@ -750,6 +751,7 @@ const setMeaning = window.ANRMeanings.mount($('#rateMeaning'));
 })();
 $('#pred').oninput = e => {
   predict = parseFloat(e.target.value); predictTouched = true;
+  recLive();
   $('#predVal').textContent = predict.toFixed(1); maybeEnableLock();
 };
 function maybeEnableLock(){ $('#btnLock').disabled = !(chosenTaste !== null && predictTouched); }
@@ -828,6 +830,21 @@ function recPost(){
   if(recStreamOn()) overlayPost('/api/admin/daily/overlay', { view: 'record', roundId: r.id, position: qIndex + 1, total: qRounds.length });
 }
 function recOff(){ if(recAdminTools()) return overlayPost('/api/admin/daily/overlay', { view: 'record', off: true }); return Promise.resolve(null); }
+// The live sequence (2026-11-13): with Record on stream ticked, the admin's own rating and
+// prediction go to the strip as he sets them, and "locked" at the lock-in. The slider posts at
+// most about three times a second; a lock always goes at once.
+let recLiveT = null, recLiveLast = 0;
+function recLive(stage, vals){
+  if(!recStreamOn() || !recAdminTools()) return;
+  const r = currentRound(); if(!r) return;
+  const go = () => {
+    recLiveLast = Date.now();
+    const v = vals || { rating: chosenTaste, predict: predictTouched ? predict : null };
+    overlayPost('/api/admin/daily/overlay', { view: 'record', roundId: r.id, position: qIndex + 1, total: qRounds.length, stage: stage || 'rating', rating: v.rating, predict: v.predict });
+  };
+  clearTimeout(recLiveT);
+  if(stage === 'locked' || Date.now() - recLiveLast > 300) go(); else recLiveT = setTimeout(go, 300);
+}
 $('#recStream').onchange = () => {
   try { localStorage.setItem(REC_KEY, $('#recStream').checked ? '1' : '0'); } catch(e){}
   if($('#recStream').checked) recPost(); else recOff();
@@ -1013,9 +1030,10 @@ function revealAnimate(box, avg){
   setTimeout(() => {
     if(!box.isConnected) return;
     box.classList.add('counting');
-    const t0 = performance.now(), dur = 900;
+    let t0 = null; const dur = 900;
     const step = (now) => {
-      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      if(t0 === null) t0 = now;
+      const k = Math.max(0, Math.min(1, (now - t0) / dur)), e = 1 - Math.pow(1 - k, 3);
       el.textContent = (avg * e).toFixed(1);
       if(k < 1) requestAnimationFrame(step);
       else { el.textContent = avg.toFixed(1); box.classList.remove('counting'); box.classList.add('in'); }
@@ -1099,6 +1117,7 @@ $('#btnLock').onclick = async () => {
     // and it must not flicker through an unlocked state on the way.
     r.voted = true; r.myVote = { taste: chosenTaste, predict };
     // A replay lock-in brings the result with it (the round is final): keep it for qPaint.
+    recLive('locked', { rating: r.myVote.taste, predict: r.myVote.predict });
     if(out.data.replay){
       r.replay = true;
       if(out.data.result) revealed[r.id] = { view: 'local', reveal: out.data.result.reveal, total: out.data.result.total };

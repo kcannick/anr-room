@@ -1285,6 +1285,25 @@ live on anr.makinitmag.com.
   Public promotional fields only — nothing about the room. Mockup
   `public/_mock-daily-nowrating-overlay.html` (over the operator's real scene,
   `public/_mock-assets/scene-daily-live.webp`).
+  **The live sequence** (2026-11-13, operator: "Rating: 5 shows up on overlay · Prediction: 4.8
+  ... updates live as I move the toggle · Prediction Locked In lock sound · brief processing ·
+  reveal with sound effects based on score — Bullseye!"). With Record on stream on, the phone
+  posts the admin's OWN rating and prediction as he sets them (`recLive`, the same record route
+  with `stage: rating|locked`, slider throttled to ~3/s); the strip shows them as two tiles, a
+  green "Prediction locked in" bar at the lock, and after the reveal Average + Points until the
+  next record (the reveal route stamps `stage:'result'` on the strip's state; a late lock post
+  can never undo it). The strip polls every 0.5s while a record is up. **`?layout=row`** on the
+  reveal source turns the tall card into ONE ROW in the slot under the primary 16:9 (x 90–990,
+  y 898–1078, the QR card's slot): lock sound → "checking" with ticks → the average counts up →
+  the tier call with its own sting (Bullseye fanfare / Sharp / Close / a low drop for Off and
+  Way off) → points and grade → gone after ~8s. All sound comes from the reveal source. The
+  total and the Track Report pager still use the tall card. **Mandatory stream elements
+  (operator) are never covered:** the header, the Submit Music call to action, the primary and
+  the secondary 16:9. The game shows on the facecam-large scene only; the Music Video scene is
+  Live Feedback Requests and carries no A&R source. The OBS collection is shared with the Live
+  Feedback tool (makinitmag.com) — brief, positions and stills for the PC session:
+  `docs/obs-handoff/` (also in the Streaming drive, `Review Music/A&R overlay handoff`).
+  Mockup `public/_mock-daily-live-sequence.html`.
 - **Tournament stream overlay** (no migration, 2026-10-25; branch `claude/wars-stream-overlay`,
   NOT merged when written). `/overlay/wars` (`public/wars-overlay.html`): an OBS browser source,
   **vertical 1080×1920 only** (the stream goes to Instagram Live / TikTok via Restream; the

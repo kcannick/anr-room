@@ -2062,6 +2062,30 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok('record: off takes it down', rcOff.status === 200 && rcOff.d.state.on === false && (await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json()).state.on === false);
     const rcPage = await fetch(base + '/overlay/daily?view=record&k=' + encodeURIComponent(gKey));
     ok('record: the overlay page serves the strip source', rcPage.status === 200 && /id="record"/.test(await rcPage.text()));
+    // THE LIVE SEQUENCE (2026-11-13): the admin's own rating and prediction ride the strip as he
+    // sets them, "locked" at the lock-in, and the outcome arrives only through the reveal.
+    const lvOn = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], position: 1, total: 3 }, 'POST', GH);
+    ok('live: a record with no stage carries no rating', lvOn.d.state.on && lvOn.d.state.rating === undefined && lvOn.d.state.stage === undefined);
+    const lvR = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], position: 1, total: 3, stage: 'rating', rating: 5, predict: null }, 'POST', GH);
+    ok('live: the rating reaches the strip, same record', lvR.status === 200 && lvR.d.state.rating === 5 && lvR.d.state.predict === null && lvR.d.state.stage === 'rating' && lvR.d.state.title === lvOn.d.state.title, JSON.stringify(lvR.d.state));
+    const lvP = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], stage: 'rating', rating: 5, predict: 4.84 }, 'POST', GH);
+    ok('live: the prediction follows, to one decimal', lvP.d.state.predict === 4.8 && lvP.d.state.rating === 5);
+    const lvBad = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], stage: 'rating', rating: 12, predict: 99 }, 'POST', GH);
+    ok('live: out-of-range numbers are dropped, not shown', lvBad.d.state.rating === null && lvBad.d.state.predict === null);
+    const lvL = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], stage: 'locked', rating: 7, predict: 6.9 }, 'POST', GH);
+    ok('live: the lock is a stage', lvL.d.state.stage === 'locked' && lvL.d.state.rating === 7 && lvL.d.state.predict === 6.9);
+    ok('live: nothing about the room before the reveal', !('result' in lvL.d.state) && !('avg' in lvL.d.state));
+    const lvRv = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[0] }, 'POST', GH);
+    const lvAfter = (await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json()).state;
+    ok('live: the reveal puts the outcome on the strip', lvRv.status === 200 && lvAfter.stage === 'result' && lvAfter.result && lvAfter.result.avg === lvRv.d.state.reveal.avg && lvAfter.result.points === lvRv.d.state.reveal.points && lvAfter.roundId === gQ[0], JSON.stringify(lvAfter));
+    const lvLate = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], stage: 'locked', rating: 1, predict: 1 }, 'POST', GH);
+    ok('live: a late lock post cannot undo the result', lvLate.d.state.stage === 'result' && lvLate.d.state.rating === lvAfter.rating);
+    const lvOther = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[0] }, 'POST', GH);
+    await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[1], position: 2, total: 3 }, 'POST', GH);
+    ok('live: the next record starts clean', (s => s.roundId === gQ[1] && s.stage === undefined && s.result === undefined)((await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json()).state) && lvOther.status === 200);
+    const lvPage = await (await fetch(base + '/overlay/daily?layout=row&k=' + encodeURIComponent(gKey))).text();
+    ok('live: the overlay page carries the one-row reveal and the strip tiles', /id="row"/.test(lvPage) && /id="rcT1"/.test(lvPage) && /id="lockbar"/.test(lvPage));
+    await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', off: true }, 'POST', GH);
 
     // The stable link + the banner: the home page only links the OPEN drop, so an admin on it
     // is pointed at the drop in the window, and /daily/closed goes straight there.

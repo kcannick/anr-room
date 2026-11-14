@@ -126,19 +126,63 @@ body.bg{background:repeating-conic-gradient(#3a3a3a 0 25%,#2a2a2a 0 50%) 0 0/40p
    the vertical show scene — so the strip is drawn at 1920 with type about twice the size the
    mockup showed, and reads at the mockup's size once scaled down. */
 body.record #c{width:1920px;height:1080px}
-body.record #reveal,body.record #total,body.record #report{display:none!important}
-#record{position:absolute;left:40px;width:1840px;top:34px;background:rgba(14,12,26,.88);border-radius:34px 34px 26px 26px;overflow:hidden;opacity:0;transform:translateY(-24px);transition:opacity .35s ease,transform .35s cubic-bezier(.2,.8,.2,1)}
+body.record #reveal,body.record #total,body.record #report,body.record #row{display:none!important}
+#record{position:absolute;left:40px;width:1840px;top:34px;background:rgba(14,12,26,.9);border-radius:34px 34px 26px 26px;overflow:hidden;opacity:0;transform:translateY(-24px);transition:opacity .35s ease,transform .35s cubic-bezier(.2,.8,.2,1)}
 #record.on{opacity:1;transform:none}
-#record .now{padding:28px 48px 32px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:48px;align-items:center}
-#record .eyebrow{grid-column:1;display:flex;align-items:center;gap:18px;font-family:'Space Mono',monospace;font-weight:700;font-size:30px;letter-spacing:.18em;text-transform:uppercase;color:var(--green)}
+#record .now{padding:28px 46px 30px;display:flex;align-items:center;gap:38px}
+#record .l{flex:1;min-width:0}
+#record .eyebrow{display:flex;align-items:center;gap:18px;font-family:'Space Mono',monospace;font-weight:700;font-size:30px;letter-spacing:.18em;text-transform:uppercase;color:var(--green)}
 #record .eyebrow i{display:block;width:22px;height:22px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(75,183,73,.6);animation:pulse 1.6s ease-out infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(75,183,73,.6)}100%{box-shadow:0 0 0 24px rgba(75,183,73,0)}}
-#record .t{grid-column:1;font-weight:900;font-size:90px;line-height:1.02;letter-spacing:-.04em;margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#record .t.long{font-size:72px}
-#record .t .by{font-weight:800;font-size:56px;letter-spacing:-.02em;color:var(--dim);margin-left:28px}
-#record .ig{grid-column:2;grid-row:1/3;display:flex;align-items:center;gap:20px;font-family:'Space Mono',monospace;font-weight:700;font-size:48px;color:var(--ink);white-space:nowrap}
-#record .ig svg{flex:none;width:56px;height:56px}
-#record .ig.none{color:var(--dim);font-size:36px}
+#record .t{font-weight:900;font-size:86px;line-height:1.04;letter-spacing:-.04em;margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#record .t.long{font-size:68px}
+#record .a{font-family:'Space Mono',monospace;font-weight:700;font-size:36px;color:var(--dim);margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#record .a b{color:var(--ink)}
+/* the live sequence: the admin's own Rating and Prediction as he sets them, then the outcome */
+#record .tile{flex:none;width:320px;border-radius:26px;padding:16px 16px 18px;text-align:center;background:var(--panel);border:4px solid var(--line);display:none}
+#record .tile.on{display:block;animation:tileIn .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes tileIn{from{opacity:0;transform:translateY(-20px) scale(.94)}to{opacity:1;transform:none}}
+#record .tile .k{font-family:'Space Mono',monospace;font-weight:700;font-size:26px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+#record .tile .v{font-family:'Space Mono',monospace;font-weight:700;font-size:94px;line-height:1;margin-top:6px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+#record .tile.p .v{color:var(--purple)}
+#record .tile.locked{border-color:var(--green)}
+#record .tile.res .v{color:var(--green)} #record .tile.res.neg .v{color:var(--red)}
+#lockbar{position:absolute;left:0;right:0;top:0;height:0;overflow:hidden;background:var(--green);color:var(--ground);display:flex;align-items:center;justify-content:center;gap:30px;font-weight:900;font-size:72px;letter-spacing:-.02em;text-transform:uppercase;transition:height .22s cubic-bezier(.2,.8,.2,1)}
+#lockbar.on{height:100%}
+#lockbar svg{width:72px;height:72px;flex:none}
+
+/* ---- the one-row reveal (?layout=row): in the slot under the primary 16:9 (x 90–990,
+   y 898–1078, where the QR card sits). Mandatory stream elements are never covered: the header,
+   the Submit Music call to action, the primary and secondary 16:9. Mockup
+   public/_mock-daily-live-sequence.html. ---- */
+#row{position:absolute;left:90px;top:898px;width:900px;height:180px;background:rgba(14,12,26,.97);border:2px solid var(--line);border-radius:20px;overflow:hidden;opacity:0;transform:translateY(20px);transition:opacity .35s ease,transform .4s cubic-bezier(.2,.8,.2,1)}
+#row.on{opacity:1;transform:none}
+#row .proc{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:28px}
+#row .proc .k{font-family:'Space Mono',monospace;font-weight:700;font-size:24px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+#row .bars{display:flex;gap:10px}
+#row .bars span{width:30px;height:20px;transform:skewX(-13deg);background:var(--line);animation:scan 1s linear infinite}
+#row .bars span:nth-child(2){animation-delay:.12s}#row .bars span:nth-child(3){animation-delay:.24s}#row .bars span:nth-child(4){animation-delay:.36s}#row .bars span:nth-child(5){animation-delay:.48s}#row .bars span:nth-child(6){animation-delay:.6s}
+@keyframes scan{0%,100%{background:var(--line)}30%{background:var(--green)}}
+#row .res{position:absolute;inset:0;display:flex;align-items:stretch;opacity:0;transition:opacity .3s}
+#row.done .res{opacity:1} #row.done .proc{display:none}
+#row .avg{flex:none;width:218px;border-right:2px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center}
+#row .avg .k{font-family:'Space Mono',monospace;font-weight:700;font-size:14px;letter-spacing:.18em;text-transform:uppercase;color:var(--green);padding:0}
+#row .avg .n{font-family:'Space Mono',monospace;font-weight:700;font-size:84px;line-height:.95;letter-spacing:-.06em;color:var(--green);font-variant-numeric:tabular-nums;margin:0}
+#row .avg .m{font-weight:900;font-size:17px;letter-spacing:-.02em;margin-top:2px;text-align:center;white-space:nowrap;min-height:0}
+#row .r{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:0 16px 0 20px}
+#row .call{flex:1;min-width:0}
+#row .tier{font-weight:900;font-size:46px;line-height:.95;letter-spacing:-.05em;text-transform:uppercase;white-space:nowrap;transform:scale(.5);opacity:0;transition:transform .45s cubic-bezier(.2,1.6,.4,1),opacity .2s;transform-origin:left center}
+#row .tier.on{transform:none;opacity:1}
+#row .tier.bull{color:var(--green)} #row .tier.neg{color:var(--red)}
+#row .off{font-family:'Space Mono',monospace;font-weight:700;font-size:16px;color:var(--dim);margin-top:8px;white-space:nowrap}
+#row .off b{color:var(--ink)} #row .off .p{color:var(--purple)}
+#row .box{flex:none;border-radius:14px;padding:12px 16px;height:132px;display:flex;flex-direction:column;justify-content:center;opacity:0;transform:translateY(14px);transition:opacity .3s,transform .35s cubic-bezier(.2,.8,.2,1)}
+#row .box.on{opacity:1;transform:none}
+#row .box .k{font-family:'Space Mono',monospace;font-weight:700;font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.8;white-space:nowrap}
+#row .box .v{font-family:'Space Mono',monospace;font-weight:700;font-size:46px;line-height:1;margin-top:6px;letter-spacing:-.05em}
+#row .pts{width:156px;background:var(--green);color:var(--ground)} #row .pts.neg{background:var(--red)}
+#row .grd{width:104px;background:var(--panel);border:2px solid var(--line);text-align:center;align-items:center}
+#row .grd .k{color:var(--dim)} #row .grd .v{font-family:'Archivo',sans-serif;font-weight:900}
 #err{position:absolute;left:40px;top:250px;width:1000px;padding:30px;border-radius:20px;background:rgba(14,12,26,.95);border:2px solid var(--red);font-family:'Space Mono',monospace;font-size:26px;color:var(--red)}
 </style>
 </head>
@@ -149,11 +193,29 @@ body.record #reveal,body.record #total,body.record #report{display:none!importan
   <!-- the "now rating" strip: shown only with ?view=record -->
   <div id="record" class="hide">
     <div class="now">
-      <div class="eyebrow"><i></i><span id="rcEyebrow">Now rating</span></div>
-      <div class="t" id="rcTitle"></div>
-      <div class="ig" id="rcIg">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>
-        <span id="rcHandle"></span>
+      <div class="l">
+        <div class="eyebrow"><i></i><span id="rcEyebrow">Now rating</span></div>
+        <div class="t" id="rcTitle"></div>
+        <div class="a"><b id="rcArtist"></b><span id="rcHandle"></span></div>
+      </div>
+      <div class="tile" id="rcT1"><div class="k" id="rcK1">Rating</div><div class="v" id="rcV1"></div></div>
+      <div class="tile p" id="rcT2"><div class="k" id="rcK2">Prediction</div><div class="v" id="rcV2"></div></div>
+    </div>
+    <div id="lockbar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      Prediction locked in
+    </div>
+  </div>
+
+  <!-- the one-row reveal: shown only with ?layout=row -->
+  <div id="row" class="hide">
+    <div class="proc"><div class="k">Checking the room</div><div class="bars"><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+    <div class="res">
+      <div class="avg"><div class="k">The average</div><div class="n" id="rwN">0.0</div><div class="m" id="rwM"></div></div>
+      <div class="r">
+        <div class="call"><div class="tier" id="rwTier"></div><div class="off" id="rwOff"></div></div>
+        <div class="box pts" id="rwPts"><div class="k">Points</div><div class="v" id="rwPtsV"></div></div>
+        <div class="box grd" id="rwGrd"><div class="k">Grade</div><div class="v" id="rwGrdV"></div></div>
       </div>
     </div>
   </div>
@@ -231,17 +293,44 @@ body.record #reveal,body.record #total,body.record #report{display:none!importan
   // ?view=record: this source is the "now rating" strip and nothing else.
   var RECORD = Q.get('view') === 'record';
   if (RECORD) document.body.classList.add('record');
-  var recAt = 0;
+  // ?layout=row: the reveal is the one-row card under the camera, not the tall card.
+  var ROW = Q.get('layout') === 'row';
+  var recAt = 0, recRound = null, recStage = null, recTimers = [];
+  function recLater(ms, fn) { recTimers.push(setTimeout(fn, ms)); }
+  function recTiles(st, outcome) {
+    var t1 = $('#rcT1'), t2 = $('#rcT2');
+    if (outcome && st.result) {
+      $('#rcK1').textContent = 'Average'; $('#rcV1').textContent = Number(st.result.avg).toFixed(1); t1.classList.add('on', 'res'); t1.classList.remove('locked');
+      $('#rcK2').textContent = 'Points'; $('#rcV2').textContent = (st.result.points >= 0 ? '+' : '') + st.result.points; t2.classList.add('on', 'res'); t2.classList.remove('locked', 'p'); t2.classList.toggle('neg', st.result.points < 0);
+      return;
+    }
+    $('#rcK1').textContent = 'Rating'; $('#rcK2').textContent = 'Prediction'; t1.classList.remove('res', 'neg'); t2.classList.remove('res', 'neg'); t2.classList.add('p');
+    if (st.rating != null) { $('#rcV1').textContent = st.rating; t1.classList.add('on'); } else t1.classList.remove('on');
+    if (st.predict != null) { $('#rcV2').textContent = Number(st.predict).toFixed(1); t2.classList.add('on'); } else t2.classList.remove('on');
+    var locked = st.stage === 'locked' || st.stage === 'result';
+    t1.classList.toggle('locked', locked); t2.classList.toggle('locked', locked);
+  }
   function renderRecord(st) {
     var el = $('#record');
-    if (!st || !st.on) { el.classList.remove('on'); recAt = st ? st.at : 0; return; }
+    if (!st || !st.on) { el.classList.remove('on'); recAt = st ? st.at : 0; recRound = null; recStage = null; recTimers.forEach(clearTimeout); recTimers = []; $('#lockbar').classList.remove('on'); return; }
     if (st.at !== recAt) {
+      var fresh = st.roundId !== recRound, was = recStage, first = recAt === 0 && recRound === null;
+      if (fresh) { recTimers.forEach(clearTimeout); recTimers = []; $('#lockbar').classList.remove('on'); }
       $('#rcEyebrow').textContent = 'Now rating' + (st.position && st.total ? ' \u00b7 Record ' + st.position + ' of ' + st.total : '');
       var t = $('#rcTitle'); t.textContent = st.title || ''; t.classList.toggle('long', String(st.title || '').length > 24);
-      var by = document.createElement('span'); by.className = 'by'; by.textContent = st.artist || ''; t.appendChild(by);
-      var ig = $('#rcIg'); ig.classList.toggle('none', !st.handle); ig.querySelector('svg').style.display = st.handle ? '' : 'none';
-      $('#rcHandle').textContent = st.handle || 'No Instagram on file';
-      recAt = st.at;
+      $('#rcArtist').textContent = st.artist || ''; $('#rcHandle').textContent = st.handle ? ' \u00b7 ' + st.handle : '';
+      var stage = st.stage || null;
+      // The locked bar shows once, the first time this page sees the lock (or a result that
+      // arrived without the lock poll landing in between).
+      var justLocked = !fresh && !first && was !== 'locked' && was !== 'result' && (stage === 'locked' || stage === 'result');
+      if (justLocked) { $('#lockbar').classList.add('on'); recLater(1400, function () { $('#lockbar').classList.remove('on'); }); }
+      if (stage === 'result') {
+        // Rating and Prediction stay up through the reveal row; Average and Points take
+        // over once the row has dropped away. A page that opens on an old result shows it at once.
+        if (was === 'result' || first || fresh) recTiles(st, true);
+        else { recTiles(st, false); recLater(12500, function () { recTiles(st, true); }); }
+      } else recTiles(st, false);
+      recAt = st.at; recRound = st.roundId; recStage = stage;
     }
     el.classList.remove('hide'); requestAnimationFrame(function () { el.classList.add('on'); });
   }
@@ -263,7 +352,43 @@ body.record #reveal,body.record #total,body.record #report{display:none!importan
 
   function pct(x) { return (x / 9 * 100) + '%'; }
   function text(id, v) { $(id).textContent = v == null ? '' : String(v); }
-  function hideAll() { ['#reveal', '#total', '#report'].forEach(function (s) { $(s).classList.add('hide'); $(s).classList.remove('in', 'out'); }); }
+  function hideAll() { ['#reveal', '#total', '#report'].forEach(function (s) { $(s).classList.add('hide'); $(s).classList.remove('in', 'out'); }); rowTimers.forEach(clearTimeout); rowTimers = []; $('#row').classList.remove('on', 'done'); }
+  /* The one-row reveal (?layout=row). All the sequence's sound comes from THIS source: the
+     lock, the ticking while it "checks", then a sting by tier. */
+  var rowTimers = [], rowCounted = false;
+  function rowLater(ms, fn) { rowTimers.push(setTimeout(fn, ms)); }
+  function lockSnd() { tick(520, .09, .16); setTimeout(function () { tick(780, .16, .16); }, 90); }
+  function tierSnd(tier) {
+    try { var a = ctx(), seq = tier === 'bullseye' ? [523.25, 659.25, 783.99, 1046.5] : tier === 'sharp' ? [523.25, 659.25, 783.99] : tier === 'close' ? [523.25, 659.25] : [329.63, 246.94];
+      var low = tier === 'off' || tier === 'wayoff';
+      seq.forEach(function (f, i) { var o = a.createOscillator(), v = a.createGain(); o.type = low ? 'sawtooth' : 'triangle'; o.frequency.value = f; v.gain.value = .001; o.connect(v); v.connect(a.destination);
+        var t = a.currentTime + i * (low ? .16 : .11), d = (tier === 'bullseye' && i === 3) ? .9 : low ? .5 : .28; o.start(t); v.gain.linearRampToValueAtTime(.2, t + .02); v.gain.exponentialRampToValueAtTime(.0001, t + d); o.stop(t + d + .05); }); } catch (e) {}
+  }
+  function playRow(st) {
+    var c = st.reveal; clearTimeout(hideTimer); hideAll();
+    var row = $('#row'); row.classList.remove('hide');
+    text('#rwN', '0.0'); text('#rwM', c.meaning || '');
+    var tr = $('#rwTier'); tr.className = 'tier' + (c.tier === 'bullseye' ? ' bull' : c.points < 0 ? ' neg' : ''); tr.textContent = (TIERS[c.tier] || '') + (c.tier === 'bullseye' ? '!' : '');
+    $('#rwOff').innerHTML = Number(c.off) === 0 ? 'Predicted <span class="p">' + Number(c.predicted).toFixed(1) + '</span>. Dead on.' : 'Predicted <span class="p">' + Number(c.predicted).toFixed(1) + '</span> \u00b7 off by <b>' + Number(c.off).toFixed(1) + '</b>';
+    text('#rwPtsV', (c.points >= 0 ? '+' : '') + c.points); $('#rwPts').classList.toggle('neg', c.points < 0); $('#rwPts').classList.remove('on'); text('#rwGrdV', c.grade || ''); $('#rwGrd').classList.remove('on');
+    rowCounted = false;
+    lockSnd();                                                   // 0.0s  the strip is showing "Prediction locked in"
+    rowLater(1200, function () { row.classList.add('on'); });   // 1.2s  the row rises, checking
+    for (var i = 0; i < 9; i++) rowLater(1400 + i * 160, function () { tick(1400, .03, .05); });
+    rowLater(2900, function () {                                 // 2.9s  the average counts up
+      row.classList.add('done');
+      // One clock (the frame timestamps) and a clamp: mixing performance.now() with the frame
+      // time can start the count below zero.
+      var t0 = null, el = $('#rwN'), avg = Number(c.avg);
+      requestAnimationFrame(function step(now) { if (rowCounted) return; if (t0 === null) t0 = now; var k = Math.max(0, Math.min(1, (now - t0) / 900)), e = 1 - Math.pow(1 - k, 3); el.textContent = (avg * e).toFixed(1); if (k < 1) requestAnimationFrame(step); else el.textContent = avg.toFixed(1); });
+    });
+    // The tier lands on the final number whatever the count-up managed: a late frame must not
+    // overwrite it (a hidden or throttled source does not get frames on time).
+    rowLater(3900, function () { rowCounted = true; $('#rwN').textContent = Number(c.avg).toFixed(1); tr.classList.add('on'); tierSnd(c.tier); });
+    rowLater(4400, function () { $('#rwPts').classList.add('on'); });
+    rowLater(4650, function () { $('#rwGrd').classList.add('on'); });
+    rowLater(12000, function () { row.classList.remove('on'); }); // ~8s on screen, then the QR card is back
+  }
 
   function playReveal(st) {
     var c = st.reveal, t = st.total || {};
@@ -340,7 +465,7 @@ body.record #reveal,body.record #total,body.record #report{display:none!importan
     if (!st || !st.view || st.view === 'idle') { if (shownView !== 'idle') { clearTimeout(hideTimer); hideAll(); } shownView = 'idle'; shownAt = st ? st.at : 0; return; }
     var changed = st.at !== shownAt || st.view !== shownView;
     if (st.view === 'report') { showReport(st, shownView === 'report' && shownPage !== st.report.page); shownPage = st.report.page; }
-    else if (changed && st.view === 'reveal') playReveal(st);
+    else if (changed && st.view === 'reveal') { if (ROW) playRow(st); else playReveal(st); }
     else if (changed && st.view === 'total') showTotal(st);
     shownAt = st.at; shownView = st.view;
   }
@@ -349,11 +474,14 @@ body.record #reveal,body.record #total,body.record #report{display:none!importan
     if (!KEY) { $('#err').textContent = 'Add ?k=<your control key> to the URL'; $('#err').classList.remove('hide'); return; }
     fetch('/api/control/daily-overlay?k=' + encodeURIComponent(KEY) + (RECORD ? '&part=record' : ''), { cache: 'no-store' })
       .then(function (r) { if (r.status === 401) { $('#err').textContent = 'Bad control key'; $('#err').classList.remove('hide'); return null; } return r.ok ? r.json() : null; })
-      .then(function (d) { if (d) { $('#err').classList.add('hide'); if (RECORD) renderRecord(d.state); else render(d.state); } })
-      .catch(function () { /* keep the last frame on a network blip */ });
+      .then(function (d) { if (d) { $('#err').classList.add('hide'); if (RECORD) { renderRecord(d.state); fast = !!(d.state && d.state.on); } else render(d.state); } })
+      .catch(function () { /* keep the last frame on a network blip */ })
+      .then(function () { setTimeout(poll, RECORD ? (fast ? 500 : 2000) : ROW ? 700 : 2000); });
   }
+  // The strip follows the slider, so it polls twice a second while a record is up; the row
+  // reveal a little faster than the tall card so the lock sound lands with the locked bar.
+  var fast = false;
   poll();
-  setInterval(poll, 2000);
 })();
 </script>
 </body>
