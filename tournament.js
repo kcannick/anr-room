@@ -23,7 +23,7 @@ const KINDS = {
 const STATUSES = ['draft', 'promo', 'live', 'complete'];
 const REMIND_BATCH = 40;
 const CTA_URL = 'makinitmag.com/ANR';
-const HOUSE_HANDLE = '@makinitmusicreview';
+const HOUSE_HANDLE = '@TheAnRTeam'; // @makinitmusicreview is gone (operator, 2026-10-23)
 const SUBMIT_PACK_URL = 'https://www.makinitmag.com/push';   // where an artist submits for the Service Pack (operator, 2026-10-14)
 const CANDIDATE_WEEKS = 8;
 // The competitor briefing that rides the package email — the operator's wording, verbatim

@@ -2406,7 +2406,9 @@ async function advanceDailyAsanaTasks({ deadline }) {
 function dailyAsanaTaskName(rd) {
   return `${rd.set === 'song' ? DAILY_STREAM_NAME : 'Top A&Rs'} — ${rd.date}`;
 }
-const TOP_AR_COLLAB = '@makinitmusicreview';
+// @makinitmusicreview no longer exists (operator, 2026-10-23: it is now @TheAnRTeam), and a dead
+// handle as a collaborator makes Meta fail the whole post.
+const TOP_AR_COLLAB = '@TheAnRTeam';
 // The countdown posts from @makinit4indies with @TheAnRTeam and the top 3 artists invited as
 // collaborators (operator, 2026-10-17; Instagram allows five). The task is made at the render
 // (the close); the operator's job schedules both posts in SocialBee that evening, with their
@@ -2416,11 +2418,25 @@ const COUNTDOWN_COLLAB = '@TheAnRTeam';
 const COUNTDOWN_COLLAB_TOP = 3;
 const COUNTDOWN_POST_TIME = '6:00 AM ET';
 const TOP_AR_POST_TIME = '9:00 AM ET';
+// Meta's rules for one post (operator, 2026-10-23): at most 5 collaborators, and each handle
+// appears ONCE in the whole post. A collaborator is never also tagged on a slide, and nobody is
+// tagged twice, or the post goes over Meta's limit and fails. `seen` holds every handle already
+// used (lower-cased); `once` returns the ones not yet used and marks them.
+function handleOnce(seen) {
+  return hs => hs.filter(h => {
+    const k = String(h || '').toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
 function dailyAsanaNotes(rd, caption) {
   const out = ['Caption (paste as-is):', '', caption, ''];
   if (rd.set === 'song') {
-    const top = rd.slides.filter(sl => sl.kind === 'rank' && sl.rank <= COUNTDOWN_COLLAB_TOP && sl.handle)
-      .sort((a, b) => a.rank - b.rank).map(sl => `${sl.handle} (#${sl.rank})`);
+    const once = handleOnce(new Set([COUNTDOWN_COLLAB.toLowerCase()]));
+    const top = [];
+    for (const sl of rd.slides.filter(sl => sl.kind === 'rank' && sl.rank <= COUNTDOWN_COLLAB_TOP && sl.handle)
+      .sort((a, b) => a.rank - b.rank)) if (once([sl.handle]).length) top.push(`${sl.handle} (#${sl.rank})`);
     out.push('—', `Schedule in SocialBee from ${COUNTDOWN_FROM} to post at ${COUNTDOWN_POST_TIME} on ${rd.day || rd.date}.`,
       `Collab: invite ${COUNTDOWN_COLLAB}${top.length ? ' and the top 3 artists: ' + top.join(', ') : ''} as collaborators.`, '');
     const cm = countdownComments(rd).comments;
@@ -2428,20 +2444,32 @@ function dailyAsanaNotes(rd, caption) {
       out.push('—', 'Comments: post each one under the carousel once it is up.', '');
       cm.forEach((c, i) => out.push(`${i + 1}) ${c}`, ''));
     }
-    const tags = rd.slides.filter(sl => (sl.kind === 'rank' && sl.handle) || (sl.kind === 'group' && sl.handles && sl.handles.length))
-      .map(sl => sl.kind === 'rank' ? `Slide ${sl.slide} (#${sl.rank}): ${sl.handle}` : `Slide ${sl.slide} (#${sl.lo}–#${sl.hi}): ${sl.handles.join(', ')}`);
+    const tags = [];
+    for (const sl of rd.slides) {
+      if (sl.kind === 'rank' && sl.handle) {
+        const h = once([sl.handle]);
+        if (h.length) tags.push(`Slide ${sl.slide} (#${sl.rank}): ${h[0]}`);
+      } else if (sl.kind === 'group' && sl.handles && sl.handles.length) {
+        const h = once(sl.handles);
+        if (h.length) tags.push(`Slide ${sl.slide} (#${sl.lo}–#${sl.hi}): ${h.join(', ')}`);
+      }
+    }
     if (tags.length) out.push('—', 'Tag each artist on their own slide (every artist on a grouped slide):', ...tags, '');
-    out.push('Artists with no Instagram handle on file are not tagged or mentioned.', '');
+    out.push('Collaborators are not tagged on a slide, and no one is tagged twice: Meta counts each handle once per post.',
+      'Artists with no Instagram handle on file are not tagged or mentioned.', '');
   } else {
     // Collab with the #1 A&R, tag the other seven (operator, 2026-10-03).
     const hero = rd.slides[0].hero || {};
-    const rest = rd.slides.filter(sl => sl.kind === 'list').flatMap(sl => sl.rows).map(r => r.handle).filter(Boolean);
-    // @makinitmusicreview is always a collaborator too (operator, 2026-10-03).
+    const once = handleOnce(new Set([TOP_AR_COLLAB.toLowerCase()]));
+    const heroHandle = hero.handle ? once([hero.handle])[0] : null;
+    const rest = once(rd.slides.filter(sl => sl.kind === 'list').flatMap(sl => sl.rows).map(r => r.handle).filter(Boolean));
+    // The house account is always a collaborator too (operator, 2026-10-03).
     out.push('—', `Schedule in SocialBee from ${COUNTDOWN_FROM} to post at ${TOP_AR_POST_TIME} on ${rd.day || rd.date}.`);
-    out.push(hero.handle ? `Collab: invite ${TOP_AR_COLLAB} and ${hero.handle} (#1) as collaborators.`
+    out.push(heroHandle ? `Collab: invite ${TOP_AR_COLLAB} and ${heroHandle} (#1) as collaborators.`
       : `Collab: invite ${TOP_AR_COLLAB} as a collaborator. The #1 A&R (${hero.title}) has no Instagram handle on file, so they are not a collaborator.`);
     if (rest.length) out.push(`Tag the other top A&Rs: ${rest.join(', ')}`);
-    out.push('A&Rs with no Instagram handle on file are not tagged.', '');
+    out.push('Collaborators are not tagged, and no one is tagged twice: Meta counts each handle once per post.',
+      'A&Rs with no Instagram handle on file are not tagged.', '');
   }
   out.push('—', `Post the ${rd.total} attached slides in order as one Instagram carousel.`, 'Generated by The A&R Room.');
   return out.join('\n');
