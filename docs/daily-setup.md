@@ -265,6 +265,20 @@ once that scene is scaled into the vertical show. Turn it on with **Record on st
 on the daily page (admin only, remembered per device): each record you land on goes up; See
 results, Exit or the switch takes it down. The reveal source is separate and unaffected.
 
+**The live sequence.** With Record on stream on, the strip also shows your Rating and Prediction
+as you set them (the prediction follows the slider), turns green with "Prediction locked in" at
+the lock, and keeps Average and Points after the reveal until the next record. Add `layout=row`
+to the reveal source's URL to get the one-row reveal in the slot under the camera, with the lock
+sound, the checking beat and a different sound for each tier:
+
+```
+https://anr.makinitmag.com/overlay/daily?layout=row&k=<your Stream Deck control key>
+```
+
+That source makes all the sound, so its audio must reach the stream. The header, the Submit
+Music call to action and the camera are never covered. Scene layout, positions and stills for
+building the OBS collection are in `docs/obs-handoff/`.
+
 ## Replay the Day (2026-10-31)
 
 Platform panel → System settings → **Replay the Day window** (days, default 7, 0 = off).

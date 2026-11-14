@@ -11514,6 +11514,13 @@ async function handleApi(req, res, url) {
       const total = await dailyDaySoFar(session, participant, demoVotes);
       const state = { view: 'reveal', at: now(), drop: { id: session.id, label: dropLabel }, reveal, total };
       await setDailyOverlayState(admin.uid, state);
+      // The strip keeps the outcome after the reveal row drops away: Average and Points for
+      // the record it is showing, until the next record.
+      const rec = await dailyRecordState(admin.uid);
+      if (rec && rec.on && rec.roundId === round.id) {
+        await setDailyRecordState(admin.uid, { ...rec, at: now(), stage: 'result', rating: reveal.rated, predict: reveal.predicted,
+          result: { avg: reveal.avg, points: reveal.points, tier: reveal.tier } });
+      }
       return send(res, 200, { ok: true, state });
     }
     const view = (body.view || '').toString();
@@ -11522,13 +11529,31 @@ async function handleApi(req, res, url) {
     // takes it down. Separate state from the reveal (see dailyRecordState).
     if (view === 'record') {
       if (body.off) { const st = { on: false, at: now(), drop: { id: session.id, label: dropLabel } }; await setDailyRecordState(admin.uid, st); return send(res, 200, { ok: true, state: st }); }
+      // THE LIVE SEQUENCE (2026-11-13, operator: "Rating: 5 shows up on overlay · Prediction: 4.8
+      // ... updates live as I move the toggle · Prediction Locked In"). The phone posts the
+      // admin's OWN rating and prediction as he sets them (`stage` rating | locked); they ride
+      // the strip's state. His own numbers before the lock-in, nothing about the room: the
+      // average reaches the strip only through the reveal route below (stage 'result').
+      const liveNum = (v, max, dec) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= max ? (dec ? Math.round(n * 10) / 10 : (Number.isInteger(n) ? n : null)) : null; };
+      const live = body.stage != null ? { stage: body.stage === 'locked' ? 'locked' : 'rating', rating: liveNum(body.rating, 9, false), predict: liveNum(body.predict, 9, true) } : null;
+      if (live) {
+        const prevR = await dailyRecordState(admin.uid);
+        if (prevR && prevR.on && prevR.roundId === body.roundId) {
+          // Never step back from a result: the lock post and the reveal post race each other.
+          if (prevR.stage === 'result') return send(res, 200, { ok: true, state: prevR });
+          const st = { ...prevR, at: now(), ...live };
+          await setDailyRecordState(admin.uid, st);
+          return send(res, 200, { ok: true, state: st });
+        }
+      }
       const round = body.roundId ? await db.get('SELECT id, song_title, song_artist, artist_instagram FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
       if (!round) return bad(res, 'Round not found', 404);
       const pos = parseInt(body.position, 10), tot = parseInt(body.total, 10);
       const st = { on: true, at: now(), drop: { id: session.id, label: dropLabel }, roundId: round.id,
         title: round.song_title || 'Untitled', artist: round.song_artist || '',
         handle: igClean(round.artist_instagram) ? '@' + igClean(round.artist_instagram) : null,
-        position: Number.isInteger(pos) && pos > 0 ? pos : null, total: Number.isInteger(tot) && tot > 0 ? tot : null };
+        position: Number.isInteger(pos) && pos > 0 ? pos : null, total: Number.isInteger(tot) && tot > 0 ? tot : null,
+        ...(live || {}) };
       await setDailyRecordState(admin.uid, st);
       return send(res, 200, { ok: true, state: st });
     }
