@@ -6181,6 +6181,243 @@ async function liveCallState(session) {
   };
 }
 
+// ===== Notify a chart's list (054) =====
+// Operator, 2026-11-12: "send email and SMS to everyone who made the HOT 100 list, or any list I
+// create from a chart." The audience IS the chart the Charts screen is showing — the same query
+// string that drives the table, the CSV and the carousel — so the people told are exactly the
+// people on the slides. Rows under the floor are out; reference tracks never chart. A record
+// chart notifies ARTISTS (the contact on the round, like the Go live card); an A&R chart
+// notifies A&Rs (users, with their opt-outs, bounces and SMS consent honoured, like the mass
+// announcement). One message per ADDRESS per send: an artist with two charting records hears
+// once, about the higher one.
+//
+// The list is identified by its canonical chart query (`chartListKey`), not a stored roster:
+// "the same list" is reproducible from the console, and the send history keeps what went to
+// whom. Artist texts keep the ET window (held, drained by the hourly cron); A&R texts go when
+// pressed, as announcements do. No score or vote count rides along unless the chart asked for
+// scores — the message is the operator's own words with merge tokens.
+const CHART_TOKEN_RE = /\[\s*(first\s*name|name|artist|title|rank|chart\s*name|post\s*link)\s*\]/gi;
+const CHART_NOTICE_BODY_MAX = 6000;
+function renderChartTokens(text, vals, html) {
+  const key = k => k.toLowerCase().replace(/\s+/g, '');
+  const out = [];
+  let last = 0;
+  const src = String(text == null ? '' : text);
+  for (const m of src.matchAll(CHART_TOKEN_RE)) {
+    out.push(html ? escapeHtml(src.slice(last, m.index)) : src.slice(last, m.index));
+    const k = key(m[1]);
+    const v = k === 'firstname' ? vals.firstName : k === 'name' ? vals.name : k === 'artist' ? vals.artist
+      : k === 'title' ? vals.title : k === 'rank' ? vals.rank : k === 'chartname' ? vals.chartName : vals.postLink;
+    const s = v == null ? '' : String(v);
+    if (html && k === 'postlink' && s) out.push(`<a href="${escapeHtml(s)}" style="color:#4bb749">${escapeHtml(s)}</a>`);
+    else out.push(html ? escapeHtml(s) : s);
+    last = m.index + m[0].length;
+  }
+  out.push(html ? escapeHtml(src.slice(last)) : src.slice(last));
+  return out.join('');
+}
+// What makes a list the same list: everything that decides MEMBERSHIP. Order, per-slide and
+// "show scores" change how it prints, not who is on it, so they stay out.
+function chartListKey(q) {
+  const parts = ['mode=' + q.mode, 'scope=' + q.scope];
+  if (q.scope === 'series') parts.push('seriesId=' + (q.seriesId || ''));
+  else if (q.scope === 'range') parts.push('from=' + q.from, 'to=' + q.to);
+  else if (q.scope === 'month') parts.push('month=' + (q.month || ''));
+  else if (q.scope === 'last') parts.push('lastN=' + q.lastN);
+  parts.push('limit=' + q.limit);
+  if (q.mode === 'ars') parts.push('sort=' + q.sort, 'minRounds=' + q.minRounds);
+  else parts.push('minVotes=' + q.minVotes, 'dedupe=' + (q.dedupe ? 1 : 0));
+  return parts.join('&');
+}
+const chartListLabel = (data) => `${data.title} — ${data.scope.label}`;
+const CHART_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// Who a send reaches. `people` is every charting row with what happens to its email and
+// its phone ('none' | 'same:<rank>' | 'opted out' | 'bounced' | 'no consent' | the address);
+// `emails` / `phones` are the deduped recipients in rank order. Pure over the rows + a
+// contact map so the test can pin the dedupe; the route masks before it answers.
+function chartNoticePlanFrom(data, contacts) {
+  const rows = (data.order === 'countdown' ? data.rows.slice().reverse() : data.rows);
+  const seenEmail = new Map(), seenPhone = new Map();
+  const people = [], emails = [], phones = [];
+  for (const r of rows) {
+    const c = contacts.get(data.mode === 'ars' ? r.id : r.roundId) || {};
+    const p = data.mode === 'ars'
+      ? { rank: r.rank, uid: r.id, name: r.name || 'A&R', title: '', artist: '', email: 'none', sms: 'none' }
+      : { rank: r.rank, roundId: r.roundId, name: r.artist || '', title: r.title || '', artist: r.artist || '', email: 'none', sms: 'none' };
+    people.push(p);
+    const em = String(c.email || '').trim();
+    if (CHART_EMAIL_RE.test(em)) {
+      const k = em.toLowerCase();
+      if (c.optOut) p.email = 'opted out';
+      else if (c.bounced) p.email = 'bounced';
+      else if (seenEmail.has(k)) p.email = 'same:' + seenEmail.get(k);
+      else { seenEmail.set(k, p.rank); p.email = em; emails.push({ dest: em, person: p }); }
+    }
+    const ph = smsNormalize(c.phone);
+    if (ph) {
+      if (data.mode === 'ars' && !c.consent) p.sms = 'no consent';
+      else if (seenPhone.has(ph)) p.sms = 'same:' + seenPhone.get(ph);
+      else { seenPhone.set(ph, p.rank); p.sms = ph; phones.push({ dest: ph, person: p }); }
+    }
+  }
+  return { mode: data.mode, people, emails, phones };
+}
+async function chartNoticeContacts(data) {
+  const map = new Map();
+  if (data.mode === 'ars') {
+    const ids = data.rows.map(r => r.id).filter(Boolean);
+    if (!ids.length) return map;
+    const ph = ids.map(() => '?').join(',');
+    // The phone falls back to the latest participant row the way the contact export does;
+    // consent and the kill switches are on users, the only place they are recorded.
+    const rows = await db.all(
+      `SELECT u.uid, u.email, u.sms_marketing_consent AS consent, u.email_opt_out, u.email_bounced_at,
+              COALESCE(NULLIF(TRIM(u.phone), ''),
+                       (SELECT NULLIF(TRIM(p.phone), '') FROM participants p
+                         WHERE p.user_id = u.uid AND NULLIF(TRIM(p.phone), '') IS NOT NULL
+                         ORDER BY p.created_at DESC LIMIT 1)) AS phone
+         FROM users u WHERE u.uid IN (${ph})`, ids);
+    for (const r of rows) map.set(r.uid, { email: r.email || '', phone: r.phone || '', consent: Number(r.consent) === 1,
+      optOut: Number(r.email_opt_out) === 1, bounced: !!r.email_bounced_at });
+  } else {
+    const ids = data.rows.map(r => r.roundId).filter(Boolean);
+    if (!ids.length) return map;
+    const ph = ids.map(() => '?').join(',');
+    const rows = await db.all(`SELECT id, artist_email, artist_phone FROM rounds WHERE id IN (${ph})`, ids);
+    for (const r of rows) map.set(r.id, { email: r.artist_email || '', phone: r.artist_phone || '' });
+  }
+  return map;
+}
+async function chartNoticePlan(data) {
+  return chartNoticePlanFrom(data, await chartNoticeContacts(data));
+}
+// One message, rendered for ONE recipient. Shared by the send loop and "send test to me".
+// Artists get the Meeting's email frame (the Go live card's); A&Rs get the announcement frame
+// with the manage/unsubscribe footer their uid signs. The SMS always carries a way out.
+function chartNoticeVals(send, rcpt) {
+  const name = rcpt.name || '';
+  return {
+    firstName: firstNameOf(name) || (send.mode === 'ars' ? 'A&R' : ''),
+    name, artist: rcpt.artist || name, title: rcpt.title || '', rank: rcpt.rank == null ? '' : '#' + rcpt.rank,
+    chartName: send.list_label, postLink: send.post_url || '',
+  };
+}
+function chartNoticeRender(send, rcpt, base) {
+  const vals = chartNoticeVals(send, rcpt);
+  const subject = renderChartTokens(send.subject || send.list_label, vals, false);
+  const bodyText = renderChartTokens(send.body || '', vals, false);
+  const bodyHtml = renderChartTokens(send.body || '', vals, true).replace(/\n/g, '<br>');
+  const smsText = renderChartTokens(send.sms_body || '', vals, false);
+  const post = send.post_url || '';
+  const cta = post ? `<p style="margin:16px 0 8px;"><a href="${escapeHtml(post)}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">See the post</a></p>` : '';
+  if (send.mode === 'ars') {
+    const manage = notifyManageUrl(base, rcpt.uid);
+    const html = `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
+      <div style="max-width:520px;margin:0 auto;background:#171328;border:1px solid #2e2750;border-radius:16px;padding:26px">
+        <p style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;font-weight:700;margin:0 0 14px">${escapeHtml(send.list_label)}</p>
+        <div style="font-size:15px;line-height:1.6;color:#f3f0fb">${bodyHtml}</div>${cta}
+        <p style="font-size:12px;color:#6f688f;margin:22px 0 0">Makin' It Magazine · The A&amp;R Team · <a href="https://anr.makinitmag.com" style="color:#6d5fe0">anr.makinitmag.com</a></p>
+        ${notifyFooterHtml(manage)}
+      </div></div>`;
+    return { subject, html, text: `${bodyText}${post ? '\n\n' + post : ''}\n\n${notifyFooterText(manage)}`, sms: `${smsText}\n${smsFooter(manage)}`, manage };
+  }
+  const html = `<div style="background:#17191D;padding:26px 12px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#F6F7FB;">
+    <div style="max-width:600px;margin:0 auto;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0D0E12" style="background:#0D0E12;border-radius:12px 12px 0 0;">
+        <tr><td align="center" style="padding:20px 16px 18px;">
+          <img src="https://makinitmag.com/sites/all/themes/mim2/images/mim-logo-email.png" alt="Makin' It Magazine" width="190" style="display:block;border:0;width:190px;max-width:70%;height:auto;margin:0 auto;">
+          <p style="margin:14px 0 0;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#4BB749;font-weight:bold;">${escapeHtml(send.list_label)}</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#17191D" style="background:#17191D;border:1px solid #2C2F34;border-top:0;border-radius:0 0 12px 12px;">
+        <tr><td style="padding:22px 18px 24px;">
+          <div style="font-size:15px;line-height:1.6;color:#F6F7FB;">${bodyHtml}</div>${cta}
+          <p style="font-size:12.5px;line-height:1.55;color:#8A94A6;margin:18px 0 0;">${escapeHtml(SUBSCRIBE_LINE)} <a href="${LIVE_SUBSCRIBE_URL}" style="color:#4BB749">${LIVE_SUBSCRIBE_SHORT}</a></p>
+        </td></tr>
+      </table>
+    </div>
+  </div>`;
+  const sms = /\bSTOP\b/i.test(smsText) ? smsText : `${smsText} Reply STOP to opt out.`;
+  return { subject, html, text: `${bodyText}${post ? '\n\n' + post : ''}\n\n${SUBSCRIBE_LINE} ${LIVE_SUBSCRIBE_URL}`, sms, manage: null };
+}
+async function enqueueChartNotice({ q, data, plan, admin, subject, body, sms, wantEmail, wantSms, postUrl }) {
+  const sendId = id(12), at = now();
+  await db.run(
+    `INSERT INTO chart_notices (id, list_key, list_label, mode, subject, body, sms_body, post_url, by_uid, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [sendId, chartListKey(q), chartListLabel(data), data.mode, subject || null, body || null, sms || null, postUrl || null, admin.uid, at]);
+  let emails = 0, texts = 0;
+  for (const [channel, list] of [['email', wantEmail ? plan.emails : []], ['sms', wantSms ? plan.phones : []]]) {
+    for (const x of list) {
+      const p = x.person;
+      await db.run(
+        `INSERT INTO chart_notice_rcpts (id, send_id, channel, dest, uid, round_id, rank, name, title, artist, status, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?) ON CONFLICT (send_id, channel, dest) DO NOTHING`,
+        [id(12), sendId, channel, x.dest, p.uid || null, p.roundId || null, p.rank, p.name || null, p.title || null, p.artist || null, at]);
+      channel === 'sms' ? texts++ : emails++;
+    }
+  }
+  return { sendId, emails, texts };
+}
+// Send what is pending. Artist texts (a records list) wait for the ET window — this is the one
+// queue here that the hourly cron drains too; A&R texts go now, as announcements do.
+async function drainChartNotices({ listKey = null, deadline = null, limit = 60, base = null } = {}) {
+  const rows = listKey
+    ? await db.all(`SELECT r.*, n.mode, n.list_label, n.subject, n.body, n.sms_body, n.post_url FROM chart_notice_rcpts r JOIN chart_notices n ON n.id = r.send_id
+                     WHERE n.list_key = ? AND r.status = 'pending' ORDER BY r.created_at ASC, r.channel ASC, r.rank ASC LIMIT ?`, [listKey, limit])
+    : await db.all(`SELECT r.*, n.mode, n.list_label, n.subject, n.body, n.sms_body, n.post_url FROM chart_notice_rcpts r JOIN chart_notices n ON n.id = r.send_id
+                     WHERE r.status = 'pending' ORDER BY r.created_at ASC, r.channel ASC, r.rank ASC LIMIT ?`, [limit]);
+  let sent = 0, failed = 0, held = 0;
+  const b = base || publicBase();
+  for (const row of rows) {
+    if (deadline && Date.now() > deadline) break;
+    if (row.channel === 'sms' && row.mode !== 'ars' && !withinSmsWindow()) { held++; continue; }
+    const claim = await db.run("UPDATE chart_notice_rcpts SET status = 'sending' WHERE id = ? AND status = 'pending'", [row.id]);
+    if (!claim.changes) continue;
+    try {
+      const m = chartNoticeRender(row, row, b);
+      const r = row.channel === 'sms' ? await sendSms(row.dest, m.sms)
+        : await sendEmail(row.dest, m.subject, m.html, m.text, row.mode === 'ars' ? notifySendOpts(b, row.uid, 'chart_notice') : { tag: 'chart_notice' });
+      if (row.channel === 'email' && row.mode === 'ars') await noteEmailOutcome(row.dest, r);
+      if (r.ok) { await db.run("UPDATE chart_notice_rcpts SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
+      else { await db.run("UPDATE chart_notice_rcpts SET status = 'failed', sent_at = ?, error = ? WHERE id = ?", [now(), (r.error || 'send failed').slice(0, 300), row.id]); failed++; }
+    } catch (e) {
+      await db.run("UPDATE chart_notice_rcpts SET status = 'failed', sent_at = ?, error = ? WHERE id = ?", [now(), (e.message || 'error').slice(0, 300), row.id]); failed++;
+    }
+  }
+  return { sent, failed, held };
+}
+// What the console shows: who a send would reach (masked), every send to this list, and the
+// lists sent to lately (so "any list I create" is a click away again).
+async function chartNoticeState(q, data, plan) {
+  const listKey = chartListKey(q);
+  const mask = (v, ch) => /^(none|same:|opted out|bounced|no consent)/.test(v) ? v : (ch === 'sms' ? maskPhone(v) : maskEmail(v));
+  const rows = await db.all(
+    `SELECT n.id AS send_id, n.subject, n.post_url, n.created_at AS started_at, n.mode, r.channel, r.dest, r.status, r.error, r.sent_at
+       FROM chart_notices n LEFT JOIN chart_notice_rcpts r ON r.send_id = n.id WHERE n.list_key = ? ORDER BY n.created_at ASC`, [listKey]);
+  const sends = [];
+  for (const r of rows) {
+    let c = sends.find(x => x.sendId === r.send_id);
+    if (!c) { c = { sendId: r.send_id, subject: r.subject || '', postUrl: r.post_url || '', startedAt: Number(r.started_at), emailsSent: 0, textsSent: 0, failed: [], pending: 0, held: 0, lastAt: null }; sends.push(c); }
+    if (!r.channel) continue;
+    if (r.status === 'sent') r.channel === 'sms' ? c.textsSent++ : c.emailsSent++;
+    else if (r.status === 'failed') c.failed.push({ channel: r.channel, to: r.channel === 'sms' ? maskPhone(r.dest) : maskEmail(r.dest), error: r.error || 'send failed' });
+    else { c.pending++; if (r.channel === 'sms' && r.mode !== 'ars') c.held++; }
+    if (r.sent_at && Number(r.sent_at) > (c.lastAt || 0)) c.lastAt = Number(r.sent_at);
+  }
+  sends.forEach(c => { c.startedLabel = dropLogWhen(c.startedAt); c.lastLabel = c.lastAt ? dropLogWhen(c.lastAt) : null; });
+  const recent = await db.all(
+    `SELECT list_key, MAX(list_label) AS list_label, MAX(created_at) AS last_at, COUNT(*) AS sends FROM chart_notices GROUP BY list_key ORDER BY MAX(created_at) DESC LIMIT 10`);
+  return {
+    listKey, listLabel: chartListLabel(data), mode: data.mode,
+    people: plan.people.length, emails: plan.emails.length, texts: plan.phones.length,
+    noContact: plan.people.filter(p => p.email === 'none' && p.sms === 'none').length,
+    smsWindow: { open: withinSmsWindow(), from: SMS_WINDOW_START_LABEL, to: SMS_WINDOW_END_LABEL, holds: data.mode !== 'ars' },
+    rows: plan.people.map(p => ({ rank: p.rank, name: p.name, title: p.title, artist: p.artist, email: mask(p.email, 'email'), sms: mask(p.sms, 'sms') })),
+    sends,
+    recent: recent.map(r => ({ listKey: r.list_key, label: r.list_label, lastAt: Number(r.last_at), lastLabel: dropLogWhen(Number(r.last_at)), sends: Number(r.sends) })),
+  };
+}
+
 // The email half of the artist queue, with a CLAIM — the sibling of drainArtistSms.
 //
 // It had none: tolerable while a human clicked the button, a double-send bug the moment a
@@ -11458,8 +11695,9 @@ async function handleApi(req, res, url) {
     if (!ok) return bad(res, 'Bad token', 401);
     if (!withinSmsWindow()) return send(res, 200, { ok: true, skipped: 'outside the ET send window', etHour: etHour() });
     const out = await drainArtistSms({ limit: 25 });
+    const charts = await drainChartNotices({ limit: 25 });
     const rem = await db.get("SELECT COUNT(*) AS c FROM artist_notices WHERE status = 'pending' AND channel = 'sms'");
-    return send(res, 200, { ok: true, ...out, remaining: Number(rem.c) || 0 });
+    return send(res, 200, { ok: true, ...out, charts, remaining: Number(rem.c) || 0 });
   }
 
   // ---- A&R Daily lifecycle: open at noon, close + tally at noon next day, publish at 3PM ----
@@ -12092,6 +12330,81 @@ async function handleApi(req, res, url) {
     }
     const drained = await drainLiveCall({ sessionId: session.id, deadline: Date.now() + 18000 });
     return send(res, 200, { ok: true, started, ...drained, ...(await liveCallState(session)) });
+  }
+  // ----- Notify a chart's list (054) -----
+  // GET ?<chart query> = who a send would reach (masked) + every send to this list + the lists
+  // sent to lately. POST {q, send:true, subject, body, sms, email, texts, postUrl} composes and
+  // sends; a list that already had a send needs {again:true} (the console asks twice). POST {q}
+  // alone drains what a deadline or the SMS window left pending. Platform-admin only: the
+  // queue holds real addresses, and a chart spans every room.
+  if (p === '/api/admin/charts/notify' && (method === 'GET' || method === 'POST')) {
+    const admin = await platformAdmin(req);
+    if (!admin) return bad(res, 'Admin only', 403);
+    const body = method === 'POST' ? await readBody(req) : {};
+    const qs = method === 'GET' ? url.search : String(body.q || '');
+    const q = chartQuery(new URL('http://x/?' + qs.replace(/^\?/, '')));
+    if (q.mode === 'weekly1s') return bad(res, 'Room #1s is not a list of people — pick Top Records or Top A&Rs');
+    const data = await chartsData(q);
+    if (!data) return bad(res, 'Scope not found', 404);
+    const plan = await chartNoticePlan(data);
+    if (method === 'GET') return send(res, 200, await chartNoticeState(q, data, plan));
+    let started = null;
+    if (body.send) {
+      const subject = String(body.subject || '').trim().slice(0, 150);
+      const text = String(body.body || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
+      const sms = String(body.sms || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
+      const wantEmail = !!body.email, wantSms = !!body.texts;
+      const postUrl = String(body.postUrl || '').trim().slice(0, 500);
+      if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
+      if (wantEmail && (!subject || !text)) return bad(res, 'Email needs a subject and a message');
+      if (wantSms && !sms) return bad(res, 'Write the text message');
+      if (postUrl && !/^https?:\/\//i.test(postUrl)) return bad(res, 'The post link must start with http');
+      const prior = await db.get('SELECT COUNT(*) AS n FROM chart_notices WHERE list_key = ?', [chartListKey(q)]);
+      if (Number(prior && prior.n) && !body.again) return bad(res, 'This list was already sent to. Press Send again to send another message.', 409);
+      if ((wantEmail ? plan.emails.length : 0) + (wantSms ? plan.phones.length : 0) === 0) return bad(res, 'Nobody on this list has a reachable email or phone', 400);
+      started = await enqueueChartNotice({ q, data, plan, admin, subject, body: text, sms, wantEmail, wantSms, postUrl });
+    }
+    const drained = await drainChartNotices({ listKey: chartListKey(q), deadline: Date.now() + 18000, base: publicBaseFromReq(req) });
+    return send(res, 200, { ok: true, started, ...drained, ...(await chartNoticeState(q, data, plan)) });
+  }
+  // "Send test to me": the message rendered for the list's #1 (real tokens), to the admin's own
+  // email and phone only. Records nothing; the consent gate is not consulted (their own number).
+  if (p === '/api/admin/charts/notify/test' && method === 'POST') {
+    const admin = await platformAdmin(req);
+    if (!admin) return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const q = chartQuery(new URL('http://x/?' + String(body.q || '').replace(/^\?/, '')));
+    if (q.mode === 'weekly1s') return bad(res, 'Room #1s is not a list of people');
+    const data = await chartsData(q);
+    if (!data) return bad(res, 'Scope not found', 404);
+    const subject = String(body.subject || '').trim().slice(0, 150);
+    const text = String(body.body || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
+    const sms = String(body.sms || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
+    const wantEmail = !!body.email, wantSms = !!body.texts;
+    if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
+    if (wantEmail && (!subject || !text)) return bad(res, 'Email needs a subject and a message');
+    if (wantSms && !sms) return bad(res, 'Write the text message');
+    const me = await db.get('SELECT uid, name, email, phone FROM users WHERE uid = ?', [admin.uid]);
+    if (!me) return bad(res, 'Account not found', 404);
+    const plan = await chartNoticePlan(data);
+    const first = plan.people[0] || { rank: 1, name: me.name || '', title: '', artist: '' };
+    const sendRow = { mode: data.mode, list_label: chartListLabel(data), subject, body: text, sms_body: sms, post_url: String(body.postUrl || '').trim() };
+    const m = chartNoticeRender(sendRow, { ...first, uid: me.uid }, publicBaseFromReq(req));
+    const out = { email: null, sms: null, sample: { rank: first.rank, name: first.name, title: first.title } };
+    if (wantEmail) {
+      if (!me.email) out.email = { ok: false, error: 'No email on your account' };
+      else { const r = await sendEmail(me.email, '[TEST] ' + m.subject, m.html, m.text); out.email = { ok: !!r.ok, error: r.error || null, to: maskEmail(me.email) }; }
+    }
+    if (wantSms) {
+      if (!me.phone || String(me.phone).length < 7) out.sms = { ok: false, error: 'No phone number on your account (add one on your profile)' };
+      else {
+        const r = await sendSms(me.phone, m.sms);
+        const seg = smsSegments(m.sms);
+        out.sms = { ok: !!r.ok, error: r.error || null, to: maskPhone(me.phone), channel: r.channel || null,
+          gsm7: seg.encoding === 'gsm7', segments: seg.segments, chars: [...m.sms].length };
+      }
+    }
+    return send(res, 200, out);
   }
   // Record (or clear) an Instagram post being scheduled in SocialBee. Called by the daily browser
   // automation from the logged-in console once it has scheduled a post (so it needs no secret of
@@ -12965,6 +13278,10 @@ module.exports._dropStreamAt = dropStreamAt;
 module.exports._artistHeadsupSmsBody = artistHeadsupSmsBody;
 module.exports._liveCallSmsBody = liveCallSmsBody;
 module.exports._liveCallPlan = liveCallPlan;
+module.exports._chartNoticePlanFrom = chartNoticePlanFrom;
+module.exports._renderChartTokens = renderChartTokens;
+module.exports._chartListKey = chartListKey;
+module.exports._chartNoticeRender = chartNoticeRender;
 module.exports._artistHeadsupContent = artistHeadsupContent;
 module.exports._artistHeadsupText = artistHeadsupText;
 module.exports._artistHeadsupHtml = artistHeadsupHtml;

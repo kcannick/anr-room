@@ -5499,6 +5499,101 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('contacts: an A&R with no number exports an empty phone, not a wrong one',
     /,ch1@fan\.com,,no,/.test(noPhLine), noPhLine);
 
+  console.log('\n— charts: notify the list (054) —');
+  {
+    const rct = srv._renderChartTokens;
+    const vals = { firstName: 'Jay', name: 'Jay Monroe', artist: 'Jay Monroe', title: 'Night Shift', rank: '#4', chartName: 'Makin’ It HOT 100 — November 2026', postLink: 'https://instagram.com/p/abc' };
+    const t = rct('Hi [first name], "[title]" by [artist] is [rank] on [chart name]. See [post link]. [other] stays.', vals, false);
+    ok('notify: every token renders in text', t === 'Hi Jay, "Night Shift" by Jay Monroe is #4 on Makin’ It HOT 100 — November 2026. See https://instagram.com/p/abc. [other] stays.', t);
+    const h = rct('<b>[first name]</b> [post link]', vals, true);
+    ok('notify: in HTML the text is escaped and the post link is an anchor', /&lt;b&gt;Jay&lt;\/b&gt; <a href="https:\/\/instagram\.com\/p\/abc"/.test(h), h);
+    ok('notify: tokens forgive case and spacing', rct('[FirstName] [Chart Name]', vals, false) === 'Jay Makin’ It HOT 100 — November 2026');
+    const lk = srv._chartListKey;
+    ok('notify: the list key is membership only (order, per-slide and scores stay out)',
+      lk({ mode: 'records', scope: 'month', month: '2026-10', limit: 100, minVotes: 10, dedupe: true, order: 'top', per: 10, scores: false })
+      === lk({ mode: 'records', scope: 'month', month: '2026-10', limit: 100, minVotes: 10, dedupe: true, order: 'countdown', per: 20, scores: true })
+      && lk({ mode: 'records', scope: 'month', month: '2026-10', limit: 100, minVotes: 10, dedupe: true }) !== lk({ mode: 'records', scope: 'month', month: '2026-10', limit: 50, minVotes: 10, dedupe: true }));
+    // The plan over hand-built rows: dedupe case-blind, opt-outs and bounces out, consent gates A&R texts.
+    const planFrom = srv._chartNoticePlanFrom;
+    const recData = { mode: 'records', order: 'countdown', rows: [
+      { rank: 3, roundId: 'r3', title: 'C', artist: 'Three' }, { rank: 2, roundId: 'r2', title: 'B', artist: 'Two' }, { rank: 1, roundId: 'r1', title: 'A', artist: 'One' }] };
+    const recPlan = planFrom(recData, new Map([['r1', { email: 'one@x.test', phone: '(404) 555-0100' }], ['r2', { email: 'ONE@x.test ', phone: '404-555-0101' }], ['r3', { email: 'bad-address', phone: '+14045550100' }]]));
+    ok('notify: records plan runs #1 first whatever the display order, one message per address',
+      recPlan.people.map(p => p.rank).join(',') === '1,2,3' && recPlan.emails.length === 1 && recPlan.phones.length === 2
+      && recPlan.people[1].email === 'same:1' && recPlan.people[2].sms === 'same:1' && recPlan.people[2].email === 'none', JSON.stringify(recPlan.people));
+    const arData = { mode: 'ars', order: 'top', rows: [{ rank: 1, id: 'u1', name: 'Ann' }, { rank: 2, id: 'u2', name: 'Bob' }, { rank: 3, id: 'u3', name: 'Cy' }, { rank: 4, id: 'u4', name: 'Di' }] };
+    const arPlan = planFrom(arData, new Map([
+      ['u1', { email: 'ann@x.test', phone: '4045550001', consent: true }], ['u2', { email: 'bob@x.test', phone: '4045550002', consent: false }],
+      ['u3', { email: 'cy@x.test', phone: '', optOut: true }], ['u4', { email: 'di@x.test', bounced: true, phone: '4045550004', consent: true }]]));
+    ok('notify: A&R plan honours opt-out, bounce and SMS consent',
+      arPlan.emails.length === 2 && arPlan.phones.length === 2 && arPlan.people[1].sms === 'no consent' && arPlan.people[2].email === 'opted out' && arPlan.people[3].email === 'bounced', JSON.stringify(arPlan.people));
+    const rendered = srv._chartNoticeRender({ mode: 'records', list_label: 'Makin’ It HOT 100 — November 2026', subject: '[title] made [chart name]', body: '[artist], "[title]" is [rank].\nSee [post link]', sms_body: 'Makin It: "[title]" is [rank] on the HOT 100. [post link]', post_url: 'https://instagram.com/p/abc' },
+      { rank: 7, name: 'Jay Monroe', artist: 'Jay Monroe', title: 'Night Shift' }, 'https://anr.test');
+    ok('notify: the artist email renders subject, body, button and the YouTube line', rendered.subject === 'Night Shift made Makin’ It HOT 100 — November 2026'
+      && /Jay Monroe, &quot;Night Shift&quot; is #7\.<br>/.test(rendered.html) && /See the post/.test(rendered.html) && rendered.html.includes(srv._SUBSCRIBE_LINE || 'Subscribe to our YouTube channel'), rendered.html.slice(0, 400));
+    ok('notify: the artist text carries STOP once', /Reply STOP to opt out\.$/.test(rendered.sms) && (rendered.sms.match(/STOP/g) || []).length === 1, rendered.sms);
+    const arR = srv._chartNoticeRender({ mode: 'ars', list_label: 'Top A&Rs — Series', subject: 'Hi [first name]', body: 'You are [rank].', sms_body: 'You are [rank].' }, { rank: 2, name: 'Bob Lee', uid: 'u2' }, 'https://anr.test');
+    ok('notify: the A&R email carries the manage footer and the text a STOP + manage link', /Manage your notifications/.test(arR.html) && /Reply STOP to opt out\. Manage: /.test(arR.sms) && arR.subject === 'Hi Bob', arR.sms);
+  }
+  // The route, on the series chart built above. The chart rounds carry no artist contact yet.
+  const cnQ = `${chBase}`;
+  ok('notify: admin only', (await call('/api/admin/charts/notify?' + cnQ, null, 'GET')).status === 403);
+  ok('notify: Room #1s is refused', (await call('/api/admin/charts/notify?mode=weekly1s&scope=all', null, 'GET', ADMINH)).status === 400);
+  const cnEmpty = await call('/api/admin/charts/notify?' + cnQ, null, 'GET', ADMINH);
+  ok('notify: a chart with no contacts lists everyone as unreachable', cnEmpty.status === 200 && cnEmpty.d.people === chTop.d.rows.length && cnEmpty.d.emails === 0 && cnEmpty.d.noContact === cnEmpty.d.people, JSON.stringify(cnEmpty.d).slice(0, 300));
+  ok('notify: a send with nobody reachable is refused, not "sent to 0"',
+    (await call('/api/admin/charts/notify', { q: cnQ, send: true, email: true, subject: 's', body: 'b' }, 'POST', ADMINH)).status === 400);
+  const [cnR1, cnR2, cnR3] = chTop.d.rows;
+  await dDb.run('UPDATE rounds SET artist_email = ?, artist_phone = ? WHERE id = ?', ['big@chart.test', '(404) 555-0100', cnR1.roundId]);
+  await dDb.run('UPDATE rounds SET artist_email = ?, artist_phone = ? WHERE id = ?', ['BIG@chart.test', '404-555-0101', cnR2.roundId]);
+  await dDb.run('UPDATE rounds SET artist_email = ?, artist_phone = ? WHERE id = ?', ['', '+1 404 555 0100', cnR3.roundId]);
+  const cnG = await call('/api/admin/charts/notify?' + cnQ + '&order=countdown', null, 'GET', ADMINH);
+  ok('notify: the plan is one email and two texts, in rank order even on a countdown', cnG.d.emails === 1 && cnG.d.texts === 2 && cnG.d.rows[0].rank === 1
+    && cnG.d.rows[1].email === 'same:1' && cnG.d.rows[2].sms === 'same:1' && cnG.d.listLabel === chTop.d.title + ' — ' + chTop.d.scope.label, JSON.stringify(cnG.d.rows));
+  ok('notify: addresses are masked on read', !JSON.stringify(cnG.d).includes('big@chart.test') && !JSON.stringify(cnG.d).includes('5550100') && cnG.d.rows[0].email === 'b•••@chart.test', JSON.stringify(cnG.d.rows[0]));
+  ok('notify: a send needs a channel', (await call('/api/admin/charts/notify', { q: cnQ, send: true, subject: 's', body: 'b', sms: 't' }, 'POST', ADMINH)).status === 400);
+  ok('notify: email needs a subject and a body', (await call('/api/admin/charts/notify', { q: cnQ, send: true, email: true, subject: '', body: 'b' }, 'POST', ADMINH)).status === 400);
+  ok('notify: a post link must be a URL', (await call('/api/admin/charts/notify', { q: cnQ, send: true, email: true, subject: 's', body: 'b', postUrl: 'instagram' }, 'POST', ADMINH)).status === 400);
+  {
+    const realNow = Date.now;
+    const threeAm = srv._etEpoch('2026-11-12', 3, 0);
+    Date.now = () => threeAm;
+    let s1;
+    try {
+      s1 = await call('/api/admin/charts/notify', { q: cnQ + '&order=countdown', send: true, email: true, texts: true, subject: '[title] made the chart', body: 'Hi [artist], "[title]" is [rank] on [chart name].', sms: 'Makin It: "[title]" is [rank] on the chart.', postUrl: 'https://instagram.com/p/abc' }, 'POST', ADMINH);
+    } finally { Date.now = realNow; }
+    ok('notify: a press at 3AM ET sends the email and HOLDS the artist texts for the window',
+      s1.status === 200 && s1.d.started && s1.d.started.emails === 1 && s1.d.started.texts === 2 && s1.d.sent === 1 && s1.d.held === 2 && s1.d.failed === 0, JSON.stringify(s1.d).slice(0, 300));
+    ok('notify: the send is reported with its pending texts', s1.d.sends.length === 1 && s1.d.sends[0].emailsSent === 1 && s1.d.sends[0].pending === 2 && s1.d.sends[0].held === 2, JSON.stringify(s1.d.sends));
+    const sentRows = await dDb.all("SELECT channel, dest, status, rank, title FROM chart_notice_rcpts ORDER BY channel, dest");
+    ok('notify: one row per address, ranked, the texts still pending', sentRows.length === 3 && sentRows[0].status === 'sent' && sentRows[0].rank === 1 && sentRows[0].title === cnR1.title
+      && sentRows.filter(r => r.channel === 'sms').every(r => r.status === 'pending') && sentRows.filter(r => r.channel === 'sms').map(r => r.dest).join(',') === '+14045550100,+14045550101', JSON.stringify(sentRows));
+    const twice = await call('/api/admin/charts/notify', { q: cnQ, send: true, email: true, subject: 's', body: 'b' }, 'POST', ADMINH);
+    ok('notify: a second send without "again" is refused', twice.status === 409, JSON.stringify(twice.d));
+    const noon = srv._etEpoch('2026-11-12', 12, 0);
+    Date.now = () => noon;
+    let d2;
+    try { d2 = await call('/api/admin/charts/notify', { q: cnQ }, 'POST', ADMINH); } finally { Date.now = realNow; }
+    ok('notify: a drain inside the window sends the held texts and nothing new', d2.status === 200 && !d2.d.started && d2.d.sent === 2 && d2.d.held === 0
+      && d2.d.sends[0].textsSent === 2 && d2.d.sends[0].pending === 0, JSON.stringify(d2.d.sends));
+    const again = await call('/api/admin/charts/notify', { q: cnQ, send: true, again: true, email: true, subject: 'Again [rank]', body: 'b' }, 'POST', ADMINH);
+    ok('notify: Send again is a second send with its own rows', again.status === 200 && again.d.started.emails === 1 && again.d.started.texts === 0 && again.d.sends.length === 2, JSON.stringify(again.d.started));
+    ok('notify: the list shows up under recent lists', again.d.recent.some(r => r.listKey === again.d.listKey && r.sends === 2), JSON.stringify(again.d.recent));
+  }
+  // The A&R chart: opt-outs and consent come off users; "send test to me" goes to the admin only.
+  await dDb.run("UPDATE users SET email_opt_out = 1 WHERE email = 'ch2@fan.com'");
+  const cnA = await call('/api/admin/charts/notify?' + arsQ, null, 'GET', ADMINH);
+  const cnA2 = cnA.d.rows.find(r => r.email === 'opted out'), cnAph = cnA.d.rows.find(r => r.name === 'Cee Phone');
+  ok('notify: the A&R list honours the opt-out and a signup phone with consent', cnA.status === 200 && cnA2 && cnA2.rank === 2 && cnAph && /•••/.test(cnAph.sms)
+    && cnA.d.emails === cnA.d.people - 1 && cnA.d.texts === 1, JSON.stringify(cnA.d.rows));
+  ok('notify: A&R texts are not held for the window', cnA.d.smsWindow.holds === false, JSON.stringify(cnA.d.smsWindow));
+  const cnT = await call('/api/admin/charts/notify/test', { q: arsQ, email: true, texts: true, subject: 'Test [first name] [rank]', body: 'Hello [name]', sms: 'Hi [first name]' }, 'POST', ADMINH);
+  ok('notify: send test to me goes to the admin and records nothing', cnT.status === 200 && cnT.d.email && cnT.d.email.ok && cnT.d.sample.rank === 1
+    && Number((await dDb.get("SELECT COUNT(*) AS n FROM chart_notices WHERE mode = 'ars'")).n) === 0, JSON.stringify(cnT.d));
+  await dDb.run("UPDATE users SET email_opt_out = 0 WHERE email = 'ch2@fan.com'");
+  // Put the chart rounds back the way the later blocks (contact backfill, Brevo) expect them.
+  for (const r of [cnR1, cnR2, cnR3]) await dDb.run('UPDATE rounds SET artist_email = NULL, artist_phone = NULL WHERE id = ?', [r.roundId]);
+
   console.log('\n— charts: the carousel renders, and the band edges do not overlap —');
   const slide0 = await fetch(`${base}/api/card/chart?${chBase}&slide=0`, { headers: ADMINH });
   ok('charts: cover slide renders a PNG', slide0.status === 200 && slide0.headers.get('content-type') === 'image/png', slide0.status);
