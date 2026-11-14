@@ -2753,7 +2753,24 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the Top A&R caption has no URL and asks to comment or DM ANR',
     !/https?:|\.com/i.test(arCap) && /^Comment or DM "ANR" to join the A&R Team\. The A&R Team powers the HOT 100 rankings/m.test(arCap) && !/\$500|Cash/.test(arCap), arCap);
   const arNotes = srv._dailyAsanaNotes(rsAr, arCap);
-  ok('the Top A&Rs task says who to collab with', /Collab: invite @makinitmusicreview( and @\S+ \(#1\) as collaborators| as a collaborator)/.test(arNotes), arNotes);
+  ok('the Top A&Rs task says who to collab with', /Collab: invite @TheAnRTeam( and @\S+ \(#1\) as collaborators| as a collaborator)/.test(arNotes), arNotes);
+  // Meta: each handle ONCE per post — a collaborator is never also tagged, nobody tagged twice.
+  const onceSong = srv._dailyAsanaNotes({ set: 'song', total: 6, date: 'x', day: 'x', records: [], slides: [
+    { kind: 'cover', slide: 1 },
+    { kind: 'group', slide: 2, lo: 4, hi: 5, handles: ['@g1', '@Top2'] },
+    { kind: 'rank', slide: 3, rank: 3, handle: '@top3' },
+    { kind: 'rank', slide: 4, rank: 2, handle: '@top2' },
+    { kind: 'rank', slide: 5, rank: 1, handle: '@theanrteam' },
+  ] }, 'cap');
+  ok('the countdown task never tags a collaborator on a slide or anyone twice',
+    /Collab: invite @TheAnRTeam and the top 3 artists: @top2 \(#2\), @top3 \(#3\) as collaborators/.test(onceSong)
+      && /Slide 2 \(#4–#5\): @g1\n/.test(onceSong) && !/Slide [345] /.test(onceSong) && !/makinitmusicreview/i.test(onceSong), onceSong);
+  const onceAr = srv._dailyAsanaNotes({ set: 'ar', total: 2, date: 'x', day: 'x', slides: [
+    { kind: 'hero', hero: { title: 'A', handle: '@one' } },
+    { kind: 'list', rows: [{ handle: '@ONE' }, { handle: '@two' }, { handle: '@two' }, { handle: '@TheAnRTeam' }] },
+  ] }, 'cap');
+  ok('the Top A&Rs task never tags a collaborator or anyone twice',
+    /Collab: invite @TheAnRTeam and @one \(#1\) as collaborators\./.test(onceAr) && /Tag the other top A&Rs: @two\n/.test(onceAr), onceAr);
   // The $500 was retired 2026-10-19: the closing slide carries the A&R premise instead.
   ok('the A&R carousel closes on the A&R Team powering the HOT 100, with no prize',
     rsAr.slides[2].cta.eyebrow === 'The A&R Team' && rsAr.slides[2].cta.head.join(' ') === 'Powers the HOT 100'
@@ -6433,7 +6450,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tnPkgCap = (await call(`/api/admin/tournament/caption?id=${TN}&key=pkg1`, null, 'GET', BOOTH)).d;
   ok('package: the competitor\'s caption — keyword line, RSVP link, comment keyword, the house account, the other seven, never self, no topic hashtags',
     /^I'm in A&R Wars #1, the A&R tournament from Makin' It Magazine\. 8 A&Rs play/.test(tnPkgCap.caption) && /\$500 Cash Prize\./.test(tnPkgCap.caption)
-      && /RSVP: \S+\/wars/.test(tnPkgCap.caption) && /Join the A&R Team and vote: Comment #ANR/.test(tnPkgCap.caption) && /@makinitmusicreview/.test(tnPkgCap.caption)
+      && /RSVP: \S+\/wars/.test(tnPkgCap.caption) && /Join the A&R Team and vote: Comment #ANR/.test(tnPkgCap.caption) && /@TheAnRTeam/.test(tnPkgCap.caption) && !/makinitmusicreview/.test(tnPkgCap.caption)
       && /Also in the tournament: @theo, Iris, @dana, Jalen, @priya, Terrence, @simone$/.test(tnPkgCap.caption) && !/maya/i.test(tnPkgCap.caption)
       && (tnPkgCap.caption.match(/#/g) || []).length === 2 && tnPkgCap.comments.length === 0 && tnPkgCap.tagOnGraphic.length === 8, JSON.stringify(tnPkgCap));
   const tnCapBefore = (await tnDb.get('SELECT caption FROM tournaments WHERE id = ?', [TN])).caption;

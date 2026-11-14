@@ -156,7 +156,7 @@ address. `email_opt_out` is not consulted: this is their own participation.
 
 Caption (`caption(T,'pkgN')`), first person: "I'm in A&R Wars #1, the A&R tournament from Makin'
 It Magazine. <premise with the $500 Cash Prize>" · "Watch live <date>. RSVP: <host>/wars" ·
-"Join the A&R Team and vote: Comment #ANR" · `@makinitmusicreview` · "Also in the tournament:
+"Join the A&R Team and vote: Comment #ANR" · `@TheAnRTeam` · "Also in the tournament:
 <the other seven>" — eight mentions, under Instagram's ten; no comments list.
 
 ## 6. Landing page + reminder list
