@@ -8790,7 +8790,7 @@ async function handleApi(req, res, url) {
     const b = await readBody(req);
     const name = (b.name || '').toString().trim();
     if (!name) return bad(res, 'Service pack title is required');
-    const picks = Math.max(1, Math.min(50, parseInt(b.picksRequired, 10) || 18));
+    const picks = Math.max(1, Math.min(50, parseInt(b.picksRequired, 10) || 16));
     const warsAt = Number(b.warsAt), closesAt = Number(b.closesAt);
     if (!warsAt || !closesAt) return bad(res, 'Tournament date and cut-off are both required');
     // Enforced server-side as well as in the form: entries that stay editable past the
