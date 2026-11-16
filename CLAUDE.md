@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 051 on main; 052 drop numbering in its PR; suite green)
+## Current state (migrations through 053 on main; 054 chart notices in its PR; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -272,6 +272,32 @@ live on anr.makinitmag.com.
   tallied in October are released in November, so `scope=month&month=2026-10` is labelled
   "November 2026" on the cover, in the caption and in the download names; `scope.tallied` carries
   the month counted and the console prints both. The same rule as the daily set's publish date.
+  **Notify this list** (054, 2026-11-12, operator: "send email and SMS to everyone who made the hot
+  100 list... or any list that I create from chart"; branch `claude/chart-notify-list`): a card at the
+  bottom of the Charts screen that emails + texts everyone on the chart ON SCREEN, as it stands. **The
+  audience IS the chart's query** — `GET/POST /api/admin/charts/notify` takes the same query string as
+  the table, so the card, the CSV and the carousel can never disagree; rows under the floor, reference
+  tracks and Versus are out; Room #1s hides the card (not a list of people). **A list's identity is
+  `chartListKey(q)`** = what decides MEMBERSHIP (mode, scope, size, floor, dedupe) — order, per-slide
+  and show-scores stay out — so "any list I create" is reproducible, and the send history doubles as
+  the saved-lists readout ("Lists sent to lately", click one and the screen rebuilds it as it stands
+  today, `chApplyListKey`). A records chart reaches the ARTISTS on the rounds (`artist_email/phone`);
+  a Top A&Rs chart reaches `users`, skipping opt-outs and bounced addresses, texting only numbers with
+  marketing consent. **One message per address** (`chartNoticePlanFrom`, case-blind email, sms.js
+  `normalize` phone): an artist with two charting records hears once, about the higher rank; the
+  "Who gets what" table says `same as #3`. Merge tokens `[first name] [name] [artist] [title] [rank]
+  [chart name] [post link]` (`renderChartTokens`; the post link is also the email's "See the post"
+  button). Own queue `chart_notices` + `chart_notice_rcpts` (claimed pending→sending, `UNIQUE
+  (send_id, channel, dest)`); the route drains 18s then returns, the hourly `/api/cron/artist-sms`
+  drains the rest. **Artist texts keep the 10 AM–10:30 PM ET window** (held, "Send pending texts now"
+  on the card); A&R texts go when pressed, like announcements. Artist SMS gets "Reply STOP to opt
+  out." unless STOP is already in it; A&R mail/SMS carry the manage-link footers. **A second message to
+  the same list is an explicit Send again** (409 without `again:true`; the confirm says when it was
+  last sent). **Send test to me** (`/notify/test`) renders the list's #1 to the admin's own email and
+  phone, `[TEST]` subject, records nothing. No score, average or vote count rides along unless the
+  operator types one. The composer draft is per device (`anr_chnotify_draft`) so changing the scope
+  never eats typed work. Platform-admin only. Mockup `public/_mock-chart-notify.html` (approved
+  2026-11-12).
 
 - **Staged rounds + one-button show control + host buzzer** (030): a round now opens into a
   new **`listening`** status — the record is on the overlay and in everyone's hands while it
