@@ -4710,7 +4710,24 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('artist email leads with the decision as the headline', /<h1[^>]*>Release it\. Push it as a single\.<\/h1>/.test(aeHtml));
   ok('artist email carries the replay link', aeHtml.includes('youtube.com/watch?v=abc123'));
   ok('artist email points the artist at the replay for clips', /short clips/i.test(aeHtml));
-  ok('a live-show email asks for the collab post with the Room tag', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARRoom'));
+  // ONE big ask per email (operator, 2026-11-17): the testimonial. The old request to post the
+  // report as a carousel is gone, and each section opens with its own heading, in this order.
+  ok('artist email no longer asks the artist to post the report', !/Share your Track Report|carousel|@Makinit4indies|#TheARRoom/.test(aeHtml));
+  const aeAt = (s) => aeHtml.indexOf(s);
+  ok('artist email sections run intro, report, hear feedback, brand partnership',
+    aeAt('Hi Jaylen,') > 0 && aeAt('Hi Jaylen,') < aeAt('<h1') && aeAt('<h1') < aeAt('>Your Track Report</p>')
+    && aeAt('>Your Track Report</p>') < aeAt('p1.png') && aeAt('p3.png') < aeAt('Hear feedback on records?')
+    && aeAt('Hear feedback on records?') < aeAt('Brand Partnership Opportunity for Jaylen Cole') && aeAt('Brand Partnership Opportunity for Jaylen Cole') < aeAt('Submit another record'));
+  ok('hear feedback: the daily stream at 9 PM ET / 6 PM PT and ONE subscribe button',
+    /daily at 9 PM ET \/ 6 PM PT on YouTube/.test(aeHtml) && /fire alarm/.test(aeHtml) && /Turn on notifications for reminders/.test(aeHtml)
+    && (aeHtml.match(/Subscribe on YouTube/g) || []).length === 1 && aeHtml.includes('makinitmag.com/live'));
+  ok('brand partnership: the full $6,000 offer and the testimonial button',
+    aeHtml.includes('investing $6,000 in an Ad Campaign') && aeHtml.includes('https://www.makinitmag.com/testimonial/review') && />Submit your testimonial<\/a>/.test(aeHtml));
+  const aeTxt = server._artistEmailText({ ...aeBase, comments: [] });
+  ok('the text part follows the same order and carries the same two asks',
+    aeTxt.startsWith('Hi Jaylen,') && aeTxt.indexOf('YOUR TRACK REPORT') < aeTxt.indexOf('HEAR FEEDBACK ON RECORDS?')
+    && aeTxt.indexOf('HEAR FEEDBACK ON RECORDS?') < aeTxt.indexOf('BRAND PARTNERSHIP OPPORTUNITY FOR JAYLEN COLE')
+    && aeTxt.includes('$6,000') && !/carousel|collaborator/.test(aeTxt));
   ok('artist email shows the rating, the verdict and the A&R count', aeHtml.includes('7.4') && />Single<\/p>/.test(aeHtml) && !aeHtml.includes('Potential Single') && /11 A&amp;Rs/.test(aeHtml));
   ok('artist email says nothing about the machine', !/pool|lottery|queue|submission|ratif/i.test(aeHtml));
   // A dollar amount IS allowed: the Track Report tells the artist what to spend on their own
@@ -4722,7 +4739,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // A Meeting record: no replay (every vote is async), the Meeting's own tag.
   const aeMeeting = server._artistEmailHtml({ ...aeBase, what: 'A&R Meeting', watchUrl: null, pages: ['https://blob/p1.png'] });
   ok('a Meeting email has no watch button (not a dead link)', !/Watch the room/.test(aeMeeting));
-  ok('a Meeting email carries the Meeting tag and name', aeMeeting.includes('#TheARMeeting') && /The A&amp;R Meeting/.test(aeMeeting) && !/#TheARRoom/.test(aeMeeting));
+  ok('a Meeting email carries the Meeting name and still sends the artist to the stream', /The A&amp;R Meeting/.test(aeMeeting) && !/#TheAR/.test(aeMeeting) && /Hear feedback on records\?/.test(aeMeeting));
   // Approved A&R comments ride along, attributed. Attribution is the whole value —
   // named people who scored the record, not anonymous opinion.
   const aeCmts = server._artistEmailHtml({ ...aeBase, watchUrl: null, pages: ['https://blob/p1.png'],
