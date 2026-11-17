@@ -7529,6 +7529,9 @@ async function ratifyRound(round) {
 // /api/sidebet response. Nothing here is readable before status='settled' (callers gate
 // on it): the standings are derived from pick counts, which stay sealed until then.
 const SIDEBET_RESULT_LIMIT = 25;
+// Pick the Hits ballots rank 16 songs by default (operator, 2026-11-17; Pack 12 was 18). Only
+// the DEFAULT for a new pack: every pack carries its own picks_required, set on the console form.
+const HITS_DEFAULT_PICKS = 16;
 async function sidebetResults(pack, limit = SIDEBET_RESULT_LIMIT) {
   const rows = await db.all(
     `SELECT se.rank, se.correct, se.distance, se.entry_no, u.name, u.location
@@ -7644,6 +7647,12 @@ async function handleApi(req, res, url) {
   // Tournaments (045): public page data + the reminder list, and the admin dashboard.
   if (p === '/api/tournament' || p.startsWith('/api/tournament/') || p.startsWith('/api/admin/tournament')) {
     const handled = await tournaments.handle(req, res, url);
+    if (handled !== false) return;
+  }
+
+  // Pick the Hits (055): the notify list, its unsubscribe, and the admin tally + sends.
+  if (p.startsWith('/api/hits/') || p === '/api/admin/hits' || p.startsWith('/api/admin/hits/')) {
+    const handled = await hits.handle(req, res, url);
     if (handled !== false) return;
   }
 
@@ -8927,15 +8936,19 @@ async function handleApi(req, res, url) {
   // Public read: the open pack, its songs, and (with an auth token) your own entry.
   if (p === '/api/sidebet' && method === 'GET') {
     const slug = (url.searchParams.get('pack') || '').trim();
-    // Resolution: the one OPEN pack wins. With none open, fall back to the most recent
-    // closed-or-settled one — otherwise an entrant who comes back after the show (which
-    // is exactly what the confirmation screen told them to do) lands on an empty page
-    // instead of their own result. An explicit slug reaches any pack by permalink.
+    // Resolution (Pick the Hits, 2026-11-11): the one OPEN pack wins. With none open, a pack
+    // whose picks closed but whose results aren't out yet. With neither, the page is in its
+    // NOT-OPEN-YET state (pack: null) and links the latest results. An explicit ?pack= (slug
+    // or id) reaches any non-draft pack — that's the results page an email links to.
+    const latestSettled = await db.get("SELECT id, slug, name FROM packs WHERE status = 'settled' ORDER BY settled_at DESC LIMIT 1", []);
+    const lastResults = latestSettled ? { pack: latestSettled.slug || latestSettled.id, name: latestSettled.name } : null;
     const pack = slug
-      ? await db.get('SELECT * FROM packs WHERE slug = ?', [slug])
+      ? await db.get("SELECT * FROM packs WHERE (slug = ? OR id = ?) AND status <> 'draft'", [slug, slug])
       : (await db.get("SELECT * FROM packs WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", []))
-        || (await db.get("SELECT * FROM packs WHERE status IN ('closed','settled') ORDER BY COALESCE(settled_at, closes_at) DESC LIMIT 1", []));
-    if (!pack) return send(res, 200, { pack: null });
+        || (await db.get("SELECT * FROM packs WHERE status = 'closed' ORDER BY closes_at DESC LIMIT 1", []));
+    if (!pack) return send(res, 200, { pack: null, state: 'preregister', lastResults });
+    const isOpen = pack.status === 'open' && now() < Number(pack.closes_at);
+    const weighted = pack.status === 'settled' && pack.scoring === 'weighted';
     const songs = await db.all('SELECT id, title, artist, row_no FROM pack_songs WHERE pack_id = ? ORDER BY row_no', [pack.id]);
     const out = {
       pack: {
@@ -8946,8 +8959,13 @@ async function handleApi(req, res, url) {
         status: pack.status, songCount: songs.length,
         // Server clock, so a device with a wrong date can't think entries are still open.
         nowMs: now(),
-        open: pack.status === 'open' && now() < Number(pack.closes_at),
+        open: isOpen,
       },
+      // preregister | open | closed | results — the four states of the page.
+      state: isOpen ? 'open' : pack.status === 'settled' ? 'results' : 'closed',
+      lastResults,
+      // Is a pack taking picks right now? Turns the results page's notify form into "Pick the Hits".
+      openNow: isOpen || !!(await db.get("SELECT 1 AS x FROM packs WHERE status = 'open' AND closes_at > ? LIMIT 1", [now()])),
       banner: pack.banner_id ? await getBanner(pack.banner_id) : null,
       songs: songs.map(s => ({ id: s.id, title: s.title, artist: s.artist || null })),
       entry: null,
@@ -8962,12 +8980,16 @@ async function handleApi(req, res, url) {
           picks: picks.map(x => x.pack_song_id),
           correct: e.correct == null ? null : Number(e.correct),
           rank: e.rank == null ? null : Number(e.rank),
+          // Pick the Hits: only a ballot with a finished A&R Team profile counts.
+          eligible: await hits.isEligible(user.uid),
         };
+        if (weighted) out.entry.result = await hits.entryResult(pack, e);
       }
     }
-    // Results are readable only once settled — before that there is nothing to read
-    // (no song has been played) and pick counts are sealed.
-    if (pack.status === 'settled') out.results = await sidebetResults(pack);
+    // Results are readable only once settled — before that there is nothing to read and
+    // pick counts are sealed. A Pick the Hits pack publishes ranks only (hits.publicResults).
+    if (weighted) out.hits = await hits.publicResults(pack);
+    else if (pack.status === 'settled') out.results = await sidebetResults(pack);
     return send(res, 200, out);
   }
 
@@ -9015,7 +9037,8 @@ async function handleApi(req, res, url) {
       }
     });
     const e = await db.get('SELECT entry_no, updated_at FROM sidebet_entries WHERE id = ?', [entryId]);
-    return send(res, 200, { ok: true, entryNo: e.entry_no, updatedAt: Number(e.updated_at), edited: !!existing });
+    return send(res, 200, { ok: true, entryNo: e.entry_no, updatedAt: Number(e.updated_at), edited: !!existing,
+      eligible: await hits.isEligible(user.uid) });
   }
 
   // ----- sidebet admin (platform admin only: a pack spans no single room) -----
@@ -9032,7 +9055,7 @@ async function handleApi(req, res, url) {
         downloadUrl: k.download_url || null, prizeText: k.prize_text || null,
         sponsorText: k.sponsor_text || null, bannerId: k.banner_id || null,
         warsAt: Number(k.wars_at), closesAt: Number(k.closes_at),
-        sessionId: k.session_id || null, status: k.status,
+        sessionId: k.session_id || null, status: k.status, scoring: k.scoring || null,
         settledAt: k.settled_at ? Number(k.settled_at) : null,
         songs: Number(sc.n), entries: Number(ec.n),
       });
@@ -9043,6 +9066,7 @@ async function handleApi(req, res, url) {
     const rooms = await db.all(
       "SELECT id, name, status FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 50", []);
     return send(res, 200, {
+      defaultPicks: HITS_DEFAULT_PICKS,
       packs: out,
       banners: banners.map(b => ({ id: b.id, label: b.label || 'Untitled banner', image: `/api/banner/image?id=${b.id}` })),
       rooms: rooms.map(r => ({ id: r.id, name: r.name, status: r.status })),
@@ -9055,12 +9079,13 @@ async function handleApi(req, res, url) {
     const b = await readBody(req);
     const name = (b.name || '').toString().trim();
     if (!name) return bad(res, 'Service pack title is required');
-    const picks = Math.max(1, Math.min(50, parseInt(b.picksRequired, 10) || 18));
-    const warsAt = Number(b.warsAt), closesAt = Number(b.closesAt);
-    if (!warsAt || !closesAt) return bad(res, 'Tournament date and cut-off are both required');
-    // Enforced server-side as well as in the form: entries that stay editable past the
-    // first song let someone submit a list they already know the answer to.
-    if (closesAt >= warsAt) return bad(res, 'The cut-off must be before the tournament starts');
+    const picks = Math.max(1, Math.min(50, parseInt(b.picksRequired, 10) || HITS_DEFAULT_PICKS));
+    // Pick the Hits has no tournament: wars_at is now the RESULTS date and defaults to the
+    // cut-off. It may not be before the cut-off (results can't come out while picks are open).
+    const closesAt = Number(b.closesAt);
+    const warsAt = Number(b.warsAt) || closesAt;
+    if (!closesAt) return bad(res, 'The cut-off is required');
+    if (closesAt > warsAt) return bad(res, 'The cut-off must be before the results date');
 
     const existing = b.id ? await db.get('SELECT * FROM packs WHERE id = ?', [b.id]) : null;
     if (b.id && !existing) return bad(res, 'Unknown iteration', 404);
@@ -9194,6 +9219,8 @@ async function handleApi(req, res, url) {
     const b = await readBody(req);
     const pack = await db.get('SELECT * FROM packs WHERE id = ?', [b.packId || '']);
     if (!pack) return bad(res, 'Unknown iteration', 404);
+    // The A&R Wars rule (a list of PLAYED songs) is kept for history. Pick the Hits tallies
+    // at /api/admin/hits/settle.
     const played = Array.isArray(b.played) ? [...new Set(b.played)] : [];
     const need = Number(pack.picks_required);
     // A miscount doesn't error on its own — it quietly crowns the wrong person. So the
@@ -9233,7 +9260,7 @@ async function handleApi(req, res, url) {
         await tx.run('UPDATE sidebet_entries SET correct = ?, distance = ?, rank = ? WHERE id = ?',
           [r.correct, r.distance, r.rank, r.id]);
       }
-      await tx.run("UPDATE packs SET status = 'settled', settled_at = ? WHERE id = ?", [now(), pack.id]);
+      await tx.run("UPDATE packs SET status = 'settled', settled_at = ?, scoring = 'played' WHERE id = ?", [now(), pack.id]);
     });
     const fresh = await db.get('SELECT * FROM packs WHERE id = ?', [pack.id]);
     return send(res, 200, { ok: true, entries: ranked.length, results: await sidebetResults(fresh) });
@@ -13131,6 +13158,13 @@ const tournaments = require('./tournament')({
   userInactive, maskEmail, noteEmailOutcome, referralLinks, sendSms, maskPhone,
 });
 
+// ═══ PICK THE HITS (055) — the side bet without the tournament: weighted tally, the notify
+// list, and the "pack is open" / results sends. Lives in hits.js, handed what it needs here.
+const hits = require('./hits')({
+  db, id, now, send, bad, readBody, platformAdmin, sendEmail, escapeHtml, sendSms, smsNormalize,
+  maskEmail, maskPhone, publicBase, activeUserSql, dispName, noteEmailOutcome,
+});
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -13159,7 +13193,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
-    if (url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html'); // A&R Wars prediction contest
+    // Pick the Hits (055). /sidebet stays as the old address for links already out.
+    if (url.pathname === '/hits' || url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html');
     // Tournament landing pages (045): /wars = the latest A&R Wars, /tournament/<slug> = any.
     if (url.pathname === '/wars' || url.pathname === '/tournament' || url.pathname.startsWith('/tournament/')) return serveStatic(res, 'tournament.html');
     // The A&R's account (2026-10-01): ONE page with sections — Earn points (the default;

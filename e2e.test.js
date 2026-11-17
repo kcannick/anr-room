@@ -5774,7 +5774,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('sidebet: standings carry no email or phone',
     !/@|phone/i.test(JSON.stringify(sbRows)), JSON.stringify(sbRows));
 
-  const sbAfter = await call('/api/sidebet', null, 'GET', E1);
+  // With nothing open the page is in its not-open-yet state and links the latest results;
+  // the results themselves are read by ?pack= (Pick the Hits, 2026-11-11).
+  const sbPre = await call('/api/sidebet', null, 'GET', E1);
+  ok('hits: nothing open → the not-open-yet state, linking the latest results',
+    sbPre.d.pack === null && sbPre.d.state === 'preregister' && sbPre.d.lastResults && sbPre.d.lastResults.pack === PACK, JSON.stringify(sbPre.d));
+  const sbAfter = await call('/api/sidebet?pack=' + PACK, null, 'GET', E1);
   ok('sidebet: my score is readable after settle', sbAfter.d.entry.correct === 6 && sbAfter.d.entry.rank === 1, JSON.stringify(sbAfter.d.entry));
   ok('sidebet: results are public after settle', Array.isArray(sbAfter.d.results) && sbAfter.d.results.length === 3);
   ok('sidebet: a settled pack is closed to new entries',
@@ -5837,6 +5842,110 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('sidebet: an entry after the cut-off is refused by the server', sbTooLate.status === 400, JSON.stringify(sbTooLate.d));
   ok('sidebet: a closed pack reports itself closed',
     (await call('/api/sidebet', null, 'GET')).d.pack.open === false);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.log('\n— Pick the Hits: weighted tally, notify list, sends (055) —');
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Get the expired 'Closing Pack' out of the way so the page resolution is clean.
+  await anDb.run("UPDATE packs SET status = 'settled' WHERE id = ?", [sbLate.d.id]);
+  const hPre = await call('/api/sidebet', null, 'GET');
+  ok('hits: no pack open → preregister', hPre.d.state === 'preregister' && hPre.d.pack === null, JSON.stringify(hPre.d));
+
+  // --- the notify list: name, email AND phone all required ---
+  ok('hits: notify without a phone is refused',
+    (await call('/api/hits/notify', { name: 'Pat', email: 'pat@test.com', phone: '' })).status === 400);
+  ok('hits: notify without a name is refused',
+    (await call('/api/hits/notify', { name: '', email: 'pat@test.com', phone: '(404) 555-0123' })).status === 400);
+  ok('hits: notify with a bad email is refused',
+    (await call('/api/hits/notify', { name: 'Pat', email: 'nope', phone: '(404) 555-0123' })).status === 400);
+  const hSub = await call('/api/hits/notify', { name: 'Pat Lee', email: 'Pat@Test.com', phone: '(404) 555-0123' });
+  ok('hits: a complete signup lands on the list', hSub.status === 200, JSON.stringify(hSub.d));
+  await call('/api/hits/notify', { name: 'Pat Lee', email: 'pat@test.com', phone: '(404) 555-0123' });
+  const hSubRows = await anDb.all("SELECT * FROM hits_subscribers WHERE email = 'pat@test.com'");
+  ok('hits: signing up twice keeps one row, email lower-cased, phone normalised',
+    hSubRows.length === 1 && /^\+1404555012/.test(hSubRows[0].phone), JSON.stringify(hSubRows));
+
+  // --- a pack: 5 songs, pick 3 ---
+  const hMk = await call('/api/admin/sidebet', { name: 'Service Pack 13', picksRequired: 3, prizeText: '$150 cash',
+    closesAt: Date.now() + 86400000, status: 'draft' }, 'POST', ADMINH);
+  ok('hits: a pack needs no tournament date', hMk.status === 200 && hMk.d.id, JSON.stringify(hMk.d));
+  const HP = hMk.d.id;
+  await call('/api/admin/sidebet/songs', { packId: HP, songs: ['One', 'Two', 'Three', 'Four', 'Five'].map(t => ({ title: t, artist: t + ' Artist' })) }, 'POST', ADMINH);
+  await call('/api/admin/sidebet', { id: HP, name: 'Service Pack 13', picksRequired: 3, prizeText: '$150 cash', closesAt: Date.now() + 86400000, status: 'open' }, 'POST', ADMINH);
+  const hOpen = await call('/api/sidebet', null, 'GET');
+  ok('hits: an open pack → state open', hOpen.d.state === 'open' && hOpen.d.pack.id === HP, JSON.stringify(hOpen.d.state));
+  const HSG = Object.fromEntries(hOpen.d.songs.map(x => [x.title, x.id]));
+
+  const H1 = await sbEntrant('hits1@test.com'), H2 = await sbEntrant('hits2@test.com'), H3 = await sbEntrant('hits3@test.com');
+  // H1 and H2 finish their profiles; H3 does not, so H3's ballot counts for nothing.
+  await anDb.run("UPDATE users SET profile_complete = 1 WHERE email IN ('hits1@test.com','hits2@test.com')");
+  const hE3 = await call('/api/sidebet/entry', { picks: [HSG.Five, HSG.Four, HSG.Three] }, 'POST', H3);
+  ok('hits: an entry with an unfinished profile is saved but flagged', hE3.status === 200 && hE3.d.eligible === false, JSON.stringify(hE3.d));
+  const hE1 = await call('/api/sidebet/entry', { picks: [HSG.One, HSG.Two, HSG.Three] }, 'POST', H1);
+  ok('hits: an entry with a finished profile counts', hE1.d.eligible === true);
+  await call('/api/sidebet/entry', { picks: [HSG.Two, HSG.One, HSG.Four] }, 'POST', H2);
+  // Tally: One 3+2=5, Two 2+3=5 (tie on points and pickers → row order: One), Three 1, Four 1
+  // (Three before Four on row order). H3's Five/Four/Three add nothing.
+
+  ok('hits: no tally while picks are open',
+    (await call('/api/admin/hits/settle', { packId: HP }, 'POST', ADMINH)).status === 400);
+  ok('hits: a host cannot tally', (await call('/api/admin/hits/settle', { packId: HP }, 'POST', CHHOST)).status === 403);
+  ok('hits: the "open" send is admin only', (await call('/api/admin/hits/send', { packId: HP, kind: 'open' }, 'POST', H1)).status === 403);
+
+  // --- the "it's open" notice: every subscriber (email + text) plus every past entrant (email) ---
+  const hSendOpen = await call('/api/admin/hits/send', { packId: HP, kind: 'open' }, 'POST', ADMINH);
+  ok('hits: the open notice sends', hSendOpen.status === 200 && hSendOpen.d.remaining === 0 && hSendOpen.d.failed === 0, JSON.stringify(hSendOpen.d));
+  const hOpenRows = await anDb.all("SELECT channel, dest FROM hits_sends WHERE pack_id = ? AND kind = 'open'", [HP]);
+  ok('hits: a subscriber gets an email and a text',
+    hOpenRows.some(r => r.channel === 'email' && r.dest === 'pat@test.com') && hOpenRows.some(r => r.channel === 'sms'), JSON.stringify(hOpenRows));
+  ok('hits: past entrants are folded in by email only',
+    hOpenRows.some(r => r.dest === 'bet1@test.com') && hOpenRows.filter(r => r.channel === 'sms').length === 1, JSON.stringify(hOpenRows));
+  const hAgain = await call('/api/admin/hits/send', { packId: HP, kind: 'open' }, 'POST', ADMINH);
+  ok('hits: a second press reaches nobody twice', hAgain.d.queued.emails === 0 && hAgain.d.queued.texts === 0 && hAgain.d.sent === 0, JSON.stringify(hAgain.d));
+
+  // --- close and tally ---
+  await anDb.run('UPDATE packs SET closes_at = ? WHERE id = ?', [Date.now() - 1000, HP]);
+  const hClosed = await call('/api/sidebet', null, 'GET');
+  ok('hits: picks closed, results not out → state closed', hClosed.d.state === 'closed', JSON.stringify(hClosed.d.state));
+  ok('hits: the open notice is refused once picks close',
+    (await call('/api/admin/hits/send', { packId: HP, kind: 'open' }, 'POST', ADMINH)).status === 400);
+  ok('hits: results email refused before the tally',
+    (await call('/api/admin/hits/send', { packId: HP, kind: 'results' }, 'POST', ADMINH)).status === 400);
+  const hSettle = await call('/api/admin/hits/settle', { packId: HP }, 'POST', ADMINH);
+  ok('hits: tallied, two ballots counted', hSettle.status === 200 && hSettle.d.counted === 2, JSON.stringify(hSettle.d));
+
+  const hAdm = await call('/api/admin/hits?packId=' + HP, null, 'GET', ADMINH);
+  ok('hits: song order One, Two, Three, Four', hAdm.d.songs.slice(0, 4).map(x => x.title).join(',') === 'One,Two,Three,Four', JSON.stringify(hAdm.d.songs));
+  ok('hits: song points 5, 5, 1, 1 and Five unranked', JSON.stringify(hAdm.d.songs.map(x => [x.points, x.rank])) === '[[5,1],[5,2],[1,3],[1,4],[0,null]]', JSON.stringify(hAdm.d.songs));
+  ok('hits: H1 matched the final order exactly and wins', hAdm.d.standings[0].distance === 0 && hAdm.d.standings[0].exact === 3, JSON.stringify(hAdm.d.standings));
+  ok('hits: the unfinished profile is listed as not counted', hAdm.d.notCounted.length === 1, JSON.stringify(hAdm.d.notCounted));
+
+  const hPub = await call('/api/sidebet?pack=' + HP, null, 'GET', H1);
+  ok('hits: the results page is state results', hPub.d.state === 'results' && hPub.d.hits, JSON.stringify(hPub.d.state));
+  ok('hits: public results are the top 3, ranks only', hPub.d.hits.songs.length === 3 && hPub.d.hits.songs.every(x => Object.keys(x).sort().join() === 'artist,rank,title'), JSON.stringify(hPub.d.hits.songs));
+  ok('hits: the winner is named, nothing else about them', hPub.d.hits.winners.length === 1 && Object.keys(hPub.d.hits.winners[0]).join() === 'name', JSON.stringify(hPub.d.hits.winners));
+  ok('hits: no points, pick counts or entrant totals in the public payload',
+    !/points|pickers|distance|"entries"|counting/.test(JSON.stringify(hPub.d)), JSON.stringify(hPub.d).slice(0, 300));
+  ok('hits: my own result: #1, 3 of the top 3, all in the right spot',
+    hPub.d.entry.result.rank === 1 && hPub.d.entry.result.hits === 3 && hPub.d.entry.result.exact === 3 && JSON.stringify(hPub.d.entry.result.finals) === '[1,2,3]', JSON.stringify(hPub.d.entry.result));
+  const hMine3 = await call('/api/sidebet?pack=' + HP, null, 'GET', H3);
+  ok('hits: an unfinished-profile ballot reads as not counted', hMine3.d.entry.result.counted === false && hMine3.d.entry.eligible === false, JSON.stringify(hMine3.d.entry));
+
+  // --- the results email ---
+  const hRes = await call('/api/admin/hits/send', { packId: HP, kind: 'results' }, 'POST', ADMINH);
+  ok('hits: the results email sends, email only', hRes.status === 200 && hRes.d.remaining === 0 && hRes.d.queued.texts === 0 && hRes.d.queued.emails > 0, JSON.stringify(hRes.d));
+  const hTest = await call('/api/admin/hits/test', { packId: HP, kind: 'results' }, 'POST', ADMINH);
+  ok('hits: send test to me', hTest.status === 200 && hTest.d.ok, JSON.stringify(hTest.d));
+
+  // --- unsubscribe ---
+  const hTok = (await anDb.get("SELECT unsub_token FROM hits_subscribers WHERE email = 'pat@test.com'")).unsub_token;
+  const hUn = await fetch(`${base}/api/hits/unsubscribe?u=${hTok}`);
+  ok('hits: the unsubscribe link works', hUn.status === 200 && (await anDb.get("SELECT unsubscribed_at FROM hits_subscribers WHERE email = 'pat@test.com'")).unsubscribed_at);
+  const hCsv = await fetch(`${base}/api/admin/hits/subscribers.csv`, { headers: ADMINH });
+  ok('hits: the list downloads as CSV', hCsv.status === 200 && /pat@test\.com/.test(await hCsv.text()));
+  // The Brevo block below counts packs with entries ("Side Bet #1/#2"); leave it the one it expects.
+  await anDb.run('DELETE FROM sidebet_picks WHERE entry_id IN (SELECT id FROM sidebet_entries WHERE pack_id = ?)', [HP]);
+  await anDb.run('DELETE FROM sidebet_entries WHERE pack_id = ?', [HP]);
 
   // ======================================================================
   // Backfill artist contacts from an export (2026-09-22)

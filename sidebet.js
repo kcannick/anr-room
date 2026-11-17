@@ -113,4 +113,71 @@ function validatePicks(songIds, validIdSet, picksRequired) {
   return { ok: true };
 }
 
-module.exports = { consensusRanking, scoreEntry, rankEntries, validatePicks };
+// ===========================================================================
+// PICK THE HITS (operator, 2026-11-11). The tournament is gone, so nothing is
+// "played" any more. Every ballot ranks N songs (N = picks_required, set per pack; 16 by default): a #1 pick
+// is worth N points to that song, #2 is worth N-1 … #N is worth 1. Songs rank by
+// their total. The ballot closest to that final order wins the cash.
+//
+// Only ELIGIBLE ballots go in (complete A&R Team profile, active account) — an
+// unfinished ballot counts for nothing, not the winner and not the song ranking.
+// The caller filters; these functions trust what they are handed.
+// ===========================================================================
+
+// ballots: [{ picks: [{ pack_song_id, position }] }]
+// songs:   [{ id, row_no }]
+// returns: [{ id, points, pickers, ones, rank }] sorted best first. rank is 1-based
+//          for every song with points; a song nobody picked has rank null.
+// Ties: points, then how many ballots picked it, then CSV row order (fixed before any
+// entry existed, so the order is reproducible from the stored rows alone).
+function weightedTally(ballots, songs, n) {
+  const by = new Map(songs.map(s => [s.id, { id: s.id, row_no: Number(s.row_no), points: 0, pickers: 0, ones: 0 }]));
+  for (const b of ballots) {
+    for (const p of b.picks) {
+      const s = by.get(p.pack_song_id);
+      const pos = Number(p.position);
+      if (!s || !(pos >= 1 && pos <= n)) continue;
+      s.points += n + 1 - pos;
+      s.pickers++;
+      if (pos === 1) s.ones++;
+    }
+  }
+  const sorted = [...by.values()].sort((a, b) =>
+    (b.points - a.points) || (b.pickers - a.pickers) || (a.row_no - b.row_no));
+  return sorted.map((s, i) => ({ id: s.id, points: s.points, pickers: s.pickers, ones: s.ones,
+    rank: s.points > 0 ? i + 1 : null }));
+}
+
+// How far one ballot is from the final order. Over every song in the final top N:
+// |where the ballot put it − where it finished|, and a song the ballot left out counts
+// as position N+1. Lower is closer. `hits` = how many of the final top N the ballot
+// had at all; `exact` = how many it had in exactly the right spot.
+//   finalTop: [songId, …] in final order (length ≤ n)
+function ballotDistance(picks, finalTop, n) {
+  const pos = new Map(picks.map(p => [p.pack_song_id, Number(p.position)]));
+  let distance = 0, hits = 0, exact = 0;
+  finalTop.forEach((sid, i) => {
+    const at = pos.get(sid);
+    const bp = at || n + 1;
+    distance += Math.abs(bp - (i + 1));
+    if (at) hits++;
+    if (at === i + 1) exact++;
+  });
+  return { distance, hits, exact };
+}
+
+// Closest first; a tie goes to the ballot that was final earliest (updated_at — the
+// list that actually competed, not a first draft). Same shared-rank rule as rankEntries.
+function rankByDistance(entries) {
+  const sorted = [...entries].sort((a, b) =>
+    (a.distance - b.distance) || (Number(a.updated_at) - Number(b.updated_at)));
+  let lastKey = null, lastRank = 0;
+  return sorted.map((e, i) => {
+    const key = `${e.distance}|${e.updated_at}`;
+    const rank = key === lastKey ? lastRank : i + 1;
+    lastKey = key; lastRank = rank;
+    return { ...e, rank };
+  });
+}
+
+module.exports = { consensusRanking, scoreEntry, rankEntries, validatePicks, weightedTally, ballotDistance, rankByDistance };
