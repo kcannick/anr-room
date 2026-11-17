@@ -182,3 +182,21 @@ All stills are 1080 × 1920, the canvas size, so positions can be read off them 
 The mockups need an internet connection for their fonts; without it they fall back to a
 system font and the layout shifts slightly.
 
+## 10. Update 2026-11-16: Rating and Prediction beside the camera
+
+The song bar (`live-feedback/songbar.html`) now shows the title, and Submit Music sits in the old
+QR slot, so two things change in Scene 1. Both are URL edits; nothing moves.
+
+1. `ANR - Song Info`: add `&tiles=side` to the URL and make the source visible.
+   `https://anr.makinitmag.com/overlay/daily?view=record&tiles=side&k=<CONTROL KEY>`
+   Same size and place as before (1920 × 1080, shown at 900 × 506 at 90, 370). It no longer
+   draws a title. It draws a Rating tile left of the host and a Prediction tile right of him,
+   between the song bar and the fire meter, then the lock, a checking beat, the average, the
+   tier call and the points. **Its sound must reach the stream** (same audio settings the
+   `A&R Daily Overlay` source has).
+2. `A&R Daily Overlay`: change `layout=row` to `reveal=0`.
+   `https://anr.makinitmag.com/overlay/daily?reveal=0&k=<CONTROL KEY>`
+   It then stays blank during a reveal (the row would cover Submit Music) and shows only the
+   day total and the Track Report pager when the operator opens them.
+
+The song bar keeps `anrFeed` as it is. Mockup: `public/_mock-daily-cam-tiles.html` in the repo.

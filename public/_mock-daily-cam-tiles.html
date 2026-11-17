@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup: Rating and Prediction beside the camera</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0d0b16; --panel:#171426; --line:#2b2740; --ink:#f3f1fa; --dim:#a8a3c2; --green:#4bb749; --purple:#6d5fe0; --plite:#8f86ff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--ink); font-family:Archivo, Arial, sans-serif; padding:28px 20px 60px; }
+  h1 { font-weight:900; font-size:26px; }
+  h2 { font-weight:900; font-size:19px; margin:38px 0 6px; }
+  p { color:var(--dim); font-size:15px; line-height:1.5; max-width:820px; margin-top:6px; }
+  p b { color:var(--ink); }
+  .row { display:flex; flex-wrap:wrap; gap:18px; margin-top:16px; }
+  figure { width:360px; }
+  figcaption { font-family:'Space Mono', monospace; font-size:12px; color:var(--dim); margin-top:8px; line-height:1.45; }
+  figcaption b { color:var(--ink); display:block; font-size:13px; }
+  /* one frame = the real stream screenshot, 720 x 1280, shown at half size */
+  .shot { width:360px; height:640px; overflow:hidden; border:1px solid var(--line); border-radius:10px; }
+  .f { position:relative; width:720px; height:1280px; transform:scale(.5); transform-origin:0 0;
+       background:url(_mock-assets/scene-cam-songbar.webp) 0 0 / 720px 1280px no-repeat; }
+  /* the tiles: camera window is x 60-660, y 245-585; free band between the song bar and the fire meter is y 340-508 */
+  .t { position:absolute; top:346px; width:124px; height:156px; border-radius:14px; padding:10px 0 0;
+       background:rgba(13,11,22,.88); border:3px solid var(--c); text-align:center; }
+  .t.l { left:70px; } .t.r { left:526px; }
+  .t.g { --c:var(--green); } .t.p { --c:var(--plite); }
+  .t .k { font-family:'Space Mono', monospace; font-weight:700; font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:var(--c); }
+  .t .v { font-weight:900; font-size:76px; line-height:1; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .t .s { position:absolute; left:0; right:0; bottom:0; height:30px; line-height:30px; border-radius:0 0 10px 10px;
+          font-family:'Space Mono', monospace; font-weight:700; font-size:13px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); }
+  .t.lock { background:rgba(13,11,22,.95); box-shadow:0 0 26px var(--c); }
+  .t.lock .s { background:var(--c); color:#0d0b16; }
+  .t.wait .v { color:var(--dim); letter-spacing:.06em; font-size:56px; margin-top:20px; }
+  .t.sm .v { font-size:56px; margin-top:14px; }
+  .t.stack2 { top:346px; height:76px; padding-top:6px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; width:150px; left:500px; }
+  .t.stack2.b { top:428px; }
+  .t.stack2 .k { font-size:12px; } .t.stack2 .v { font-size:46px; margin:0; }
+  .call { position:absolute; left:206px; width:308px; top:452px; height:50px; line-height:50px; border-radius:12px; text-align:center;
+          background:var(--green); color:#0d0b16; font-weight:900; font-size:30px; letter-spacing:.04em; text-transform:uppercase; box-shadow:0 0 30px rgba(75,183,73,.7); }
+  .bad { position:absolute; left:60px; width:600px; top:598px; height:120px; border:4px dashed #ff5a3c; border-radius:14px;
+         background:rgba(255,90,60,.18); color:#fff; font-weight:900; font-size:26px; display:flex; align-items:center; justify-content:center; text-align:center; }
+  .note { border:1px solid var(--line); background:var(--panel); border-radius:12px; padding:14px 16px; margin-top:16px; max-width:820px; }
+  .note p { margin:0; }
+  @media (max-width:420px) { figure { width:100%; } }
+</style>
+</head>
+<body>
+<h1>Rating and Prediction beside the camera</h1>
+<p>Drawn over a real frame of the big-camera scene. The song bar at the top and the fire meter at the bottom stay as they are.
+The tiles use the band between them, left and right of you. Green is the rating, purple is the prediction.</p>
+
+<h2>Option A: one each side (recommended)</h2>
+<p>Your face stays clear in the middle. The same two tiles carry the whole sequence, so nothing else on the stream is covered.</p>
+<div class="row" id="a"></div>
+
+<h2>Option B: both on the right</h2>
+<p>Smaller, stacked. Leaves the left side (the mic arm) alone, but the numbers are about 40% smaller and the reveal has less room.</p>
+<div class="row" id="b"></div>
+
+<h2>Why the reveal moves into the camera too</h2>
+<div class="note"><p>The one-row reveal built last week draws in the slot under the camera, where the QR card used to be.
+In the current scene that slot is gone and <b>Submit Music sits there</b>, so the row would cover a mandatory element (shown in red below).
+In this mockup the reveal happens in the two tiles instead, with the tier call between them above the fire meter. The sounds stay the same.</p></div>
+<div class="row" id="c"></div>
+
+<script>
+const tile = (side, col, k, v, s, cls) => `<div class="t ${side} ${col} ${cls||''}"><div class="k">${k}</div><div class="v">${v}</div>${s?`<div class="s">${s}</div>`:''}</div>`;
+const fig = (inner, title, text) => `<figure><div class="shot"><div class="f">${inner}</div></div><figcaption><b>${title}</b>${text}</figcaption></figure>`;
+document.getElementById('a').innerHTML = [
+  fig(tile('l','g','Rating','5'), '1. You rate it', 'The Rating tile appears when you set the dial. Prediction is not up yet.'),
+  fig(tile('l','g','Rating','5') + tile('r','p','Predict','4.8'), '2. You predict', 'The Prediction number follows the slider as you move it.'),
+  fig(tile('l','g','Rating','5','Locked','lock') + tile('r','p','Predict','4.8','Locked','lock'), '3. Lock it in', 'Lock sound. Both tiles glow and show Locked.'),
+  fig(tile('l','g','Average','· · ·','You 5','wait') + tile('r','p','Points','· · ·','You 4.8','wait'), '4. Checking', 'About 1.5 seconds with ticks. Your own numbers drop to the bottom of each tile.'),
+  fig(tile('l','g','Average','4.8','You 5','sm') + tile('r','p','Points','125','You 4.8','sm') + `<div class="call">Bullseye!</div>`, '5. Reveal', 'The average counts up, then the tier call and its sound, then the points. Stays until the next record.'),
+].join('');
+document.getElementById('b').innerHTML = [
+  fig(`<div class="t g stack2"><div class="k">Rating</div><div class="v">5</div></div><div class="t p stack2 b"><div class="k">Predict</div><div class="v">4.8</div></div>`, 'Rating and Prediction', 'Both on the right, stacked.'),
+  fig(`<div class="t g stack2 lock"><div class="k">Average</div><div class="v">4.8</div></div><div class="t p stack2 b lock"><div class="k">Points</div><div class="v">125</div></div><div class="call" style="left:176px">Bullseye!</div>`, 'Reveal', 'Average and Points replace them; the tier call sits to the left.'),
+].join('');
+document.getElementById('c').innerHTML =
+  fig(`<div class="bad">Where the row reveal draws today:<br>over Submit Music</div>`, 'The problem', 'The reveal source should be switched off or changed before the next stream.');
+</script>
+</body>
+</html>
