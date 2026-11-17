@@ -1330,6 +1330,15 @@ live on anr.makinitmag.com.
   Feedback tool (makinitmag.com) — brief, positions and stills for the PC session:
   `docs/obs-handoff/` (also in the Streaming drive, `Review Music/A&R overlay handoff`).
   Mockup `public/_mock-daily-live-sequence.html`.
+  **Camera tiles** (2026-11-16, operator: "to the Right and/or left of me"): the streaming PC's
+  own song bar (`live-feedback/songbar.html`, Streaming drive) now draws the title for both
+  platforms and the QR slot is gone (Submit Music sits there), so the strip and the row reveal
+  no longer fit that scene. `?view=record&tiles=side` (same 1920×1080 source, same `part=record`
+  state, no server change) draws NO title: Rating left, Prediction right of the host between the
+  song bar and the fire meter (y 318–817 of the source), and runs the whole sequence with its own
+  sound — Locked, checking, Average counting up, the tier call, Points — holding the result until
+  the next record. `&reveal=0` on the reveal source skips the reveal there and keeps the day
+  total and report pager. Mockup `public/_mock-daily-cam-tiles.html`.
 - **Tournament stream overlay** (no migration, 2026-10-25; branch `claude/wars-stream-overlay`,
   NOT merged when written). `/overlay/wars` (`public/wars-overlay.html`): an OBS browser source,
   **vertical 1080×1920 only** (the stream goes to Instagram Live / TikTok via Restream; the

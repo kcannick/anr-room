@@ -147,6 +147,23 @@ body.record #reveal,body.record #total,body.record #report,body.record #row{disp
 #record .tile.p .v{color:var(--purple)}
 #record .tile.locked{border-color:var(--green)}
 #record .tile.res .v{color:var(--green)} #record .tile.res.neg .v{color:var(--red)}
+/* ?view=record&tiles=side: Rating left and Prediction right of the host, between the PC's song bar
+   (top 290px of this source) and the fire meter (from 845px). No title: the song bar draws it. */
+#cam{position:absolute;left:0;top:0;width:1920px;height:1080px;display:none}
+body.side #cam{display:block} body.side #record{display:none!important}
+.ct{position:absolute;top:318px;width:397px;height:499px;border-radius:45px;border:10px solid var(--c);background:rgba(13,11,22,.9);text-align:center;padding-top:30px;opacity:0;transform:scale(.8);transition:opacity .25s ease,transform .3s cubic-bezier(.2,1.4,.4,1),box-shadow .3s ease}
+.ct.on{opacity:1;transform:none}
+#ctL{left:32px;--c:var(--green)} #ctR{right:32px;--c:#8F86FF}
+.ct .k{font-family:'Space Mono',monospace;font-weight:700;font-size:45px;letter-spacing:.12em;text-transform:uppercase;color:var(--c)}
+.ct .v{font-weight:900;font-size:220px;line-height:1;margin-top:26px;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.ct .s{position:absolute;left:0;right:0;bottom:0;height:96px;line-height:96px;border-radius:0 0 34px 34px;font-family:'Space Mono',monospace;font-weight:700;font-size:42px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);opacity:0}
+.ct .s.on{opacity:1}
+.ct.is-lock{box-shadow:0 0 80px var(--c)} .ct.is-lock .s{background:var(--c);color:var(--ground)}
+.ct.is-wait .v{font-size:150px;margin-top:70px;color:var(--dim);animation:ctWait .5s ease-in-out infinite alternate}
+@keyframes ctWait{to{opacity:.35}}
+.ct.is-res .v{font-size:170px;margin-top:52px} #ctR.is-res .v{font-size:138px;margin-top:74px} .ct.is-res.neg .v{color:var(--red)}
+#ctCall{position:absolute;left:467px;width:986px;top:657px;height:160px;line-height:160px;border-radius:38px;text-align:center;background:var(--green);color:var(--ground);font-weight:900;font-size:96px;letter-spacing:.03em;text-transform:uppercase;box-shadow:0 0 90px rgba(75,183,73,.7);opacity:0;transform:scale(.5);transition:opacity .2s ease,transform .35s cubic-bezier(.2,1.6,.4,1)}
+#ctCall.on{opacity:1;transform:none} #ctCall.neg{background:var(--red);color:#fff;box-shadow:0 0 90px rgba(255,93,108,.6)}
 #lockbar{position:absolute;left:0;right:0;top:0;height:0;overflow:hidden;background:var(--green);color:var(--ground);display:flex;align-items:center;justify-content:center;gap:30px;font-weight:900;font-size:72px;letter-spacing:-.02em;text-transform:uppercase;transition:height .22s cubic-bezier(.2,.8,.2,1)}
 #lockbar.on{height:100%}
 #lockbar svg{width:72px;height:72px;flex:none}
@@ -205,6 +222,13 @@ body.record #reveal,body.record #total,body.record #report,body.record #row{disp
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
       Prediction locked in
     </div>
+  </div>
+
+  <!-- Rating and Prediction beside the host: shown only with ?view=record&tiles=side -->
+  <div id="cam">
+    <div class="ct" id="ctL"><div class="k" id="ctLk">Rating</div><div class="v" id="ctLv"></div><div class="s" id="ctLs"></div></div>
+    <div class="ct" id="ctR"><div class="k" id="ctRk">Predict</div><div class="v" id="ctRv"></div><div class="s" id="ctRs"></div></div>
+    <div id="ctCall"></div>
   </div>
 
   <!-- the one-row reveal: shown only with ?layout=row -->
@@ -295,6 +319,12 @@ body.record #reveal,body.record #total,body.record #report,body.record #row{disp
   if (RECORD) document.body.classList.add('record');
   // ?layout=row: the reveal is the one-row card under the camera, not the tall card.
   var ROW = Q.get('layout') === 'row';
+  // ?view=record&tiles=side: the tiles beside the host, and the whole sequence with its sound.
+  var SIDE = RECORD && Q.get('tiles') === 'side';
+  if (SIDE) document.body.classList.add('side');
+  // ?reveal=0 on the reveal source: the tiles carry the reveal, so this source keeps only the
+  // day total and the Track Report pager.
+  var NOREVEAL = Q.get('reveal') === '0';
   var recAt = 0, recRound = null, recStage = null, recTimers = [];
   function recLater(ms, fn) { recTimers.push(setTimeout(fn, ms)); }
   function recTiles(st, outcome) {
@@ -363,6 +393,67 @@ body.record #reveal,body.record #total,body.record #report,body.record #row{disp
       var low = tier === 'off' || tier === 'wayoff';
       seq.forEach(function (f, i) { var o = a.createOscillator(), v = a.createGain(); o.type = low ? 'sawtooth' : 'triangle'; o.frequency.value = f; v.gain.value = .001; o.connect(v); v.connect(a.destination);
         var t = a.currentTime + i * (low ? .16 : .11), d = (tier === 'bullseye' && i === 3) ? .9 : low ? .5 : .28; o.start(t); v.gain.linearRampToValueAtTime(.2, t + .02); v.gain.exponentialRampToValueAtTime(.0001, t + d); o.stop(t + d + .05); }); } catch (e) {}
+  }
+  /* The camera tiles (?view=record&tiles=side). One source runs the whole sequence: Rating,
+     Prediction following the slider, the lock, a checking beat, then Average, the tier call and
+     Points, which stay until the next record. */
+  var camAt = 0, camRound = null, camStage = null, camTimers = [], camCounted = false;
+  function camLater(ms, fn) { camTimers.push(setTimeout(fn, ms)); }
+  function camClear() { camTimers.forEach(clearTimeout); camTimers = []; camCounted = true; $('#ctCall').classList.remove('on'); }
+  function camSub(id, txt, on) { var e = $(id); e.textContent = txt; e.classList.toggle('on', !!on); }
+  function camInput(st, locked) {
+    var L = $('#ctL'), R = $('#ctR');
+    L.classList.remove('is-wait', 'is-res', 'neg'); R.classList.remove('is-wait', 'is-res', 'neg');
+    $('#ctLk').textContent = 'Rating'; $('#ctRk').textContent = 'Predict';
+    if (st.rating != null) { $('#ctLv').textContent = st.rating; L.classList.add('on'); } else L.classList.remove('on');
+    if (st.predict != null) { $('#ctRv').textContent = Number(st.predict).toFixed(1); R.classList.add('on'); } else R.classList.remove('on');
+    L.classList.toggle('is-lock', locked); R.classList.toggle('is-lock', locked);
+    camSub('#ctLs', 'Locked', locked); camSub('#ctRs', 'Locked', locked);
+  }
+  function camYou(st) {
+    camSub('#ctLs', st.rating != null ? 'You ' + st.rating : '', st.rating != null);
+    camSub('#ctRs', st.predict != null ? 'You ' + Number(st.predict).toFixed(1) : '', st.predict != null);
+  }
+  function camFinal(st, call) {
+    var L = $('#ctL'), R = $('#ctR'), r = st.result, neg = r.points < 0;
+    L.classList.remove('is-wait', 'is-lock'); R.classList.remove('is-wait', 'is-lock'); L.classList.add('on', 'is-res'); R.classList.add('on', 'is-res');
+    $('#ctLk').textContent = 'Average'; $('#ctRk').textContent = 'Points';
+    $('#ctLv').textContent = Number(r.avg).toFixed(1); $('#ctRv').textContent = (neg ? '' : '+') + r.points; R.classList.toggle('neg', neg);
+    camYou(st);
+    var c = $('#ctCall'); c.textContent = (TIERS[r.tier] || '') + (r.tier === 'bullseye' ? '!' : ''); c.classList.toggle('neg', neg || r.tier === 'off' || r.tier === 'wayoff');
+    c.classList.toggle('on', !!call && !!c.textContent);
+  }
+  function camReveal(st, lockSeen) {
+    var L = $('#ctL'), R = $('#ctR'), r = st.result, t = lockSeen ? 600 : 1200;
+    camInput(st, true); if (!lockSeen) lockSnd();
+    camLater(t, function () {                                   // checking
+      L.classList.remove('is-lock'); R.classList.remove('is-lock'); L.classList.add('is-wait'); R.classList.add('is-wait');
+      $('#ctLk').textContent = 'Average'; $('#ctRk').textContent = 'Points'; $('#ctLv').textContent = $('#ctRv').textContent = '\u00b7\u00b7\u00b7';
+      camYou(st);
+    });
+    for (var i = 0; i < 9; i++) camLater(t + 100 + i * 160, function () { tick(1400, .03, .05); });
+    camLater(t + 1600, function () {                            // the average counts up
+      L.classList.remove('is-wait'); L.classList.add('is-res'); camCounted = false;
+      var t0 = null, el = $('#ctLv'), avg = Number(r.avg);
+      requestAnimationFrame(function step(now) { if (camCounted) return; if (t0 === null) t0 = now; var k = Math.max(0, Math.min(1, (now - t0) / 900)), e = 1 - Math.pow(1 - k, 3); el.textContent = (avg * e).toFixed(1); if (k < 1) requestAnimationFrame(step); });
+    });
+    // The final numbers land on a timer, whatever the count-up managed (a throttled source
+    // does not get frames on time).
+    camLater(t + 2600, function () { camCounted = true; camFinal(st, true); $('#ctR').classList.add('is-wait'); $('#ctRv').textContent = '\u00b7\u00b7\u00b7'; tierSnd(r.tier); });
+    camLater(t + 3100, function () { camFinal(st, true); });    // points
+  }
+  function renderCam(st) {
+    if (!st || !st.on) { camClear(); $('#ctL').classList.remove('on'); $('#ctR').classList.remove('on'); camAt = st ? st.at : 0; camRound = null; camStage = null; return; }
+    if (st.at === camAt) return;
+    var fresh = st.roundId !== camRound, was = camStage, first = camAt === 0 && camRound === null, stage = st.stage || null;
+    if (stage === 'result' && st.result) {
+      if (fresh || first || was === 'result') { camClear(); camFinal(st, true); }      // opened onto an old result
+      else { camClear(); camReveal(st, was === 'locked'); }
+    } else if (stage === 'locked') {
+      camClear(); camInput(st, true);
+      if (!fresh && !first && was !== 'locked') lockSnd();
+    } else { camClear(); camInput(st, false); }
+    camAt = st.at; camRound = st.roundId; camStage = stage;
   }
   function playRow(st) {
     var c = st.reveal; clearTimeout(hideTimer); hideAll();
@@ -465,7 +556,7 @@ body.record #reveal,body.record #total,body.record #report,body.record #row{disp
     if (!st || !st.view || st.view === 'idle') { if (shownView !== 'idle') { clearTimeout(hideTimer); hideAll(); } shownView = 'idle'; shownAt = st ? st.at : 0; return; }
     var changed = st.at !== shownAt || st.view !== shownView;
     if (st.view === 'report') { showReport(st, shownView === 'report' && shownPage !== st.report.page); shownPage = st.report.page; }
-    else if (changed && st.view === 'reveal') { if (ROW) playRow(st); else playReveal(st); }
+    else if (changed && st.view === 'reveal') { if (NOREVEAL) { clearTimeout(hideTimer); hideAll(); } else if (ROW) playRow(st); else playReveal(st); }
     else if (changed && st.view === 'total') showTotal(st);
     shownAt = st.at; shownView = st.view;
   }
@@ -474,7 +565,7 @@ body.record #reveal,body.record #total,body.record #report,body.record #row{disp
     if (!KEY) { $('#err').textContent = 'Add ?k=<your control key> to the URL'; $('#err').classList.remove('hide'); return; }
     fetch('/api/control/daily-overlay?k=' + encodeURIComponent(KEY) + (RECORD ? '&part=record' : ''), { cache: 'no-store' })
       .then(function (r) { if (r.status === 401) { $('#err').textContent = 'Bad control key'; $('#err').classList.remove('hide'); return null; } return r.ok ? r.json() : null; })
-      .then(function (d) { if (d) { $('#err').classList.add('hide'); if (RECORD) { renderRecord(d.state); fast = !!(d.state && d.state.on); } else render(d.state); } })
+      .then(function (d) { if (d) { $('#err').classList.add('hide'); if (RECORD) { if (SIDE) renderCam(d.state); else renderRecord(d.state); fast = !!(d.state && d.state.on); } else render(d.state); } })
       .catch(function () { /* keep the last frame on a network blip */ })
       .then(function () { setTimeout(poll, RECORD ? (fast ? 500 : 2000) : ROW ? 700 : 2000); });
   }

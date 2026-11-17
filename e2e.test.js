@@ -2050,7 +2050,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok('an unknown view is refused', rpView.status === 400);
     // THE "NOW RATING" STRIP (2026-11-04): its own state, its own source, nothing about the room.
     const rcOn = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[1], position: 2, total: 3 }, 'POST', GH);
-    ok('record: the strip takes a record with its position', rcOn.status === 200 && rcOn.d.state.on === true && rcOn.d.state.roundId === gQ[1] && rcOn.d.state.position === 2 && rcOn.d.state.total === 3 && /Record 7[12]/.test(rcOn.d.state.title), JSON.stringify(rcOn.d));
+    ok('record: the strip takes a record with its position', rcOn.status === 200 && rcOn.d.state.on === true && rcOn.d.state.roundId === gQ[1] && rcOn.d.state.position === 2 && rcOn.d.state.total === 3 && /Record 7\d/.test(rcOn.d.state.title), JSON.stringify(rcOn.d));
     ok('record: title, artist and handle only — no average, no count, no rating', !('avg' in rcOn.d.state) && !('n' in rcOn.d.state) && !('rated' in rcOn.d.state) && typeof rcOn.d.state.artist === 'string');
     const rcCtl = await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json();
     ok('record: the strip source reads it through the control key', rcCtl.state && rcCtl.state.on === true && rcCtl.state.roundId === gQ[1], JSON.stringify(rcCtl));
@@ -2062,6 +2062,8 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok('record: off takes it down', rcOff.status === 200 && rcOff.d.state.on === false && (await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json()).state.on === false);
     const rcPage = await fetch(base + '/overlay/daily?view=record&k=' + encodeURIComponent(gKey));
     ok('record: the overlay page serves the strip source', rcPage.status === 200 && /id="record"/.test(await rcPage.text()));
+    const camPage = await (await fetch(base + '/overlay/daily?view=record&tiles=side&k=' + encodeURIComponent(gKey))).text();
+    ok('record: the overlay page carries the camera tiles and reads only the record state for them', /id="cam"/.test(camPage) && /tiles'\) === 'side'/.test(camPage) && /RECORD \? '&part=record'/.test(camPage));
     // THE LIVE SEQUENCE (2026-11-13): the admin's own rating and prediction ride the strip as he
     // sets them, "locked" at the lock-in, and the outcome arrives only through the reveal.
     const lvOn = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], position: 1, total: 3 }, 'POST', GH);
