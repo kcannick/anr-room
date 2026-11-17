@@ -8,15 +8,15 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/brand/mark/apple-touch-icon-180.png">
 <meta name="theme-color" content="#0E0C1A">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://anr.makinitmag.com/sidebet">
-<meta property="og:title" content="Pick the hits.">
-<meta property="og:description" content="Pick the top 18 songs from this month’s A&R Service Pack.">
+<meta property="og:url" content="https://anr.makinitmag.com/hits">
+<meta property="og:title" content="Pick the Hits">
+<meta property="og:description" content="Pick the top songs from the A&R Service Pack for a chance to win cash.">
 <meta property="og:image" content="https://anr.makinitmag.com/brand/og/og-team.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<title>Pick the hits — The A&amp;R Room</title>
-<meta name="description" content="Pick the top songs from this month's A&R Service Pack for a chance to win cash.">
+<title>Pick the Hits — Makin' It</title>
+<meta name="description" content="Pick the top songs from the A&R Service Pack for a chance to win cash. Get notified when the next pack opens.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/tokens.css?v=3">
@@ -125,13 +125,35 @@
   .err{background:rgba(255,93,108,.12);border:1px solid var(--hot);color:#ffd6da;border-radius:12px;padding:11px 13px;font-size:13.5px;margin-top:12px;line-height:1.45}
   .code-in{letter-spacing:.5em;text-align:center;font-family:"Space Mono",monospace;font-size:23px}
   .hide{display:none!important}
+  .pts{list-style:none;margin:12px 0 0;padding:0}
+  .pts li{display:flex;gap:12px;align-items:flex-start;padding:6px 0;font-size:14px;line-height:1.45;color:var(--ink-dim)}
+  .pts li b.n{flex:none;width:24px;height:21px;display:flex;align-items:center;justify-content:center;transform:skewX(-13deg);border-radius:3px;background:#241d40;font-family:"Space Mono",monospace;font-size:12px;color:var(--ink)}
+  .top{border:1px solid var(--line);border-radius:14px;background:var(--inset);margin-top:12px;overflow:hidden}
+  .top .row{display:flex;align-items:center;gap:11px;padding:9px 13px;border-bottom:1px solid #1a1530}
+  .top .row:last-child{border-bottom:0}
+  .top .rk{width:30px;height:24px;flex:none;display:flex;align-items:center;justify-content:center;transform:skewX(-13deg);border-radius:4px;background:#241d40;font-family:"Space Mono",monospace;font-weight:700;font-size:12px}
+  .top .rk.one{background:var(--gold);color:#1a1400}
+  .top .t{font-size:14px;font-weight:700;line-height:1.2}
+  .top .t span{display:block;font-size:12px;color:var(--ink-faint);font-weight:400;margin-top:1px}
+  .top .fin{margin-left:auto;font-family:"Space Mono",monospace;font-size:11px;color:var(--ink-faint);white-space:nowrap}
+  .top .fin.hit{color:var(--signal)}
+  .winner{display:flex;align-items:center;gap:14px;margin-top:10px}
+  .winner .av{width:52px;height:52px;border-radius:50%;background:#2a2148;border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;color:var(--gold);flex:none}
+  .winner .nm{font-weight:800;font-size:22px;letter-spacing:-.02em}
+  .wins{font-family:"Space Mono",monospace;font-weight:700;color:var(--gold);font-size:13px;letter-spacing:.06em;margin-top:4px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .stat{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:left}
+  .stat .n{font-family:"Space Mono",monospace;font-weight:700;font-size:26px;line-height:1}
+  .stat .l{font-size:12px;color:var(--ink-dim);margin-top:6px;line-height:1.35}
+  .gap{margin-top:14px}
+  .btn.purple{background:var(--accent);color:#fff;border:0}
   .spin{text-align:center;color:var(--ink-faint);font-size:14px;padding:60px 0}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="brandbar">
-    <a class="wordmark" href="/">The A&amp;R Room</a>
+    <a class="wordmark" href="/hits">Makin' It · Pick the Hits</a>
     <span class="step" id="step"></span>
   </div>
   <div id="app"><div class="spin">Loading…</div></div>
@@ -140,30 +162,28 @@
 
 <script>
 // ─────────────────────────────────────────────────────────────────────────────
-// /sidebet — the A&R Wars prediction contest.
+// /hits (also /sidebet) — Pick the Hits (055; was the A&R Wars side bet, 033).
 //
-// Pick which songs from the month's service pack will actually get PLAYED at A&R
-// Wars, put them in order, then identify yourself. Set membership, not ratings.
+// Four states, chosen by the server (state): NOT OPEN YET (the notify form: name, email,
+// phone, all required) · OPEN (download, pick N, order them, confirm an email code) ·
+// CLOSED (results coming + the notify form) · RESULTS (winner, the Top N by rank, your own
+// result, then the notify form or "Pick the Hits" if the next pack is open).
 //
-// The form is LAST on purpose: by then they've done the work of picking, so it
-// reads as the cost of keeping it rather than a toll before they see anything.
-// Picks live in memory + localStorage until the OTP verifies — someone who bails
-// at the form leaves no half-entry in the table.
+// Scoring: your #1 gives a song N points … #N gives 1. Songs rank by total; the entry
+// closest to that order wins. Only entries with a finished A&R Team profile count.
 //
-// Nothing on this page shows how many people picked what. That aggregate is the
-// tiebreak axis, so exposing it would make copying the crowd the winning move.
-// The server never sends it before settle either; this is belt and braces.
+// The form is LAST on purpose: by then they've done the work of picking, so it reads as
+// the cost of keeping it. Picks live in memory + localStorage until the code verifies.
+// Nothing on this page shows how many people picked what before results — the final
+// order is built from the entries, so a live count would make copying the crowd optimal.
 // ─────────────────────────────────────────────────────────────────────────────
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
 const LS_PICKS = 'anr_sidebet_picks';
 const LS_TOKEN = 'anr_auth_token';       // same key the rest of the app uses
-// Subscribe target for the confirmation screen. `?sub_confirmation=1` (a real query
-// string — as `&` with no `?` before it, YouTube reads it as part of the path and the
-// subscribe prompt never opens) makes YouTube show the subscribe dialog on arrival.
-const YT_URL = 'https://www.youtube.com/makinitmag/live?sub_confirmation=1';
 
-let PACK = null, SONGS = [], BANNER = null, ENTRY = null, RESULTS = null;
+let PACK = null, SONGS = [], BANNER = null, ENTRY = null, RESULTS = null, HITS = null, STATE = 'preregister', LAST = null, OPEN_NOW = false;
+let sub = { name: '', email: '', phone: '' }, subDone = false;
 let picks = [];                           // pack_song ids, in the entrant's order
 let screen = 'offer';
 let filter = '';
@@ -197,9 +217,13 @@ async function api(path, body, method = 'GET') {
 
 // ---------- load ----------
 async function load() {
-  const { d } = await api('/api/sidebet');
+  // ?pack=<id or slug> is the results page an email links to; no param = whatever is current.
+  const want = new URLSearchParams(location.search).get('pack');
+  const { d } = await api('/api/sidebet' + (want ? '?pack=' + encodeURIComponent(want) : ''));
   PACK = d.pack; SONGS = d.songs || []; BANNER = d.banner || null;
-  ENTRY = d.entry || null; RESULTS = d.results || null;
+  ENTRY = d.entry || null; RESULTS = d.results || null; HITS = d.hits || null;
+  STATE = d.state || (PACK ? (PACK.open ? 'open' : 'closed') : 'preregister');
+  LAST = d.lastResults || null; OPEN_NOW = !!d.openNow;
   // A saved entry always wins over whatever is in localStorage — the server row is
   // the entry that competes, and a stale draft on one device must never shadow it.
   if (ENTRY && ENTRY.picks && ENTRY.picks.length) picks = ENTRY.picks.slice();
@@ -213,10 +237,12 @@ async function load() {
   const valid = new Set(SONGS.map(s => s.id));
   picks = picks.filter(id => valid.has(id));
 
-  if (!PACK) screen = 'none';
-  else if (ENTRY && !PACK.open) screen = 'done';
+  // The four states: not open yet (sign up) · open (enter) · closed (results coming) · results.
+  if (!PACK) screen = 'notify';
+  else if (STATE === 'results') screen = HITS ? 'results' : (ENTRY ? 'done' : 'closed');
   else if (ENTRY) screen = 'done';
   else if (!PACK.open) screen = 'closed';
+  else screen = 'offer';
   render();
 }
 
@@ -239,6 +265,118 @@ function paintAd() {
   el.classList.remove('hide');
 }
 
+// ---------- the notify list ----------
+// Name, email and phone, all required (operator, 2026-11-13). No email code: it's a
+// sign-up, not an entry.
+function notifyForm(title, blurb) {
+  if (subDone) return `<div class="panel gap">
+      <h2>You're on the list.</h2>
+      <p>We'll email and text you when the next A&amp;R Service Pack opens for download and picks.</p>
+    </div>
+    <div class="panel gap">
+      <h2>While you wait</h2>
+      <p style="font-size:13.5px">Rate today's records on The A&amp;R Team. Every record you rate builds your standing.</p>
+      <a class="btn" href="/daily">Rate today's records</a>
+    </div>
+    <div class="panel gap">
+      <h2>Are you an artist?</h2>
+      <p style="font-size:13.5px">Get your song in the next pack. A&amp;R Service Pack · 450+ downloads.</p>
+      <a class="btn purple" href="https://www.makinitmag.com/push" target="_blank" rel="noopener">Get featured in the next pack</a>
+    </div>`;
+  return `<div class="panel gap">
+    <h2>${title}</h2>
+    ${blurb ? `<p style="font-size:13.5px">${blurb}</p>` : ''}
+    <div class="field"><label>Name</label><input type="text" id="nName" autocomplete="name" value="${esc(sub.name)}"></div>
+    <div class="field"><label>Email</label><input type="email" id="nEmail" autocomplete="email" inputmode="email" value="${esc(sub.email)}"></div>
+    <div class="field"><label>Phone</label><input type="tel" id="nPhone" autocomplete="tel" inputmode="tel" value="${esc(sub.phone)}"></div>
+    ${err ? `<div class="err">${esc(err)}</div>` : ''}
+    <button class="btn" id="nGo" ${busy ? 'disabled' : ''}>${busy ? 'Saving…' : 'Notify me'}</button>
+    <div class="legal">By entering your phone number you agree to receive texts from Makin' It about Pick the Hits. Msg &amp; data rates may apply. Reply STOP to opt out.</div>
+  </div>`;
+}
+
+async function doNotify() {
+  ['name', 'email', 'phone'].forEach(k => { const el = $('#n' + k[0].toUpperCase() + k.slice(1)); if (el) sub[k] = el.value; });
+  err = '';
+  if (!sub.name.trim()) { err = 'Enter your name.'; render(); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(sub.email.trim())) { err = 'Enter a valid email address.'; render(); return; }
+  if (sub.phone.replace(/\D/g, '').length < 10) { err = 'Enter your mobile number.'; render(); return; }
+  busy = true; render();
+  const { status, d } = await api('/api/hits/notify', { name: sub.name.trim(), email: sub.email.trim(), phone: sub.phone.trim() }, 'POST');
+  busy = false;
+  if (status !== 200) { err = d.error || 'Could not save that. Try again.'; render(); return; }
+  subDone = true; render();
+}
+
+const prizeAmt = () => { const m = /\$\s?[\d,]+/.exec((PACK && PACK.prizeText) || '$150'); return m ? m[0].replace(/\s/g, '') : ''; };
+
+function viewNotify() {
+  return `<div class="panel">
+    <span class="eyebrow">Pick the Hits</span>
+    <h1>Pick the hits. Win <span style="color:var(--gold)">$150</span>.</h1>
+    <p>The next A&amp;R Service Pack isn't open yet. Enter your info below to get notified when it's ready.</p>
+  </div>
+  ${notifyForm('Get notified when the next pack opens', "We'll email and text you when the pack is ready to download and pick.")}
+  ${subDone ? '' : `<div class="rules">
+    <span class="eyebrow">How it works</span>
+    <ol>
+      <li>Download the A&amp;R Service Pack.</li>
+      <li>Pick your top songs, in order.</li>
+      <li>The entry closest to everyone's combined picks wins.</li>
+    </ol>
+  </div>`}
+  ${LAST ? `<a class="btn ghost" href="/hits?pack=${encodeURIComponent(LAST.pack)}">See ${esc(LAST.name)} results</a>` : ''}`;
+}
+
+function viewResults() {
+  const H = HITS, n = need();
+  const amt = H.prize || '';
+  const byId = new Map(SONGS.map(s => [s.id, s]));
+  const initials = (nm) => nm.split(/\s+/).map(x => x[0] || '').join('').slice(0, 2).toUpperCase();
+  let mine = '';
+  if (ENTRY && ENTRY.result) {
+    const R = ENTRY.result;
+    if (!R.counted) {
+      mine = `<div class="panel gap"><span class="eyebrow">Your entry</span>
+        <h2 style="margin-top:8px">Your entry didn't count.</h2>
+        <p style="font-size:13.5px">Only entries with a finished A&amp;R Team profile count. Finish yours so your next entry counts.</p>
+        <a class="btn ghost" href="/profile" id="toProfile">Finish my profile</a></div>`;
+    } else {
+      const rows = (ENTRY.picks || []).map((sid, i) => {
+        const s = byId.get(sid) || { title: '?' }, f = R.finals ? R.finals[i] : null;
+        return `<div class="row"><span class="rk"><span>${i + 1}</span></span><span class="t">${esc(s.title)}${s.artist ? `<span>${esc(s.artist)}</span>` : ''}</span>
+          <span class="fin ${f === i + 1 ? 'hit' : ''}">${f ? (f === i + 1 ? 'exact' : 'final #' + f) : 'not in top ' + n}</span></div>`;
+      }).join('');
+      mine = `<div class="panel gap"><span class="eyebrow">Your result</span>
+        <h2 style="margin-top:8px">${R.rank === 1 ? `You won${amt ? ' ' + esc(amt) : ''}. We'll be in touch.` : `You finished #${R.rank}.`}</h2>
+        <div class="stats">
+          <div class="stat"><div class="n">${R.hits}</div><div class="l">of your picks made the Top ${n}</div></div>
+          <div class="stat"><div class="n">${R.exact}</div><div class="l">in the exact spot</div></div>
+        </div>
+        <div class="top">${rows}</div></div>`;
+    }
+  }
+  const next = OPEN_NOW
+    ? `<div class="panel gap"><h2>The next pack is open.</h2><p style="font-size:13.5px">Pick your top songs for a chance to win${amt ? ' ' + esc(amt) : ''}.</p><a class="btn" href="/hits">Pick the Hits</a></div>`
+    : notifyForm('Pick the Hits returns with the next Service Pack.', `Get notified when it opens and pick your top ${n} for a chance to win${amt ? ' ' + esc(amt) : ''}.`);
+  return `<div class="panel">
+    <span class="eyebrow">Pick the Hits · Results</span>
+    <h1>The listeners picked the hits.</h1>
+    <p>Listeners ranked their top ${n} songs from ${esc(H.packName)}. Here is the final order${H.winners.length ? ' and the entry that came closest' : ''}.</p>
+  </div>
+  ${H.winners.length ? `<div class="panel gap"><span class="eyebrow">Winner</span>
+    ${H.winners.map(w => `<div class="winner"><div class="av">${esc(initials(w.name))}</div><div><div class="nm">${esc(w.name)}</div>${amt ? `<div class="wins">WINS ${esc(amt)}</div>` : ''}</div></div>`).join('')}
+  </div>` : ''}
+  ${mine}
+  <div class="panel gap"><span class="eyebrow">The Top ${n}</span>
+    <div class="top">${H.songs.map(s => `<div class="row"><span class="rk ${s.rank === 1 ? 'one' : ''}"><span>${s.rank}</span></span><span class="t">${esc(s.title)}${s.artist ? `<span>${esc(s.artist)}</span>` : ''}</span></div>`).join('')}</div>
+  </div>
+  ${next}
+  <div class="panel gap"><h2>Artists: get featured in the next Service Pack.</h2>
+    <ul class="pts"><li><b class="n">1</b>A&amp;R Service Pack placement · 450+ downloads</li><li><b class="n">2</b>Spotify playlist placement</li><li><b class="n">3</b>Promo video and collab post with @MakinIt4Indies</li></ul>
+    <a class="btn purple" href="https://www.makinitmag.com/push" target="_blank" rel="noopener">Get featured</a></div>`;
+}
+
 // ---------- screens ----------
 function viewNone() {
   return `<div class="panel center">
@@ -250,24 +388,23 @@ function viewNone() {
 }
 
 function viewOffer() {
-  const prize = PACK.prizeText || '';
+  const amt = prizeAmt();
   return `<div class="panel center">
-    <span class="eyebrow">Side contest · A&amp;R Wars</span>
-    <h1>Pick the hits.${prize ? `<br>Win ${esc(prize)}.` : ''}</h1>
-    ${prize ? `<div class="prize">${esc(prize)}</div>` : ''}
+    <span class="eyebrow" style="color:var(--signal)">Open now · ${esc(PACK.name)}</span>
+    <h1>Pick the hits.${amt ? `<br>Win <span style="color:var(--gold)">${esc(amt)}</span>.` : ''}</h1>
     ${PACK.sponsorText ? `<div class="sponsor">${esc(PACK.sponsorText)}</div>` : ''}
-    <p>Pick the top ${need()} songs from this month's A&amp;R Service Pack${prize ? ` for a chance to win ${esc(prize)} cash` : ''}.</p>
+    <p>Pick the top ${need()} songs from ${esc(PACK.name)}${amt ? ` for a chance to win ${esc(amt)} cash` : ''}.</p>
     <button class="btn" id="go1">Pick my ${need()} songs</button>
     <div class="rules">
       <span class="eyebrow">How it works</span>
       <ol>
-        <li>Check out this month's A&amp;R Service Pack.</li>
-        <li>Pick your top ${need()} songs.</li>
-        <li>Tune into the A&amp;R Wars tournament to see if your picks get played.</li>
-        <li>Person with the most right selections wins.</li>
+        <li>Download ${esc(PACK.name)}.</li>
+        <li>Pick your top ${need()} songs, in order.</li>
+        <li>Fill out your A&amp;R Team profile so your entry counts.</li>
+        <li>The entry closest to everyone's combined picks wins.</li>
       </ol>
-      <div class="tiebreak">If two people get the same number right, order decides it. Free to enter, one entry per person.</div>
-      <div class="mono" style="font-size:11px;color:var(--ink-faint);margin-top:9px">Entries close ${esc(fmtDate(PACK.closesAt))}</div>
+      <div class="tiebreak">Your #1 pick gives a song ${need()} points, your #2 gives ${need() - 1}, down to 1 point for #${need()}. Songs are ranked by their total. Free to enter, one entry per person.</div>
+      <div class="mono" style="font-size:11px;color:var(--ink-faint);margin-top:9px">Picks close ${esc(fmtDate(PACK.closesAt))}</div>
     </div>
   </div>`;
 }
@@ -331,7 +468,7 @@ function viewOrder() {
   }).join('');
   return `<div class="panel" style="padding:16px">
       <h2>Put them in order</h2>
-      <p style="font-size:13.5px">Your best pick at the top. Order only matters if someone else picks the same ${need()} songs you did.</p>
+      <p style="font-size:13.5px">Your best pick at the top. Your #1 is worth the most points to that song.</p>
     </div>
     <div class="ranks">${rows}</div>
     <button class="btn" id="go4">${ENTRY ? 'Save my picks' : 'Lock in my picks'}</button>
@@ -342,7 +479,7 @@ function viewOrder() {
 function viewForm() {
   return `<div class="panel">
     <span class="eyebrow">Almost in</span>
-    <h2 style="margin-top:9px">${PACK.prizeText ? `Where do we send the ${esc(PACK.prizeText)}?` : 'Tell us who you are'}</h2>
+    <h2 style="margin-top:9px">${prizeAmt() ? `Where do we send the ${esc(prizeAmt())}?` : 'Tell us who you are'}</h2>
     <p style="font-size:13.5px">Enter your email and we'll send a 6-digit code to confirm it's you.</p>
     <div class="field"><label>Email</label><input type="email" id="fEmail" autocomplete="email" inputmode="email" value="${esc(form.email)}"></div>
     ${err ? `<div class="err">${esc(err)}</div>` : ''}
@@ -355,7 +492,7 @@ function viewForm() {
 function viewCode() {
   // Only the fields we don't already have. Name and number changes live in the
   // A&R's profile; the notify choice is made once, at signup.
-  const askName = !known.hasName, askPhone = !known.hasPhone, askNotify = !known.exists;
+  const askName = !known.hasName, askPhone = !known.hasPhone, askNotify = false;
   return `<div class="panel">
     <span class="eyebrow">Check your email</span>
     <h2 style="margin-top:10px">${known.exists ? 'Welcome back' : 'Enter your code'}</h2>
@@ -370,7 +507,7 @@ function viewCode() {
     </div>` : ''}
     ${askPhone ? `<div class="field"><label>Mobile <span class="muted">(optional)</span></label><input type="tel" id="fPhone" autocomplete="tel" inputmode="tel" value="${esc(form.phone)}"></div>
     <div class="check ${form.sms ? 'on' : ''}" id="ckSms"><span class="box">✓</span>
-      <span class="txt">Text me about A&amp;R Wars and the results. Msg &amp; data rates may apply, reply STOP to opt out.</span></div>` : ''}
+      <span class="txt">Text me about Pick the Hits and the results. Msg &amp; data rates may apply, reply STOP to opt out.</span></div>` : ''}
     ${askNotify ? `<div class="check ${form.notify ? 'on' : ''}" id="ckNotify"><span class="box">✓</span>
       <span class="txt">Email me when the A&amp;R Room goes live.</span></div>` : ''}
     ${err ? `<div class="err">${esc(err)}</div>` : ''}
@@ -383,7 +520,8 @@ function viewCode() {
 function viewDone() {
   const byId = new Map(SONGS.map(s => [s.id, s]));
   const top = picks.length ? byId.get(picks[0]) : null;
-  const scored = ENTRY && ENTRY.correct != null;
+  const scored = ENTRY && ENTRY.correct != null && RESULTS;   // an old A&R Wars pack
+  const eligible = !ENTRY || ENTRY.eligible !== false;
   return `<div class="panel center">
     <div class="tick">✓</div>
     <span class="eyebrow">${scored ? 'Results are in' : "You're locked in"}</span>
@@ -392,17 +530,17 @@ function viewDone() {
       : `Your ${need()} picks are in.`}</h2>
     <p style="font-size:13.5px">${scored
       ? (ENTRY.rank === 1 ? 'You won. We’ll be in touch.' : `You finished #${ENTRY.rank}.`)
-      : 'Tune into A&amp;R Wars to see how many you got right.'}</p>
+      : 'We’ll email you the results after picks close.'}</p>
+    ${eligible ? '' : `<div class="err" style="text-align:left">Your entry doesn't count yet. Finish your A&amp;R Team profile before picks close so it counts.</div>
+      <a class="btn" href="/profile" id="toProfile">Finish my profile</a>`}
     <div class="recap">
       ${ENTRY && ENTRY.entryNo ? `<div class="row"><span>Entry</span><b>#${String(ENTRY.entryNo).padStart(4, '0')}</b></div>` : ''}
       ${top ? `<div class="row"><span>Your top pick</span><b style="font-size:12.5px">${esc(top.title)}</b></div>` : ''}
-      <div class="row"><span>${PACK.open ? 'Entries close' : 'Entries closed'}</span><b style="font-size:12.5px">${esc(fmtDate(PACK.closesAt))}</b></div>
-      <div class="row"><span>A&amp;R Wars</span><b style="font-size:12.5px">${esc(fmtDate(PACK.warsAt))}</b></div>
+      <div class="row"><span>${PACK.open ? 'Picks close' : 'Picks closed'}</span><b style="font-size:12.5px">${esc(fmtDate(PACK.closesAt))}</b></div>
+      ${PACK.warsAt && PACK.warsAt !== PACK.closesAt ? `<div class="row"><span>Results</span><b style="font-size:12.5px">${esc(fmtDate(PACK.warsAt))}</b></div>` : ''}
     </div>
     ${RESULTS && RESULTS.length ? viewBoard() : ''}
-    <a class="btn" style="background:#ff0000;color:#fff" href="${esc(YT_URL)}" target="_blank" rel="noopener noreferrer">Subscribe on YouTube ↗</a>
     ${PACK.open ? `<button class="btn ghost" id="edit">Edit my picks</button>` : ''}
-    <div class="legal">A&amp;R Wars streams live. Subscribe so you don't miss it.</div>
   </div>`;
 }
 
@@ -416,13 +554,14 @@ function viewBoard() {
 }
 
 function viewClosed() {
-  return `<div class="panel center">
-    <span class="eyebrow">Entries closed</span>
-    <h2 style="margin-top:10px">${esc(PACK.name)}</h2>
-    <p>Picks closed ${esc(fmtDate(PACK.closesAt))}. Results after A&amp;R Wars on ${esc(fmtDate(PACK.warsAt))}.</p>
+  const when = PACK.warsAt && PACK.warsAt > PACK.closesAt ? ` post ${esc(fmtDate(PACK.warsAt))}` : ' are coming';
+  return `<div class="panel">
+    <span class="eyebrow">Picks closed · ${esc(PACK.name)}</span>
+    <h1>Picks are closed. Results are coming.</h1>
+    <p>Results for ${esc(PACK.name)}${when}. Everyone who entered gets an email with their result.</p>
     ${RESULTS && RESULTS.length ? viewBoard() : ''}
-    <a class="btn ghost" href="/">Back to The A&amp;R Room</a>
-  </div>`;
+  </div>
+  ${notifyForm('Get notified when the next pack opens', '')}`;
 }
 
 const STEPS = { pack: 'STEP 1 OF 4', pick: 'STEP 2 OF 4', order: 'STEP 3 OF 4', form: 'STEP 4 OF 4', code: 'STEP 4 OF 4' };
@@ -431,6 +570,8 @@ function render() {
   $('#step').textContent = STEPS[screen] || '';
   app.innerHTML =
     screen === 'none'   ? viewNone()   :
+    screen === 'notify' ? viewNotify() :
+    screen === 'results'? viewResults():
     screen === 'offer'  ? viewOffer()  :
     screen === 'pack'   ? viewPack()   :
     screen === 'pick'   ? viewPick()   :
@@ -510,6 +651,9 @@ function wire() {
     if (el) el.addEventListener('input', () => { form[k] = el.value; });
   });
 
+  on('#nGo', 'click', doNotify);
+  // /profile (join.html's edit mode) reads rt_auth_token; this page keeps its own key.
+  on('#toProfile', 'click', () => { try { if (tok() && !localStorage.getItem('rt_auth_token')) localStorage.setItem('rt_auth_token', tok()); } catch (e) {} });
   on('#go5', 'click', requestCode);
   on('#resend', 'click', requestCode);
   on('#back4', 'click', () => go('order'));
@@ -549,6 +693,7 @@ async function verifyCode() {
   busy = false;
   if (status !== 200 || !d.token) { err = d.error || 'That code did not work.'; render(); return; }
   localStorage.setItem(LS_TOKEN, d.token);
+  try { if (!localStorage.getItem('rt_auth_token')) localStorage.setItem('rt_auth_token', d.token); } catch (e) {}
   await submitEntry();
 }
 

@@ -1351,6 +1351,27 @@ live on anr.makinitmag.com.
   operator's RØDECaster, so no audio sources; Social Stream Ninja for comments, alerts, viewer
   total) lives in the Streaming shared drive, `A&R Wars/OBS scene collection/`, not in the repo.
 
+- **Pick the Hits** (055, 2026-11-13; branch `claude/pick-the-hits`, NOT merged when written). The side
+  bet without the tournament, at **/hits** (/sidebet still works). **Scoring (operator):** each ballot
+  ranks N songs (`picks_required`, set per pack on the console; **default 16** from 2026-11-17 — `HITS_DEFAULT_PICKS`; Pack 12 ran 18); #1 gives a song N points … #N gives 1; songs rank by total (ties:
+  how many ballots picked it, then CSV row order); the ballot closest to that order wins — distance =
+  sum over the final top N of |ballot position − final rank|, a missing song counts as N+1; ties go to
+  the earlier `updated_at` (`sidebet.js` `weightedTally` / `ballotDistance` / `rankByDistance`).
+  **Only ballots with a finished A&R Team profile count**, for the winner AND the song ranking.
+  `/api/admin/hits/settle` (refused while picks are open; re-runnable) writes `pack_songs.points /
+  pickers / final_rank` and `sidebet_entries.correct (= in the top N) / distance / exact / rank`,
+  `packs.scoring = 'weighted'`. The old played-set settle is kept for history (`scoring = 'played'`).
+  **The page has four states** (`/api/sidebet` → `state`): preregister (no pack open: name, email,
+  phone — ALL required, operator 2026-11-13 — into `hits_subscribers`, no email code) · open ·
+  closed (results coming + the form) · results (`?pack=<id|slug>`: winner, the Top N by RANK ONLY,
+  your own result, then the form or "Pick the Hits" when the next pack is open). Never prints the
+  number of entrants. **Two admin sends** on the console's Results & sends card (`hits.js`):
+  "the pack is open" (email + text to the list, email to every past entrant, only while open) and
+  the public results email (winner, top 10, Notify me / Pick the Hits, Get featured → /push).
+  Rows in `hits_sends` (unique per pack/kind/channel/address, claimed before send), so a second
+  press reaches only new people; one-click unsubscribe per subscriber; Send test to me; list CSV.
+  Mockups: `public/_mock-pick-the-hits-results.html`, `public/_mock-pick-the-hits-landing.html`.
+
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
    bracket for the stream; the Promo Budget crediting for the artist tournament; the Series

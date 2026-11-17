@@ -1,5 +1,5 @@
 'use strict';
-const { consensusRanking, scoreEntry, rankEntries, validatePicks } = require('./sidebet');
+const { consensusRanking, scoreEntry, rankEntries, validatePicks, weightedTally, ballotDistance, rankByDistance } = require('./sidebet');
 
 let pass = 0, fail = 0;
 function eq(label, got, want) {
@@ -131,6 +131,40 @@ eq('the error names the shortfall', validatePicks(['a'], valid, 18).error, 'Pick
   ]);
   eq('worked example: closer order beats an earlier entry', r.map(x => x.id), ['denise', 'marcus']);
   eq('worked example: both got everything right', r.map(x => x.correct), [3, 3]);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n— Pick the Hits: weighted tally —');
+{
+  const songs = [{ id: 'a', row_no: 1 }, { id: 'b', row_no: 2 }, { id: 'c', row_no: 3 }, { id: 'd', row_no: 4 }];
+  const P = (ids) => ({ picks: ids.map((id, i) => ({ pack_song_id: id, position: i + 1 })) });
+  // N = 3: #1 = 3 points, #2 = 2, #3 = 1.
+  const t = weightedTally([P(['a', 'b', 'c']), P(['b', 'a', 'c']), P(['a', 'c', 'b'])], songs, 3);
+  eq('points: a 3+2+3, b 2+3+1, c 1+1+2', t.map(x => [x.id, x.points]), [['a', 8], ['b', 6], ['c', 4], ['d', 0]]);
+  eq('ranks 1..3, nobody picked d', t.map(x => x.rank), [1, 2, 3, null]);
+  eq('pickers and #1 picks', t.map(x => [x.pickers, x.ones]), [[3, 2], [3, 1], [3, 0], [0, 0]]);
+  // A points tie breaks on how many ballots picked it, then CSV row order.
+  const t2 = weightedTally([P(['c', 'd', 'a']), P(['d', 'a', 'b'])], songs, 3);
+  // c 3, d 2+3=5, a 1+2=3, b 1 → d, then a (2 pickers) over c (1 picker), then b
+  eq('ties break on pickers', t2.map(x => x.id), ['d', 'a', 'c', 'b']);
+  const t3 = weightedTally([P(['b', 'a', 'c']), P(['a', 'b', 'd'])], songs, 3);
+  eq('then on row order', t3.map(x => x.id).slice(0, 2), ['a', 'b']);
+  eq('a position outside 1..N is ignored',
+    weightedTally([{ picks: [{ pack_song_id: 'a', position: 9 }] }], songs, 3)[0].points, 0);
+
+  // Distance: final order a, b, c. Missing counts as N+1.
+  const top = ['a', 'b', 'c'];
+  eq('a perfect ballot is 0', ballotDistance(P(['a', 'b', 'c']).picks, top, 3), { distance: 0, hits: 3, exact: 3 });
+  eq('a swap costs 2', ballotDistance(P(['b', 'a', 'c']).picks, top, 3), { distance: 2, hits: 3, exact: 1 });
+  // a@1 ok, b missing → |4-2| = 2, c@2 → 1
+  eq('a missing song counts as N+1', ballotDistance(P(['a', 'c', 'd']).picks, top, 3), { distance: 3, hits: 2, exact: 1 });
+
+  const r = rankByDistance([
+    { id: 'x', distance: 5, updated_at: 100 },
+    { id: 'y', distance: 2, updated_at: 300 },
+    { id: 'z', distance: 2, updated_at: 200 },
+  ]);
+  eq('closest wins, a tie goes to the earlier final ballot', r.map(e => [e.id, e.rank]), [['z', 1], ['y', 2], ['x', 3]]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

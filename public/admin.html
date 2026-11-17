@@ -722,7 +722,7 @@
             <div><label>Watch link <span class="muted">(shown on the landing page when live)</span></label><input id="tnWatch" placeholder="https://www.youtube.com/@makinitmag/live"></div>
           </div>
           <div class="row">
-            <div><label>Polls in the final</label><input id="tnFinalPolls" inputmode="numeric" placeholder="3"><div class="hint">4 + 2 + 3 = 9 polls = 18 songs, the number Pick the Hits counts on.</div></div>
+            <div><label>Polls in the final</label><input id="tnFinalPolls" inputmode="numeric" placeholder="3"><div class="hint">4 + 2 + 3 = 9 polls = 18 songs.</div></div>
             <div><label>Reminder email goes out</label>
               <select id="tnRemind">
                 <option value="120">2 hours before</option>
@@ -870,7 +870,7 @@
       <div class="row" style="gap:8px;flex:0 0 auto">
         <button class="btn ghost sm hide" id="btnAnalytics">Analytics</button>
         <button class="btn ghost sm hide" id="btnCharts">Charts</button>
-        <button class="btn ghost sm hide" id="btnSidebet">Sidebet</button>
+        <button class="btn ghost sm hide" id="btnSidebet">Pick the Hits</button>
         <button class="btn ghost sm hide" id="btnTournaments">Tournaments</button>
         <button class="btn ghost sm hide" id="btnManageUsers">Users</button>
         <button class="btn ghost sm hide" id="btnPlatform">Platform</button>
@@ -1814,10 +1814,10 @@
   <div class="stack">
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-        <h2 style="margin:0">Sidebet</h2>
+        <h2 style="margin:0">Pick the Hits</h2>
         <button class="btn ghost sm" id="btnSidebetBack">← My rooms</button>
       </div>
-      <p class="muted" style="font-size:12px;margin:0 0 14px">The A&amp;R Wars prediction contest at <b>/sidebet</b>. Entrants pick which songs from the service pack will actually get played; most right wins. <b>Only one iteration can be open at a time.</b> Pick counts stay hidden until you settle — they're the tiebreak, so showing them would make copying the crowd the winning move.</p>
+      <p class="muted" style="font-size:12px;margin:0 0 14px">The Service Pack contest at <b>/hits</b>. Entrants rank their top songs from the pack: a #1 pick gives that song as many points as there are picks, down to 1 point for the last. Songs rank by total; the entry closest to that order wins. <b>Only entries with a finished A&amp;R Team profile count.</b> With no pack open, /hits collects name, email and phone for the notify list. <b>Only one pack can be open at a time.</b> Pick counts stay hidden until you tally.</p>
       <div id="sbList"><div class="muted" style="font-size:13px">Loading…</div></div>
       <div class="row" style="margin-top:12px;gap:8px"><button class="btn sm" id="sbNew">New iteration</button></div>
     </div>
@@ -1828,15 +1828,15 @@
       <div class="stack">
         <div><label>Service pack title</label><input id="sbName" placeholder="e.g. September 2026 A&amp;R Service Pack"></div>
         <div class="sb-grid">
-          <div><label>Number of songs to predict</label><input id="sbPicks" type="number" min="1" max="50" value="18">
-            <div class="hint" id="sbPicksHint">18 = the A&amp;R Wars bracket (4 + 2 + 3 polls × 2 songs).</div></div>
+          <div><label>Number of songs to predict</label><input id="sbPicks" type="number" min="1" max="50" value="16">
+            <div class="hint" id="sbPicksHint">#1 is worth this many points; the last pick is worth 1.</div></div>
           <div><label>Prize <span class="muted">(printed on the page)</span></label><input id="sbPrize" placeholder="$150"></div>
         </div>
         <div><label>Sponsor line <span class="muted">(optional)</span></label><input id="sbSponsor" placeholder="courtesy of our sponsor"></div>
         <div><label>Download link for the service pack</label><input id="sbUrl" placeholder="https://…">
           <div class="hint">Opens in a new tab. Not a gate — nobody is blocked from entering without it.</div></div>
         <div class="sb-grid">
-          <div><label>A&amp;R Wars tournament date <span class="muted">(ET)</span></label><input id="sbWars" type="datetime-local"></div>
+          <div><label>Results date <span class="muted">(ET, optional — shown on the page)</span></label><input id="sbWars" type="datetime-local"></div>
           <div><label>Cut-off to submit / edit picks <span class="muted">(ET)</span></label><input id="sbCut" type="datetime-local">
             <div class="hint" id="sbCutHint">Entries freeze at this moment.</div></div>
         </div>
@@ -1844,12 +1844,13 @@
           <div><label>Sponsor banner <span class="muted">(optional)</span></label>
             <select id="sbBanner"><option value="">No banner — hide the slot</option></select>
             <div class="hint">Same banner library as rooms. No fallback to the house banner: the page says "courtesy of our sponsor," so an unrelated advertiser there would be wrong. Unset means no slot at all.</div></div>
-          <div><label>A&amp;R Wars room <span class="muted">(links the played songs)</span></label>
+          <div class="hide"><label>A&amp;R Wars room <span class="muted">(links the played songs)</span></label>
             <select id="sbSession"><option value="">Not linked yet</option></select>
             <div class="hint">Set this once the Wars room exists — it's what pre-ticks the settle checklist.</div></div>
         </div>
         <div><label>Status</label>
-          <select id="sbStatus"><option value="draft">Draft — not visible</option><option value="open">Open — accepting entries</option><option value="closed">Closed — entries frozen</option></select></div>
+          <select id="sbStatus"><option value="draft">Draft — not visible</option><option value="open">Open — accepting entries</option><option value="closed">Closed — entries frozen</option></select>
+          <div class="hint">Opening a pack does not message anyone. Send the "pack is open" notice from Results &amp; sends.</div></div>
         <div class="hint bad hide" id="sbFormErr"></div>
         <div class="row" style="gap:8px"><button class="btn" id="sbSave">Save iteration</button><button class="btn ghost" id="sbCancel">Cancel</button></div>
       </div>
@@ -1858,7 +1859,7 @@
     <!-- songs -->
     <div class="card hide" id="sbSongsCard">
       <h2>Service pack songs</h2>
-      <p class="muted" style="font-size:12px;margin:0 0 12px"><b style="color:var(--gold)">Row order is load-bearing.</b> When two played songs were picked by the same number of entrants, CSV row order breaks the tie — so it's fixed before any entry exists. Columns: <span class="mono">title, artist</span>, header row optional.</p>
+      <p class="muted" style="font-size:12px;margin:0 0 12px"><b style="color:var(--gold)">Row order is load-bearing.</b> When two songs tie on points and on how many entries picked them, CSV row order breaks the tie — so it's fixed before any entry exists. Columns: <span class="mono">title, artist</span>, header row optional.</p>
       <div class="drop" id="sbDrop">
         <div style="font-size:15px;font-weight:700" id="sbDropBig">Drop a CSV here, or choose a file</div>
         <div style="font-size:12.5px;color:var(--ink-faint);margin-top:5px" id="sbDropSub">Nothing loaded yet</div>
@@ -1869,19 +1870,10 @@
       <div id="sbCsvOut"></div>
     </div>
 
-    <!-- settle -->
+    <!-- results & sends (Pick the Hits, 055) -->
     <div class="card hide" id="sbSettleCard">
-      <h2>Confirm what was played</h2>
-      <p class="muted" style="font-size:12px;margin:0 0 12px">Pre-ticked from the A&amp;R Wars Versus rounds when the room is linked. Confirm or correct, then settle. <b>Settle is blocked at anything other than the exact count</b> — a miscount doesn't error, it quietly crowns the wrong person.</p>
-      <div class="tally">
-        <span><span class="n ok" id="sbSn">0</span> <span class="lbl" id="sbSnLbl">of 0 marked played</span></span>
-        <span class="lbl" id="sbSrc"></span>
-      </div>
-      <div class="scroller" id="sbChecks"></div>
-      <div class="hint" id="sbSettleHint"></div>
-      <div class="row" style="gap:8px;margin-top:12px"><button class="btn" id="sbSettle">Settle &amp; publish results</button></div>
-      <div class="locked">Settling scores every entry and <b>unhides pick counts</b>. It can be re-run while the iteration isn't settled, so a corrected checklist produces a corrected result.</div>
-      <div id="sbResults"></div>
+      <h2 id="phTitle">Results &amp; sends</h2>
+      <div id="phBody"><div class="muted" style="font-size:13px">Loading…</div></div>
     </div>
   </div>
 </div>
@@ -5862,7 +5854,7 @@ async function openSidebet(){
 async function loadSidebet(){
   try{
     const d=await api('/api/admin/sidebet',null,'GET');
-    SB.packs=d.packs||[]; SB.banners=d.banners||[]; SB.rooms=d.rooms||[];
+    SB.packs=d.packs||[]; SB.defaultPicks=d.defaultPicks||16; SB.banners=d.banners||[]; SB.rooms=d.rooms||[];
     renderSbList();
   }catch(e){ $('#sbList').innerHTML='<div class="hint bad">'+esc(e.message)+'</div>'; }
 }
@@ -5891,18 +5883,18 @@ const sbFmt=ms=>ms?new Date(ms).toLocaleString('en-US',{month:'short',day:'numer
 function renderSbList(){
   if(!SB.packs.length){ $('#sbList').innerHTML='<div class="muted" style="font-size:13px">No iterations yet.</div>'; return; }
   $('#sbList').innerHTML=`<table class="data-table"><tr>
-      <th>Service pack</th><th>Picks</th><th>Songs</th><th>Entries</th><th>Wars</th><th>Status</th><th></th></tr>`+
+      <th>Service pack</th><th>Picks</th><th>Songs</th><th>Entries</th><th>Picks close</th><th>Status</th><th></th></tr>`+
     SB.packs.map(k=>`<tr>
       <td><b>${esc(k.name)}</b></td>
       <td class="mono">${k.picksRequired}</td>
       <td class="mono">${k.songs}</td>
       <td class="mono">${k.entries}</td>
-      <td>${esc(sbFmt(k.warsAt))}</td>
+      <td>${esc(sbFmt(k.closesAt))}</td>
       <td><span class="pill ${k.status==='open'?'live':''}">${esc(k.status)}</span></td>
       <td style="text-align:right;white-space:nowrap">
         <button class="btn ghost sm sb-edit" data-id="${esc(k.id)}">Edit</button>
         <button class="btn ghost sm sb-songs" data-id="${esc(k.id)}">Songs</button>
-        <button class="btn ghost sm sb-settle" data-id="${esc(k.id)}">Settle</button>
+        <button class="btn ghost sm sb-settle" data-id="${esc(k.id)}">Results &amp; sends</button>
       </td></tr>`).join('')+'</table>';
   document.querySelectorAll('#sbList .sb-edit').forEach(b=>b.onclick=()=>sbEdit(b.dataset.id));
   document.querySelectorAll('#sbList .sb-songs').forEach(b=>b.onclick=()=>sbOpenSongs(b.dataset.id));
@@ -5915,7 +5907,7 @@ function sbFillForm(k){
   SB.editing=k?k.id:null;
   $('#sbFormTitle').textContent=k?'Edit iteration':'New iteration';
   $('#sbName').value=k?k.name:'';
-  $('#sbPicks').value=k?k.picksRequired:18;
+  $('#sbPicks').value=k?k.picksRequired:(SB.defaultPicks||16);
   $('#sbPrize').value=k&&k.prizeText||'';
   $('#sbSponsor').value=k&&k.sponsorText||'';
   $('#sbUrl').value=k&&k.downloadUrl||'';
@@ -5937,14 +5929,12 @@ function sbEdit(id){ sbFillForm(SB.packs.find(x=>x.id===id)); }
 function sbCheckDates(){
   const w=localInputToMs($('#sbWars').value), c=localInputToMs($('#sbCut').value);
   const h=$('#sbCutHint');
-  if(w&&c&&c>=w){ h.className='hint bad'; h.textContent='The cut-off must be before the tournament starts — entries can’t stay open once songs are playing.'; $('#sbSave').disabled=true; }
+  if(w&&c&&c>w){ h.className='hint bad'; h.textContent='The results date can’t be before the cut-off.'; $('#sbSave').disabled=true; }
   else { h.className='hint'; h.textContent='Entries freeze at this moment.'; $('#sbSave').disabled=false; }
 }
 function sbCheckPicks(){
   const n=+$('#sbPicks').value, h=$('#sbPicksHint');
-  if(n===18){h.className='hint';h.textContent='18 = the A&R Wars bracket (4 + 2 + 3 polls × 2 songs).';}
-  else if(n%2){h.className='hint warn';h.textContent=n+' is odd — every matchup plays two songs, so a bracket total is always even.';}
-  else {h.className='hint';h.textContent=n+' songs to predict. Every screen and the scoring read this value.';}
+  h.className='hint'; h.textContent=n>0?`Each entry ranks ${n} songs. #1 is worth ${n} points, #${n} is worth 1.`:'';
 }
 
 async function sbSave(){
@@ -5952,7 +5942,7 @@ async function sbSave(){
   const body={
     id:SB.editing||undefined,
     name:$('#sbName').value.trim(),
-    picksRequired:+$('#sbPicks').value||18,
+    picksRequired:+$('#sbPicks').value||SB.defaultPicks||16,
     prizeText:$('#sbPrize').value.trim(),
     sponsorText:$('#sbSponsor').value.trim(),
     downloadUrl:$('#sbUrl').value.trim(),
@@ -6023,43 +6013,112 @@ function sbRenderCSV(rows){
 }
 function sbReadFile(f){ const r=new FileReader(); r.onload=()=>sbRenderCSV(sbParseCSV(r.result)); r.readAsText(f); }
 
-// ---- settle ----
+// ---- results & sends (Pick the Hits, 055) ----
+// One card per pack: the notify list, the "pack is open" notice (email + text), the tally,
+// the standings, and the public results email. Every send is a press that writes one row per
+// address it hasn't reached yet for this pack, then drains; the card loops until nothing is
+// pending, so a second press only reaches people who signed up since.
+let PH=null;
 async function sbOpenSettle(id){
-  SB.editing=id;
+  SB.editing=id; sbShow('sbSettleCard');
+  $('#phBody').innerHTML='<div class="muted" style="font-size:13px">Loading…</div>';
+  await phLoad();
+}
+async function phLoad(){
+  try{ PH=await api('/api/admin/hits?packId='+encodeURIComponent(SB.editing),null,'GET'); phRender(); }
+  catch(e){ $('#phBody').innerHTML='<div class="hint bad">'+esc(e.message)+'</div>'; }
+}
+function phCounts(c){
+  const e=c.email,t=c.sms;
+  const parts=[`${e.sent} emails sent`];
+  if(t.sent||t.failed||t.pending)parts.push(`${t.sent} texts sent`);
+  if(e.pending+t.pending)parts.push(`${e.pending+t.pending} waiting`);
+  if(e.failed+t.failed)parts.push(`<span style="color:var(--hot)">${e.failed+t.failed} failed</span>`);
+  return parts.join(' · ');
+}
+function phRender(){
+  const k=PH.pack, L=PH.list; if(!k)return;
+  $('#phTitle').textContent='Results & sends · '+k.name;
+  const settled=k.status==='settled'&&k.scoring==='weighted';
+  const canTally=!k.open&&k.status!=='draft';
+  const openSent=k.sends.open, resSent=k.sends.results;
+  let h=`<div class="tally"><span><span class="n ok">${L.subscribed}</span> <span class="lbl">on the notify list · ${L.withPhone} with a phone</span></span>
+      <button class="btn ghost sm" id="phCsv">Download list (CSV)</button></div>
+    <div class="tally"><span><span class="n ${k.counting===k.entries?'ok':'bad'}">${k.counting}</span> <span class="lbl">of ${k.entries} entries count (finished profile)</span></span>
+      <span class="lbl">${k.open?'picks open · close '+esc(sbFmt(k.closesAt)):'picks closed'}</span></div>
+
+    <h3 style="margin:16px 0 4px">1 · "The pack is open" notice</h3>
+    <p class="muted" style="font-size:12px;margin:0 0 8px">Email and text to everyone on the notify list, plus an email to everyone who entered a past pack. Only while the pack is open.</p>
+    <div class="hint">${phCounts(openSent)}</div>
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn sm" id="phSendOpen" ${k.open?'':'disabled'}>Send the open notice</button><button class="btn ghost sm" id="phTestOpen">Send test to me</button></div>
+
+    <h3 style="margin:18px 0 4px">2 · Tally the results</h3>
+    <p class="muted" style="font-size:12px;margin:0 0 8px">Scores every entry that counts and publishes the results page. Re-run it if a profile is finished late or an entry is removed.</p>
+    <div class="row" style="gap:8px"><button class="btn sm" id="phTally" ${canTally?'':'disabled'}>${settled?'Re-tally':'Tally & publish results'}</button>${settled?`<a class="btn ghost sm" href="/hits?pack=${encodeURIComponent(k.id)}" target="_blank" rel="noopener">Open the results page ↗</a>`:''}</div>
+    ${canTally?'':'<div class="hint">Available once picks close.</div>'}
+    <div class="hint bad hide" id="phErr"></div>`;
+  if(settled){
+    h+=`<h3 style="margin:18px 0 6px">Standings</h3>
+      <table class="data-table"><tr><th>#</th><th>Entrant</th><th>Distance</th><th>In the top ${(SB.packs.find(x=>x.id===SB.editing)||{}).picksRequired||''}</th><th>Exact</th></tr>
+      ${(PH.standings||[]).map(r=>`<tr><td class="mono">${r.rank}</td><td>${esc(r.name)}${r.location?` <span class="muted">· ${esc(r.location)}</span>`:''}</td><td class="mono">${r.distance}</td><td class="mono">${r.hits}</td><td class="mono">${r.exact}</td></tr>`).join('')}</table>
+      ${(PH.notCounted||[]).length?`<div class="hint warn">Not counted (profile not finished): ${PH.notCounted.map(esc).join(', ')}</div>`:''}
+      <h3 style="margin:18px 0 6px">Songs</h3>
+      <div class="scroller"><table class="data-table"><tr><th>#</th><th>Song</th><th>Points</th><th>Picked by</th></tr>
+      ${(PH.songs||[]).map(x=>`<tr><td class="mono">${x.rank==null?'—':x.rank}</td><td>${esc(x.title)}${x.artist?` <span class="muted">· ${esc(x.artist)}</span>`:''}</td><td class="mono">${x.points}</td><td class="mono">${x.pickers}</td></tr>`).join('')}</table></div>
+      <div class="hint">Points and pick counts are for you. The public page and the email show ranks only.</div>`;
+  }
+  h+=`<h3 style="margin:18px 0 4px">3 · The results email</h3>
+    <p class="muted" style="font-size:12px;margin:0 0 8px">Winner, the top 10, "Notify me" (or "Pick the Hits" if the next pack is open), and "Get featured" for artists. To the notify list plus every past entrant. Email only.</p>
+    <div class="hint">${phCounts(resSent)}</div>
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn sm" id="phSendRes" ${settled?'':'disabled'}>Send the results email</button><button class="btn ghost sm" id="phTestRes" ${settled?'':'disabled'}>Send test to me</button></div>
+    <div class="hint" id="phMsg"></div>`;
+  $('#phBody').innerHTML=h;
+  $('#phCsv').onclick=phCsv;
+  $('#phTally').onclick=phTally;
+  $('#phSendOpen').onclick=()=>phSend('open');
+  $('#phSendRes').onclick=()=>phSend('results');
+  $('#phTestOpen').onclick=()=>phTest('open');
+  $('#phTestRes').onclick=()=>phTest('results');
+}
+function phErr(m){ const e=$('#phErr'); if(e){ e.textContent=m; e.classList.remove('hide'); } else alert(m); }
+async function phCsv(){
   try{
-    const d=await api('/api/admin/sidebet/checklist?packId='+encodeURIComponent(id),null,'GET');
-    SB.need=d.picksRequired; SB.checks=d.songs;
-    $('#sbResults').innerHTML='';
-    sbRenderChecks(); sbShow('sbSettleCard');
+    const h={}; if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;
+    const r=await fetch('/api/admin/hits/subscribers.csv',{headers:h});
+    if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Download failed');
+    anDownload('pick-the-hits-list.csv',await r.text(),'text/csv');
   }catch(e){ alert(e.message); }
 }
-function sbRenderChecks(){
-  $('#sbChecks').innerHTML=SB.checks.map((s,i)=>`<div class="ck ${s.played?'on':''}" data-i="${i}">
-    <span class="box">✓</span><span>${esc(s.title)} ${s.artist?`<span class="muted">· ${esc(s.artist)}</span>`:''}</span>
-    <span class="src">${s.derived?'Versus round':''}</span></div>`).join('');
-  document.querySelectorAll('#sbChecks .ck').forEach(el=>el.onclick=()=>{
-    const i=+el.dataset.i; SB.checks[i].played=!SB.checks[i].played; sbRenderChecks();
-  });
-  const n=SB.checks.filter(s=>s.played).length, need=SB.need;
-  const el=$('#sbSn'); el.textContent=n; el.className='n '+(n===need?'ok':'bad');
-  $('#sbSnLbl').textContent='of '+need+' marked played';
-  const auto=SB.checks.filter(s=>s.played&&s.derived).length;
-  $('#sbSrc').textContent=`${auto} from Versus rounds · ${n-auto} by hand`;
-  const h=$('#sbSettleHint');
-  if(n===need){h.className='hint';h.textContent='Ready to settle.';$('#sbSettle').disabled=false;}
-  else {h.className='hint bad';h.textContent=`${n} marked, ${need} required. Settle is blocked — a miscount would crown the wrong person without erroring.`;$('#sbSettle').disabled=true;}
-}
-async function sbDoSettle(){
-  const played=SB.checks.filter(s=>s.played).map(s=>s.id);
-  if(!confirm(`Settle with ${played.length} songs marked played? This scores every entry and makes pick counts readable.`))return;
+async function phTally(){
+  if(!confirm('Tally '+PH.pack.name+' and publish the results page?'))return;
   try{
-    const d=await api('/api/admin/sidebet/settle',{packId:SB.editing,played});
-    await loadSidebet();
-    $('#sbResults').innerHTML='<h2 style="margin-top:18px">Final standings</h2>'+
-      `<table class="data-table"><tr><th>#</th><th>A&R</th><th>Right</th><th>Order distance</th></tr>`+
-      (d.results||[]).map(r=>`<tr><td class="mono">${r.rank}</td><td>${esc(r.name)}${r.location?` <span class="muted">· ${esc(r.location)}</span>`:''}</td><td class="mono">${r.correct}</td><td class="mono">${r.distance}</td></tr>`).join('')+
-      '</table>';
-  }catch(e){ const h=$('#sbSettleHint'); h.className='hint bad'; h.textContent=e.message; }
+    const d=await api('/api/admin/hits/settle',{packId:SB.editing});
+    if(d.warning)alert(d.warning);
+    await loadSidebet(); await phLoad();
+  }catch(e){ phErr(e.message); }
+}
+async function phSend(kind){
+  const label=kind==='open'?'the "pack is open" notice (email + text)':'the results email';
+  if(!confirm(`Send ${label} now? Everyone it has not reached yet for this pack gets it.`))return;
+  const msg=$('#phMsg'); let first=true, total=0, failed=0;
+  try{
+    for(let i=0;i<40;i++){
+      msg.textContent=`Sending… ${total} sent so far`;
+      const d=await api('/api/admin/hits/send',{packId:SB.editing,kind,drainOnly:!first});
+      first=false; total+=d.sent; failed+=d.failed;
+      if(!d.remaining)break;
+    }
+    await phLoad();
+    const m=$('#phMsg'); if(m)m.textContent=`Done: ${total} sent${failed?`, ${failed} failed`:''}.`;
+  }catch(e){ msg.textContent=''; phErr(e.message); }
+}
+async function phTest(kind){
+  try{
+    const d=await api('/api/admin/hits/test',{packId:SB.editing,kind});
+    const bits=[]; if(d.email)bits.push('email to '+d.email); if(d.sms)bits.push('text to '+d.sms);
+    if(d.emailError)bits.push('email failed: '+d.emailError); if(d.smsError)bits.push('text failed: '+d.smsError);
+    $('#phMsg').textContent=bits.length?'Test sent: '+bits.join(' · '):'No email or phone on your account.';
+  }catch(e){ phErr(e.message); }
 }
 
 $('#btnSidebet')&&($('#btnSidebet').onclick=openSidebet);
@@ -6070,7 +6129,6 @@ $('#sbSave')&&($('#sbSave').onclick=sbSave);
 $('#sbWars')&&($('#sbWars').oninput=sbCheckDates);
 $('#sbCut')&&($('#sbCut').oninput=sbCheckDates);
 $('#sbPicks')&&($('#sbPicks').oninput=sbCheckPicks);
-$('#sbSettle')&&($('#sbSettle').onclick=sbDoSettle);
 $('#sbFile')&&($('#sbFile').onchange=e=>{const f=e.target.files[0];if(f)sbReadFile(f);});
 if($('#sbDrop')){
   ['dragover','dragenter'].forEach(ev=>$('#sbDrop').addEventListener(ev,e=>e.preventDefault()));

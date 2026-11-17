@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — Pick the Hits page + email</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#0e0c1a; --panel:#171328; --panel2:#1d1733; --line:#2e2750; --inset:#0a0814;
+    --ink:#eae9f2; --dim:#9793b4; --faint:#7d789e;
+    --signal:#4bb749; --on-signal:#06210b; --purple:#6d5fe0; --gold:#f5c518;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:Archivo,system-ui,sans-serif;padding:32px 16px 90px}
+  .mono{font-family:"Space Mono",monospace}
+  .top{max-width:1180px;margin:0 auto 10px;text-align:center}
+  .top h1{font-weight:900;letter-spacing:-.04em;font-size:34px;margin:0}
+  .top p{color:var(--dim);font-size:14.5px;line-height:1.55;max-width:720px;margin:10px auto 0}
+  .mocklabel{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--signal);margin:60px 0 6px;text-align:center}
+  .mocknote{font-size:13.5px;line-height:1.55;color:var(--dim);text-align:center;max-width:700px;margin:0 auto 22px}
+  .mocknote b{color:var(--ink)}
+  .cols{display:flex;gap:28px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+  .caption{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);text-align:center;margin:10px 0 0;max-width:390px}
+
+  /* phone */
+  .phone{width:390px;max-width:100%;background:radial-gradient(130% 80% at 50% -10%,#221a48 0%,var(--ground) 60%);
+    border:1px solid #1d1833;border-radius:22px;padding:22px 18px 26px}
+  .brandbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .brandbar img{height:30px;display:block}
+  .eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  h2{margin:6px 0 0;font-weight:900;font-size:32px;line-height:1.02;letter-spacing:-.04em}
+  h3{margin:0;font-weight:800;font-size:19px;letter-spacing:-.03em}
+  p{margin:10px 0 0;font-size:14.5px;line-height:1.5;color:var(--dim)}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px}
+  .gold{color:var(--gold)} .green{color:var(--signal)} .purple{color:#9d92ff}
+  .btn{display:block;width:100%;background:var(--signal);color:var(--on-signal);border:0;border-radius:14px;padding:15px;
+    font-family:Archivo;font-size:16px;font-weight:800;text-align:center;margin-top:14px;text-decoration:none}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:700}
+  .btn.purple{background:var(--purple);color:#fff}
+
+  /* winner */
+  .winner{display:flex;align-items:center;gap:14px}
+  .winner .av{width:58px;height:58px;border-radius:50%;background:#2a2148;border:2px solid var(--gold);display:grid;place-items:center;font-weight:900;font-size:22px;color:var(--gold);flex:none}
+  .winner .nm{font-weight:900;font-size:24px;letter-spacing:-.03em}
+  .winner .sub{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--dim);margin-top:3px}
+  .prize{font-family:"Space Mono",monospace;font-weight:700;color:var(--gold);font-size:13px;letter-spacing:.06em}
+
+  /* ranked list */
+  .list{list-style:none;margin:10px 0 0;padding:0}
+  .list li{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+  .list li:first-child{border-top:0}
+  .rk{width:34px;height:28px;flex:none;display:grid;place-items:center;transform:skewX(-13deg);border-radius:4px;background:#241d40;
+    font-family:"Space Mono",monospace;font-weight:700;font-size:13px}
+  .rk span{transform:skewX(13deg)}
+  .rk.one{background:var(--gold);color:#1a1400}
+  .t{font-weight:800;font-size:15px;letter-spacing:-.02em;line-height:1.15}
+  .a{font-size:12.5px;color:var(--dim);margin-top:2px}
+  .more{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--faint);text-align:center;margin-top:8px}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .stat{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .stat .n{font-family:"Space Mono",monospace;font-weight:700;font-size:26px;letter-spacing:-.03em;line-height:1}
+  .stat .l{font-size:12px;color:var(--dim);margin-top:6px;line-height:1.35}
+  .big{font-family:"Space Mono",monospace;font-weight:700;font-size:64px;letter-spacing:-.05em;line-height:1}
+  .big small{font-size:20px;color:var(--dim);letter-spacing:0}
+
+  /* ballot check */
+  .check li .mark{width:20px;flex:none;font-family:"Space Mono",monospace;font-size:12px;font-weight:700;text-align:center}
+  .check li .fin{margin-left:auto;font-family:"Space Mono",monospace;font-size:11.5px;color:var(--faint);white-space:nowrap}
+  .check li.hit .fin{color:var(--signal)}
+
+  /* who picked */
+  .who{list-style:none;padding:0;margin:12px 0 0}
+  .who li{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:13.5px}
+  .who .bar{height:10px;background:var(--signal);border-radius:2px;transform:skewX(-13deg)}
+  .who .c{font-family:"Space Mono",monospace;font-size:12px;width:16px;text-align:right;color:var(--ink)}
+  .who .lab{width:104px;color:var(--dim)}
+
+  .rule{height:2px;background:linear-gradient(90deg,var(--purple),transparent);margin:18px 0 0;transform:skewX(-13deg)}
+  .placed{list-style:none;padding:0;margin:10px 0 0}
+  .placed li{font-size:13.5px;color:var(--dim);padding:5px 0 5px 18px;position:relative}
+  .placed li:before{content:"";position:absolute;left:2px;top:11px;width:7px;height:7px;background:var(--purple);transform:skewX(-13deg)}
+
+  /* IG slide */
+  .slide{width:360px;height:450px;background:var(--ground);border-radius:6px;overflow:hidden;position:relative;border:1px solid #1d1833}
+  .slide .cut{position:absolute;left:-40px;right:-40px;bottom:0;height:105px;background:var(--purple);transform:skewY(-13deg);transform-origin:left bottom}
+  .slide .in{position:absolute;inset:26px 24px}
+  .slide .k{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.24em;color:var(--dim);text-transform:uppercase;margin-top:10px}
+  .slide .h{font-weight:900;font-size:48px;line-height:.9;letter-spacing:-.05em;margin-top:16px}
+  .slide .w{margin-top:14px;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+  .slide .wn{font-weight:900;font-size:30px;letter-spacing:-.04em;color:var(--gold);margin-top:4px}
+  .slide .foot{position:absolute;left:24px;right:24px;bottom:22px;color:#fff;font-weight:800;font-size:15px;z-index:2}
+  .slide .foot .mono{font-size:11px;font-weight:400;opacity:.85;margin-top:3px}
+  .slide.list .row{display:flex;align-items:center;gap:10px;margin-top:9px}
+  .slide.list .rk{width:30px;height:24px;font-size:11.5px}
+  .slide.list .t{font-size:13px} .slide.list .a{font-size:11px;margin-top:1px}
+
+  .placeholder{outline:1px dashed var(--gold);outline-offset:2px}
+
+  /* form */
+  .field{margin-top:12px}
+  .field label{display:block;font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+  .field input{width:100%;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:13px 14px;color:var(--ink);font-family:Archivo;font-size:15px}
+  .fine{font-size:11.5px;line-height:1.45;color:var(--faint);margin-top:10px}
+  .steps{list-style:none;padding:0;margin:12px 0 0;counter-reset:s}
+  .steps li{counter-increment:s;display:flex;gap:12px;align-items:flex-start;padding:7px 0;font-size:14.5px;line-height:1.4}
+  .steps li:before{content:counter(s);flex:none;width:26px;height:22px;display:grid;place-items:center;transform:skewX(-13deg);border-radius:3px;background:#241d40;font-family:"Space Mono",monospace;font-size:12px;font-weight:700}
+  .clock{display:flex;gap:8px;margin-top:12px}
+  .clock div{flex:1;background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:10px 0;text-align:center}
+  .clock b{display:block;font-family:"Space Mono",monospace;font-size:22px;color:var(--signal)}
+  .clock span{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.18em;color:var(--faint);text-transform:uppercase}
+  .done{display:flex;gap:12px;align-items:center}
+  .done .tick{width:34px;height:30px;flex:none;background:var(--signal);transform:skewX(-13deg);border-radius:4px;display:grid;place-items:center}
+  .done .tick svg{transform:skewX(13deg)}
+
+  /* email (light) */
+  .mail{width:600px;max-width:100%;background:#fff;color:#1b1830;border-radius:8px;overflow:hidden;font-family:Archivo,Arial,sans-serif}
+  .mail .hdr{background:#0e0c1a;padding:20px 28px;display:flex;justify-content:space-between;align-items:center}
+  .mail .hdr img{height:28px}
+  .mail .bd{padding:28px}
+  .mail .ey{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#6b6788;font-weight:700}
+  .mail h1{font-weight:900;font-size:34px;letter-spacing:-.04em;line-height:1.02;margin:8px 0 0}
+  .mail p{color:#47435f;font-size:15.5px;line-height:1.55;margin:12px 0 0}
+  .mail .win{margin-top:22px;border:1px solid #e3e1ee;border-radius:12px;padding:18px;display:flex;align-items:center;gap:14px}
+  .mail .win .av{width:56px;height:56px;border-radius:50%;background:#f5c518;color:#1a1400;display:grid;place-items:center;font-weight:900;font-size:21px;flex:none}
+  .mail .win .nm{font-weight:900;font-size:22px;letter-spacing:-.03em}
+  .mail .win .pz{display:inline-block;margin-top:5px;background:#f5c518;color:#1a1400;font-family:"Space Mono",monospace;font-weight:700;font-size:12px;padding:3px 8px;border-radius:4px}
+  .mail h2{font-weight:900;font-size:21px;letter-spacing:-.03em;margin:28px 0 0}
+  .mail table{width:100%;border-collapse:collapse;margin-top:10px}
+  .mail td{padding:9px 0;border-top:1px solid #ecebf3;font-size:15px;vertical-align:middle}
+  .mail td.r{width:44px;font-family:"Space Mono",monospace;font-weight:700;color:#6b6788}
+  .mail td.r.one{color:#1a1400}
+  .mail td.r.one span{background:#f5c518;padding:2px 7px;border-radius:3px}
+  .mail td .a{color:#6b6788;font-size:13px}
+  .mail td.h{text-align:right;font-family:"Space Mono",monospace;font-size:12px;color:#4c3fbd}
+  .mail .btn{display:block;text-align:center;border-radius:10px;padding:15px;font-weight:800;font-size:16px;text-decoration:none;margin-top:14px}
+  .mail .btn.g{background:#2f8f2e;color:#fff}
+  .mail .btn.p{background:#4c3fbd;color:#fff}
+  .mail .box{margin-top:26px;border-radius:12px;padding:20px;background:#f6f5fb;border:1px solid #e3e1ee}
+  .mail .box.p{border-left:4px solid #4c3fbd}
+  .mail .box.g{border-left:4px solid #2f8f2e}
+  .mail .box h3{font-weight:900;font-size:19px;letter-spacing:-.03em;margin:0}
+  .mail .box ul{margin:10px 0 0;padding-left:18px;color:#47435f;font-size:14.5px;line-height:1.6}
+  .mail .ft{padding:18px 28px 26px;font-size:12px;color:#8a86a3;line-height:1.5;border-top:1px solid #ecebf3}
+  .mail .ft a{color:#6b6788}
+  .swap{display:flex;gap:10px;justify-content:center;margin:0 0 14px}
+  .swap button{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-family:"Space Mono",monospace;font-size:11.5px;cursor:pointer}
+  .swap button.on{background:var(--signal);color:var(--on-signal);border-color:var(--signal)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="eyebrow">Mockup · not built</div>
+  <h1>Pick the Hits: the page and the results email</h1>
+  <p>One address, four states. The page changes with the pack, so a link in a post, a bio or an email never goes dead.
+  Pack 13 isn't open yet, so the first state is the one that's live today. Dates and times in <span class="placeholder">dashed gold</span> are placeholders.</p>
+</div>
+
+<!-- ============ LANDING STATES ============ -->
+<div class="mocklabel">1 · The page, four states</div>
+<p class="mocknote"><b>Not open yet</b> and <b>Closed</b> collect name, email and phone for the notify list. <b>All three are required.</b> <b>Open</b> is the contest. <b>Results</b> shows the winner and the Top 18 with the notify form under it, or "Enter Pack 13" once Pack 13 is open. No email code on the notify form: it's a sign-up, not an entry.</p>
+<div class="cols">
+
+  <!-- A. NOT OPEN YET -->
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt="A&R Service Pack"><span class="eyebrow">Pack 13</span></div>
+      <div class="eyebrow">Pick the Hits</div>
+      <h2>Pick the hits. Win <span class="gold">$150</span>.</h2>
+      <p>The next A&amp;R Service Pack isn't open yet. Enter your info below to get notified when it's ready.</p>
+
+      <div class="panel">
+        <h3>Get notified when Pack 13 opens</h3>
+        <p style="font-size:13.5px">We'll email and text you when the pack is ready to download and pick.</p>
+        <div class="field"><label>Name</label><input value="" placeholder="Your name"></div>
+        <div class="field"><label>Email</label><input value="" placeholder="you@email.com"></div>
+        <div class="field"><label>Phone</label><input value="" placeholder="(555) 555-5555" required></div>
+        <a class="btn" href="#">Notify me</a>
+        <div class="fine">By entering your phone number you agree to receive texts from Makin' It about Pick the Hits. Msg &amp; data rates may apply. Reply STOP to opt out.</div>
+      </div>
+
+      <div class="panel">
+        <div class="eyebrow">How it works</div>
+        <ol class="steps">
+          <li>Download this month's A&amp;R Service Pack.</li>
+          <li>Pick your top 18 songs, in order.</li>
+          <li>The entry closest to everyone's combined picks wins $150.</li>
+        </ol>
+      </div>
+
+      <a class="btn ghost" href="#">See Pack 12 results</a>
+    </div>
+    <div class="caption">A · Not open yet (live today)</div>
+  </div>
+
+  <!-- A2. After submit -->
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt="A&R Service Pack"><span class="eyebrow">Pack 13</span></div>
+      <div class="eyebrow">Pick the Hits</div>
+      <h2>Pick the hits. Win <span class="gold">$150</span>.</h2>
+      <div class="panel">
+        <div class="done">
+          <div class="tick"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7" stroke="#06210b" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div><h3>You're on the list.</h3></div>
+        </div>
+        <p>We'll email and text you when Pack 13 opens for download and picks.</p>
+      </div>
+      <div class="panel">
+        <h3>While you wait</h3>
+        <p style="font-size:13.5px">Rate today's records on The A&amp;R Team. Every record you rate builds your standing.</p>
+        <a class="btn" href="#">Rate today's records</a>
+      </div>
+      <div class="panel">
+        <h3>Are you an artist?</h3>
+        <p style="font-size:13.5px">Get your song in Pack 13. A&amp;R Service Pack · 450+ downloads.</p>
+        <a class="btn purple" href="#">Get featured in the next pack</a>
+      </div>
+    </div>
+    <div class="caption">A · After "Notify me"</div>
+  </div>
+
+  <!-- B. OPEN -->
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt="A&R Service Pack"><span class="eyebrow">Pack 13</span></div>
+      <div class="eyebrow green">Open now</div>
+      <h2>Pick the hits. Win <span class="gold">$150</span>.</h2>
+      <p>Pick the top 18 songs from A&amp;R Service Pack 13 for a chance to win $150 cash.</p>
+      <div class="panel">
+        <div class="eyebrow">Picks close <span class="placeholder">Sun, Dec 14 · 11:59 PM ET</span></div>
+        <div class="clock"><div><b>12</b><span>days</span></div><div><b>06</b><span>hrs</span></div><div><b>41</b><span>min</span></div></div>
+      </div>
+      <div class="panel">
+        <ol class="steps">
+          <li>Download A&amp;R Service Pack 13.</li>
+          <li>Pick your top 18 songs, in order.</li>
+          <li>Fill out your A&amp;R Team profile so your entry counts.</li>
+          <li>The entry closest to everyone's combined picks wins $150.</li>
+        </ol>
+        <a class="btn ghost" href="#">Download the pack</a>
+        <a class="btn" href="#">Start my picks</a>
+      </div>
+    </div>
+    <div class="caption">B · Open</div>
+  </div>
+
+  <!-- C. CLOSED -->
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt="A&R Service Pack"><span class="eyebrow">Pack 13</span></div>
+      <div class="eyebrow">Picks closed</div>
+      <h2>Picks are closed. Results are coming.</h2>
+      <p>Results for Pack 13 post <span class="placeholder">Tue, Dec 16</span>. Everyone who entered gets an email with their result.</p>
+      <div class="panel">
+        <h3>Get notified when Pack 14 opens</h3>
+        <div class="field"><label>Name</label><input placeholder="Your name"></div>
+        <div class="field"><label>Email</label><input placeholder="you@email.com"></div>
+        <div class="field"><label>Phone</label><input placeholder="(555) 555-5555"></div>
+        <a class="btn" href="#">Notify me</a>
+      </div>
+    </div>
+    <div class="caption">C · Closed, results coming</div>
+  </div>
+
+  <!-- D. RESULTS -->
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt="A&R Service Pack"><span class="eyebrow">Pack 12</span></div>
+      <div class="eyebrow">Pick the Hits · Results</div>
+      <h2>The listeners picked the hits.</h2>
+      <div class="panel">
+        <div class="eyebrow">Winner</div>
+        <div class="winner" style="margin-top:10px">
+          <div class="av">DS</div>
+          <div><div class="nm">Dora Smith</div><div class="sub">Closest to the final order</div></div>
+        </div>
+        <div class="prize" style="margin-top:12px">WINS $150</div>
+      </div>
+      <div class="panel">
+        <div class="eyebrow">The Top 18</div>
+        <ol class="list">
+          <li><div class="rk one"><span>1</span></div><div><div class="t">Sweet Lady</div><div class="a">Hoolibabyneeno</div></div></li>
+          <li><div class="rk"><span>2</span></div><div><div class="t">T O X I C</div><div class="a">Kamilla Kali</div></div></li>
+          <li><div class="rk"><span>3</span></div><div><div class="t">Body Language</div><div class="a">Boomwah</div></div></li>
+        </ol>
+        <div class="more">#4 to #18 below</div>
+      </div>
+      <div class="panel">
+        <h3>Pick the Hits returns with Service Pack 13.</h3>
+        <p style="font-size:13.5px">Get notified when it opens and pick your top 18 for a chance to win $150.</p>
+        <div class="field"><label>Name</label><input placeholder="Your name"></div>
+        <div class="field"><label>Email</label><input placeholder="you@email.com"></div>
+        <div class="field"><label>Phone</label><input placeholder="(555) 555-5555"></div>
+        <a class="btn" href="#">Notify me</a>
+      </div>
+    </div>
+    <div class="caption">D · Results posted (Pack 13 not open yet)</div>
+  </div>
+</div>
+
+<!-- ============ NOTIFICATION ============ -->
+<div class="mocklabel">2 · The "it's open" notice</div>
+<p class="mocknote">What the list gets the moment a pack opens. One email, one text. The text stays plain and inside one 160-character segment.</p>
+<div class="cols">
+  <div class="phone" style="padding:18px">
+    <div class="eyebrow">Text</div>
+    <div style="margin-top:10px;background:#2a2547;border-radius:16px 16px 16px 4px;padding:12px 14px;font-size:14.5px;line-height:1.45">Makin' It: A&amp;R Service Pack 13 is open. Download it and pick your top 18 for a chance to win $150: makinitmag.com/hits Reply STOP to opt out</div>
+    <div class="caption" style="text-align:left">139 characters · plain text · 1 segment</div>
+  </div>
+  <div class="mail" style="width:420px">
+    <div class="hdr"><img src="brand/lockups/anr-service-pack-h.svg" alt=""><span class="ey" style="color:#9793b4">Pack 13</span></div>
+    <div class="bd">
+      <div class="ey">Subject: Service Pack 13 is open. Pick the hits, win $150.</div>
+      <h1 style="font-size:28px">Pack 13 is open.</h1>
+      <p>Hi <span class="placeholder">[first name]</span>, A&amp;R Service Pack 13 is ready. Download it and pick your top 18 songs for a chance to win $150 cash.</p>
+      <p>Picks close <span class="placeholder">Sunday, December 14 at 11:59 PM ET</span>.</p>
+      <a class="btn g" href="#">Pick the Hits</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ RESULTS EMAIL ============ -->
+<div class="mocklabel">3 · The public results email</div>
+<p class="mocknote">Goes to the whole Pick the Hits list plus everyone who entered. The Pick the Hits button follows the pack: <b>Notify me</b> while Pack 13 isn't open, <b>Pick the Hits</b> once it is. Switch between them here.</p>
+<div class="swap"><button class="on" data-v="pre">Pack 13 not open</button><button data-v="open">Pack 13 open</button></div>
+<div class="cols">
+  <div class="mail">
+    <div class="hdr"><img src="brand/lockups/anr-service-pack-h.svg" alt=""><span class="ey" style="color:#9793b4">Pick the Hits · Pack 12</span></div>
+    <div class="bd">
+      <div class="ey">Subject: Pick the Hits results: Dora Smith wins $150</div>
+      <h1>The listeners picked the hits.</h1>
+      <p>Listeners ranked their top 18 songs from A&amp;R Service Pack 12. Here is the final order and the entry that came closest.</p>
+
+      <div class="win">
+        <div class="av">DS</div>
+        <div><div class="ey" style="font-size:10px">Winner</div><div class="nm">Dora Smith</div><span class="pz">WINS $150</span></div>
+      </div>
+
+      <h2>The top songs from Service Pack 12</h2>
+      <table>
+        <tr><td class="r one"><span>1</span></td><td><b>Sweet Lady</b><br><span class="a">Hoolibabyneeno</span></td><td class="h">@handle</td></tr>
+        <tr><td class="r">2</td><td><b>T O X I C</b><br><span class="a">Kamilla Kali</span></td><td class="h">@handle</td></tr>
+        <tr><td class="r">3</td><td><b>Body Language</b><br><span class="a">Boomwah</span></td><td class="h">@handle</td></tr>
+        <tr><td class="r">4</td><td><b>SMOOTH TALKER</b><br><span class="a">Diamond Desireé</span></td><td class="h"></td></tr>
+        <tr><td class="r">5</td><td><b>Say my Fkn Name</b><br><span class="a">KiiWii Babe</span></td><td class="h"></td></tr>
+        <tr><td class="r">6</td><td><b>Meanwhile Back At The Ranch</b><br><span class="a">Hue Brown</span></td><td class="h"></td></tr>
+        <tr><td class="r">7</td><td><b>My,My</b><br><span class="a">AL Laye</span></td><td class="h"></td></tr>
+        <tr><td class="r">8</td><td><b>Touch It</b><br><span class="a">Jean Bernard Fatal</span></td><td class="h"></td></tr>
+        <tr><td class="r">9</td><td><b>East Side Kids</b><br><span class="a">SPADE777</span></td><td class="h"></td></tr>
+        <tr><td class="r">10</td><td><b>ATM</b><br><span class="a">$kinnyPurp Featuring The Black Royal</span></td><td class="h"></td></tr>
+      </table>
+      <p style="font-size:13.5px"><a href="#" style="color:#2f8f2e;font-weight:700">See the full Top 18</a> · Instagram handles shown where we have them <span class="placeholder">(handles above are placeholders)</span>.</p>
+
+      <div class="box g">
+        <div data-show="pre">
+          <h3>Pick the Hits returns with Service Pack 13.</h3>
+          <p style="font-size:14.5px;margin-top:8px">Get notified when it opens and pick your top 18 for a chance to win $150.</p>
+          <a class="btn g" href="#">Notify me</a>
+        </div>
+        <div data-show="open" hidden>
+          <h3>Service Pack 13 is open now.</h3>
+          <p style="font-size:14.5px;margin-top:8px">Download it and pick your top 18 for a chance to win $150. Picks close <span class="placeholder">Sun, Dec 14</span>.</p>
+          <a class="btn g" href="#">Pick the Hits</a>
+        </div>
+      </div>
+
+      <div class="box p">
+        <h3>Artists: get featured in the next Service Pack.</h3>
+        <ul>
+          <li>A&amp;R Service Pack placement · 450+ downloads</li>
+          <li>Spotify playlist placement</li>
+          <li>Promo video and collab post with @MakinIt4Indies</li>
+        </ul>
+        <a class="btn p" href="#">Get featured · makinitmag.com/push</a>
+      </div>
+    </div>
+    <div class="ft">You're getting this because you signed up for Pick the Hits or entered a past pack.<br><a href="#">Unsubscribe</a> · Makin' It Magazine</div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.swap button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.swap button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('[data-show]').forEach(el=>el.hidden=el.dataset.show!==b.dataset.v);
+});
+</script>
+</body>
+</html>
