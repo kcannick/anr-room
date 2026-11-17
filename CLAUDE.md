@@ -709,7 +709,13 @@ live on anr.makinitmag.com.
   for a Meeting record (needs 20 rated records before the page shows), the series or every
   live show for a live one. Email rebuilt as a sibling of the site's template (mim
   `docs/mockups/email-template-round1.html`): decision first, the rating as evidence, the
-  pages, the comments, the post instructions; still no price or upsell (tested). The SMS says
+  pages, the comments, the post instructions; still no price or upsell (tested). **Re-laid out
+  2026-11-17 (operator):** four sections, each opened by a rule and a heading — intro ("Hi
+  <first name>," + the decision), Your Track Report, Hear feedback on records? (the daily
+  9 PM ET / 6 PM PT stream, ONE Subscribe on YouTube button), Brand Partnership Opportunity for
+  <artist> (the testimonial ask, the site's `mim_wins_anr_pitch()` copy word for word, button to
+  makinitmag.com/testimonial/review). ONE big ask per email: the "Share your Track Report"
+  carousel request and the mid-report subscribe block are GONE (tested). The SMS says
   "has been rated", never "evaluated live". **Still open (spec §2):** calibrating the band
   edges to the real quartiles — `?meta=1` returns them — and naming the 7+ raters with
   consent; and a hosted report page → `reportUrl` in the §12 callback.

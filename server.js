@@ -5762,20 +5762,40 @@ function asyncQueueOrder(seedKey, sessionId, rounds) {
   return arr;
 }
 
-const artistEmailText = (d) => `Your Track Report — ${d.title}\n\n`
+// The two sections under the report (operator, 2026-11-17). ONE big ask per email, and in the
+// Track Report it is the testimonial, so the old "Share your Track Report" request is gone.
+// Order: intro, the report, Hear feedback, the Brand Partnership Opportunity.
+// TESTIMONIAL_PITCH is the site's own offer, word for word (mim: mim_wins_anr_pitch()). The
+// offer is a collab post, not a sale: no price of ours, nothing to buy (the no-upsell test stands).
+const HEAR_FEEDBACK_HEAD = 'Hear feedback on records?';
+const HEAR_FEEDBACK_LINE = 'Join us daily at 9 PM ET / 6 PM PT on YouTube for the live feedback session and hear what people had to say about the records. Will your song set off the fire alarm?';
+const HEAR_FEEDBACK_NOTE = "Turn on notifications for reminders. We're also live on TikTok and Instagram.";
+const TESTIMONIAL_HEAD = 'Brand Partnership Opportunity';
+const TESTIMONIAL_PITCH = [
+  "We're investing $6,000 in an Ad Campaign to Promote the A&R Team. We want to partner with actual Artists, Producers, and Songwriters who've submitted and received feedback.",
+  "If you submit a testimonial we'll do a collab post with you to further expose you to our Audience. If the post does well we will add it to the Ad campaign for even more people to see you.",
+];
+const TESTIMONIAL_URL = 'https://www.makinitmag.com/testimonial/review';
+const TESTIMONIAL_CTA = 'Submit your testimonial';
+const artistFirstName = (artist) => (artist ? String(artist).trim().split(/\s+/)[0] : '');
+
+const artistEmailText = (d) => `Hi${artistFirstName(d.artist) ? ' ' + artistFirstName(d.artist) : ''},\n\n`
   + `${d.decision}\n\n`
-  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}. `
+  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}.\n\n`
+  + `YOUR TRACK REPORT\n\n`
   + `Official track rating: ${d.mean} out of 9. ${d.verdict || d.bandLabel}.\n\n`
-  + (d.subscribe ? `${subscribeBlockText()}\n\n` : '')
+  + `Your Track Report is attached as ${d.pages.length} images.\n\n`
   + (d.watchUrl ? `${d.watchLabel || 'Watch the room hear your record'}: ${d.watchUrl}\n\n` : '')
   + artistCommentsText(d.comments)
-  + `Your Track Report is attached as ${d.pages.length} images. Share them as one Instagram carousel, `
-  + `add @Makinit4indies as a collaborator, and tag ${d.hashtag}.\n\n`
+  + `${HEAR_FEEDBACK_HEAD.toUpperCase()}\n\n${HEAR_FEEDBACK_LINE}\n${SUBSCRIBE_CTA}: ${LIVE_SUBSCRIBE_URL}\n${HEAR_FEEDBACK_NOTE}\n\n`
+  + `${(TESTIMONIAL_HEAD + (d.artist ? ' for ' + d.artist : '')).toUpperCase()}\n\n${TESTIMONIAL_PITCH.join('\n\n')}\n${TESTIMONIAL_CTA}: ${TESTIMONIAL_URL}\n\n`
   + `Submit another record: https://${shareCards.SUBMIT_URL}`;
 
-// The artist's report email: the decision first, the rating as evidence, every report page,
-// the A&R comments attributed, and the post instructions. Deliberately carries NO price or
-// upsell — the operator's call: visibility first (see the postshow-artist-workflow memory).
+// The artist's report email, in four sections, each opened by a rule and a heading (operator,
+// 2026-11-17): the intro (the decision first), Your Track Report (the rating as evidence, every
+// report page, the A&R comments attributed), Hear feedback (the daily stream, one subscribe
+// button), and the Brand Partnership Opportunity (the testimonial ask). Deliberately carries NO
+// price or upsell — the operator's call: visibility first (see the postshow-artist-workflow memory).
 // Built as a sibling of the site's own email template (mim docs/mockups/email-template-
 // round1.html: the #0D0E12 masthead well, #17191D body, #24272C cards, green = go, 24px
 // pill buttons, Open Sans), so the mail looks like the site the links land on.
@@ -5802,17 +5822,29 @@ const artistCommentsText = (comments) => (!comments || !comments.length) ? ''
     + comments.map(c => `"${c.body}"\n— ${c.name}${[c.role, c.location].filter(Boolean).length ? ' (' + [c.role, c.location].filter(Boolean).join(', ') + ')' : ''}`).join('\n\n')
     + `\n\nComments are the personal opinions of individual A&Rs who scored the record.\n\n`;
 
-function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag, subscribe = false }) {
+// A section opener for the artist mails: a green rule, then a heading. `title` is already escaped.
+function artistSectionHtml(title) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:30px 0 16px;">
+            <tr><td bgcolor="#4BB749" height="2" style="background:#4BB749;height:2px;font-size:1px;line-height:1px;">&nbsp;</td></tr>
+            <tr><td align="center" style="padding:18px 4px 0;text-align:center;">
+              <p style="margin:0;font-size:20px;line-height:1.3;font-weight:800;color:#F6F7FB;">${title}</p>
+            </td></tr>
+          </table>`;
+}
+
+function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments }) {
   what = what || 'A&R Meeting';
-  hashtag = hashtag || (what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting');
   const pageBlock = (pages || []).filter(Boolean).map((u, i) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Track Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:10px;display:block;margin:0 auto 10px;border:1px solid #2C2F34"></a>`
   ).join('');
-  const watchBlock = subscribe ? `
-      ${subscribeBlockHtml('artist')}` : watchUrl ? `
+  // A live session keeps its own replay link. A daily record has none: the Hear feedback
+  // section below is where every artist is sent to watch.
+  const watchBlock = watchUrl ? `
       <p style="margin:6px 0 4px;"><a href="${watchUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">${escapeHtml(watchLabel || 'Watch the room hear your record')}</a></p>
       <p style="font-size:12px;line-height:1.55;color:#8A94A6;margin:0 0 14px;">Go to your record in the replay. Short clips of the live response are the easiest thing to post.</p>` : '';
-  const first = artist ? escapeHtml(String(artist).split(/\s+/)[0]) : '';
+  const first = escapeHtml(artistFirstName(artist));
+  const pill = 'display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;';
+  const body = 'font-size:14px;line-height:1.6;color:#B0B7C3;';
   return `<div style="background:#17191D;padding:26px 12px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#F6F7FB;">
     <div style="max-width:600px;margin:0 auto;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0D0E12" style="background:#0D0E12;border-radius:12px 12px 0 0;">
@@ -5824,9 +5856,10 @@ function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, vo
       </table>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#17191D" style="background:#17191D;border:1px solid #2C2F34;border-top:0;border-radius:0 0 12px 12px;">
         <tr><td style="padding:22px 18px 24px;text-align:center;">
-          <p style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:bold;margin:0 0 10px;">Your Track Report${first ? ', ' + first : ''}</p>
+          <p style="font-size:15px;line-height:1.5;color:#F6F7FB;margin:0 0 12px;">Hi${first ? ' ' + first : ''},</p>
           <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F6F7FB;">${escapeHtml(decision || '')}</h1>
-          <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0 0 18px;"><b style="color:#F6F7FB">“${escapeHtml(title)}”</b>${artist ? ' by ' + escapeHtml(artist) : ''} was rated by <b style="color:#F6F7FB">${escapeHtml(String(votes || 0))} A&amp;Rs</b> in The ${escapeHtml(what)} on ${escapeHtml(dateLabel || '')}.</p>
+          <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0;"><b style="color:#F6F7FB">“${escapeHtml(title)}”</b>${artist ? ' by ' + escapeHtml(artist) : ''} was rated by <b style="color:#F6F7FB">${escapeHtml(String(votes || 0))} A&amp;Rs</b> in The ${escapeHtml(what)} on ${escapeHtml(dateLabel || '')}.</p>
+          ${artistSectionHtml('Your Track Report')}
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#24272C" style="background:#24272C;border:1px solid #2C2F34;border-radius:10px;margin-bottom:16px;">
             <tr><td align="center" style="padding:16px;">
               <p style="margin:0;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:bold;">Official track rating</p>
@@ -5838,13 +5871,15 @@ function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, vo
           ${pageBlock}
           ${watchBlock}
           ${artistCommentsHtml(comments)}
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#24272C" style="background:#24272C;border:1px solid #2F6B31;border-radius:10px;margin-top:22px;">
-            <tr><td style="padding:14px 15px;text-align:left;">
-              <p style="margin:0 0 6px;font-size:14px;font-weight:bold;color:#F6F7FB;">Share your Track Report</p>
-              <p style="margin:0;font-size:13px;line-height:1.6;color:#B0B7C3;">Post the pages as one Instagram <b style="color:#F6F7FB">carousel</b>. Add <b style="color:#F6F7FB">@Makinit4indies</b> as a <b>collaborator</b> and tag <b style="color:#F6F7FB">${escapeHtml(hashtag)}</b>. The last page carries no score, so it is the one to lead with.</p>
-            </td></tr>
-          </table>
-          <p style="font-size:12.5px;color:#8A94A6;margin:20px 0 0;">Submit another record → <a href="https://${shareCards.SUBMIT_URL}" style="color:#4BB749;text-decoration:none;">${shareCards.SUBMIT_URL}</a></p>
+          ${artistSectionHtml(escapeHtml(HEAR_FEEDBACK_HEAD))}
+          <p style="${body}margin:0 0 14px;">${escapeHtml(HEAR_FEEDBACK_LINE)}</p>
+          <a href="${LIVE_SUBSCRIBE_URL}" style="${pill}">${SUBSCRIBE_CTA}</a>
+          <p style="font-size:12.5px;line-height:1.55;color:#8A94A6;margin:12px 0 0;">${escapeHtml(HEAR_FEEDBACK_NOTE)}</p>
+          ${artistSectionHtml(escapeHtml(TESTIMONIAL_HEAD + (artist ? ' for ' + artist : '')))}
+          <p style="${body}margin:0 0 10px;">${escapeHtml(TESTIMONIAL_PITCH[0])}</p>
+          <p style="${body}margin:0 0 14px;">${escapeHtml(TESTIMONIAL_PITCH[1])}</p>
+          <a href="${TESTIMONIAL_URL}" style="${pill}">${TESTIMONIAL_CTA}</a>
+          <p style="font-size:12.5px;color:#8A94A6;margin:30px 0 0;">Submit another record → <a href="https://${shareCards.SUBMIT_URL}" style="color:#4BB749;text-decoration:none;">${shareCards.SUBMIT_URL}</a></p>
         </td></tr>
       </table>
     </div>
@@ -5878,12 +5913,11 @@ async function sendArtistReportEmail(round, session, dest) {
   const common = {
     title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, verdict: d.band.verdict, decision, votes: d.votes,
     what: d.what, dateLabel: d.dateLabel,
-    // A daily record has no replay: the YouTube subscribe block replaces the watch link.
+    // A daily record has no replay: the Hear feedback section is where it is sent to watch.
     // A live session keeps its own replay link.
-    subscribe: isAsync(session),
     watchUrl: isAsync(session) ? null : (session.watch_url || null),
     watchLabel: null,
-    pages, comments: d.comments, hashtag: d.what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting',
+    pages, comments: d.comments,
   };
   const html = artistEmailHtml(common);
   const text = artistEmailText(common);
