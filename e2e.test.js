@@ -5612,6 +5612,16 @@ async function startVoting(sessionId, headers, minutes = 5) {
     try { d2 = await call('/api/admin/charts/notify', { q: cnQ }, 'POST', ADMINH); } finally { Date.now = realNow; }
     ok('notify: a drain inside the window sends the held texts and nothing new', d2.status === 200 && !d2.d.started && d2.d.sent === 2 && d2.d.held === 0
       && d2.d.sends[0].textsSent === 2 && d2.d.sends[0].pending === 0, JSON.stringify(d2.d.sends));
+    // A request killed mid-send (Vercel's 30s cap) leaves a row claimed as 'sending' forever:
+    // the card lists it as not confirmed, never as pending, and only an explicit retry resends it.
+    await dDb.run("UPDATE chart_notice_rcpts SET status = 'sending' WHERE channel = 'email'");
+    const stuckG = await call('/api/admin/charts/notify?' + cnQ, null, 'GET', ADMINH);
+    ok('notify: a cut-off row shows as not confirmed, not as pending', stuckG.d.sends[0].stuck.length === 1 && stuckG.d.sends[0].pending === 0
+      && stuckG.d.sends[0].stuck[0].to.includes("•"), JSON.stringify(stuckG.d.sends[0]));
+    const plainDrain = await call('/api/admin/charts/notify', { q: cnQ }, 'POST', ADMINH);
+    ok('notify: a plain drain leaves a cut-off row alone', plainDrain.d.sent === 0 && plainDrain.d.sends[0].stuck.length === 1, JSON.stringify(plainDrain.d.sends[0]));
+    const retry = await call('/api/admin/charts/notify', { q: cnQ, retryStuck: true }, 'POST', ADMINH);
+    ok('notify: "Send it again" resends the cut-off row', retry.status === 200 && retry.d.sent === 1 && retry.d.sends[0].stuck.length === 0 && retry.d.sends[0].emailsSent === 1, JSON.stringify(retry.d.sends[0]));
     const again = await call('/api/admin/charts/notify', { q: cnQ, send: true, again: true, email: true, subject: 'Again [rank]', body: 'b' }, 'POST', ADMINH);
     ok('notify: Send again is a second send with its own rows', again.status === 200 && again.d.started.emails === 1 && again.d.started.texts === 0 && again.d.sends.length === 2, JSON.stringify(again.d.started));
     ok('notify: the list shows up under recent lists', again.d.recent.some(r => r.listKey === again.d.listKey && r.sends === 2), JSON.stringify(again.d.recent));

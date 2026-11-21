@@ -6407,16 +6407,22 @@ async function enqueueChartNotice({ q, data, plan, admin, subject, body, sms, wa
   await db.run(
     `INSERT INTO chart_notices (id, list_key, list_label, mode, subject, body, sms_body, post_url, by_uid, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [sendId, chartListKey(q), chartListLabel(data), data.mode, subject || null, body || null, sms || null, postUrl || null, admin.uid, at]);
+  // Rows go in 50 to a statement: one INSERT per recipient was ~200 round trips to Neon on a
+  // HOT 100, which ate most of the request's 30s before a single message went out (2026-11-21).
   let emails = 0, texts = 0;
+  const all = [];
   for (const [channel, list] of [['email', wantEmail ? plan.emails : []], ['sms', wantSms ? plan.phones : []]]) {
-    for (const x of list) {
+    for (const x of list) { all.push([channel, x]); channel === 'sms' ? texts++ : emails++; }
+  }
+  for (let i = 0; i < all.length; i += 50) {
+    const chunk = all.slice(i, i + 50), params = [];
+    for (const [channel, x] of chunk) {
       const p = x.person;
-      await db.run(
-        `INSERT INTO chart_notice_rcpts (id, send_id, channel, dest, uid, round_id, rank, name, title, artist, status, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?) ON CONFLICT (send_id, channel, dest) DO NOTHING`,
-        [id(12), sendId, channel, x.dest, p.uid || null, p.roundId || null, p.rank, p.name || null, p.title || null, p.artist || null, at]);
-      channel === 'sms' ? texts++ : emails++;
+      params.push(id(12), sendId, channel, x.dest, p.uid || null, p.roundId || null, p.rank, p.name || null, p.title || null, p.artist || null, at);
     }
+    await db.run(
+      `INSERT INTO chart_notice_rcpts (id, send_id, channel, dest, uid, round_id, rank, name, title, artist, status, created_at)
+       VALUES ${chunk.map(() => "(?,?,?,?,?,?,?,?,?,?,'pending',?)").join(',')} ON CONFLICT (send_id, channel, dest) DO NOTHING`, params);
   }
   return { sendId, emails, texts };
 }
@@ -6459,10 +6465,13 @@ async function chartNoticeState(q, data, plan) {
   const sends = [];
   for (const r of rows) {
     let c = sends.find(x => x.sendId === r.send_id);
-    if (!c) { c = { sendId: r.send_id, subject: r.subject || '', postUrl: r.post_url || '', startedAt: Number(r.started_at), emailsSent: 0, textsSent: 0, failed: [], pending: 0, held: 0, lastAt: null }; sends.push(c); }
+    if (!c) { c = { sendId: r.send_id, subject: r.subject || '', postUrl: r.post_url || '', startedAt: Number(r.started_at), emailsSent: 0, textsSent: 0, failed: [], stuck: [], pending: 0, held: 0, lastAt: null }; sends.push(c); }
     if (!r.channel) continue;
     if (r.status === 'sent') r.channel === 'sms' ? c.textsSent++ : c.emailsSent++;
     else if (r.status === 'failed') c.failed.push({ channel: r.channel, to: r.channel === 'sms' ? maskPhone(r.dest) : maskEmail(r.dest), error: r.error || 'send failed' });
+    // 'sending' = claimed but never finished: the request died mid-send (Vercel's 30s cap).
+    // Nothing retries it on its own (it may or may not have arrived), so the card lists it.
+    else if (r.status === 'sending') c.stuck.push({ channel: r.channel, to: r.channel === 'sms' ? maskPhone(r.dest) : maskEmail(r.dest) });
     else { c.pending++; if (r.channel === 'sms' && r.mode !== 'ars') c.held++; }
     if (r.sent_at && Number(r.sent_at) > (c.lastAt || 0)) c.lastAt = Number(r.sent_at);
   }
@@ -12427,6 +12436,10 @@ async function handleApi(req, res, url) {
   // alone drains what a deadline or the SMS window left pending. Platform-admin only: the
   // queue holds real addresses, and a chart spans every room.
   if (p === '/api/admin/charts/notify' && (method === 'GET' || method === 'POST')) {
+    // The send budget counts from HERE, not from the drain: building the chart and queueing
+    // 180 rows took most of Vercel's 30s on the Nov 2026 HOT 100, the drain then took its own
+    // 18s, and the function was killed mid-send. The console got a bare "Error".
+    const t0 = Date.now();
     const admin = await platformAdmin(req);
     if (!admin) return bad(res, 'Admin only', 403);
     const body = method === 'POST' ? await readBody(req) : {};
@@ -12438,6 +12451,13 @@ async function handleApi(req, res, url) {
     const plan = await chartNoticePlan(data);
     if (method === 'GET') return send(res, 200, await chartNoticeState(q, data, plan));
     let started = null;
+    // "Send them again" for rows stuck in 'sending' (a request that died mid-send). Explicit,
+    // because the message may already have arrived; a minute's grace so a drain running right
+    // now is never doubled.
+    if (body.retryStuck) {
+      await db.run(`UPDATE chart_notice_rcpts SET status = 'pending' WHERE status = 'sending'
+                      AND send_id IN (SELECT id FROM chart_notices WHERE list_key = ? AND created_at < ?)`, [chartListKey(q), now() - 60000]);
+    }
     if (body.send) {
       const subject = String(body.subject || '').trim().slice(0, 150);
       const text = String(body.body || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
@@ -12453,7 +12473,7 @@ async function handleApi(req, res, url) {
       if ((wantEmail ? plan.emails.length : 0) + (wantSms ? plan.phones.length : 0) === 0) return bad(res, 'Nobody on this list has a reachable email or phone', 400);
       started = await enqueueChartNotice({ q, data, plan, admin, subject, body: text, sms, wantEmail, wantSms, postUrl });
     }
-    const drained = await drainChartNotices({ listKey: chartListKey(q), deadline: Date.now() + 18000, base: publicBaseFromReq(req) });
+    const drained = await drainChartNotices({ listKey: chartListKey(q), deadline: t0 + 20000, base: publicBaseFromReq(req) });
     return send(res, 200, { ok: true, started, ...drained, ...(await chartNoticeState(q, data, plan)) });
   }
   // "Send test to me": the message rendered for the list's #1 (real tokens), to the admin's own
