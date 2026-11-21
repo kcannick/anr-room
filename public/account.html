@@ -12,14 +12,14 @@
 <style>
 /* ============================================================================
    /account — the A&R's account (2026-10-01), built to public/_mock-account.html: ONE page
-   with sections. "Earn points" is the default and is what /refer was (2026-09-18: two
-   links, two lanes, four graphics — now with real thumbnails); "My profile" is the public
+   with sections. "Earn points" (the referral page /refer used to be) was RETIRED 2026-11-21
+   with referral and scouting points; "My results" is the default now. "My profile" is the public
    record as anyone sees it; "Edit profile" goes to the edit form at /profile, which carries
    the same tab strip. "My results" (2026-10-02, mockup public/_mock-account-results.html) is
    the A&R's own results a week at a time: the open drop first, then each day they played,
    record by record. The results email links straight to it (/account#results). It shows
    points and NO RANK — the weekly announcement is where rank is revealed. /refer serves this same file, so signed #rt= links still land here.
-   Built to the approved canvas (design/refer/Main.dc.html) on the daily page's dialect:
+   Built on the daily page's dialect:
    Archivo display, Space Mono for every number and label. No prize is advertised (2026-10-23).
    Auth is whichever token this device holds: the account token from /join, or any
    per-session player token from a daily drop (the server resolves both to the same
@@ -177,9 +177,9 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
 .pf-row .v{text-align:right;min-width:0}
 .pill{display:inline-block;font-family:"Space Mono",monospace;font-size:10.5px;border:1px solid var(--line);border-radius:999px;padding:3px 9px;margin:2px 0 2px 4px;color:var(--ink)}
 .pill.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-/* Opens of the scout link (human only; diagnosis, never points). Approved 2026-09-23. */
-.opens{margin:-2px 0 0;font-family:"Space Mono",monospace;font-size:12px;color:var(--ink-dim)}
-.opens b{color:var(--ink);font-weight:700}
+/* The streak line under the week's numbers (2026-11-21). */
+.streak{display:flex;align-items:center;gap:9px;font-size:13px;line-height:1.45;color:var(--ink-dim)}
+.streak b{color:var(--ink);font-weight:800}
 .endorse{display:flex;align-items:center;justify-content:center;gap:9px;padding-top:4px}
 .endorse img{height:13px;width:auto;opacity:.75}
 </style>
@@ -228,64 +228,14 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
     </div>
 
     <div class="tabs" role="tablist">
-      <button class="tab on" data-sec="earn" role="tab">Earn points</button>
-      <button class="tab" data-sec="results" role="tab">My results</button>
+      <button class="tab on" data-sec="results" role="tab">My results</button>
       <button class="tab" data-sec="profile" role="tab">My profile</button>
       <button class="tab" data-sec="edit" role="tab">Edit profile</button>
     </div>
 
-    <!-- 1. EARN POINTS: the default section. SCOUTING FIRST, and bigger (operator, 2026-10-02):
-         referring artists to submit is the secondary game, the thing an A&R is always doing
-         outside of rating; recruiting A&Rs is second and not on equal footing. Copy is the
-         operator's verbatim. -->
-    <div class="sec on" id="sec-earn">
-    <div class="stack" style="gap:8px">
-      <h1 style="font-weight:900;font-size:28px;letter-spacing:-.04em;line-height:1.05">Earn more points</h1>
-      <p class="dim" style="margin:0;font-size:14.5px;line-height:1.55">Your A&amp;R promo graphics also contain QR codes with your link. Post/promote them to let everyone know you're an official member of our A&amp;R Team.</p>
-    </div>
-
-    <div class="panel lead">
-      <div class="section-head"><span class="tick"></span><span class="eyebrow">Scout talent</span></div>
-      <h2 style="font-size:23px;line-height:1.12">Refer artists to submit to earn bonus points. The higher their music scores, the more points you get.</h2>
-      <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="artistRule"></p>
-      <label>Your scout link</label>
-      <div class="linkrow"><span class="url" id="linkSubmit"></span><button class="copy" data-copy="linkSubmit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
-      <p class="opens hide" id="submitOpens"></p>
-      <div class="perk"><span class="tick"></span><span>Every artist gets a rating, a review and a full Track Report. Free with a Trusted Account. Support from $5 to move up the line.</span></div>
-      <div class="stats">
-        <div class="stat"><div class="k">Submitted</div><div class="v" id="artSubmitted">0</div></div>
-        <div class="stat"><div class="k">Rated</div><div class="v" id="artRated">0</div></div>
-        <div class="stat"><div class="k">Earned</div><div class="v earned" id="artEarned">+0</div></div>
-      </div>
-      <div class="rows" id="artRows"></div>
-    </div>
-
-    <div class="panel">
-      <div class="section-head"><span class="tick"></span><span class="eyebrow">Recruit A&amp;Rs</span></div>
-      <h2 style="font-size:18px;line-height:1.15">Know someone with a good ear for music? Share your Recruit link with them. Earn more points the better they do.</h2>
-      <p class="dim" style="margin:0;font-size:14px;line-height:1.55" id="arRule"></p>
-      <label>Your recruit link</label>
-      <div class="linkrow"><span class="url" id="linkJoin"></span><button class="copy" data-copy="linkJoin"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy</button></div>
-      <div class="stats">
-        <div class="stat"><div class="k">Recruited</div><div class="v" id="arReferred">0</div></div>
-        <div class="stat"><div class="k">Active</div><div class="v" id="arActive">0</div></div>
-        <div class="stat"><div class="k">Earned</div><div class="v earned" id="arEarned">+0</div></div>
-      </div>
-      <div class="rows" id="arRows"></div>
-    </div>
-    <p class="dim" style="margin:0;font-size:12.5px;line-height:1.5">Anyone who submits or joins through your link counts as yours.</p>
-
-    <div class="stack">
-      <div class="section-head"><span class="tick contest"></span><span class="eyebrow">Your A&amp;R promo graphics</span></div>
-      <p class="dim" style="margin:0;font-size:13px;line-height:1.5">Each one carries your link as a QR code. Your cards carry both. Post it, put the link in your bio, or send the link by DM.</p>
-      <div class="gfxgrid" id="gfxList"></div>
-      <div class="note" id="photoNote">Your card uses your profile photo. <a href="/profile">Add a photo</a> to use your face on it.</div>
-    </div>
-    </div>
-
     <!-- 2. MY RESULTS: the open drop first (the visit should end in rating today's records),
          then one week at a time, each day opening into its records. Points only, no rank. -->
-    <div class="sec" id="sec-results">
+    <div class="sec on" id="sec-results">
       <div id="rsOpen"></div>
       <!-- The grade card for the newest published day they played. Hidden until there is one. -->
       <div class="gc hide" id="gcPanel">
@@ -315,6 +265,7 @@ input.code{font-family:"Space Mono",monospace;font-size:26px;letter-spacing:.34e
         </div>
         <div class="stats four" id="rsStats"></div>
         <div class="wkline hide" id="rsLine"></div>
+        <div class="streak hide" id="rsStreak"><span class="tick"></span><span id="rsStreakText"></span></div>
       </div>
       <div class="section-head"><span class="tick"></span><span class="eyebrow">Day by day</span></div>
       <div class="days" id="rsDays"></div>
@@ -411,59 +362,22 @@ $('#btnVerify').onclick = async () => {
 };
 
 // ---- the page
-function stripProto(u){ return String(u || '').replace(/^https?:\/\//, ''); }
 function fmtPts(n){ return (n >= 0 ? '+' : '') + Number(n || 0).toLocaleString(); }
-function render(d){
-  const r = d.rules || {};
-  $('#linkJoin').textContent = stripProto(d.links.join);
-  $('#linkSubmit').textContent = stripProto(d.links.submit);
-  $('#linkJoin').dataset.full = d.links.join; $('#linkSubmit').dataset.full = d.links.submit;
-  const c = d.clicks;
-  if (c) {
-    $('#submitOpens').innerHTML = !c.total ? 'No one has opened this link yet.'
-      : '<b>' + c.week + '</b> ' + (c.week === 1 ? 'person' : 'people') + ' opened your link this week · <b>' + c.total + '</b> all time';
-    $('#submitOpens').classList.remove('hide');
-  }
-  $('#arRule').textContent = 'You earn ' + r.pointsPerRound + ' point for every round your recruit comes within ' + r.errMax + ' of the average, for their first ' + r.windowDays + ' days, up to ' + r.cap + ' points each.';
-  $('#artistRule').textContent = 'You earn ' + r.scoutMultiplier + ' times each referred record’s average. A 7.1 earns ' + Math.round(7.1 * r.scoutMultiplier) + ' points.';
-  $('#arReferred').textContent = d.ars.referred; $('#arActive').textContent = d.ars.active; $('#arEarned').textContent = fmtPts(d.ars.earned);
-  $('#artSubmitted').textContent = d.artists.submitted; $('#artRated').textContent = d.artists.rated; $('#artEarned').textContent = fmtPts(d.artists.earned);
-  $('#arRows').innerHTML = d.ars.rows.map(x => {
-    const right = !x.played ? 'joined, not yet played'
-      : (x.windowOpen ? ('day ' + x.day + ' of ' + r.windowDays + ' · ') : 'window closed · ') + '<b>' + fmtPts(x.points) + '</b>';
-    return '<div class="row"><span class="l">' + esc(x.name) + '</span><span class="r">' + right + '</span></div>';
-  }).join('') || '<div class="row dim"><span class="l">No one yet. Share your recruit link.</span></div>';
-  $('#artRows').innerHTML = d.artists.rows.map(x => {
-    const left = esc(x.artist ? (x.artist + ' · ' + x.title) : x.title);
-    const right = x.rated ? (Number(x.average).toFixed(1) + ' · <b>' + fmtPts(x.points) + '</b>') : 'submitted, not yet rated';
-    return '<div class="row"><span class="l">' + left + '</span><span class="r">' + right + '</span></div>';
-  }).join('') || '<div class="row dim"><span class="l">No records yet. Share your scout link.</span></div>';
-  // Each graphic is SHOWN, not described: the thumbnail is the same render as the download
-  // (432px wide), so the A&R sees their own card before deciding to save it. Tapping the
-  // picture or the button downloads the full-size file.
-  const what = { card: 'both QR codes', story: 'both QR codes', join: 'your recruit QR', submit: 'your scout QR' };
-  $('#gfxList').innerHTML = d.graphics.map(g => '<div class="gcard">'
-    + '<button class="gimg" data-kind="' + esc(g.kind) + '" data-url="' + esc(g.url) + '" aria-label="Download ' + esc(g.label) + '">'
-    + '<div class="wait" data-thumb="' + esc(g.thumb || '') + '">Loading</div></button>'
-    + '<div class="gt"><b>' + esc(g.label) + '</b><small>' + esc(String(g.size).replace(/\s/g, '')) + ' · ' + (what[g.kind] || '') + '</small></div>'
-    + '<a class="gdl" href="#" data-kind="' + esc(g.kind) + '" data-url="' + esc(g.url) + '">Download</a></div>').join('');
-  loadThumbs();
-  $('#photoNote').classList.toggle('hide', !!(d.me && d.me.hasPhoto));
+function renderAccount(d){
   renderMe(d.me || {});
+  renderStreak(d.streak);
 }
-// Thumbnails need the token in a header, so they are fetched and shown as blob URLs, one
-// after another (four Satori renders at once is four cold renders racing). The response is
-// privately cacheable for a day under a per-profile version key, so a return visit is free.
-async function loadThumbs(){
-  for(const el of document.querySelectorAll('#gfxList .wait[data-thumb]')){
-    const u = el.dataset.thumb; if(!u) { el.textContent = ''; continue; }
-    try{
-      const r = await fetch(u, { headers: authHeaders() || {} });
-      if(!r.ok) throw 0;
-      const img = new Image(); img.alt = ''; img.src = URL.createObjectURL(await r.blob());
-      el.replaceWith(img);
-    }catch(e){ el.textContent = 'Preview unavailable'; }
-  }
+// The streak (2026-11-21): drops completed in a row. Every 3rd drop in a row pays an extra
+// completion bonus (the 3rd pays 1, the 6th 2, the 9th 3, ...). A count only.
+function renderStreak(sk){
+  const box = $('#rsStreak');
+  if(!sk){ box.classList.add('hide'); return; }
+  const t = $('#rsStreakText'); t.textContent = '';
+  const b = document.createElement('b');
+  b.textContent = 'Streak: ' + sk.days + ' drop' + (sk.days === 1 ? '' : 's') + ' in a row.';
+  t.appendChild(b);
+  t.appendChild(document.createTextNode(' Complete every drop: every ' + sk.every + ' in a row pays an extra completion bonus. Drop ' + sk.nextMilestone + ' of your streak pays ' + sk.nextMultiplier + '.'));
+  box.classList.remove('hide');
 }
 // ---- the account header + My profile. The header comes from the same payload as the page;
 // the public profile (stats, socials) is the public endpoint anyone can read at /u/<uid>.
@@ -596,8 +510,14 @@ function rsDay(d){
     // averaged nothing). Not finished: what finishing would have added, so the miss is concrete.
     const f = mk('div', 'foot' + (d.finished ? '' : ' none'));
     f.appendChild(mk('span', null, 'Completion bonus'));
-    f.appendChild(mk('span', null, d.finished ? '+' + (d.bonus || 0) : 'Not earned'));
+    f.appendChild(mk('span', null, d.finished ? '+' + ((d.bonus || 0) - (d.streakBonus || 0)) : 'Not earned'));
     rt.appendChild(f);
+    if(d.streakBonus){
+      const sf = mk('div', 'foot');
+      sf.appendChild(mk('span', null, 'Streak bonus'));
+      sf.appendChild(mk('span', null, '+' + d.streakBonus));
+      rt.appendChild(sf);
+    }
     if(!d.finished && d.bonusAvg > 0){
       const p = mk('p', 'dim', 'You rated ' + d.rated + ' of ' + d.total + ' rounds and averaged ' + d.bonusAvg + ' points per round. Finishing the drop would have added ' + d.bonusAvg + ' bonus points.');
       p.style.cssText = 'font-size:13px;line-height:1.5;margin:8px 0 0';
@@ -622,6 +542,7 @@ function rsRender(d){
   const line = $('#rsLine');
   line.classList.toggle('hide', !st.pending);
   line.textContent = st.pending ? (st.pending + (st.pending === 1 ? ' day' : ' days') + ' still to come out') : '';
+  if(d.streak) renderStreak(d.streak);
   const days = $('#rsDays'); days.textContent = '';
   d.days.forEach(x => days.appendChild(rsDay(x)));
   if(!d.days.length){
@@ -646,7 +567,7 @@ async function loadResults(week){
   RS_BUSY = false;
 }
 // ---- The grade card. The picture needs the token in a header, so it is fetched and shown as
-// a blob URL, like the referral graphics. The pick is saved when the device is signed in; on a
+// a blob URL. The pick is saved when the device is signed in; on a
 // refer link (read-only) it still switches the preview and the download.
 // Two cards: the latest day, and Standing (all time, no date, no rank).
 let GC = null, GC_URL = null, GC_SCOPE = 'day';
@@ -722,48 +643,22 @@ $('#rsNext').onclick = () => { const w = $('#rsNext').dataset.week; if(w){ loadR
 // edit form's own page (photo crop, city lookup and notification settings live there).
 function showSec(k){
   if(k === 'edit'){ location.href = '/profile'; return; }
-  if(k !== 'profile' && k !== 'results') k = 'earn';
+  if(k !== 'profile') k = 'results';
   if(k === 'results' && !RS_LOADED){ loadResults(); gcLoad(); }
   document.querySelectorAll('.tab[data-sec]').forEach(t => t.classList.toggle('on', t.dataset.sec === k));
   document.querySelectorAll('.sec').forEach(x => x.classList.toggle('on', x.id === 'sec-' + k));
-  try{ history.replaceState(null, '', location.pathname + location.search + (k === 'earn' ? '' : '#' + k)); }catch(e){}
+  try{ history.replaceState(null, '', location.pathname + location.search + (k === 'results' ? '' : '#' + k)); }catch(e){}
   track('account_section', { section: k });
 }
 document.querySelectorAll('.tab[data-sec]').forEach(t => t.onclick = () => { showSec(t.dataset.sec); window.scrollTo(0, 0); });
-document.addEventListener('click', async (ev) => {
-  const c = ev.target.closest('.copy');
-  if(c){
-    const el = $('#' + c.dataset.copy), full = el.dataset.full || el.textContent;
-    try{ await navigator.clipboard.writeText(full); c.classList.add('done'); c.lastChild.textContent = 'Copied'; setTimeout(() => { c.classList.remove('done'); c.lastChild.textContent = 'Copy'; }, 1600); }
-    catch(e){ window.prompt('Copy your link', full); }
-    track('referral_link_copy', { which: c.dataset.copy });
-    return;
-  }
-  const a = ev.target.closest('[data-url]');
-  if(a){
-    ev.preventDefault();
-    if(a.dataset.busy) return;
-    a.dataset.busy = '1'; a.style.opacity = '.5';
-    try{
-      // The graphic needs the token in a header, so fetch it and hand the bytes to a download.
-      const r = await fetch(a.dataset.url, { headers: authHeaders() || {} });
-      if(!r.ok) throw new Error('Could not build the graphic');
-      const blob = await r.blob(), u = URL.createObjectURL(blob);
-      const l = document.createElement('a'); l.href = u; l.download = 'anr-team-' + a.dataset.kind + '.png'; document.body.appendChild(l); l.click(); l.remove();
-      setTimeout(() => URL.revokeObjectURL(u), 10000);
-      track('referral_graphic_download', { kind: a.dataset.kind });
-    }catch(e){ alert(e.message); }
-    delete a.dataset.busy; a.style.opacity = '';
-  }
-});
 async function load(){
   const h = authHeaders();
   if(!h){ show('screen-login'); return; }
   try{
-    const d = await api('/api/me/referrals', null, h);
-    render(d); show('screen-main');
+    const d = await api('/api/me/account', null, h);
+    renderAccount(d); show('screen-main');
     const want = (location.hash.match(/^#(profile|edit|results)\b/) || [])[1];
-    if(want) showSec(want);
+    showSec(want || 'results');
   }catch(e){
     // ONLY a 401 means the token is dead. Any other failure keeps the token and says so —
     // the first build dropped the token on a server error, which read as being logged out
@@ -775,9 +670,8 @@ async function load(){
       return;
     }
     show('screen-main');
-    $('#arRows').innerHTML = '';
     $('#loadErr').classList.remove('hide');
-    $('#loadErr').textContent = 'Could not load your referral page (' + e.message + '). Try again in a moment.';
+    $('#loadErr').textContent = 'Could not load your account (' + e.message + '). Try again in a moment.';
   }
 }
 load();

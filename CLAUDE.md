@@ -143,8 +143,8 @@ live on anr.makinitmag.com.
 - **Binary ("Verzuz") polls:** full player + overlay + export; split SEALED until ratify.
 - **Push migration (Ably):** board recomputes on ratify and pushes to all clients; polling
   drops to a 15s heartbeat when connected, 2s fallback otherwise. No leaderboard cache needed.
-- **Growth + monetization + ops:** referral points (per accurate round in the invitee's first
-  30 days — see the referral rework below; the 10/75 milestones are retired); invite-only rooms (unlisted + access code); share cards (Score Card, Top 8
+- **Growth + monetization + ops:** ~~referral points~~ (RETIRED 2026-11-21 — see the streak
+  bullet below); invite-only rooms (unlisted + access code); share cards (Score Card, Top 8
   A&Rs, Top 8 Songs — Satori/Blob) + recap emails (chunked queue); host-only **Song
   Report** (per-round analytics PNGs — rebuilt as the **Track Report**, see below) + a Rounds-tab round-history browser; **Platform
   control panel** (global banners, allowlisted system settings, SMS test) + host defaults
@@ -747,7 +747,8 @@ live on anr.makinitmag.com.
   is a read-only screen, and every query is admin-triggered (CLAUDE.md #1 rule).
 
 - **Referral rework — `/refer`, per-round referral points, 5× scouting, per-user graphics**
-  (no migration, 2026-09-18). Two links per A&R, both carrying their `users.uid` (already
+  (no migration, 2026-09-18). **RETIRED 2026-11-21 — see "Referral and scouting points retired
+  + the streak bonus" at the end of this section; what follows is history.** Two links per A&R, both carrying their `users.uid` (already
   public as the `/u/<uid>` profile URL): **join** = `anr.makinitmag.com/?ref=<uid>` and
   **submit** = `www.makinitmag.com/review?ref=<uid>`. The uid replaces the Drupal uid on the
   scouting link, so an A&R needs no Makin' It account; `creditScoutPoints` resolves by our uid
@@ -1377,6 +1378,26 @@ live on anr.makinitmag.com.
   Rows in `hits_sends` (unique per pack/kind/channel/address, claimed before send), so a second
   press reaches only new people; one-click unsubscribe per subscriber; Send test to me; list CSV.
   Mockups: `public/_mock-pick-the-hits-results.html`, `public/_mock-pick-the-hits-landing.html`.
+
+- **Referral and scouting points retired + the streak bonus** (no migration, 2026-11-21, Kelby:
+  A&Rs are rewarded for consistent rating and participation, not for promoting the platform;
+  branch `claude/no-referral-points-streaks-71f44f`, NOT merged when written). A&R points now come
+  only from listening and rating, plus the completion, live-show and streak bonuses.
+  **Removed:** `creditReferralRounds`, `creditScoutPoints`/`scoutPointsFor`/`SCOUT_MULTIPLIER`, the
+  account page's Earn points section, `/api/me/referrals` (→ `/api/me/account`: header + streak),
+  `/api/card/refer`, `/api/card/anr` + Brevo `ANR_CARD_IMAGE`, the refer graphics in share-cards.js
+  and `design/refer/`, the homepage Top talent scouts board, the play page's "N credited" counter,
+  and `referral_clicks` writes (`/r/<uid>` is a plain 302 to the form, no ref). **Kept:** every
+  `referral`/`referral_round`/`scout` point already paid; `?ref=` attribution as history; scout.uid
+  accepted on the push and stored, never paid. **The streak** (`sweepStreakBonuses`, run in the
+  daily tally right after the completion sweep): a streak day = a public drop the A&R COMPLETED
+  (an `async_complete` row); the 3rd drop in a row pays 1 extra completion bonus (that day's), the
+  6th 2, the 9th 3…; a missed drop resets to 0; a day with no drop neither counts nor breaks it
+  (**assumption, unconfirmed by Kelby**), nor does an unlisted drop or one too small to complete;
+  history counts. Ledger `point_events` reason `streak_bonus`, `source_uid` `<drop>:<uid>`. Shown
+  as a count on /daily's done screen and My results (`streakFor`); the paid amount shows per day on
+  published days only (it is a multiple of the sealed completion bonus). The weekly report counts
+  it with the completion bonus. `REFERRALS-NOTES.md` says what retired.
 
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay

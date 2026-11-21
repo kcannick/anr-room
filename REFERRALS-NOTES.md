@@ -1,4 +1,32 @@
-# Referrals & Access — built now vs. deferred (with legal flags)
+# Referrals & Access — RETIRED (2026-11-21)
+
+> **Status: retired.** Kelby decided on 2026-11-21 that A&Rs are rewarded for consistent
+> rating and participation, not for promoting the platform. Referrals had barely worked
+> (7 A&R scouting credits ever, none in November). What changed in the app:
+>
+> - **No more referral or scouting points.** `creditReferralRounds` (1 point per accurate
+>   invitee round), `creditScoutPoints` / `scoutPointsFor` (5x a scouted record's average) and
+>   their calls at ratify and in the daily tally are gone.
+> - **Points already paid stay.** `referral`, `referral_round` and `scout` rows in
+>   `point_events` and the `lifetime_points` they added are untouched and still count on the
+>   boards. Nothing deletes or reverses them.
+> - **Gone from the UI and API:** the account page's "Earn points" section (scout link, recruit
+>   link, lanes, counters, promo graphics), `/api/me/referrals` (replaced by `/api/me/account`),
+>   `/api/card/refer`, the public Official A&R Card `/api/card/anr/<uid>.png` and Brevo's
+>   `ANR_CARD_IMAGE` attribute, the four refer graphics in `share-cards.js` and `design/refer/`,
+>   the homepage "Top talent scouts" board, the play page's "N credited" invite counter.
+> - **Click tracking stopped.** `/r/<uid>` no longer writes `referral_clicks`; the table
+>   (migration 049) stays as history.
+> - **Plain invite links still work, with no reward and no counter.** `?ref=` still records
+>   `users.referrer_uid` / `participants.referred_by` as history; `/r/<uid>` still 302s to the
+>   review form (without the ref). If Drupal still sends `scout.uid` on the daily push it is
+>   accepted and stored on the round, and earns nothing (the website is removing it separately).
+> - **What replaced it:** the streak bonus (every 3rd completed drop in a row pays an extra
+>   completion bonus; see `sweepStreakBonuses` in server.js).
+>
+> The rest of this file is the original design note, kept for history.
+
+## Original note: built now vs. deferred (with legal flags)
 
 This documents what shipped in the referral/sharing pass and what was deliberately
 deferred, so the deferred items carry their context (especially the legal ones) the

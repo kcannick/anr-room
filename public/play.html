@@ -365,11 +365,10 @@
       <div class="lv-h">Session details</div>
       <div id="lobbyMsg" style="font-size:14px;color:var(--ink-dim);line-height:1.55"></div>
     </div>
-    <!-- THE lobby action: recruiting. Green primary; bonus-points hook is real
-         (referral milestones pay at the invitee's 10th and 50th scored rounds). -->
+    <!-- The lobby's invite. A plain link: invites earn no points (retired 2026-11-21). -->
     <div class="panel" style="margin-top:14px;text-align:center">
       <button id="inviteBtn" class="btn">＋ Invite an A&amp;R</button>
-      <p class="dim" style="font-size:13px;line-height:1.5;margin:10px 0 0">Invite people whose musical judgment you respect. When they join and complete eligible sessions, your referral can earn bonus points.</p>
+      <p class="dim" style="font-size:13px;line-height:1.5;margin:10px 0 0">Invite people whose musical judgment you respect.</p>
     </div>
     <!-- LIVENESS FEED (3.5d) — recent joins, count-only -->
     <div class="panel" id="livenessPanel" style="margin-top:14px;display:none">
@@ -844,7 +843,6 @@ function showFbThanks(){
 }
 
 // ---- invite: anyone can share their personal join link (carries their ref code) ----
-let referredCount=0;
 function playLink(){
   let u=location.origin+'/?s='+encodeURIComponent(SID||'');
   if(myRefCode)u+='&ref='+encodeURIComponent(myRefCode);
@@ -859,15 +857,14 @@ async function shareRoom(btn){
   }catch(e){/* user cancelled share — ignore */}
 }
 $('#inviteBtn')&&($('#inviteBtn').onclick=e=>shareRoom(e.currentTarget));
-// Top-bar share — visible on every screen once the room is known. Players recruit
-// MID-GAME (each new A&R they bring feeds the referral milestones), so the share
-// affordance can't live only in the lobby.
+// Top-bar share — visible on every screen once the room is known, so a player can invite
+// someone mid-game. A plain invite: it earns no points (referral points retired 2026-11-21).
 $('#shareRoomBtn')&&($('#shareRoomBtn').onclick=e=>shareRoom(e.currentTarget));
 if(SID&&$('#shareRoomBtn'))$('#shareRoomBtn').classList.remove('hide');
-// Invite button label reflects how many credited referrals the A&R has.
+// No counter on the invite button since 2026-11-21 (invites earn nothing).
 function updateInviteBtn(){
   const b=$('#inviteBtn');if(!b)return;
-  b.textContent = referredCount>0 ? ('＋ Invite an A&R · '+referredCount+' credited') : '＋ Invite an A&R';
+  b.textContent = '＋ Invite an A&R';
 }
 
 
@@ -1331,9 +1328,8 @@ function render(st){
   // sends the cascade in EVERY phase (results and recap included) — ads fund the show.
   renderAd(st);
 
-  // Referral: remember my code (for the invite link) + my credited count.
+  // Remember my code for the invite link (no counter, no reward).
   if(st.refCode)myRefCode=st.refCode;
-  if(typeof st.referredCount==='number'){referredCount=st.referredCount;updateInviteBtn();}
 
   // Geo check-in config (drives the check-in modal copy).
   if(st.geo){geoMode=st.geo.mode||'off';geoLabel=st.geo.label||null;}

@@ -240,29 +240,11 @@ function arBlock(size, fontSize) {
 function tick(w, hgt, mr) {
   return h({ width: w, height: hgt, background: RECAP.green, transform: `skewX(${SKEW}deg)`, flexShrink: 0, marginRight: mr }, '');
 }
-// ============ Referral graphics — the A&R's own promo set ============
-// Four per-user graphics off ONE data shape { name, category, location, photo, qrJoin, qrSubmit }
-// (photo and the two QRs are data URIs, prepared by the caller — this module never fetches):
-//   'referCard'   1080×1350 — the A&R Team card (portrait); face, name, title, both QRs
-//   'referStory'  1080×1920 — the same as a story
-//   'referJoin'   1080×1350 — "Join the A&R Team." on the green cut, the join QR
-//   'referSubmit' 1080×1350 — "Submit your music." on the purple cut, the submit QR
-// Built to the approved canvas (design/refer, 2026-09-18) and the brand: Archivo display,
-// Space Mono labels, the 13° cut as a colour field that stays BELOW the copy on the two
-// flyers (never behind type). No gold: there is no prize (operator, 2026-10-23 — no giveaways
-// are advertised any more). The A&R premise is the HOT 100 (operator, 2026-10-21); the artist
-// line is the site's ("Free with a Trusted Account. Support from $5 to move up the line.").
-const REFER_SIZES = { referCard: [1080, 1350], referStory: [1080, 1920], referJoin: [1080, 1350], referSubmit: [1080, 1350] };
+// ============ Shared Archivo-card pieces (lockup, endorse line, face) ============
+// The four referral graphics (referCard / referStory / referJoin / referSubmit, built to
+// design/refer) were RETIRED 2026-11-21 with referral and scouting points. What is left here
+// is shared by the grade card, which still draws the lockup, the endorse line and the face.
 const REFER = { ...RECAP, purple: '#6d5fe0', gold: '#f5c518', avBg: '#221b3a' };
-const REFER_COPY = {
-  title: 'Official A&R · The A&R Team',
-  statement: 'I rate new records every day and help decide which artists make the ',
-  highlight: 'HOT 100',
-  join: { eyebrow: 'OFFICIAL A&R', title: ['Join the', 'A&R Team.'], sub: 'Rate new records every day and help decide which artists make the Makin’ It HOT 100.' },
-  submit: { eyebrow: 'RATING · REVIEW · TRACK REPORT', title: ['Submit', 'your music.'], sub: 'Get your record rated and reviewed by the A&R Team. Free with a Trusted Account. Support from $5 to move up the line.' },
-  dm: 'or DM me for the link', dms: 'or DM me for the links', scan: 'Scan the code',
-  qrJoin: 'Join the A&R Team', qrSubmit: 'Submit your music',
-};
 // The block in any fill, letters in any ink (the recap block is green-only).
 function referBlock(size, fontSize, fill, ink) {
   return h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -283,12 +265,6 @@ function referEndorse(hgt) {
     { type: 'img', props: { src: logoDataUri(), style: { height: hgt } } },
   ]);
 }
-// A full-bleed colour field cut along the 13° line. `top` is the field's top edge at the LEFT
-// margin; the skew lifts the right end by ~23% of the width.
-function referCut(fill, top, hgt, Wd) {
-  return h({ position: 'absolute', left: -200, top, width: Wd + 400, height: hgt, background: fill,
-    transform: `skewY(${SKEW}deg)`, transformOrigin: 'left top' }, '');
-}
 function referFace(d, size) {
   const border = Math.round(size * 0.02);
   if (d.photo) {
@@ -299,82 +275,6 @@ function referFace(d, size) {
   return h({ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
     width: size, height: size, borderRadius: size, background: REFER.avBg, border: `${border}px solid ${REFER.purple}` },
     text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: Math.round(size * 0.32), letterSpacing: -Math.round(size * 0.012), color: REFER.purple }, initials));
-}
-function referQr(src, size, label) {
-  return col({ gap: 18, flexGrow: 1 }, [
-    h({ display: 'flex', padding: 16, background: REFER.fg, alignSelf: 'flex-start' },
-      { type: 'img', props: { src, width: size, height: size, style: { width: size, height: size } } }),
-    text({ fontFamily: MONO, fontWeight: 400, fontSize: 28, color: REFER.fg, ...NOWRAP }, label),
-  ]);
-}
-// The name, two lines, hard-clipped so a long display name never runs under the QRs.
-function referName(name, fontSize) {
-  const words = esc(name).trim().split(/\s+/).filter(Boolean);
-  const first = clip(words[0] || 'A&R', 14), rest = clip(words.slice(1).join(' '), 14);
-  const st = { fontFamily: DISPLAY, fontWeight: 900, fontSize, lineHeight: 0.92, letterSpacing: -Math.round(fontSize * 0.04), color: REFER.fg, ...NOWRAP };
-  return col({}, rest ? [text(st, first), text(st, rest)] : [text(st, first)]);
-}
-function elementReferPerson(d, story) {
-  const W0 = 1080, H0 = story ? 1920 : 1350;
-  const face = story ? 500 : 300, nameSize = story ? 118 : 88, stmt = story ? 40 : 34, qr = story ? 240 : 176;
-  const stStyle = { fontFamily: DISPLAY, fontWeight: 800, fontSize: stmt, lineHeight: 1.25, letterSpacing: -Math.round(stmt * 0.02), color: REFER.fg };
-  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
-    referCut(REFER.green, -Math.round(H0 * 0.18), Math.round(H0 * 0.42), W0),
-    col({ position: 'absolute', left: 80, right: 80, top: 72, bottom: 72, justifyContent: 'space-between' }, [
-      row({ justifyContent: 'space-between' }, [referLockup(REFER.bg, REFER.green)]),
-      col({ gap: story ? 44 : 18 }, [
-        referFace(d, face),
-        col({ gap: 14 }, [
-          referName(d.name, nameSize),
-          text({ fontFamily: MONO, fontWeight: 400, fontSize: 30, letterSpacing: 6, textTransform: 'uppercase', color: REFER.green, marginTop: 10, ...NOWRAP }, REFER_COPY.title),
-          text({ fontFamily: MONO, fontWeight: 400, fontSize: 26, color: REFER.dim, ...NOWRAP }, [d.category, d.location].filter(Boolean).join(' · ')),
-        ]),
-        // Satori has no inline runs, so the statement is laid as wrapped words: the highlight
-        // words take green, everything else ink, and the wrap gap stands in for the space.
-        row({ flexWrap: 'wrap', maxWidth: 920, columnGap: Math.round(stmt * 0.26), rowGap: 0, alignItems: 'baseline' }, [
-          ...REFER_COPY.statement.trim().split(' ').map(w => text(stStyle, w)),
-          ...REFER_COPY.highlight.split(' ').map((w, i, a) => text({ ...stStyle, color: REFER.green }, w + (i === a.length - 1 ? '.' : ''))),
-        ]),
-      ]),
-      col({ gap: 28 }, [
-        h({ height: 2, background: REFER.line, transform: `skewX(${SKEW}deg)` }, ''),
-        row({ gap: 40, alignItems: 'flex-start' }, [referQr(d.qrJoin, qr, REFER_COPY.qrJoin), referQr(d.qrSubmit, qr, REFER_COPY.qrSubmit)]),
-        text({ fontFamily: MONO, fontWeight: 400, fontSize: 26, color: REFER.dim, ...NOWRAP }, REFER_COPY.dms),
-        referEndorse(22),
-      ]),
-    ]),
-  ]);
-}
-function elementReferFlyer(d, kind) {
-  const W0 = 1080, H0 = 1350;
-  const join = kind === 'referJoin';
-  const fill = join ? REFER.green : REFER.purple, onFill = join ? REFER.bg : REFER.fg;
-  const c = join ? REFER_COPY.join : REFER_COPY.submit;
-  const tSt = { fontFamily: DISPLAY, fontWeight: 900, fontSize: 128, lineHeight: 0.92, letterSpacing: -5, color: REFER.fg, ...NOWRAP };
-  return h({ position: 'relative', display: 'flex', width: W0, height: H0, background: REFER.bg, overflow: 'hidden' }, [
-    // the colour field: its top edge at the left margin sits at 1170, so the copy above is
-    // always on ink and the QR + "scan" line below are always on colour.
-    referCut(fill, 1170, 800, W0),
-    col({ position: 'absolute', left: 80, right: 80, top: 72, bottom: 72, justifyContent: 'space-between' }, [
-      row({ justifyContent: 'space-between' }, [referLockup(fill, join ? REFER.greenInk : REFER.fg), referEndorse(22)]),
-      col({ gap: 28 }, [
-        row({ gap: 18 }, [
-          h({ width: 6, height: 34, background: fill, transform: `skewX(${SKEW}deg)`, flexShrink: 0 }, ''),
-          text({ fontFamily: MONO, fontWeight: 700, fontSize: 40, letterSpacing: 2, color: join ? REFER.green : REFER.fg, ...NOWRAP }, c.eyebrow),
-        ]),
-        col({}, c.title.map(l => text(tSt, l))),
-        text({ fontFamily: DISPLAY, fontWeight: 800, fontSize: 38, lineHeight: 1.3, letterSpacing: -1, color: REFER.dim, maxWidth: 880 }, c.sub),
-      ]),
-      row({ justifyContent: 'space-between', alignItems: 'flex-end', gap: 40 }, [
-        col({ gap: 14, paddingBottom: 20 }, [
-          text({ fontFamily: MONO, fontWeight: 400, fontSize: 30, color: onFill, ...NOWRAP }, REFER_COPY.scan),
-          text({ fontFamily: MONO, fontWeight: 400, fontSize: 26, color: onFill, opacity: 0.75, ...NOWRAP }, REFER_COPY.dm),
-        ]),
-        h({ display: 'flex', padding: 20, background: REFER.fg, flexShrink: 0 },
-          { type: 'img', props: { src: join ? d.qrJoin : d.qrSubmit, width: 240, height: 240, style: { width: 240, height: 240 } } }),
-      ]),
-    ]),
-  ]);
 }
 // ============ The daily grade card — "Do you have a better ear than <name>?" ============
 // The card an A&R gets the day a drop's results come out (operator, 2026-10-15). Built to the
@@ -1851,9 +1751,6 @@ function element(type, data = {}) {
   if (type === 'promo') return frame({ title: 'Join the A&R Team', sub: 'Free to join', body: bodyPromo() });
   if (type === 'trackPage') return elementTrackPage(data);
   if (type === 'chartSlide') return elementChartSlide(data);
-  if (type === 'referCard') return elementReferPerson(data, false);
-  if (type === 'referStory') return elementReferPerson(data, true);
-  if (type === 'referJoin' || type === 'referSubmit') return elementReferFlyer(data, type);
   if (type === 'resultsSlide') return elementResultsSlide(data);
   if (type === 'gradePhoto') return elementGradePhoto(data, false);
   if (type === 'gradePhotoStory') return elementGradePhoto(data, true);
@@ -1871,9 +1768,8 @@ function element(type, data = {}) {
 // ---- render to PNG ----
 let _satori = null, _Resvg = null;
 // Every card is 3:4 except the recap graphics, which carry their own size.
-// ONE size table. A merge once left two sizeOf()s here; the later one lost REFER_SIZES, so
-// every referral graphic rendered on the 1080×1440 default and the 1920-tall story was cut
-// off at the QR codes (found 2026-09-20). The test suite now pins the refer sizes.
+// ONE size table. A merge once left two sizeOf()s here and one lost a size table (found
+// 2026-09-20), so the test suite pins the sizes.
 function sizeOf(type) {
   if (type === 'resultsSlide') return RESULTS_SIZE;
   if (type === 'countdownSlide') return COUNTDOWN_SIZE;
@@ -1882,7 +1778,7 @@ function sizeOf(type) {
   if (type === 'trackPage') return TRACK_SIZE;
   if (TOURNAMENT_SIZES[type]) return TOURNAMENT_SIZES[type];
   if (GRADE_SIZES[type]) return GRADE_SIZES[type];
-  return REFER_SIZES[type] || [W, H];
+  return [W, H];
 }
 // `outWidth` rasterises the same layout at a smaller width (a thumbnail): the element is
 // still laid out at its real size, so a thumbnail is the download, scaled — never a
@@ -1896,4 +1792,4 @@ async function renderPng(type, data, outWidth) {
   return png;
 }
 
-module.exports = { CD_GROUP_MAX, renderPng, element, sizeOf, REFER_SIZES, REFER_COPY, GRADE_SIZES, GRADE_COPY, W, H, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
+module.exports = { CD_GROUP_MAX, renderPng, element, sizeOf, GRADE_SIZES, GRADE_COPY, W, H, CHART_BANDS, CHART_SCALE_MAX, SUBMIT_URL, JOIN_URL, RESULTS_PER_SLIDE, COUNTDOWN_SIZE, COUNTDOWN_COPY, CHART_SIZE, CHART_COPY, TRACK_SIZE, TRACK_TAG, WINNER_SIZE, TOURNAMENT_SIZES };
