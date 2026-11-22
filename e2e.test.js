@@ -2098,7 +2098,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok('an unknown view is refused', rpView.status === 400);
     // THE "NOW RATING" STRIP (2026-11-04): its own state, its own source, nothing about the room.
     const rcOn = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[1], position: 2, total: 3 }, 'POST', GH);
-    ok('record: the strip takes a record with its position', rcOn.status === 200 && rcOn.d.state.on === true && rcOn.d.state.roundId === gQ[1] && rcOn.d.state.position === 2 && rcOn.d.state.total === 3 && /Record 7[123]/.test(rcOn.d.state.title), JSON.stringify(rcOn.d));
+    ok('record: the strip takes a record with its position', rcOn.status === 200 && rcOn.d.state.on === true && rcOn.d.state.roundId === gQ[1] && rcOn.d.state.position === 2 && rcOn.d.state.total === 3 && /Record 7\d/.test(rcOn.d.state.title), JSON.stringify(rcOn.d));
     ok('record: title, artist and handle only — no average, no count, no rating', !('avg' in rcOn.d.state) && !('n' in rcOn.d.state) && !('rated' in rcOn.d.state) && typeof rcOn.d.state.artist === 'string');
     const rcCtl = await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json();
     ok('record: the strip source reads it through the control key', rcCtl.state && rcCtl.state.on === true && rcCtl.state.roundId === gQ[1], JSON.stringify(rcCtl));
@@ -2110,6 +2110,32 @@ async function startVoting(sessionId, headers, minutes = 5) {
     ok('record: off takes it down', rcOff.status === 200 && rcOff.d.state.on === false && (await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json()).state.on === false);
     const rcPage = await fetch(base + '/overlay/daily?view=record&k=' + encodeURIComponent(gKey));
     ok('record: the overlay page serves the strip source', rcPage.status === 200 && /id="record"/.test(await rcPage.text()));
+    const camPage = await (await fetch(base + '/overlay/daily?view=record&tiles=side&k=' + encodeURIComponent(gKey))).text();
+    ok('record: the overlay page carries the camera tiles and reads only the record state for them', /id="cam"/.test(camPage) && /tiles'\) === 'side'/.test(camPage) && /RECORD \? '&part=record'/.test(camPage));
+    // THE LIVE SEQUENCE (2026-11-13): the admin's own rating and prediction ride the strip as he
+    // sets them, "locked" at the lock-in, and the outcome arrives only through the reveal.
+    const lvOn = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], position: 1, total: 3 }, 'POST', GH);
+    ok('live: a record with no stage carries no rating', lvOn.d.state.on && lvOn.d.state.rating === undefined && lvOn.d.state.stage === undefined);
+    const lvR = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], position: 1, total: 3, stage: 'rating', rating: 5, predict: null }, 'POST', GH);
+    ok('live: the rating reaches the strip, same record', lvR.status === 200 && lvR.d.state.rating === 5 && lvR.d.state.predict === null && lvR.d.state.stage === 'rating' && lvR.d.state.title === lvOn.d.state.title, JSON.stringify(lvR.d.state));
+    const lvP = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], stage: 'rating', rating: 5, predict: 4.84 }, 'POST', GH);
+    ok('live: the prediction follows, to one decimal', lvP.d.state.predict === 4.8 && lvP.d.state.rating === 5);
+    const lvBad = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], stage: 'rating', rating: 12, predict: 99 }, 'POST', GH);
+    ok('live: out-of-range numbers are dropped, not shown', lvBad.d.state.rating === null && lvBad.d.state.predict === null);
+    const lvL = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], stage: 'locked', rating: 7, predict: 6.9 }, 'POST', GH);
+    ok('live: the lock is a stage', lvL.d.state.stage === 'locked' && lvL.d.state.rating === 7 && lvL.d.state.predict === 6.9);
+    ok('live: nothing about the room before the reveal', !('result' in lvL.d.state) && !('avg' in lvL.d.state));
+    const lvRv = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[0] }, 'POST', GH);
+    const lvAfter = (await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json()).state;
+    ok('live: the reveal puts the outcome on the strip', lvRv.status === 200 && lvAfter.stage === 'result' && lvAfter.result && lvAfter.result.avg === lvRv.d.state.reveal.avg && lvAfter.result.points === lvRv.d.state.reveal.points && lvAfter.roundId === gQ[0], JSON.stringify(lvAfter));
+    const lvLate = await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[0], stage: 'locked', rating: 1, predict: 1 }, 'POST', GH);
+    ok('live: a late lock post cannot undo the result', lvLate.d.state.stage === 'result' && lvLate.d.state.rating === lvAfter.rating);
+    const lvOther = await call('/api/admin/daily/reveal', { s: GDROP, roundId: gQ[0] }, 'POST', GH);
+    await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', roundId: gQ[1], position: 2, total: 3 }, 'POST', GH);
+    ok('live: the next record starts clean', (s => s.roundId === gQ[1] && s.stage === undefined && s.result === undefined)((await (await fetch(base + '/api/control/daily-overlay?k=' + encodeURIComponent(gKey) + '&part=record')).json()).state) && lvOther.status === 200);
+    const lvPage = await (await fetch(base + '/overlay/daily?layout=row&k=' + encodeURIComponent(gKey))).text();
+    ok('live: the overlay page carries the one-row reveal and the strip tiles', /id="row"/.test(lvPage) && /id="rcT1"/.test(lvPage) && /id="lockbar"/.test(lvPage));
+    await call('/api/admin/daily/overlay', { s: GDROP, view: 'record', off: true }, 'POST', GH);
 
     // The stable link + the banner: the home page only links the OPEN drop, so an admin on it
     // is pointed at the drop in the window, and /daily/closed goes straight there.
@@ -2801,7 +2827,24 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('the Top A&R caption has no URL and asks to comment or DM ANR',
     !/https?:|\.com/i.test(arCap) && /^Comment or DM "ANR" to join the A&R Team\. The A&R Team powers the HOT 100 rankings/m.test(arCap) && !/\$500|Cash/.test(arCap), arCap);
   const arNotes = srv._dailyAsanaNotes(rsAr, arCap);
-  ok('the Top A&Rs task says who to collab with', /Collab: invite @makinitmusicreview( and @\S+ \(#1\) as collaborators| as a collaborator)/.test(arNotes), arNotes);
+  ok('the Top A&Rs task says who to collab with', /Collab: invite @TheAnRTeam( and @\S+ \(#1\) as collaborators| as a collaborator)/.test(arNotes), arNotes);
+  // Meta: each handle ONCE per post — a collaborator is never also tagged, nobody tagged twice.
+  const onceSong = srv._dailyAsanaNotes({ set: 'song', total: 6, date: 'x', day: 'x', records: [], slides: [
+    { kind: 'cover', slide: 1 },
+    { kind: 'group', slide: 2, lo: 4, hi: 5, handles: ['@g1', '@Top2'] },
+    { kind: 'rank', slide: 3, rank: 3, handle: '@top3' },
+    { kind: 'rank', slide: 4, rank: 2, handle: '@top2' },
+    { kind: 'rank', slide: 5, rank: 1, handle: '@theanrteam' },
+  ] }, 'cap');
+  ok('the countdown task never tags a collaborator on a slide or anyone twice',
+    /Collab: invite @TheAnRTeam and the top 3 artists: @top2 \(#2\), @top3 \(#3\) as collaborators/.test(onceSong)
+      && /Slide 2 \(#4–#5\): @g1\n/.test(onceSong) && !/Slide [345] /.test(onceSong) && !/makinitmusicreview/i.test(onceSong), onceSong);
+  const onceAr = srv._dailyAsanaNotes({ set: 'ar', total: 2, date: 'x', day: 'x', slides: [
+    { kind: 'hero', hero: { title: 'A', handle: '@one' } },
+    { kind: 'list', rows: [{ handle: '@ONE' }, { handle: '@two' }, { handle: '@two' }, { handle: '@TheAnRTeam' }] },
+  ] }, 'cap');
+  ok('the Top A&Rs task never tags a collaborator or anyone twice',
+    /Collab: invite @TheAnRTeam and @one \(#1\) as collaborators\./.test(onceAr) && /Tag the other top A&Rs: @two\n/.test(onceAr), onceAr);
   // The $500 was retired 2026-10-19: the closing slide carries the A&R premise instead.
   ok('the A&R carousel closes on the A&R Team powering the HOT 100, with no prize',
     rsAr.slides[2].cta.eyebrow === 'The A&R Team' && rsAr.slides[2].cta.head.join(' ') === 'Powers the HOT 100'
@@ -4715,7 +4758,24 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('artist email leads with the decision as the headline', /<h1[^>]*>Release it\. Push it as a single\.<\/h1>/.test(aeHtml));
   ok('artist email carries the replay link', aeHtml.includes('youtube.com/watch?v=abc123'));
   ok('artist email points the artist at the replay for clips', /short clips/i.test(aeHtml));
-  ok('a live-show email asks for the collab post with the Room tag', aeHtml.includes('@Makinit4indies') && aeHtml.includes('#TheARRoom'));
+  // ONE big ask per email (operator, 2026-11-17): the testimonial. The old request to post the
+  // report as a carousel is gone, and each section opens with its own heading, in this order.
+  ok('artist email no longer asks the artist to post the report', !/Share your Track Report|carousel|@Makinit4indies|#TheARRoom/.test(aeHtml));
+  const aeAt = (s) => aeHtml.indexOf(s);
+  ok('artist email sections run intro, report, hear feedback, brand partnership',
+    aeAt('Hi Jaylen,') > 0 && aeAt('Hi Jaylen,') < aeAt('<h1') && aeAt('<h1') < aeAt('>Your Track Report</p>')
+    && aeAt('>Your Track Report</p>') < aeAt('p1.png') && aeAt('p3.png') < aeAt('Hear feedback on records?')
+    && aeAt('Hear feedback on records?') < aeAt('Brand Partnership Opportunity for Jaylen Cole') && aeAt('Brand Partnership Opportunity for Jaylen Cole') < aeAt('Submit another record'));
+  ok('hear feedback: the daily stream at 9 PM ET / 6 PM PT and ONE subscribe button',
+    /daily at 9 PM ET \/ 6 PM PT on YouTube/.test(aeHtml) && /fire alarm/.test(aeHtml) && /Turn on notifications for reminders/.test(aeHtml)
+    && (aeHtml.match(/Subscribe on YouTube/g) || []).length === 1 && aeHtml.includes('makinitmag.com/live'));
+  ok('brand partnership: the full $6,000 offer and the testimonial button',
+    aeHtml.includes('investing $6,000 in an Ad Campaign') && aeHtml.includes('https://www.makinitmag.com/testimonial/review') && />Submit your testimonial<\/a>/.test(aeHtml));
+  const aeTxt = server._artistEmailText({ ...aeBase, comments: [] });
+  ok('the text part follows the same order and carries the same two asks',
+    aeTxt.startsWith('Hi Jaylen,') && aeTxt.indexOf('YOUR TRACK REPORT') < aeTxt.indexOf('HEAR FEEDBACK ON RECORDS?')
+    && aeTxt.indexOf('HEAR FEEDBACK ON RECORDS?') < aeTxt.indexOf('BRAND PARTNERSHIP OPPORTUNITY FOR JAYLEN COLE')
+    && aeTxt.includes('$6,000') && !/carousel|collaborator/.test(aeTxt));
   ok('artist email shows the rating, the verdict and the A&R count', aeHtml.includes('7.4') && />Single<\/p>/.test(aeHtml) && !aeHtml.includes('Potential Single') && /11 A&amp;Rs/.test(aeHtml));
   ok('artist email says nothing about the machine', !/pool|lottery|queue|submission|ratif/i.test(aeHtml));
   // A dollar amount IS allowed: the Track Report tells the artist what to spend on their own
@@ -4727,7 +4787,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   // A Meeting record: no replay (every vote is async), the Meeting's own tag.
   const aeMeeting = server._artistEmailHtml({ ...aeBase, what: 'A&R Meeting', watchUrl: null, pages: ['https://blob/p1.png'] });
   ok('a Meeting email has no watch button (not a dead link)', !/Watch the room/.test(aeMeeting));
-  ok('a Meeting email carries the Meeting tag and name', aeMeeting.includes('#TheARMeeting') && /The A&amp;R Meeting/.test(aeMeeting) && !/#TheARRoom/.test(aeMeeting));
+  ok('a Meeting email carries the Meeting name and still sends the artist to the stream', /The A&amp;R Meeting/.test(aeMeeting) && !/#TheAR/.test(aeMeeting) && /Hear feedback on records\?/.test(aeMeeting));
   // Approved A&R comments ride along, attributed. Attribution is the whole value —
   // named people who scored the record, not anonymous opinion.
   const aeCmts = server._artistEmailHtml({ ...aeBase, watchUrl: null, pages: ['https://blob/p1.png'],
@@ -5368,7 +5428,11 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const chYm = (k) => { const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })); d.setDate(1); d.setMonth(d.getMonth() - k); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
   const cMon = await chGet(`scope=month&month=${chYm(0)}&minVotes=3`);
   ok('charts: this month charts the rooms that ran this month', cMon.status === 200 && cMon.d.rows.some(r => /broad/i.test(r.title)), JSON.stringify(cMon.d).slice(0, 200));
-  ok('charts: the month label is the month name', /^[A-Z][a-z]+ \d{4}$/.test(cMon.d.scope.label) && cMon.d.scope.kind === 'month', JSON.stringify(cMon.d.scope));
+  // The chart is named for the month it is RELEASED in: this month's rooms make NEXT month's chart.
+  const chMonthName = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+  const chNextYm = (ym) => { const [y, m] = ym.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; };
+  ok('charts: the month label is the PUBLICATION month (the month after the rooms)', cMon.d.scope.label === chMonthName(chNextYm(chYm(0))) && cMon.d.scope.kind === 'month', JSON.stringify(cMon.d.scope));
+  ok('charts: ...and the month counted is reported as tallied', cMon.d.scope.tallied === chMonthName(chYm(0)), JSON.stringify(cMon.d.scope));
   const cPrev = await chGet(`scope=month&month=${chYm(1)}&minVotes=3`);
   ok('charts: last month does not include rooms that ran this month', cPrev.status === 200 && !cPrev.d.rows.some(r => /broad/i.test(r.title)), JSON.stringify(cPrev.d.rows.map(r => r.title)));
   const cBadMon = await chGet('scope=month&month=2026-13');
@@ -5518,6 +5582,111 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const noPhLine = conPh.split('\n').find(l => /ch1@fan\.com/.test(l)) || '';
   ok('contacts: an A&R with no number exports an empty phone, not a wrong one',
     /,ch1@fan\.com,,no,/.test(noPhLine), noPhLine);
+
+  console.log('\n— charts: notify the list (054) —');
+  {
+    const rct = srv._renderChartTokens;
+    const vals = { firstName: 'Jay', name: 'Jay Monroe', artist: 'Jay Monroe', title: 'Night Shift', rank: '#4', chartName: 'Makin’ It HOT 100 — November 2026', postLink: 'https://instagram.com/p/abc' };
+    const t = rct('Hi [first name], "[title]" by [artist] is [rank] on [chart name]. See [post link]. [other] stays.', vals, false);
+    ok('notify: every token renders in text', t === 'Hi Jay, "Night Shift" by Jay Monroe is #4 on Makin’ It HOT 100 — November 2026. See https://instagram.com/p/abc. [other] stays.', t);
+    const h = rct('<b>[first name]</b> [post link]', vals, true);
+    ok('notify: in HTML the text is escaped and the post link is an anchor', /&lt;b&gt;Jay&lt;\/b&gt; <a href="https:\/\/instagram\.com\/p\/abc"/.test(h), h);
+    ok('notify: tokens forgive case and spacing', rct('[FirstName] [Chart Name]', vals, false) === 'Jay Makin’ It HOT 100 — November 2026');
+    const lk = srv._chartListKey;
+    ok('notify: the list key is membership only (order, per-slide and scores stay out)',
+      lk({ mode: 'records', scope: 'month', month: '2026-10', limit: 100, minVotes: 10, dedupe: true, order: 'top', per: 10, scores: false })
+      === lk({ mode: 'records', scope: 'month', month: '2026-10', limit: 100, minVotes: 10, dedupe: true, order: 'countdown', per: 20, scores: true })
+      && lk({ mode: 'records', scope: 'month', month: '2026-10', limit: 100, minVotes: 10, dedupe: true }) !== lk({ mode: 'records', scope: 'month', month: '2026-10', limit: 50, minVotes: 10, dedupe: true }));
+    // The plan over hand-built rows: dedupe case-blind, opt-outs and bounces out, consent gates A&R texts.
+    const planFrom = srv._chartNoticePlanFrom;
+    const recData = { mode: 'records', order: 'countdown', rows: [
+      { rank: 3, roundId: 'r3', title: 'C', artist: 'Three' }, { rank: 2, roundId: 'r2', title: 'B', artist: 'Two' }, { rank: 1, roundId: 'r1', title: 'A', artist: 'One' }] };
+    const recPlan = planFrom(recData, new Map([['r1', { email: 'one@x.test', phone: '(404) 555-0100' }], ['r2', { email: 'ONE@x.test ', phone: '404-555-0101' }], ['r3', { email: 'bad-address', phone: '+14045550100' }]]));
+    ok('notify: records plan runs #1 first whatever the display order, one message per address',
+      recPlan.people.map(p => p.rank).join(',') === '1,2,3' && recPlan.emails.length === 1 && recPlan.phones.length === 2
+      && recPlan.people[1].email === 'same:1' && recPlan.people[2].sms === 'same:1' && recPlan.people[2].email === 'none', JSON.stringify(recPlan.people));
+    const arData = { mode: 'ars', order: 'top', rows: [{ rank: 1, id: 'u1', name: 'Ann' }, { rank: 2, id: 'u2', name: 'Bob' }, { rank: 3, id: 'u3', name: 'Cy' }, { rank: 4, id: 'u4', name: 'Di' }] };
+    const arPlan = planFrom(arData, new Map([
+      ['u1', { email: 'ann@x.test', phone: '4045550001', consent: true }], ['u2', { email: 'bob@x.test', phone: '4045550002', consent: false }],
+      ['u3', { email: 'cy@x.test', phone: '', optOut: true }], ['u4', { email: 'di@x.test', bounced: true, phone: '4045550004', consent: true }]]));
+    ok('notify: A&R plan honours opt-out, bounce and SMS consent',
+      arPlan.emails.length === 2 && arPlan.phones.length === 2 && arPlan.people[1].sms === 'no consent' && arPlan.people[2].email === 'opted out' && arPlan.people[3].email === 'bounced', JSON.stringify(arPlan.people));
+    const rendered = srv._chartNoticeRender({ mode: 'records', list_label: 'Makin’ It HOT 100 — November 2026', subject: '[title] made [chart name]', body: '[artist], "[title]" is [rank].\nSee [post link]', sms_body: 'Makin It: "[title]" is [rank] on the HOT 100. [post link]', post_url: 'https://instagram.com/p/abc' },
+      { rank: 7, name: 'Jay Monroe', artist: 'Jay Monroe', title: 'Night Shift' }, 'https://anr.test');
+    ok('notify: the artist email renders subject, body, button and the YouTube line', rendered.subject === 'Night Shift made Makin’ It HOT 100 — November 2026'
+      && /Jay Monroe, &quot;Night Shift&quot; is #7\.<br>/.test(rendered.html) && /See the post/.test(rendered.html) && rendered.html.includes(srv._SUBSCRIBE_LINE || 'Subscribe to our YouTube channel'), rendered.html.slice(0, 400));
+    ok('notify: the artist text carries STOP once', /Reply STOP to opt out\.$/.test(rendered.sms) && (rendered.sms.match(/STOP/g) || []).length === 1, rendered.sms);
+    const arR = srv._chartNoticeRender({ mode: 'ars', list_label: 'Top A&Rs — Series', subject: 'Hi [first name]', body: 'You are [rank].', sms_body: 'You are [rank].' }, { rank: 2, name: 'Bob Lee', uid: 'u2' }, 'https://anr.test');
+    ok('notify: the A&R email carries the manage footer and the text a STOP + manage link', /Manage your notifications/.test(arR.html) && /Reply STOP to opt out\. Manage: /.test(arR.sms) && arR.subject === 'Hi Bob', arR.sms);
+  }
+  // The route, on the series chart built above. The chart rounds carry no artist contact yet.
+  const cnQ = `${chBase}`;
+  ok('notify: admin only', (await call('/api/admin/charts/notify?' + cnQ, null, 'GET')).status === 403);
+  ok('notify: Room #1s is refused', (await call('/api/admin/charts/notify?mode=weekly1s&scope=all', null, 'GET', ADMINH)).status === 400);
+  const cnEmpty = await call('/api/admin/charts/notify?' + cnQ, null, 'GET', ADMINH);
+  ok('notify: a chart with no contacts lists everyone as unreachable', cnEmpty.status === 200 && cnEmpty.d.people === chTop.d.rows.length && cnEmpty.d.emails === 0 && cnEmpty.d.noContact === cnEmpty.d.people, JSON.stringify(cnEmpty.d).slice(0, 300));
+  ok('notify: a send with nobody reachable is refused, not "sent to 0"',
+    (await call('/api/admin/charts/notify', { q: cnQ, send: true, email: true, subject: 's', body: 'b' }, 'POST', ADMINH)).status === 400);
+  const [cnR1, cnR2, cnR3] = chTop.d.rows;
+  await dDb.run('UPDATE rounds SET artist_email = ?, artist_phone = ? WHERE id = ?', ['big@chart.test', '(404) 555-0100', cnR1.roundId]);
+  await dDb.run('UPDATE rounds SET artist_email = ?, artist_phone = ? WHERE id = ?', ['BIG@chart.test', '404-555-0101', cnR2.roundId]);
+  await dDb.run('UPDATE rounds SET artist_email = ?, artist_phone = ? WHERE id = ?', ['', '+1 404 555 0100', cnR3.roundId]);
+  const cnG = await call('/api/admin/charts/notify?' + cnQ + '&order=countdown', null, 'GET', ADMINH);
+  ok('notify: the plan is one email and two texts, in rank order even on a countdown', cnG.d.emails === 1 && cnG.d.texts === 2 && cnG.d.rows[0].rank === 1
+    && cnG.d.rows[1].email === 'same:1' && cnG.d.rows[2].sms === 'same:1' && cnG.d.listLabel === chTop.d.title + ' — ' + chTop.d.scope.label, JSON.stringify(cnG.d.rows));
+  ok('notify: addresses are masked on read', !JSON.stringify(cnG.d).includes('big@chart.test') && !JSON.stringify(cnG.d).includes('5550100') && cnG.d.rows[0].email === 'b•••@chart.test', JSON.stringify(cnG.d.rows[0]));
+  ok('notify: a send needs a channel', (await call('/api/admin/charts/notify', { q: cnQ, send: true, subject: 's', body: 'b', sms: 't' }, 'POST', ADMINH)).status === 400);
+  ok('notify: email needs a subject and a body', (await call('/api/admin/charts/notify', { q: cnQ, send: true, email: true, subject: '', body: 'b' }, 'POST', ADMINH)).status === 400);
+  ok('notify: a post link must be a URL', (await call('/api/admin/charts/notify', { q: cnQ, send: true, email: true, subject: 's', body: 'b', postUrl: 'instagram' }, 'POST', ADMINH)).status === 400);
+  {
+    const realNow = Date.now;
+    const threeAm = srv._etEpoch('2026-11-12', 3, 0);
+    Date.now = () => threeAm;
+    let s1;
+    try {
+      s1 = await call('/api/admin/charts/notify', { q: cnQ + '&order=countdown', send: true, email: true, texts: true, subject: '[title] made the chart', body: 'Hi [artist], "[title]" is [rank] on [chart name].', sms: 'Makin It: "[title]" is [rank] on the chart.', postUrl: 'https://instagram.com/p/abc' }, 'POST', ADMINH);
+    } finally { Date.now = realNow; }
+    ok('notify: a press at 3AM ET sends the email and HOLDS the artist texts for the window',
+      s1.status === 200 && s1.d.started && s1.d.started.emails === 1 && s1.d.started.texts === 2 && s1.d.sent === 1 && s1.d.held === 2 && s1.d.failed === 0, JSON.stringify(s1.d).slice(0, 300));
+    ok('notify: the send is reported with its pending texts', s1.d.sends.length === 1 && s1.d.sends[0].emailsSent === 1 && s1.d.sends[0].pending === 2 && s1.d.sends[0].held === 2, JSON.stringify(s1.d.sends));
+    const sentRows = await dDb.all("SELECT channel, dest, status, rank, title FROM chart_notice_rcpts ORDER BY channel, dest");
+    ok('notify: one row per address, ranked, the texts still pending', sentRows.length === 3 && sentRows[0].status === 'sent' && sentRows[0].rank === 1 && sentRows[0].title === cnR1.title
+      && sentRows.filter(r => r.channel === 'sms').every(r => r.status === 'pending') && sentRows.filter(r => r.channel === 'sms').map(r => r.dest).join(',') === '+14045550100,+14045550101', JSON.stringify(sentRows));
+    const twice = await call('/api/admin/charts/notify', { q: cnQ, send: true, email: true, subject: 's', body: 'b' }, 'POST', ADMINH);
+    ok('notify: a second send without "again" is refused', twice.status === 409, JSON.stringify(twice.d));
+    const noon = srv._etEpoch('2026-11-12', 12, 0);
+    Date.now = () => noon;
+    let d2;
+    try { d2 = await call('/api/admin/charts/notify', { q: cnQ }, 'POST', ADMINH); } finally { Date.now = realNow; }
+    ok('notify: a drain inside the window sends the held texts and nothing new', d2.status === 200 && !d2.d.started && d2.d.sent === 2 && d2.d.held === 0
+      && d2.d.sends[0].textsSent === 2 && d2.d.sends[0].pending === 0, JSON.stringify(d2.d.sends));
+    // A request killed mid-send (Vercel's 30s cap) leaves a row claimed as 'sending' forever:
+    // the card lists it as not confirmed, never as pending, and only an explicit retry resends it.
+    await dDb.run("UPDATE chart_notice_rcpts SET status = 'sending' WHERE channel = 'email'");
+    const stuckG = await call('/api/admin/charts/notify?' + cnQ, null, 'GET', ADMINH);
+    ok('notify: a cut-off row shows as not confirmed, not as pending', stuckG.d.sends[0].stuck.length === 1 && stuckG.d.sends[0].pending === 0
+      && stuckG.d.sends[0].stuck[0].to.includes("•"), JSON.stringify(stuckG.d.sends[0]));
+    const plainDrain = await call('/api/admin/charts/notify', { q: cnQ }, 'POST', ADMINH);
+    ok('notify: a plain drain leaves a cut-off row alone', plainDrain.d.sent === 0 && plainDrain.d.sends[0].stuck.length === 1, JSON.stringify(plainDrain.d.sends[0]));
+    const retry = await call('/api/admin/charts/notify', { q: cnQ, retryStuck: true }, 'POST', ADMINH);
+    ok('notify: "Send it again" resends the cut-off row', retry.status === 200 && retry.d.sent === 1 && retry.d.sends[0].stuck.length === 0 && retry.d.sends[0].emailsSent === 1, JSON.stringify(retry.d.sends[0]));
+    const again = await call('/api/admin/charts/notify', { q: cnQ, send: true, again: true, email: true, subject: 'Again [rank]', body: 'b' }, 'POST', ADMINH);
+    ok('notify: Send again is a second send with its own rows', again.status === 200 && again.d.started.emails === 1 && again.d.started.texts === 0 && again.d.sends.length === 2, JSON.stringify(again.d.started));
+    ok('notify: the list shows up under recent lists', again.d.recent.some(r => r.listKey === again.d.listKey && r.sends === 2), JSON.stringify(again.d.recent));
+  }
+  // The A&R chart: opt-outs and consent come off users; "send test to me" goes to the admin only.
+  await dDb.run("UPDATE users SET email_opt_out = 1 WHERE email = 'ch2@fan.com'");
+  const cnA = await call('/api/admin/charts/notify?' + arsQ, null, 'GET', ADMINH);
+  const cnA2 = cnA.d.rows.find(r => r.email === 'opted out'), cnAph = cnA.d.rows.find(r => r.name === 'Cee Phone');
+  ok('notify: the A&R list honours the opt-out and a signup phone with consent', cnA.status === 200 && cnA2 && cnA2.rank === 2 && cnAph && /•••/.test(cnAph.sms)
+    && cnA.d.emails === cnA.d.people - 1 && cnA.d.texts === 1, JSON.stringify(cnA.d.rows));
+  ok('notify: A&R texts are not held for the window', cnA.d.smsWindow.holds === false, JSON.stringify(cnA.d.smsWindow));
+  const cnT = await call('/api/admin/charts/notify/test', { q: arsQ, email: true, texts: true, subject: 'Test [first name] [rank]', body: 'Hello [name]', sms: 'Hi [first name]' }, 'POST', ADMINH);
+  ok('notify: send test to me goes to the admin and records nothing', cnT.status === 200 && cnT.d.email && cnT.d.email.ok && cnT.d.sample.rank === 1
+    && Number((await dDb.get("SELECT COUNT(*) AS n FROM chart_notices WHERE mode = 'ars'")).n) === 0, JSON.stringify(cnT.d));
+  await dDb.run("UPDATE users SET email_opt_out = 0 WHERE email = 'ch2@fan.com'");
+  // Put the chart rounds back the way the later blocks (contact backfill, Brevo) expect them.
+  for (const r of [cnR1, cnR2, cnR3]) await dDb.run('UPDATE rounds SET artist_email = NULL, artist_phone = NULL WHERE id = ?', [r.roundId]);
 
   console.log('\n— charts: the carousel renders, and the band edges do not overlap —');
   const slide0 = await fetch(`${base}/api/card/chart?${chBase}&slide=0`, { headers: ADMINH });
@@ -5680,7 +5849,12 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('sidebet: standings carry no email or phone',
     !/@|phone/i.test(JSON.stringify(sbRows)), JSON.stringify(sbRows));
 
-  const sbAfter = await call('/api/sidebet', null, 'GET', E1);
+  // With nothing open the page is in its not-open-yet state and links the latest results;
+  // the results themselves are read by ?pack= (Pick the Hits, 2026-11-11).
+  const sbPre = await call('/api/sidebet', null, 'GET', E1);
+  ok('hits: nothing open → the not-open-yet state, linking the latest results',
+    sbPre.d.pack === null && sbPre.d.state === 'preregister' && sbPre.d.lastResults && sbPre.d.lastResults.pack === PACK, JSON.stringify(sbPre.d));
+  const sbAfter = await call('/api/sidebet?pack=' + PACK, null, 'GET', E1);
   ok('sidebet: my score is readable after settle', sbAfter.d.entry.correct === 6 && sbAfter.d.entry.rank === 1, JSON.stringify(sbAfter.d.entry));
   ok('sidebet: results are public after settle', Array.isArray(sbAfter.d.results) && sbAfter.d.results.length === 3);
   ok('sidebet: a settled pack is closed to new entries',
@@ -5743,6 +5917,110 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('sidebet: an entry after the cut-off is refused by the server', sbTooLate.status === 400, JSON.stringify(sbTooLate.d));
   ok('sidebet: a closed pack reports itself closed',
     (await call('/api/sidebet', null, 'GET')).d.pack.open === false);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.log('\n— Pick the Hits: weighted tally, notify list, sends (055) —');
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Get the expired 'Closing Pack' out of the way so the page resolution is clean.
+  await anDb.run("UPDATE packs SET status = 'settled' WHERE id = ?", [sbLate.d.id]);
+  const hPre = await call('/api/sidebet', null, 'GET');
+  ok('hits: no pack open → preregister', hPre.d.state === 'preregister' && hPre.d.pack === null, JSON.stringify(hPre.d));
+
+  // --- the notify list: name, email AND phone all required ---
+  ok('hits: notify without a phone is refused',
+    (await call('/api/hits/notify', { name: 'Pat', email: 'pat@test.com', phone: '' })).status === 400);
+  ok('hits: notify without a name is refused',
+    (await call('/api/hits/notify', { name: '', email: 'pat@test.com', phone: '(404) 555-0123' })).status === 400);
+  ok('hits: notify with a bad email is refused',
+    (await call('/api/hits/notify', { name: 'Pat', email: 'nope', phone: '(404) 555-0123' })).status === 400);
+  const hSub = await call('/api/hits/notify', { name: 'Pat Lee', email: 'Pat@Test.com', phone: '(404) 555-0123' });
+  ok('hits: a complete signup lands on the list', hSub.status === 200, JSON.stringify(hSub.d));
+  await call('/api/hits/notify', { name: 'Pat Lee', email: 'pat@test.com', phone: '(404) 555-0123' });
+  const hSubRows = await anDb.all("SELECT * FROM hits_subscribers WHERE email = 'pat@test.com'");
+  ok('hits: signing up twice keeps one row, email lower-cased, phone normalised',
+    hSubRows.length === 1 && /^\+1404555012/.test(hSubRows[0].phone), JSON.stringify(hSubRows));
+
+  // --- a pack: 5 songs, pick 3 ---
+  const hMk = await call('/api/admin/sidebet', { name: 'Service Pack 13', picksRequired: 3, prizeText: '$150 cash',
+    closesAt: Date.now() + 86400000, status: 'draft' }, 'POST', ADMINH);
+  ok('hits: a pack needs no tournament date', hMk.status === 200 && hMk.d.id, JSON.stringify(hMk.d));
+  const HP = hMk.d.id;
+  await call('/api/admin/sidebet/songs', { packId: HP, songs: ['One', 'Two', 'Three', 'Four', 'Five'].map(t => ({ title: t, artist: t + ' Artist' })) }, 'POST', ADMINH);
+  await call('/api/admin/sidebet', { id: HP, name: 'Service Pack 13', picksRequired: 3, prizeText: '$150 cash', closesAt: Date.now() + 86400000, status: 'open' }, 'POST', ADMINH);
+  const hOpen = await call('/api/sidebet', null, 'GET');
+  ok('hits: an open pack → state open', hOpen.d.state === 'open' && hOpen.d.pack.id === HP, JSON.stringify(hOpen.d.state));
+  const HSG = Object.fromEntries(hOpen.d.songs.map(x => [x.title, x.id]));
+
+  const H1 = await sbEntrant('hits1@test.com'), H2 = await sbEntrant('hits2@test.com'), H3 = await sbEntrant('hits3@test.com');
+  // H1 and H2 finish their profiles; H3 does not, so H3's ballot counts for nothing.
+  await anDb.run("UPDATE users SET profile_complete = 1 WHERE email IN ('hits1@test.com','hits2@test.com')");
+  const hE3 = await call('/api/sidebet/entry', { picks: [HSG.Five, HSG.Four, HSG.Three] }, 'POST', H3);
+  ok('hits: an entry with an unfinished profile is saved but flagged', hE3.status === 200 && hE3.d.eligible === false, JSON.stringify(hE3.d));
+  const hE1 = await call('/api/sidebet/entry', { picks: [HSG.One, HSG.Two, HSG.Three] }, 'POST', H1);
+  ok('hits: an entry with a finished profile counts', hE1.d.eligible === true);
+  await call('/api/sidebet/entry', { picks: [HSG.Two, HSG.One, HSG.Four] }, 'POST', H2);
+  // Tally: One 3+2=5, Two 2+3=5 (tie on points and pickers → row order: One), Three 1, Four 1
+  // (Three before Four on row order). H3's Five/Four/Three add nothing.
+
+  ok('hits: no tally while picks are open',
+    (await call('/api/admin/hits/settle', { packId: HP }, 'POST', ADMINH)).status === 400);
+  ok('hits: a host cannot tally', (await call('/api/admin/hits/settle', { packId: HP }, 'POST', CHHOST)).status === 403);
+  ok('hits: the "open" send is admin only', (await call('/api/admin/hits/send', { packId: HP, kind: 'open' }, 'POST', H1)).status === 403);
+
+  // --- the "it's open" notice: every subscriber (email + text) plus every past entrant (email) ---
+  const hSendOpen = await call('/api/admin/hits/send', { packId: HP, kind: 'open' }, 'POST', ADMINH);
+  ok('hits: the open notice sends', hSendOpen.status === 200 && hSendOpen.d.remaining === 0 && hSendOpen.d.failed === 0, JSON.stringify(hSendOpen.d));
+  const hOpenRows = await anDb.all("SELECT channel, dest FROM hits_sends WHERE pack_id = ? AND kind = 'open'", [HP]);
+  ok('hits: a subscriber gets an email and a text',
+    hOpenRows.some(r => r.channel === 'email' && r.dest === 'pat@test.com') && hOpenRows.some(r => r.channel === 'sms'), JSON.stringify(hOpenRows));
+  ok('hits: past entrants are folded in by email only',
+    hOpenRows.some(r => r.dest === 'bet1@test.com') && hOpenRows.filter(r => r.channel === 'sms').length === 1, JSON.stringify(hOpenRows));
+  const hAgain = await call('/api/admin/hits/send', { packId: HP, kind: 'open' }, 'POST', ADMINH);
+  ok('hits: a second press reaches nobody twice', hAgain.d.queued.emails === 0 && hAgain.d.queued.texts === 0 && hAgain.d.sent === 0, JSON.stringify(hAgain.d));
+
+  // --- close and tally ---
+  await anDb.run('UPDATE packs SET closes_at = ? WHERE id = ?', [Date.now() - 1000, HP]);
+  const hClosed = await call('/api/sidebet', null, 'GET');
+  ok('hits: picks closed, results not out → state closed', hClosed.d.state === 'closed', JSON.stringify(hClosed.d.state));
+  ok('hits: the open notice is refused once picks close',
+    (await call('/api/admin/hits/send', { packId: HP, kind: 'open' }, 'POST', ADMINH)).status === 400);
+  ok('hits: results email refused before the tally',
+    (await call('/api/admin/hits/send', { packId: HP, kind: 'results' }, 'POST', ADMINH)).status === 400);
+  const hSettle = await call('/api/admin/hits/settle', { packId: HP }, 'POST', ADMINH);
+  ok('hits: tallied, two ballots counted', hSettle.status === 200 && hSettle.d.counted === 2, JSON.stringify(hSettle.d));
+
+  const hAdm = await call('/api/admin/hits?packId=' + HP, null, 'GET', ADMINH);
+  ok('hits: song order One, Two, Three, Four', hAdm.d.songs.slice(0, 4).map(x => x.title).join(',') === 'One,Two,Three,Four', JSON.stringify(hAdm.d.songs));
+  ok('hits: song points 5, 5, 1, 1 and Five unranked', JSON.stringify(hAdm.d.songs.map(x => [x.points, x.rank])) === '[[5,1],[5,2],[1,3],[1,4],[0,null]]', JSON.stringify(hAdm.d.songs));
+  ok('hits: H1 matched the final order exactly and wins', hAdm.d.standings[0].distance === 0 && hAdm.d.standings[0].exact === 3, JSON.stringify(hAdm.d.standings));
+  ok('hits: the unfinished profile is listed as not counted', hAdm.d.notCounted.length === 1, JSON.stringify(hAdm.d.notCounted));
+
+  const hPub = await call('/api/sidebet?pack=' + HP, null, 'GET', H1);
+  ok('hits: the results page is state results', hPub.d.state === 'results' && hPub.d.hits, JSON.stringify(hPub.d.state));
+  ok('hits: public results are the top 3, ranks only', hPub.d.hits.songs.length === 3 && hPub.d.hits.songs.every(x => Object.keys(x).sort().join() === 'artist,rank,title'), JSON.stringify(hPub.d.hits.songs));
+  ok('hits: the winner is named, nothing else about them', hPub.d.hits.winners.length === 1 && Object.keys(hPub.d.hits.winners[0]).join() === 'name', JSON.stringify(hPub.d.hits.winners));
+  ok('hits: no points, pick counts or entrant totals in the public payload',
+    !/points|pickers|distance|"entries"|counting/.test(JSON.stringify(hPub.d)), JSON.stringify(hPub.d).slice(0, 300));
+  ok('hits: my own result: #1, 3 of the top 3, all in the right spot',
+    hPub.d.entry.result.rank === 1 && hPub.d.entry.result.hits === 3 && hPub.d.entry.result.exact === 3 && JSON.stringify(hPub.d.entry.result.finals) === '[1,2,3]', JSON.stringify(hPub.d.entry.result));
+  const hMine3 = await call('/api/sidebet?pack=' + HP, null, 'GET', H3);
+  ok('hits: an unfinished-profile ballot reads as not counted', hMine3.d.entry.result.counted === false && hMine3.d.entry.eligible === false, JSON.stringify(hMine3.d.entry));
+
+  // --- the results email ---
+  const hRes = await call('/api/admin/hits/send', { packId: HP, kind: 'results' }, 'POST', ADMINH);
+  ok('hits: the results email sends, email only', hRes.status === 200 && hRes.d.remaining === 0 && hRes.d.queued.texts === 0 && hRes.d.queued.emails > 0, JSON.stringify(hRes.d));
+  const hTest = await call('/api/admin/hits/test', { packId: HP, kind: 'results' }, 'POST', ADMINH);
+  ok('hits: send test to me', hTest.status === 200 && hTest.d.ok, JSON.stringify(hTest.d));
+
+  // --- unsubscribe ---
+  const hTok = (await anDb.get("SELECT unsub_token FROM hits_subscribers WHERE email = 'pat@test.com'")).unsub_token;
+  const hUn = await fetch(`${base}/api/hits/unsubscribe?u=${hTok}`);
+  ok('hits: the unsubscribe link works', hUn.status === 200 && (await anDb.get("SELECT unsubscribed_at FROM hits_subscribers WHERE email = 'pat@test.com'")).unsubscribed_at);
+  const hCsv = await fetch(`${base}/api/admin/hits/subscribers.csv`, { headers: ADMINH });
+  ok('hits: the list downloads as CSV', hCsv.status === 200 && /pat@test\.com/.test(await hCsv.text()));
+  // The Brevo block below counts packs with entries ("Side Bet #1/#2"); leave it the one it expects.
+  await anDb.run('DELETE FROM sidebet_picks WHERE entry_id IN (SELECT id FROM sidebet_entries WHERE pack_id = ?)', [HP]);
+  await anDb.run('DELETE FROM sidebet_entries WHERE pack_id = ?', [HP]);
 
   // ======================================================================
   // Backfill artist contacts from an export (2026-09-22)
@@ -6477,7 +6755,7 @@ async function startVoting(sessionId, headers, minutes = 5) {
   const tnPkgCap = (await call(`/api/admin/tournament/caption?id=${TN}&key=pkg1`, null, 'GET', BOOTH)).d;
   ok('package: the competitor\'s caption — keyword line, RSVP link, comment keyword, the house account, the other seven, never self, no topic hashtags',
     /^I'm in A&R Wars #1, the A&R tournament from Makin' It Magazine\. 8 A&Rs play/.test(tnPkgCap.caption) && /\$500 Cash Prize\./.test(tnPkgCap.caption)
-      && /RSVP: \S+\/wars/.test(tnPkgCap.caption) && /Join the A&R Team and vote: Comment #ANR/.test(tnPkgCap.caption) && /@makinitmusicreview/.test(tnPkgCap.caption)
+      && /RSVP: \S+\/wars/.test(tnPkgCap.caption) && /Join the A&R Team and vote: Comment #ANR/.test(tnPkgCap.caption) && /@TheAnRTeam/.test(tnPkgCap.caption) && !/makinitmusicreview/.test(tnPkgCap.caption)
       && /Also in the tournament: @theo, Iris, @dana, Jalen, @priya, Terrence, @simone$/.test(tnPkgCap.caption) && !/maya/i.test(tnPkgCap.caption)
       && (tnPkgCap.caption.match(/#/g) || []).length === 2 && tnPkgCap.comments.length === 0 && tnPkgCap.tagOnGraphic.length === 8, JSON.stringify(tnPkgCap));
   const tnCapBefore = (await tnDb.get('SELECT caption FROM tournaments WHERE id = ?', [TN])).caption;

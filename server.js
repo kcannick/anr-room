@@ -2429,7 +2429,9 @@ async function advanceDailyAsanaTasks({ deadline }) {
 function dailyAsanaTaskName(rd) {
   return `${rd.set === 'song' ? DAILY_STREAM_NAME : 'Top A&Rs'} — ${rd.date}`;
 }
-const TOP_AR_COLLAB = '@makinitmusicreview';
+// @makinitmusicreview no longer exists (operator, 2026-10-23: it is now @TheAnRTeam), and a dead
+// handle as a collaborator makes Meta fail the whole post.
+const TOP_AR_COLLAB = '@TheAnRTeam';
 // The countdown posts from @makinit4indies with @TheAnRTeam and the top 3 artists invited as
 // collaborators (operator, 2026-10-17; Instagram allows five). The task is made at the render
 // (the close); the operator's job schedules both posts in SocialBee that evening, with their
@@ -2439,11 +2441,25 @@ const COUNTDOWN_COLLAB = '@TheAnRTeam';
 const COUNTDOWN_COLLAB_TOP = 3;
 const COUNTDOWN_POST_TIME = '6:00 AM ET';
 const TOP_AR_POST_TIME = '9:00 AM ET';
+// Meta's rules for one post (operator, 2026-10-23): at most 5 collaborators, and each handle
+// appears ONCE in the whole post. A collaborator is never also tagged on a slide, and nobody is
+// tagged twice, or the post goes over Meta's limit and fails. `seen` holds every handle already
+// used (lower-cased); `once` returns the ones not yet used and marks them.
+function handleOnce(seen) {
+  return hs => hs.filter(h => {
+    const k = String(h || '').toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
 function dailyAsanaNotes(rd, caption) {
   const out = ['Caption (paste as-is):', '', caption, ''];
   if (rd.set === 'song') {
-    const top = rd.slides.filter(sl => sl.kind === 'rank' && sl.rank <= COUNTDOWN_COLLAB_TOP && sl.handle)
-      .sort((a, b) => a.rank - b.rank).map(sl => `${sl.handle} (#${sl.rank})`);
+    const once = handleOnce(new Set([COUNTDOWN_COLLAB.toLowerCase()]));
+    const top = [];
+    for (const sl of rd.slides.filter(sl => sl.kind === 'rank' && sl.rank <= COUNTDOWN_COLLAB_TOP && sl.handle)
+      .sort((a, b) => a.rank - b.rank)) if (once([sl.handle]).length) top.push(`${sl.handle} (#${sl.rank})`);
     out.push('—', `Schedule in SocialBee from ${COUNTDOWN_FROM} to post at ${COUNTDOWN_POST_TIME} on ${rd.day || rd.date}.`,
       `Collab: invite ${COUNTDOWN_COLLAB}${top.length ? ' and the top 3 artists: ' + top.join(', ') : ''} as collaborators.`, '');
     const cm = countdownComments(rd).comments;
@@ -2451,20 +2467,32 @@ function dailyAsanaNotes(rd, caption) {
       out.push('—', 'Comments: post each one under the carousel once it is up.', '');
       cm.forEach((c, i) => out.push(`${i + 1}) ${c}`, ''));
     }
-    const tags = rd.slides.filter(sl => (sl.kind === 'rank' && sl.handle) || (sl.kind === 'group' && sl.handles && sl.handles.length))
-      .map(sl => sl.kind === 'rank' ? `Slide ${sl.slide} (#${sl.rank}): ${sl.handle}` : `Slide ${sl.slide} (#${sl.lo}–#${sl.hi}): ${sl.handles.join(', ')}`);
+    const tags = [];
+    for (const sl of rd.slides) {
+      if (sl.kind === 'rank' && sl.handle) {
+        const h = once([sl.handle]);
+        if (h.length) tags.push(`Slide ${sl.slide} (#${sl.rank}): ${h[0]}`);
+      } else if (sl.kind === 'group' && sl.handles && sl.handles.length) {
+        const h = once(sl.handles);
+        if (h.length) tags.push(`Slide ${sl.slide} (#${sl.lo}–#${sl.hi}): ${h.join(', ')}`);
+      }
+    }
     if (tags.length) out.push('—', 'Tag each artist on their own slide (every artist on a grouped slide):', ...tags, '');
-    out.push('Artists with no Instagram handle on file are not tagged or mentioned.', '');
+    out.push('Collaborators are not tagged on a slide, and no one is tagged twice: Meta counts each handle once per post.',
+      'Artists with no Instagram handle on file are not tagged or mentioned.', '');
   } else {
     // Collab with the #1 A&R, tag the other seven (operator, 2026-10-03).
     const hero = rd.slides[0].hero || {};
-    const rest = rd.slides.filter(sl => sl.kind === 'list').flatMap(sl => sl.rows).map(r => r.handle).filter(Boolean);
-    // @makinitmusicreview is always a collaborator too (operator, 2026-10-03).
+    const once = handleOnce(new Set([TOP_AR_COLLAB.toLowerCase()]));
+    const heroHandle = hero.handle ? once([hero.handle])[0] : null;
+    const rest = once(rd.slides.filter(sl => sl.kind === 'list').flatMap(sl => sl.rows).map(r => r.handle).filter(Boolean));
+    // The house account is always a collaborator too (operator, 2026-10-03).
     out.push('—', `Schedule in SocialBee from ${COUNTDOWN_FROM} to post at ${TOP_AR_POST_TIME} on ${rd.day || rd.date}.`);
-    out.push(hero.handle ? `Collab: invite ${TOP_AR_COLLAB} and ${hero.handle} (#1) as collaborators.`
+    out.push(heroHandle ? `Collab: invite ${TOP_AR_COLLAB} and ${heroHandle} (#1) as collaborators.`
       : `Collab: invite ${TOP_AR_COLLAB} as a collaborator. The #1 A&R (${hero.title}) has no Instagram handle on file, so they are not a collaborator.`);
     if (rest.length) out.push(`Tag the other top A&Rs: ${rest.join(', ')}`);
-    out.push('A&Rs with no Instagram handle on file are not tagged.', '');
+    out.push('Collaborators are not tagged, and no one is tagged twice: Meta counts each handle once per post.',
+      'A&Rs with no Instagram handle on file are not tagged.', '');
   }
   out.push('—', `Post the ${rd.total} attached slides in order as one Instagram carousel.`, 'Generated by The A&R Room.');
   return out.join('\n');
@@ -3672,8 +3700,12 @@ async function chartScope(q) {
     const pad = n => String(n).padStart(2, '0');
     const from = etEpoch(`${y}-${pad(mo)}-01`, 0);
     const to = etEpoch(mo === 12 ? `${y + 1}-01-01` : `${y}-${pad(mo + 1)}-01`, 0) - 1;
-    const label = new Date(Date.UTC(y, mo - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-    return { kind: 'month', label, month: q.month, from, to,
+    // NAMED BY ITS PUBLICATION MONTH (operator, 2026-11-11): the chart of October's rooms is
+    // released in November, so it is "HOT 100 — November 2026" on the cover, in the caption
+    // and in the file names. `tallied` keeps the month that was counted readable on the console.
+    const monthName = (yy, mm) => new Date(Date.UTC(yy, mm - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const label = mo === 12 ? monthName(y + 1, 1) : monthName(y, mo + 1);
+    return { kind: 'month', label, tallied: monthName(y, mo), month: q.month, from, to,
       sessions: await pick("AND status <> 'upcoming' AND COALESCE(window_closes_at, scheduled_at, created_at) BETWEEN ? AND ?", [from, to]) };
   }
   if (q.scope === 'last') {
@@ -3824,7 +3856,7 @@ async function chartsData(q) {
   const out = {
     mode: q.mode, order: q.order, minVotes: q.minVotes, limit: q.limit, per: q.per,
     dedupe: q.dedupe, scores: q.scores && q.mode !== 'ars', scaleMax: shareCards.CHART_SCALE_MAX, bands: shareCards.CHART_BANDS,
-    scope: { kind: scope.kind, label: scope.label, rooms: sessions.length,
+    scope: { kind: scope.kind, label: scope.label, tallied: scope.tallied || null, rooms: sessions.length,
       from: sessions.length ? Math.min(...sessions.map(s => Number(s.show_at))) : null,
       to: sessions.length ? Math.max(...sessions.map(s => Number(s.show_at))) : null },
     generatedAt: now(),
@@ -5783,21 +5815,41 @@ function asyncQueueOrder(seedKey, sessionId, rounds) {
   return arr;
 }
 
-const artistEmailText = (d) => `Your Track Report — ${d.title}\n\n`
+// The two sections under the report (operator, 2026-11-17). ONE big ask per email, and in the
+// Track Report it is the testimonial, so the old "Share your Track Report" request is gone.
+// Order: intro, the report, Hear feedback, the Brand Partnership Opportunity.
+// TESTIMONIAL_PITCH is the site's own offer, word for word (mim: mim_wins_anr_pitch()). The
+// offer is a collab post, not a sale: no price of ours, nothing to buy (the no-upsell test stands).
+const HEAR_FEEDBACK_HEAD = 'Hear feedback on records?';
+const HEAR_FEEDBACK_LINE = 'Join us daily at 9 PM ET / 6 PM PT on YouTube for the live feedback session and hear what people had to say about the records. Will your song set off the fire alarm?';
+const HEAR_FEEDBACK_NOTE = "Turn on notifications for reminders. We're also live on TikTok and Instagram.";
+const TESTIMONIAL_HEAD = 'Brand Partnership Opportunity';
+const TESTIMONIAL_PITCH = [
+  "We're investing $6,000 in an Ad Campaign to Promote the A&R Team. We want to partner with actual Artists, Producers, and Songwriters who've submitted and received feedback.",
+  "If you submit a testimonial we'll do a collab post with you to further expose you to our Audience. If the post does well we will add it to the Ad campaign for even more people to see you.",
+];
+const TESTIMONIAL_URL = 'https://www.makinitmag.com/testimonial/review';
+const TESTIMONIAL_CTA = 'Submit your testimonial';
+const artistFirstName = (artist) => (artist ? String(artist).trim().split(/\s+/)[0] : '');
+
+const artistEmailText = (d) => `Hi${artistFirstName(d.artist) ? ' ' + artistFirstName(d.artist) : ''},\n\n`
   + `${d.decision}\n\n`
-  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}. `
+  + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}.\n\n`
+  + `YOUR TRACK REPORT\n\n`
   + `Official track rating: ${d.mean} out of 9. ${d.verdict || d.bandLabel}.\n\n`
   + (d.liveLine ? `${d.liveLine}\n\n` : '')
-  + (d.subscribe ? `${subscribeBlockText()}\n\n` : '')
+  + `Your Track Report is attached as ${d.pages.length} images.\n\n`
   + (d.watchUrl ? `${d.watchLabel || 'Watch the room hear your record'}: ${d.watchUrl}\n\n` : '')
   + artistCommentsText(d.comments)
-  + `Your Track Report is attached as ${d.pages.length} images. Share them as one Instagram carousel, `
-  + `add @Makinit4indies as a collaborator, and tag ${d.hashtag}.\n\n`
+  + `${HEAR_FEEDBACK_HEAD.toUpperCase()}\n\n${HEAR_FEEDBACK_LINE}\n${SUBSCRIBE_CTA}: ${LIVE_SUBSCRIBE_URL}\n${HEAR_FEEDBACK_NOTE}\n\n`
+  + `${(TESTIMONIAL_HEAD + (d.artist ? ' for ' + d.artist : '')).toUpperCase()}\n\n${TESTIMONIAL_PITCH.join('\n\n')}\n${TESTIMONIAL_CTA}: ${TESTIMONIAL_URL}\n\n`
   + `Submit another record: https://${shareCards.SUBMIT_URL}`;
 
-// The artist's report email: the decision first, the rating as evidence, every report page,
-// the A&R comments attributed, and the post instructions. Deliberately carries NO price or
-// upsell — the operator's call: visibility first (see the postshow-artist-workflow memory).
+// The artist's report email, in four sections, each opened by a rule and a heading (operator,
+// 2026-11-17): the intro (the decision first), Your Track Report (the rating as evidence, every
+// report page, the A&R comments attributed), Hear feedback (the daily stream, one subscribe
+// button), and the Brand Partnership Opportunity (the testimonial ask). Deliberately carries NO
+// price or upsell — the operator's call: visibility first (see the postshow-artist-workflow memory).
 // Built as a sibling of the site's own email template (mim docs/mockups/email-template-
 // round1.html: the #0D0E12 masthead well, #17191D body, #24272C cards, green = go, 24px
 // pill buttons, Open Sans), so the mail looks like the site the links land on.
@@ -5824,18 +5876,30 @@ const artistCommentsText = (comments) => (!comments || !comments.length) ? ''
     + comments.map(c => `"${c.body}"\n— ${c.name}${[c.role, c.location].filter(Boolean).length ? ' (' + [c.role, c.location].filter(Boolean).join(', ') + ')' : ''}`).join('\n\n')
     + `\n\nComments are the personal opinions of individual A&Rs who scored the record.\n\n`;
 
-function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag, subscribe = false, liveLine = null }) {
+// A section opener for the artist mails: a green rule, then a heading. `title` is already escaped.
+function artistSectionHtml(title) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:30px 0 16px;">
+            <tr><td bgcolor="#4BB749" height="2" style="background:#4BB749;height:2px;font-size:1px;line-height:1px;">&nbsp;</td></tr>
+            <tr><td align="center" style="padding:18px 4px 0;text-align:center;">
+              <p style="margin:0;font-size:20px;line-height:1.3;font-weight:800;color:#F6F7FB;">${title}</p>
+            </td></tr>
+          </table>`;
+}
+
+function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, liveLine = null }) {
   what = what || 'A&R Meeting';
-  hashtag = hashtag || (what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting');
   const pageBlock = (pages || []).filter(Boolean).map((u, i) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Track Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:10px;display:block;margin:0 auto 10px;border:1px solid #2C2F34"></a>`
   ).join('');
-  const watchBlock = subscribe ? `
-      ${liveLine ? `<p style="font-size:14px;line-height:1.6;color:#F6F7FB;margin:0 0 12px;">${escapeHtml(liveLine)}</p>` : ''}
-      ${subscribeBlockHtml('artist')}` : watchUrl ? `
+  const liveBlock = liveLine ? `<p style="font-size:14px;line-height:1.6;color:#F6F7FB;margin:0 0 16px;">${escapeHtml(liveLine)}</p>` : '';
+  // A live session keeps its own replay link. A daily record has none: the Hear feedback
+  // section below is where every artist is sent to watch.
+  const watchBlock = watchUrl ? `
       <p style="margin:6px 0 4px;"><a href="${watchUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">${escapeHtml(watchLabel || 'Watch the room hear your record')}</a></p>
       <p style="font-size:12px;line-height:1.55;color:#8A94A6;margin:0 0 14px;">Go to your record in the replay. Short clips of the live response are the easiest thing to post.</p>` : '';
-  const first = artist ? escapeHtml(String(artist).split(/\s+/)[0]) : '';
+  const first = escapeHtml(artistFirstName(artist));
+  const pill = 'display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;';
+  const body = 'font-size:14px;line-height:1.6;color:#B0B7C3;';
   return `<div style="background:#17191D;padding:26px 12px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#F6F7FB;">
     <div style="max-width:600px;margin:0 auto;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0D0E12" style="background:#0D0E12;border-radius:12px 12px 0 0;">
@@ -5847,9 +5911,10 @@ function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, vo
       </table>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#17191D" style="background:#17191D;border:1px solid #2C2F34;border-top:0;border-radius:0 0 12px 12px;">
         <tr><td style="padding:22px 18px 24px;text-align:center;">
-          <p style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:bold;margin:0 0 10px;">Your Track Report${first ? ', ' + first : ''}</p>
+          <p style="font-size:15px;line-height:1.5;color:#F6F7FB;margin:0 0 12px;">Hi${first ? ' ' + first : ''},</p>
           <h1 style="font-size:24px;line-height:1.25;margin:0 0 12px;color:#F6F7FB;">${escapeHtml(decision || '')}</h1>
-          <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0 0 18px;"><b style="color:#F6F7FB">“${escapeHtml(title)}”</b>${artist ? ' by ' + escapeHtml(artist) : ''} was rated by <b style="color:#F6F7FB">${escapeHtml(String(votes || 0))} A&amp;Rs</b> in The ${escapeHtml(what)} on ${escapeHtml(dateLabel || '')}.</p>
+          <p style="font-size:14px;line-height:1.6;color:#B0B7C3;margin:0;"><b style="color:#F6F7FB">“${escapeHtml(title)}”</b>${artist ? ' by ' + escapeHtml(artist) : ''} was rated by <b style="color:#F6F7FB">${escapeHtml(String(votes || 0))} A&amp;Rs</b> in The ${escapeHtml(what)} on ${escapeHtml(dateLabel || '')}.</p>
+          ${artistSectionHtml('Your Track Report')}
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#24272C" style="background:#24272C;border:1px solid #2C2F34;border-radius:10px;margin-bottom:16px;">
             <tr><td align="center" style="padding:16px;">
               <p style="margin:0;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8A94A6;font-weight:bold;">Official track rating</p>
@@ -5858,16 +5923,19 @@ function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, vo
               <p style="margin:10px 0 0;font-size:17px;font-weight:800;line-height:1.3;color:#F6F7FB;">${escapeHtml(verdict || bandLabel || '')}</p>
             </td></tr>
           </table>
+          ${liveBlock}
           ${pageBlock}
           ${watchBlock}
           ${artistCommentsHtml(comments)}
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#24272C" style="background:#24272C;border:1px solid #2F6B31;border-radius:10px;margin-top:22px;">
-            <tr><td style="padding:14px 15px;text-align:left;">
-              <p style="margin:0 0 6px;font-size:14px;font-weight:bold;color:#F6F7FB;">Share your Track Report</p>
-              <p style="margin:0;font-size:13px;line-height:1.6;color:#B0B7C3;">Post the pages as one Instagram <b style="color:#F6F7FB">carousel</b>. Add <b style="color:#F6F7FB">@Makinit4indies</b> as a <b>collaborator</b> and tag <b style="color:#F6F7FB">${escapeHtml(hashtag)}</b>. The last page carries no score, so it is the one to lead with.</p>
-            </td></tr>
-          </table>
-          <p style="font-size:12.5px;color:#8A94A6;margin:20px 0 0;">Submit another record → <a href="https://${shareCards.SUBMIT_URL}" style="color:#4BB749;text-decoration:none;">${shareCards.SUBMIT_URL}</a></p>
+          ${artistSectionHtml(escapeHtml(HEAR_FEEDBACK_HEAD))}
+          <p style="${body}margin:0 0 14px;">${escapeHtml(HEAR_FEEDBACK_LINE)}</p>
+          <a href="${LIVE_SUBSCRIBE_URL}" style="${pill}">${SUBSCRIBE_CTA}</a>
+          <p style="font-size:12.5px;line-height:1.55;color:#8A94A6;margin:12px 0 0;">${escapeHtml(HEAR_FEEDBACK_NOTE)}</p>
+          ${artistSectionHtml(escapeHtml(TESTIMONIAL_HEAD + (artist ? ' for ' + artist : '')))}
+          <p style="${body}margin:0 0 10px;">${escapeHtml(TESTIMONIAL_PITCH[0])}</p>
+          <p style="${body}margin:0 0 14px;">${escapeHtml(TESTIMONIAL_PITCH[1])}</p>
+          <a href="${TESTIMONIAL_URL}" style="${pill}">${TESTIMONIAL_CTA}</a>
+          <p style="font-size:12.5px;color:#8A94A6;margin:30px 0 0;">Submit another record → <a href="https://${shareCards.SUBMIT_URL}" style="color:#4BB749;text-decoration:none;">${shareCards.SUBMIT_URL}</a></p>
         </td></tr>
       </table>
     </div>
@@ -5906,12 +5974,11 @@ async function sendArtistReportEmail(round, session, dest) {
   const common = {
     title: d.title, artist: d.artist, mean: d.mean, bandLabel: d.band.label, verdict: d.band.verdict, decision, votes: d.votes,
     what: d.what, dateLabel: d.dateLabel,
-    // A daily record has no replay: the YouTube subscribe block replaces the watch link.
+    // A daily record has no replay: the Hear feedback section is where it is sent to watch.
     // A live session keeps its own replay link.
-    subscribe: isAsync(session),
     watchUrl: isAsync(session) ? null : (session.watch_url || null),
     watchLabel: null,
-    pages, comments: d.comments, hashtag: d.what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting',
+    pages, comments: d.comments,
   };
   // The live stream (2026-11-22): a Go live press on the drop is the record of a stream. Pressed
   // while the drop was still being scored = "scored live"; after the tally = "played".
@@ -6284,6 +6351,252 @@ async function liveCallState(session) {
     noContact: plan.records.filter(r => r.email === 'none' && r.sms === 'none').length,
     records: plan.records.map(r => ({ n: r.n, title: r.title, artist: r.artist, email: mask(r.email, 'email'), sms: mask(r.sms, 'sms') })),
     calls,
+  };
+}
+
+// ===== Notify a chart's list (054) =====
+// Operator, 2026-11-12: "send email and SMS to everyone who made the HOT 100 list, or any list I
+// create from a chart." The audience IS the chart the Charts screen is showing — the same query
+// string that drives the table, the CSV and the carousel — so the people told are exactly the
+// people on the slides. Rows under the floor are out; reference tracks never chart. A record
+// chart notifies ARTISTS (the contact on the round, like the Go live card); an A&R chart
+// notifies A&Rs (users, with their opt-outs, bounces and SMS consent honoured, like the mass
+// announcement). One message per ADDRESS per send: an artist with two charting records hears
+// once, about the higher one.
+//
+// The list is identified by its canonical chart query (`chartListKey`), not a stored roster:
+// "the same list" is reproducible from the console, and the send history keeps what went to
+// whom. Artist texts keep the ET window (held, drained by the hourly cron); A&R texts go when
+// pressed, as announcements do. No score or vote count rides along unless the chart asked for
+// scores — the message is the operator's own words with merge tokens.
+const CHART_TOKEN_RE = /\[\s*(first\s*name|name|artist|title|rank|chart\s*name|post\s*link)\s*\]/gi;
+const CHART_NOTICE_BODY_MAX = 6000;
+function renderChartTokens(text, vals, html) {
+  const key = k => k.toLowerCase().replace(/\s+/g, '');
+  const out = [];
+  let last = 0;
+  const src = String(text == null ? '' : text);
+  for (const m of src.matchAll(CHART_TOKEN_RE)) {
+    out.push(html ? escapeHtml(src.slice(last, m.index)) : src.slice(last, m.index));
+    const k = key(m[1]);
+    const v = k === 'firstname' ? vals.firstName : k === 'name' ? vals.name : k === 'artist' ? vals.artist
+      : k === 'title' ? vals.title : k === 'rank' ? vals.rank : k === 'chartname' ? vals.chartName : vals.postLink;
+    const s = v == null ? '' : String(v);
+    if (html && k === 'postlink' && s) out.push(`<a href="${escapeHtml(s)}" style="color:#4bb749">${escapeHtml(s)}</a>`);
+    else out.push(html ? escapeHtml(s) : s);
+    last = m.index + m[0].length;
+  }
+  out.push(html ? escapeHtml(src.slice(last)) : src.slice(last));
+  return out.join('');
+}
+// What makes a list the same list: everything that decides MEMBERSHIP. Order, per-slide and
+// "show scores" change how it prints, not who is on it, so they stay out.
+function chartListKey(q) {
+  const parts = ['mode=' + q.mode, 'scope=' + q.scope];
+  if (q.scope === 'series') parts.push('seriesId=' + (q.seriesId || ''));
+  else if (q.scope === 'range') parts.push('from=' + q.from, 'to=' + q.to);
+  else if (q.scope === 'month') parts.push('month=' + (q.month || ''));
+  else if (q.scope === 'last') parts.push('lastN=' + q.lastN);
+  parts.push('limit=' + q.limit);
+  if (q.mode === 'ars') parts.push('sort=' + q.sort, 'minRounds=' + q.minRounds);
+  else parts.push('minVotes=' + q.minVotes, 'dedupe=' + (q.dedupe ? 1 : 0));
+  return parts.join('&');
+}
+const chartListLabel = (data) => `${data.title} — ${data.scope.label}`;
+const CHART_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// Who a send reaches. `people` is every charting row with what happens to its email and
+// its phone ('none' | 'same:<rank>' | 'opted out' | 'bounced' | 'no consent' | the address);
+// `emails` / `phones` are the deduped recipients in rank order. Pure over the rows + a
+// contact map so the test can pin the dedupe; the route masks before it answers.
+function chartNoticePlanFrom(data, contacts) {
+  const rows = (data.order === 'countdown' ? data.rows.slice().reverse() : data.rows);
+  const seenEmail = new Map(), seenPhone = new Map();
+  const people = [], emails = [], phones = [];
+  for (const r of rows) {
+    const c = contacts.get(data.mode === 'ars' ? r.id : r.roundId) || {};
+    const p = data.mode === 'ars'
+      ? { rank: r.rank, uid: r.id, name: r.name || 'A&R', title: '', artist: '', email: 'none', sms: 'none' }
+      : { rank: r.rank, roundId: r.roundId, name: r.artist || '', title: r.title || '', artist: r.artist || '', email: 'none', sms: 'none' };
+    people.push(p);
+    const em = String(c.email || '').trim();
+    if (CHART_EMAIL_RE.test(em)) {
+      const k = em.toLowerCase();
+      if (c.optOut) p.email = 'opted out';
+      else if (c.bounced) p.email = 'bounced';
+      else if (seenEmail.has(k)) p.email = 'same:' + seenEmail.get(k);
+      else { seenEmail.set(k, p.rank); p.email = em; emails.push({ dest: em, person: p }); }
+    }
+    const ph = smsNormalize(c.phone);
+    if (ph) {
+      if (data.mode === 'ars' && !c.consent) p.sms = 'no consent';
+      else if (seenPhone.has(ph)) p.sms = 'same:' + seenPhone.get(ph);
+      else { seenPhone.set(ph, p.rank); p.sms = ph; phones.push({ dest: ph, person: p }); }
+    }
+  }
+  return { mode: data.mode, people, emails, phones };
+}
+async function chartNoticeContacts(data) {
+  const map = new Map();
+  if (data.mode === 'ars') {
+    const ids = data.rows.map(r => r.id).filter(Boolean);
+    if (!ids.length) return map;
+    const ph = ids.map(() => '?').join(',');
+    // The phone falls back to the latest participant row the way the contact export does;
+    // consent and the kill switches are on users, the only place they are recorded.
+    const rows = await db.all(
+      `SELECT u.uid, u.email, u.sms_marketing_consent AS consent, u.email_opt_out, u.email_bounced_at,
+              COALESCE(NULLIF(TRIM(u.phone), ''),
+                       (SELECT NULLIF(TRIM(p.phone), '') FROM participants p
+                         WHERE p.user_id = u.uid AND NULLIF(TRIM(p.phone), '') IS NOT NULL
+                         ORDER BY p.created_at DESC LIMIT 1)) AS phone
+         FROM users u WHERE u.uid IN (${ph})`, ids);
+    for (const r of rows) map.set(r.uid, { email: r.email || '', phone: r.phone || '', consent: Number(r.consent) === 1,
+      optOut: Number(r.email_opt_out) === 1, bounced: !!r.email_bounced_at });
+  } else {
+    const ids = data.rows.map(r => r.roundId).filter(Boolean);
+    if (!ids.length) return map;
+    const ph = ids.map(() => '?').join(',');
+    const rows = await db.all(`SELECT id, artist_email, artist_phone FROM rounds WHERE id IN (${ph})`, ids);
+    for (const r of rows) map.set(r.id, { email: r.artist_email || '', phone: r.artist_phone || '' });
+  }
+  return map;
+}
+async function chartNoticePlan(data) {
+  return chartNoticePlanFrom(data, await chartNoticeContacts(data));
+}
+// One message, rendered for ONE recipient. Shared by the send loop and "send test to me".
+// Artists get the Meeting's email frame (the Go live card's); A&Rs get the announcement frame
+// with the manage/unsubscribe footer their uid signs. The SMS always carries a way out.
+function chartNoticeVals(send, rcpt) {
+  const name = rcpt.name || '';
+  return {
+    firstName: firstNameOf(name) || (send.mode === 'ars' ? 'A&R' : ''),
+    name, artist: rcpt.artist || name, title: rcpt.title || '', rank: rcpt.rank == null ? '' : '#' + rcpt.rank,
+    chartName: send.list_label, postLink: send.post_url || '',
+  };
+}
+function chartNoticeRender(send, rcpt, base) {
+  const vals = chartNoticeVals(send, rcpt);
+  const subject = renderChartTokens(send.subject || send.list_label, vals, false);
+  const bodyText = renderChartTokens(send.body || '', vals, false);
+  const bodyHtml = renderChartTokens(send.body || '', vals, true).replace(/\n/g, '<br>');
+  const smsText = renderChartTokens(send.sms_body || '', vals, false);
+  const post = send.post_url || '';
+  const cta = post ? `<p style="margin:16px 0 8px;"><a href="${escapeHtml(post)}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">See the post</a></p>` : '';
+  if (send.mode === 'ars') {
+    const manage = notifyManageUrl(base, rcpt.uid);
+    const html = `<div style="background:#0d0b16;padding:32px 20px;font-family:sans-serif">
+      <div style="max-width:520px;margin:0 auto;background:#171328;border:1px solid #2e2750;border-radius:16px;padding:26px">
+        <p style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#4bb749;font-weight:700;margin:0 0 14px">${escapeHtml(send.list_label)}</p>
+        <div style="font-size:15px;line-height:1.6;color:#f3f0fb">${bodyHtml}</div>${cta}
+        <p style="font-size:12px;color:#6f688f;margin:22px 0 0">Makin' It Magazine · The A&amp;R Team · <a href="https://anr.makinitmag.com" style="color:#6d5fe0">anr.makinitmag.com</a></p>
+        ${notifyFooterHtml(manage)}
+      </div></div>`;
+    return { subject, html, text: `${bodyText}${post ? '\n\n' + post : ''}\n\n${notifyFooterText(manage)}`, sms: `${smsText}\n${smsFooter(manage)}`, manage };
+  }
+  const html = `<div style="background:#17191D;padding:26px 12px;font-family:'Open Sans',Helvetica,Arial,sans-serif;color:#F6F7FB;">
+    <div style="max-width:600px;margin:0 auto;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0D0E12" style="background:#0D0E12;border-radius:12px 12px 0 0;">
+        <tr><td align="center" style="padding:20px 16px 18px;">
+          <img src="https://makinitmag.com/sites/all/themes/mim2/images/mim-logo-email.png" alt="Makin' It Magazine" width="190" style="display:block;border:0;width:190px;max-width:70%;height:auto;margin:0 auto;">
+          <p style="margin:14px 0 0;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#4BB749;font-weight:bold;">${escapeHtml(send.list_label)}</p>
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#17191D" style="background:#17191D;border:1px solid #2C2F34;border-top:0;border-radius:0 0 12px 12px;">
+        <tr><td style="padding:22px 18px 24px;">
+          <div style="font-size:15px;line-height:1.6;color:#F6F7FB;">${bodyHtml}</div>${cta}
+          <p style="font-size:12.5px;line-height:1.55;color:#8A94A6;margin:18px 0 0;">${escapeHtml(SUBSCRIBE_LINE)} <a href="${LIVE_SUBSCRIBE_URL}" style="color:#4BB749">${LIVE_SUBSCRIBE_SHORT}</a></p>
+        </td></tr>
+      </table>
+    </div>
+  </div>`;
+  const sms = /\bSTOP\b/i.test(smsText) ? smsText : `${smsText} Reply STOP to opt out.`;
+  return { subject, html, text: `${bodyText}${post ? '\n\n' + post : ''}\n\n${SUBSCRIBE_LINE} ${LIVE_SUBSCRIBE_URL}`, sms, manage: null };
+}
+async function enqueueChartNotice({ q, data, plan, admin, subject, body, sms, wantEmail, wantSms, postUrl }) {
+  const sendId = id(12), at = now();
+  await db.run(
+    `INSERT INTO chart_notices (id, list_key, list_label, mode, subject, body, sms_body, post_url, by_uid, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [sendId, chartListKey(q), chartListLabel(data), data.mode, subject || null, body || null, sms || null, postUrl || null, admin.uid, at]);
+  // Rows go in 50 to a statement: one INSERT per recipient was ~200 round trips to Neon on a
+  // HOT 100, which ate most of the request's 30s before a single message went out (2026-11-21).
+  let emails = 0, texts = 0;
+  const all = [];
+  for (const [channel, list] of [['email', wantEmail ? plan.emails : []], ['sms', wantSms ? plan.phones : []]]) {
+    for (const x of list) { all.push([channel, x]); channel === 'sms' ? texts++ : emails++; }
+  }
+  for (let i = 0; i < all.length; i += 50) {
+    const chunk = all.slice(i, i + 50), params = [];
+    for (const [channel, x] of chunk) {
+      const p = x.person;
+      params.push(id(12), sendId, channel, x.dest, p.uid || null, p.roundId || null, p.rank, p.name || null, p.title || null, p.artist || null, at);
+    }
+    await db.run(
+      `INSERT INTO chart_notice_rcpts (id, send_id, channel, dest, uid, round_id, rank, name, title, artist, status, created_at)
+       VALUES ${chunk.map(() => "(?,?,?,?,?,?,?,?,?,?,'pending',?)").join(',')} ON CONFLICT (send_id, channel, dest) DO NOTHING`, params);
+  }
+  return { sendId, emails, texts };
+}
+// Send what is pending. Artist texts (a records list) wait for the ET window — this is the one
+// queue here that the hourly cron drains too; A&R texts go now, as announcements do.
+async function drainChartNotices({ listKey = null, deadline = null, limit = 60, base = null } = {}) {
+  const rows = listKey
+    ? await db.all(`SELECT r.*, n.mode, n.list_label, n.subject, n.body, n.sms_body, n.post_url FROM chart_notice_rcpts r JOIN chart_notices n ON n.id = r.send_id
+                     WHERE n.list_key = ? AND r.status = 'pending' ORDER BY r.created_at ASC, r.channel ASC, r.rank ASC LIMIT ?`, [listKey, limit])
+    : await db.all(`SELECT r.*, n.mode, n.list_label, n.subject, n.body, n.sms_body, n.post_url FROM chart_notice_rcpts r JOIN chart_notices n ON n.id = r.send_id
+                     WHERE r.status = 'pending' ORDER BY r.created_at ASC, r.channel ASC, r.rank ASC LIMIT ?`, [limit]);
+  let sent = 0, failed = 0, held = 0;
+  const b = base || publicBase();
+  for (const row of rows) {
+    if (deadline && Date.now() > deadline) break;
+    if (row.channel === 'sms' && row.mode !== 'ars' && !withinSmsWindow()) { held++; continue; }
+    const claim = await db.run("UPDATE chart_notice_rcpts SET status = 'sending' WHERE id = ? AND status = 'pending'", [row.id]);
+    if (!claim.changes) continue;
+    try {
+      const m = chartNoticeRender(row, row, b);
+      const r = row.channel === 'sms' ? await sendSms(row.dest, m.sms)
+        : await sendEmail(row.dest, m.subject, m.html, m.text, row.mode === 'ars' ? notifySendOpts(b, row.uid, 'chart_notice') : { tag: 'chart_notice' });
+      if (row.channel === 'email' && row.mode === 'ars') await noteEmailOutcome(row.dest, r);
+      if (r.ok) { await db.run("UPDATE chart_notice_rcpts SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
+      else { await db.run("UPDATE chart_notice_rcpts SET status = 'failed', sent_at = ?, error = ? WHERE id = ?", [now(), (r.error || 'send failed').slice(0, 300), row.id]); failed++; }
+    } catch (e) {
+      await db.run("UPDATE chart_notice_rcpts SET status = 'failed', sent_at = ?, error = ? WHERE id = ?", [now(), (e.message || 'error').slice(0, 300), row.id]); failed++;
+    }
+  }
+  return { sent, failed, held };
+}
+// What the console shows: who a send would reach (masked), every send to this list, and the
+// lists sent to lately (so "any list I create" is a click away again).
+async function chartNoticeState(q, data, plan) {
+  const listKey = chartListKey(q);
+  const mask = (v, ch) => /^(none|same:|opted out|bounced|no consent)/.test(v) ? v : (ch === 'sms' ? maskPhone(v) : maskEmail(v));
+  const rows = await db.all(
+    `SELECT n.id AS send_id, n.subject, n.post_url, n.created_at AS started_at, n.mode, r.channel, r.dest, r.status, r.error, r.sent_at
+       FROM chart_notices n LEFT JOIN chart_notice_rcpts r ON r.send_id = n.id WHERE n.list_key = ? ORDER BY n.created_at ASC`, [listKey]);
+  const sends = [];
+  for (const r of rows) {
+    let c = sends.find(x => x.sendId === r.send_id);
+    if (!c) { c = { sendId: r.send_id, subject: r.subject || '', postUrl: r.post_url || '', startedAt: Number(r.started_at), emailsSent: 0, textsSent: 0, failed: [], stuck: [], pending: 0, held: 0, lastAt: null }; sends.push(c); }
+    if (!r.channel) continue;
+    if (r.status === 'sent') r.channel === 'sms' ? c.textsSent++ : c.emailsSent++;
+    else if (r.status === 'failed') c.failed.push({ channel: r.channel, to: r.channel === 'sms' ? maskPhone(r.dest) : maskEmail(r.dest), error: r.error || 'send failed' });
+    // 'sending' = claimed but never finished: the request died mid-send (Vercel's 30s cap).
+    // Nothing retries it on its own (it may or may not have arrived), so the card lists it.
+    else if (r.status === 'sending') c.stuck.push({ channel: r.channel, to: r.channel === 'sms' ? maskPhone(r.dest) : maskEmail(r.dest) });
+    else { c.pending++; if (r.channel === 'sms' && r.mode !== 'ars') c.held++; }
+    if (r.sent_at && Number(r.sent_at) > (c.lastAt || 0)) c.lastAt = Number(r.sent_at);
+  }
+  sends.forEach(c => { c.startedLabel = dropLogWhen(c.startedAt); c.lastLabel = c.lastAt ? dropLogWhen(c.lastAt) : null; });
+  const recent = await db.all(
+    `SELECT list_key, MAX(list_label) AS list_label, MAX(created_at) AS last_at, COUNT(*) AS sends FROM chart_notices GROUP BY list_key ORDER BY MAX(created_at) DESC LIMIT 10`);
+  return {
+    listKey, listLabel: chartListLabel(data), mode: data.mode,
+    people: plan.people.length, emails: plan.emails.length, texts: plan.phones.length,
+    noContact: plan.people.filter(p => p.email === 'none' && p.sms === 'none').length,
+    smsWindow: { open: withinSmsWindow(), from: SMS_WINDOW_START_LABEL, to: SMS_WINDOW_END_LABEL, holds: data.mode !== 'ars' },
+    rows: plan.people.map(p => ({ rank: p.rank, name: p.name, title: p.title, artist: p.artist, email: mask(p.email, 'email'), sms: mask(p.sms, 'sms') })),
+    sends,
+    recent: recent.map(r => ({ listKey: r.list_key, label: r.list_label, lastAt: Number(r.last_at), lastLabel: dropLogWhen(Number(r.last_at)), sends: Number(r.sends) })),
   };
 }
 
@@ -7370,6 +7683,9 @@ async function ratifyRound(round) {
 // /api/sidebet response. Nothing here is readable before status='settled' (callers gate
 // on it): the standings are derived from pick counts, which stay sealed until then.
 const SIDEBET_RESULT_LIMIT = 25;
+// Pick the Hits ballots rank 16 songs by default (operator, 2026-11-17; Pack 12 was 18). Only
+// the DEFAULT for a new pack: every pack carries its own picks_required, set on the console form.
+const HITS_DEFAULT_PICKS = 16;
 async function sidebetResults(pack, limit = SIDEBET_RESULT_LIMIT) {
   const rows = await db.all(
     `SELECT se.rank, se.correct, se.distance, se.entry_no, u.name, u.location
@@ -7485,6 +7801,12 @@ async function handleApi(req, res, url) {
   // Tournaments (045): public page data + the reminder list, and the admin dashboard.
   if (p === '/api/tournament' || p.startsWith('/api/tournament/') || p.startsWith('/api/admin/tournament')) {
     const handled = await tournaments.handle(req, res, url);
+    if (handled !== false) return;
+  }
+
+  // Pick the Hits (055): the notify list, its unsubscribe, and the admin tally + sends.
+  if (p.startsWith('/api/hits/') || p === '/api/admin/hits' || p.startsWith('/api/admin/hits/')) {
+    const handled = await hits.handle(req, res, url);
     if (handled !== false) return;
   }
 
@@ -8768,15 +9090,19 @@ async function handleApi(req, res, url) {
   // Public read: the open pack, its songs, and (with an auth token) your own entry.
   if (p === '/api/sidebet' && method === 'GET') {
     const slug = (url.searchParams.get('pack') || '').trim();
-    // Resolution: the one OPEN pack wins. With none open, fall back to the most recent
-    // closed-or-settled one — otherwise an entrant who comes back after the show (which
-    // is exactly what the confirmation screen told them to do) lands on an empty page
-    // instead of their own result. An explicit slug reaches any pack by permalink.
+    // Resolution (Pick the Hits, 2026-11-11): the one OPEN pack wins. With none open, a pack
+    // whose picks closed but whose results aren't out yet. With neither, the page is in its
+    // NOT-OPEN-YET state (pack: null) and links the latest results. An explicit ?pack= (slug
+    // or id) reaches any non-draft pack — that's the results page an email links to.
+    const latestSettled = await db.get("SELECT id, slug, name FROM packs WHERE status = 'settled' ORDER BY settled_at DESC LIMIT 1", []);
+    const lastResults = latestSettled ? { pack: latestSettled.slug || latestSettled.id, name: latestSettled.name } : null;
     const pack = slug
-      ? await db.get('SELECT * FROM packs WHERE slug = ?', [slug])
+      ? await db.get("SELECT * FROM packs WHERE (slug = ? OR id = ?) AND status <> 'draft'", [slug, slug])
       : (await db.get("SELECT * FROM packs WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", []))
-        || (await db.get("SELECT * FROM packs WHERE status IN ('closed','settled') ORDER BY COALESCE(settled_at, closes_at) DESC LIMIT 1", []));
-    if (!pack) return send(res, 200, { pack: null });
+        || (await db.get("SELECT * FROM packs WHERE status = 'closed' ORDER BY closes_at DESC LIMIT 1", []));
+    if (!pack) return send(res, 200, { pack: null, state: 'preregister', lastResults });
+    const isOpen = pack.status === 'open' && now() < Number(pack.closes_at);
+    const weighted = pack.status === 'settled' && pack.scoring === 'weighted';
     const songs = await db.all('SELECT id, title, artist, row_no FROM pack_songs WHERE pack_id = ? ORDER BY row_no', [pack.id]);
     const out = {
       pack: {
@@ -8787,8 +9113,13 @@ async function handleApi(req, res, url) {
         status: pack.status, songCount: songs.length,
         // Server clock, so a device with a wrong date can't think entries are still open.
         nowMs: now(),
-        open: pack.status === 'open' && now() < Number(pack.closes_at),
+        open: isOpen,
       },
+      // preregister | open | closed | results — the four states of the page.
+      state: isOpen ? 'open' : pack.status === 'settled' ? 'results' : 'closed',
+      lastResults,
+      // Is a pack taking picks right now? Turns the results page's notify form into "Pick the Hits".
+      openNow: isOpen || !!(await db.get("SELECT 1 AS x FROM packs WHERE status = 'open' AND closes_at > ? LIMIT 1", [now()])),
       banner: pack.banner_id ? await getBanner(pack.banner_id) : null,
       songs: songs.map(s => ({ id: s.id, title: s.title, artist: s.artist || null })),
       entry: null,
@@ -8803,12 +9134,16 @@ async function handleApi(req, res, url) {
           picks: picks.map(x => x.pack_song_id),
           correct: e.correct == null ? null : Number(e.correct),
           rank: e.rank == null ? null : Number(e.rank),
+          // Pick the Hits: only a ballot with a finished A&R Team profile counts.
+          eligible: await hits.isEligible(user.uid),
         };
+        if (weighted) out.entry.result = await hits.entryResult(pack, e);
       }
     }
-    // Results are readable only once settled — before that there is nothing to read
-    // (no song has been played) and pick counts are sealed.
-    if (pack.status === 'settled') out.results = await sidebetResults(pack);
+    // Results are readable only once settled — before that there is nothing to read and
+    // pick counts are sealed. A Pick the Hits pack publishes ranks only (hits.publicResults).
+    if (weighted) out.hits = await hits.publicResults(pack);
+    else if (pack.status === 'settled') out.results = await sidebetResults(pack);
     return send(res, 200, out);
   }
 
@@ -8856,7 +9191,8 @@ async function handleApi(req, res, url) {
       }
     });
     const e = await db.get('SELECT entry_no, updated_at FROM sidebet_entries WHERE id = ?', [entryId]);
-    return send(res, 200, { ok: true, entryNo: e.entry_no, updatedAt: Number(e.updated_at), edited: !!existing });
+    return send(res, 200, { ok: true, entryNo: e.entry_no, updatedAt: Number(e.updated_at), edited: !!existing,
+      eligible: await hits.isEligible(user.uid) });
   }
 
   // ----- sidebet admin (platform admin only: a pack spans no single room) -----
@@ -8873,7 +9209,7 @@ async function handleApi(req, res, url) {
         downloadUrl: k.download_url || null, prizeText: k.prize_text || null,
         sponsorText: k.sponsor_text || null, bannerId: k.banner_id || null,
         warsAt: Number(k.wars_at), closesAt: Number(k.closes_at),
-        sessionId: k.session_id || null, status: k.status,
+        sessionId: k.session_id || null, status: k.status, scoring: k.scoring || null,
         settledAt: k.settled_at ? Number(k.settled_at) : null,
         songs: Number(sc.n), entries: Number(ec.n),
       });
@@ -8884,6 +9220,7 @@ async function handleApi(req, res, url) {
     const rooms = await db.all(
       "SELECT id, name, status FROM sessions WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 50", []);
     return send(res, 200, {
+      defaultPicks: HITS_DEFAULT_PICKS,
       packs: out,
       banners: banners.map(b => ({ id: b.id, label: b.label || 'Untitled banner', image: `/api/banner/image?id=${b.id}` })),
       rooms: rooms.map(r => ({ id: r.id, name: r.name, status: r.status })),
@@ -8896,12 +9233,13 @@ async function handleApi(req, res, url) {
     const b = await readBody(req);
     const name = (b.name || '').toString().trim();
     if (!name) return bad(res, 'Service pack title is required');
-    const picks = Math.max(1, Math.min(50, parseInt(b.picksRequired, 10) || 18));
-    const warsAt = Number(b.warsAt), closesAt = Number(b.closesAt);
-    if (!warsAt || !closesAt) return bad(res, 'Tournament date and cut-off are both required');
-    // Enforced server-side as well as in the form: entries that stay editable past the
-    // first song let someone submit a list they already know the answer to.
-    if (closesAt >= warsAt) return bad(res, 'The cut-off must be before the tournament starts');
+    const picks = Math.max(1, Math.min(50, parseInt(b.picksRequired, 10) || HITS_DEFAULT_PICKS));
+    // Pick the Hits has no tournament: wars_at is now the RESULTS date and defaults to the
+    // cut-off. It may not be before the cut-off (results can't come out while picks are open).
+    const closesAt = Number(b.closesAt);
+    const warsAt = Number(b.warsAt) || closesAt;
+    if (!closesAt) return bad(res, 'The cut-off is required');
+    if (closesAt > warsAt) return bad(res, 'The cut-off must be before the results date');
 
     const existing = b.id ? await db.get('SELECT * FROM packs WHERE id = ?', [b.id]) : null;
     if (b.id && !existing) return bad(res, 'Unknown iteration', 404);
@@ -9035,6 +9373,8 @@ async function handleApi(req, res, url) {
     const b = await readBody(req);
     const pack = await db.get('SELECT * FROM packs WHERE id = ?', [b.packId || '']);
     if (!pack) return bad(res, 'Unknown iteration', 404);
+    // The A&R Wars rule (a list of PLAYED songs) is kept for history. Pick the Hits tallies
+    // at /api/admin/hits/settle.
     const played = Array.isArray(b.played) ? [...new Set(b.played)] : [];
     const need = Number(pack.picks_required);
     // A miscount doesn't error on its own — it quietly crowns the wrong person. So the
@@ -9074,7 +9414,7 @@ async function handleApi(req, res, url) {
         await tx.run('UPDATE sidebet_entries SET correct = ?, distance = ?, rank = ? WHERE id = ?',
           [r.correct, r.distance, r.rank, r.id]);
       }
-      await tx.run("UPDATE packs SET status = 'settled', settled_at = ? WHERE id = ?", [now(), pack.id]);
+      await tx.run("UPDATE packs SET status = 'settled', settled_at = ?, scoring = 'played' WHERE id = ?", [now(), pack.id]);
     });
     const fresh = await db.get('SELECT * FROM packs WHERE id = ?', [pack.id]);
     return send(res, 200, { ok: true, entries: ranked.length, results: await sidebetResults(fresh) });
@@ -11565,8 +11905,9 @@ async function handleApi(req, res, url) {
     if (!ok) return bad(res, 'Bad token', 401);
     if (!withinSmsWindow()) return send(res, 200, { ok: true, skipped: 'outside the ET send window', etHour: etHour() });
     const out = await drainArtistSms({ limit: 25 });
+    const charts = await drainChartNotices({ limit: 25 });
     const rem = await db.get("SELECT COUNT(*) AS c FROM artist_notices WHERE status = 'pending' AND channel = 'sms'");
-    return send(res, 200, { ok: true, ...out, remaining: Number(rem.c) || 0 });
+    return send(res, 200, { ok: true, ...out, charts, remaining: Number(rem.c) || 0 });
   }
 
   // ---- A&R Daily lifecycle: open at noon, close + tally at noon next day, publish at 3PM ----
@@ -11621,6 +11962,13 @@ async function handleApi(req, res, url) {
       const total = await dailyDaySoFar(session, participant, demoVotes);
       const state = { view: 'reveal', at: now(), drop: { id: session.id, label: dropLabel }, reveal, total };
       await setDailyOverlayState(admin.uid, state);
+      // The strip keeps the outcome after the reveal row drops away: Average and Points for
+      // the record it is showing, until the next record.
+      const rec = await dailyRecordState(admin.uid);
+      if (rec && rec.on && rec.roundId === round.id) {
+        await setDailyRecordState(admin.uid, { ...rec, at: now(), stage: 'result', rating: reveal.rated, predict: reveal.predicted,
+          result: { avg: reveal.avg, points: reveal.points, tier: reveal.tier } });
+      }
       return send(res, 200, { ok: true, state });
     }
     const view = (body.view || '').toString();
@@ -11629,13 +11977,31 @@ async function handleApi(req, res, url) {
     // takes it down. Separate state from the reveal (see dailyRecordState).
     if (view === 'record') {
       if (body.off) { const st = { on: false, at: now(), drop: { id: session.id, label: dropLabel } }; await setDailyRecordState(admin.uid, st); return send(res, 200, { ok: true, state: st }); }
+      // THE LIVE SEQUENCE (2026-11-13, operator: "Rating: 5 shows up on overlay · Prediction: 4.8
+      // ... updates live as I move the toggle · Prediction Locked In"). The phone posts the
+      // admin's OWN rating and prediction as he sets them (`stage` rating | locked); they ride
+      // the strip's state. His own numbers before the lock-in, nothing about the room: the
+      // average reaches the strip only through the reveal route below (stage 'result').
+      const liveNum = (v, max, dec) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= max ? (dec ? Math.round(n * 10) / 10 : (Number.isInteger(n) ? n : null)) : null; };
+      const live = body.stage != null ? { stage: body.stage === 'locked' ? 'locked' : 'rating', rating: liveNum(body.rating, 9, false), predict: liveNum(body.predict, 9, true) } : null;
+      if (live) {
+        const prevR = await dailyRecordState(admin.uid);
+        if (prevR && prevR.on && prevR.roundId === body.roundId) {
+          // Never step back from a result: the lock post and the reveal post race each other.
+          if (prevR.stage === 'result') return send(res, 200, { ok: true, state: prevR });
+          const st = { ...prevR, at: now(), ...live };
+          await setDailyRecordState(admin.uid, st);
+          return send(res, 200, { ok: true, state: st });
+        }
+      }
       const round = body.roundId ? await db.get('SELECT id, song_title, song_artist, artist_instagram FROM rounds WHERE id = ? AND session_id = ?', [body.roundId, session.id]) : null;
       if (!round) return bad(res, 'Round not found', 404);
       const pos = parseInt(body.position, 10), tot = parseInt(body.total, 10);
       const st = { on: true, at: now(), drop: { id: session.id, label: dropLabel }, roundId: round.id,
         title: round.song_title || 'Untitled', artist: round.song_artist || '',
         handle: igClean(round.artist_instagram) ? '@' + igClean(round.artist_instagram) : null,
-        position: Number.isInteger(pos) && pos > 0 ? pos : null, total: Number.isInteger(tot) && tot > 0 ? tot : null };
+        position: Number.isInteger(pos) && pos > 0 ? pos : null, total: Number.isInteger(tot) && tot > 0 ? tot : null,
+        ...(live || {}) };
       await setDailyRecordState(admin.uid, st);
       return send(res, 200, { ok: true, state: st });
     }
@@ -12174,6 +12540,92 @@ async function handleApi(req, res, url) {
     }
     const drained = await drainLiveCall({ sessionId: session.id, deadline: Date.now() + 18000 });
     return send(res, 200, { ok: true, started, ...drained, ...(await liveCallState(session)) });
+  }
+  // ----- Notify a chart's list (054) -----
+  // GET ?<chart query> = who a send would reach (masked) + every send to this list + the lists
+  // sent to lately. POST {q, send:true, subject, body, sms, email, texts, postUrl} composes and
+  // sends; a list that already had a send needs {again:true} (the console asks twice). POST {q}
+  // alone drains what a deadline or the SMS window left pending. Platform-admin only: the
+  // queue holds real addresses, and a chart spans every room.
+  if (p === '/api/admin/charts/notify' && (method === 'GET' || method === 'POST')) {
+    // The send budget counts from HERE, not from the drain: building the chart and queueing
+    // 180 rows took most of Vercel's 30s on the Nov 2026 HOT 100, the drain then took its own
+    // 18s, and the function was killed mid-send. The console got a bare "Error".
+    const t0 = Date.now();
+    const admin = await platformAdmin(req);
+    if (!admin) return bad(res, 'Admin only', 403);
+    const body = method === 'POST' ? await readBody(req) : {};
+    const qs = method === 'GET' ? url.search : String(body.q || '');
+    const q = chartQuery(new URL('http://x/?' + qs.replace(/^\?/, '')));
+    if (q.mode === 'weekly1s') return bad(res, 'Room #1s is not a list of people — pick Top Records or Top A&Rs');
+    const data = await chartsData(q);
+    if (!data) return bad(res, 'Scope not found', 404);
+    const plan = await chartNoticePlan(data);
+    if (method === 'GET') return send(res, 200, await chartNoticeState(q, data, plan));
+    let started = null;
+    // "Send them again" for rows stuck in 'sending' (a request that died mid-send). Explicit,
+    // because the message may already have arrived; a minute's grace so a drain running right
+    // now is never doubled.
+    if (body.retryStuck) {
+      await db.run(`UPDATE chart_notice_rcpts SET status = 'pending' WHERE status = 'sending'
+                      AND send_id IN (SELECT id FROM chart_notices WHERE list_key = ? AND created_at < ?)`, [chartListKey(q), now() - 60000]);
+    }
+    if (body.send) {
+      const subject = String(body.subject || '').trim().slice(0, 150);
+      const text = String(body.body || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
+      const sms = String(body.sms || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
+      const wantEmail = !!body.email, wantSms = !!body.texts;
+      const postUrl = String(body.postUrl || '').trim().slice(0, 500);
+      if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
+      if (wantEmail && (!subject || !text)) return bad(res, 'Email needs a subject and a message');
+      if (wantSms && !sms) return bad(res, 'Write the text message');
+      if (postUrl && !/^https?:\/\//i.test(postUrl)) return bad(res, 'The post link must start with http');
+      const prior = await db.get('SELECT COUNT(*) AS n FROM chart_notices WHERE list_key = ?', [chartListKey(q)]);
+      if (Number(prior && prior.n) && !body.again) return bad(res, 'This list was already sent to. Press Send again to send another message.', 409);
+      if ((wantEmail ? plan.emails.length : 0) + (wantSms ? plan.phones.length : 0) === 0) return bad(res, 'Nobody on this list has a reachable email or phone', 400);
+      started = await enqueueChartNotice({ q, data, plan, admin, subject, body: text, sms, wantEmail, wantSms, postUrl });
+    }
+    const drained = await drainChartNotices({ listKey: chartListKey(q), deadline: t0 + 20000, base: publicBaseFromReq(req) });
+    return send(res, 200, { ok: true, started, ...drained, ...(await chartNoticeState(q, data, plan)) });
+  }
+  // "Send test to me": the message rendered for the list's #1 (real tokens), to the admin's own
+  // email and phone only. Records nothing; the consent gate is not consulted (their own number).
+  if (p === '/api/admin/charts/notify/test' && method === 'POST') {
+    const admin = await platformAdmin(req);
+    if (!admin) return bad(res, 'Admin only', 403);
+    const body = await readBody(req);
+    const q = chartQuery(new URL('http://x/?' + String(body.q || '').replace(/^\?/, '')));
+    if (q.mode === 'weekly1s') return bad(res, 'Room #1s is not a list of people');
+    const data = await chartsData(q);
+    if (!data) return bad(res, 'Scope not found', 404);
+    const subject = String(body.subject || '').trim().slice(0, 150);
+    const text = String(body.body || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
+    const sms = String(body.sms || '').trim().slice(0, CHART_NOTICE_BODY_MAX);
+    const wantEmail = !!body.email, wantSms = !!body.texts;
+    if (!wantEmail && !wantSms) return bad(res, 'Pick at least one channel');
+    if (wantEmail && (!subject || !text)) return bad(res, 'Email needs a subject and a message');
+    if (wantSms && !sms) return bad(res, 'Write the text message');
+    const me = await db.get('SELECT uid, name, email, phone FROM users WHERE uid = ?', [admin.uid]);
+    if (!me) return bad(res, 'Account not found', 404);
+    const plan = await chartNoticePlan(data);
+    const first = plan.people[0] || { rank: 1, name: me.name || '', title: '', artist: '' };
+    const sendRow = { mode: data.mode, list_label: chartListLabel(data), subject, body: text, sms_body: sms, post_url: String(body.postUrl || '').trim() };
+    const m = chartNoticeRender(sendRow, { ...first, uid: me.uid }, publicBaseFromReq(req));
+    const out = { email: null, sms: null, sample: { rank: first.rank, name: first.name, title: first.title } };
+    if (wantEmail) {
+      if (!me.email) out.email = { ok: false, error: 'No email on your account' };
+      else { const r = await sendEmail(me.email, '[TEST] ' + m.subject, m.html, m.text); out.email = { ok: !!r.ok, error: r.error || null, to: maskEmail(me.email) }; }
+    }
+    if (wantSms) {
+      if (!me.phone || String(me.phone).length < 7) out.sms = { ok: false, error: 'No phone number on your account (add one on your profile)' };
+      else {
+        const r = await sendSms(me.phone, m.sms);
+        const seg = smsSegments(m.sms);
+        out.sms = { ok: !!r.ok, error: r.error || null, to: maskPhone(me.phone), channel: r.channel || null,
+          gsm7: seg.encoding === 'gsm7', segments: seg.segments, chars: [...m.sms].length };
+      }
+    }
+    return send(res, 200, out);
   }
   // Record (or clear) an Instagram post being scheduled in SocialBee. Called by the daily browser
   // automation from the logged-in console once it has scheduled a post (so it needs no secret of
@@ -12872,6 +13324,13 @@ const tournaments = require('./tournament')({
   userInactive, maskEmail, noteEmailOutcome, referralLinks, sendSms, maskPhone,
 });
 
+// ═══ PICK THE HITS (055) — the side bet without the tournament: weighted tally, the notify
+// list, and the "pack is open" / results sends. Lives in hits.js, handed what it needs here.
+const hits = require('./hits')({
+  db, id, now, send, bad, readBody, platformAdmin, sendEmail, escapeHtml, sendSms, smsNormalize,
+  maskEmail, maskPhone, publicBase, activeUserSql, dispName, noteEmailOutcome,
+});
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -12900,7 +13359,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/u/')) return serveStatic(res, 'profile.html'); // public A&R profile
     if (url.pathname === '/join' || url.pathname === '/profile') return serveStatic(res, 'join.html'); // team signup + self-serve profile edit
     if (url.pathname === '/admin') return serveStatic(res, 'admin.html');
-    if (url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html'); // A&R Wars prediction contest
+    // Pick the Hits (055). /sidebet stays as the old address for links already out.
+    if (url.pathname === '/hits' || url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html');
     // Tournament landing pages (045): /wars = the latest A&R Wars, /tournament/<slug> = any.
     if (url.pathname === '/wars' || url.pathname === '/tournament' || url.pathname.startsWith('/tournament/')) return serveStatic(res, 'tournament.html');
     // The A&R's account (2026-10-01): ONE page with sections — Earn points (the default;
@@ -13050,6 +13510,10 @@ module.exports._liveCallContent = liveCallContent;
 module.exports._liveReportLine = liveReportLine;
 module.exports._liveAtAfterClose = liveAtAfterClose;
 module.exports._liveCallPlan = liveCallPlan;
+module.exports._chartNoticePlanFrom = chartNoticePlanFrom;
+module.exports._renderChartTokens = renderChartTokens;
+module.exports._chartListKey = chartListKey;
+module.exports._chartNoticeRender = chartNoticeRender;
 module.exports._artistHeadsupContent = artistHeadsupContent;
 module.exports._artistHeadsupText = artistHeadsupText;
 module.exports._artistHeadsupHtml = artistHeadsupHtml;

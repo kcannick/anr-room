@@ -89,7 +89,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   auth/verify), replacing reliance on `ADMIN_EMAIL` — which stays as a fallback/override.
   SHIPPED (with the profile build).
 
-## Current state (migrations through 051 on main; 052 drop numbering in its PR; suite green)
+## Current state (migrations through 053 on main; 054 chart notices in its PR; suite green)
 The **weekly show is feature-complete and prod-verified.** Everything below is on `main` and
 live on anr.makinitmag.com.
 > **Keep this section honest against git, not against intent.** On 2026-08-05 this file
@@ -268,6 +268,36 @@ live on anr.makinitmag.com.
   defaults to 0 so a series chart still matches the public $500 board until a floor is set,
   accuracy to 10; the console remembers each separately.
   `CHART_SCALE_MAX` in share-cards.js is the 0–9 ceiling and moves with the 0–10 switch.
+  **A month's chart is NAMED FOR ITS PUBLICATION MONTH** (operator, 2026-11-11): the rooms that
+  tallied in October are released in November, so `scope=month&month=2026-10` is labelled
+  "November 2026" on the cover, in the caption and in the download names; `scope.tallied` carries
+  the month counted and the console prints both. The same rule as the daily set's publish date.
+  **Notify this list** (054, 2026-11-12, operator: "send email and SMS to everyone who made the hot
+  100 list... or any list that I create from chart"; branch `claude/chart-notify-list`): a card at the
+  bottom of the Charts screen that emails + texts everyone on the chart ON SCREEN, as it stands. **The
+  audience IS the chart's query** — `GET/POST /api/admin/charts/notify` takes the same query string as
+  the table, so the card, the CSV and the carousel can never disagree; rows under the floor, reference
+  tracks and Versus are out; Room #1s hides the card (not a list of people). **A list's identity is
+  `chartListKey(q)`** = what decides MEMBERSHIP (mode, scope, size, floor, dedupe) — order, per-slide
+  and show-scores stay out — so "any list I create" is reproducible, and the send history doubles as
+  the saved-lists readout ("Lists sent to lately", click one and the screen rebuilds it as it stands
+  today, `chApplyListKey`). A records chart reaches the ARTISTS on the rounds (`artist_email/phone`);
+  a Top A&Rs chart reaches `users`, skipping opt-outs and bounced addresses, texting only numbers with
+  marketing consent. **One message per address** (`chartNoticePlanFrom`, case-blind email, sms.js
+  `normalize` phone): an artist with two charting records hears once, about the higher rank; the
+  "Who gets what" table says `same as #3`. Merge tokens `[first name] [name] [artist] [title] [rank]
+  [chart name] [post link]` (`renderChartTokens`; the post link is also the email's "See the post"
+  button). Own queue `chart_notices` + `chart_notice_rcpts` (claimed pending→sending, `UNIQUE
+  (send_id, channel, dest)`); the route drains 18s then returns, the hourly `/api/cron/artist-sms`
+  drains the rest. **Artist texts keep the 10 AM–10:30 PM ET window** (held, "Send pending texts now"
+  on the card); A&R texts go when pressed, like announcements. Artist SMS gets "Reply STOP to opt
+  out." unless STOP is already in it; A&R mail/SMS carry the manage-link footers. **A second message to
+  the same list is an explicit Send again** (409 without `again:true`; the confirm says when it was
+  last sent). **Send test to me** (`/notify/test`) renders the list's #1 to the admin's own email and
+  phone, `[TEST]` subject, records nothing. No score, average or vote count rides along unless the
+  operator types one. The composer draft is per device (`anr_chnotify_draft`) so changing the scope
+  never eats typed work. Platform-admin only. Mockup `public/_mock-chart-notify.html` (approved
+  2026-11-12).
 
 - **Staged rounds + one-button show control + host buzzer** (030): a round now opens into a
   new **`listening`** status — the record is on the overlay and in everyone's hands while it
@@ -679,7 +709,13 @@ live on anr.makinitmag.com.
   for a Meeting record (needs 20 rated records before the page shows), the series or every
   live show for a live one. Email rebuilt as a sibling of the site's template (mim
   `docs/mockups/email-template-round1.html`): decision first, the rating as evidence, the
-  pages, the comments, the post instructions; still no price or upsell (tested). The SMS says
+  pages, the comments, the post instructions; still no price or upsell (tested). **Re-laid out
+  2026-11-17 (operator):** four sections, each opened by a rule and a heading — intro ("Hi
+  <first name>," + the decision), Your Track Report, Hear feedback on records? (the daily
+  9 PM ET / 6 PM PT stream, ONE Subscribe on YouTube button), Brand Partnership Opportunity for
+  <artist> (the testimonial ask, the site's `mim_wins_anr_pitch()` copy word for word, button to
+  makinitmag.com/testimonial/review). ONE big ask per email: the "Share your Track Report"
+  carousel request and the mid-report subscribe block are GONE (tested). The SMS says
   "has been rated", never "evaluated live". **Still open (spec §2):** calibrating the band
   edges to the real quartiles — `?meta=1` returns them — and naming the 7+ raters with
   consent; and a hosted report page → `reportUrl` in the §12 callback.
@@ -1281,6 +1317,34 @@ live on anr.makinitmag.com.
   Public promotional fields only — nothing about the room. Mockup
   `public/_mock-daily-nowrating-overlay.html` (over the operator's real scene,
   `public/_mock-assets/scene-daily-live.webp`).
+  **The live sequence** (2026-11-13, operator: "Rating: 5 shows up on overlay · Prediction: 4.8
+  ... updates live as I move the toggle · Prediction Locked In lock sound · brief processing ·
+  reveal with sound effects based on score — Bullseye!"). With Record on stream on, the phone
+  posts the admin's OWN rating and prediction as he sets them (`recLive`, the same record route
+  with `stage: rating|locked`, slider throttled to ~3/s); the strip shows them as two tiles, a
+  green "Prediction locked in" bar at the lock, and after the reveal Average + Points until the
+  next record (the reveal route stamps `stage:'result'` on the strip's state; a late lock post
+  can never undo it). The strip polls every 0.5s while a record is up. **`?layout=row`** on the
+  reveal source turns the tall card into ONE ROW in the slot under the primary 16:9 (x 90–990,
+  y 898–1078, the QR card's slot): lock sound → "checking" with ticks → the average counts up →
+  the tier call with its own sting (Bullseye fanfare / Sharp / Close / a low drop for Off and
+  Way off) → points and grade → gone after ~8s. All sound comes from the reveal source. The
+  total and the Track Report pager still use the tall card. **Mandatory stream elements
+  (operator) are never covered:** the header, the Submit Music call to action, the primary and
+  the secondary 16:9. The game shows on the facecam-large scene only; the Music Video scene is
+  Live Feedback Requests and carries no A&R source. The OBS collection is shared with the Live
+  Feedback tool (makinitmag.com) — brief, positions and stills for the PC session:
+  `docs/obs-handoff/` (also in the Streaming drive, `Review Music/A&R overlay handoff`).
+  Mockup `public/_mock-daily-live-sequence.html`.
+  **Camera tiles** (2026-11-16, operator: "to the Right and/or left of me"): the streaming PC's
+  own song bar (`live-feedback/songbar.html`, Streaming drive) now draws the title for both
+  platforms and the QR slot is gone (Submit Music sits there), so the strip and the row reveal
+  no longer fit that scene. `?view=record&tiles=side` (same 1920×1080 source, same `part=record`
+  state, no server change) draws NO title: Rating left, Prediction right of the host between the
+  song bar and the fire meter (y 318–817 of the source), and runs the whole sequence with its own
+  sound — Locked, checking, Average counting up, the tier call, Points — holding the result until
+  the next record. `&reveal=0` on the reveal source skips the reveal there and keeps the day
+  total and report pager. Mockup `public/_mock-daily-cam-tiles.html`.
 - **Tournament stream overlay** (no migration, 2026-10-25; branch `claude/wars-stream-overlay`,
   NOT merged when written). `/overlay/wars` (`public/wars-overlay.html`): an OBS browser source,
   **vertical 1080×1920 only** (the stream goes to Instagram Live / TikTok via Restream; the
@@ -1292,6 +1356,27 @@ live on anr.makinitmag.com.
   `public/_mock-tournament-overlay.html`. The OBS scene collection (8 scenes; audio is the
   operator's RØDECaster, so no audio sources; Social Stream Ninja for comments, alerts, viewer
   total) lives in the Streaming shared drive, `A&R Wars/OBS scene collection/`, not in the repo.
+
+- **Pick the Hits** (055, 2026-11-13; branch `claude/pick-the-hits`, NOT merged when written). The side
+  bet without the tournament, at **/hits** (/sidebet still works). **Scoring (operator):** each ballot
+  ranks N songs (`picks_required`, set per pack on the console; **default 16** from 2026-11-17 — `HITS_DEFAULT_PICKS`; Pack 12 ran 18); #1 gives a song N points … #N gives 1; songs rank by total (ties:
+  how many ballots picked it, then CSV row order); the ballot closest to that order wins — distance =
+  sum over the final top N of |ballot position − final rank|, a missing song counts as N+1; ties go to
+  the earlier `updated_at` (`sidebet.js` `weightedTally` / `ballotDistance` / `rankByDistance`).
+  **Only ballots with a finished A&R Team profile count**, for the winner AND the song ranking.
+  `/api/admin/hits/settle` (refused while picks are open; re-runnable) writes `pack_songs.points /
+  pickers / final_rank` and `sidebet_entries.correct (= in the top N) / distance / exact / rank`,
+  `packs.scoring = 'weighted'`. The old played-set settle is kept for history (`scoring = 'played'`).
+  **The page has four states** (`/api/sidebet` → `state`): preregister (no pack open: name, email,
+  phone — ALL required, operator 2026-11-13 — into `hits_subscribers`, no email code) · open ·
+  closed (results coming + the form) · results (`?pack=<id|slug>`: winner, the Top N by RANK ONLY,
+  your own result, then the form or "Pick the Hits" when the next pack is open). Never prints the
+  number of entrants. **Two admin sends** on the console's Results & sends card (`hits.js`):
+  "the pack is open" (email + text to the list, email to every past entrant, only while open) and
+  the public results email (winner, top 10, Notify me / Pick the Hits, Get featured → /push).
+  Rows in `hits_sends` (unique per pack/kind/channel/address, claimed before send), so a second
+  press reaches only new people; one-click unsubscribe per subscriber; Send test to me; list CSV.
+  Mockups: `public/_mock-pick-the-hits-results.html`, `public/_mock-pick-the-hits-landing.html`.
 
 ## What's next (roadmap order)
 1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay

@@ -259,11 +259,40 @@ can stay off the stream:
 https://anr.makinitmag.com/overlay/daily?view=record&k=<your Stream Deck control key>
 ```
 
-It is **1920×1080** (the face-cam scene's size), transparent; it draws a strip across the top of
+**Rating and Prediction beside the camera** (2026-11-16) is the same source with `&tiles=side`:
+
+```
+https://anr.makinitmag.com/overlay/daily?view=record&tiles=side&k=<your Stream Deck control key>
+```
+
+Use it when another overlay already shows the title (the streaming PC's song bar does). It is
+1920×1080 over the camera and draws no title: a Rating tile on the left and a Prediction tile on
+the right, in the band between the song bar and the fire meter. It runs the whole sequence with
+its own sound: the prediction follows the slider, both tiles show Locked at the lock-in, a short
+checking beat, then Average, the tier call and Points, which stay until the next record. With
+this source on, hide the reveal source or add `&reveal=0` to its URL (it then shows only the day
+total and the Track Report pager); the one-row reveal (`layout=row`) draws where Submit Music
+now sits.
+
+The strip (without `tiles=side`) is **1920×1080** (the face-cam scene's size), transparent; it draws a strip across the top of
 the frame with the title, artist and Instagram handle of the record you are on, sized to read
 once that scene is scaled into the vertical show. Turn it on with **Record on stream**
 on the daily page (admin only, remembered per device): each record you land on goes up; See
 results, Exit or the switch takes it down. The reveal source is separate and unaffected.
+
+**The live sequence.** With Record on stream on, the strip also shows your Rating and Prediction
+as you set them (the prediction follows the slider), turns green with "Prediction locked in" at
+the lock, and keeps Average and Points after the reveal until the next record. Add `layout=row`
+to the reveal source's URL to get the one-row reveal in the slot under the camera, with the lock
+sound, the checking beat and a different sound for each tier:
+
+```
+https://anr.makinitmag.com/overlay/daily?layout=row&k=<your Stream Deck control key>
+```
+
+That source makes all the sound, so its audio must reach the stream. The header, the Submit
+Music call to action and the camera are never covered. Scene layout, positions and stills for
+building the OBS collection are in `docs/obs-handoff/`.
 
 ## Replay the Day (2026-10-31)
 

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A&amp;R Daily — "now rating" overlay card (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   MOCKUP ONLY (2026-11-03) — a new view on /overlay/daily: the record the operator is on,
+   so the stream does not need the phone screen. Operator: "I want to play the game and just
+   show the current song, artist, and IG in the overlay instead of having the phone screen on
+   stream."
+
+   HOW IT DRIVES: the daily page already tells the overlay what to show (reveal, total, report).
+   This adds `record`: when a platform admin lands on a record in replay (or the admin window),
+   the page posts {view:'record', roundId} and this card shows. Lock in → the reveal replaces
+   it (already built). Next record → the next card. Exit / See results → idle.
+
+   Same frame and rules as the reveal: 1080×1920 vertical, transparent outside the card, cards
+   inside y 250–1400, no gold, no score, no count of votes (the seal: this card shows nothing
+   about the room). Green only on the "now" tick and the step.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; }
+*{box-sizing:border-box}
+html,body{margin:0;background:#07060d;color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+.ctl{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;padding:14px 16px;font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);border-bottom:1px solid var(--line)}
+.ctl b{color:var(--ink);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:11px;margin-right:6px}
+.ctl .grp{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.ctl button{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 10px;font:inherit;cursor:pointer}
+.ctl button.on{background:var(--green);border-color:var(--green);color:var(--ground)}
+.note{padding:10px 16px 0;font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);max-width:1100px;line-height:1.5}
+.stage{padding:16px;display:flex;gap:16px;align-items:flex-start}
+.fit{position:relative;overflow:hidden;border:1px solid var(--line);flex:none}
+#frame{position:absolute;left:0;top:0;width:1080px;height:1920px;transform-origin:0 0;overflow:hidden}
+#frame.bg-stream{background:linear-gradient(160deg,#2a3b4a 0%,#1c2430 45%,#3a2a2a 100%)}
+#frame.bg-stream::before{content:'Camera';position:absolute;left:50%;top:50%;width:900px;text-align:center;transform:translate(-50%,-50%);font-family:'Space Mono',monospace;font-size:30px;color:rgba(255,255,255,.18);letter-spacing:.14em;text-transform:uppercase}
+#frame.bg-check{background:repeating-conic-gradient(#3a3a3a 0 25%,#2a2a2a 0 50%) 0 0/40px 40px}
+/* the operator's real scene (2026-11-04 screenshot): camera, the line-is-open + fire meter, the
+   green CTA, the ticker, then the PHONE CAPTURE slot — a 500×540 box at x 250, y 1380. The card
+   takes that slot: the phone leaves the stream, the record stays. */
+#frame.bg-scene{background:#0E0C1A url(assets/scene-daily-live.webp) 0 0/1080px 1920px no-repeat}
+#frame.bg-scene::before{display:none}
+.zone{position:absolute;left:0;right:0;border:0 dashed rgba(255,93,108,.55);pointer-events:none;display:none}
+#frame.zones .zone{display:block}
+.zone.top{top:0;height:230px;border-bottom-width:3px}
+.zone.bot{bottom:0;height:520px;border-top-width:3px}
+.zone span{position:absolute;right:16px;font-family:'Space Mono',monospace;font-size:20px;color:rgba(255,93,108,.8);letter-spacing:.1em;text-transform:uppercase}
+.zone.top span{bottom:10px} .zone.bot span{top:10px}
+
+/* A strip across the TOP of the 16:9 camera window (operator, 2026-11-04: the bottom is the
+   platform's chat). The window sits at x 40–960, y 360–885 in his scene; the strip hugs its
+   top edge, inside it, and leaves the face clear. */
+.card{position:absolute;left:46px;width:908px;top:366px;background:rgba(14,12,26,.88);border:0;border-radius:18px 18px 14px 14px;overflow:hidden;display:flex;flex-direction:column}
+.hd{display:none}
+.rule13{display:none}
+
+/* the record */
+.now{padding:14px 24px 16px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:24px;align-items:center}
+.now .eyebrow{grid-column:1;display:flex;align-items:center;gap:10px;font-family:'Space Mono',monospace;font-weight:700;font-size:15px;letter-spacing:.18em;text-transform:uppercase;color:var(--green)}
+.now .eyebrow i{display:block;width:11px;height:11px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(75,183,73,.6);animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(75,183,73,.6)}100%{box-shadow:0 0 0 12px rgba(75,183,73,0)}}
+.now .t{grid-column:1;font-weight:900;font-size:44px;line-height:1.02;letter-spacing:-.04em;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now .t.long{font-size:36px}
+.now .t .by{font-weight:800;font-size:28px;letter-spacing:-.02em;color:var(--dim);margin-left:14px}
+.now .a{display:none}
+.now .ig{grid-column:2;grid-row:1/3;display:flex;align-items:center;gap:10px;font-family:'Space Mono',monospace;font-weight:700;font-size:24px;color:var(--ink);white-space:nowrap}
+.now .ig svg{flex:none;width:28px;height:28px}
+.now .ig.none{color:var(--dim);font-size:18px}
+/* the artist's note, when there is one: what they asked the room to listen for */
+.ask{margin:26px 36px 0;padding:20px 26px;border-left:6px solid var(--purple);background:var(--panel);border-radius:0 18px 18px 0}
+.ask .k{font-family:'Space Mono',monospace;font-weight:700;font-size:18px;letter-spacing:.16em;text-transform:uppercase;color:var(--purple)}
+.ask .q{font-weight:800;font-size:28px;line-height:1.3;letter-spacing:-.02em;margin-top:8px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+/* the step the operator is on: listening → rating → predicting */
+.steps{display:flex;gap:14px;margin:28px 36px 0}
+.step{flex:1;border:2px solid var(--line);border-radius:16px;padding:14px 18px;font-family:'Space Mono',monospace;font-weight:700;font-size:20px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:12px}
+.step .n{width:34px;height:34px;border-radius:50%;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:17px;flex:none}
+.step.on{border-color:var(--green);color:var(--ink)}
+.step.on .n{background:var(--green);border-color:var(--green);color:var(--ground)}
+.step.done{color:var(--dim)} .step.done .n{background:var(--line);border-color:var(--line);color:var(--ink)}
+/* footer: progress */
+.ft{margin:26px 0 0;padding:16px 36px 22px;border-top:2px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:20px}
+.ft .k{font-family:'Space Mono',monospace;font-weight:700;font-size:20px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.ft .v{font-family:'Space Mono',monospace;font-weight:700;font-size:28px;margin-top:6px;white-space:nowrap}
+.ticks{display:flex;gap:6px;flex-wrap:wrap;max-width:420px;justify-content:flex-end}
+.tk{width:24px;height:16px;transform:skewX(-13deg);border:2px solid rgba(234,233,242,.4);border-radius:2px}
+.tk.done{background:var(--ink);border-color:var(--ink)}
+.tk.now{background:var(--green);border-color:var(--green)}
+.hide{display:none!important}
+body.bare .ctl,body.bare .note,body.bare .aside{display:none}
+html:has(body.bare),body.bare{background:transparent}
+body.bare .stage{padding:0} body.bare .fit{border:0}
+.aside{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);line-height:1.6;max-width:420px}
+.aside h3{font-family:'Archivo',sans-serif;font-weight:900;font-size:15px;letter-spacing:-.02em;color:var(--ink);margin:0 0 8px}
+.aside ol{padding-left:18px;margin:0 0 14px} .aside li{margin:4px 0} .aside b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="ctl">
+  <div class="grp"><b>Case</b>
+    <button data-case="a" class="on">with Instagram</button>
+    <button data-case="b">no Instagram</button>
+    <button data-case="c">long title</button></div>
+  <div class="grp"><b>Behind</b>
+    <button data-bg="scene" class="on">the scene</button>
+    <button data-bg="stream">camera</button>
+    <button data-bg="check">transparent</button>
+    <button data-zones="1">safe zones</button></div>
+</div>
+<p class="note">The <b>record</b> view on /overlay/daily, a strip across the top of the camera window in the operator's scene (the bottom of the frame is the platform's chat): what he is rating right now, so the phone screen stays off the stream. The daily page posts it as he lands on each record; the lock-in replaces it with the reveal; Next record brings the next one. Nothing about the room is on it — no average, no vote count — because the seal rule applies until the reveal.</p>
+
+<div class="stage">
+<div class="fit" id="fit">
+<div id="frame" class="bg-scene">
+  <div class="zone top"><span>Apps draw here (profile · LIVE · viewers)</span></div>
+  <div class="zone bot"><span>Comments draw here</span></div>
+
+  <div class="card" id="record">
+    <div class="hd">
+      <div class="lock"></div>
+      <div class="drop"></div>
+    </div>
+    <div class="rule13"></div>
+    <div class="now">
+      <div class="eyebrow"><i></i>Now rating · Record <span id="rIdx">3</span> of <span id="rN">11</span></div>
+      <div class="t" id="rTitle">Paper Trail</div>
+      <div class="a" id="rArtist">Devon Shaw</div>
+      <div class="ig" id="rIg">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1"/></svg>
+        <span id="rHandle">@devonshawmusic</span>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="aside">
+  <h3>How it drives</h3>
+  <ol>
+    <li>Admin lands on a record (replay or the window) → the page posts <b>record</b> to the overlay → this card.</li>
+    <li>Lock in → the <b>reveal</b> replaces it (built). The Track Report pager works as before.</li>
+    <li>Next record → the next card. See results / Exit → idle.</li>
+  </ol>
+  <p>Operator, 2026-11-04: "entirely too busy... I just need to be able to show Song title, Artist Name, and Instagram username." The note, the step row and the progress footer are gone.</p>
+  <h3>Rules kept</h3>
+  <ol>
+    <li>No average, no vote count, no rank: the seal holds until the reveal.</li>
+    <li>No gold. Green only on the live dot, the active step and the "now" tick.</li>
+    <li>A strip across the top of the 16:9 camera window (the bottom of the frame is the platform's chat — operator, 2026-11-04). Title with the artist beside it, the handle on the right; a long title steps down a size and clips.</li>
+  </ol>
+</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const CASES = {
+  a: { title: 'Paper Trail', artist: 'Devon Shaw', handle: '@devonshawmusic', ask: 'Not mixed yet. How are the drums sitting under the vocal?' },
+  b: { title: 'Hold On', artist: 'Mara Lee', handle: null, ask: null },
+  c: { title: 'Everything I Never Said to You on the Way Home', artist: 'The Night Ferry Collective', handle: '@nightferrycollective', ask: 'This is the radio edit. Does the hook land fast enough?' },
+};
+function setCase(k){
+  const c = CASES[k];
+  $('#rTitle').textContent = c.title; $('#rTitle').classList.toggle('long', c.title.length > 24);
+  const by = document.createElement('span'); by.className = 'by'; by.textContent = c.artist; $('#rTitle').appendChild(by);
+  $('#rArtist').textContent = c.artist;
+  const ig = $('#rIg');
+  if(c.handle){ ig.classList.remove('none'); ig.querySelector('svg').classList.remove('hide'); $('#rHandle').textContent = c.handle; }
+  else { ig.classList.add('none'); ig.querySelector('svg').classList.add('hide'); $('#rHandle').textContent = 'No Instagram on file'; }
+}
+document.querySelectorAll('[data-case]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-case]').forEach(x => x.classList.remove('on')); b.classList.add('on'); setCase(b.dataset.case); });
+document.querySelectorAll('[data-bg]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-bg]').forEach(x => x.classList.remove('on')); b.classList.add('on'); $('#frame').className = 'bg-' + b.dataset.bg + ($('#frame').classList.contains('zones') ? ' zones' : ''); });
+document.querySelector('[data-zones]').onclick = (e) => { $('#frame').classList.toggle('zones'); e.target.classList.toggle('on'); };
+const q = new URLSearchParams(location.search);
+if(q.get('bare') === '1'){ document.body.classList.add('bare'); $('#frame').className = 'bg-' + (q.get('bg') || 'scene'); }
+if(q.get('case')) setCase(q.get('case')); else setCase('a');
+function fit(){ const bare = document.body.classList.contains('bare'); const w = bare ? 1080 : Math.min(540, window.innerWidth - 470); const s = w / 1080; $('#fit').style.width = (1080 * s) + 'px'; $('#fit').style.height = (1920 * s) + 'px'; $('#frame').style.transform = 'scale(' + s + ')'; }
+window.addEventListener('resize', fit); fit();
+</script>
+</body>
+</html>

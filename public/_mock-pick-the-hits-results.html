@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — Pick the Hits results</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#0e0c1a; --panel:#171328; --panel2:#1d1733; --line:#2e2750; --inset:#0a0814;
+    --ink:#eae9f2; --dim:#9793b4; --faint:#7d789e;
+    --signal:#4bb749; --on-signal:#06210b; --purple:#6d5fe0; --gold:#f5c518;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:Archivo,system-ui,sans-serif;padding:32px 16px 90px}
+  .mono{font-family:"Space Mono",monospace}
+  .top{max-width:1180px;margin:0 auto 10px;text-align:center}
+  .top h1{font-weight:900;letter-spacing:-.04em;font-size:34px;margin:0}
+  .top p{color:var(--dim);font-size:14.5px;line-height:1.55;max-width:720px;margin:10px auto 0}
+  .mocklabel{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--signal);margin:60px 0 6px;text-align:center}
+  .mocknote{font-size:13.5px;line-height:1.55;color:var(--dim);text-align:center;max-width:700px;margin:0 auto 22px}
+  .mocknote b{color:var(--ink)}
+  .cols{display:flex;gap:28px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+  .caption{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);text-align:center;margin:10px 0 0;max-width:390px}
+
+  /* phone */
+  .phone{width:390px;max-width:100%;background:radial-gradient(130% 80% at 50% -10%,#221a48 0%,var(--ground) 60%);
+    border:1px solid #1d1833;border-radius:22px;padding:22px 18px 26px}
+  .brandbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .brandbar img{height:30px;display:block}
+  .eyebrow{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  h2{margin:6px 0 0;font-weight:900;font-size:32px;line-height:1.02;letter-spacing:-.04em}
+  h3{margin:0;font-weight:800;font-size:19px;letter-spacing:-.03em}
+  p{margin:10px 0 0;font-size:14.5px;line-height:1.5;color:var(--dim)}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px}
+  .gold{color:var(--gold)} .green{color:var(--signal)} .purple{color:#9d92ff}
+  .btn{display:block;width:100%;background:var(--signal);color:var(--on-signal);border:0;border-radius:14px;padding:15px;
+    font-family:Archivo;font-size:16px;font-weight:800;text-align:center;margin-top:14px;text-decoration:none}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:700}
+  .btn.purple{background:var(--purple);color:#fff}
+
+  /* winner */
+  .winner{display:flex;align-items:center;gap:14px}
+  .winner .av{width:58px;height:58px;border-radius:50%;background:#2a2148;border:2px solid var(--gold);display:grid;place-items:center;font-weight:900;font-size:22px;color:var(--gold);flex:none}
+  .winner .nm{font-weight:900;font-size:24px;letter-spacing:-.03em}
+  .winner .sub{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--dim);margin-top:3px}
+  .prize{font-family:"Space Mono",monospace;font-weight:700;color:var(--gold);font-size:13px;letter-spacing:.06em}
+
+  /* ranked list */
+  .list{list-style:none;margin:10px 0 0;padding:0}
+  .list li{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+  .list li:first-child{border-top:0}
+  .rk{width:34px;height:28px;flex:none;display:grid;place-items:center;transform:skewX(-13deg);border-radius:4px;background:#241d40;
+    font-family:"Space Mono",monospace;font-weight:700;font-size:13px}
+  .rk span{transform:skewX(13deg)}
+  .rk.one{background:var(--gold);color:#1a1400}
+  .t{font-weight:800;font-size:15px;letter-spacing:-.02em;line-height:1.15}
+  .a{font-size:12.5px;color:var(--dim);margin-top:2px}
+  .more{font-family:"Space Mono",monospace;font-size:11.5px;color:var(--faint);text-align:center;margin-top:8px}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .stat{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .stat .n{font-family:"Space Mono",monospace;font-weight:700;font-size:26px;letter-spacing:-.03em;line-height:1}
+  .stat .l{font-size:12px;color:var(--dim);margin-top:6px;line-height:1.35}
+  .big{font-family:"Space Mono",monospace;font-weight:700;font-size:64px;letter-spacing:-.05em;line-height:1}
+  .big small{font-size:20px;color:var(--dim);letter-spacing:0}
+
+  /* ballot check */
+  .check li .mark{width:20px;flex:none;font-family:"Space Mono",monospace;font-size:12px;font-weight:700;text-align:center}
+  .check li .fin{margin-left:auto;font-family:"Space Mono",monospace;font-size:11.5px;color:var(--faint);white-space:nowrap}
+  .check li.hit .fin{color:var(--signal)}
+
+  /* who picked */
+  .who{list-style:none;padding:0;margin:12px 0 0}
+  .who li{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:13.5px}
+  .who .bar{height:10px;background:var(--signal);border-radius:2px;transform:skewX(-13deg)}
+  .who .c{font-family:"Space Mono",monospace;font-size:12px;width:16px;text-align:right;color:var(--ink)}
+  .who .lab{width:104px;color:var(--dim)}
+
+  .rule{height:2px;background:linear-gradient(90deg,var(--purple),transparent);margin:18px 0 0;transform:skewX(-13deg)}
+  .placed{list-style:none;padding:0;margin:10px 0 0}
+  .placed li{font-size:13.5px;color:var(--dim);padding:5px 0 5px 18px;position:relative}
+  .placed li:before{content:"";position:absolute;left:2px;top:11px;width:7px;height:7px;background:var(--purple);transform:skewX(-13deg)}
+
+  /* IG slide */
+  .slide{width:360px;height:450px;background:var(--ground);border-radius:6px;overflow:hidden;position:relative;border:1px solid #1d1833}
+  .slide .cut{position:absolute;left:-40px;right:-40px;bottom:0;height:105px;background:var(--purple);transform:skewY(-13deg);transform-origin:left bottom}
+  .slide .in{position:absolute;inset:26px 24px}
+  .slide .k{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.24em;color:var(--dim);text-transform:uppercase;margin-top:10px}
+  .slide .h{font-weight:900;font-size:48px;line-height:.9;letter-spacing:-.05em;margin-top:16px}
+  .slide .w{margin-top:14px;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+  .slide .wn{font-weight:900;font-size:30px;letter-spacing:-.04em;color:var(--gold);margin-top:4px}
+  .slide .foot{position:absolute;left:24px;right:24px;bottom:22px;color:#fff;font-weight:800;font-size:15px;z-index:2}
+  .slide .foot .mono{font-size:11px;font-weight:400;opacity:.85;margin-top:3px}
+  .slide.list .row{display:flex;align-items:center;gap:10px;margin-top:9px}
+  .slide.list .rk{width:30px;height:24px;font-size:11.5px}
+  .slide.list .t{font-size:13px} .slide.list .a{font-size:11px;margin-top:1px}
+
+  .placeholder{outline:1px dashed var(--gold);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="eyebrow">Mockup · not built</div>
+  <h1>Pick the Hits results</h1>
+  <p>Three views of one result: the public announcement, each entrant's own result, and the artist's result that comes with a paid placement.
+  Every number below is <b style="color:var(--ink)">Service Pack 12's real tally</b> (no total entrant count is printed anywhere): 12 ballots with a complete profile (2 incomplete ballots don't count), 18 picks each, a #1 pick worth 18 points down to 1 for #18.
+  Nothing is released until the pack closes. The prize is <span class="gold">$150</span>.</p>
+</div>
+
+<!-- ============ 1. PUBLIC ============ -->
+<div class="mocklabel">1 · Public results</div>
+<p class="mocknote">The page and the Instagram carousel. <b>Ranks only, no points</b>, the same rule as the HOT 100 posts. Gold is used only for the winner, the prize and #1. Every artist in the Top 18 is tagged on the slide with their song, so they have a reason to share it.</p>
+<div class="cols">
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt="A&R Service Pack"><span class="eyebrow">Pack 12</span></div>
+      <div class="eyebrow">Pick the Hits · Results</div>
+      <h2>The listeners picked the hits.</h2>
+      <p>Listeners ranked their top 18 songs from Service Pack 12. Here is the final order and the entry that came closest.</p>
+
+      <div class="panel">
+        <div class="eyebrow">Winner</div>
+        <div class="winner" style="margin-top:10px">
+          <div class="av">DS</div>
+          <div><div class="nm">Dora Smith</div><div class="sub">Artist · closest to the final order</div></div>
+        </div>
+        <div class="prize" style="margin-top:12px;display:inline-block">WINS $150</div>
+      </div>
+
+      <div class="panel">
+        <div class="eyebrow">The Top 18</div>
+        <ol class="list">
+          <li><div class="rk one"><span>1</span></div><div><div class="t">Sweet Lady</div><div class="a">Hoolibabyneeno</div></div></li>
+          <li><div class="rk"><span>2</span></div><div><div class="t">T O X I C</div><div class="a">Kamilla Kali</div></div></li>
+          <li><div class="rk"><span>3</span></div><div><div class="t">Body Language</div><div class="a">Boomwah</div></div></li>
+          <li><div class="rk"><span>4</span></div><div><div class="t">SMOOTH TALKER</div><div class="a">Diamond Desireé</div></div></li>
+          <li><div class="rk"><span>5</span></div><div><div class="t">Say my Fkn Name</div><div class="a">KiiWii Babe</div></div></li>
+          <li><div class="rk"><span>6</span></div><div><div class="t">Meanwhile Back At The Ranch</div><div class="a">Hue Brown</div></div></li>
+        </ol>
+        <div class="more">7 – 18 continue</div>
+      </div>
+
+      <a class="btn">Enter Pack 13</a>
+      <a class="btn ghost">Get your song in the next pack</a>
+    </div>
+    <div class="caption">/hits/pack-12 · public page</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px;align-items:center">
+    <div class="slide">
+      <div class="in">
+        <img src="brand/lockups/anr-service-pack-h.svg" alt="" style="height:20px">
+        <div class="k">Service Pack 12 · Results</div>
+        <div class="h">PICK<br>THE<br>HITS</div>
+        <div class="w">Winner</div>
+        <div class="wn">Dora Smith</div>
+      </div>
+      <div class="cut"></div>
+      <div class="foot">The Top 18, picked by the listeners<div class="mono">Swipe →</div></div>
+    </div>
+    <div class="slide list">
+      <div class="in">
+        <div class="k" style="margin-top:0">Pick the Hits · Pack 12</div>
+        <div class="row"><div class="rk one"><span>1</span></div><div><div class="t">Sweet Lady</div><div class="a">Hoolibabyneeno</div></div></div>
+        <div class="row"><div class="rk"><span>2</span></div><div><div class="t">T O X I C</div><div class="a">Kamilla Kali</div></div></div>
+        <div class="row"><div class="rk"><span>3</span></div><div><div class="t">Body Language</div><div class="a">Boomwah</div></div></div>
+        <div class="row"><div class="rk"><span>4</span></div><div><div class="t">SMOOTH TALKER</div><div class="a">Diamond Desireé</div></div></div>
+        <div class="row"><div class="rk"><span>5</span></div><div><div class="t">Say my Fkn Name</div><div class="a">KiiWii Babe</div></div></div>
+        <div class="row"><div class="rk"><span>6</span></div><div><div class="t">Meanwhile Back At The Ranch</div><div class="a">Hue Brown</div></div></div>
+      </div>
+      <div class="cut" style="height:110px"></div>
+      <div class="foot">Pack 13 is open. Comment HITS to enter.</div>
+    </div>
+    <div class="caption">Instagram carousel · 1080×1350 (shown at 1/3)</div>
+  </div>
+</div>
+
+<!-- ============ 2. ENTRANT ============ -->
+<div class="mocklabel">2 · The entrant's own result</div>
+<p class="mocknote">Page plus email. Shown for <b>KiiWii Babe, who came 2nd</b>, because most entrants see this view and not the winner's. Each of their picks is checked against the final Top 18. The second half is the way into the A&R Team: they're already an Intern because they finished their profile.</p>
+<div class="cols">
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt=""><span class="eyebrow">Pack 12</span></div>
+      <div class="eyebrow">Your Pick the Hits result</div>
+      <div class="big" style="margin-top:10px">#2</div>
+      <p>You came second. Dora Smith was 2 points closer to the final order.</p>
+      <div class="stats">
+        <div class="stat"><div class="n green">9<span style="font-size:15px;color:var(--dim)">/18</span></div><div class="l">of your picks made the Top 18</div></div>
+        <div class="stat"><div class="n green">2</div><div class="l">in exactly the right spot</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="eyebrow">Your picks vs. the final order</div>
+        <ol class="list check">
+          <li class="hit"><span class="mark green">✓</span><div class="t" style="font-size:14px">Sweet Lady</div><span class="fin">you #1 · final #1</span></li>
+          <li class="hit"><span class="mark green">✓</span><div class="t" style="font-size:14px">Body Language</div><span class="fin">you #3 · final #3</span></li>
+          <li class="hit"><span class="mark"></span><div class="t" style="font-size:14px">Say my Fkn Name</div><span class="fin">you #2 · final #5</span></li>
+          <li><span class="mark"></span><div class="t" style="font-size:14px;color:var(--dim)">…15 more</div><span class="fin"></span></li>
+        </ol>
+      </div>
+
+      <a class="btn">Enter Pack 13</a>
+
+      <div class="panel" style="border-color:#3a3170">
+        <div class="eyebrow">A&R Team · Intern</div>
+        <h3 style="margin-top:8px">You're an A&R Team Intern.</h3>
+        <p style="font-size:13.5px">Rate new records every day and predict the average. Score well and you move up to the official A&R Team.</p>
+        <a class="btn ghost">Rate today's records</a>
+      </div>
+    </div>
+    <div class="caption">/hits/pack-12/me · and the results email</div>
+  </div>
+</div>
+
+<!-- ============ 3. ARTIST ============ -->
+<div class="mocklabel">3 · The artist's result</div>
+<p class="mocknote">Sent to every artist with a paid placement in the pack. <b>This is what makes the $99 slot visible.</b> "Who picked it" comes from the entrants' profiles, so it only works because the profile is required. A song low on the list leads with who picked it, never "#39 of 60". These are a Service Pack deliverable, so the next-campaign button belongs here. That's not the A&R Meeting's results screen, which stays free of it.</p>
+<div class="cols">
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt=""><span class="eyebrow">Pack 12</span></div>
+      <div class="eyebrow">Pick the Hits · your song</div>
+      <h2 style="font-size:30px">Sweet Lady</h2>
+      <div class="a" style="font-size:14px">Hoolibabyneeno</div>
+      <div class="big gold" style="margin-top:16px">#1<small> of 60 songs</small></div>
+      <p>The listeners ranked your song the top hit in Service Pack 12.</p>
+      <div class="stats">
+        <div class="stat"><div class="n green">8</div><div class="l">listeners put it in their Top 18</div></div>
+        <div class="stat"><div class="n green">2</div><div class="l">picked it as the #1 hit</div></div>
+      </div>
+      <div class="panel">
+        <div class="eyebrow">Who picked it</div>
+        <ul class="who">
+          <li><span class="lab">Artists</span><span class="c">4</span><span class="bar" style="width:120px"></span></li>
+          <li><span class="lab">DJs</span><span class="c">1</span><span class="bar" style="width:30px"></span></li>
+          <li><span class="lab">Producers</span><span class="c">1</span><span class="bar" style="width:30px"></span></li>
+          <li><span class="lab">Engineers</span><span class="c">1</span><span class="bar" style="width:30px"></span></li>
+          <li><span class="lab">Music fans</span><span class="c">1</span><span class="bar" style="width:30px"></span></li>
+        </ul>
+      </div>
+      <div class="rule"></div>
+      <div class="eyebrow" style="margin-top:14px">Your placement</div>
+      <ul class="placed">
+        <li>A&R Service Pack 12 · 450+ downloads</li>
+        <li>The Service Pack Spotify playlist</li>
+        <li>Promo video and collab post with @MakinIt4Indies</li>
+      </ul>
+      <a class="btn purple">Book your next campaign</a>
+    </div>
+    <div class="caption">Top of the list · email + page</div>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt=""><span class="eyebrow">Pack 12</span></div>
+      <div class="eyebrow">Pick the Hits · your song</div>
+      <h2 style="font-size:30px">C-NOTES</h2>
+      <div class="a" style="font-size:14px">LarryLongway</div>
+      <div class="big green" style="margin-top:16px">2<small> listeners picked it</small></div>
+      <p>Two people put C-NOTES in their Top 18 out of 60 songs, including a DJ.</p>
+      <div class="panel">
+        <div class="eyebrow">Who picked it</div>
+        <ul class="who">
+          <li><span class="lab">DJs</span><span class="c">1</span><span class="bar" style="width:30px"></span></li>
+          <li><span class="lab">Engineers</span><span class="c">1</span><span class="bar" style="width:30px"></span></li>
+        </ul>
+      </div>
+      <div class="rule"></div>
+      <div class="eyebrow" style="margin-top:14px">Your placement</div>
+      <ul class="placed">
+        <li>A&R Service Pack 12 · 450+ downloads</li>
+        <li>The Service Pack Spotify playlist</li>
+        <li>Promo video and collab post with @MakinIt4Indies</li>
+      </ul>
+      <a class="btn purple">Book your next campaign</a>
+    </div>
+    <div class="caption">Lower on the list · no rank printed</div>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="brandbar"><img src="brand/lockups/anr-service-pack-h.svg" alt=""><span class="eyebrow">Pack 12</span></div>
+      <div class="eyebrow">Your placement · Pack 12</div>
+      <h2 style="font-size:30px">Eater 4 Eater</h2>
+      <div class="a" style="font-size:14px">DoeBoy Dutch</div>
+      <p style="margin-top:16px">Your song went out in A&R Service Pack 12. Here is where it was placed.</p>
+      <ul class="placed" style="margin-top:14px">
+        <li>A&R Service Pack 12 · 450+ downloads</li>
+        <li>The Service Pack Spotify playlist</li>
+        <li>Promo video and collab post with @MakinIt4Indies</li>
+      </ul>
+      <div class="panel">
+        <h3>Want to know how it lands?</h3>
+        <p style="font-size:13.5px">A Live Feedback Session puts your song in front of the A&R Team on stream, with notes you can use on the next release.</p>
+        <a class="btn ghost">See Live Feedback Sessions</a>
+      </div>
+      <a class="btn purple">Book your next campaign</a>
+    </div>
+    <div class="caption">Nobody picked it · placement only (your call)</div>
+  </div>
+</div>
+
+</body>
+</html>

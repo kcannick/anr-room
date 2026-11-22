@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A&amp;R Daily — live rating sequence on stream (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   MOCKUP ONLY (2026-11-10). The live rating sequence on the operator's scene "5 · Just Me"
+   (reworked OBS collection): the phone screen is off the stream, the camera is the nested
+   1920×1080 CAM scene at x 90, y 370, 900×506, and the overlays carry the game.
+
+   Operator: "Rating: 5 shows up on overlay · Prediction: 4.8 shows up and maybe updates live as
+   I move the toggle · play 'Prediction Locked In' lock sound · brief processing animation ·
+   then reveal animation with sound effects based on score — Bullseye!"
+
+   Two pieces, both already sources in his collection:
+     THE STRIP   (ANR - Song Info, inside the CAM scene): title · artist · handle, and now the
+                 RATING and PREDICTION tiles as he sets them, then "Prediction locked in".
+     THE REVEAL  (A&R Daily Overlay, 1080×1920): redrawn COMPACT, in the free band under the
+                 camera (y 890–1370, the 900 column) so it never covers his face: processing,
+                 then the average counting up, the tier call with its own sound, points, grade.
+
+   Colour: green = scoring, purple = the prediction. No gold. Red only on a negative round.
+   Nothing about the room shows before the lock-in.
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; --red:#FF5D6C; }
+*{box-sizing:border-box}
+html,body{margin:0;background:#07060d;color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+.ctl{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:14px 16px;font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);border-bottom:1px solid var(--line)}
+.ctl b{color:var(--ink);letter-spacing:.08em;text-transform:uppercase;font-size:11px;margin-right:6px}
+.ctl .grp{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.ctl button{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 10px;font:inherit;cursor:pointer}
+.ctl button.on{background:var(--green);border-color:var(--green);color:var(--ground)}
+.stage{padding:16px;display:flex;gap:18px;align-items:flex-start}
+.fit{position:relative;overflow:hidden;border:1px solid var(--line);flex:none}
+#frame{position:absolute;left:0;top:0;width:1080px;height:1920px;transform-origin:0 0;overflow:hidden;background:#0E0C1A url(assets/scene-just-me.png) 0 0/1080px 1920px no-repeat}
+/* stand-ins for his scene, not part of the overlays */
+.ph{position:absolute;border:2px dashed rgba(234,233,242,.18);border-radius:18px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:20px;letter-spacing:.14em;text-transform:uppercase;color:rgba(234,233,242,.28);text-align:center}
+/* the camera window in the operator's real scene (2026-11-10 screenshots): x 90–990, y 362–885.
+   The fire meter runs along its bottom (y 786–870) and must stay clear. */
+#cam{position:absolute;left:90px;top:362px;width:900px;height:523px;border-radius:18px;overflow:hidden}
+
+/* ---------- THE STRIP (drawn at the size it reads once the CAM scene is scaled to 900) ---------- */
+#strip{position:absolute;left:19px;right:19px;top:16px;background:rgba(14,12,26,.9);border-radius:16px 16px 12px 12px;padding:13px 22px 14px;display:flex;align-items:center;gap:18px}
+#strip .l{flex:1;min-width:0}
+#strip .eyebrow{display:flex;align-items:center;gap:9px;font-family:'Space Mono',monospace;font-weight:700;font-size:14px;letter-spacing:.18em;text-transform:uppercase;color:var(--green)}
+#strip .eyebrow i{width:10px;height:10px;border-radius:50%;background:var(--green)}
+#strip .t{font-weight:900;font-size:40px;line-height:1.04;letter-spacing:-.04em;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#strip .a{font-family:'Space Mono',monospace;font-weight:700;font-size:17px;color:var(--dim);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#strip .a b{color:var(--ink)}
+.tile{flex:none;width:150px;border-radius:12px;padding:8px 10px 9px;text-align:center;background:var(--panel);border:2px solid var(--line);opacity:0;transform:translateY(-10px) scale(.94);transition:opacity .25s ease,transform .3s cubic-bezier(.2,1.4,.4,1),border-color .2s}
+.tile.on{opacity:1;transform:none}
+.tile .k{font-family:'Space Mono',monospace;font-weight:700;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.tile .v{font-family:'Space Mono',monospace;font-weight:700;font-size:44px;line-height:1;margin-top:3px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.tile.p .v{color:var(--purple)}
+.tile.bump{border-color:var(--ink)}
+.tile.locked{border-color:var(--green)}
+.tile.res .v{color:var(--green)} .tile.res.neg .v{color:var(--red)}
+#lockbar{position:absolute;left:19px;right:19px;top:16px;height:0;overflow:hidden;border-radius:16px 16px 12px 12px;background:var(--green);color:var(--ground);display:flex;align-items:center;justify-content:center;gap:14px;font-weight:900;font-size:34px;letter-spacing:-.02em;text-transform:uppercase;transition:height .22s cubic-bezier(.2,.8,.2,1)}
+#lockbar.on{height:118px}
+
+/* ---------- THE REVEAL: one row, in the QR card's slot (y 898–1078) ----------
+   Mandatory stream elements (operator, 2026-11-10) are never covered: the header, the Submit
+   Music call to action, the primary 16:9, the secondary 16:9. The QR card is not one of them
+   (about ten real scans), so its slot goes to the game. */
+#rv{position:absolute;left:90px;top:898px;width:900px;height:180px;background:rgba(14,12,26,.97);border:2px solid var(--line);border-radius:20px;overflow:hidden;opacity:0;transform:translateY(20px);transition:opacity .35s ease,transform .4s cubic-bezier(.2,.8,.2,1)}
+#rv.on{opacity:1;transform:none}
+#rv .proc{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:28px}
+#rv .proc .k{font-family:'Space Mono',monospace;font-weight:700;font-size:24px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+#rv .bars{display:flex;gap:10px}
+#rv .bars span{width:30px;height:20px;transform:skewX(-13deg);background:var(--line);animation:scan 1s linear infinite}
+#rv .bars span:nth-child(2){animation-delay:.12s}#rv .bars span:nth-child(3){animation-delay:.24s}#rv .bars span:nth-child(4){animation-delay:.36s}#rv .bars span:nth-child(5){animation-delay:.48s}#rv .bars span:nth-child(6){animation-delay:.6s}
+@keyframes scan{0%,100%{background:var(--line)}30%{background:var(--green)}}
+#rv .res{position:absolute;inset:0;display:flex;align-items:stretch;opacity:0;transition:opacity .3s}
+#rv.done .res{opacity:1} #rv.done .proc{display:none}
+#rv .avg{flex:none;width:218px;border-right:2px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center}
+#rv .avg .k{font-family:'Space Mono',monospace;font-weight:700;font-size:14px;letter-spacing:.18em;text-transform:uppercase;color:var(--green)}
+#rv .avg .n{font-family:'Space Mono',monospace;font-weight:700;font-size:84px;line-height:.95;letter-spacing:-.06em;color:var(--green);font-variant-numeric:tabular-nums}
+#rv .avg .m{font-weight:900;font-size:17px;letter-spacing:-.02em;margin-top:2px;text-align:center;white-space:nowrap}
+#rv .avg .c{display:none}
+#rv .r{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:0 16px 0 20px}
+#rv .call{flex:1;min-width:0}
+#rv .tier{font-weight:900;font-size:46px;line-height:.95;letter-spacing:-.05em;text-transform:uppercase;white-space:nowrap;transform:scale(.5);opacity:0;transition:transform .45s cubic-bezier(.2,1.6,.4,1),opacity .2s;transform-origin:left center}
+#rv .tier.on{transform:none;opacity:1}
+#rv .tier.bull{color:var(--green)} #rv .tier.neg{color:var(--red)}
+#rv .off{font-family:'Space Mono',monospace;font-weight:700;font-size:16px;color:var(--dim);margin-top:8px;white-space:nowrap}
+#rv .off b{color:var(--ink)} #rv .off .p{color:var(--purple)}
+#rv .row{display:contents}
+#rv .box{flex:none;border-radius:14px;padding:12px 16px;height:132px;display:flex;flex-direction:column;justify-content:center;opacity:0;transform:translateY(14px);transition:opacity .3s,transform .35s cubic-bezier(.2,.8,.2,1)}
+#rv .box.on{opacity:1;transform:none}
+#rv .box .k{font-family:'Space Mono',monospace;font-weight:700;font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.8;white-space:nowrap}
+#rv .box .v{font-family:'Space Mono',monospace;font-weight:700;font-size:46px;line-height:1;margin-top:6px;letter-spacing:-.05em}
+#rv .pts{width:156px;background:var(--green);color:var(--ground)} #rv .pts.neg{background:var(--red)}
+#rv .grd{width:104px;background:var(--panel);border:2px solid var(--line);text-align:center;align-items:center}
+#rv .grd .k{color:var(--dim)} #rv .grd .v{font-family:'Archivo',sans-serif;font-weight:900}
+
+/* The game shows on "5 · Just Me" ONLY (operator, 2026-11-10): the Music Video scene is Live
+   Feedback Requests and none of the A&R game is visible there. */
+.hide{display:none!important}
+body.bare .ctl,body.bare .aside{display:none} body.bare .stage{padding:0} body.bare .fit{border:0}
+.aside{font-family:'Space Mono',monospace;font-size:12px;color:var(--dim);line-height:1.6;max-width:430px}
+.aside h3{font-family:'Archivo',sans-serif;font-weight:900;font-size:15px;color:var(--ink);margin:0 0 8px}
+.aside ol{padding-left:18px;margin:0 0 14px} .aside li{margin:5px 0} .aside b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="ctl">
+  <div class="grp"><b>Sequence</b><button id="play" class="on">▶ Play with sound</button></div>
+  <div class="grp"><b>Jump to</b>
+    <button data-step="0">record</button><button data-step="1">rating</button><button data-step="2">prediction</button>
+    <button data-step="3">locked</button><button data-step="4">processing</button><button data-step="5">reveal</button><button data-step="6">after</button></div>
+  <div class="grp"><b>Result</b>
+    <button data-case="bull" class="on">bullseye</button><button data-case="sharp">sharp</button><button data-case="close">close</button><button data-case="way">way off</button></div>
+</div>
+
+<div class="stage">
+<div class="fit" id="fit">
+<div id="frame">
+
+  <div id="cam">
+    <!-- THE STRIP: lives inside the CAM scene -->
+    <div id="strip">
+      <div class="l">
+        <div class="eyebrow"><i></i>Now rating · Record 3 of 11</div>
+        <div class="t">Paper Trail</div>
+        <div class="a"><b>Devon Shaw</b> · @devonshawmusic</div>
+      </div>
+      <div class="tile" id="tRate"><div class="k">Rating</div><div class="v" id="vRate">5</div></div>
+      <div class="tile p" id="tPred"><div class="k">Prediction</div><div class="v" id="vPred">4.5</div></div>
+    </div>
+    <div id="lockbar">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      Prediction locked in
+    </div>
+  </div>
+
+  <!-- THE REVEAL: compact, under the camera -->
+  <div id="rv">
+    <div class="proc"><div class="k">Checking the room</div><div class="bars"><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+    <div class="res">
+      <div class="avg"><div class="k">The average</div><div class="n" id="avgN">0.0</div><div class="m" id="avgM"></div><div class="c">from 38 A&amp;Rs</div></div>
+      <div class="r">
+        <div class="call"><div class="tier" id="tier"></div><div class="off" id="off"></div></div>
+        <div class="row">
+          <div class="box pts" id="pts"><div class="k">Points</div><div class="v" id="ptsV"></div></div>
+          <div class="box grd" id="grd"><div class="k">Grade</div><div class="v" id="grdV"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="aside">
+  <h3>The sequence</h3>
+  <ol>
+    <li><b>Record.</b> The strip, as live today, with the handle moved under the title.</li>
+    <li><b>Rating.</b> Tap a number on the phone: the Rating tile pops in. Tap another: it changes.</li>
+    <li><b>Prediction.</b> Move the slider: the purple tile follows it live.</li>
+    <li><b>Locked.</b> Lock it in: the strip turns green, "Prediction locked in", a lock sound.</li>
+    <li><b>Processing.</b> The card rises under the camera, ticking, about a second and a half.</li>
+    <li><b>Reveal.</b> The average counts up, the tier lands with its own sound, then points and the round grade. It holds about eight seconds.</li>
+    <li><b>After.</b> The card drops away, the QR card and the call to action come back, and the strip keeps Average and Points until Next record.</li>
+  </ol>
+  <h3>Sounds (all made in the page, no files)</h3>
+  <ol>
+    <li>Rating tap: one soft tick. Slider: a quiet tick per tenth.</li>
+    <li>Lock: a two-note latch.</li>
+    <li>Bullseye: a rising four-note fanfare. Sharp / Close: a shorter rise. Off / Way off: a low two-note drop.</li>
+  </ol>
+  <h3>What is new versus live</h3>
+  <ol>
+    <li>The strip gains the two tiles and the locked bar.</li>
+    <li>The reveal is one row in the QR card's slot (y 898–1078). The mandatory elements are never covered: the header, the Submit Music call to action, the primary and secondary 16:9. Nor are the fire meter, the viewer count, the ticker or the chat.</li>
+    <li>The strip source polls faster while a record is up, so the slider reads live.</li>
+  </ol>
+</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const CASES = {
+  bull:  { rate: 5, pred: 4.8, avg: 4.8, mean: 'Potential release',  tier: 'Bullseye!', cls: 'bull', off: 0.0, pts: 125,  grade: 'A+' },
+  sharp: { rate: 5, pred: 4.8, avg: 5.2, mean: 'Worth releasing',    tier: 'Sharp',     cls: '',     off: 0.4, pts: 96,   grade: 'A'  },
+  close: { rate: 5, pred: 4.8, avg: 6.1, mean: 'Potential Single',   tier: 'Close',     cls: '',     off: 1.3, pts: 61,   grade: 'B'  },
+  way:   { rate: 5, pred: 4.8, avg: 8.2, mean: 'Hit record',         tier: 'Way off',   cls: 'neg',  off: 3.4, pts: -20,  grade: 'D'  },
+};
+let C = CASES.bull, timers = [], SOUND = false;
+let ac; const ctx = () => ac || (ac = new (window.AudioContext || window.webkitAudioContext)());
+function tone(f, d, g, type, at){ if(!SOUND) return; try{ const a = ctx(), o = a.createOscillator(), v = a.createGain(); o.type = type || 'triangle'; o.frequency.value = f; const t = a.currentTime + (at || 0); v.gain.setValueAtTime(.0001, t); v.gain.linearRampToValueAtTime(g || .12, t + .015); v.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(v); v.connect(a.destination); o.start(t); o.stop(t + d + .05); }catch(e){} }
+const tick = () => tone(1400, .03, .05, 'square');
+const lockSnd = () => { tone(520, .09, .16, 'square'); tone(780, .16, .16, 'square', .09); };
+function tierSnd(k){ if(k === 'bull') [523,659,784,1047].forEach((f,i) => tone(f, i === 3 ? .9 : .22, .2, 'triangle', i * .11));
+  else if(k === 'sharp' || k === 'close') [523,659,784].slice(0, k === 'sharp' ? 3 : 2).forEach((f,i) => tone(f, .3, .16, 'triangle', i * .1));
+  else [330,247].forEach((f,i) => tone(f, .5, .18, 'sawtooth', i * .16)); }
+const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+function reset(){
+  timers.forEach(clearTimeout); timers = [];
+  ['#tRate','#tPred'].forEach(s => $(s).classList.remove('on','bump','locked'));
+  $('#lockbar').classList.remove('on'); $('#rv').classList.remove('on','done');
+  $('#tier').classList.remove('on','bull','neg'); $('#pts').classList.remove('on','neg'); $('#grd').classList.remove('on');
+  $('#vRate').textContent = C.rate; $('#vPred').textContent = '4.5'; $('#avgN').textContent = '0.0';
+  ['#tRate','#tPred'].forEach(s => $(s).classList.remove('res','neg'));
+  $('#tRate .k').textContent = 'Rating'; $('#tPred .k').textContent = 'Prediction';
+}
+// After the reveal the card drops away and the strip keeps the result until Next record:
+// the QR card and the call to action are back on screen within about ten seconds.
+function after(){
+  $('#rv').classList.remove('on');
+  $('#tRate .k').textContent = 'Average'; $('#vRate').textContent = C.avg.toFixed(1); $('#tRate').classList.add('on','res');
+  $('#tPred .k').textContent = 'Points'; $('#vPred').textContent = (C.pts >= 0 ? '+' : '') + C.pts; $('#tPred').classList.add('on','res'); $('#tPred').classList.toggle('neg', C.pts < 0);
+}
+function fill(){
+  $('#avgM').textContent = C.mean; $('#tier').textContent = C.tier; if(C.cls) $('#tier').classList.add(C.cls);
+  $('#off').innerHTML = C.off === 0 ? 'Predicted <span class="p">' + C.pred.toFixed(1) + '</span>. Dead on.' : 'Predicted <span class="p">' + C.pred.toFixed(1) + '</span> · off by <b>' + C.off.toFixed(1) + '</b>';
+  $('#ptsV').textContent = (C.pts >= 0 ? '+' : '') + C.pts; $('#pts').classList.toggle('neg', C.pts < 0); $('#grdV').textContent = C.grade;
+}
+function show(step){            // the final frame of a step, for stills
+  reset(); fill();
+  if(step >= 1) $('#tRate').classList.add('on');
+  if(step >= 2){ $('#tPred').classList.add('on'); $('#vPred').textContent = C.pred.toFixed(1); }
+  if(step === 3) $('#lockbar').classList.add('on');
+  if(step >= 3) ['#tRate','#tPred'].forEach(s => $(s).classList.add('locked'));
+  if(step >= 4) $('#rv').classList.add('on');
+  if(step >= 5){ $('#rv').classList.add('done'); $('#avgN').textContent = C.avg.toFixed(1); $('#tier').classList.add('on'); $('#pts').classList.add('on'); $('#grd').classList.add('on'); }
+  if(step >= 6) after();
+}
+function play(){
+  SOUND = true; reset(); fill();
+  later(700, () => { $('#tRate').classList.add('on'); tick(); });
+  later(1900, () => { $('#tPred').classList.add('on'); tick(); });
+  for(let i = 1; i <= 3; i++) later(2100 + i * 260, () => { $('#vPred').textContent = (4.5 + i * .1).toFixed(1); tick(); });
+  later(3900, () => { $('#lockbar').classList.add('on'); ['#tRate','#tPred'].forEach(s => $(s).classList.add('locked')); lockSnd(); });
+  later(5100, () => { $('#lockbar').classList.remove('on'); $('#rv').classList.add('on'); });
+  for(let i = 0; i < 9; i++) later(5300 + i * 160, tick);
+  later(6800, () => {
+    $('#rv').classList.add('done');
+    const t0 = performance.now(), el = $('#avgN');
+    const step = now => { const k = Math.min(1, (now - t0) / 900), e = 1 - Math.pow(1 - k, 3); el.textContent = (C.avg * e).toFixed(1); if(k < 1) requestAnimationFrame(step); else el.textContent = C.avg.toFixed(1); };
+    requestAnimationFrame(step);
+  });
+  later(7800, () => { $('#tier').classList.add('on'); tierSnd(Object.keys(CASES).find(k => CASES[k] === C)); });
+  later(8300, () => $('#pts').classList.add('on'));
+  later(8550, () => $('#grd').classList.add('on'));
+  later(16500, after);
+}
+$('#play').onclick = play;
+document.querySelectorAll('[data-step]').forEach(b => b.onclick = () => show(+b.dataset.step));
+document.querySelectorAll('[data-case]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-case]').forEach(x => x.classList.remove('on')); b.classList.add('on'); C = CASES[b.dataset.case]; show(5); });
+const q = new URLSearchParams(location.search);
+if(q.get('case') && CASES[q.get('case')]) C = CASES[q.get('case')];
+if(q.get('bare') === '1') document.body.classList.add('bare');
+show(q.get('step') != null ? +q.get('step') : 2);
+function fit(){ const bare = document.body.classList.contains('bare'); const w = bare ? 1080 : Math.min(520, window.innerWidth - 500); const s = w / 1080; $('#fit').style.width = (1080 * s) + 'px'; $('#fit').style.height = (1920 * s) + 'px'; $('#frame').style.transform = 'scale(' + s + ')'; }
+window.addEventListener('resize', fit); fit();
+</script>
+</body>
+</html>
