@@ -1,5 +1,8 @@
 # The A&R Program as a league — direction note
 
+> **Superseded 2026-11-10** by `docs/anr-team-saas-direction.md` (the app as an independent product for
+> managing your own A&R Team; "Team", not "league"). Kept for history.
+
 *Operator direction, 2026-10-29 (planning conversation). Supersedes the host-role model of 2026-07-02
 in `docs/multi-tenant-roadmap.md`. Nothing here is built. Mockup-first applies to every screen named.*
 
