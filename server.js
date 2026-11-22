@@ -1821,6 +1821,21 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       continue;                                            // nothing else is due for this day yet
     }
 
+    // ---- the live-night heads-up: at the PUBLIC close, when a stream time is set ----
+    // Queued here, not in the close step below, because with an admin window the state stays
+    // 'open' for hours past the public close and the artists need to hear before the stream.
+    // One SELECT a tick on the drop that just closed; enqueue is idempotent per (round, channel).
+    if (state === 'open' && sched.liveMin != null && at >= Number(s.window_closes_at)) {
+      const any = await db.get('SELECT 1 AS x FROM artist_headsups WHERE session_id = ? LIMIT 1', [s.id]);
+      if (!any) {
+        try {
+          const q = await enqueueArtistHeadsups(s.id, { all: true });
+          out.headsupQueued = (out.headsupQueued || 0) + q.queued;
+          if (q.queued) await logDropEvent(s.id, 'headsup_queued', { detail: `${q.queued} live-night heads-ups queued` });
+        } catch (e) { console.error('[daily] heads-up queue failed:', e.message); }
+      }
+    }
+
     // ---- close: open -> closing (stop the voting, then tally over as many ticks as needed) ----
     // The PUBLIC close is window_closes_at (the vote route refuses everyone else from then);
     // the tally waits out the admin rating window, if one is set.
@@ -1930,9 +1945,17 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
       } catch (e) { console.error('[daily] open notice drain failed:', e.message); }
     }
     // The Thursday weekly update was RETIRED 2026-10-23 (operator): no weekly show, no prizes.
-    // The artist heads-up at the close (041) is RETIRED (operator, 2026-10-17): the artist
-    // hears from the program once, with the Track Report, after the countdown has posted.
-    // enqueueArtistHeadsups / drainArtistHeadsups stay for the console's manual send only.
+    // The artist heads-up at the close (041) was RETIRED 2026-10-17 and is BACK 2026-11-22 as
+    // the live-night notice, queued above only when a stream time is set; the drain stops at
+    // the stream (a heads-up after the stream has started is noise).
+    const hus = await db.all("SELECT DISTINCT session_id FROM artist_headsups WHERE status = 'pending' LIMIT 3", []);
+    for (const h of hus) {
+      if (left() < 4000) { out.budgetHit = true; break; }
+      try {
+        const d = await drainArtistHeadsups({ sessionId: h.session_id, limit: 40, deadline: t0 + budgetMs });
+        out.headsupSent = (out.headsupSent || 0) + (d.sent || 0);
+      } catch (e) { console.error('[daily] heads-up drain failed:', e.message); }
+    }
     const pubs = await db.all(
       `SELECT * FROM sessions WHERE mode = 'async' AND async_state = 'published' AND deleted_at IS NULL
         ORDER BY published_at DESC LIMIT 3`, []);
@@ -4826,13 +4849,20 @@ const DAILY_SCHEDULE_DEFAULTS = Object.freeze({
   // The tally — and the carousel render, the Asana tasks and the publish behind it — waits
   // for the window to end. 0 = off, and the day runs exactly as before.
   adminGraceMin: 0,
+  // THE LIVE STREAM ON THE CLOSE NIGHT (operator, 2026-11-22, "a stronger sell"): the ET time
+  // of day the operator goes live to score the just-closed drop inside the admin window. null =
+  // no stream and nothing is announced. When set, the PUBLIC close queues an artist heads-up
+  // ("reviewed live tonight at <time>"), the live call says the final result is on the stream,
+  // and the Track Report says the record was scored live. Rendered live on the close day when
+  // the time is after the close, else the next day.
+  liveMin: null,
   // REPLAY THE DAY (053): how many days back from today an A&R may replay a published drop's
   // unrated records for practice (no points). 0 = off for A&Rs; platform admins are never capped.
   replayDays: 7,
 });
 const DAILY_SCHEDULE_KEYS = ['daily_open_min', 'daily_close_min', 'daily_stream_min', 'daily_stream_days',
   'daily_results_min', 'daily_results_days', 'daily_bonus_tiers', 'daily_artist_delay_min', 'daily_admin_grace_min',
-  'daily_replay_days'];
+  'daily_replay_days', 'daily_live_min'];
 const DAILY_REPLAY_MAX_DAYS = 365;
 const DAILY_ADMIN_GRACE_MAX_MIN = 12 * 60;
 
@@ -4877,6 +4907,8 @@ function parseDailySchedule(inp) {
   const resultsAbs = (cfg.closeMin > cfg.openMin ? 0 : 1440) + cfg.resultsDays * 1440 + cfg.resultsMin;
   if (grace > 0 && closeAbs + grace >= resultsAbs) throw new Error('The admin rating window must end before the results publish');
   cfg.adminGraceMin = grace;
+  const liveRaw = inp.liveMin ?? D.liveMin;
+  cfg.liveMin = liveRaw == null || liveRaw === '' ? null : min(liveRaw, 'liveMin');
   const replay = Number(inp.replayDays ?? D.replayDays);
   if (!Number.isInteger(replay) || replay < 0 || replay > DAILY_REPLAY_MAX_DAYS) throw new Error(`The replay window must be whole days, 0–${DAILY_REPLAY_MAX_DAYS}`);
   cfg.replayDays = replay;
@@ -4888,6 +4920,25 @@ function dropGraceEndAt(session, sched = DAILY_SCHEDULE_DEFAULTS) {
   const closes = Number(session && session.window_closes_at) || 0;
   return closes + (Number(sched.adminGraceMin) || 0) * 60000;
 }
+
+// When the operator goes live to score a drop that closed at `closesAt`: the schedule's live
+// time on the close day, or the next day when that time is already past the close. null when
+// no stream time is set.
+function liveAtAfterClose(closesAt, sched = DAILY_SCHEDULE_DEFAULTS) {
+  if (closesAt == null || sched.liveMin == null) return null;
+  const closeDay = etDay(Number(closesAt));
+  const hm = [Math.floor(sched.liveMin / 60), sched.liveMin % 60];
+  let at = etEpoch(closeDay, ...hm);
+  if (at < Number(closesAt)) at = etEpoch(etNextDay(closeDay), ...hm);
+  return at;
+}
+function dropLiveAt(session, sched = DAILY_SCHEDULE_DEFAULTS) {
+  const closes = Number(session && session.window_closes_at) || null;
+  return closes ? liveAtAfterClose(closes, sched) : null;
+}
+// A clock label that is safe inside a GSM-7 text: Intl pads "9:00 PM" with a narrow no-break
+// space on newer ICUs, which would turn the whole message UCS-2.
+function etClockPlain(ts) { return String(etClockLabel(ts) || '').replace(/[\u202f\u00a0]/g, ' '); }
 
 let _dailySched = { at: 0, cfg: null };
 async function dailySchedule() {
@@ -4902,7 +4953,8 @@ async function dailySchedule() {
       resultsMin: m.daily_results_min ?? D.resultsMin, resultsDays: m.daily_results_days ?? D.resultsDays,
       artistDelayMin: m.daily_artist_delay_min ?? D.artistDelayMin,
       adminGraceMin: m.daily_admin_grace_min ?? D.adminGraceMin,
-      replayDays: m.daily_replay_days ?? D.replayDays });
+      replayDays: m.daily_replay_days ?? D.replayDays,
+      liveMin: m.daily_live_min ?? D.liveMin });
     if (parsed.cfg) cfg = parsed.cfg;
   } catch (e) { console.error('[daily] schedule setting unreadable, using defaults:', e.message); }
   _dailySched = { at: Date.now(), cfg };
@@ -4955,6 +5007,7 @@ function dailyScheduleView(sched) {
     opensLabel: lab(w.opensAt), closesLabel: lab(w.closesAt), streamLabel: lab(w.streamAt), resultsLabel: lab(w.resultsAt),
     lockLabel: etClockLabel(w.opensAt - 3600000),
     tallyLabel: lab(w.closesAt + (sched.adminGraceMin || 0) * 60000),
+    liveLabel: sched.liveMin == null ? null : lab(liveAtAfterClose(w.closesAt, sched)),
     streamHours: hrs(w.streamAt), resultsHours: hrs(w.resultsAt),
     bonusRule: 'Finish every record before the close: the bonus is the A&R\'s own average points per round on the drop.' };
 }
@@ -5734,6 +5787,7 @@ const artistEmailText = (d) => `Your Track Report — ${d.title}\n\n`
   + `${d.decision}\n\n`
   + `"${d.title}"${d.artist ? ' by ' + d.artist : ''} was rated by ${d.votes} A&Rs in The ${d.what} on ${d.dateLabel}. `
   + `Official track rating: ${d.mean} out of 9. ${d.verdict || d.bandLabel}.\n\n`
+  + (d.liveLine ? `${d.liveLine}\n\n` : '')
   + (d.subscribe ? `${subscribeBlockText()}\n\n` : '')
   + (d.watchUrl ? `${d.watchLabel || 'Watch the room hear your record'}: ${d.watchUrl}\n\n` : '')
   + artistCommentsText(d.comments)
@@ -5770,13 +5824,14 @@ const artistCommentsText = (comments) => (!comments || !comments.length) ? ''
     + comments.map(c => `"${c.body}"\n— ${c.name}${[c.role, c.location].filter(Boolean).length ? ' (' + [c.role, c.location].filter(Boolean).join(', ') + ')' : ''}`).join('\n\n')
     + `\n\nComments are the personal opinions of individual A&Rs who scored the record.\n\n`;
 
-function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag, subscribe = false }) {
+function artistEmailHtml({ title, artist, mean, bandLabel, verdict, decision, votes, what, dateLabel, watchUrl, watchLabel, pages, comments, hashtag, subscribe = false, liveLine = null }) {
   what = what || 'A&R Meeting';
   hashtag = hashtag || (what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting');
   const pageBlock = (pages || []).filter(Boolean).map((u, i) =>
     `<a href="${u}" style="text-decoration:none"><img src="${u}" alt="Track Report page ${i + 1}" width="320" style="width:320px;max-width:100%;border-radius:10px;display:block;margin:0 auto 10px;border:1px solid #2C2F34"></a>`
   ).join('');
   const watchBlock = subscribe ? `
+      ${liveLine ? `<p style="font-size:14px;line-height:1.6;color:#F6F7FB;margin:0 0 12px;">${escapeHtml(liveLine)}</p>` : ''}
       ${subscribeBlockHtml('artist')}` : watchUrl ? `
       <p style="margin:6px 0 4px;"><a href="${watchUrl}" style="display:inline-block;background:#4BB749;color:#0D0E12;border-radius:24px;padding:12px 24px;font-size:13px;font-weight:bold;text-decoration:none;">${escapeHtml(watchLabel || 'Watch the room hear your record')}</a></p>
       <p style="font-size:12px;line-height:1.55;color:#8A94A6;margin:0 0 14px;">Go to your record in the replay. Short clips of the live response are the easiest thing to post.</p>` : '';
@@ -5833,6 +5888,11 @@ const ARTIST_ELIGIBLE_SQL = `
 // hosted page URLs so the queue row can record exactly what was delivered.
 // The page count varies by record (trackReportPages): conditional pages drop out and
 // comments take as many as they need, so the URLs are the record of what went.
+function liveReportLine(callAt, session, sched = DAILY_SCHEDULE_DEFAULTS) {
+  const day = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long' }).format(new Date(Number(callAt)));
+  const scored = Number(callAt) < dropGraceEndAt(session, sched);
+  return scored ? `Your record was scored live on ${day}'s stream.` : `Your record was played on ${day}'s live stream.`;
+}
 async function sendArtistReportEmail(round, session, dest) {
   const d = await songReportData(round, session);
   if (!d) return { ok: false, error: 'No eligible evaluations to report' };
@@ -5853,6 +5913,12 @@ async function sendArtistReportEmail(round, session, dest) {
     watchLabel: null,
     pages, comments: d.comments, hashtag: d.what === 'A&R Room' ? '#TheARRoom' : '#TheARMeeting',
   };
+  // The live stream (2026-11-22): a Go live press on the drop is the record of a stream. Pressed
+  // while the drop was still being scored = "scored live"; after the tally = "played".
+  if (isAsync(session)) {
+    const call = await db.get('SELECT MIN(created_at) AS at FROM artist_live_calls WHERE session_id = ?', [session.id]);
+    if (call && call.at) common.liveLine = liveReportLine(Number(call.at), session, await dailySchedule());
+  }
   const html = artistEmailHtml(common);
   const text = artistEmailText(common);
   const r = await sendEmail(dest, `Track Report: “${d.title}” — ${decision}`, html, text, { tag: 'artist_report' });
@@ -5935,8 +6001,16 @@ async function dailyStreamUrl() {
   return (row && cleanUrl(row.v)) || LIVE_SUBSCRIBE_URL;
 }
 
-async function enqueueArtistHeadsups(sessionId) {
-  const rounds = await db.all(ARTIST_ELIGIBLE_SQL, [sessionId]);
+// `all` (the live-night notice, 2026-11-22): every rating record in the drop, rated or not —
+// at the PUBLIC close nothing is ratified yet, and the stream plays the whole drop. The manual
+// console send keeps the rated-only set (its copy says "was rated").
+const ARTIST_ALL_RECORDS_SQL = `
+  SELECT r.* FROM rounds r
+   WHERE r.session_id = ? AND COALESCE(r.poll_type,'rating') <> 'binary'
+     AND COALESCE(r.is_reference, 0) = 0
+   ORDER BY r.idx ASC`;
+async function enqueueArtistHeadsups(sessionId, { all = false } = {}) {
+  const rounds = await db.all(all ? ARTIST_ALL_RECORDS_SQL : ARTIST_ELIGIBLE_SQL, [sessionId]);
   let queued = 0;
   for (const r of rounds) {
     for (const [channel, dest] of [['email', (r.artist_email || '').trim()], ['sms', (r.artist_phone || '').trim()]]) {
@@ -5953,16 +6027,40 @@ async function enqueueArtistHeadsups(sessionId) {
 // The heads-up (2026-10-15): the record was rated and the results come by email on the report
 // day. No show to announce (the Wednesday show was retired 2026-10-23); the YouTube line stays.
 // GSM-7, one segment: the report day is the only variable text besides the title.
-function artistHeadsupSmsBody(title, reportAt) {
+// "tonight" when the stream is on the ET day the message goes, else the day's label.
+function liveWhen(liveAt, atTs = now()) {
+  return etDay(Number(liveAt)) === etDay(Number(atTs)) ? 'tonight' : 'on ' + etDayLabel(etDay(Number(liveAt)));
+}
+// With a live time (2026-11-22): the record is reviewed live tonight at <time>, the final
+// score is on the stream — the operator's ask: give the artist a reason to watch and bring
+// people. Without one, the older "rated, report on <day>" notice (manual send only).
+function artistHeadsupSmsBody(title, reportAt, liveAt = null, atTs = now()) {
+  if (liveAt) {
+    const when = `${liveWhen(liveAt, atTs)} at ${etClockPlain(liveAt)}`;
+    const frame = (t) => `"${t}" is being reviewed live ${when}. Final score on the stream. Watch: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`;
+    return frame(fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame('').length));
+  }
   const day = reportAt ? etDayLabel(etDay(Number(reportAt))) : null;
   const frame = (t) => `"${t}" was rated by the A&R Team. Report by email${day ? ' ' + day : ''}. Subscribe + hit the bell: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`;
   return frame(fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame('').length));
 }
-function artistHeadsupContent({ title, artist, reportAt, streamUrl }) {
+function artistHeadsupContent({ title, artist, reportAt, streamUrl, liveAt = null, atTs = now() }) {
+  const reportLine = reportAt ? `Your full Track Report arrives by email on ${etDayLabel(etDay(Number(reportAt)))}.` : '';
+  if (liveAt) {
+    const when = liveWhen(liveAt, atTs);
+    return {
+      subject: `“${title}” is being reviewed live ${when}`,
+      lead: `Your record is being reviewed live ${when}.`,
+      body: `“${title}”${artist ? ' by ' + artist : ''} is being reviewed live ${when} at ${etClockPlain(liveAt)}. The final score is given on the stream.`,
+      tune: 'Watch and bring your fans to the comments.',
+      report: reportLine,
+      streamUrl,
+    };
+  }
   return {
     subject: `“${title}” was rated by the A&R Team`,
     lead: 'Your song was rated.',
-    body: `“${title}”${artist ? ' by ' + artist : ''} was rated by the A&R Team.${reportAt ? ` Your full Track Report arrives by email on ${etDayLabel(etDay(Number(reportAt)))}.` : ''}`,
+    body: `“${title}”${artist ? ' by ' + artist : ''} was rated by the A&R Team.${reportLine ? ' ' + reportLine : ''}`,
     tune: SUBSCRIBE_LINE,
     report: '',
     streamUrl,
@@ -6004,7 +6102,9 @@ async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = 
   // true. Anything still pending is left, not sent late. (Was the stream time until the daily
   // stream was retired, 2026-10-15.)
   const reportAt = Number(session.results_at) || null;
-  if (!reportAt || now() >= reportAt) return { sent: 0, failed: 0, stale: true };
+  const liveAt = dropLiveAt(session, await dailySchedule());
+  const until = liveAt || reportAt;
+  if (!until || now() >= until) return { sent: 0, failed: 0, stale: true };
   const smsOk = withinSmsWindow();
   const rows = await db.all(
     `SELECT h.*, r.song_title, r.song_artist FROM artist_headsups h JOIN rounds r ON r.id = h.round_id
@@ -6019,10 +6119,9 @@ async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = 
     try {
       const title = row.song_title || 'your record';
       const r = row.channel === 'sms'
-        ? await sendSms(row.dest, artistHeadsupSmsBody(title, Number(session.results_at) || null))
+        ? await sendSms(row.dest, artistHeadsupSmsBody(title, reportAt, liveAt))
         : await (async () => {
-            const c = artistHeadsupContent({ title, artist: row.song_artist,
-              reportAt: Number(session.results_at) || null, streamUrl });
+            const c = artistHeadsupContent({ title, artist: row.song_artist, reportAt, streamUrl, liveAt });
             return sendEmail(row.dest, c.subject, artistHeadsupHtml(c), artistHeadsupText(c), { tag: 'artist_headsup' });
           })();
       if (r.ok) { await db.run("UPDATE artist_headsups SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
@@ -6044,15 +6143,24 @@ async function drainArtistHeadsups({ sessionId, limit = 20, deadline = null } = 
 // THE SEAL: nothing here carries a score, a rank or a vote count. It only says we're live.
 // QUIET HOURS DO NOT APPLY (operator, 2026-10-25): the host presses it when the stream starts,
 // so the texts go then, whatever the hour. The other artist texts keep the ET window.
-function liveCallSmsBody(title) {
-  const frame = (t) => `Makin' It: We're live now reviewing music, including "${t}". Watch: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`;
+// `scoring` (2026-11-22): the drop is still being scored (async_state 'open' — the admin
+// window, or the open day) so the operator's votes count and the final result is given on the
+// stream. After the tally the stream is a replay, and the message says "playing", not
+// "reviewing": by then the artist already holds the score.
+function liveCallSmsBody(title, scoring = false) {
+  const frame = scoring
+    ? (t) => `Makin' It: We're live now scoring "${t}". The final result is on the stream. Watch: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`
+    : (t) => `Makin' It: We're live now playing "${t}". Watch: ${LIVE_SUBSCRIBE_SHORT} Reply STOP to opt out.`;
   return frame(fitSmsTitle(title, SMS_SINGLE_SEGMENT - frame('').length));
 }
-function liveCallContent({ title, artist }) {
+function liveCallContent({ title, artist, scoring = false }) {
+  const rec = `“${title}”${artist ? ' by ' + artist : ''}`;
   return {
-    subject: "We're live reviewing music now",
+    subject: scoring ? "We're live now, scoring your record" : "We're live now, playing your record",
     lead: "We're live now.",
-    body: `We're reviewing music live right now, including “${title}”${artist ? ' by ' + artist : ''}.`,
+    body: scoring
+      ? `We're scoring records live right now, including ${rec}. The final result is given on the stream.`
+      : `We're playing records live right now, including ${rec}.`,
     tune: 'Watch, and bring your fans to the comments.',
   };
 }
@@ -6128,6 +6236,8 @@ async function enqueueLiveCall(sessionId, byUid) {
   return { callNo, emails: plan.emails.length, texts: plan.phones.length };
 }
 async function drainLiveCall({ sessionId, deadline = null } = {}) {
+  const lcSession = await db.get('SELECT async_state FROM sessions WHERE id = ?', [sessionId]);
+  const scoring = !!(lcSession && lcSession.async_state === 'open');
   const rows = await db.all(
     `SELECT c.*, r.song_title, r.song_artist FROM artist_live_calls c LEFT JOIN rounds r ON r.id = c.round_id
       WHERE c.session_id = ? AND c.status = 'pending' ORDER BY c.call_no ASC, c.channel ASC, c.created_at ASC LIMIT 60`, [sessionId]);
@@ -6139,9 +6249,9 @@ async function drainLiveCall({ sessionId, deadline = null } = {}) {
     try {
       const title = row.song_title || 'your record';
       const r = row.channel === 'sms'
-        ? await sendSms(row.dest, liveCallSmsBody(title))
+        ? await sendSms(row.dest, liveCallSmsBody(title, scoring))
         : await (async () => {
-            const c = liveCallContent({ title, artist: row.song_artist });
+            const c = liveCallContent({ title, artist: row.song_artist, scoring });
             return sendEmail(row.dest, c.subject, liveCallHtml(c), liveCallText(c), { tag: 'artist_live' });
           })();
       if (r.ok) { await db.run("UPDATE artist_live_calls SET status = 'sent', sent_at = ?, error = NULL WHERE id = ?", [now(), row.id]); sent++; }
@@ -9900,6 +10010,7 @@ async function handleApi(req, res, url) {
         await setOrClear('daily_artist_delay_min', String(c.artistDelayMin));
         await setOrClear('daily_admin_grace_min', String(c.adminGraceMin));
         await setOrClear('daily_replay_days', String(c.replayDays));
+        await setOrClear('daily_live_min', c.liveMin == null ? null : String(c.liveMin));
       }
       _dailySched.at = 0;
       const sched = await dailySchedule();
@@ -12935,6 +13046,9 @@ module.exports._dropAfterClose = dropAfterClose;
 module.exports._dropStreamAt = dropStreamAt;
 module.exports._artistHeadsupSmsBody = artistHeadsupSmsBody;
 module.exports._liveCallSmsBody = liveCallSmsBody;
+module.exports._liveCallContent = liveCallContent;
+module.exports._liveReportLine = liveReportLine;
+module.exports._liveAtAfterClose = liveAtAfterClose;
 module.exports._liveCallPlan = liveCallPlan;
 module.exports._artistHeadsupContent = artistHeadsupContent;
 module.exports._artistHeadsupText = artistHeadsupText;
