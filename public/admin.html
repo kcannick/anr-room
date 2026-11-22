@@ -1771,7 +1771,7 @@
       <div id="cnHist" style="display:none;margin-top:22px">
         <div class="row" style="justify-content:space-between;align-items:center">
           <h3 class="cn-h3">Sent to this list</h3>
-          <button class="btn ghost sm" id="cnDrain" style="display:none">Send pending texts now</button>
+          <button class="btn ghost sm" id="cnDrain" style="display:none">Send the rest now</button>
         </div>
         <div id="cnSends"></div>
       </div>
@@ -2495,7 +2495,11 @@ async function api(path,body,method='POST'){
   if(AUTHTOK)h['X-Auth-Token']=AUTHTOK;       // identity login (preferred)
   if(ATOK)h['X-Admin-Token']=ATOK;            // legacy per-session token (fallback)
   const r=await fetch(path,{method,headers:h,body:method==='GET'?undefined:JSON.stringify(body||{})});
-  const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Error');return d;
+  const d=await r.json().catch(()=>null);
+  // No JSON = the request never finished on our side (Vercel's 30s cap answers 504 with a page,
+  // not our error). Say so rather than a bare "Error": the work may have partly happened.
+  if(!r.ok)throw new Error(d&&d.error?d.error:(r.status===504||r.status===502?'The server ran out of time ('+r.status+'). Part of it may have gone through.':'Server error ('+r.status+').'));
+  return d||{};
 }
 const fmtAvg=v=>v==null?'—':(+v).toFixed(1);
 
@@ -5623,7 +5627,7 @@ function renderChartNotify(st){
     for(const s of st.sends.slice().reverse()){
       const em=s.emailsSent+' sent',tx=s.textsSent+' sent'+(s.held?' · <span class="hold">'+s.held+' hold until '+st.smsWindow.from+'</span>':'');
       const fe=s.failed.filter(f=>f.channel==='email').length,ft=s.failed.filter(f=>f.channel==='sms').length;
-      const status=s.pending?'<span class="ok">sending</span>':'done';
+      const status=s.pending?'<span class="ok">sending</span>':(s.stuck&&s.stuck.length?'<span class="bad">check</span>':'done');
       h+='<tr><td style="white-space:nowrap">'+esc(s.startedLabel||'')+'</td><td>'+esc(s.subject||'(text only)')+'</td>'
         +'<td><span class="ok">'+em+'</span>'+(fe?' · <span class="bad">'+fe+' failed</span>':'')+'</td>'
         +'<td><span class="ok">'+tx+'</span>'+(ft?' · <span class="bad">'+ft+' failed</span>':'')+'</td><td>'+status+'</td></tr>';
@@ -5631,8 +5635,14 @@ function renderChartNotify(st){
     }
     h+='</table>';
     if(failed.length)h+='<details><summary>'+failed.length+' failed</summary><p class="muted" style="font-size:12.5px">'+failed.map(f=>esc(f.to)+' — '+esc(f.error)).join(' · ')+'</p></details>';
+    const stuck=st.sends.reduce((a,s)=>a.concat(s.stuck||[]),[]);
+    if(stuck.length)h+='<p class="muted" style="font-size:12.5px;margin-top:10px"><span class="bad">'+stuck.length+' not confirmed:</span> '
+      +stuck.map(x=>esc(x.to)+' ('+(x.channel==='sms'?'text':'email')+')').join(' · ')
+      +'. The send was cut off while these were going out, so they may or may not have arrived. '
+      +'<button class="btn ghost sm" id="cnRetryStuck">Send '+(stuck.length===1?'it':'them')+' again</button></p>';
     $('#cnSends').innerHTML=h;
     $('#cnDrain').style.display=st.sends.some(s=>s.pending)?'':'none';
+    $('#cnRetryStuck')&&($('#cnRetryStuck').onclick=cnRetryStuck);
   }else hist.style.display='none';
   const lists=$('#chLists');
   if(st.recent&&st.recent.length){
@@ -5700,9 +5710,29 @@ async function cnSend(){
     cnState=d; renderChartNotify(d);
     const st=d.started||{};
     $('#cnMsg').innerHTML='<span class="ok">Queued '+(st.emails||0)+' email'+(st.emails===1?'':'s')+' + '+(st.texts||0)+' text'+(st.texts===1?'':'s')+'.</span> Sent '+d.sent+(d.failed?', <span class="bad">'+d.failed+' failed</span>':'')+(d.held?', <span class="hold">'+d.held+' held for the window</span>':'')+'.'
-      +(d.sends.some(s=>s.pending&&!s.held)?' Still sending — press "Send pending texts now" or reload to continue.':'');
-  }catch(e){$('#cnMsg').innerHTML='<span class="bad">'+esc(e.message)+'</span>';}
+      +(d.sends.some(s=>s.pending&&!s.held)?' Still sending — press "Send the rest now" or reload to continue.':'');
+  }catch(e){cnFailed(e);}
   finally{b.disabled=false;cnSendLabel();}
+}
+async function cnRetryStuck(){
+  if(!confirm('Send again to the messages that were cut off?\n\nSome of them may already have arrived, so those people would get it twice.'))return;
+  $('#cnMsg').textContent='Sending…';
+  try{
+    const d=await api('/api/admin/charts/notify',{q:chParams().toString(),retryStuck:true});
+    cnState=d; renderChartNotify(d);
+    $('#cnMsg').innerHTML='Sent '+d.sent+(d.failed?', <span class="bad">'+d.failed+' failed</span>':'')+'.';
+  }catch(e){cnFailed(e);}
+}
+// A send that died partway still queued its messages: show what actually went, not just "Error".
+async function cnFailed(e){
+  $('#cnMsg').innerHTML='<span class="bad">'+esc(e.message)+'</span>';
+  try{
+    const d=await api('/api/admin/charts/notify?'+chParams().toString(),null,'GET');
+    cnState=d; renderChartNotify(d);
+    const s=d.sends[d.sends.length-1];
+    if(s&&(s.pending||s.emailsSent||s.textsSent))$('#cnMsg').innerHTML+=' So far: '+s.emailsSent+' email'+(s.emailsSent===1?'':'s')+' + '+s.textsSent+' text'+(s.textsSent===1?'':'s')+' sent'
+      +(s.pending?', '+s.pending+' still to send. Press "Send the rest now" to continue (nobody gets it twice).':'.');
+  }catch(_){}
 }
 async function cnDrain(){
   const b=$('#cnDrain'); b.disabled=true; $('#cnMsg').textContent='Sending…';
@@ -5710,7 +5740,7 @@ async function cnDrain(){
     const d=await api('/api/admin/charts/notify',{q:chParams().toString()});
     cnState=d; renderChartNotify(d);
     $('#cnMsg').innerHTML='Sent '+d.sent+(d.failed?', <span class="bad">'+d.failed+' failed</span>':'')+(d.held?', <span class="hold">'+d.held+' still held until '+d.smsWindow.from+'</span>':'')+'.';
-  }catch(e){$('#cnMsg').innerHTML='<span class="bad">'+esc(e.message)+'</span>';}
+  }catch(e){cnFailed(e);}
   finally{b.disabled=false;}
 }
 async function cnTestToMe(){
