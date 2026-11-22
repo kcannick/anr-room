@@ -1993,6 +1993,54 @@ async function startVoting(sessionId, headers, minutes = 5) {
     const gTick = await call('/api/admin/daily/tick', { at: gNow + 60000 }, 'POST', BOOTH);
     ok('the tally waits for the window', gTick.d.closed === 0 && (await dDb.get('SELECT async_state FROM sessions WHERE id = ?', [GDROP])).async_state === 'open', JSON.stringify(gTick.d));
 
+    const srvL = require('./server');
+    // THE LIVE NIGHT (2026-11-22, "a stronger sell"): a stream time on the schedule makes the
+    // PUBLIC close tell every artist "reviewed live tonight at <time>", while the drop is still
+    // open for the admin to score on air. No time set = nothing queued (the tick above).
+    ok('no live time: the public close queued no heads-up', (await dDb.all('SELECT id FROM artist_headsups WHERE session_id = ?', [GDROP])).length === 0);
+    await dDb.run("UPDATE rounds SET artist_email = 'live71@test.com', artist_phone = '+14045550171' WHERE session_id = ? AND idx = 1", [GDROP]);
+    await dDb.run("UPDATE rounds SET artist_email = 'live72@test.com' WHERE session_id = ? AND idx = 2", [GDROP]);
+    const lvSet = await call('/api/admin/settings', { dailySchedule: { adminGraceMin: 120, liveMin: 21 * 60 } }, 'POST', BOOTH);
+    ok('the live stream time is a schedule setting', lvSet.status === 200, JSON.stringify(lvSet.d));
+    const lvView = (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule;
+    ok('the panel reads the live time back with a label', lvView.liveMin === 1260 && /9:00 PM ET/.test(lvView.liveLabel || ''), JSON.stringify([lvView.liveMin, lvView.liveLabel]));
+    ok('a bad live time is refused', (await call('/api/admin/settings', { dailySchedule: { adminGraceMin: 120, liveMin: 1500 } }, 'POST', BOOTH)).status === 400);
+    const lvTick = await call('/api/admin/daily/tick', { at: gNow + 90000 }, 'POST', BOOTH);
+    const lvRows = await dDb.all('SELECT channel, dest, status FROM artist_headsups WHERE session_id = ? ORDER BY channel, dest', [GDROP]);
+    ok('with a live time the public close queues the heads-up while the drop is still open (3 rows: 2 email + 1 text)',
+      lvTick.d.headsupQueued === 3 && lvRows.length === 3 && (await dDb.get('SELECT async_state FROM sessions WHERE id = ?', [GDROP])).async_state === 'open', JSON.stringify([lvTick.d, lvRows]));
+    // The text keeps the ET quiet window (the close is 6 PM, inside it; the suite runs whenever).
+    ok('and the same tick sends it (dev mail; the text waits for the ET window if the suite runs at night)',
+      lvRows.filter(r => r.channel === 'email').every(r => r.status === 'sent') && lvTick.d.headsupSent >= 2
+        && ['sent', 'pending'].includes(lvRows.find(r => r.channel === 'sms').status), JSON.stringify(lvRows));
+    ok('a second tick queues nothing twice', (await call('/api/admin/daily/tick', { at: gNow + 120000 }, 'POST', BOOTH)).d.headsupQueued == null
+      && (await dDb.all('SELECT id FROM artist_headsups WHERE session_id = ?', [GDROP])).length === 3);
+    ok('the log carries the heads-up line', (await dDb.all("SELECT id FROM drop_events WHERE session_id = ? AND event = 'headsup_queued'", [GDROP])).length === 1);
+    const lvAt = srvL._liveAtAfterClose(gNow - 1000, { liveMin: 21 * 60 });
+    const lvC = srvL._artistHeadsupContent({ title: 'Record 71', artist: 'Artist 71', reportAt: gNow + 36 * 3600000, liveAt: lvAt, atTs: gNow });
+    ok('the live heads-up names the time, the stakes and the ask, no score',
+      /is being reviewed live (tonight|on )/.test(lvC.subject) && /at \d{1,2}:\d\d [AP]M ET\. The final score is given on the stream\./.test(lvC.body)
+        && lvC.tune === 'Watch and bring your fans to the comments.' && /Track Report arrives by email on/.test(lvC.report)
+        && !/\d\.\d|out of 9|#\d/.test(lvC.body + lvC.subject), JSON.stringify(lvC));
+    const lvSms = srvL._artistHeadsupSmsBody('A Very Long Record Title That Goes On And On Forever', null, lvAt, gNow);
+    ok('the live heads-up text is plain GSM-7 in one segment', lvSms.length <= 160 && /^[\x20-\x7e]*$/.test(lvSms) && /reviewed live (tonight|on )/.test(lvSms)
+      && /Final score on the stream/.test(lvSms) && /makinitmag\.com\/live/.test(lvSms) && /Reply STOP/.test(lvSms), lvSms.length + ' ' + lvSms);
+    const lvNext = srvL._artistHeadsupContent({ title: 'R', reportAt: null, liveAt: lvAt, atTs: gNow - 86400000 });
+    ok('a stream on another day is named by its day, not "tonight"', /live on \w{3}, \w{3} \d/.test(lvNext.subject) && lvNext.report === '', lvNext.subject);
+    // The live call: while the drop is being scored it says so; after the tally it says "playing".
+    ok('live call copy: scoring', /scoring your record/.test(srvL._liveCallContent({ title: 'T', scoring: true }).subject)
+      && /final result is given on the stream/.test(srvL._liveCallContent({ title: 'T', scoring: true }).body)
+      && /playing your record/.test(srvL._liveCallContent({ title: 'T' }).subject) && !/scor|review/.test(srvL._liveCallContent({ title: 'T' }).body));
+    const lcS = srvL._liveCallSmsBody('Night Shift', true);
+    ok('live call text, scoring: one GSM-7 segment with the stakes', lcS.length <= 160 && /^[\x20-\x7E]+$/.test(lcS) && /scoring "Night Shift"\. The final result is on the stream/.test(lcS), lcS);
+    // The Track Report line reads off the Go live press: inside the window = scored, after = played.
+    ok('report line: a press inside the window = scored live', /^Your record was scored live on \w+day's stream\.$/.test(srvL._liveReportLine(gNow + 60000, { window_closes_at: gNow - 1000 }, { adminGraceMin: 120 })));
+    ok('report line: a press after the tally = played', /^Your record was played on \w+day's live stream\.$/.test(srvL._liveReportLine(gNow + 3 * 3600000, { window_closes_at: gNow - 1000 }, { adminGraceMin: 120 })));
+    ok('the report email prints the line', /scored live on/.test(srvL._artistEmailText({ title: 'T', artist: 'A', mean: '7.0', decision: 'D', votes: 3, what: 'A&R Meeting', dateLabel: 'd', pages: [], comments: [], hashtag: '#x', liveLine: "Your record was scored live on Tuesday's stream." }))
+      && /scored live on/.test(srvL._artistEmailHtml({ title: 'T', artist: 'A', mean: '7.0', decision: 'D', votes: 3, what: 'A&R Meeting', dateLabel: 'd', pages: [], comments: [], hashtag: '#x', subscribe: true, liveLine: "Your record was scored live on Tuesday's stream." })));
+    await call('/api/admin/settings', { dailySchedule: { adminGraceMin: 120, liveMin: null } }, 'POST', BOOTH);
+    ok('clearing the live time leaves the window', (await call('/api/admin/platform', null, 'GET', BOOTH)).d.dailySchedule.liveMin === null);
+
     // The admin rates: record 1 holds a 6 and a 7 → his 8 lands the average at 7.0; he predicts 6.9.
     const gVote = await call('/api/vote', { roundId: gQ[0], taste: 8, predict: 6.9 }, 'POST', GH);
     ok('grace on: the admin can vote after the public close', gVote.status === 200 && gVote.d.locked === true, JSON.stringify(gVote.d));
