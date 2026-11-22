@@ -1,13 +1,25 @@
 # Project: The A&R Room
 
-A weekly live music-review broadcast (Wed 7–11 PM ET, multistreamed to 6 platforms) with a
-participation layer: viewers rate songs 0–9 and predict the room average, scoring on how
-well they "read the room." Points accrue across a monthly **Series**, whose top A&Rs help
-populate **A&R Wars**: an 8-competitor single-elimination tournament (curated — e.g. top 4
-from the board + 4 invited Tastemakers) where competitors scout songs from a "service pack"
-and play them head-to-head; the A&R Room audience votes each matchup via binary ("Verzuz")
-polls, majority wins, winner advances. Competitors aren't session participants — the audience
-votes. Cash prize. (See docs/anr-room-roadmap.md 6.4 for the full format.)
+A music-review game. A&Rs rate records 0–9 and predict the room average, scoring on how well
+they "read the room." The core is **A&R Daily**, an async daily drop; live rooms and pop-up
+event sessions run on the same engine. Points add up on boards (live-computed). It began as a
+weekly live broadcast (Wed 7–11 PM ET) with a monthly **Series** feeding **A&R Wars**, an
+8-competitor tournament with a cash prize (docs/anr-room-roadmap.md 6.4).
+
+> **NO PRIZES (operator, 2026-10-19 / 2026-10-23, commit 4b9e36c).** Every prize is retired:
+> no $500 Monthly A&R Award, no A&R Wars cash, no $1,000 artist Giveaway / Promo Budget /
+> Music Tournament, no Wednesday show (and so no Thursday results mail). The tournaments are
+> retired with them; their tooling is still in the code, dormant, with its prize defaults
+> (`tournament.js` `KIND`, admin.html `TN_KIND_PRIZE`). Cash attracted the wrong players; the
+> game is for people who enjoy it. The reward is **recognition**: published boards, and
+> something special for the Top A&R of the week (a free ad, an interview, a spotlight).
+> Many bullets below were written while the prizes existed. Read every "$500 board",
+> "cash-prize board", "$1,000", "Wednesday show" and "A&R Wars seat" there as HISTORY.
+> **Boards (operator, 2026-11-22, not built):** lifetime points and windowed points are
+> separate numbers. Boards filter by daily / weekly / monthly / quarterly / yearly /
+> lifetime / group / series. The Top A&R chart is weekly, Monday to Sunday. The front page is
+> a TRAILING 30 CALENDAR DAYS across every session type (daily drops, live, pop-up events), so
+> anyone who plays for 30 days can make it.
 
 Operator: Makin' It Magazine (makinitmag.com). The operator is a marketing person and
 ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to babysit.
@@ -76,7 +88,7 @@ ex-coder (NOT a developer) who wants a reliable tool, not infrastructure to baby
   off the final board. No snapshot/lock needed (the board only moves when tagged sessions get
   new votes).
 - **No points for round comments** (decided 2026-07-26). Points on this board are
-  accuracy-derived; paying for free text puts non-accuracy points on a CASH-prize board
+  accuracy-derived; paying for free text puts non-accuracy points on what was then a CASH-prize board
   (compounding the open attorney item on referral points), rewards volume over quality, and
   scales the host's approval queue with room size. The reward is recognition instead — the
   A&R's name goes to the artist. If it's ever revisited, the only defensible version is
@@ -101,7 +113,7 @@ live on anr.makinitmag.com.
   `docs/mockups/anr-grade-card-round2.html`, options A and C.
   - **Card** (`share-cards.js` `gradePhoto[Story]` / `gradeStats[Story]`): "Do you have a better
     ear than <name>?", the grade, accuracy, and ONLY Bullseye / Sharp / Close (Off and Way off
-    are never printed — operator). "$500 cash" in gold, makinitmag.com/ANR, no QR, no invite
+    are never printed — operator). "$500 cash" in gold (removed 2026-10-23), makinitmag.com/ANR, no QR, no invite
     link, no headcount. A = the A&R's big photo is the top of the card; C = stats-led, small face.
     The A&R picks (`users.grade_card_style`); A needs `users.photo_large_url`, else C.
   - **Big photo:** both crop modals (join.html, play.html) now also send `imageLarge`, the SAME
@@ -143,8 +155,8 @@ live on anr.makinitmag.com.
 - **Binary ("Verzuz") polls:** full player + overlay + export; split SEALED until ratify.
 - **Push migration (Ably):** board recomputes on ratify and pushes to all clients; polling
   drops to a 15s heartbeat when connected, 2s fallback otherwise. No leaderboard cache needed.
-- **Growth + monetization + ops:** referral points (per accurate round in the invitee's first
-  30 days — see the referral rework below; the 10/75 milestones are retired); invite-only rooms (unlisted + access code); share cards (Score Card, Top 8
+- **Growth + monetization + ops:** ~~referral points~~ (RETIRED 2026-11-21 — see the streak
+  bullet below); invite-only rooms (unlisted + access code); share cards (Score Card, Top 8
   A&Rs, Top 8 Songs — Satori/Blob) + recap emails (chunked queue); host-only **Song
   Report** (per-round analytics PNGs — rebuilt as the **Track Report**, see below) + a Rounds-tab round-history browser; **Platform
   control panel** (global banners, allowlisted system settings, SMS test) + host defaults
@@ -357,8 +369,7 @@ live on anr.makinitmag.com.
   — the accident one-button Advance makes easy: lean on the key and a record is opened, ended
   and ratified on an empty room, then sits in the numbering, the Rounds tab and the artist-
   notice surfaces forever with no way out (unopen only rescues a `listening` round). A round
-  WITH votes is refused at the server: those points are somebody's score on a cash-prize
-  board, and vaporising them is not an undo — soft-delete the room instead. The delete is one
+  WITH votes is refused at the server: those points are somebody's score on the board, and vaporising them is not an undo — soft-delete the room instead. The delete is one
   transaction (comments → notices → votes → round) and then **closes the gap in the
   numbering**, because idx is assigned at open as (started rounds)+1, so a hole makes the NEXT
   record reuse a number already on the board. It also clears an Advance arm pointing at the
@@ -650,7 +661,7 @@ live on anr.makinitmag.com.
   `public/brand/daily/carousel.html`. The promo brand system (marks, ads, key art, share
   graphics) lives in `public/brand/` — see `docs/promo-asset-list.md`.
 
-- **The winner posts** (039, 2026-09-18; simplified 2026-09-21; weekly only 2026-10-03): **Top
+- **The winner posts** (RETIRED 2026-10-23 with their routes; history follows) (039, 2026-09-18; simplified 2026-09-21; weekly only 2026-10-03): **Top
   Track / Top A&R of the Week**, one 1080×1350 portrait graphic each, posted as Instagram
   **collab posts** so they land on the winner's own feed. One Satori element, `winnerPost`,
   built to `public/brand/winners/winner.html` after four operator rounds. **The card is the
@@ -747,7 +758,8 @@ live on anr.makinitmag.com.
   is a read-only screen, and every query is admin-triggered (CLAUDE.md #1 rule).
 
 - **Referral rework — `/refer`, per-round referral points, 5× scouting, per-user graphics**
-  (no migration, 2026-09-18). Two links per A&R, both carrying their `users.uid` (already
+  (no migration, 2026-09-18). **RETIRED 2026-11-21 — see "Referral and scouting points retired
+  + the streak bonus" at the end of this section; what follows is history.** Two links per A&R, both carrying their `users.uid` (already
   public as the `/u/<uid>` profile URL): **join** = `anr.makinitmag.com/?ref=<uid>` and
   **submit** = `www.makinitmag.com/review?ref=<uid>`. The uid replaces the Drupal uid on the
   scouting link, so an A&R needs no Makin' It account; `creditScoutPoints` resolves by our uid
@@ -1051,7 +1063,8 @@ live on anr.makinitmag.com.
   grouped slide.
   The schedule bullets below describe older clocks.
 - **Daily live stream RETIRED from every communication** (no migration, 2026-10-15, operator's
-  call): the only live stream is **The A&R Room on Wednesday at 7:00 PM ET**, where the week's
+  call; the Wednesday show this bullet describes was itself RETIRED 2026-10-23 — the YouTube
+  subscribe line stays, the show line is gone from every mail): the only live stream is **The A&R Room on Wednesday at 7:00 PM ET**, where the week's
   Top 8 are announced and the week's finalist for the $1,000 Music Tournament is picked.
   `WEEKLY_SHOW_LINE` / `WEEKLY_SHOW_CTA` are the ONE definition; the artist heads-up (email +
   SMS) now says "rated · Track Report by email on <day> · Top 8 of the week on The A&R Room
@@ -1177,7 +1190,7 @@ live on anr.makinitmag.com.
     segments, and the report is moving onto the site as a live page, so it must not change
     because someone left. A closed account's comment is credited "A&R" · role · city, no name;
     the report's comment query is the one site filtering on `blocked` alone (`closed-ok`).
-  - **Both leave the boards** — a closed account can't win the $500 or a Wars seat.
+  - **Both leave the boards** — a closed account can't place on any board.
   - **One predicate:** `activeUserSql(alias)` / `activeParticipantSql(p)` / `userInactive(u)` in
     server.js. Every board, payout (scout, referral), audience, profile and signed link goes
     through it; an e2e guard fails on a hand-written `blocked = 0`. The per-session participant
@@ -1378,11 +1391,31 @@ live on anr.makinitmag.com.
   press reaches only new people; one-click unsubscribe per subscriber; Send test to me; list CSV.
   Mockups: `public/_mock-pick-the-hits-results.html`, `public/_mock-pick-the-hits-landing.html`.
 
+- **Referral and scouting points retired + the streak bonus** (no migration, 2026-11-21, Kelby:
+  A&Rs are rewarded for consistent rating and participation, not for promoting the platform;
+  branch `claude/no-referral-points-streaks-71f44f`, NOT merged when written). A&R points now come
+  only from listening and rating, plus the completion, live-show and streak bonuses.
+  **Removed:** `creditReferralRounds`, `creditScoutPoints`/`scoutPointsFor`/`SCOUT_MULTIPLIER`, the
+  account page's Earn points section, `/api/me/referrals` (→ `/api/me/account`: header + streak),
+  `/api/card/refer`, `/api/card/anr` + Brevo `ANR_CARD_IMAGE`, the refer graphics in share-cards.js
+  and `design/refer/`, the homepage Top talent scouts board, the play page's "N credited" counter,
+  and `referral_clicks` writes (`/r/<uid>` is a plain 302 to the form, no ref). **Kept:** every
+  `referral`/`referral_round`/`scout` point already paid; `?ref=` attribution as history; scout.uid
+  accepted on the push and stored, never paid. **The streak** (`sweepStreakBonuses`, run in the
+  daily tally right after the completion sweep): a streak day = a public drop the A&R COMPLETED
+  (an `async_complete` row); the 3rd drop in a row pays 1 extra completion bonus (that day's), the
+  6th 2, the 9th 3…; a missed drop resets to 0; a day with no drop neither counts nor breaks it
+  (**assumption, unconfirmed by Kelby**), nor does an unlisted drop or one too small to complete;
+  history counts. Ledger `point_events` reason `streak_bonus`, `source_uid` `<drop>:<uid>`. Shown
+  as a count on /daily's done screen and My results (`streakFor`); the paid amount shows per day on
+  published days only (it is a multiple of the sealed completion bonus). The weekly report counts
+  it with the completion bonus. `REFERRALS-NOTES.md` says what retired.
+
 ## What's next (roadmap order)
-1. **Tournament tooling follow-ons** (the dashboard SHIPPED 2026-10-07, see above): an overlay
-   bracket for the stream; the Promo Budget crediting for the artist tournament; the Series
-   `qualify_count` cut is superseded by weekly seats and left as is; Brevo list for the
-   reminder subscribers (operator undecided).
+1. **Public boards** (operator, 2026-11-22; mockup first): the filters (daily · weekly ·
+   monthly · quarterly · yearly · lifetime · group · series), the weekly Top A&R chart
+   (Mon → Sun) and the trailing-30-day front page, plus the Top A&R of the week recognition.
+   Open: what "Group" means. (Tournaments are retired; their follow-ons are dropped.)
 2. **Multi-tenant** (docs/multi-tenant-roadmap.md): invite-only hosts, email-only, the
    contact-list thesis. A program of work, not a single task — the next horizon after Wars.
 3. **Digest senders** — both shipped: `digest_daily` (033; default ON and narrowed to recent players 2026-10-15) and `digest_weekly` (043,
@@ -1402,9 +1435,8 @@ live on anr.makinitmag.com.
 - **VIP gating for the Song Report** (parked): later, only VIP submissions get the report;
   first-timers get it free once with a notice upselling VIP. NOT built — today every artist
   gets it free. See the `postshow-artist-workflow` memory.
-- Attorney re-check: referral bonus points sitting on the CASH-prize board; whether referral
-  points count toward the A&R Wars cut.
-- Do private-room points count toward the $500? (Today they do.)
+- (Closed: the referral-points-on-a-cash-board and private-room-points-toward-the-$500
+  questions ended with the prizes, 2026-10-23, and referral points themselves, 2026-11-21.)
 - Song Report pricing / which submission tier bundles it.
 - Copy-inventory spreadsheet: reconcile the Room/A&Rs terminology sweep against the operator's
   revised docs/copy-inventory.xlsx when returned.

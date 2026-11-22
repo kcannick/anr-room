@@ -717,7 +717,7 @@ function mintReferLink(uid) {
 }
 function referPageUrl(base, uid) {
   const tok = mintReferLink(uid);
-  return tok ? `${base}/refer#rt=${tok}` : `${base}/refer`;
+  return tok ? `${base}/account#rt=${tok}` : `${base}/account`;
 }
 async function verifyReferLink(req, url) {
   const secret = notifyLinkSecret();
@@ -737,9 +737,9 @@ async function verifyReferLink(req, url) {
   if (userClosed(u)) return { error: 'account_closed', status: 403 };
   return { uid: u.uid, user: u };
 }
-// Either token, or a refer link. Used ONLY by /api/me/referrals, /api/card/refer and
-// /api/me/results (2026-10-02: the results email opens the account page's results section) —
-// all three read the caller's OWN account-page data and write nothing.
+// Either token, or a refer link. Used ONLY by the account page's own reads — /api/me/account,
+// /api/me/results and the grade card (the results email opens the results section) —
+// all of them read the caller's OWN account-page data and write nothing.
 async function resolveReferUid(req, url) {
   const uid = await resolveUserId(req);
   if (uid) return uid;
@@ -778,7 +778,7 @@ function renderNotifyTokens(text, vals, html) {
 // One announcement, rendered for ONE recipient: subject, HTML email, plain-text email and
 // the SMS body. The footer is per-recipient (the manage link is signed with their uid), and
 // tokens are per recipient too: their first name and the three links that carry their uid.
-// The card link is a signed deep link into /refer (no login on the device the email lands
+// The card link is a signed deep link into /account (no login on the device the email lands
 // on); without NOTIFY_LINK_SECRET it degrades to the plain page, which asks for a code.
 // Shared by the real send loop and the "send test to me" route so the two can never differ.
 async function renderAnnouncement(bc, uid, base) {
@@ -1058,19 +1058,15 @@ function clearAdvanceArm(sessionId) {
 
 // Ratify + every side effect that must ride with it. Extracted so the console route and the
 // staged advance share one path — a second copy would drift, and the copy that forgot to
-// credit referral points or push the board would be silently wrong.
+// push the board would be silently wrong.
 async function ratifyAndPublish(round, session) {
   if (round.status === 'voting' || round.status === 'listening') {
     await db.run("UPDATE rounds SET status = 'closed' WHERE id = ?", [round.id]);
   }
   const out = await ratifyRound(round);
-  // Referral bonuses fire BEFORE the board compute so the pushed board includes them.
-  try { await creditReferralRounds(round, session); }
-  catch (e) { console.error('[referral] round credit failed:', e.message); }
-  // Eye for talent: the A&R who found this record earns in proportion to how it scored.
-  // Needs room_average, so it can only fire here — after the tally.
-  try { await creditScoutPoints(await db.get('SELECT * FROM rounds WHERE id = ?', [round.id]), session); }
-  catch (e) { console.error('[scout] credit failed:', e.message); }
+  // Referral and scouting points are RETIRED (Kelby, 2026-11-21): A&R points come only from
+  // listening and rating, plus the completion, live-show and streak bonuses. Points already
+  // paid for referrals and scouting stay on the board; nothing produces new ones.
   // A tournament poll: the side with more votes advances in the bracket (045).
   if (round.tournament_match_id) {
     try { await tournaments.onRoundRatified(round); }
@@ -1578,12 +1574,9 @@ async function maybeAwardCompletionBonus(participant, session, { mode = 'average
   return ins.changes ? pts : null;
 }
 
-// ===== EYE FOR TALENT — scouting =====
-// An A&R promotes makinitmag.com/review?a=<their Drupal uid>; Drupal records the referring
-// A&R on the submission and returns it in the daily push. Drupal owns the non-points rewards
-// (ambassador tiers, promo budget) natively off that uid and needs nothing from us.
-//
-// The POINTS half needs a mapping, since we credit users.uid. Bootstrapped lazily: the push
+// ===== Scouting attribution (history only since 2026-11-21) =====
+// A submission may still name the A&R whose link brought it in. Nothing is paid for it.
+// The mapping below is kept so old rounds keep resolving: the push
 // carries the scout's Drupal uid AND email, and the first successful email match writes
 // users.drupal_uid permanently. No handshake, no connect UI — the mapping accumulates as a
 // side effect of normal use, and a mismatched email simply doesn't earn until it's linked.
@@ -1600,55 +1593,10 @@ async function linkScout(drupalUid, email) {
   return byEmail.uid;
 }
 
-// Scouting points scale with how well the record actually SCORED — that is the "eye for
-// talent" half measured directly. Not flat-on-play: submission is free, so a flat award would
-// make referring 100 mediocre artists beat referring 5 great ones.
-//
-// THE CURVE (operator, 2026-09-18): FIVE TIMES the room average, rounded — a 7.1 earns 36.
-// No floor: a weak record earns a little rather than nothing, and nothing ever goes negative
-// (or nobody refers anyone). This replaced the 250-per-point-above-5.0 curve, which paid 525
-// for the same 7.1 and would have let scouting outrun accuracy on a cash-prize board. Against
-// ~1,500 points for one sharp 16-record day, a scouting credit is deliberately a garnish.
-// SCOUT_MULTIPLIER is the dial; it moves with the 0-9 -> 0-10 scale switch.
-const SCOUT_MULTIPLIER = 5;
-function scoutPointsFor(roomAverage) {
-  const a = Number(roomAverage);
-  if (!Number.isFinite(a) || a <= 0) return 0;
-  return Math.round(a * SCOUT_MULTIPLIER);
-}
-
-// A self-referral (operator, 2026-09-22): an A&R submitting their OWN record through their
-// own submit link earns nothing — scouting pays for finding someone else. The only identity
-// the push carries for the artist is the contact email, so that is the match, case-blind.
-// Attribution still records on the round (Drupal's own reporting reads it); only the points
-// and the /refer artist lane skip it.
-function isSelfScout(round, scout) {
-  const a = (round.artist_email || '').toString().trim().toLowerCase();
-  const s = (scout && scout.email || '').toString().trim().toLowerCase();
-  return !!a && a === s;
-}
-// Credit the A&R who found this record, once it has a room average. Fires at ratify next to
-// the referral milestones, because room_average does not exist before then. Idempotent on the
-// same UNIQUE (reason, source_uid, milestone) that makes referral milestones safe.
-async function creditScoutPoints(round, session) {
-  if (!round || !round.scout_drupal_uid || round.room_average == null) return null;
-  if ((round.poll_type || 'rating') === 'binary') return null;
-  const pts = scoutPointsFor(round.room_average);
-  if (pts <= 0) return null;
-  // The submit link carries OUR uid (makinitmag.com/review?ref=<users.uid>) and Drupal hands it
-  // back verbatim as scout.uid, so the A&R resolves directly — no Makin' It account needed.
-  // Older links carried a Drupal uid; the lazy email link still resolves those.
-  const u = (await db.get('SELECT uid, blocked, deactivated_at, deleted_at, email FROM users WHERE uid = ?', [round.scout_drupal_uid]))
-    || (await db.get('SELECT uid, blocked, deactivated_at, deleted_at, email FROM users WHERE drupal_uid = ?', [round.scout_drupal_uid]));
-  if (userInactive(u)) return null;      // an unresolvable (or closed) scout earns nothing
-  if (isSelfScout(round, u)) return null;
-  const ins = await db.run(
-    `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
-     VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
-    [id(9), u.uid, pts, session.series_id || null, 'scout', round.id, 1, now()]);
-  if (ins.changes) await db.run('UPDATE users SET lifetime_points = lifetime_points + ? WHERE uid = ?', [pts, u.uid]);
-  return ins.changes ? pts : null;
-}
+// Scouting POINTS are retired (Kelby, 2026-11-21). scoutPointsFor / creditScoutPoints / the
+// 5x curve are gone; `scout` rows already in point_events stay as paid history. The push may
+// still carry scout.uid (the website is removing it separately): it is accepted, stored on the
+// round as history, and earns nothing.
 
 // The unified board's counterweight. A month of A&R Daily is roughly 15,000-45,000 points;
 // one live show is a dozen records, so WITHOUT this the weekly broadcast is decorative on the
@@ -1700,6 +1648,122 @@ async function sweepCompletionBonuses(session, { deadline = null } = {}) {
     if ((await maybeAwardCompletionBonus(p, session, { mode })) != null) paid++;
   }
   return paid;
+}
+
+// ===== THE STREAK BONUS (Kelby, 2026-11-21: "+1 bonus every 3 days") =====
+// Rewards showing up day after day, which is what A&R points are for now that referral and
+// scouting points are retired.
+//   STREAK DAY: a drop the A&R COMPLETED, by the completion bonus's own test — an
+//     'async_complete' row for <drop>:<uid> exists (written by maybeAwardCompletionBonus, even
+//     at +0, so the row IS the finished flag).
+//   RESET: missing a drop (not completing it) puts the streak back to 0.
+//   PAYOUT, on milestone days only: day 3 of a streak pays 1 extra completion bonus, day 6
+//     pays 2, day 9 pays 3, and so on — (streak / 3) x that drop's own completion bonus.
+//   ASSUMPTION (not yet confirmed by Kelby): a calendar day with NO drop neither counts nor
+//     breaks the streak. The streak walks DROPS in drop_day order, never calendar days, so a
+//     skipped day is invisible to it. A drop too small to earn a completion bonus
+//     (< ASYNC_MIN_FOR_BONUS records) is treated the same way, since nobody could complete it.
+//   COUNTS HISTORY: a streak that was already running when this shipped counts from its start.
+//   Only public drops count (an unlisted drop is invite-only; missing one must not break a
+//     streak). Only drops that have tallied count: an open drop is not a miss yet.
+//   IDEMPOTENT: point_events reason 'streak_bonus', source_uid '<drop>:<uid>', milestone 1 —
+//     the completion bonus's own key shape — so a re-run tally never pays twice.
+// Paid at the tally right after the completion sweep (sweepStreakBonuses). Bounded by the
+// day's finishers and each one's own completion rows; inside the cron, never boot or request.
+const STREAK = Object.freeze({ every: 3 });
+
+// The streak-day sequence: public, tallied (or tallying) daily drops with enough records to
+// be completable, newest first, up to and including `uptoDay`.
+async function streakDrops(uptoDay, { includeId = null } = {}) {
+  const rows = await db.all(
+    `SELECT s.id, s.drop_day FROM sessions s
+      WHERE s.mode = 'async' AND s.deleted_at IS NULL AND s.drop_day IS NOT NULL AND s.drop_day <= ?
+        AND (s.visibility IS NULL OR s.visibility != 'unlisted')
+        AND (s.async_state IN ('ratified','published') OR s.id = ?)
+        AND (SELECT COUNT(*) FROM rounds r WHERE r.session_id = s.id AND r.status = 'ratified') >= ?
+      ORDER BY s.drop_day DESC`, [uptoDay, includeId || '', ASYNC_MIN_FOR_BONUS]);
+  return rows;
+}
+// The drops this A&R completed, as a Set of session ids.
+async function completedDropIds(uid) {
+  const rows = await db.all(
+    "SELECT source_uid FROM point_events WHERE user_id = ? AND reason = 'async_complete'", [uid]);
+  const set = new Set();
+  const tail = ':' + uid;
+  for (const r of rows) {
+    const k = String(r.source_uid || '');
+    if (k.endsWith(tail)) set.add(k.slice(0, -tail.length));
+  }
+  return set;
+}
+// Pure: how long the run is, counting back from the first drop in `dropsNewestFirst`.
+function streakLength(dropsNewestFirst, done) {
+  let n = 0;
+  for (const d of dropsNewestFirst) { if (!done.has(d.id)) break; n++; }
+  return n;
+}
+// Pure: what a streak of `n` pays on its last day, in completion bonuses (0 off a milestone).
+function streakMultiplier(n) {
+  const k = Math.floor(Number(n) || 0);
+  return k > 0 && k % STREAK.every === 0 ? k / STREAK.every : 0;
+}
+
+// Pay every finisher of `session` whose streak lands on a milestone with this drop.
+async function sweepStreakBonuses(session, { deadline = null } = {}) {
+  _streakDropsCache = null;
+  if (!session || !isAsync(session) || !session.drop_day) return 0;
+  if (session.visibility === 'unlisted') return 0;
+  const drops = await streakDrops(session.drop_day, { includeId: session.id });
+  if (!drops.length || drops[0].id !== session.id) return 0;
+  const finishers = await db.all(
+    "SELECT user_id, points FROM point_events WHERE reason = 'async_complete' AND substr(source_uid, 1, ?) = ?",
+    [session.id.length + 1, session.id + ':']);
+  let paid = 0;
+  for (const f of finishers) {
+    if (deadline && Date.now() > deadline) break;   // idempotent: the next tick finishes the rest
+    if (!f.user_id) continue;
+    const n = streakLength(drops, await completedDropIds(f.user_id));
+    const mult = streakMultiplier(n);
+    const pts = mult * Math.max(0, Number(f.points) || 0);
+    if (pts <= 0) continue;
+    const ins = await db.run(
+      `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
+       VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
+      [id(9), f.user_id, pts, session.series_id || null, 'streak_bonus', `${session.id}:${f.user_id}`, 1, now()]);
+    if (ins.changes) { await db.run('UPDATE users SET lifetime_points = lifetime_points + ? WHERE uid = ?', [pts, f.user_id]); paid++; }
+  }
+  return paid;
+}
+
+// What the streak bonus paid this A&R on this drop: { points, days } or null. `days` is
+// recovered from the multiple (points = days/3 x the completion bonus).
+async function streakBonusPaid(sessionId, uid) {
+  if (!uid) return null;
+  const row = await db.get(
+    "SELECT points FROM point_events WHERE reason = 'streak_bonus' AND source_uid = ?", [`${sessionId}:${uid}`]);
+  if (!row) return null;
+  const base = await db.get(
+    "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [`${sessionId}:${uid}`]);
+  const per = base ? Number(base.points) || 0 : 0;
+  const pts = Number(row.points) || 0;
+  return { points: pts, days: per > 0 ? Math.round(pts / per) * STREAK.every : null };
+}
+
+// The drop list for the DISPLAY path (streakFor runs on the daily page's state request), cached
+// per instance: it only changes when a drop tallies, about once a day.
+let _streakDropsCache = null;
+// The A&R's current streak, for the surfaces that show points and bonuses. Counts back from
+// the newest tallied public drop; the open drop never breaks it (it has not tallied). A count
+// only — the streak bonus's POINTS are a multiple of the completion bonus, which is sealed
+// until the day publishes, so they are shown per day on published days, never here.
+async function streakFor(uid) {
+  if (!_streakDropsCache || Date.now() - _streakDropsCache.at > 60000) {
+    _streakDropsCache = { at: Date.now(), drops: await streakDrops('9999-12-31') };
+  }
+  const days = streakLength(_streakDropsCache.drops, await completedDropIds(uid));
+  const toNext = STREAK.every - (days % STREAK.every);
+  return { days, every: STREAK.every, nextMilestone: days + toNext, toNext,
+    nextMultiplier: (days + toNext) / STREAK.every };
 }
 
 // ===== A&R DAILY — the lifecycle =====
@@ -1870,9 +1934,6 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
           [Date.now(), r.id, 'closed']);
         if (!rc.changes) continue;
         await ratifyRound(r);                               // pure tally — no per-round board push
-        try { await creditReferralRounds(r, s); } catch (e) { console.error('[daily] referral credit failed:', e.message); }
-        try { await creditScoutPoints(await db.get('SELECT * FROM rounds WHERE id = ?', [r.id]), s); }
-        catch (e) { console.error('[daily] scout credit failed:', e.message); }
         out.ratified++;
       }
       const stillOpen = (await db.get(
@@ -1882,6 +1943,9 @@ async function runAsyncDropLifecycle({ budgetMs = DROP_TICK_BUDGET_MS, ts = null
         // HERE, before the seal flip, so a crash or a budget break re-runs it on the next tick.
         try { out.bonusPaid = (out.bonusPaid || 0) + await sweepCompletionBonuses(s, { deadline: Date.now() + Math.max(0, left() - 3000) }); }
         catch (e) { console.error('[daily] completion bonus failed:', e.message); }
+        // The streak bonus rides on the completion rows just written, so it runs after them.
+        try { out.streakPaid = (out.streakPaid || 0) + await sweepStreakBonuses(s, { deadline: Date.now() + Math.max(0, left() - 2000) }); }
+        catch (e) { console.error('[daily] streak bonus failed:', e.message); }
         const sealed = await db.run("UPDATE sessions SET async_state = 'ratified' WHERE id = ? AND async_state = 'closing'", [s.id]);
         if (sealed.changes) {
           const n = (await db.get("SELECT COUNT(*) AS c FROM rounds WHERE session_id = ? AND status = 'ratified'", [s.id])).c;
@@ -2959,6 +3023,8 @@ async function asyncPlayerState(participant, session, count, opts = {}) {
     // Every LABEL here is server-rendered for the same reason the tiers are: the surface
     // must never turn an epoch into ET wall-clock with the browser's own timezone.
     async: { day, opens_at: opens, closes_at: closes, results_at: results,
+      // The A&R's current streak of completed drops (a count; the open drop never breaks it).
+      streak: participant.user_id ? await streakFor(participant.user_id) : null,
       dayLabel: etDayLabel(day), opensLabel: etClockLabel(opens),
       closesLabel: etClockLabel(closes), resultsLabel: etClockLabel(results),
       closesWhen: etWhenLabel(closes, day), resultsWhen: etWhenLabel(results, day),
@@ -3019,6 +3085,7 @@ async function asyncPlayerState(participant, session, count, opts = {}) {
   if (phase === 'recap') {
     out.recap = await buildRecap(participant, { detail: true });
     out.recap.completionBonus = earned ? Number(earned.points) : null;
+    out.recap.streakBonus = await streakBonusPaid(session.id, participant.user_id);
     // For the results line: "You averaged N points per round & completed all rounds" or
     // "finishing the drop would have added N" — the same number either way.
     out.recap.finished = total > 0 && handled >= total;
@@ -3122,10 +3189,6 @@ async function playerState(participant, opts = {}) {
     }
   }
 
-  // Referral: this player's own share code + how many people they've brought who
-  // actually played (credited). The DISPLAY here is per-session; the reward is the
-  // per-round credit (creditReferralRounds) — see /refer for the durable links and totals.
-  const referredCount = (await db.get('SELECT COUNT(*) AS c FROM participants WHERE session_id = ? AND referred_by = ? AND ref_credited = 1', [sessionId, participant.id])).c;
 
   // Liveness join feed (3.5d) — recent verified joiners. Names show only for COMPLETE
   // profiles; incomplete joiners appear as "someone". Count-only — no lean/direction.
@@ -3155,8 +3218,7 @@ async function playerState(participant, opts = {}) {
     broadcast: session.broadcast_text ? { text: session.broadcast_text, at: Number(session.broadcast_at) } : null,
     me: { name: participant.name, email: participant.email, total_points: participant.total_points },
     myTotalPoints: participant.total_points,
-    refCode: participant.ref_code || null,
-    referredCount,
+    refCode: participant.ref_code || null,   // the plain invite link; no counter since 2026-11-21
     geo: { mode: session.geo_mode || 'off', label: session.geo_label || null, radius: session.geo_radius || null },
     pool: participant.pool || null,
     participants: count,
@@ -3201,79 +3263,13 @@ async function creditReferral(participant) {
   await db.run('UPDATE participants SET ref_credited = 1 WHERE id = ? AND referred_by IS NOT NULL AND ref_credited = 0', [participant.id]);
 }
 
-// Referral points (operator decision 2026-09-18, replacing the 10/75 milestones of 2026-07):
-// the referrer earns ONE point for every round their invitee lands within REFERRAL.errMax of
-// the room average, for the invitee's FIRST 30 DAYS only, capped at 240 per invitee. Accuracy
-// is the unit — "refer people who can read the room" — so it pays for the quality of the
-// person brought in, not for the signup, and the window keeps it from becoming an annuity.
-//   errMax 1.5 = the results screen's `close` tier and better, so the referrer's credit and the
-//   invitee's own screen agree on what counted. Binary (split) rounds are skipped: their error
-//   is in percentage points, a different unit.
-//   The window is 30 days from the invitee's ACCOUNT creation (users.first_seen — the moment
-//   the referral happened), not from their first vote: someone who signs up and sits idle for
-//   three weeks pays little, which is the right pressure on the referrer.
-//   The cap is per invitee, for life (240 ≈ one full month of 8-record days).
-// Runs at ratify for that round's voters only (bounded by room size — never on the boot or
-// request path), lands on the ratified session's series board via point_events (live-summed
-// per the no-stored-rollup rule) and on the referrer's lifetime total. Idempotent in the DB:
-// source_uid is '<invitee>:<round>', so a re-fired ratify is a no-op on the unique index.
-// Historic 'referral' milestone rows are kept as paid points; nothing produces new ones.
-const REFERRAL = { windowDays: 30, cap: 240, errMax: 1.5, pointsPerRound: 1 };
-async function creditReferralRounds(round, session) {
-  if ((round.poll_type || 'rating') === 'binary') return 0;
-  const rows = await db.all(
-    `SELECT u.uid, u.referrer_uid, u.first_seen, v.err, v.locked_at FROM votes v
-       JOIN participants p ON v.participant_id = p.id
-       JOIN users u        ON p.user_id = u.uid
-      WHERE v.round_id = ? AND u.referrer_uid IS NOT NULL AND v.err IS NOT NULL`, [round.id]);
-  let paid = 0;
-  for (const r of rows) {
-    if (Math.abs(Number(r.err)) > REFERRAL.errMax) continue;
-    if (Number(r.locked_at) > Number(r.first_seen) + REFERRAL.windowDays * 86400000) continue;
-    const ref = await db.get('SELECT uid, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [r.referrer_uid]);
-    if (userInactive(ref) || ref.uid === r.uid) continue;
-    // substr, not LIKE: a uid is base64url and may contain '_', which LIKE reads as a wildcard.
-    const c = Number((await db.get(
-      "SELECT COUNT(*) AS c FROM point_events WHERE reason = 'referral_round' AND substr(source_uid, 1, CAST(? AS INTEGER)) = ?",
-      [r.uid.length + 1, r.uid + ':'])).c) || 0;
-    if (c >= REFERRAL.cap) continue;
-    const ins = await db.run(
-      `INSERT INTO point_events (id, user_id, points, series_id, reason, source_uid, milestone, created_at)
-       VALUES (?,?,?,?,?,?,?,?)
-       ON CONFLICT (reason, source_uid, milestone) DO NOTHING`,
-      [id(9), ref.uid, REFERRAL.pointsPerRound, session.series_id || null, 'referral_round', `${r.uid}:${round.id}`, 1, now()]);
-    // Lifetime rolls up only when the event actually landed (changes = 0 on replays).
-    if (ins.changes) { await db.run('UPDATE users SET lifetime_points = lifetime_points + ? WHERE uid = ?', [REFERRAL.pointsPerRound, ref.uid]); paid++; }
-  }
-  return paid;
-}
+// Referral POINTS are retired (Kelby, 2026-11-21): creditReferralRounds and REFERRAL are gone.
+// 'referral_round' and 'referral' rows already in point_events stay as paid history.
 
-// The two links an A&R shares. The JOIN link carries the uid as ?ref= into this app (resolved
-// at account creation in /api/auth/verify and /api/join/verify); the SUBMIT link is /r/<uid>
-// on THIS app, which counts the click and 302s to the review form with ?ref=<uid>, and
-// makinitmag.com hands the ref back on the daily push as scout.uid.
-// The uid is already public (it is the /u/<uid> profile URL), so it is safe in a link.
-// Links posted before 2026-09-23 (makinitmag.com/review?ref=<uid>) go straight to Drupal and
-// keep working; they are simply never counted.
-// The account page's thumbnail grid. 432px is 2x a ~200px card on a phone.
-const REFER_THUMB_WIDTH = 432;
-// What a referral graphic PRINTS, hashed: the cache key for its thumbnail. Per-A&R (the uid
-// is in it, so a shared device never shows the last person's card) and it moves when the
-// printed fields do, so a new photo shows on the next visit instead of a day later.
-function referGraphicVersion(u) {
-  return crypto.createHash('sha256')
-    .update([u.uid, u.name || '', u.primary_category || '', u.location || '', u.photo_url || ''].join('\u0000'))
-    .digest('hex').slice(0, 12);
-}
-// The Official A&R Card as a PUBLIC image URL — for email blasts (Brevo's ANR_CARD_IMAGE).
-// Public by design: everything it prints (name, role, city, photo, the two referral QRs) is
-// already on the public /u/<uid> profile, and an <img> in an email cannot carry a login.
-// `v` is referGraphicVersion: a new name/photo/city/role makes a new URL (the sync re-sends
-// it), and a matching URL is cached at the CDN for good, so a blast renders each card once.
-const ANR_CARD_EMAIL_WIDTH = 800;
-function anrCardImageUrl(base, u) {
-  return `${base}/api/card/anr/${encodeURIComponent(u.uid)}.png?v=${referGraphicVersion(u)}`;
-}
+// The two plain invite links an A&R can share. Since 2026-11-21 they earn nothing and nothing
+// counts them; they simply keep working. JOIN = ?ref=<uid> into this app (still recorded as
+// users.referrer_uid at account creation, as history). SUBMIT = /r/<uid> on this app, which
+// 302s to the review form. The uid is already public (the /u/<uid> profile URL).
 function referralLinks(uid) {
   const u = encodeURIComponent(uid);
   return { join: `${publicBase()}/?ref=${u}`, submit: `${publicBase()}/r/${u}` };
@@ -3282,49 +3278,6 @@ function referralLinks(uid) {
 // reaches it through two redirects nobody set up for this) and never the bare domain (it 301s
 // to www — that extra hop silently broke the results callback for nine days).
 const SUBMIT_FORM_URL = 'https://www.makinitmag.com/opportunities/anr-meeting';
-const REF_UID_RE = /^[A-Za-z0-9_-]{8,40}$/;
-// Link previewers and crawlers. Chat apps fetch a pasted link at once, so without this one
-// post in a group chat reads as several opens. A previewer with a browser UA gets through;
-// a small overcount is accepted.
-const CLICK_BOT_RE = /bot|crawl|spider|slurp|facebookexternalhit|facebot|whatsapp|telegram|discord|slack|skype|linkedin|pinterest|embedly|preview|curl|wget|python-|go-http|okhttp|headless|lighthouse/i;
-// The client IP behind Vercel: the first x-forwarded-for hop, else the socket. (Nothing else
-// in this server reads the client IP; if something does later, it should call this.)
-function clientIp(req) {
-  const xff = (req.headers['x-forwarded-for'] || '').toString().split(',')[0].trim();
-  return xff || (req.socket && req.socket.remoteAddress) || '';
-}
-// Count one click. Best-effort by contract: any failure is logged and swallowed, because a
-// tracking fault must never stop an artist reaching the form. Only a real, unblocked A&R's
-// uid is counted. Diagnosis only — this never awards anything.
-async function recordReferralClick(req, uid) {
-  try {
-    const u = await db.get('SELECT uid, blocked FROM users WHERE uid = ?', [uid]);
-    if (!u || u.blocked) return;
-    const ua = (req.headers['user-agent'] || '').toString();
-    const day = etDay();
-    const visitor = crypto.createHash('sha256').update(`${clientIp(req)}|${ua}|${day}`).digest('hex').slice(0, 32);
-    const kind = !ua.trim() || CLICK_BOT_RE.test(ua) ? 'bot' : 'human';
-    await db.run('INSERT INTO referral_clicks (day, user_id, visitor, kind, created_at) VALUES (?,?,?,?,?) ON CONFLICT (day, user_id, visitor) DO NOTHING',
-      [day, u.uid, visitor, kind, now()]);
-  } catch (e) { console.error('[referral click] not recorded:', e.message); }
-}
-// Human opens of an A&R's submit link: the last 7 ET days (today and the six before) and all time.
-async function referralClickCounts(uid) {
-  const since = etDay(now() - 6 * 86400000);
-  const r = await db.get(
-    `SELECT COUNT(*) AS total, SUM(CASE WHEN day >= ? THEN 1 ELSE 0 END) AS week
-       FROM referral_clicks WHERE user_id = ? AND kind = 'human'`, [since, uid]);
-  return { week: Number(r && r.week) || 0, total: Number(r && r.total) || 0 };
-}
-// A QR as a PNG data URI for Satori (its SVG-image support is the less certain path; resvg
-// rasterises the SVG the qrcode package emits in a few ms).
-async function qrPngDataUri(link) {
-  const QRCode = require('qrcode');
-  const { Resvg } = require('@resvg/resvg-js');
-  const svg = await QRCode.toString(String(link).slice(0, 512), { type: 'svg', margin: 0, errorCorrectionLevel: 'M', color: { dark: '#0e0c1a', light: '#eae9f2' } });
-  const png = new Resvg(svg, { fitTo: { mode: 'width', value: 480 } }).render().asPng();
-  return 'data:image/png;base64,' + png.toString('base64');
-}
 // The profile photo as a data URI, or null. A stored data: URL is used as-is; an http(s) one
 // (Vercel Blob) is fetched with a short timeout — a slow store costs the face, not the card.
 async function photoDataUri(photoUrl) {
@@ -4310,6 +4263,10 @@ function dailyDigestEmailHtml({ name, dayLabel, recap = null, manage, playUrl, s
         <td style="padding:11px 0 0;border-top:1px solid #2e2750;font-size:13.5px;font-weight:700;color:#f3f0fb;text-align:left">Completion bonus</td>
         <td align="right" style="padding:11px 0 0;border-top:1px solid #2e2750;font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:#f5c518">+${recap.completionBonus}</td>
       </tr></table>` : ''}
+      ${recap.streakBonus ? `<table role="presentation" width="100%" style="margin-top:4px"><tr>
+        <td style="padding:8px 0 0;font-size:13.5px;font-weight:700;color:#f3f0fb;text-align:left">Streak bonus · ${recap.streakBonus.days} drops in a row</td>
+        <td align="right" style="padding:8px 0 0;font-family:'Space Mono',monospace;font-size:14px;font-weight:700;color:#f5c518">+${recap.streakBonus.points}</td>
+      </tr></table>` : ''}
       ${completionLineText(recap) ? `<p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:14px 0 0;text-align:left">${escapeHtml(completionLineText(recap))}</p>` : ''}
       <p style="font-size:14px;line-height:1.5;color:#a9a2c9;margin:16px 0 0;text-align:left">You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.</p>
       ${ex.resultsUrl ? `<a href="${ex.resultsUrl}" style="display:block;background:#4bb749;color:#0d0b16;text-decoration:none;font-weight:700;font-size:16px;padding:15px;border-radius:13px;margin:14px 0 0">See your results</a>` : ''}`;
@@ -4353,6 +4310,7 @@ function dailyDigestEmailText({ name, dayLabel, recap, manage, playUrl, streamUr
     lines.push('', `Points ${recap.totalPoints} · Grade ${recap.grade || '—'} · Bullseyes ${recap.bullseyes || 0}`);
     if (cardUrl) lines.push(`Your grade card: ${cardUrl}`, `Want to post it? Download it from your results page and we'll collab with you on Instagram.`);
     if (recap.completionBonus != null) lines.push(`Completion bonus: +${recap.completionBonus}`);
+    if (recap.streakBonus) lines.push(`Streak bonus (${recap.streakBonus.days} drops in a row): +${recap.streakBonus.points}`);
     if (completionLineText(recap)) lines.push(completionLineText(recap));
     lines.push('', `You rated ${n} ${n === 1 ? 'record' : 'records'}. Your rating, your guess and the room average for each one are on your results page.`);
     if (ex.resultsUrl) lines.push(`See your results: ${ex.resultsUrl}`);
@@ -4583,6 +4541,7 @@ async function drainDailyDigest({ sessionId, broadcastId, limit = 40, deadline =
         const earned = await db.get(
           "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [`${sessionId}:${r.uid}`]);
         recap.completionBonus = earned ? Number(earned.points) : null;
+        recap.streakBonus = await streakBonusPaid(sessionId, r.uid);
         const h = await asyncHandled(participant, session);
         recap.finished = h.total > 0 && h.handled >= h.total;
         recap.bonusAvg = recapBonusAvg(recap);
@@ -5547,7 +5506,10 @@ async function arResultsData(uid, weekDay) {
     }
     const bonusRow = isDaily ? await db.get(
       "SELECT points FROM point_events WHERE reason = 'async_complete' AND source_uid = ?", [`${sess.id}:${uid}`]) : null;
-    const bonus = bonusRow ? Number(bonusRow.points) || 0 : 0;
+    const streakRow = isDaily ? await db.get(
+      "SELECT points FROM point_events WHERE reason = 'streak_bonus' AND source_uid = ?", [`${sess.id}:${uid}`]) : null;
+    const streakBonus = streakRow ? Number(streakRow.points) || 0 : 0;
+    const bonus = (bonusRow ? Number(bonusRow.points) || 0 : 0) + streakBonus;
     // A finished day always holds a row (even at +0), so the row IS the finished flag; the
     // average is what finishing paid or would have paid — see completionLineText.
     const votePts = mine.reduce((a, m) => a + (Number(m.points) || 0), 0);
@@ -5563,7 +5525,7 @@ async function arResultsData(uid, weekDay) {
           AND NOT EXISTS (SELECT 1 FROM replay_votes rv WHERE rv.round_id = r.id AND rv.uid = ?)`, [sess.id, pid, pid, uid])).c) || 0 : 0;
     days.push({ ...base, state: 'published', total: rows.length, rated: mine.length,
       ...(skipped ? { replay: { left: skipped, url: replayUrl(sess) } } : {}),
-      points: votePts + bonus, bonus, finished: isDaily ? !!bonusRow : null, bonusAvg,
+      points: votePts + bonus, bonus, streakBonus, finished: isDaily ? !!bonusRow : null, bonusAvg,
       grade: dayAccs.length ? gradeForAccuracy(dayAccs.reduce((a, b) => a + b, 0) / dayAccs.length) : null,
       bullseyes: mine.filter(m => m.tier === 'bullseye').length,
       // Every record of a day they played, their own row filled where they rated it. The day is
@@ -5611,7 +5573,9 @@ async function arResultsData(uid, weekDay) {
       "SELECT window_opens_at FROM sessions WHERE mode = 'async' AND COALESCE(async_state,'scheduled') = 'scheduled' AND deleted_at IS NULL AND (visibility IS NULL OR visibility != 'unlisted') AND window_opens_at > ? ORDER BY window_opens_at ASC LIMIT 1", [ts]);
     if (nx) next = { opensWhen: whenFromToday(Number(nx.window_opens_at)) };
   }
-  return { week, stats, days, open, next };
+  // The current streak (a count only; see streakFor for why no points ride with it).
+  const streak = await streakFor(uid);
+  return { week, stats, days, open, next, streak };
 }
 // The results email's link into that section: the signed refer-scope link when the secret is
 // set (lands logged in), the plain page otherwise (which asks for a code).
@@ -5747,11 +5711,12 @@ async function weeklyReportData(day, opts = {}) {
       WHERE r.session_id IN (${ph}) AND v.points IS NOT NULL
         AND u.profile_complete = 1 AND ${activeUserSql('u')}
       GROUP BY u.uid, u.name, u.instagram, u.primary_category, u.location`, ids);
-  // The completion bonus lives in point_events keyed '<sessionId>:<uid>' — the only bonus
-  // that belongs to a specific drop, so it is the only one a week can honestly claim.
+  // The completion bonus and the streak bonus live in point_events keyed '<sessionId>:<uid>' —
+  // the only bonuses that belong to a specific drop, so the only ones a week can honestly claim.
+  // `days` counts completions only (a streak day is also a completion day).
   const bonusRows = await db.all(
-    `SELECT user_id, SUM(points) AS pts, COUNT(*) AS days FROM point_events
-      WHERE reason = 'async_complete' AND (${ids.map(() => 'source_uid LIKE ?').join(' OR ')})
+    `SELECT user_id, SUM(points) AS pts, SUM(CASE WHEN reason = 'async_complete' THEN 1 ELSE 0 END) AS days FROM point_events
+      WHERE reason IN ('async_complete', 'streak_bonus') AND (${ids.map(() => 'source_uid LIKE ?').join(' OR ')})
       GROUP BY user_id`, ids.map(i => i + ':%'));
   const bonusBy = new Map(bonusRows.map(b => [b.user_id, { pts: Number(b.pts) || 0, days: Number(b.days) || 0 }]));
   const ars = voteRows.map(r => {
@@ -7113,12 +7078,12 @@ const BREVO_LISTS = {
 };
 // The A&R profile as Brevo attributes. FIRSTNAME / LASTNAME / SMS are Brevo's built-ins;
 // the rest are created on the first sync if missing.
-// On A&R contacts (operator, 2026-10-09: the full profile was too much): their promo card as
-// an IMAGE URL (so an email blast can show each A&R their own card: <img src="{{ contact.
-// ANR_CARD_IMAGE }}">), their A&R referral link (join) and their artist referral link
-// (submit) — beside name, email, phone.
+// On A&R contacts (operator, 2026-10-09: the full profile was too much): their A&R invite link
+// (join) and their artist submit link — beside name, email, phone. Plain links since
+// 2026-11-21: they earn nothing. ANR_CARD_IMAGE (the Official A&R Card, which printed the
+// referral QR codes) is no longer sent; values already in Brevo are left as they are.
 const BREVO_ATTRS = {
-  ANR_CARD_IMAGE: 'text', ANR_REFERRAL_LINK: 'text', ARTIST_REFERRAL_LINK: 'text',
+  ANR_REFERRAL_LINK: 'text', ARTIST_REFERRAL_LINK: 'text',
   // On ARTIST contacts: ONE number, their best record's score, to segment good artists for
   // select opportunities (operator, 2026-10-05: a single value, nothing else).
   ARTIST_TOP_SCORE: 'float',
@@ -7263,7 +7228,6 @@ async function brevoContacts() {
     const links = referralLinks(u.uid);
     const attrs = {
       FIRSTNAME: sp > 0 ? name.slice(0, sp) : name, LASTNAME: sp > 0 ? name.slice(sp + 1) : '',
-      ANR_CARD_IMAGE: anrCardImageUrl(base, u),
       ANR_REFERRAL_LINK: links.join, ARTIST_REFERRAL_LINK: links.submit,
     };
     // Blank text is dropped rather than sent: with emptyContactsAttributes off it would be a
@@ -11043,21 +11007,7 @@ async function handleApi(req, res, url) {
     const arRows = await db.all(
       `SELECT uid, name, primary_category, location, photo_url FROM users WHERE profile_complete = 1 AND ${activeUserSql('')} ORDER BY first_seen DESC LIMIT 12`, []);
     const recentARs = arRows.map(u => ({ id: u.uid, name: u.name, category: u.primary_category || null, location: u.location || null, photoUrl: u.photo_url || null }));
-    // Top talent scouts (operator, 2026-10-02): scouting is the secondary game and the
-    // homepage makes a big deal of who is best at it — the top 3 by lifetime scouting points
-    // (point_events reason 'scout', one row per referred record that rated), shown once anyone
-    // has some. Complete, unblocked profiles only (the listing prints name/role/city/photo).
-    // Bounded: scout rows are one per scouted record, grouped and limited.
-    const scoutRows = await db.all(
-      `SELECT u.uid, u.name, u.primary_category, u.location, u.photo_url,
-              SUM(pe.points) AS pts, COUNT(*) AS records
-         FROM point_events pe JOIN users u ON u.uid = pe.user_id
-        WHERE pe.reason = 'scout' AND u.profile_complete = 1 AND ${activeUserSql('u')}
-        GROUP BY u.uid, u.name, u.primary_category, u.location, u.photo_url
-       HAVING SUM(pe.points) > 0
-        ORDER BY pts DESC, records DESC, u.name ASC LIMIT 3`, []);
-    const topScouts = scoutRows.map((u, i) => ({ rank: i + 1, id: u.uid, name: u.name, category: u.primary_category || null,
-      location: u.location || null, photoUrl: u.photo_url || null, points: Number(u.pts) || 0, records: Number(u.records) || 0 }));
+    // The "Top talent scouts" board was retired 2026-11-21 with scouting points.
     // House submission link for the homepage's submit section when no room link applies
     // (single source of truth: the platform setting, falling back to the built-in).
     const houseSubmitUrl = (await db.get("SELECT v FROM settings WHERE k = 'house_submit_url'"))?.v || 'https://www.makinitmag.com/review';
@@ -11135,7 +11085,7 @@ async function handleApi(req, res, url) {
       streamLabel: etClockLabel(schedW.streamAt), resultsLabel: etClockLabel(schedW.resultsAt) };
     let winners = [];
     try { winners = await tournaments.homeWinners(); } catch (e) { console.error('[home] winners failed:', e.message); }
-    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners, recentARs, topScouts, houseSubmitUrl, schedule });
+    return send(res, 200, { live, daily, yesterday, teamCount, tryIt, next, series, winners, recentARs, houseSubmitUrl, schedule });
   }
 
 
@@ -11299,47 +11249,7 @@ async function handleApi(req, res, url) {
   // ---- Shareable report graphics (PNG, 1080×1440). Rendered on demand from live data. ----
   // score = personal (player token); songs/ars/promo = public promo (display name + IG + points,
   // no email/phone). Binary/Versus sessions are excluded from Top 8 Songs.
-  // The four per-user graphics. Each carries the A&R's own link(s) as a QR code, so the
-  // attribution survives a repost. Rendered on demand and never cached: it is one person's
-  // face and links, and the photo can change.
-  if (p === '/api/card/refer' && method === 'GET') {
-    // (REFER_THUMB_WIDTH / referGraphicVersion are defined beside referralLinks.)
-    const uid = await resolveReferUid(req, url);
-    if (!uid) return bad(res, 'Not logged in', 401);
-    const kinds = { card: 'referCard', story: 'referStory', join: 'referJoin', submit: 'referSubmit' };
-    const type = kinds[url.searchParams.get('kind') || 'card'];
-    if (!type) return bad(res, 'Unknown graphic', 404);
-    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [uid]);
-    if (userInactive(u)) return bad(res, 'Not logged in', 401);
-    try {
-      const links = referralLinks(u.uid);
-      const data = {
-        name: u.name || 'A&R', category: u.primary_category || null, location: u.location || null,
-        photo: await photoDataUri(u.photo_url),
-        qrJoin: await qrPngDataUri(links.join), qrSubmit: await qrPngDataUri(links.submit),
-      };
-      // thumb=1: the SAME render at 432px wide, for the account page's preview grid — the
-      // A&R sees the graphic before downloading it (operator, 2026-09-20). A thumbnail may
-      // sit in the browser's private cache for a day: its URL carries `v`, a hash of what
-      // the graphic prints (referGraphicVersion), so it is per-A&R and changes the moment
-      // their name, photo, city or role does. The full download stays no-store.
-      const thumb = url.searchParams.get('thumb') === '1';
-      let png;
-      try { png = await shareCards.renderPng(type, data, thumb ? REFER_THUMB_WIDTH : undefined); }
-      catch (e) {
-        // A photo the renderer cannot decode must not cost the A&R their graphic.
-        if (!data.photo) throw e;
-        console.error('[refer] render with photo failed, retrying without:', e.message);
-        png = await shareCards.renderPng(type, { ...data, photo: null }, thumb ? REFER_THUMB_WIDTH : undefined);
-      }
-      const fresh = thumb && url.searchParams.get('v') === referGraphicVersion(u);
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': fresh ? 'private, max-age=86400' : 'private, no-store' });
-      return res.end(png);
-    } catch (e) {
-      console.error('[refer] card render failed:', e.message);
-      return bad(res, 'Card render failed', 500);
-    }
-  }
+  // The four referral graphics (/api/card/refer) were retired 2026-11-21 with referral points.
 
   // ---- The daily grade card (see gradeCardFacts). Three doors, one renderer:
   //   /api/card/grade/<day>/<uid>.png?k=  public, signed — the results email's <img>
@@ -11415,37 +11325,8 @@ async function handleApi(req, res, url) {
     return send(res, 200, { ok: true, picked: style, style: gradeCardStyleFor(u) });
   }
 
-  // The public card image (see anrCardImageUrl). No login: it prints only public profile data.
-  // A blocked or unknown A&R is a 404 — an old email then shows a broken image, never a card.
-  if (p.startsWith('/api/card/anr/') && p.endsWith('.png') && method === 'GET') {
-    const uid = decodeURIComponent(p.slice('/api/card/anr/'.length, -'.png'.length));
-    if (!/^[A-Za-z0-9_-]{6,32}$/.test(uid)) return bad(res, 'Not found', 404);
-    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [uid]);
-    if (userInactive(u)) return bad(res, 'Not found', 404);
-    try {
-      const links = referralLinks(u.uid);
-      const data = {
-        name: u.name || 'A&R', category: u.primary_category || null, location: u.location || null,
-        photo: await photoDataUri(u.photo_url),
-        qrJoin: await qrPngDataUri(links.join), qrSubmit: await qrPngDataUri(links.submit),
-      };
-      let png;
-      try { png = await shareCards.renderPng('referCard', data, ANR_CARD_EMAIL_WIDTH); }
-      catch (e) {
-        if (!data.photo) throw e;
-        png = await shareCards.renderPng('referCard', { ...data, photo: null }, ANR_CARD_EMAIL_WIDTH);
-      }
-      // A current URL caches at the CDN for a year (its content cannot change without the URL
-      // changing); an old one (an email sent before a profile edit) renders today's card, briefly.
-      const current = url.searchParams.get('v') === referGraphicVersion(u);
-      res.writeHead(200, { 'Content-Type': 'image/png',
-        'Cache-Control': current ? 'public, max-age=86400, s-maxage=31536000, immutable' : 'public, max-age=3600, s-maxage=3600' });
-      return res.end(png);
-    } catch (e) {
-      console.error('[card/anr] render failed:', e.message);
-      return bad(res, 'Card render failed', 500);
-    }
-  }
+  // /api/card/anr/<uid>.png (the Official A&R Card for Brevo blasts) was retired 2026-11-21:
+  // it printed the referral QR codes. It now falls through to the generic card route's 404.
 
   if (p.startsWith('/api/card/') && method === 'GET') {
     const kind = p.slice('/api/card/'.length);
@@ -11569,95 +11450,20 @@ async function handleApi(req, res, url) {
     }
   }
 
-  // ---- /refer: the A&R's own referral page (2026-09-18). Two links, two lanes, four
-  // graphics. Auth is EITHER token (a daily player holds a per-session player token, a /join
-  // signup holds an account token; resolveUserId takes both). Names of invitees are their
-  // public display names — the referrer already knows who they invited; no email, no phone.
-  if (p === '/api/me/referrals' && method === 'GET') {
+  // ---- /account: the header the account page needs (who you are) plus the current streak.
+  // Replaced /api/me/referrals on 2026-11-21, when referral and scouting points were retired:
+  // no links lane, no counters, no graphics. Either token, or the signed link.
+  if (p === '/api/me/account' && method === 'GET') {
     const uid = await resolveReferUid(req, url);
     if (!uid) return bad(res, 'Not logged in', 401);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, drupal_uid, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [uid]);
+    const u = await db.get('SELECT uid, name, primary_category, location, photo_url, blocked, deactivated_at, deleted_at FROM users WHERE uid = ?', [uid]);
     if (userInactive(u)) return bad(res, 'Not logged in', 401);
-    const dayMs = 86400000, nowTs = now();
-    // ---- A&R lane: everyone whose account this A&R brought in, plus what each has paid.
-    const invitees = await db.all(
-      `SELECT u2.uid, u2.name, u2.first_seen, u2.profile_complete, COUNT(v.id) AS played
-         FROM users u2
-         LEFT JOIN participants p ON p.user_id = u2.uid
-         LEFT JOIN votes v ON v.participant_id = p.id AND v.points IS NOT NULL
-        WHERE u2.referrer_uid = ?
-        GROUP BY u2.uid, u2.name, u2.first_seen, u2.profile_complete
-        ORDER BY u2.first_seen DESC`, [uid]);
-    const perInvitee = new Map();
-    let arEarned = 0;
-    for (const e of await db.all("SELECT reason, source_uid, points FROM point_events WHERE user_id = ? AND reason IN ('referral_round','referral')", [uid])) {
-      arEarned += Number(e.points) || 0;
-      const inv = e.reason === 'referral_round' ? String(e.source_uid).split(':')[0] : String(e.source_uid);
-      perInvitee.set(inv, (perInvitee.get(inv) || 0) + (Number(e.points) || 0));
-    }
-    const arRows = invitees.map(i => {
-      const age = Math.max(0, nowTs - Number(i.first_seen));
-      const day = Math.min(REFERRAL.windowDays, Math.floor(age / dayMs) + 1);
-      const open = age < REFERRAL.windowDays * dayMs;
-      return {
-        name: (i.name || '').toString().trim().slice(0, 40) || 'New A&R',
-        played: Number(i.played) > 0,
-        day, windowOpen: open,
-        points: perInvitee.get(i.uid) || 0,
-      };
-    });
-    // ---- Artist lane: every record this A&R scouted. The average is SEALED until the day it
-    // ran has published (a daily drop is tallied hours before its results go out), so an
-    // unpublished record reports only that it is waiting.
-    // Never test a bare placeholder for NULL in SQL: Postgres cannot infer its type and the
-    // request 500s, while SQLite (the test suite) is happy. Shape the predicate here instead.
-    const scoutIds = u.drupal_uid ? [uid, u.drupal_uid] : [uid];
-    const scoutedAll = await db.all(
-      `SELECT r.id, r.song_title, r.song_artist, r.status, r.room_average, r.created_at, r.artist_email, s.mode, s.async_state
-         FROM rounds r JOIN sessions s ON s.id = r.session_id
-        WHERE s.deleted_at IS NULL AND r.scout_drupal_uid IN (${scoutIds.map(() => '?').join(',')})
-        ORDER BY r.created_at DESC LIMIT 200`, scoutIds);
-    // Your own record is not a referral: it never earns and it does not count on the page.
-    const me = await db.get('SELECT email FROM users WHERE uid = ?', [uid]);
-    const scouted = scoutedAll.filter(r => !isSelfScout(r, me));
-    const scoutPts = new Map();
-    let artistEarned = 0;
-    for (const e of await db.all("SELECT source_uid, points FROM point_events WHERE user_id = ? AND reason = 'scout'", [uid])) {
-      artistEarned += Number(e.points) || 0;
-      scoutPts.set(e.source_uid, Number(e.points) || 0);
-    }
-    const artistRows = scouted.map(r => {
-      const revealed = r.status === 'ratified' && (r.mode !== 'async' || r.async_state === 'published') && r.room_average != null;
-      return {
-        title: (r.song_title || '').toString().slice(0, 60),
-        artist: (r.song_artist || '').toString().slice(0, 40),
-        rated: revealed,
-        average: revealed ? Number(r.room_average) : undefined,
-        points: revealed ? (scoutPts.get(r.id) || 0) : undefined,
-      };
-    });
-    const gv = referGraphicVersion(u);
-    const gfx = (kind, label, size) => ({ kind, label, size, url: '/api/card/refer?kind=' + kind,
-      thumb: '/api/card/refer?kind=' + kind + '&thumb=1&v=' + gv });
     return send(res, 200, {
-      // name / photo / city / role feed the account page's header (the A&R's own data, on
-      // a header-authenticated or signed-link route; nothing here is email or phone).
       me: { uid: u.uid, name: u.name || null, hasPhoto: !!u.photo_url, photoUrl: u.photo_url || null,
         location: u.location || null, primaryCategory: u.primary_category || null },
-      links: referralLinks(u.uid),
-      clicks: await referralClickCounts(u.uid).catch(() => null),
-      rules: { windowDays: REFERRAL.windowDays, cap: REFERRAL.cap, errMax: REFERRAL.errMax, pointsPerRound: REFERRAL.pointsPerRound, scoutMultiplier: SCOUT_MULTIPLIER },
-      ars: { referred: arRows.length, active: arRows.filter(r => r.played).length, earned: arEarned, rows: arRows.slice(0, 50) },
-      artists: { submitted: artistRows.length, rated: artistRows.filter(r => r.rated).length, earned: artistEarned, rows: artistRows.slice(0, 50) },
-      // Labels are the operator's (2026-09-20): "Official A&R Card - Feed" / "- Story".
-      graphics: [
-        gfx('card', 'Official A&R Card - Feed', '1080 × 1350'),
-        gfx('story', 'Official A&R Card - Story', '1080 × 1920'),
-        gfx('submit', 'Submit your music', '1080 × 1350'),
-        gfx('join', 'Join the A&R Team', '1080 × 1350'),
-      ],
+      streak: await streakFor(u.uid),
     });
   }
   // ---- /account "My results": the A&R's own results for one week. Same auth as the rest of
@@ -13363,8 +13169,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/hits' || url.pathname === '/sidebet') return serveStatic(res, 'sidebet.html');
     // Tournament landing pages (045): /wars = the latest A&R Wars, /tournament/<slug> = any.
     if (url.pathname === '/wars' || url.pathname === '/tournament' || url.pathname.startsWith('/tournament/')) return serveStatic(res, 'tournament.html');
-    // The A&R's account (2026-10-01): ONE page with sections — Earn points (the default;
-    // what /refer was), My profile, and a tab to the edit form. /refer serves the same file
+    // The A&R's account (2026-10-01): ONE page with sections — My results (the default since
+    // 2026-11-21, when the Earn points / referral section was retired), My profile, and a tab
+    // to the edit form. /refer still serves the same file
     // so every link already out there (email footers, the signed [card link], QR'd flyers'
     // copy) lands on the same page and section.
     if (url.pathname === '/account' || url.pathname === '/refer') return serveStatic(res, 'account.html');
@@ -13378,15 +13185,11 @@ const server = http.createServer(async (req, res) => {
     // The QR encodes this route, so the host can change the destination mid-show
     // and every printed/on-screen code keeps working. no-store: never cache a 302
     // to a stale destination.
-    // An A&R's submit link. Count the click (GET only — link checkers send HEAD), then 302 to
-    // the review form carrying the ref. An invalid uid still redirects, without the ref: a
-    // posted link never 404s. The uid is passed verbatim — case-sensitive, never trimmed.
+    // An A&R's submit link, posted before 2026-11-21. It keeps working: a plain 302 to the
+    // review form. Nothing is counted (referral_clicks is left in place as history) and no
+    // ref rides along, because a referral earns nothing any more.
     if (url.pathname.startsWith('/r/')) {
-      let uid = null;
-      try { uid = decodeURIComponent(url.pathname.slice(3)); } catch (e) { /* malformed escape */ }
-      if (uid && !REF_UID_RE.test(uid)) uid = null;
-      if (uid && req.method === 'GET') await recordReferralClick(req, uid);
-      res.writeHead(302, { Location: uid ? `${SUBMIT_FORM_URL}?ref=${encodeURIComponent(uid)}` : SUBMIT_FORM_URL, 'Cache-Control': 'no-store' });
+      res.writeHead(302, { Location: SUBMIT_FORM_URL, 'Cache-Control': 'no-store' });
       return res.end();
     }
     if (url.pathname === '/submit') {
@@ -13536,6 +13339,11 @@ module.exports._completionBonusPoints = completionBonusPoints;
 module.exports._completionBonusFor = completionBonusFor;
 module.exports._completionBonusMode = completionBonusMode;
 module.exports._sweepCompletionBonuses = sweepCompletionBonuses;
+module.exports._sweepStreakBonuses = sweepStreakBonuses;
+module.exports._streakLength = streakLength;
+module.exports._streakMultiplier = streakMultiplier;
+module.exports._streakFor = streakFor;
+module.exports._STREAK = STREAK;
 module.exports._completionLineText = completionLineText;
 module.exports._dropWindowFor = dropWindowFor;
 module.exports._DAILY_SCHEDULE_DEFAULTS = DAILY_SCHEDULE_DEFAULTS;
@@ -13546,12 +13354,7 @@ module.exports._dailyDayLabel = dailyDayLabel;
 module.exports._dailyDropName = dailyDropName;
 module.exports._dailySetDate = dailySetDate;
 module.exports._parseDailySchedule = parseDailySchedule;
-// Exported for tests: the scouting curve is the dial that decides whether "eye for talent"
-// is a real second lane or a garnish, so its shape is asserted rather than eyeballed.
-module.exports._scoutPointsFor = scoutPointsFor;
-module.exports._REFERRAL = REFERRAL;
 module.exports._renderNotifyTokens = renderNotifyTokens;
-module.exports._isSelfScout = isSelfScout;
 module.exports._openDropUrl = openDropUrl;
 module.exports._mintReferLink = mintReferLink;
 module.exports._referralLinks = referralLinks;

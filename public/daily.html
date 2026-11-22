@@ -223,7 +223,6 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <span class="wordmark">A&amp;R Daily</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
-      <a class="standing" href="/refer" style="color:var(--signal);border-color:var(--signal-deep)">Bonus points</a>
       <div class="standing hide mono" id="standing"></div>
     </div>
   </div>
@@ -459,12 +458,11 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
       <div class="mono hide" id="doneBonus" style="font-size:62px;font-weight:700;line-height:1.05;color:var(--gold);margin-top:12px"></div>
       <div class="dim" id="doneBonusSub" style="font-size:13.5px"></div>
       <div class="rule" style="margin:20px 0 16px"></div>
-      <div id="doneTiers" style="text-align:left"></div>
+      <div id="doneTiers" class="dim" style="text-align:left;font-size:13.5px;line-height:1.5"></div>
       <div class="note" id="doneNext" style="text-align:left;margin-top:18px"></div>
       <button class="btn contest hide" id="btnDayOnStream" style="margin-top:16px">Show the day on stream</button>
       <button class="btn ghost" id="btnReview" style="margin-top:16px">Review my evaluations</button>
       <a class="btn ghost" href="/account#results" style="margin-top:10px;text-decoration:none">My past results</a>
-      <a class="btn ghost" href="/refer" style="margin-top:10px;text-decoration:none">Earn bonus points</a>
     </div>
   </section>
 
@@ -510,7 +508,6 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
          yesterday's. The homepage already resolves whichever drop is open. -->
     <a class="btn" id="btnRecapNext" href="/">Today's records are open</a>
     <a class="btn ghost" href="/account#results" style="text-decoration:none">My past results</a>
-    <a class="btn ghost" href="/refer" style="text-decoration:none">Earn bonus points</a>
   </section>
 
   <div class="endorse">
@@ -1313,9 +1310,17 @@ function renderDone(st){
     $('#doneBonusSub').textContent = pr.eligible
       ? 'Rated Full Drop for Daily Bonus Points. Your bonus is your average points per round, added when your results come out.'
       : 'Too few records today for a completion bonus.'; }
-  $('#doneTiers').textContent = '';
+  $('#doneTiers').textContent = streakText(as.streak);
 
   afterNode($('#doneNext'), as, '');
+}
+// The streak (2026-11-21): drops completed in a row, and what the next milestone pays. A count
+// only; the drop just finished joins it once it tallies.
+function streakText(sk){
+  if(!sk || sk.every == null) return '';
+  const next = 'Every ' + sk.every + ' drops in a row pays an extra completion bonus. Day ' + sk.nextMilestone + ' pays ' + sk.nextMultiplier + '.';
+  if(!sk.days) return 'Streak: complete ' + sk.every + ' drops in a row for a streak bonus.';
+  return 'Streak: ' + sk.days + ' drop' + (sk.days === 1 ? '' : 's') + ' in a row. ' + next;
 }
 // afterLines as text, then the YouTube subscribe line with a real link (operator, 2026-10-15:
 // every touch point asks people to subscribe and hit the bell). Built as nodes, never HTML.
@@ -1428,6 +1433,17 @@ function renderRecap(st){
     const v = document.createElement('span'); v.className = 'mono';
     v.style.cssText = 'font-size:15px;font-weight:700;color:var(--gold)';
     v.textContent = '+' + rc.completionBonus;
+    foot.appendChild(l); foot.appendChild(v); rows.appendChild(foot);
+  }
+  // The streak bonus, when this drop landed on a streak milestone (every 3rd drop in a row).
+  if(rc.streakBonus && rc.streakBonus.points){
+    const foot = document.createElement('div');
+    foot.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 2px 0';
+    const l = document.createElement('span'); l.style.cssText = 'font-weight:800;font-size:14px';
+    l.textContent = 'Streak bonus' + (rc.streakBonus.days ? ' · ' + rc.streakBonus.days + ' drops in a row' : '');
+    const v = document.createElement('span'); v.className = 'mono';
+    v.style.cssText = 'font-size:15px;font-weight:700;color:var(--gold)';
+    v.textContent = '+' + rc.streakBonus.points;
     foot.appendChild(l); foot.appendChild(v); rows.appendChild(foot);
   }
   const n = (rc.rounds || []).length, total = rc.totalRounds != null ? rc.totalRounds : n;
