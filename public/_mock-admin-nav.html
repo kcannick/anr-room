@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOCKUP — Console navigation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Token values mirrored from public/tokens.css so the mockup renders standalone. */
+  :root{
+    --bg:#0E0C1A; --panel:#171328; --panel-2:#1d1733; --line:#2e2750; --inset:#0a0814;
+    --ink:#EAE9F2; --ink-dim:#9793B4; --ink-faint:#8c84ad;
+    --signal:#4bb749; --on-signal:#06210b; --accent:#6d5fe0; --gold:#F5C518; --hot:#ff5d6c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07060d;color:var(--ink);font-family:"DM Sans",system-ui,sans-serif;padding:28px 16px 80px}
+  .mocklabel{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-faint);margin:52px 0 6px;text-align:center}
+  .mocklabel:first-of-type{margin-top:0}
+  .mocknote{font-size:14px;line-height:1.6;color:var(--ink-dim);text-align:center;max-width:720px;margin:0 auto 20px}
+  .mocknote b{color:var(--ink)}
+  .mono{font-family:"Space Mono",monospace}
+
+  /* ---------- before/after ---------- */
+  .ba{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:820px){.ba{grid-template-columns:1fr}}
+  .ba .col{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
+  .ba h3{margin:0 0 12px;font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint)}
+  .ba ol{margin:0;padding-left:18px;font-size:13.5px;line-height:1.6;color:var(--ink-dim)}
+  .ba ol li{margin-bottom:8px}
+  .ba ol b{color:var(--ink)}
+  .ba .col.after{border-color:rgba(75,183,73,.45)}
+
+  /* ---------- the shell ---------- */
+  .viewbar{display:flex;justify-content:center;gap:8px;margin:0 0 14px;flex-wrap:wrap}
+  .seg{display:flex;gap:4px;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:4px}
+  .seg button{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;background:none;border:0;color:var(--ink-dim);padding:7px 12px;border-radius:9px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff;font-weight:700}
+
+  .shell{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:240px 1fr;min-height:640px;background:var(--bg);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .shell.phone{max-width:390px;grid-template-columns:1fr;min-height:720px}
+
+  .side{background:#120f22;border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:2px}
+  .brand{display:flex;align-items:center;gap:8px;padding:2px 8px 14px;font-weight:800;letter-spacing:.02em}
+  .brand .blk{background:var(--signal);color:var(--on-signal);font-family:"Space Mono",monospace;font-size:11px;font-weight:700;padding:3px 6px;border-radius:5px}
+  .grp{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);padding:14px 10px 6px}
+  .nav{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;background:none;border:0;color:var(--ink-dim);font:inherit;font-size:14px;padding:8px 10px;border-radius:9px;cursor:pointer}
+  .nav:hover{background:var(--panel);color:var(--ink)}
+  .nav.on{background:var(--panel-2);color:var(--ink);font-weight:700;box-shadow:inset 3px 0 0 var(--signal)}
+  .nav .bdg{font-family:"Space Mono",monospace;font-size:10px;border-radius:999px;padding:2px 7px;border:1px solid var(--line);color:var(--ink-dim)}
+  .nav .bdg.live{color:var(--signal);border-color:var(--signal)}
+  .nav .bdg.hot{color:var(--hot);border-color:var(--hot)}
+  .side .foot{margin-top:auto;padding:14px 10px 0;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-dim)}
+  .side .foot a{color:var(--ink-dim)}
+
+  /* phone: sidebar becomes a top bar + drawer */
+  .topbar{display:none}
+  .shell.phone .side{display:none}
+  .shell.phone.open .side{display:flex;border-right:0;border-bottom:1px solid var(--line)}
+  .shell.phone .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:#120f22}
+  .topbar button{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:7px 11px;font:inherit;font-size:13px;cursor:pointer}
+
+  .main{padding:20px 24px;min-width:0}
+  .shell.phone .main{padding:16px}
+  .crumb{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 4px}
+  .main h1{margin:0 0 4px;font-size:24px;font-weight:800}
+  .main .lede{margin:0 0 16px;color:var(--ink-dim);font-size:14px;line-height:1.55}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 16px;overflow-x:auto}
+  .tabs span{padding:8px 12px;font-size:13.5px;color:var(--ink-dim);border-bottom:2px solid transparent;white-space:nowrap}
+  .tabs span.on{color:var(--ink);border-color:var(--signal);font-weight:700}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card h4{margin:0 0 6px;font-size:14.5px}
+  .card p{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
+  .from{display:inline-block;margin-top:9px;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.08em;color:#b3a9ff;background:rgba(109,95,224,.14);border:1px solid rgba(109,95,224,.4);border-radius:6px;padding:3px 7px}
+  .from.same{color:var(--ink-faint);background:none;border-color:var(--line)}
+  .alert{background:rgba(255,93,108,.08);border:1px solid var(--hot);border-radius:12px;padding:10px 12px;font-size:13px;margin:0 0 14px}
+  .alert b{color:var(--hot)}
+</style>
+</head>
+<body>
+
+<div class="mocklabel">The problem</div>
+<p class="mocknote">The console grew one screen at a time, and each new screen got a button wherever there was room. Today there are <b>two different menus</b>, and which one you see depends on where you came from.</p>
+
+<div class="ba">
+  <div class="col">
+    <h3>Today</h3>
+    <ol>
+      <li><b>Two menus.</b> Daily, Weekly and Tournaments have a 5-button switch at the top. The room list has a different row of 10 buttons. Charts, Users, Series, Analytics and Sidebet are only in the second one.</li>
+      <li><b>"Live show" opens the room list</b>, and the room list is where Charts, Users and Analytics live. You go "into the live show" to look up an A&amp;R.</li>
+      <li><b>Every back button says "← My rooms"</b>, but the console opens on A&amp;R Daily, not rooms. Back takes you somewhere you weren't.</li>
+      <li><b>Platform is a drawer of 9 unrelated cards</b>: banners, the daily schedule, Asana, Brevo, the contact backfill, the mass message, the SMS test.</li>
+      <li><b>No addresses.</b> Refresh or the browser's Back button does not keep you on the page you were on.</li>
+      <li>Log out is in three different places.</li>
+    </ol>
+  </div>
+  <div class="col after">
+    <h3>Proposed</h3>
+    <ol>
+      <li><b>One sidebar, always on screen</b>, the same on every page. Every screen is in it, so you never need to remember which page has the button.</li>
+      <li><b>One name per thing:</b> Daily Drops, Live Sessions, Tournaments, Top Picks. The sidebar, page titles and buttons all use the same four.</li>
+      <li><b>Four groups by job:</b> Run the show · Results · A&amp;Rs &amp; artists · Settings.</li>
+      <li><b>Platform is split up</b> by what each card is for: the schedule is a setting, the mass message is about A&amp;Rs, Brevo and Asana are contact lists.</li>
+      <li><b>No back buttons.</b> The sidebar shows where you are; inside a session, a line at the top reads "Live Sessions › Session name".</li>
+      <li><b>Every page has an address</b> (/admin#weekly), so refresh, Back and bookmarks work.</li>
+      <li>Problems show up in the sidebar (a red dot on Connections when the submission system is failing), not only on the page you happen to open.</li>
+    </ol>
+  </div>
+</div>
+
+<div class="mocklabel">Proposed console · click through it · checked against main 10/17</div>
+<p class="mocknote">Each card is a card that exists today. The purple tag says where it lives now. <b>Nothing is removed</b>: this changes how you get to things, not what they do.</p>
+
+<div class="viewbar">
+  <div class="seg" id="segWho">
+    <button class="on" data-who="op">View as: Operator</button>
+    <button data-who="host">View as: Host</button>
+  </div>
+  <div class="seg" id="segSize">
+    <button class="on" data-size="desk">Desktop</button>
+    <button data-size="phone">Phone</button>
+  </div>
+</div>
+
+<div class="shell" id="shell">
+  <div class="topbar">
+    <div class="brand" style="padding:0"><span class="blk">A&amp;R</span> Console</div>
+    <button id="btnMenu">Menu</button>
+  </div>
+  <nav class="side" id="side"></nav>
+  <main class="main" id="main"></main>
+</div>
+
+<div class="mocklabel">What changes in the code</div>
+<p class="mocknote" style="text-align:left">
+<b>Front end only, admin.html.</b> No server change, no migration, no change to what any button does.
+<br>1 · Add the sidebar and hash addresses; route every existing <span class="mono">showScreen()</span> through them.
+<br>2 · Remove the three copies of the mode switch, the room list's row of 10 buttons, the seven "← My rooms" buttons and two of the three Log outs.
+<br>3 · Split the Platform screen into its pages (the cards move as they are).
+<br>4 · Room console: same cards, grouped into the four tabs shown under Live Sessions.
+<br>Hosts see only Live Sessions and My session defaults, as today.
+</p>
+
+<script>
+const PAGES = {
+  // ---- Run the show
+  today:{grp:'Run the show', label:'Daily Drops', badge:['Open','live'], title:'Daily Drops',
+    lede:'Songs submitted for the daily A&R Meeting. Opens on today\'s drop, as the console does now.',
+    tabs:['Today','Yesterday ▾'],
+    cards:[
+      ['The records','Every record in the drop, score, support, play link, the three sort orders, and the Results view for each record.','same'],
+      ['Sending','Digest, artist reports, heads-ups. Run the lifecycle now · Publish the day.','same'],
+      ['Instagram posts','Countdown + Top A&Rs carousels, Asana tasks, captions.','same'],
+      ['Add a record','The hand-add builder, reference tracks.','same'],
+    ],
+    moved:'Submission system card → Settings › Connections. If it is failing, a red banner shows here too.'},
+  live:{grp:'Run the show', label:'Live Sessions', title:'Live Sessions',
+    lede:'Real-time review sessions. Open a session to run it.',
+    tabs:['Sessions','+ New session'],
+    cards:[
+      ['Sessions list','Sort by recent, name, A&Rs, rounds.','Room list'],
+      ['Inside a session: Run','This round · Up next · Start round · Rankings · Rounds.','Room console'],
+      ['Inside a session: Wrap-up','Email recap, Top 8 cards, artist notices, Asana post kit.','Room console'],
+      ['Inside a session: Share & control','Link + QR, overlay link, Stream Deck key, broadcast message.','Room console'],
+      ['Inside a session: Settings','Edit session, ads for this session, Complete / Archive / Delete.','Room console'],
+    ]},
+  tournaments:{grp:'Run the show', label:'Tournaments', title:'Tournaments',
+    lede:'A&R Wars and the $1,000 Music Review Tournament.',
+    cards:[
+      ['Setup · Field · Bracket','Unchanged.','same'],
+      ['Graphics','Weekly qualifier graphics, Download all (zip).','same'],
+      ['Competitor packages','Feed + story per competitor, Send test to me, email + text to one or all 8.','same'],
+      ['Reminder list · Wrap','Unchanged.','same'],
+    ]},
+  sidebet:{grp:'Run the show', label:'Top Picks', title:'Top Picks',
+    lede:'Entrants pick which Service Pack songs get played at A&R Wars. Songs, entries, settle.',
+    cards:[
+      ['Iterations','Create, edit, banner, prize.','Room list › Sidebet'],
+      ['Service pack songs','CSV loader.','Room list › Sidebet'],
+      ['Confirm what was played','The settle checklist.','Room list › Sidebet'],
+    ]},
+  // ---- Results
+  weekly:{grp:'Results', label:'Weekly report', title:'Weekly report',
+    lede:'What the Wednesday show reads off. Monday to Sunday.',
+    cards:[
+      ['Top 8 Records','Read sheet, #1 seeded into the Artist Tournament.','same'],
+      ['Top 8 A&Rs','Read sheet, #1 takes a Wars seat.','same'],
+      ['Winners of the week','The two collab posts.','A&R Daily › Instagram posts'],
+    ]},
+  charts:{grp:'Results', label:'Charts', title:'Charts',
+    lede:'HOT 100: records or A&Rs over any range. Table, CSV, carousel.',
+    cards:[['Chart builder','Unchanged.','Room list › Charts']]},
+  series:{grp:'Results', label:'Series', title:'Series',
+    lede:'Monthly series and the live $500 board.',
+    cards:[['Series list + standings','Create, tag sessions, set the cut, close.','Room list › Series']]},
+  analytics:{grp:'Results', label:'Analytics', title:'Analytics',
+    lede:'Engagement and retention across every session.',
+    cards:[['Analytics','Unchanged.','Room list › Analytics']]},
+  // ---- A&Rs & artists
+  users:{grp:'A&Rs & artists', label:'A&Rs', title:'A&Rs',
+    lede:'Every account. Search, filter, open a profile, block, delete.',
+    cards:[['Users','Unchanged, including Edit profile and the grade card download.','Room list › Users']]},
+  message:{grp:'A&Rs & artists', label:'Message A&Rs', title:'Message A&Rs',
+    lede:'One announcement by email and/or text, and who each alert reaches.',
+    cards:[
+      ['Message all A&Rs','Composer, tokens, Send test to me.','Platform'],
+      ['Notification audience','Who gets each alert after opt-outs.','Platform'],
+    ]},
+  leads:{grp:'A&Rs & artists', label:'Sales leads', title:'Sales leads',
+    lede:'Top-scoring artists, one Asana task each.',
+    cards:[['Sales leads → Asana','Preview, create tasks, rebuild.','Platform']]},
+  contacts:{grp:'A&Rs & artists', label:'Contact lists', title:'Contact lists',
+    lede:'Keeping artist and A&R contact details complete and in Brevo.',
+    cards:[
+      ['Brevo contacts','List IDs, Sync now.','Platform'],
+      ['Backfill artist contacts','CSV upload, preview, apply.','Platform'],
+    ]},
+  // ---- Settings
+  schedule:{grp:'Settings', label:'Daily schedule', title:'Daily schedule',
+    lede:'When drops open, close, stream and publish, and the completion bonus.',
+    cards:[['Schedule','Open / close / Daily Countdown graphics / results times, The A&R Room link, bonus steps, artist report delay.','Platform › System settings']]},
+  ads:{grp:'Settings', label:'Ads & banners', title:'Ads & banners',
+    lede:'What shows in the ad slot when a session or drop has no banner of its own.',
+    cards:[
+      ['Banner library','Global default banner.','Platform'],
+      ['Revive ad server','Lobby and evaluation zones.','Platform › System settings'],
+    ]},
+  connections:{grp:'Settings', label:'Connections', badge:['!','hot'], title:'Connections',
+    lede:'Everything the app talks to, and whether it is working.',
+    alert:true,
+    cards:[
+      ['Submission system','Results callback to makinitmag: status, Send the backlog.','A&R Daily'],
+      ['House submission link','Fallback for the Submit QR and homepage.','Platform › System settings'],
+      ['Asana','Post-kit project, sales-leads project.','Platform › System settings'],
+      ['SMS','Provider, send a test text.','Platform › SMS test'],
+    ]},
+  defaults:{grp:'Settings', label:'My session defaults', host:true, title:'My session defaults',
+    lede:'Prefills for every new session you start.',
+    cards:[['Room defaults','Watch link, submit link, description, banner, auto-fill.','Room list › Defaults (a pop-up)']]},
+};
+PAGES.live.host = true;
+
+let cur='today', who='op';
+const $=s=>document.querySelector(s);
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+
+function renderSide(){
+  let h='<div class="brand"><span class="blk">A&amp;R</span> Console</div>', g='';
+  for(const [k,p] of Object.entries(PAGES)){
+    if(who==='host' && !p.host) continue;
+    if(p.grp!==g){ g=p.grp; h+=`<div class="grp">${esc(g)}</div>`; }
+    const b=p.badge?`<span class="bdg ${p.badge[1]}">${p.badge[0]}</span>`:'';
+    h+=`<button class="nav${k===cur?' on':''}" data-k="${k}"><span>${esc(p.label)}</span>${b}</button>`;
+  }
+  h+=`<div class="foot">${who==='op'?'Signed in as the operator':'A host'}<br><a href="#" onclick="return false">Log out</a></div>`;
+  $('#side').innerHTML=h;
+  $('#side').querySelectorAll('.nav').forEach(b=>b.onclick=()=>{cur=b.dataset.k;$('#shell').classList.remove('open');render();});
+}
+function renderMain(){
+  const p=PAGES[cur];
+  let h=`<div class="crumb">${esc(p.grp)} · /admin#${cur}</div><h1>${esc(p.title)}</h1><p class="lede">${esc(p.lede)}</p>`;
+  if(p.alert) h+=`<div class="alert"><b>Submission system: 3 days not sent.</b> The same banner shows on Daily Drops until it is fixed.</div>`;
+  if(p.tabs) h+=`<div class="tabs">${p.tabs.map((t,i)=>`<span class="${i?'':'on'}">${esc(t)}</span>`).join('')}</div>`;
+  h+='<div class="cards">'+p.cards.map(([t,d,f])=>`<div class="card"><h4>${esc(t)}</h4><p>${esc(d)}</p><span class="from ${f==='same'?'same':''}">${f==='same'?'stays here':'now in: '+esc(f)}</span></div>`).join('')+'</div>';
+  if(p.moved) h+=`<p class="lede" style="margin-top:14px;font-size:12.5px">${esc(p.moved)}</p>`;
+  $('#main').innerHTML=h;
+}
+function render(){ renderSide(); renderMain(); }
+
+$('#segWho').onclick=e=>{const b=e.target.closest('button');if(!b)return;who=b.dataset.who;
+  $('#segWho').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  if(who==='host'&&!PAGES[cur].host)cur='live';render();};
+$('#segSize').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  $('#segSize').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  $('#shell').classList.toggle('phone',b.dataset.size==='phone');$('#shell').classList.remove('open');};
+$('#btnMenu').onclick=()=>$('#shell').classList.toggle('open');
+render();
+</script>
+</body>
+</html>
