@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>@TheAnRTeam starter kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Space+Mono:wght@400;700&display=block" rel="stylesheet">
+<style>
+/* ============================================================
+   @TheAnRTeam — the evergreen Instagram starter kit. MOCKUP for approval.
+   One template, every piece:
+
+     ?p=avatar                         1080x1080  profile picture: the block alone
+     ?p=hl-how|hl-join|hl-submit|      1080x1920  highlight covers: one stroke icon in the block
+        hl-hot100|hl-results|hl-winners
+     ?p=intro|how-1..how-4|            1080x1350  launch grid + the How it works carousel
+        numbers-1..numbers-3|              + the What the numbers mean carousel
+        artists|schedule|join
+     ?p=story-open|story-join|         1080x1920  story templates
+        story-results[&day=Oct 16, 2026]   (day = the release date the set is named by)
+     &guides=1                         draws Instagram's safe zones / link-sticker box (review only)
+
+   Family: the masthead (logo 80/80, series name at 142), the countdown ticks, the 13° field
+   with the call to action and the strip are lifted from countdown/countdown.html and
+   ads/ad.html so this account's grid reads as one thing with the Countdown and winner posts.
+   No type straddles the cut. Safe area 80px all round, which clears the profile grid's 3:4
+   crop (34px a side on a 1080x1350 post).
+
+   Colour has a job: green = the Team and scoring; gold = first place only (the top A&R on
+   How it works 4, the Winners highlight). No purple: nothing here is head-to-head. No red:
+   nothing here is a deadline in the "last 5 seconds" sense. No prize amounts anywhere
+   (tournaments retired 2026-10-19).
+   ============================================================ */
+:root{ --ground:#0E0C1A; --panel:#171328; --line:#2E2750; --ink:#EAE9F2; --dim:#9793B4; --green:#4BB749; --purple:#6D5FE0; --gold:#F5C518; }
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;background:var(--ground)}
+#c{position:relative;overflow:hidden;background:var(--ground);color:var(--ink);font-family:'Archivo',system-ui,sans-serif}
+#c.sq{width:1080px;height:1080px}
+#c.feed{width:1080px;height:1350px}
+#c.tall{width:1080px;height:1920px}
+.p{display:none;position:absolute;inset:0}
+.p.on{display:block}
+.mono{font-family:'Space Mono',monospace;font-weight:700}
+.gold{color:var(--gold)}
+svg.i{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:square;stroke-linejoin:miter;overflow:visible}
+
+/* ---------- shared masthead (countdown) ---------- */
+.logo{position:absolute;left:80px;top:80px;height:34px;width:auto}
+.tall .logo{top:260px}
+.series{position:absolute;left:80px;top:142px;font-weight:900;font-size:58px;line-height:1;letter-spacing:-.04em;text-transform:uppercase;white-space:nowrap}
+.eyebrow{position:absolute;left:80px;right:80px;font-family:'Space Mono',monospace;font-weight:700;font-size:30px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.eyebrow::before{content:'';display:inline-block;width:.32em;height:.85em;background:var(--tk,var(--green));transform:skewX(-13deg);margin-right:.5em;vertical-align:-.06em}
+/* lockup svgs carry .5S clear space; left:-S/2+80 puts the block on the 80px margin */
+.lock{position:absolute;width:auto}
+
+/* ---------- ticks (countdown) ---------- */
+.ticks{position:absolute;left:84px;display:flex;gap:12px}
+.tick{display:flex;align-items:center;justify-content:center;width:var(--tw,78px);height:var(--th,46px);border:2px solid var(--line);border-radius:5px;transform:skewX(-13deg)}
+.tick span{transform:skewX(13deg);font-family:'Space Mono',monospace;font-weight:700;font-size:var(--tf,22px);color:var(--dim);line-height:1}
+.tick.on{background:var(--green);border-color:var(--green)}
+.tick.on span{color:var(--ground)}
+
+/* ---------- the field with the call to action (13°: 1080·tan13 = 249) ---------- */
+.field{position:absolute;left:0;right:0;bottom:0;background:var(--fill,var(--green));clip-path:polygon(0 249px,100% 0,100% 100%,0 100%)}
+.fcta{position:absolute;left:80px;bottom:80px;color:var(--ground)}
+.fcta .k{font-weight:900;font-size:58px;line-height:1;letter-spacing:-.04em;text-transform:uppercase}
+.fcta .u{font-family:'Space Mono',monospace;font-weight:700;font-size:36px;margin-top:12px}
+
+/* ---------- the strip (countdown rank slide) ---------- */
+.strip{position:absolute;left:80px;right:80px;bottom:80px;height:150px;border-top:2px solid var(--line);padding-top:30px}
+.strip .q{font-weight:900;font-size:36px;line-height:1;letter-spacing:-.03em;text-transform:uppercase}
+.strip .u{font-family:'Space Mono',monospace;font-weight:700;font-size:30px;color:var(--dim);margin-top:14px}
+.btn{position:absolute;right:10px;bottom:0;background:var(--green);color:var(--ground);transform:skewX(-13deg);border-radius:6px;padding:0 32px;height:72px;display:flex;align-items:center;gap:14px}
+.btn > *{transform:skewX(13deg)}
+.btn span{font-weight:900;font-size:34px;letter-spacing:-.03em;text-transform:uppercase;white-space:nowrap}
+.btn svg{width:36px;height:36px;stroke-width:2.6}
+
+/* ---------- display type ---------- */
+.head{position:absolute;left:80px;right:80px;font-weight:900;letter-spacing:-.04em;line-height:.92}
+.body{position:absolute;left:80px;font-weight:500;line-height:1.28;letter-spacing:-.01em}
+.body .mono{font-weight:700;letter-spacing:-.02em}
+
+/* ============ 1 · profile picture ============ */
+/* The mark's far corners are 0.644·W from its centre (W = drawn width), so W=760 puts them at
+   489px — inside the 540px circle with the rounded corners clear of the edge. */
+.p-avatar img{position:absolute;left:160px;top:231px;width:760px;height:auto}
+
+/* ============ 2 · highlight covers ============ */
+/* The block (S=520, the master geometry: skew 13°, r=.04S) centred on the frame; the icon upright
+   inside it in ground ink. Far corners sit 412px from centre, so the cover survives any circle
+   from ~830px up, whatever crop Instagram offers. */
+.hl{position:absolute;left:50%;top:50%;width:520px;height:520px;margin:-260px 0 0 -260px;background:var(--fill,var(--green));border-radius:21px;transform:skewX(-13deg)}
+.hl-icon{position:absolute;left:50%;top:50%;width:300px;height:300px;margin:-150px 0 0 -150px;color:var(--ground)}
+
+/* ============ 3a · intro ============ */
+.p-intro .head{top:410px;font-size:104px}
+.p-intro .body{top:640px;width:860px;font-size:42px}
+
+/* ============ 3b · How it works ============ */
+.how .ticks{top:226px}
+.how .step{position:absolute;left:80px;right:80px;top:320px}
+.how .step h2{margin:0;font-weight:900;font-size:96px;line-height:.94;letter-spacing:-.04em}
+.how .step p{margin:30px 0 0;font-weight:500;font-size:40px;line-height:1.28;letter-spacing:-.01em;max-width:880px}
+.how .vis{position:absolute;left:80px;right:80px}
+.vlabel{font-family:'Space Mono',monospace;font-weight:700;font-size:26px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:22px}
+.dial{display:flex;gap:12px;margin-left:4px}
+.dial div{width:78px;height:96px;border:2px solid var(--line);border-radius:6px;transform:skewX(-13deg);display:flex;align-items:center;justify-content:center}
+.dial span{transform:skewX(13deg);font-family:'Space Mono',monospace;font-weight:700;font-size:44px;color:var(--dim)}
+.dial .on{background:var(--green);border-color:var(--green)}
+.dial .on span{color:var(--ground)}
+.guess{display:inline-flex;align-items:center;justify-content:center;width:380px;height:190px;border:3px solid var(--green);border-radius:8px;transform:skewX(-13deg);margin-left:24px}
+.guess span{transform:skewX(13deg);font-family:'Space Mono',monospace;font-weight:700;font-size:140px;line-height:1;color:var(--green);letter-spacing:-.04em}
+.bull{display:flex;align-items:center;gap:44px}
+.bull svg{width:230px;height:230px;color:var(--green);flex:none}
+.bull .t{font-weight:900;font-size:76px;line-height:.92;letter-spacing:-.04em;text-transform:uppercase}
+.bull .t small{display:block;font-family:'Space Mono',monospace;font-weight:700;font-size:28px;letter-spacing:.06em;color:var(--dim);margin-top:16px;text-transform:none}
+.top4{display:flex;align-items:center;gap:40px}
+.top4 svg{width:150px;height:150px;flex:none}
+.top4 .t{font-weight:900;font-size:52px;line-height:1.02;letter-spacing:-.04em;max-width:680px}
+
+/* ============ 3c · What the numbers mean (carousel) ============ */
+/* The operator's meaning for each rating, verbatim (track-report.js RATING_MEANINGS). One row a
+   rating: the number in a filled 13° tick, the meaning beside it. No colour ranks the scale: every
+   number is green (scoring); 9 is not first place, so it is not gold. */
+.nums .series{white-space:normal}
+.nums .ticks{top:226px}
+.nrows{position:absolute;left:84px;right:80px;top:var(--nt,330px);display:flex;flex-direction:column;gap:var(--ng,26px)}
+.nrow{display:flex;align-items:center;gap:40px}
+.nrow .n{flex:none;width:104px;height:104px;background:var(--green);border-radius:6px;transform:skewX(-13deg);display:flex;align-items:center;justify-content:center}
+.nrow .n span{transform:skewX(13deg);font-family:'Space Mono',monospace;font-weight:700;font-size:64px;line-height:1;color:var(--ground)}
+.nrow .m{font-weight:900;font-size:50px;line-height:1;letter-spacing:-.035em}
+.nrow .m.long{font-size:42px;line-height:1.08}
+.p-numbers-1 .head{top:330px;font-size:118px;line-height:.9}
+.p-numbers-1 .body{top:600px;width:880px;font-size:42px}
+.p-numbers-1 .dial{position:absolute;left:84px;top:800px}
+.p-numbers-1 .dial div{border-color:var(--green)}
+.p-numbers-1 .dial span{color:var(--ink)}
+
+/* ============ 3d · artists ============ */
+.p-artists .eyebrow{top:170px}
+.p-artists .head{top:236px;font-size:104px}
+.p-artists .body{top:560px;width:880px;font-size:40px}
+.p-artists .prize{position:absolute;left:80px;width:880px;top:700px;font-weight:900;font-size:48px;line-height:1.08;letter-spacing:-.03em}
+
+/* ============ 3e · schedule ============ */
+.p-schedule .eyebrow{top:170px}
+.p-schedule .head{top:236px;font-size:96px}
+.p-schedule .time{position:absolute;left:72px;top:440px;font-family:'Space Mono',monospace;font-weight:700;font-size:166px;line-height:1;letter-spacing:-.06em;color:var(--green);white-space:nowrap}
+.p-schedule .ticks{top:720px;gap:8px}
+.p-schedule .tick{border-color:var(--green);background:var(--green)}
+.p-schedule .hrs{position:absolute;left:80px;top:810px;font-weight:900;font-size:56px;line-height:1;letter-spacing:-.04em}
+.p-schedule .hrs .mono{letter-spacing:-.05em;font-size:62px}
+
+/* ============ 3f · join ============ */
+.p-join .head{top:180px;font-size:150px;line-height:.88}
+.p-join .body{top:480px;width:900px;font-size:42px}
+.p-join .fcta .k{font-size:132px;text-transform:none;letter-spacing:-.05em}
+.p-join .fcta .u{font-size:40px;margin-top:20px}
+.p-join .fcta .s{font-weight:900;font-size:44px;letter-spacing:-.03em;margin-bottom:18px}
+
+/* ============ 4 · stories ============ */
+.story .lock{left:20px;top:300px;height:240px}         /* S=120 */
+.story .head{top:540px;font-size:120px;line-height:.9}
+.story .body{top:var(--bt,890px);width:900px;font-size:50px}
+/* field 820 tall: the cut runs 1151 (right) to 1400 (left), so the two-line CTA sits wholly on green and the
+   link-sticker box (560 wide, centred) clears the cut at its right edge */
+.story .field{height:820px;clip-path:polygon(0 300px,100% 51px,100% 100%,0 100%)}
+.story .fcta{bottom:340px}                              /* above the reply bar */
+.story .fcta .k{font-size:64px}
+.story .fcta .u{font-size:44px}
+.p-story-results .eyebrow{top:540px;font-size:34px}
+.p-story-results .head{top:600px}
+.p-story-results .body{top:var(--bt,740px)}
+
+/* ---------- review guides (never in a posted PNG) ---------- */
+.g{display:none;position:absolute;pointer-events:none}
+.guides .g{display:block}
+.g.zone{left:0;right:0;background:rgba(255,93,108,.18);border:2px dashed #FF5D6C}
+.g.sticker{left:50%;width:560px;margin-left:-280px;height:150px;border:4px dashed var(--ink);border-radius:20px;display:none}
+.guides .g.sticker{display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-weight:700;font-size:30px;color:var(--ink);letter-spacing:.06em}
+.g.circle{border:4px dashed #FF5D6C;border-radius:50%}
+.g.crop{top:0;bottom:0;width:34px;background:rgba(255,93,108,.35)}
+</style>
+</head>
+<body>
+<!-- the stroke set: masters from ../icons/anr-icons.svg verbatim (join, submit, trophy and bullseye
+     were added to build.py 2026-10-20 for this kit) -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-vote" viewBox="0 0 24 24"><path d="M4 15 A8 8 0 0 1 20 15"/><path d="M12 15 L17.5 9.5"/><path d="M3 19 H21"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 20 H21"/><path d="M5 20 V12 H9 V20"/><path d="M10 20 V5 H14 V20"/><path d="M15 20 V14 H19 V20"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12 H20"/><path d="M13 5 L20 12 L13 19"/></symbol>
+    <symbol id="i-join" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21 A7 7 0 0 1 16 21"/><path d="M19 8 V14 M16 11 H22"/></symbol>
+    <symbol id="i-submit" viewBox="0 0 24 24"><path d="M12 16 V3"/><path d="M6 9 L12 3 L18 9"/><path d="M4 20 H20"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 3 H17 V9 A5 5 0 0 1 7 9 Z"/><path d="M7 5 H3 V7 A4 4 0 0 0 7 11"/><path d="M17 5 H21 V7 A4 4 0 0 1 17 11"/><path d="M12 14 V18"/><path d="M7 21 H17 V18 H7 Z"/></symbol>
+    <symbol id="i-bullseye" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+  </defs>
+</svg>
+
+<div id="c">
+
+  <!-- 1 · profile picture -->
+  <div class="p p-avatar" data-p="avatar">
+    <img src="../mark/anr-mark.svg" alt="A&amp;R">
+    <div class="g circle" style="left:0;top:0;width:1080px;height:1080px"></div>
+  </div>
+
+  <!-- 2 · highlight covers (filled by script) -->
+  <div class="p p-hl" data-p="hl">
+    <div class="hl"></div>
+    <svg class="i hl-icon"><use id="hlUse" href="#i-vote"/></svg>
+    <div class="g circle" style="left:0;top:420px;width:1080px;height:1080px"></div>
+  </div>
+
+  <!-- 3a · intro -->
+  <div class="p p-intro" data-p="intro">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <img class="lock" src="../lockups/anr-team-h.svg" style="left:5px;top:130px;height:300px" alt="A&amp;R Team">
+    <div class="head">This is the<br>A&amp;R Team.</div>
+    <div class="body">A team of listeners who rate new records from independent artists every day and earn points for reading the room.</div>
+    <div class="field" style="height:470px"></div>
+    <div class="fcta"><div class="k">Join the A&amp;R Team</div><div class="u">makinitmag.com/ANR</div></div>
+  </div>
+
+  <!-- 3b · How it works, four slides -->
+  <div class="p how" data-p="how-1">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="series">How it works</div>
+    <div class="ticks" data-lit="1"></div>
+    <div class="step"><h2>Rate each record from 0 to 9.</h2><p>New records from independent artists. Listen, then give each one your rating.</p></div>
+    <div class="vis" style="top:790px"><div class="vlabel">Your rating</div><div class="dial" data-lit="7"></div></div>
+    <div class="strip"><div class="q">Next: Predict the Average</div><div class="u">makinitmag.com/ANR</div><div class="btn"><span>Next</span><svg class="i"><use href="#i-arrow"/></svg></div></div>
+  </div>
+  <div class="p how" data-p="how-2">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="series">How it works</div>
+    <div class="ticks" data-lit="2"></div>
+    <div class="step"><h2>Predict the Average.</h2><p>Guess the average rating the whole A&amp;R Team will give the record.</p></div>
+    <div class="vis" style="top:760px"><div class="vlabel">Your prediction</div><div class="guess"><span>?.?</span></div></div>
+    <div class="strip"><div class="q">Next: Score points</div><div class="u">makinitmag.com/ANR</div><div class="btn"><span>Next</span><svg class="i"><use href="#i-arrow"/></svg></div></div>
+  </div>
+  <div class="p how" data-p="how-3">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="series">How it works</div>
+    <div class="ticks" data-lit="3"></div>
+    <div class="step"><h2>Score points on how close you were.</h2><p>The closer your prediction is to the team's average, the more points you score.</p></div>
+    <div class="vis" style="top:800px"><div class="bull"><svg class="i"><use href="#i-bullseye"/></svg><div class="t">Bullseye<small>An exact hit.</small></div></div></div>
+    <div class="strip"><div class="q">Next: The top A&amp;R</div><div class="u">makinitmag.com/ANR</div><div class="btn"><span>Next</span><svg class="i"><use href="#i-arrow"/></svg></div></div>
+  </div>
+  <div class="p how" data-p="how-4">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="series">How it works</div>
+    <div class="ticks" data-lit="4"></div>
+    <div class="step"><h2 style="font-size:80px">The top A&amp;R curates the Makin' It Approved playlist.</h2><p>Points add up every day you rate.</p></div>
+    <div class="vis" style="top:700px"><div class="top4"><svg class="i gold"><use href="#i-trophy"/></svg><div class="t">And is guest editor for Makin' It Magazine.</div></div></div>
+    <div class="field" style="height:470px"></div>
+    <div class="fcta"><div class="k">Join the A&amp;R Team</div><div class="u">makinitmag.com/ANR</div></div>
+  </div>
+
+  <!-- 3c · What the numbers mean, three slides -->
+  <div class="p nums p-numbers-1" data-p="numbers-1">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="series">What the numbers mean</div>
+    <div class="ticks" data-lit="1" data-of="3"></div>
+    <div class="head">What each rating means.</div>
+    <div class="body">Every A&amp;R rates on the same scale, so a 6 means the same thing to everyone.</div>
+    <div class="dial" data-lit="-1"></div>
+    <div class="strip"><div class="q">Next: 0 to 4</div><div class="u">makinitmag.com/ANR</div><div class="btn"><span>Next</span><svg class="i"><use href="#i-arrow"/></svg></div></div>
+  </div>
+  <div class="p nums" data-p="numbers-2">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="series">What the numbers mean</div>
+    <div class="ticks" data-lit="2" data-of="3"></div>
+    <div class="nrows" data-from="0" style="--nt:340px;--ng:34px"></div>
+    <div class="strip"><div class="q">Next: 5 to 9</div><div class="u">makinitmag.com/ANR</div><div class="btn"><span>Next</span><svg class="i"><use href="#i-arrow"/></svg></div></div>
+  </div>
+  <div class="p nums" data-p="numbers-3">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="series">What the numbers mean</div>
+    <div class="ticks" data-lit="3" data-of="3"></div>
+    <div class="nrows" data-from="5" style="--nt:310px;--ng:22px"></div>
+    <div class="field" style="height:470px"></div>
+    <div class="fcta"><div class="k">Join the A&amp;R Team</div><div class="u">makinitmag.com/ANR</div></div>
+  </div>
+
+  <!-- 3d · artists -->
+  <div class="p p-artists" data-p="artists">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="eyebrow">Independent artists</div>
+    <div class="head">Submit your music for a free review.</div>
+    <div class="body">Every record is rated by the A&amp;R Team, and every rated artist gets a Track Report.</div>
+    <div class="prize">Submit for a report and a chance to be featured in the Makin' It HOT 100.</div>
+    <div class="field" style="height:470px"></div>
+    <div class="fcta"><div class="k">Submit for free</div><div class="u">makinitmag.com/review</div></div>
+  </div>
+
+  <!-- 3e · schedule -->
+  <div class="p p-schedule" data-p="schedule">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="eyebrow">Every day</div>
+    <div class="head">New records open every day at</div>
+    <div class="time">6:00 PM ET</div>
+    <div class="ticks" data-hours="24"></div>
+    <div class="hrs">You have <span class="mono">24</span> hours to rate them.</div>
+    <div class="strip"><div class="q">Join the A&amp;R Team</div><div class="u">makinitmag.com/ANR</div></div>
+  </div>
+
+  <!-- 3f · join -->
+  <div class="p p-join" data-p="join">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <div class="head">Join the<br>A&amp;R Team.</div>
+    <div class="body">Rate new records every day. Predict the average. Score points.</div>
+    <div class="field" style="height:720px"></div>
+    <div class="fcta"><div class="s">To join, comment</div><div class="k">#ANR</div><div class="u">or go to makinitmag.com/ANR</div></div>
+  </div>
+
+  <!-- 4 · stories -->
+  <div class="p story p-story-open" data-p="story-open">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <img class="lock" src="../lockups/anr-team-h.svg" alt="A&amp;R Team">
+    <div class="head">Today's records are open.</div>
+    <div class="body">Rate them before <span class="mono">6:00 PM ET</span> tomorrow.</div>
+    <div class="g sticker" style="top:1045px">LINK STICKER</div>
+    <div class="field"></div>
+    <div class="fcta"><div class="k">Rate today's records</div><div class="u">makinitmag.com/ANR</div></div>
+    <div class="g zone" style="top:0;height:250px"></div><div class="g zone" style="bottom:0;height:340px"></div>
+  </div>
+  <div class="p story p-story-join" data-p="story-join">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <img class="lock" src="../lockups/anr-team-h.svg" alt="A&amp;R Team">
+    <div class="head">Join the<br>A&amp;R Team.</div>
+    <div class="body" style="font-size:46px;--bt:790px">A team of listeners who rate new records from independent artists every day and earn points for reading the room.</div>
+    <div class="g sticker" style="top:1000px">LINK STICKER</div>
+    <div class="field"></div>
+    <div class="fcta"><div class="k">Join the team</div><div class="u">makinitmag.com/ANR</div></div>
+    <div class="g zone" style="top:0;height:250px"></div><div class="g zone" style="bottom:0;height:340px"></div>
+  </div>
+
+  <div class="p story p-story-results" data-p="story-results">
+    <img class="logo" src="../assets/makinit-logo-white.png" alt="Makin' It">
+    <img class="lock" src="../lockups/anr-team-h.svg" alt="A&amp;R Team">
+    <div class="eyebrow" id="resDay">Daily Drop</div>
+    <div class="head">Results are up.</div>
+    <div class="body">See where each record placed in the Daily Countdown, and see your points and grade.</div>
+    <div class="g sticker" style="top:1045px">LINK STICKER</div>
+    <div class="field"></div>
+    <div class="fcta"><div class="k">See your results</div><div class="u">makinitmag.com/ANR</div></div>
+    <div class="g zone" style="top:0;height:250px"></div><div class="g zone" style="bottom:0;height:340px"></div>
+  </div>
+
+  <!-- grid-crop guide for feed posts -->
+  <div class="g crop" style="left:0"></div><div class="g crop" style="right:0"></div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const P = q.get('p') || 'intro';
+const c = document.getElementById('c');
+if (q.get('guides') === '1') c.classList.add('guides');
+
+// Highlight covers: one block, one icon, one meaning-colour each.
+const HL = {
+  'hl-how':     { icon: 'i-vote',    fill: 'var(--green)'  },   // the rating dial — the mechanic
+  'hl-join':    { icon: 'i-join',    fill: 'var(--green)'  },
+  'hl-submit':  { icon: 'i-submit',  fill: 'var(--green)'  },
+  'hl-hot100':  { icon: 'i-chart',   fill: 'var(--green)'  },   // the Countdown posts
+  'hl-results': { icon: 'i-bullseye', fill: 'var(--green)' },   // your score
+  'hl-winners': { icon: 'i-trophy',  fill: 'var(--gold)'   },   // first place
+};
+let key = P;
+if (HL[P]) {
+  key = 'hl';
+  c.style.setProperty('--fill', HL[P].fill);
+  document.getElementById('hlUse').setAttribute('href', '#' + HL[P].icon);
+}
+const el = document.querySelector('.p[data-p="' + key + '"]');
+el.classList.add('on');
+c.className = (c.className + ' ' + (P === 'avatar' ? 'sq' : (HL[P] || P.startsWith('story')) ? 'tall' : 'feed')).trim();
+if (!c.classList.contains('feed')) document.querySelectorAll('.g.crop').forEach(n => n.remove());
+if (el.style.getPropertyValue('--fill')) c.style.setProperty('--fill', el.style.getPropertyValue('--fill'));
+
+// How it works step ticks: 01–04, the current step lit.
+el.querySelectorAll('.ticks[data-lit]').forEach(t => {
+  const lit = +t.dataset.lit;
+  const of = +(t.dataset.of || 4);
+  t.innerHTML = Array.from({ length: of }, (_, i) => i + 1).map(n => '<div class="tick' + (n === lit ? ' on' : '') + '"><span>0' + n + '</span></div>').join('');
+});
+// The 0–9 dial. The lit value is ONE A&R's example rating, never a room figure.
+el.querySelectorAll('.dial').forEach(d => {
+  const lit = +d.dataset.lit;
+  d.innerHTML = Array.from({ length: 10 }, (_, n) => '<div' + (n === lit ? ' class="on"' : '') + '><span>' + n + '</span></div>').join('');
+});
+// What the numbers mean: the operator's words, verbatim (track-report.js RATING_MEANINGS).
+const MEANINGS = ['Scrap it!', 'Take the best ideas... Scrap the rest.', 'There\u2019s something there but it needs significant work',
+  'Potential release', 'Solid release', 'Strong release', 'Potential Single', 'Single', 'Strong Single', 'It\u2019s a Hit!'];
+el.querySelectorAll('.nrows').forEach(r => {
+  const from = +r.dataset.from;
+  r.innerHTML = MEANINGS.slice(from, from + 5).map((m, i) => '<div class="nrow"><div class="n"><span>' + (from + i) + '</span></div><div class="m' + (m.length > 24 ? ' long' : '') + '">' + m + '</div></div>').join('');
+});
+// The results story's day line: the release date the set is named by ("Daily Drop · Oct 16, 2026").
+if (q.get('day')) document.getElementById('resDay').textContent = 'Daily Drop · ' + q.get('day');
+// 24 hour ticks, one row inside the 920px measure.
+el.querySelectorAll('.ticks[data-hours]').forEach(t => {
+  const n = +t.dataset.hours, gap = 8, w = (912 - gap * (n - 1)) / n;
+  t.style.setProperty('--tw', w + 'px'); t.style.setProperty('--th', '56px');
+  t.innerHTML = '<div class="tick"></div>'.repeat(n);
+});
+document.title = '@TheAnRTeam — ' + P;
+</script>
+</body>
+</html>
