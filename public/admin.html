@@ -2994,7 +2994,7 @@ function renderDlRecords(){
     const cls = [alarm ? 'alarm' : '', r.top_supporter ? 'top' : ''].filter(Boolean).join(' ');
     return `<tr id="dlrow-${r.id}"${cls?` class="${cls}"`:''}>
       <td class="num muted" style="width:34px">${bySc ? (r.rank != null ? '#' + r.rank : '—') : r.idx}</td>
-      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')} · ${dlIgLink(r.instagram)}</div></td>
+      <td style="width:32%"><div class="dlttl">${esc(r.song_title||'')}</div><div class="dlart">${esc(r.song_artist||'')} · ${dlIgLink(r.instagram)}${r.hot100 === false ? ' · <span class="muted">not on the HOT 100</span>' : ''}</div></td>
       <td>${dlSupport(r)}</td>
       <td>${dlPlayLink(r.play_url)}</td>
       <td class="num" style="color:var(--signal);font-weight:700">${score}</td>

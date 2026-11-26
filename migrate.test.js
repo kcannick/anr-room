@@ -423,6 +423,19 @@ async function freshDb() {
   const applied42 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
   ok('042 idempotent (not duplicated)', applied42.filter(x => x === '042_daily_asana_tasks').length === 1, JSON.stringify(applied42));
 
+  // ── 056: the submit form's stage / AI / HOT 100 answers on each round ─────────
+  const rc56 = await db.all('PRAGMA table_info(rounds)', []);
+  const c56 = (n) => rc56.find(c => c.name === n);
+  ok('056 creates rounds.song_stage, default \'\'', c56('song_stage') && /^''$/.test(String(c56('song_stage').dflt_value)), JSON.stringify(c56('song_stage')));
+  ok('056 creates rounds.uses_ai, default \'\'', c56('uses_ai') && /^''$/.test(String(c56('uses_ai').dflt_value)), JSON.stringify(c56('uses_ai')));
+  ok('056 creates rounds.hot100, default 1 (on the HOT 100)', c56('hot100') && String(c56('hot100').dflt_value) === '1', JSON.stringify(c56('hot100')));
+  await db.run("INSERT INTO rounds (id, session_id, idx, song_title, created_at) VALUES ('r056', 's056', 1, 'Old Row', 1)", []);
+  const r056 = await db.get("SELECT song_stage, uses_ai, hot100 FROM rounds WHERE id = 'r056'", []);
+  ok('an old-style insert reads as unanswered and on the HOT 100', r056.song_stage === '' && r056.uses_ai === '' && Number(r056.hot100) === 1, JSON.stringify(r056));
+  await db.init();
+  const applied56 = (await db.all('SELECT id FROM _migrations', [])).map(r => r.id);
+  ok('056 idempotent (not duplicated)', applied56.filter(x => x === '056_song_stage_ai_hot100').length === 1, JSON.stringify(applied56));
+
   clean();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
