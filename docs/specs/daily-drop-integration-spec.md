@@ -86,7 +86,10 @@ the lower-value integration this one's blast radius.
   "phone": "(305) 555-0142",
   "note": "Hey, this isn't mixed. Just recorded it on Bandlab last night.",
   "playUrl": "https://cdn.makinitmag.com/review/9182.mp3",
-  "scout": { "uid": "4471", "email": "andre@example.com" }
+  "scout": { "uid": "4471", "email": "andre@example.com" },
+  "stage": "done",
+  "usesAi": "no",
+  "hot100": true
 }
 ```
 
@@ -106,6 +109,9 @@ the lower-value integration this one's blast radius.
 | `scout.uid` | no | 60 | The referring A&R's **A&R Team user id**, verbatim from the `?ref=` link. See §3. |
 | `scout.email` | no | 200 | Only for links issued under the earlier Drupal-uid form. See §3. |
 | `amount` | no | ≥ 0, ≤ 100000 | **The support level — what the artist paid to submit, in dollars.** `0` for a free submission; the pay-what-you-want amount for a paid one (`25`, `"25.50"` and `"$25"` all work). Stored in cents. **Omit it only when you genuinely do not know**: absent prints as "—" on the console, never as free. Unusable → nulls out with a `warnings[]` entry, never fatal. Drives the recap: free records play for a minute, paid ones in full, and the day's highest amount is marked **top supporter**. Not scored, not ranked, never shown to A&Rs or artists. |
+| `stage` | no | `released` \| `done` \| `wip` | **The artist's answer: where the record is** (056, 2026-11-26). `done` = done, not released yet; `wip` = still working on it. Shown to the A&R under the artist line while rating as "Released" / "Done, not released yet" / "Still working on it". Omit (or `""`) for a submission from before the question existed: nothing is shown. Anything else reads as unanswered, with a `warnings[]` entry. |
+| `usesAi` | no | `yes` \| `no` | **Does the record use AI** (056). Shown to the A&R as "Uses AI" / "No AI". Omit (or `""`) when unanswered. Also `uses_ai`; `true`/`false` work too. Unrecognized → unanswered, with a warning. |
+| `hot100` | no | boolean | **`false` = the artist unticked "Put my song up for the HOT 100"** (056). The record is rated, scored and reported exactly as usual, and is left off every HOT 100 list: the Daily Countdown carousel and the HOT 100 charts (monthly, any date range, CSV, caption, slides, chart notices). Omitted = `true` (send `true` for entries from before the question). Only `false`, `0`, `"false"`, `"0"` or `"no"` opt out. |
 
 Unknown fields are ignored. Field names are accepted in both camelCase and snake_case where
 noted; prefer camelCase.
@@ -323,7 +329,10 @@ record into the host's console. It is unchanged in shape but now accepts the sam
 fields, and **should be updated to send them**:
 
 `title`, `artist`, `instagram`, `email`, `phone`, **`note`**, **`playUrl`**, **`profileUrl`**,
-**`ref`**, **`url`**, **`scout.uid`**
+**`ref`**, **`url`**, **`scout.uid`**, **`stage`**, **`usesAi`**, **`hot100`** (same values and
+defaults as the daily batch; a record auto-staged into a room in auto mode carries them. The
+console's "Pull latest submission" form does NOT carry them yet, so a record queued by hand
+from it is on the HOT 100.)
 
 Auth: `X-Ingest-Token: <INGEST_TOKEN>` (the *other* secret) or `body.token`. CORS is allowed from
 `makinitmag.com` / `www.makinitmag.com`, because this one is called from a browser button.

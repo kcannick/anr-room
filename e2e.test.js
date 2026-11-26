@@ -2620,7 +2620,9 @@ async function startVoting(sessionId, headers, minutes = 5) {
 
     // Quiet hours do NOT apply: send at 3AM ET and the texts still go.
     const realNow = Date.now;
-    const threeAm = srv._etEpoch('2026-10-25', 3, 0);
+    // 3AM ET TODAY, not a fixed date: the faked clock also slides the admin token's 30-day
+    // expiry (userFromAuth), and a fixed date more than 30 days back expired BOOTH mid-suite.
+    const threeAm = srv._etEpoch(srv._etDay(), 3, 0);
     Date.now = () => threeAm;
     let s1;
     try { s1 = await call('/api/admin/live-call', { s: LS, send: true }, 'POST', BOOTH); } finally { Date.now = realNow; }
@@ -4013,6 +4015,117 @@ async function startVoting(sessionId, headers, minutes = 5) {
   ok('idx stays 1..n with no collision and no hole',
     afterPush.map(r => Number(r.idx)).join() === '1,2,3', afterPush.map(r => r.idx).join());
   await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), refSid]);
+
+  {
+  console.log('\n— A&R Daily: stage, AI and the HOT 100 opt-out (056) —');
+  // Three answers from the site's submit form ride the daily push. stage + usesAi are song
+  // info for the A&R; hot100 = false takes the record off every HOT 100 list and NOTHING else.
+  ok('stage: only released/done/wip survive', srv._songStageOf('Done') === 'done' && srv._songStageOf('wip') === 'wip'
+    && srv._songStageOf('released') === 'released' && srv._songStageOf('mixed') === '' && srv._songStageOf(undefined) === '');
+  ok('usesAi: yes/no (and booleans); anything else is unanswered', srv._usesAiOf('YES') === 'yes' && srv._usesAiOf(false) === 'no'
+    && srv._usesAiOf('maybe') === '' && srv._usesAiOf(null) === '');
+  ok('hot100: only an explicit no opts out; missing is ON',
+    srv._hot100Of(false) === 0 && srv._hot100Of('false') === 0 && srv._hot100Of(0) === 0 && srv._hot100Of('0') === 0
+      && srv._hot100Of(true) === 1 && srv._hot100Of(undefined) === 1 && srv._hot100Of(null) === 1 && srv._hot100Of('') === 1);
+
+  const hDay = srv._etDay(Date.now() - 86400000);   // the reference-track day above, freed by its soft delete
+  const hPush = await call('/api/ingest/daily', { day: hDay, seriesId: serId, songs: [
+    song(61, { title: 'Opted Out Song', artist: 'Quiet Act', stage: 'done', usesAi: 'yes', hot100: false }),
+    song(62, { title: 'Charting Song', artist: 'Loud Act', stage: 'wip', uses_ai: 'no', hot100: true }),
+    song(63, { title: 'Old Site Song', artist: 'Legacy Act' }),   // an older site: no new keys at all
+    song(64, { title: 'Odd Answers Song', artist: 'Odd Act', stage: 'Mixed', usesAi: 'maybe', hot100: '' }),
+  ] }, 'POST', DTOK);
+  ok('a push with and without the new keys is accepted', hPush.status === 200 && hPush.d.rounds === 4, JSON.stringify(hPush.d));
+  ok('unrecognized answers warn (not fatal)',
+    (hPush.d.warnings || []).some(w => w.index === 3 && w.field === 'stage') && (hPush.d.warnings || []).some(w => w.index === 3 && w.field === 'usesAi'),
+    JSON.stringify(hPush.d.warnings));
+  const HSID = hPush.d.sessionId;
+  const hRow = async (t) => dDb.get('SELECT id, song_stage, uses_ai, hot100 FROM rounds WHERE session_id = ? AND song_title = ?', [HSID, t]);
+  const hOut = await hRow('Opted Out Song'), hIn = await hRow('Charting Song'), hOld = await hRow('Old Site Song'), hOdd = await hRow('Odd Answers Song');
+  ok('stored: done / yes / off the HOT 100', hOut.song_stage === 'done' && hOut.uses_ai === 'yes' && Number(hOut.hot100) === 0, JSON.stringify(hOut));
+  ok('stored: wip / no (snake_case uses_ai) / on the HOT 100', hIn.song_stage === 'wip' && hIn.uses_ai === 'no' && Number(hIn.hot100) === 1, JSON.stringify(hIn));
+  ok('stored: missing keys read as "" / "" / on the HOT 100', hOld.song_stage === '' && hOld.uses_ai === '' && Number(hOld.hot100) === 1, JSON.stringify(hOld));
+  ok('stored: unrecognized answers read as unanswered, still on the HOT 100', hOdd.song_stage === '' && hOdd.uses_ai === '' && Number(hOdd.hot100) === 1, JSON.stringify(hOdd));
+
+  // The A&R's rating screen gets the plain labels, and nothing when unanswered.
+  await dDb.run("UPDATE sessions SET status = 'live', async_state = 'open', window_opens_at = ?, window_closes_at = ? WHERE id = ?",
+    [Date.now() - 1000, Date.now() + 3600000, HSID]);
+  await dDb.run("UPDATE rounds SET status = 'voting' WHERE session_id = ?", [HSID]);
+  const hrq = await call('/api/join/request', { sessionId: HSID, email: 'stage.ai@test.com' });
+  const htok = (await call('/api/join/verify', { sessionId: HSID, email: 'stage.ai@test.com', code: hrq.d.devCode, name: 'Sage' })).d.token;
+  const hState = (await call('/api/me/state', null, 'GET', { 'X-Player-Token': htok })).d;
+  const hq = (t) => (hState.queue || []).find(q => q.song_title === t) || {};
+  ok('the A&R sees "Done, not released yet" + "Uses AI"', hq('Opted Out Song').stage_label === 'Done, not released yet' && hq('Opted Out Song').ai_label === 'Uses AI', JSON.stringify(hq('Opted Out Song')));
+  ok('the A&R sees "Still working on it" + "No AI"', hq('Charting Song').stage_label === 'Still working on it' && hq('Charting Song').ai_label === 'No AI', JSON.stringify(hq('Charting Song')));
+  ok('an unanswered record shows nothing', hq('Old Site Song').stage_label === null && hq('Old Site Song').ai_label === null, JSON.stringify(hq('Old Site Song')));
+  ok('the HOT 100 choice never reaches the A&R', !/hot100/i.test(JSON.stringify(hState)));
+  const dailyHtml = fs.readFileSync('./public/daily.html', 'utf8');
+  ok('daily.html renders the labels under the artist line, hidden when empty',
+    /id="qInfo"/.test(dailyHtml) && /r\.stage_label, r\.ai_label/.test(dailyHtml) && /\$\('#qInfo'\)\.classList\.toggle\('hide', !info\)/.test(dailyHtml));
+  ok('the released label is the operator\'s word', srv._songStageLabels.released === 'Released');
+
+  // Score all four identically so any difference downstream is the flag and nothing else.
+  await dDb.run("UPDATE rounds SET status = 'ratified', room_average = 8.0 WHERE session_id = ?", [HSID]);
+  const hPar = await dDb.get('SELECT id FROM participants LIMIT 1', []);
+  for (const r of await dDb.all('SELECT id FROM rounds WHERE session_id = ?', [HSID])) {
+    await dDb.run('INSERT INTO votes (id, round_id, participant_id, taste, predict, locked_at) VALUES (?,?,?,?,?,?)',
+      ['v_h100_' + r.id, r.id, hPar.id, 8, 8.0, Date.now()]);
+  }
+  const hSess = await dDb.get('SELECT * FROM sessions WHERE id = ?', [HSID]);
+
+  // 1. The Daily Countdown carousel.
+  const hCd = await srv._countdownCarouselData(hSess);
+  const cdTitles = (hCd && hCd.records || []).map(r => r.title);
+  ok('Daily Countdown: the opted-out song is left off', cdTitles.length === 3 && !cdTitles.includes('Opted Out Song'), JSON.stringify(cdTitles));
+  ok('Daily Countdown: ranks close up 1..3 with no gap', hCd && hCd.records.map(r => r.rank).join() === '1,2,3' && hCd.slides[0].count === 3, JSON.stringify(hCd && hCd.records));
+  ok('Daily Countdown: no slide names it', !/Opted Out Song|Quiet Act/.test(JSON.stringify(hCd && hCd.slides)));
+
+  // 2. The HOT 100 charts — all time, the monthly chart, a date range (the quarterly), CSV and caption.
+  const chartTitles = (d) => ((d && d.rows) || []).map(r => r.title).concat(((d && d.excluded) || []).map(r => r.title));
+  const hAll = (await call('/api/admin/charts?scope=all&mode=records&minVotes=0&limit=200', null, 'GET', BOOTH)).d;
+  ok('HOT 100 (all time): left off, while its day-mates chart', !chartTitles(hAll).includes('Opted Out Song') && chartTitles(hAll).includes('Charting Song') && chartTitles(hAll).includes('Old Site Song'), JSON.stringify(chartTitles(hAll).slice(0, 12)));
+  const hMonth = srv._etDay(Number(hSess.window_closes_at)).slice(0, 7);
+  const hMo = (await call(`/api/admin/charts?scope=month&month=${hMonth}&mode=records&minVotes=0&limit=200`, null, 'GET', BOOTH)).d;
+  ok('HOT 100 (monthly chart): left off', chartTitles(hMo).includes('Charting Song') && !chartTitles(hMo).includes('Opted Out Song'), JSON.stringify(chartTitles(hMo).slice(0, 12)));
+  const qFrom = Date.now() - 90 * 86400000, qTo = Date.now() + 86400000;
+  const hQ = (await call(`/api/admin/charts?scope=range&from=${qFrom}&to=${qTo}&mode=records&minVotes=0&limit=200`, null, 'GET', BOOTH)).d;
+  ok('HOT 100 (date range / quarterly): left off', chartTitles(hQ).includes('Charting Song') && !chartTitles(hQ).includes('Opted Out Song'), JSON.stringify(chartTitles(hQ).slice(0, 12)));
+  const hWk = (await call('/api/admin/charts?scope=all&mode=weekly1s&minVotes=0&limit=200', null, 'GET', BOOTH)).d;
+  ok('Room #1s: never the opted-out song', !JSON.stringify((hWk && hWk.rows) || []).includes('Opted Out Song'));
+  const hCsv = await fetch(base + '/api/admin/charts?scope=all&mode=records&minVotes=0&limit=200&format=csv', { headers: BOOTH }).then(r => r.text());
+  ok('HOT 100 CSV: left off', /Charting Song/.test(hCsv) && !/Opted Out Song/.test(hCsv));
+  const hCap = await fetch(base + '/api/admin/charts?scope=all&mode=records&minVotes=0&limit=200&format=caption', { headers: BOOTH }).then(r => r.text());
+  ok('HOT 100 caption: left off', hCap.length > 0 && !/Opted Out Song|Quiet Act/.test(hCap));
+
+  // 3. Everything else about the record is unchanged.
+  const hRep = await srv._songReportData(await dDb.get('SELECT * FROM rounds WHERE id = ?', [hOut.id]), hSess);
+  const hRepIn = await srv._songReportData(await dDb.get('SELECT * FROM rounds WHERE id = ?', [hIn.id]), hSess);
+  ok('its Track Report still builds, the same as a charting day-mate', !!hRep && JSON.stringify(Object.keys(hRep)) === JSON.stringify(Object.keys(hRepIn)), JSON.stringify(Object.keys(hRep || {})));
+  const hElig = await dDb.all(`SELECT song_title FROM rounds r WHERE r.session_id = ? AND r.status = 'ratified'
+       AND r.room_average IS NOT NULL AND COALESCE(r.is_reference,0) = 0
+       AND EXISTS (SELECT 1 FROM votes v WHERE v.round_id = r.id AND v.taste IS NOT NULL)`, [HSID]);
+  ok('it still queues an artist report', hElig.some(r => r.song_title === 'Opted Out Song'));
+  ok('its rating is untouched', Number((await dDb.get('SELECT room_average FROM rounds WHERE id = ?', [hOut.id])).room_average) === 8);
+  const hStat = (await call('/api/admin/daily/status?day=' + hDay, null, 'GET', BOOTH)).d;
+  const hsOut = (hStat.rounds || []).find(r => r.song_title === 'Opted Out Song');
+  const hsIn = (hStat.rounds || []).find(r => r.song_title === 'Charting Song');
+  ok('the console marks it "not on the HOT 100" (and only it)', hsOut && hsOut.hot100 === false && hsIn && hsIn.hot100 === true, JSON.stringify({ hsOut, hsIn }));
+
+  // A re-push of an unplayed day carries the answers too (the replace path is its own INSERT).
+  await dDb.run('DELETE FROM votes WHERE id LIKE ?', ['v_h100_%']);
+  await dDb.run("UPDATE sessions SET status='upcoming', async_state='scheduled' WHERE id = ?", [HSID]);
+  await dDb.run("UPDATE rounds SET status='pending', room_average=NULL WHERE session_id = ?", [HSID]);
+  const hRe = await call('/api/ingest/daily', { day: hDay, seriesId: serId, songs: [
+    song(65, { title: 'Repushed Out', stage: 'released', usesAi: 'no', hot100: false }), song(66, { title: 'Repushed Plain' })] }, 'POST', DTOK);
+  const hRe1 = await hRow('Repushed Out'), hRe2 = await hRow('Repushed Plain');
+  ok('a re-push stores them as well', hRe.d.replaced === true && hRe1 && hRe1.song_stage === 'released' && hRe1.uses_ai === 'no' && Number(hRe1.hot100) === 0
+    && hRe2 && hRe2.song_stage === '' && Number(hRe2.hot100) === 1, JSON.stringify({ d: hRe.d, hRe1, hRe2 }));
+  // A record added by hand to an unplayed day (addDropRound, the third INSERT).
+  const hAdd = await call('/api/admin/daily/round', { day: hDay, title: 'Hand Added', artist: 'Desk', playUrl: 'https://a.co/h.mp3', stage: 'wip', hot100: false }, 'POST', BOOTH);
+  const hAddRow = await hRow('Hand Added');
+  ok('a hand-added record carries them too', hAdd.status === 200 && hAddRow && hAddRow.song_stage === 'wip' && Number(hAddRow.hot100) === 0, JSON.stringify({ s: hAdd.status, d: hAdd.d, hAddRow }));
+  await dDb.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [Date.now(), HSID]);
+  }
 
   console.log('\n— A&R Daily: the digest never promises results it does not have —');
   // The complaint that produced this test: A&Rs reported "emails with no results". The

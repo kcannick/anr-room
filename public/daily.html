@@ -294,6 +294,8 @@ input[type=range]{width:100%;accent-color:var(--signal);height:30px;padding:0;ba
 
       <h2 style="font-size:23px;margin-top:15px;text-wrap:pretty" id="qTitle"></h2>
       <div class="dim" style="font-size:14px;margin-top:3px" id="qArtist"></div>
+      <!-- The artist's answers about the record (056): stage + AI, song info only. -->
+      <div class="faint hide" style="font-size:12.5px;margin-top:4px" id="qInfo"></div>
 
       <!-- The play link is the whole screen. target=_blank so the page never navigates
            away: on iOS the hand-off to Spotify leaves this alive, and coming back is the
@@ -870,6 +872,9 @@ function qPaint(){
   $('#qPos').textContent = 'Record ' + (qIndex + 1) + ' / ' + total;
   $('#qTitle').textContent = r.song_title || 'Untitled';
   $('#qArtist').textContent = r.song_artist || '';
+  const info = [r.stage_label, r.ai_label].filter(Boolean).join(' · ');
+  $('#qInfo').textContent = info;
+  $('#qInfo').classList.toggle('hide', !info);
 
   // rail: the segments are the navigation control
   const rail = $('#rail');

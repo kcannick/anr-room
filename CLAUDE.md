@@ -1410,6 +1410,17 @@ live on anr.makinitmag.com.
   as a count on /daily's done screen and My results (`streakFor`); the paid amount shows per day on
   published days only (it is a multiple of the sealed completion bonus). The weekly report counts
   it with the completion bonus. `REFERRALS-NOTES.md` says what retired.
+- **Stage, AI and the HOT 100 opt-out** (056, 2026-11-26, operator-approved form questions): the
+  daily push (and `/api/ingest/submission`) carries `stage` (released|done|wip), `usesAi` (yes|no,
+  also `uses_ai`) and `hot100` (boolean) per song → `rounds.song_stage` / `uses_ai` / `hot100`
+  (defaults '' / '' / 1; a missing key = an older site = the same defaults; only an explicit
+  false/0/"no" opts out). /daily shows the A&R "Done, not released yet · Uses AI" under the artist
+  line (`stage_label` / `ai_label`, null = nothing shown); the hot100 value never reaches a player.
+  `hot100 = 0` is ONE predicate, `HOT100_SQL`, on the two HOT 100 builders: `countdownCarouselData`
+  (Daily Countdown, ranks close up) and `chartRecords` (every Charts record scope: month, range,
+  series, all, Room #1s, CSV, caption, slides, chart notices). Votes, average, points, Track Report
+  and the weekly report are untouched; the console marks the row "not on the HOT 100". The
+  console's "Pull latest submission" form does not carry the three answers (hand-queued = on).
 
 ## What's next (roadmap order)
 1. **Public boards** (operator, 2026-11-22; mockup first): the filters (daily · weekly ·

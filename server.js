@@ -1040,13 +1040,14 @@ async function stageIngestRound(session, rec) {
   await db.run(
     `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note, giveaway,
        artist_email, artist_phone, artist_note, play_url, artist_instagram, artist_profile_url,
-       ingest_ref, ingest_url, scout_drupal_uid, status, ingest_at, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?, ?)`,
+       ingest_ref, ingest_url, scout_drupal_uid, song_stage, uses_ai, hot100, status, ingest_at, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?, ?)`,
     [rid, session.id, 0, Number(maxPos) + 1, 'rating', rec.title, rec.artist || '',
      rec.instagram ? ('IG: @' + rec.instagram) : '', '',
      cleanArtistEmail(rec.email), cleanArtistPhone(rec.phone),
      rec.note || null, cleanPlayUrl(rec.playUrl), rec.instagram || null, rec.profileUrl || null,
      rec.ref || null, cleanUrl(rec.url), rec.scoutUid || null,
+     songStageOf(rec.stage), usesAiOf(rec.usesAi), hot100Of(rec.hot100),
      Number(rec.at) || now(), now()]
   );
   return rid;
@@ -2355,7 +2356,8 @@ async function countdownCarouselData(session) {
             (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes
        FROM rounds r
       WHERE r.session_id = ? AND r.status = 'ratified' AND r.room_average IS NOT NULL
-        AND COALESCE(r.is_reference, 0) = 0`, [session.id]);
+        AND COALESCE(r.is_reference, 0) = 0
+        AND ${HOT100_SQL('r')}`, [session.id]);
   if (!rows.length) return null;
   rows.sort((a, b) => (Number(b.room_average) - Number(a.room_average)) || (Number(b.votes) - Number(a.votes)) || (a.idx - b.idx));
   const recs = rows.slice(0, COUNTDOWN_MAX_RECORDS).map((r, i) => {
@@ -2942,7 +2944,8 @@ async function asyncPlayerState(participant, session, count, opts = {}) {
   const results = Number(session.results_at) || 0;
 
   const rows = await db.all(
-    `SELECT id, idx, song_title, song_artist, artist_note, play_url, artist_instagram, artist_profile_url, status
+    `SELECT id, idx, song_title, song_artist, artist_note, play_url, artist_instagram, artist_profile_url,
+            song_stage, uses_ai, status
        FROM rounds WHERE session_id = ? AND status IN ('voting','closed','ratified') ORDER BY idx ASC`,
     [session.id]);
   const total = rows.length;
@@ -2999,6 +3002,10 @@ async function asyncPlayerState(participant, session, count, opts = {}) {
       // node and carries the submitter's contact details — it must never reach a player.
       artist_instagram: r.artist_instagram || null,
       artist_profile_url: r.artist_profile_url || null,
+      // The artist's own answers about the record (056) — song info, like the note, never
+      // anything about the vote. null when unanswered, and the page then shows nothing.
+      stage_label: SONG_STAGE_LABELS[r.song_stage] || null,
+      ai_label: USES_AI_LABELS[r.uses_ai] || null,
       voted: !!v };
     if (v) item.myVote = { taste: v.taste, predict: v.predict };
     else if (demoVotes[r.id]) { item.voted = true; item.replay = true; item.myVote = { taste: demoVotes[r.id].taste, predict: demoVotes[r.id].predict }; }
@@ -3625,6 +3632,12 @@ const chartDay = ms => new Date(Number(ms) || 0)
   .toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // YYYY-MM-DD, for CSV/sorting
 // Loose match for "same record, played twice": case/punctuation-insensitive title+artist.
 const chartKey = s => (s == null ? '' : String(s)).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+// THE HOT 100 OPT-OUT (056): a record whose artist unticked "Put my song up for the HOT 100"
+// is left off EVERY HOT 100 list — the Daily Countdown carousel (countdownCarouselData) and
+// the Charts screen's record charts (chartRecords → table, CSV, caption, chart slides and the
+// chart notices). Nothing else reads it: the record's votes, average, points and Track Report
+// are untouched. COALESCE so a row from before the column reads as on the list.
+const HOT100_SQL = (a) => `COALESCE(${a}.hot100, 1) <> 0`;
 
 // Resolve the requested scope to a concrete set of rooms + a human label.
 // Soft-deleted rooms never chart. Returns null when the scope names something that's gone.
@@ -3686,6 +3699,7 @@ async function chartRecords(sessions, { minVotes, dedupe }) {
       WHERE r.session_id IN (${ph}) AND r.status = 'ratified'
         AND r.poll_type <> 'binary' AND r.room_average IS NOT NULL
         AND COALESCE(r.is_reference, 0) = 0
+        AND ${HOT100_SQL('r')}
       GROUP BY r.id, r.idx, r.song_title, r.song_artist, r.song_note, r.room_average,
                r.session_id, s.name, s.scheduled_at, s.created_at`, ids);
   const all = rows.map(r => {
@@ -5114,8 +5128,38 @@ function normalizeDropSong(raw, i) {
     // the console prints as "—" rather than pretending to know. Unusable is a warning at the
     // caller, not a rejection — a mistyped amount must not kill the whole day.
     supportCents: cleanSupportCents(raw.amount),
+    // THE THREE FORM ANSWERS (056, operator 2026-11-26). Song info for the A&R plus the HOT 100
+    // opt-out. An older site omits the keys; that reads exactly like "before the question
+    // existed": '' / '' / on the HOT 100. See songStageOf / usesAiOf / hot100Of.
+    stage: songStageOf(raw.stage),
+    usesAi: usesAiOf(raw.usesAi ?? raw.uses_ai),
+    hot100: hot100Of(raw.hot100),
   } };
 }
+
+// The submit form's answers, normalized. Anything unrecognized reads as unanswered ('')
+// rather than failing the day — the caller warns so Drupal can see it.
+const SONG_STAGES = ['released', 'done', 'wip'];
+function songStageOf(v) {
+  const s = (v == null ? '' : String(v)).trim().toLowerCase();
+  return SONG_STAGES.includes(s) ? s : '';
+}
+function usesAiOf(v) {
+  if (v === true) return 'yes';
+  if (v === false) return 'no';
+  const s = (v == null ? '' : String(v)).trim().toLowerCase();
+  return s === 'yes' || s === 'no' ? s : '';
+}
+// ONLY an explicit "no" takes a song off the HOT 100. Missing, null or anything else is on:
+// entries from before the question arrive as true, and an older site sends no key at all.
+function hot100Of(v) {
+  if (v === false || v === 0) return 0;
+  const s = (v == null ? '' : String(v)).trim().toLowerCase();
+  return s === 'false' || s === '0' || s === 'no' ? 0 : 1;
+}
+// The A&R-facing labels (operator's wording). '' shows nothing.
+const SONG_STAGE_LABELS = { released: 'Released', done: 'Done, not released yet', wip: 'Still working on it' };
+const USES_AI_LABELS = { yes: 'Uses AI', no: 'No AI' };
 
 // A drop MUST be tagged into a series or its points never reach the $500 board — the whole
 // unification premise, failing silently. Explicit -> the active series -> refuse. One rule,
@@ -5173,6 +5217,9 @@ async function stageDailyDrop(res, body) {
     if (raw.amount != null && String(raw.amount).trim() !== '' && rec.supportCents == null) {
       warnings.push({ index: i, field: 'amount', reason: 'unusable' });
     }
+    if (raw.stage != null && String(raw.stage).trim() !== '' && !rec.stage) warnings.push({ index: i, field: 'stage', reason: 'unrecognized' });
+    const ai = raw.usesAi ?? raw.uses_ai;
+    if (ai != null && String(ai).trim() !== '' && !rec.usesAi) warnings.push({ index: i, field: 'usesAi', reason: 'unrecognized' });
     recs.push(rec);
   });
   if (rejected.length) return send(res, 400, { error: 'Batch rejected', rejected });
@@ -5207,10 +5254,11 @@ async function stageDailyDrop(res, body) {
         await tx.run(
           `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
              giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-             artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, status, opens_at, closes_at, created_at)
-           VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+             artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, song_stage, uses_ai, hot100, status, opens_at, closes_at, created_at)
+           VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
           [id(9), existing.id, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
            s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, s.supportCents,
+           s.stage || '', s.usesAi || '', s.hot100 === 0 ? 0 : 1,
            existing.window_opens_at, existing.window_closes_at, now()]);
       }
       const kept = await tx.all(
@@ -5286,10 +5334,11 @@ async function createAsyncDrop({ day, name, seriesId, songs, opensAt, closesAt, 
       await tx.run(
         `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
            giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-           artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, status, opens_at, closes_at, created_at)
-         VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+           artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, song_stage, uses_ai, hot100, status, opens_at, closes_at, created_at)
+         VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
         [id(9), sid, i, i, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
-         s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, s.supportCents, wo, wc, ts]);
+         s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, s.supportCents,
+           s.stage || '', s.usesAi || '', s.hot100 === 0 ? 0 : 1, wo, wc, ts]);
     }
   });
   return { sessionId: sid, day, rounds: songs.length, opensAt: wo, closesAt: wc, streamAt: sa, resultsAt: rp };
@@ -5321,10 +5370,11 @@ async function addDropRound(session, s) {
   await db.run(
     `INSERT INTO rounds (id, session_id, idx, queue_pos, poll_type, song_title, song_artist, song_note,
        giveaway, artist_email, artist_phone, artist_note, play_url, artist_instagram,
-       artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, status, opens_at, closes_at, created_at)
-     VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
+       artist_profile_url, ingest_ref, ingest_url, scout_drupal_uid, is_reference, support_cents, song_stage, uses_ai, hot100, status, opens_at, closes_at, created_at)
+     VALUES (?,?,?,?, 'rating', ?,?,?, '', ?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending', ?,?,?)`,
     [rid, session.id, idx, idx, s.title, s.artist || '', s.instagram ? ('IG: @' + s.instagram) : '',
      s.email, s.phone, s.note, s.playUrl, s.instagram, s.profileUrl, s.ref, s.url, s.scoutUid, s.isReference || 0, s.supportCents,
+           s.stage || '', s.usesAi || '', s.hot100 === 0 ? 0 : 1,
      session.window_opens_at, session.window_closes_at, ts]);
   const n = Number((await db.get('SELECT COUNT(*) AS c FROM rounds WHERE session_id = ?', [session.id])).c) || 0;
   return { ok: true, created: false, sessionId: session.id, day: session.drop_day, roundId: rid, idx, rounds: n };
@@ -8956,6 +9006,8 @@ async function handleApi(req, res, url) {
       ref: clip(body.ref, 100) || null,
       url: cleanUrl(body.url),
       scoutUid: clip(body.scout && body.scout.uid, 60) || null,
+      // The submit form's three answers (056); absent = unanswered / on the HOT 100.
+      stage: songStageOf(body.stage), usesAi: usesAiOf(body.usesAi ?? body.uses_ai), hot100: hot100Of(body.hot100),
       source: clip(body.source, 60) || 'makinitmag', at: now() };
     if (!rec.title && !rec.artist) return send(res, 400, { error: 'Need at least a title or artist' }, cors);
     await db.run("INSERT INTO settings (k,v) VALUES ('ingest_latest', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", [JSON.stringify(rec)]);
@@ -12080,6 +12132,7 @@ async function handleApi(req, res, url) {
     const rounds = await db.all(
       `SELECT r.id, r.idx, r.status, r.song_title, r.song_artist, r.play_url, r.artist_note,
               r.artist_instagram, r.song_note, r.ingest_ref, r.ingest_url, r.room_average, r.artist_email, r.artist_phone, r.support_cents,
+              r.hot100,
               (SELECT COUNT(*) FROM votes v WHERE v.round_id = r.id) AS votes,
               (SELECT COUNT(*) FROM round_reports rr WHERE rr.round_id = r.id) AS reports,
               (SELECT COUNT(*) FROM round_comments c WHERE c.round_id = r.id AND c.status = 'shared') AS comments_shared
@@ -12154,6 +12207,8 @@ async function handleApi(req, res, url) {
         // Support level: 0 = free, > 0 = paid (cents), null = not reported. top_supporter
         // marks the record(s) at the day's highest amount so the console can set them apart.
         support_cents: supportCentsOf(r), top_supporter: topCents != null && supportCentsOf(r) === topCents,
+        // false = the artist opted out of the HOT 100 (056): rated as usual, left off the countdown.
+        hot100: Number(r.hot100 ?? 1) !== 0,
         votes: Number(r.votes) || 0, reports: Number(r.reports) || 0,
         comments_shared: Number(r.comments_shared) || 0,
       })),
@@ -13391,4 +13446,8 @@ module.exports._resultsPages = resultsPages;
 module.exports._arResultsData = arResultsData;
 module.exports._accountResultsUrl = accountResultsUrl;
 module.exports._songReportData = songReportData;
+module.exports._songStageOf = songStageOf;
+module.exports._usesAiOf = usesAiOf;
+module.exports._hot100Of = hot100Of;
+module.exports._songStageLabels = SONG_STAGE_LABELS;
 module.exports._tournaments = tournaments;
